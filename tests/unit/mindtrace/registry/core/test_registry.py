@@ -414,31 +414,31 @@ def test_save_without_materializer(registry):
 
 def test_find_materializer_with_class_object(registry, test_config):
     """Test that _find_materializer() converts a materializer class object to a string.
-    
+
     This test covers the code path in _find_materializer() where a materializer
     class object is converted to a string representation using type(materializer).
-    
+
     Note: When a materializer class object is provided (not a string), it is converted
     to a string using type(materializer) which returns:
     - For classes with metaclasses: the metaclass (e.g., ArchiverMeta)
     - For regular classes: builtins.type
     """
     from mindtrace.registry.archivers.config_archiver import ConfigArchiver
-    
+
     # Call _find_materializer with a materializer class object (not a string)
-    # This should trigger the conversion: 
+    # This should trigger the conversion:
     # return f"{type(materializer).__module__}.{type(materializer).__name__}"
     materializer_str = registry._find_materializer(test_config, provided_materializer=ConfigArchiver)
-    
+
     # Verify the materializer class was converted to a string
     # Since ConfigArchiver uses a metaclass, type(ConfigArchiver) returns ArchiverMeta
     assert materializer_str == "mindtrace.registry.core.archiver.ArchiverMeta"
     assert isinstance(materializer_str, str)
-    
+
     # Verify that if we pass a regular class, type() returns builtins.type
     class SimpleMaterializer:
         pass
-    
+
     # This should convert type(SimpleMaterializer) which is builtins.type
     simple_str = registry._find_materializer(test_config, provided_materializer=SimpleMaterializer)
     assert simple_str == "builtins.type"
@@ -2098,17 +2098,18 @@ def test_get_registry_metadata_fallback(registry, monkeypatch):
     """Test _get_registry_metadata exception handling."""
     # Mock fetch_registry_metadata to raise an exception
     registry.backend.fetch_registry_metadata = lambda: (_ for _ in ()).throw(Exception("Test error"))
-    
+
     result = registry._get_registry_metadata()
     assert result == {}
 
 
 def test_get_registry_metadata_exception_handling(registry, monkeypatch):
     """Test _get_registry_metadata exception handling."""
+
     # Mock fetch_registry_metadata to raise an exception
     def raise_exception():
         raise Exception("Test error")
-    
+
     registry.backend.fetch_registry_metadata = raise_exception
     result = registry._get_registry_metadata()
     assert result == {}
@@ -2118,10 +2119,11 @@ def test_save_registry_metadata_gcp_backend(registry, monkeypatch):
     """Test _save_registry_metadata with GCP backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 
@@ -2132,10 +2134,11 @@ def test_save_registry_metadata_minio_backend(registry, monkeypatch):
     """Test _save_registry_metadata with MinIO backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 
@@ -2146,10 +2149,11 @@ def test_save_registry_metadata_local_backend(registry, monkeypatch):
     """Test _save_registry_metadata with local backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 
@@ -2158,26 +2162,28 @@ def test_save_registry_metadata_local_backend(registry, monkeypatch):
 
 def test_save_registry_metadata_fallback(registry, monkeypatch):
     """Test _save_registry_metadata exception handling."""
+
     # Mock save_registry_metadata to raise an exception (should be caught and logged)
     def raise_exception(metadata):
         raise Exception("Test error")
-    
+
     registry.backend.save_registry_metadata = raise_exception
     registry.backend.fetch_registry_metadata = lambda: {}
-    
+
     # Should not raise, but log a warning
     registry._save_registry_metadata({"materializers": {"test": "materializer"}})
 
 
 def test_save_registry_metadata_exception_handling(registry, monkeypatch):
     """Test _save_registry_metadata exception handling."""
+
     # Mock save_registry_metadata to raise an exception (should be caught and logged)
     def raise_exception(metadata):
         raise Exception("Test error")
-    
+
     registry.backend.save_registry_metadata = raise_exception
     registry.backend.fetch_registry_metadata = lambda: {}
-    
+
     # Should not raise, but log a warning
     registry._save_registry_metadata({"materializers": {"test": "materializer"}})
 
@@ -2251,10 +2257,11 @@ def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
     """Test clear_registry_metadata with GCP backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 
@@ -2265,10 +2272,11 @@ def test_clear_registry_metadata_minio_backend(registry, monkeypatch):
     """Test clear_registry_metadata with MinIO backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 
@@ -2279,10 +2287,11 @@ def test_clear_registry_metadata_local_backend(registry, monkeypatch):
     """Test clear_registry_metadata with local backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
+
     def save_metadata(metadata):
         saved_metadata.clear()
         saved_metadata.update(metadata)
-    
+
     registry.backend.save_registry_metadata = save_metadata
     registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
 

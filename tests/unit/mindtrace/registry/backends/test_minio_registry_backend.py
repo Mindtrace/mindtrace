@@ -2045,6 +2045,7 @@ def test_save_registry_metadata(backend, monkeypatch):
 
 def test_save_registry_metadata_error(backend, monkeypatch, caplog):
     """Test save_registry_metadata error handling."""
+
     # Mock put_object to raise an exception
     def mock_put_object(*args, **kwargs):
         raise Exception("Failed to save metadata")
@@ -2084,6 +2085,7 @@ def test_fetch_registry_metadata_exists(backend, monkeypatch):
 
 def test_fetch_registry_metadata_not_exists(backend, monkeypatch):
     """Test fetch_registry_metadata when metadata file doesn't exist (lines 399-401)."""
+
     # Mock get_object to raise NoSuchKey error
     def mock_get_object(bucket, object_name):
         error = S3Error(
@@ -2107,6 +2109,7 @@ def test_fetch_registry_metadata_not_exists(backend, monkeypatch):
 
 def test_fetch_registry_metadata_error(backend, monkeypatch):
     """Test fetch_registry_metadata error handling (lines 404-406)."""
+
     # Mock get_object to raise a non-S3Error exception
     def mock_get_object(bucket, object_name):
         raise Exception("Network error")
@@ -2120,6 +2123,7 @@ def test_fetch_registry_metadata_error(backend, monkeypatch):
 
 def test_fetch_registry_metadata_s3_error_non_nosuchkey(backend, monkeypatch):
     """Test fetch_registry_metadata when S3Error is not NoSuchKey (line 403)."""
+
     # Mock get_object to raise an S3Error that is not NoSuchKey
     def mock_get_object(bucket, object_name):
         error = S3Error(

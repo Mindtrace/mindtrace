@@ -468,7 +468,7 @@ class GCPRegistryBackend(RegistryBackend):
             with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
-            
+
             try:
                 self.gcs.upload(temp_path, self._metadata_path)
             finally:
@@ -487,7 +487,7 @@ class GCPRegistryBackend(RegistryBackend):
         try:
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
-            
+
             try:
                 self.gcs.download(self._metadata_path, temp_path)
                 with open(temp_path, "r") as f:
