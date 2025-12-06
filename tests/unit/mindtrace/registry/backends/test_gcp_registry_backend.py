@@ -3129,3 +3129,217 @@ def test_cleanup_partial_overwrite_metadata_delete_exception(backend, mock_gcs_h
         # Should have error but continue
         assert stats["errors"] > 0
         assert stats["metadata_deleted"] == 0
+
+
+def test_save_registry_metadata(backend, mock_gcs_handler):
+    """Test save_registry_metadata method."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {
+            "test.Object": "TestMaterializer",
+            "another.Object": "AnotherMaterializer",
+        },
+    }
+
+    # Use the backend's actual GCS handler instance
+    gcs_handler = backend.gcs
+
+    # Clear any initialization metadata
+    if backend._metadata_path in gcs_handler._objects:
+        del gcs_handler._objects[backend._metadata_path]
+
+    # Save registry metadata
+    backend.save_registry_metadata(metadata)
+
+    # Verify metadata was uploaded to GCS
+    assert backend._metadata_path in gcs_handler._objects
+
+    # Verify metadata content
+    uploaded_data = json.loads(gcs_handler._objects[backend._metadata_path].decode())
+    assert uploaded_data == metadata
+
+
+def test_save_registry_metadata_error(backend, mock_gcs_handler, monkeypatch):
+    """Test save_registry_metadata error handling."""
+    # Mock upload to raise an exception
+    def mock_upload(local_path, remote_path):
+        raise Exception("Failed to upload")
+
+    monkeypatch.setattr(backend.gcs, "upload", mock_upload)
+
+    metadata = {"version_objects": True}
+    with pytest.raises(Exception, match="Failed to upload"):
+        backend.save_registry_metadata(metadata)
+
+
+def test_save_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, monkeypatch):
+    """Test save_registry_metadata cleans up temp file even on error (lines 475-476)."""
+    temp_files_created = []
+
+    original_named_temporary_file = tempfile.NamedTemporaryFile
+
+    def mock_named_temporary_file(*args, **kwargs):
+        f = original_named_temporary_file(*args, **kwargs)
+        temp_files_created.append(f.name)
+        return f
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", mock_named_temporary_file)
+
+    # Mock upload to raise an exception
+    def mock_upload(local_path, remote_path):
+        raise Exception("Upload failed")
+
+    monkeypatch.setattr(backend.gcs, "upload", mock_upload)
+
+    metadata = {"version_objects": True}
+    try:
+        backend.save_registry_metadata(metadata)
+    except Exception:
+        pass
+
+    # Verify temp file was cleaned up
+    for temp_file in temp_files_created:
+        assert not os.path.exists(temp_file)
+
+
+def test_fetch_registry_metadata_exists(backend, mock_gcs_handler):
+    """Test fetch_registry_metadata when metadata file exists."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {"test.Object": "TestMaterializer"},
+    }
+
+    # Use the backend's actual GCS handler instance
+    gcs_handler = backend.gcs
+
+    # Clear any initialization metadata first
+    if backend._metadata_path in gcs_handler._objects:
+        del gcs_handler._objects[backend._metadata_path]
+
+    # Upload metadata to mock GCS
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(metadata, f)
+        temp_path = f.name
+
+    try:
+        # Upload metadata to mock GCS
+        gcs_handler.upload(temp_path, backend._metadata_path)
+        
+        # Verify the metadata was uploaded correctly
+        assert backend._metadata_path in gcs_handler._objects
+        uploaded_data = json.loads(gcs_handler._objects[backend._metadata_path].decode())
+        assert uploaded_data == metadata
+    finally:
+        os.unlink(temp_path)
+
+    # Fetch metadata
+    fetched_metadata = backend.fetch_registry_metadata()
+
+    # Verify metadata content
+    assert fetched_metadata == metadata
+
+
+def test_fetch_registry_metadata_not_exists(backend, mock_gcs_handler):
+    """Test fetch_registry_metadata when metadata file doesn't exist."""
+    # Ensure metadata doesn't exist in mock GCS
+    if backend._metadata_path in mock_gcs_handler._objects:
+        del mock_gcs_handler._objects[backend._metadata_path]
+
+    # Mock download to raise FileNotFoundError
+    original_download = backend.gcs.download
+
+    def mock_download(remote_path, local_path):
+        if remote_path == backend._metadata_path:
+            raise FileNotFoundError(f"Object {remote_path} not found")
+        return original_download(remote_path, local_path)
+
+    backend.gcs.download = mock_download
+
+    # Fetch metadata - should return empty dict
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_error_during_download(backend, mock_gcs_handler, monkeypatch):
+    """Test fetch_registry_metadata error handling during download (lines 495-497)."""
+    # Mock download to raise an exception
+    def mock_download(remote_path, local_path):
+        raise Exception("Network error")
+
+    monkeypatch.setattr(backend.gcs, "download", mock_download)
+
+    # Fetch metadata - should return empty dict on error
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_error_during_json_load(backend, mock_gcs_handler, monkeypatch):
+    """Test fetch_registry_metadata error handling during JSON load (lines 495-497)."""
+    # Use the backend's actual GCS handler instance
+    gcs_handler = backend.gcs
+
+    # Clear any initialization metadata first
+    if backend._metadata_path in gcs_handler._objects:
+        del gcs_handler._objects[backend._metadata_path]
+
+    # Upload invalid JSON to mock GCS
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write("invalid json content")
+        temp_path = f.name
+
+    try:
+        # Upload invalid JSON to mock GCS
+        gcs_handler.upload(temp_path, backend._metadata_path)
+        
+        # Verify invalid JSON was uploaded
+        assert backend._metadata_path in gcs_handler._objects
+        assert gcs_handler._objects[backend._metadata_path] == b"invalid json content"
+    finally:
+        os.unlink(temp_path)
+
+    # Fetch metadata - should return empty dict on JSON decode error
+    # The inner exception handler (lines 495-497) catches the JSONDecodeError
+    fetched_metadata = backend.fetch_registry_metadata()
+    # Should return empty dict when JSON parsing fails
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, monkeypatch):
+    """Test fetch_registry_metadata cleans up temp file even on error (lines 499-500)."""
+    temp_files_created = []
+
+    original_named_temporary_file = tempfile.NamedTemporaryFile
+
+    def mock_named_temporary_file(*args, **kwargs):
+        f = original_named_temporary_file(*args, **kwargs)
+        temp_files_created.append(f.name)
+        return f
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", mock_named_temporary_file)
+
+    # Mock download to raise an exception in the inner try block
+    def mock_download(remote_path, local_path):
+        raise Exception("Download failed")
+
+    monkeypatch.setattr(backend.gcs, "download", mock_download)
+
+    # Fetch metadata - should return empty dict
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+    # Verify temp file was cleaned up
+    for temp_file in temp_files_created:
+        assert not os.path.exists(temp_file)
+
+
+def test_fetch_registry_metadata_outer_exception(backend, mock_gcs_handler, monkeypatch):
+    """Test fetch_registry_metadata outer exception handler (lines 501-503)."""
+    # Mock NamedTemporaryFile to raise an exception (outer try block)
+    def mock_named_temporary_file(*args, **kwargs):
+        raise Exception("Failed to create temp file")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", mock_named_temporary_file)
+
+    # Fetch metadata - should return empty dict on outer exception
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}

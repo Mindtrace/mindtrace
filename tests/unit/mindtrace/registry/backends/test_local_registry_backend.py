@@ -1260,3 +1260,77 @@ def test_init_with_file_uri(temp_dir):
     backend = LocalRegistryBackend(uri=file_uri)
     assert backend.uri == temp_dir.resolve()
     assert str(backend.uri).startswith(str(temp_dir))
+
+
+def test_save_registry_metadata(backend):
+    """Test save_registry_metadata method."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {
+            "test.Object": "TestMaterializer",
+            "another.Object": "AnotherMaterializer",
+        },
+    }
+
+    # Save registry metadata
+    backend.save_registry_metadata(metadata)
+
+    # Verify metadata file was created
+    assert backend.metadata_path.exists()
+
+    # Verify metadata content
+    with open(backend.metadata_path, "r") as f:
+        saved_metadata = json.load(f)
+    assert saved_metadata == metadata
+
+
+def test_save_registry_metadata_error(backend, caplog):
+    """Test save_registry_metadata error handling."""
+    # Make the metadata path directory read-only to cause an error
+    backend.metadata_path.parent.chmod(0o444)
+
+    try:
+        metadata = {"version_objects": True}
+        with pytest.raises(Exception):
+            backend.save_registry_metadata(metadata)
+    finally:
+        # Restore permissions for cleanup
+        backend.metadata_path.parent.chmod(0o755)
+
+
+def test_fetch_registry_metadata_exists(backend):
+    """Test fetch_registry_metadata when metadata file exists."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {"test.Object": "TestMaterializer"},
+    }
+
+    # Save metadata first
+    backend.save_registry_metadata(metadata)
+
+    # Fetch metadata
+    fetched_metadata = backend.fetch_registry_metadata()
+
+    # Verify metadata content
+    assert fetched_metadata == metadata
+
+
+def test_fetch_registry_metadata_not_exists(backend):
+    """Test fetch_registry_metadata when metadata file doesn't exist."""
+    # Ensure metadata file doesn't exist
+    if backend.metadata_path.exists():
+        backend.metadata_path.unlink()
+
+    # Fetch metadata - should return empty dict
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_error(backend):
+    """Test fetch_registry_metadata error handling (lines 340-342)."""
+    # Create metadata file with invalid JSON
+    backend.metadata_path.write_text("invalid json content")
+
+    # Fetch metadata - should return empty dict on error
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
