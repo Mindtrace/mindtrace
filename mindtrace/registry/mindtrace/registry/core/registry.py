@@ -641,7 +641,7 @@ class Registry(Mindtrace):
             ValueError: If the object does not exist.
             ValueError: If verify_hash is True and the computed hash doesn't match the metadata hash.
         """
-        if not verify_cache and self._cache is not None and self._cache.has_object(name):
+        if not verify_cache and self._cache is not None and self._cache.has_object(name, version=version):
             return self._cache.load(
                 name=name, version=version, verify_hash=verify_hash, verify_cache=verify_cache, **kwargs
             )
