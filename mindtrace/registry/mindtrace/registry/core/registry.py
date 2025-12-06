@@ -354,6 +354,56 @@ class Registry(Mindtrace):
         except Exception as e:
             self.logger.warning(f"Could not save registry metadata: {e}")
 
+    def _find_materializer(self, obj: Any, provided_materializer: Type[BaseMaterializer] | None = None) -> str:
+        """Find the appropriate materializer for an object.
+
+        The order of precedence for determining the materializer is:
+        1. Materializer provided as an argument.
+        2. Materializer previously registered for the object type.
+        3. Materializer for any of the object's base classes (checked recursively).
+        4. The object itself, if it's its own materializer.
+
+        Args:
+            obj: Object to find materializer for.
+            provided_materializer: Materializer provided as argument. If None, will be inferred.
+
+        Returns:
+            Materializer class string.
+
+        Raises:
+            ValueError: If no materializer is found for the object.
+        """
+        object_class = f"{type(obj).__module__}.{type(obj).__name__}"
+
+        # Get all base classes recursively
+        def get_all_base_classes(cls):
+            bases = []
+            for base in cls.__bases__:
+                bases.append(base)
+                bases.extend(get_all_base_classes(base))
+            return bases
+
+        # Try to find a materializer in order of precedence
+        materializer = first_not_none(
+            (
+                provided_materializer,
+                self.registered_materializer(object_class),
+                *[
+                    self.registered_materializer(f"{base.__module__}.{base.__name__}")
+                    for base in get_all_base_classes(type(obj))
+                ],
+                object_class if isinstance(obj, BaseMaterializer) else None,
+            )
+        )
+
+        if materializer is None:
+            raise ValueError(f"No materializer found for object of type {type(obj)}.")
+
+        # Convert to string if needed
+        if isinstance(materializer, str):
+            return materializer
+        return f"{type(materializer).__module__}.{type(materializer).__name__}"
+
     def save(
         self,
         name: str,
@@ -390,35 +440,7 @@ class Registry(Mindtrace):
             ValueError: If version string is invalid.
         """
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-
-        # Get all base classes recursively
-        def get_all_base_classes(cls):
-            bases = []
-            for base in cls.__bases__:
-                bases.append(base)
-                bases.extend(get_all_base_classes(base))
-            return bases
-
-        # Try to find a materializer in order of precedence
-        materializer = first_not_none(
-            (
-                materializer,
-                self.registered_materializer(object_class),
-                *[
-                    self.registered_materializer(f"{base.__module__}.{base.__name__}")
-                    for base in get_all_base_classes(type(obj))
-                ],
-                object_class if isinstance(obj, BaseMaterializer) else None,
-            )
-        )
-
-        if materializer is None:
-            raise ValueError(f"No materializer found for object of type {type(obj)}.")
-        materializer_class = (
-            f"{type(materializer).__module__}.{type(materializer).__name__}"
-            if not isinstance(materializer, str)
-            else materializer
-        )
+        materializer_class = self._find_materializer(obj, materializer)
 
         # Acquire a lock for the entire save operation to prevent race conditions
         # Use a special lock name that covers all operations for this object
@@ -494,10 +516,10 @@ class Registry(Mindtrace):
                         else:
                             # No cache - create temp directory and save object
                             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir_path:
-                                materializer = instantiate_target(
-                                    materializer, uri=str(temp_dir_path), artifact_store=self._artifact_store
+                                materializer_instance = instantiate_target(
+                                    materializer_class, uri=str(temp_dir_path), artifact_store=self._artifact_store
                                 )
-                                materializer.save(obj)
+                                materializer_instance.save(obj)
 
                                 # Compute artifact hash after materializer saves the object
                                 artifact_hash = compute_dir_hash(temp_dir_path)
