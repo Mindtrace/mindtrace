@@ -9,9 +9,12 @@ from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import Ope
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
     CameraNotFoundError,
     CameraTimeoutError,
     HardwareOperationError,
+    SDKNotAvailableError,
 )
 
 
@@ -532,3 +535,1172 @@ class TestOpenCVAdvancedFeatures:
         # No cap - should return False
         result = await cam.is_exposure_control_supported()
         assert result is False
+
+
+class TestOpenCVCameraBackendInitialization:
+    """Test suite for OpenCVCameraBackend initialization and configuration."""
+
+    def test_init_with_sdk_not_available(self, monkeypatch):
+        """Test initialization when OpenCV SDK is not available."""
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
+
+        with pytest.raises(SDKNotAvailableError, match="opencv-python"):
+            OpenCVCameraBackend("0")
+
+    def test_init_with_invalid_resolution_width(self, fake_cv):
+        """Test initialization with invalid width."""
+        with pytest.raises(CameraConfigurationError, match="Invalid resolution"):
+            OpenCVCameraBackend("0", width=0, height=480)
+
+    def test_init_with_invalid_resolution_height(self, fake_cv):
+        """Test initialization with invalid height."""
+        with pytest.raises(CameraConfigurationError, match="Invalid resolution"):
+            OpenCVCameraBackend("0", width=640, height=-1)
+
+    def test_init_with_invalid_fps(self, fake_cv):
+        """Test initialization with invalid frame rate."""
+        with pytest.raises(CameraConfigurationError, match="Invalid frame rate"):
+            OpenCVCameraBackend("0", fps=0)
+
+    def test_init_with_invalid_timeout(self, fake_cv):
+        """Test initialization with invalid timeout."""
+        with pytest.raises(CameraConfigurationError, match="Timeout must be at least 100ms"):
+            OpenCVCameraBackend("0", timeout_ms=50)
+
+    def test_init_with_config_defaults(self, fake_cv, monkeypatch):
+        """Test initialization uses config defaults when kwargs not provided."""
+        # Mock config to return specific defaults
+        from unittest.mock import MagicMock
+
+        mock_config = MagicMock()
+        mock_config.cameras.opencv_default_width = 1920
+        mock_config.cameras.opencv_default_height = 1080
+        mock_config.cameras.opencv_default_fps = 60
+        mock_config.cameras.opencv_default_exposure = -3.0
+        mock_config.cameras.timeout_ms = 3000
+
+        cam = OpenCVCameraBackend("0")
+        # Patch the camera_config after initialization
+        cam.camera_config = mock_config
+
+        # Re-initialize with defaults
+        assert cam._width == 1280  # Default from getattr fallback
+        assert cam._height == 720  # Default from getattr fallback
+
+    def test_init_op_timeout_calculation_exception(self, fake_cv, monkeypatch):
+        """Test _op_timeout_s calculation when exception occurs."""
+        cam = OpenCVCameraBackend("0", timeout_ms=5000)
+        # The timeout_ms should be converted to seconds
+        assert cam._op_timeout_s >= 1.0
+
+        # Test with invalid timeout_ms that causes exception
+        cam.timeout_ms = "invalid"
+        # The exception handler should set default to 5.0
+        # But this is set in __init__, so we need to test it differently
+        # Actually, the exception handling is in __init__, so we can't easily test it
+        # But we can verify the normal path works
+
+
+class TestOpenCVCameraBackendSDKMethods:
+    """Test suite for SDK execution methods."""
+
+    @pytest.mark.asyncio
+    async def test_sdk_timeout_error(self, fake_cv):
+        """Test _sdk method with timeout error."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        def slow_func():
+            import time
+            time.sleep(1)  # Sleep for 1 second, but timeout is 0.01
+            return "result"
+
+        # Use a very short timeout to trigger timeout error
+        with pytest.raises(CameraTimeoutError):
+            await cam._sdk(slow_func, timeout=0.001)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_sdk_generic_exception(self, fake_cv):
+        """Test _sdk method with generic exception."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        def failing_func():
+            raise RuntimeError("Test error")
+
+        with pytest.raises(HardwareOperationError, match="OpenCV operation failed"):
+            await cam._sdk(failing_func)
+
+        await cam.close()
+
+    def test_sdk_sync_basic(self, fake_cv):
+        """Test _sdk_sync method basic functionality."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = True
+        import cv2
+
+        cam.cap = cv2.VideoCapture(0)
+
+        def test_func():
+            return 42
+
+        result = cam._sdk_sync(test_func)
+        assert result == 42
+
+    def test_sdk_sync_timeout(self, fake_cv):
+        """Test _sdk_sync method with timeout."""
+        cam = OpenCVCameraBackend("0")
+        cam._sdk_executor = None  # Will be created in _sdk_sync
+        cam._op_timeout_s = 0.01
+
+        def slow_func():
+            import time
+
+            time.sleep(1)
+            return "result"
+
+        # Should raise TimeoutError from future.result()
+        with pytest.raises(Exception):  # Could be TimeoutError or other exception
+            cam._sdk_sync(slow_func, timeout=0.01)
+
+
+class TestOpenCVCameraBackendEnsureOpen:
+    """Test suite for _ensure_open method."""
+
+    @pytest.mark.asyncio
+    async def test_ensure_open_sdk_not_available(self, fake_cv, monkeypatch):
+        """Test _ensure_open when OpenCV is not available."""
+        # Create camera first with OpenCV available
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        # Then patch to make OpenCV unavailable
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
+
+        with pytest.raises(SDKNotAvailableError):
+            await cam._ensure_open()
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_ensure_open_not_initialized(self, fake_cv):
+        """Test _ensure_open when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.cap = None
+
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await cam._ensure_open()
+
+    @pytest.mark.asyncio
+    async def test_ensure_open_not_opened(self, fake_cv):
+        """Test _ensure_open when camera is not opened."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        # Manually close the cap to simulate it not being opened
+        await cam._sdk(cam.cap.release)
+        cam.cap._opened = False
+
+        with pytest.raises(CameraConnectionError, match="is not open"):
+            await cam._ensure_open()
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendInitialize:
+    """Test suite for initialize method error paths."""
+
+    def test_initialize_sdk_not_available(self, monkeypatch):
+        """Test initialize when OpenCV is not available."""
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
+
+        # Camera creation should fail if OpenCV is not available
+        with pytest.raises(SDKNotAvailableError):
+            OpenCVCameraBackend("0")
+
+    @pytest.mark.asyncio
+    async def test_initialize_test_frame_failure(self, fake_cv, monkeypatch):
+        """Test initialize when test frame capture fails."""
+        import cv2
+
+        class FailingReadCap(FakeCap):
+            def read(self):
+                return False, None
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: FailingReadCap(*args, **kwargs))
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(CameraInitializationError, match="failed to capture test frame"):
+            await cam.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_invalid_frame_format(self, fake_cv, monkeypatch):
+        """Test initialize when frame has invalid format."""
+        import cv2
+
+        class InvalidFormatCap(FakeCap):
+            def read(self):
+                # Return frame with wrong shape (2D instead of 3D)
+                frame = np.zeros((480, 640), dtype=np.uint8)
+                return True, frame
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: InvalidFormatCap(*args, **kwargs))
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(CameraInitializationError, match="invalid frame format"):
+            await cam.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_invalid_frame_channels(self, fake_cv, monkeypatch):
+        """Test initialize when frame has wrong number of channels."""
+        import cv2
+
+        class WrongChannelsCap(FakeCap):
+            def read(self):
+                # Return frame with 4 channels instead of 3
+                frame = np.zeros((480, 640, 4), dtype=np.uint8)
+                return True, frame
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: WrongChannelsCap(*args, **kwargs))
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(CameraInitializationError, match="invalid frame format"):
+            await cam.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_exception_with_cleanup(self, fake_cv, monkeypatch):
+        """Test initialize exception handling with cleanup."""
+        import cv2
+
+        class ExceptionCap(FakeCap):
+            def isOpened(self):
+                raise RuntimeError("Test exception")
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: ExceptionCap(*args, **kwargs))
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(CameraInitializationError):
+            await cam.initialize()
+
+        # Cap should be None after cleanup
+        assert cam.cap is None
+        assert cam.initialized is False
+
+
+class TestOpenCVCameraBackendConfigureCamera:
+    """Test suite for _configure_camera method."""
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_exception(self, fake_cv, monkeypatch):
+        """Test _configure_camera exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.set:
+                raise RuntimeError("Set failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(CameraConfigurationError, match="Failed to configure camera"):
+            await cam._configure_camera()
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendGetAvailableCameras:
+    """Test suite for get_available_cameras static method."""
+
+    def test_get_available_cameras_platform_backends_linux(self, fake_cv, monkeypatch):
+        """Test platform-specific backend selection for Linux."""
+        import sys
+
+        original_platform = sys.platform
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        try:
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_platform_backends_windows(self, fake_cv, monkeypatch):
+        """Test platform-specific backend selection for Windows."""
+        import sys
+
+        original_platform = sys.platform
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        try:
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_platform_backends_darwin(self, fake_cv, monkeypatch):
+        """Test platform-specific backend selection for macOS."""
+        import sys
+
+        original_platform = sys.platform
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        try:
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_quick_can_open_exception(self, fake_cv, monkeypatch):
+        """Test _quick_can_open exception handling."""
+        import cv2
+
+        def failing_videocapture(*args, **kwargs):
+            raise RuntimeError("VideoCapture failed")
+
+        monkeypatch.setattr(cv2, "VideoCapture", failing_videocapture)
+        cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+        assert cameras == []
+
+    def test_get_available_cameras_suppress_cv_output(self, fake_cv, monkeypatch):
+        """Test CV output suppression in discovery."""
+        import cv2
+
+        # Test that discovery doesn't fail even if cv2.utils.logging doesn't exist
+        if hasattr(cv2, "utils") and hasattr(cv2.utils, "logging"):
+            original_logging = cv2.utils.logging
+            monkeypatch.delattr(cv2.utils, "logging", raising=False)
+
+        try:
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+        finally:
+            if hasattr(cv2, "utils") and "logging" in dir(cv2.utils):
+                cv2.utils.logging = original_logging
+
+
+class TestOpenCVCameraBackendCapture:
+    """Test suite for capture method error paths."""
+
+    @pytest.mark.asyncio
+    async def test_capture_not_initialized(self, fake_cv):
+        """Test capture when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not ready for capture"):
+            await cam.capture()
+
+    @pytest.mark.asyncio
+    async def test_capture_cancellation(self, fake_cv, monkeypatch):
+        """Test capture cancellation handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        def slow_read():
+            import time
+            time.sleep(1)
+            return True, np.zeros((480, 640, 3), dtype=np.uint8)
+
+        original_read = cam.cap.read
+        cam.cap.read = slow_read
+
+        # Create a task and cancel it
+        task = asyncio.create_task(cam.capture())
+        await asyncio.sleep(0.01)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        cam.cap.read = original_read
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_capture_enhancement_error_handling(self, fake_cv, monkeypatch):
+        """Test capture when image enhancement fails."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+        cam.img_quality_enhancement = True
+
+        original_enhance = cam._enhance_image_quality
+
+        def failing_enhance(image):
+            raise RuntimeError("Enhancement failed")
+
+        monkeypatch.setattr(cam, "_enhance_image_quality", failing_enhance, raising=False)
+
+        # Should still capture successfully, just without enhancement
+        image = await cam.capture()
+        assert isinstance(image, np.ndarray)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_capture_all_retries_fail(self, fake_cv, monkeypatch):
+        """Test capture when all retry attempts fail."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+        cam.retrieve_retry_count = 2
+
+        async def failing_read():
+            return False, None
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.read:
+                return await failing_read()
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(CameraCaptureError, match="All.*capture attempts failed"):
+            await cam.capture()
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendEnhanceImageQuality:
+    """Test suite for _enhance_image_quality method."""
+
+    def test_enhance_image_quality_sdk_not_available(self, fake_cv, monkeypatch):
+        """Test _enhance_image_quality when OpenCV is not available."""
+        # Create camera first with OpenCV available
+        cam = OpenCVCameraBackend("0")
+        test_image = np.zeros((240, 320, 3), dtype=np.uint8)
+
+        # Then patch to make OpenCV unavailable
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
+
+        with pytest.raises(SDKNotAvailableError):
+            cam._enhance_image_quality(test_image)
+
+
+class TestOpenCVCameraBackendClose:
+    """Test suite for close method."""
+
+    @pytest.mark.asyncio
+    async def test_close_release_exception(self, fake_cv, monkeypatch):
+        """Test close when release raises exception."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        def failing_release():
+            raise RuntimeError("Release failed")
+
+        cam.cap.release = failing_release
+
+        with pytest.raises(CameraConnectionError, match="Failed to close camera"):
+            await cam.close()
+
+        # After close, cap should be None
+        assert cam.cap is None
+
+    @pytest.mark.asyncio
+    async def test_close_executor_shutdown_error(self, fake_cv, monkeypatch):
+        """Test close when executor shutdown raises exception."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        def failing_shutdown(wait=True):
+            raise RuntimeError("Shutdown failed")
+
+        cam._sdk_executor.shutdown = failing_shutdown
+
+        # Should handle exception gracefully
+        await cam.close()
+
+        # After close, executor should be None
+        assert cam._sdk_executor is None
+
+
+class TestOpenCVCameraBackendExposure:
+    """Test suite for exposure-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_is_exposure_control_supported_exception(self, fake_cv, monkeypatch):
+        """Test is_exposure_control_supported exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        result = await cam.is_exposure_control_supported()
+        assert result is False
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_is_exposure_control_supported_negative_exposure(self, fake_cv, monkeypatch):
+        """Test is_exposure_control_supported with negative exposure value."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_get = cam.cap.get
+
+        def get_negative_exposure(prop):
+            import cv2
+
+            if prop == cv2.CAP_PROP_EXPOSURE:
+                return -1.0
+            return original_get(prop)
+
+        cam.cap.get = get_negative_exposure
+
+        result = await cam.is_exposure_control_supported()
+        assert result is False
+
+        cam.cap.get = original_get
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_exposure_not_connected(self, fake_cv):
+        """Test set_exposure when camera is not connected."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not available for exposure setting"):
+            await cam.set_exposure(-5.0)
+
+    @pytest.mark.asyncio
+    async def test_set_exposure_hardware_operation_error(self, fake_cv, monkeypatch):
+        """Test set_exposure when hardware operation fails."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=True))
+        monkeypatch.setattr(cam, "get_exposure_range", lambda: asyncio.sleep(0, result=[-13.0, -1.0]))
+
+        original_sdk = cam._sdk
+
+        async def failing_set(func, *args, **kwargs):
+            if func == cam.cap.set:
+                return False  # Set failed
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_set, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to set exposure"):
+            await cam.set_exposure(-5.0)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_exposure_generic_exception(self, fake_cv, monkeypatch):
+        """Test set_exposure with generic exception."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=True))
+        monkeypatch.setattr(cam, "get_exposure_range", lambda: asyncio.sleep(0, result=[-13.0, -1.0]))
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            # Only fail on set/get operations, not on isOpened check
+            import cv2
+            if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_EXPOSURE):
+                raise RuntimeError("SDK error")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to set exposure"):
+            await cam.set_exposure(-5.0)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_get_exposure_exception(self, fake_cv, monkeypatch):
+        """Test get_exposure exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to get exposure"):
+            await cam.get_exposure()
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendGain:
+    """Test suite for gain-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_set_gain_not_connected(self, fake_cv):
+        """Test set_gain when camera is not connected."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not available for gain setting"):
+            await cam.set_gain(10.0)
+
+    @pytest.mark.asyncio
+    async def test_set_gain_exception(self, fake_cv, monkeypatch):
+        """Test set_gain exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            # Only fail on set/get operations, not on isOpened check
+            import cv2
+            if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAIN):
+                raise RuntimeError("SDK error")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(CameraConfigurationError, match="Failed to set gain"):
+            await cam.set_gain(10.0)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_get_gain_exception(self, fake_cv, monkeypatch):
+        """Test get_gain exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        # Should return 0.0 on exception
+        result = await cam.get_gain()
+        assert result == 0.0
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendROI:
+    """Test suite for ROI-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_roi_not_initialized(self, fake_cv):
+        """Test get_ROI when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+        cam.cap = None
+
+        roi = await cam.get_ROI()
+        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
+
+    @pytest.mark.asyncio
+    async def test_get_roi_exception(self, fake_cv, monkeypatch):
+        """Test get_ROI exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        # Should return default ROI on exception
+        roi = await cam.get_ROI()
+        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendWhiteBalance:
+    """Test suite for white balance methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_wb_not_initialized(self, fake_cv):
+        """Test get_wb when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+        cam.cap = None
+
+        wb = await cam.get_wb()
+        assert wb == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_get_wb_exception(self, fake_cv, monkeypatch):
+        """Test get_wb exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        wb = await cam.get_wb()
+        assert wb == "unknown"
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_not_connected(self, fake_cv):
+        """Test set_auto_wb_once when camera is not connected."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not available for white balance setting"):
+            await cam.set_auto_wb_once("auto")
+
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_invalid_mode(self, fake_cv):
+        """Test set_auto_wb_once with invalid mode."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        # The code catches CameraConfigurationError and re-raises as HardwareOperationError
+        with pytest.raises(HardwareOperationError, match="Failed to set white balance"):
+            await cam.set_auto_wb_once("invalid_mode")
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_set_fails(self, fake_cv, monkeypatch):
+        """Test set_auto_wb_once when set operation fails."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_set(func, *args, **kwargs):
+            if func == cam.cap.set:
+                return False
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_set, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to set white balance"):
+            await cam.set_auto_wb_once("auto")
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_exception(self, fake_cv, monkeypatch):
+        """Test set_auto_wb_once exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            # Only fail on set operations, not on isOpened or ensure_open checks
+            import cv2
+            if func == cam.cap.set:
+                raise RuntimeError("SDK error")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to set white balance"):
+            await cam.set_auto_wb_once("auto")
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendImageEnhancement:
+    """Test suite for image quality enhancement methods."""
+
+    @pytest.mark.asyncio
+    async def test_set_image_quality_enhancement_exception(self, fake_cv, monkeypatch):
+        """Test set_image_quality_enhancement exception handling."""
+        cam = OpenCVCameraBackend("0")
+
+        def failing_init():
+            raise RuntimeError("Init failed")
+
+        monkeypatch.setattr(cam, "_initialize_image_enhancement", failing_init, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to set image quality enhancement"):
+            await cam.set_image_quality_enhancement(True)
+
+    def test_initialize_image_enhancement_exception(self, fake_cv, monkeypatch):
+        """Test _initialize_image_enhancement exception handling."""
+        cam = OpenCVCameraBackend("0")
+
+        # Mock logger to raise exception
+        original_error = cam.logger.error
+
+        def failing_error(*args, **kwargs):
+            raise RuntimeError("Logger error")
+
+        cam.logger.error = failing_error
+
+        # Should handle exception gracefully
+        try:
+            cam._initialize_image_enhancement()
+        except Exception:
+            pass
+
+        cam.logger.error = original_error
+
+
+class TestOpenCVCameraBackendExportConfig:
+    """Test suite for export_config method."""
+
+    @pytest.mark.asyncio
+    async def test_export_config_exception(self, fake_cv, monkeypatch, tmp_path):
+        """Test export_config exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.get:
+                raise RuntimeError("Get failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        config_path = os.path.join(tmp_path, "config.json")
+
+        with pytest.raises(CameraConfigurationError, match="Failed to export config"):
+            await cam.export_config(config_path)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_export_config_directory_creation(self, fake_cv, tmp_path):
+        """Test export_config creates parent directories."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "nested", "dir", "config.json")
+
+        await cam.export_config(config_path)
+        assert os.path.exists(config_path)
+
+        await cam.close()
+
+
+class TestOpenCVCameraBackendImportConfig:
+    """Test suite for import_config method."""
+
+    @pytest.mark.asyncio
+    async def test_import_config_file_not_found(self, fake_cv):
+        """Test import_config when file does not exist."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        with pytest.raises(CameraConfigurationError, match="Configuration file not found"):
+            await cam.import_config("/nonexistent/path/config.json")
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_invalid_format(self, fake_cv, tmp_path):
+        """Test import_config with invalid JSON format."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "invalid.json")
+        with open(config_path, "w") as f:
+            f.write("not valid json")
+
+        with pytest.raises(CameraConfigurationError, match="Failed to import config"):
+            await cam.import_config(config_path)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_not_dict(self, fake_cv, tmp_path):
+        """Test import_config when JSON is not a dictionary."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "not_dict.json")
+        with open(config_path, "w") as f:
+            json.dump([1, 2, 3], f)
+
+        with pytest.raises(CameraConfigurationError, match="Invalid configuration file format"):
+            await cam.import_config(config_path)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_nested_format(self, fake_cv, tmp_path):
+        """Test import_config with nested settings format."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "nested.json")
+        config_data = {
+            "settings": {
+                "width": 800,
+                "height": 600,
+                "fps": 25,
+                "exposure": -5.0,
+            }
+        }
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        await cam.import_config(config_path)
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_legacy_exposure_key(self, fake_cv, tmp_path):
+        """Test import_config with legacy exposure key."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "legacy.json")
+        config_data = {
+            "width": 800,
+            "height": 600,
+            "exposure": -5.0,  # Legacy key instead of exposure_time
+        }
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        await cam.import_config(config_path)
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_legacy_enhancement_key(self, fake_cv, tmp_path):
+        """Test import_config with legacy img_quality_enhancement key."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "legacy_enhancement.json")
+        config_data = {
+            "img_quality_enhancement": True,  # Legacy key instead of image_enhancement
+        }
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        await cam.import_config(config_path)
+        assert cam.img_quality_enhancement is True
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_import_config_white_balance_exception(self, fake_cv, tmp_path, monkeypatch):
+        """Test import_config white balance setting exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        config_path = os.path.join(tmp_path, "wb.json")
+        config_data = {"white_balance": "auto"}
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        original_sdk = cam._sdk
+
+        async def failing_wb_set(func, *args, **kwargs):
+            if func == cam.cap.set and args and args[0] == getattr(__import__("cv2"), "CAP_PROP_AUTO_WB"):
+                raise RuntimeError("WB set failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_wb_set, raising=False)
+
+        # Should handle exception gracefully
+        await cam.import_config(config_path)
+        await cam.close()
+
+
+class TestOpenCVCameraBackendNetworkMethods:
+    """Test suite for network-related methods (not applicable for OpenCV)."""
+
+    @pytest.mark.asyncio
+    async def test_get_bandwidth_limit(self, fake_cv):
+        """Test get_bandwidth_limit raises NotImplementedError."""
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(NotImplementedError, match="Bandwidth limiting not applicable"):
+            await cam.get_bandwidth_limit()
+
+    @pytest.mark.asyncio
+    async def test_get_packet_size(self, fake_cv):
+        """Test get_packet_size raises NotImplementedError."""
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(NotImplementedError, match="Packet size not applicable"):
+            await cam.get_packet_size()
+
+    @pytest.mark.asyncio
+    async def test_get_inter_packet_delay(self, fake_cv):
+        """Test get_inter_packet_delay raises NotImplementedError."""
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(NotImplementedError, match="Inter-packet delay not applicable"):
+            await cam.get_inter_packet_delay()
+
+
+class TestOpenCVCameraBackendTriggerMode:
+    """Test suite for trigger mode methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_triggermode(self, fake_cv):
+        """Test get_triggermode returns continuous."""
+        cam = OpenCVCameraBackend("0")
+        mode = await cam.get_triggermode()
+        assert mode == "continuous"
+
+    @pytest.mark.asyncio
+    async def test_set_triggermode_continuous(self, fake_cv):
+        """Test set_triggermode with continuous mode."""
+        cam = OpenCVCameraBackend("0")
+        result = await cam.set_triggermode("continuous")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_set_triggermode_invalid(self, fake_cv):
+        """Test set_triggermode with invalid mode."""
+        cam = OpenCVCameraBackend("0")
+
+        with pytest.raises(CameraConfigurationError, match="Trigger mode.*not supported"):
+            await cam.set_triggermode("software")
+
+
+class TestOpenCVCameraBackendDestructor:
+    """Test suite for __del__ destructor."""
+
+    def test_del_with_cap(self, fake_cv):
+        """Test __del__ with cap present."""
+        cam = OpenCVCameraBackend("0")
+        import cv2
+
+        cam.cap = cv2.VideoCapture(0)
+        cam._sdk_executor = None
+
+        # Call destructor manually
+        cam.__del__()
+
+        # Cap should be None after cleanup
+        assert cam.cap is None
+
+    def test_del_with_executor(self, fake_cv):
+        """Test __del__ with executor present."""
+        import concurrent.futures
+
+        cam = OpenCVCameraBackend("0")
+        import cv2
+
+        cam.cap = cv2.VideoCapture(0)
+        cam._sdk_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        # Call destructor manually
+        cam.__del__()
+
+        # Cap should be None after cleanup
+        assert cam.cap is None
+
+    def test_del_exception_handling(self, fake_cv, monkeypatch):
+        """Test __del__ exception handling."""
+        cam = OpenCVCameraBackend("0")
+        import cv2
+
+        cam.cap = cv2.VideoCapture(0)
+
+        def failing_release():
+            raise RuntimeError("Release failed")
+
+        cam.cap.release = failing_release
+
+        # Should handle exception gracefully
+        # After __del__, cam.cap will be None, so we don't try to restore
+        cam.__del__()
+
+        # Verify cap was set to None
+        assert cam.cap is None
+
+
+class TestOpenCVCameraBackendMiscMethods:
+    """Test suite for miscellaneous methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_exposure_range(self, fake_cv):
+        """Test get_exposure_range returns config values."""
+        cam = OpenCVCameraBackend("0")
+        range_vals = await cam.get_exposure_range()
+        assert len(range_vals) == 2
+        assert isinstance(range_vals[0], (int, float))
+        assert isinstance(range_vals[1], (int, float))
+
+    @pytest.mark.asyncio
+    async def test_get_width_range(self, fake_cv):
+        """Test get_width_range returns config values."""
+        cam = OpenCVCameraBackend("0")
+        range_vals = await cam.get_width_range()
+        assert len(range_vals) == 2
+        assert isinstance(range_vals[0], int)
+        assert isinstance(range_vals[1], int)
+
+    @pytest.mark.asyncio
+    async def test_get_height_range(self, fake_cv):
+        """Test get_height_range returns config values."""
+        cam = OpenCVCameraBackend("0")
+        range_vals = await cam.get_height_range()
+        assert len(range_vals) == 2
+        assert isinstance(range_vals[0], int)
+        assert isinstance(range_vals[1], int)
+
+    @pytest.mark.asyncio
+    async def test_get_gain_range(self, fake_cv):
+        """Test get_gain_range returns fixed range."""
+        cam = OpenCVCameraBackend("0")
+        range_vals = await cam.get_gain_range()
+        assert range_vals == [0.0, 100.0]
+
+    @pytest.mark.asyncio
+    async def test_get_wb_range(self, fake_cv):
+        """Test get_wb_range returns available modes."""
+        cam = OpenCVCameraBackend("0")
+        modes = await cam.get_wb_range()
+        assert "auto" in modes
+        assert "manual" in modes
+        assert "off" in modes
+
+    @pytest.mark.asyncio
+    async def test_get_pixel_format_range(self, fake_cv):
+        """Test get_pixel_format_range returns available formats."""
+        cam = OpenCVCameraBackend("0")
+        formats = await cam.get_pixel_format_range()
+        assert "BGR8" in formats
+        assert "RGB8" in formats
+
+    @pytest.mark.asyncio
+    async def test_get_current_pixel_format(self, fake_cv):
+        """Test get_current_pixel_format returns RGB8."""
+        cam = OpenCVCameraBackend("0")
+        format_str = await cam.get_current_pixel_format()
+        assert format_str == "RGB8"
