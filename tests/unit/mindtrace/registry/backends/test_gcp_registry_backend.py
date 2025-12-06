@@ -3161,6 +3161,7 @@ def test_save_registry_metadata(backend, mock_gcs_handler):
 
 def test_save_registry_metadata_error(backend, mock_gcs_handler, monkeypatch):
     """Test save_registry_metadata error handling."""
+
     # Mock upload to raise an exception
     def mock_upload(local_path, remote_path):
         raise Exception("Failed to upload")
@@ -3224,7 +3225,7 @@ def test_fetch_registry_metadata_exists(backend, mock_gcs_handler):
     try:
         # Upload metadata to mock GCS
         gcs_handler.upload(temp_path, backend._metadata_path)
-        
+
         # Verify the metadata was uploaded correctly
         assert backend._metadata_path in gcs_handler._objects
         uploaded_data = json.loads(gcs_handler._objects[backend._metadata_path].decode())
@@ -3262,6 +3263,7 @@ def test_fetch_registry_metadata_not_exists(backend, mock_gcs_handler):
 
 def test_fetch_registry_metadata_error_during_download(backend, mock_gcs_handler, monkeypatch):
     """Test fetch_registry_metadata error handling during download (lines 495-497)."""
+
     # Mock download to raise an exception
     def mock_download(remote_path, local_path):
         raise Exception("Network error")
@@ -3290,7 +3292,7 @@ def test_fetch_registry_metadata_error_during_json_load(backend, mock_gcs_handle
     try:
         # Upload invalid JSON to mock GCS
         gcs_handler.upload(temp_path, backend._metadata_path)
-        
+
         # Verify invalid JSON was uploaded
         assert backend._metadata_path in gcs_handler._objects
         assert gcs_handler._objects[backend._metadata_path] == b"invalid json content"
@@ -3334,6 +3336,7 @@ def test_fetch_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, mo
 
 def test_fetch_registry_metadata_outer_exception(backend, mock_gcs_handler, monkeypatch):
     """Test fetch_registry_metadata outer exception handler (lines 501-503)."""
+
     # Mock NamedTemporaryFile to raise an exception (outer try block)
     def mock_named_temporary_file(*args, **kwargs):
         raise Exception("Failed to create temp file")
