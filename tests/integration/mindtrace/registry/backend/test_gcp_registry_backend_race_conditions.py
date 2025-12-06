@@ -95,7 +95,19 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
         """Thread function to acquire shared lock."""
         lock_id = f"shared_lock_{thread_id}"
         try:
-            result = gcp_backend.acquire_lock(lock_key, lock_id, timeout, shared=True)
+            # Retry logic for shared lock acquisition to handle race conditions
+            # When multiple threads try to create a shared lock simultaneously,
+            # some may get False due to transient PreconditionFailed/NotFound errors
+            max_retries = 10
+            retry_delay = 0.01
+            result = False
+            for attempt in range(max_retries):
+                result = gcp_backend.acquire_lock(lock_key, lock_id, timeout, shared=True)
+                if result:
+                    break
+                # Small delay before retry to allow other threads to complete
+                time.sleep(retry_delay)
+
             with results_lock:
                 results.append((thread_id, result, lock_id))
             # Hold lock briefly

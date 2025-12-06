@@ -43,22 +43,27 @@ class LocalClient(OrchestratorBackend):
         """
         super().__init__()
         self.broker_id = ifnone(broker_id, default="mindtrace.default_broker")
+
+        # Preserve client_dir for job results even when backend is provided
+        if client_dir is not None:
+            client_dir = Path(client_dir).expanduser().resolve()
+
         if backend is None:
             if client_dir is None:
                 client_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
-            client_dir = Path(client_dir).expanduser().resolve()
-            backend = Registry(registry_dir=client_dir)
+                client_dir = Path(client_dir).expanduser().resolve()
+            backend = Registry(backend=client_dir)
 
         self.queues: Registry[str, LocalJobQueue] = backend
         self._lock = threading.Lock()
 
         # Co-locate job results with the selected client directory when available
         if client_dir is not None:
-            results_dir = Path(client_dir).expanduser().resolve() / "results"
+            results_dir = client_dir / "results"
         else:
             results_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
             results_dir = Path(results_dir).expanduser().resolve() / "results"
-        self._job_results: Registry[str, Any] = Registry(registry_dir=results_dir)
+        self._job_results: Registry[str, Any] = Registry(backend=results_dir)
 
     @property
     def consumer_backend_args(self):

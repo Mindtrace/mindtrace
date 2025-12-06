@@ -109,6 +109,31 @@ def test_list_versions(minio_backend, sample_metadata, minio_client, minio_test_
     assert "2.0.0" in versions
 
 
+def test_list_versions_uses_metadata_prefix(minio_backend, sample_metadata, minio_client, minio_test_bucket):
+    """Test that list_versions correctly uses _object_metadata_prefix (line 483)."""
+    # Save metadata for an object with colons in the name
+    minio_backend.save_metadata("test:object:with:colons", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object:with:colons", "2.0.0", sample_metadata)
+
+    # Verify the metadata prefix is correctly generated (colons should be replaced with underscores)
+    expected_prefix = "_meta_test_object_with_colons@"
+    assert minio_backend._object_metadata_prefix("test:object:with:colons") == expected_prefix
+
+    # List versions - this internally uses _object_metadata_prefix
+    versions = minio_backend.list_versions("test:object:with:colons")
+
+    # Verify results
+    assert len(versions) == 2
+    assert "1.0.0" in versions
+    assert "2.0.0" in versions
+
+    # Verify the metadata files were created with the correct prefix format
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix=expected_prefix))
+    assert len(objects) == 2
+    assert any(obj.object_name == f"{expected_prefix}1.0.0.json" for obj in objects)
+    assert any(obj.object_name == f"{expected_prefix}2.0.0.json" for obj in objects)
+
+
 def test_has_object(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test checking object existence."""
     # Save metadata

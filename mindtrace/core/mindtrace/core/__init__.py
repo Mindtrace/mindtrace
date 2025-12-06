@@ -26,6 +26,7 @@ from mindtrace.core.utils.conversions import (
     tensor_to_pil,
 )
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
+from mindtrace.core.utils.hashing import compute_dir_hash
 from mindtrace.core.utils.lambdas import named_lambda
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
@@ -37,6 +38,7 @@ __all__ = [
     "base64_to_pil",
     "bytes_to_pil",
     "check_libs",
+    "compute_dir_hash",
     "ContextListener",
     "Config",
     "CoreConfig",
