@@ -183,11 +183,21 @@ class LocalRegistryBackend(RegistryBackend):
 
         Returns:
             dict: The loaded metadata.
+
+        Raises:
+            ValueError: If the metadata file is empty or corrupted.
         """
         meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
         with open(meta_path, "r") as f:
             metadata = yaml.safe_load(f)
+
+        # Handle case where yaml.safe_load returns None (empty file or whitespace only)
+        if metadata is None:
+            raise ValueError(
+                f"Metadata file for {name}@{version} is empty or corrupted. "
+                f"This may indicate a race condition during concurrent writes."
+            )
 
         # Add the path to the object directory to the metadata:
         object_key = self._object_key(name, version)
