@@ -613,12 +613,12 @@ class TestOpenCVCameraBackendSDKMethods:
 
         def slow_func():
             import time
-            time.sleep(1)  # Sleep for 1 second, but timeout is 0.01
+            time.sleep(0.1)  # Reduced from 1s to 0.1s to speed up test
             return "result"
 
         # Use a very short timeout to trigger timeout error
         with pytest.raises(CameraTimeoutError):
-            await cam._sdk(slow_func, timeout=0.001)
+            await cam._sdk(slow_func, timeout=0.01)
 
         await cam.close()
 
@@ -906,7 +906,7 @@ class TestOpenCVCameraBackendCapture:
 
         def slow_read():
             import time
-            time.sleep(1)
+            time.sleep(0.1)  # Reduced from 1s to 0.1s to speed up test
             return True, np.zeros((480, 640, 3), dtype=np.uint8)
 
         original_read = cam.cap.read
