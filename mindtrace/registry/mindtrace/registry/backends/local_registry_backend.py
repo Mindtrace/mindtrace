@@ -313,6 +313,34 @@ class LocalRegistryBackend(RegistryBackend):
             raise e
         return materializers
 
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
+
     def _lock_path(self, key: str) -> Path:
         """Get the path for a lock file."""
         return self._full_path(f"_lock_{key}")
