@@ -7,18 +7,12 @@ from mindtrace.services.samples.echo_mcp import EchoService
 
 
 async def _extract_echoed(result):
-    # Try multiple possible return formats
-    try:
-        if isinstance(result, dict) and "echoed" in result:
-            return result["echoed"]
-        if hasattr(result, "echoed"):
-            return getattr(result, "echoed")
-        if isinstance(result, list) and result and hasattr(result[0], "text"):
-            data = json.loads(result[0].text)
-            return data.get("echoed")
-    except Exception:
-        return None
-    return None
+    # The result is in result.content[0].text as a JSON string
+    assert hasattr(result, "content")
+    assert len(result.content) > 0
+    text_content = result.content[0].text
+    data = json.loads(text_content)
+    return data.get("echoed")
 
 
 @pytest.mark.asyncio
