@@ -318,6 +318,20 @@ class Registry(Mindtrace):
             self._save_registry_metadata({"version_objects": version_objects})
             return version_objects
 
+    def _get_lock_context(self, name: str, version: str, acquire_lock: bool, shared: bool = False):
+        """Get lock context, respecting acquire_lock flag.
+
+        Args:
+            name: Object name
+            version: Object version
+            acquire_lock: Whether to acquire a lock
+            shared: Whether to use a shared (read) lock
+
+        Returns:
+            Lock context manager or nullcontext if acquire_lock is False
+        """
+        return self.get_lock(name, version, shared=shared) if acquire_lock else nullcontext()
+
     def _should_use_cache(self, name: str, version: str, metadata: dict, verify_hash: bool) -> bool:
         """Determine if cache should be used for loading an object.
 
@@ -646,8 +660,7 @@ class Registry(Mindtrace):
             raise ValueError(f"Object {name} version {version} does not exist.")
 
         # Acquire shared lock for reading metadata
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
+        with self._get_lock_context(name, version, acquire_lock, shared=True):
             metadata = self.info(name=name, version=version, acquire_lock=acquire_lock)
             if not metadata.get("class"):
                 raise ValueError(f"Class not registered for {name}@{version}.")
@@ -678,8 +691,7 @@ class Registry(Mindtrace):
             return self._cache.load(name=name, version=version, verify_hash=False, **kwargs)
 
         # Get the object from the remote backend
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
+        with self._get_lock_context(name, version, acquire_lock, shared=True):
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                     self.backend.pull(name=name, version=version, local_path=temp_dir)
