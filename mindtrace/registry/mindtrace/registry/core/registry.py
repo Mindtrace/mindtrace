@@ -292,7 +292,6 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If there's a conflict between existing and new version_objects values
         """
-        # Try to get existing registry metadata
         try:
             existing_metadata = self._get_registry_metadata()
             existing_version_objects = existing_metadata.get("version_objects")
@@ -307,11 +306,10 @@ class Registry(Mindtrace):
                     )
                 # Use existing value
                 return existing_version_objects
-            else:
-                # No existing setting, use the provided value and save it
-                self._save_registry_metadata({"version_objects": version_objects})
-                return version_objects
 
+            # No existing setting, use the provided value and save it
+            self._save_registry_metadata({"version_objects": version_objects})
+            return version_objects
         except ValueError:
             # Re-raise ValueError (conflict)
             raise
