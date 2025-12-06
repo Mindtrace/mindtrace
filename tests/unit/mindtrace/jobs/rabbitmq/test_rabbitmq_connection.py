@@ -42,10 +42,13 @@ class TestRabbitMQConnection:
             patch("mindtrace.jobs.rabbitmq.connection.BlockingConnection", side_effect=AMQPConnectionError),
             patch("mindtrace.jobs.rabbitmq.connection.PlainCredentials"),
             patch("mindtrace.jobs.rabbitmq.connection.ConnectionParameters"),
+            patch("mindtrace.jobs.rabbitmq.connection.time.sleep") as mock_sleep,  # Mock sleep to speed up retries
         ):
             with pytest.raises(AMQPConnectionError):
                 rabbitmq_conn.connect()
             assert not rabbitmq_conn.is_connected()
+            # Verify that sleep was called during retries (but immediately, not actually sleeping)
+            assert mock_sleep.call_count > 0
 
     def test_is_connected_true_false(self, rabbitmq_conn):
         mock_conn = MagicMock()
