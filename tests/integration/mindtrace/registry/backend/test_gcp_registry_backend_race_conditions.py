@@ -107,7 +107,7 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
                     break
                 # Small delay before retry to allow other threads to complete
                 time.sleep(retry_delay)
-            
+
             with results_lock:
                 results.append((thread_id, result, lock_id))
             # Hold lock briefly

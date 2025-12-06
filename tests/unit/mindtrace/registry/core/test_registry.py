@@ -2292,10 +2292,10 @@ def test_save_computes_hash(registry, test_config):
     """Test that save() computes and stores hash in metadata."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Get metadata
     metadata = registry.info("test:config", version="1.0.0")
-    
+
     # Verify hash is present in metadata
     assert "hash" in metadata
     assert isinstance(metadata["hash"], str)
@@ -2307,11 +2307,11 @@ def test_save_hash_deterministic(registry, test_config):
     # Save object first time
     registry.save("test:config1", test_config, version="1.0.0")
     hash1 = registry.info("test:config1", version="1.0.0")["hash"]
-    
+
     # Save same object again with different name
     registry.save("test:config2", test_config, version="1.0.0")
     hash2 = registry.info("test:config2", version="1.0.0")["hash"]
-    
+
     # Hashes should be the same for identical objects
     assert hash1 == hash2
 
@@ -2320,7 +2320,7 @@ def test_load_verifies_hash_by_default(registry, test_config):
     """Test that load() verifies hash by default."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Load should succeed with hash verification (default)
     loaded_config = registry.load("test:config", version="1.0.0")
     assert loaded_config == test_config
@@ -2330,7 +2330,7 @@ def test_load_with_verify_hash_true(registry, test_config):
     """Test that load() verifies hash when verify_hash=True."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Load with explicit verify_hash=True
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
     assert loaded_config == test_config
@@ -2340,7 +2340,7 @@ def test_load_with_verify_hash_false(registry, test_config):
     """Test that load() skips hash verification when verify_hash=False."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Load with verify_hash=False should still work
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=False)
     assert loaded_config == test_config
@@ -2350,12 +2350,12 @@ def test_load_hash_mismatch_detection(registry, test_config):
     """Test that load() detects hash mismatches and raises ValueError."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Manually corrupt the metadata hash
     metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
     metadata["hash"] = "0" * 64  # Invalid hash
     registry.backend.save_metadata("test:config", "1.0.0", metadata)
-    
+
     # Load should detect hash mismatch and raise ValueError
     with pytest.raises(ValueError, match="Artifact hash verification failed"):
         registry.load("test:config", version="1.0.0", verify_hash=True)
@@ -2365,16 +2365,16 @@ def test_load_missing_hash_warning(registry, test_config, caplog):
     """Test that load() logs warning when hash is missing from metadata."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Manually remove hash from metadata
     metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
     metadata.pop("hash", None)
     registry.backend.save_metadata("test:config", "1.0.0", metadata)
-    
+
     # Load should still work but log a warning
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
     assert loaded_config == test_config
-    
+
     # Verify warning was logged
     assert any("No hash found in metadata" in record.message for record in caplog.records)
     assert any("Skipping hash verification" in record.message for record in caplog.records)
@@ -2384,11 +2384,11 @@ def test_load_hash_verification_passed_logging(registry, test_config, caplog):
     """Test that load() successfully verifies hash when verify_hash=True."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Load with hash verification - should succeed without errors
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
     assert loaded_config == test_config
-    
+
     # Verify no hash verification errors were logged
     assert not any("Hash mismatch" in record.message for record in caplog.records)
     assert not any("Artifact hash verification failed" in record.message for record in caplog.records)
@@ -2398,19 +2398,19 @@ def test_load_hash_mismatch_error_message(registry, test_config):
     """Test that hash mismatch error message contains expected and computed hashes."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
-    
+
     # Get the correct hash
     correct_hash = registry.info("test:config", version="1.0.0")["hash"]
-    
+
     # Manually corrupt the metadata hash
     metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
     metadata["hash"] = "0" * 64  # Invalid hash
     registry.backend.save_metadata("test:config", "1.0.0", metadata)
-    
+
     # Load should raise ValueError with informative message
     with pytest.raises(ValueError) as exc_info:
         registry.load("test:config", version="1.0.0", verify_hash=True)
-    
+
     error_message = str(exc_info.value)
     assert "Artifact hash verification failed" in error_message
     assert "Expected hash:" in error_message
@@ -2424,15 +2424,15 @@ def test_hash_computation_different_objects(registry, test_config):
     # Create two different configs
     config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
     config2 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir2"}})
-    
+
     # Save both
     registry.save("test:config1", config1, version="1.0.0")
     registry.save("test:config2", config2, version="1.0.0")
-    
+
     # Get hashes
     hash1 = registry.info("test:config1", version="1.0.0")["hash"]
     hash2 = registry.info("test:config2", version="1.0.0")["hash"]
-    
+
     # Different objects should produce different hashes
     assert hash1 != hash2
 
@@ -2443,12 +2443,12 @@ def test_hash_preserved_across_versions(registry, test_config):
     registry.save("test:config", test_config, version="1.0.0")
     registry.save("test:config", test_config, version="1.0.1")
     registry.save("test:config", test_config, version="2.0.0")
-    
+
     # Get hashes
     hash1 = registry.info("test:config", version="1.0.0")["hash"]
     hash2 = registry.info("test:config", version="1.0.1")["hash"]
     hash3 = registry.info("test:config", version="2.0.0")["hash"]
-    
+
     # Same object should produce same hash across versions
     assert hash1 == hash2 == hash3
 
@@ -2457,19 +2457,19 @@ def test_get_cache_dir_from_backend_uri(registry):
     """Test _get_cache_dir_from_backend_uri generates deterministic cache directory."""
     # Get cache directory using class method
     cache_dir1 = Registry._get_cache_dir_from_backend_uri(registry.backend.uri, registry.config)
-    
+
     # Get cache directory again
     cache_dir2 = Registry._get_cache_dir_from_backend_uri(registry.backend.uri, registry.config)
-    
+
     # Should be the same
     assert cache_dir1 == cache_dir2
-    
+
     # Should be a Path object
     assert isinstance(cache_dir1, Path)
-    
+
     # Should contain registry_cache_ prefix
     assert "registry_cache_" in cache_dir1.name
-    
+
     # Should be in temp directory
     temp_dir = Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
     assert cache_dir1.parent == temp_dir
@@ -2480,11 +2480,11 @@ def test_get_cache_dir_from_backend_uri_different_backends(temp_registry_dir):
     # Create two registries with different backend URIs
     registry1 = Registry(backend=temp_registry_dir + "_1")
     registry2 = Registry(backend=temp_registry_dir + "_2")
-    
+
     # Get cache directories using class method
     cache_dir1 = Registry._get_cache_dir_from_backend_uri(registry1.backend.uri, registry1.config)
     cache_dir2 = Registry._get_cache_dir_from_backend_uri(registry2.backend.uri, registry2.config)
-    
+
     # Different backends should produce different cache directories
     assert cache_dir1 != cache_dir2
 
@@ -2496,13 +2496,13 @@ def test_load_hash_verification_with_basic_types(registry):
     assert "hash" in registry.info("test:str", version="1.0.0")
     loaded = registry.load("test:str", version="1.0.0", verify_hash=True)
     assert loaded == "hello"
-    
+
     # Test with int
     registry.save("test:int", 42, version="1.0.0")
     assert "hash" in registry.info("test:int", version="1.0.0")
     loaded = registry.load("test:int", version="1.0.0", verify_hash=True)
     assert loaded == 42
-    
+
     # Test with float
     registry.save("test:float", 3.14, version="1.0.0")
     assert "hash" in registry.info("test:float", version="1.0.0")
@@ -2518,7 +2518,7 @@ def test_load_hash_verification_with_container_types(registry):
     assert "hash" in registry.info("test:list", version="1.0.0")
     loaded = registry.load("test:list", version="1.0.0", verify_hash=True)
     assert loaded == test_list
-    
+
     # Test with dict
     test_dict = {"a": 1, "b": 2}
     registry.save("test:dict", test_dict, version="1.0.0")
@@ -2531,26 +2531,26 @@ def test_list_versions_cache_expiration(temp_registry_dir):
     """Test that expired cache entries are removed from versions cache."""
     # Create registry with very short TTL to test expiration quickly
     registry = Registry(backend=temp_registry_dir, version_objects=True, versions_cache_ttl=0.01)
-    
+
     # Save an object with multiple versions
     registry.save("test:obj", "value1", version="1.0.0")
     registry.save("test:obj", "value2", version="1.0.1")
-    
+
     # First call populates the cache
     versions1 = registry.list_versions("test:obj")
     assert versions1 == ["1.0.0", "1.0.1"]
-    
+
     # Verify cache is populated
     with registry._versions_cache_lock:
         assert "test:obj" in registry._versions_cache
-    
+
     # Wait for cache to expire
     time.sleep(0.2)
-    
+
     # Second call should trigger cache expiration deletion (line 838)
     versions2 = registry.list_versions("test:obj")
     assert versions2 == ["1.0.0", "1.0.1"]
-    
+
     # Cache should be repopulated with new timestamp
     with registry._versions_cache_lock:
         assert "test:obj" in registry._versions_cache
@@ -2567,13 +2567,12 @@ def test_cache_initialization_local_backend(temp_registry_dir):
 
 def test_cache_initialization_remote_backend(temp_registry_dir):
     """Test that remote backend has cache initialized."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
-    
+
     registry = Registry(backend=mock_backend)
     assert registry._cache is not None
     assert isinstance(registry._cache.backend, LocalRegistryBackend)
@@ -2582,8 +2581,7 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
 
 def test_save_with_cache(temp_registry_dir):
     """Test that save() saves to cache first, then uploads to remote."""
-    from unittest.mock import Mock, call
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -2595,12 +2593,12 @@ def test_save_with_cache(temp_registry_dir):
     mock_backend.delete_metadata = Mock()
     mock_backend.has_object = Mock(return_value=False)
     mock_backend.list_versions = Mock(return_value=[])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save an object
     registry.save("test:obj", "value", version="1.0.0")
-    
+
     # Verify cache has the object (cache save might have failed, but that's OK - it will be populated on load)
     # The important thing is that remote save succeeded
     try:
@@ -2609,7 +2607,7 @@ def test_save_with_cache(temp_registry_dir):
     except (AssertionError, ValueError):
         # Cache save might have failed, which is OK - it will be populated on next load
         pass
-    
+
     # Verify remote backend was called (this is the critical part)
     assert mock_backend.push.called
     assert mock_backend.save_metadata.called
@@ -2618,63 +2616,63 @@ def test_save_with_cache(temp_registry_dir):
 
 def test_load_cache_hit(temp_registry_dir):
     """Test that load() uses cache when hash matches."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    mock_backend.fetch_metadata = Mock(return_value={
-        "class": "builtins.str",
-        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-        "hash": "test_hash",
-    })
+    mock_backend.fetch_metadata = Mock(
+        return_value={
+            "class": "builtins.str",
+            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+            "hash": "test_hash",
+        }
+    )
     mock_backend.pull = Mock()  # Should not be called on cache hit
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache first
     registry._cache.save("test:obj", "value", version="1.0.0")
-    
+
     # Get the hash from cache
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
-    
+
     # Mock remote metadata to have same hash
     mock_backend.fetch_metadata.return_value = {
         "class": "builtins.str",
         "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
         "hash": cached_hash,
     }
-    
+
     # Load should use cache
     result = registry.load("test:obj", "1.0.0")
     assert result == "value"
-    
+
     # Verify remote pull was not called
     mock_backend.pull.assert_not_called()
 
 
 def test_load_cache_miss(temp_registry_dir):
     """Test that load() downloads from remote and saves to cache on cache miss."""
-    from unittest.mock import Mock, patch
     from tempfile import TemporaryDirectory
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to remote (not cache)
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
-        
+
         # Mock remote metadata
         expected_hash = compute_dir_hash(temp_path)
         mock_backend.fetch_metadata.return_value = {
@@ -2682,47 +2680,46 @@ def test_load_cache_miss(temp_registry_dir):
             "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
             "hash": expected_hash,
         }
-        
+
         # Mock pull to copy our temp directory
         def mock_pull(name, version, local_path):
             shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
-        
+
         mock_backend.pull = Mock(side_effect=mock_pull)
-        
+
         # Load should download and save to cache
         result = registry.load("test:obj", "1.0.0")
         assert result == "value"
-        
+
         # Verify cache now has the object
         assert registry._cache.has_object("test:obj", "1.0.0")
         assert registry._cache.load("test:obj", "1.0.0") == "value"
-        
+
         # Verify remote pull was called
         mock_backend.pull.assert_called_once()
 
 
 def test_load_cache_hash_mismatch(temp_registry_dir):
     """Test that load() downloads from remote when cache hash doesn't match."""
-    from unittest.mock import Mock
     from tempfile import TemporaryDirectory
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save old version to cache
     registry._cache.save("test:obj", "old_value", version="1.0.0")
-    
+
     # Save new version to remote (different hash)
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"new_value"')  # BuiltInMaterializer expects JSON format
-        
+
         # Mock remote metadata with different hash
         expected_hash = compute_dir_hash(temp_path)
         mock_backend.fetch_metadata.return_value = {
@@ -2730,44 +2727,44 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
             "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
             "hash": expected_hash,
         }
-        
+
         # Mock pull to copy our temp directory
         def mock_pull(name, version, local_path):
             shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
-        
+
         mock_backend.pull = Mock(side_effect=mock_pull)
-        
+
         # Load should download from remote (hash mismatch)
         result = registry.load("test:obj", "1.0.0")
         assert result == "new_value"
-        
+
         # Verify cache was updated
         assert registry._cache.load("test:obj", "1.0.0") == "new_value"
-        
+
         # Verify remote pull was called
         mock_backend.pull.assert_called_once()
 
 
 def test_load_cache_error_fallback(temp_registry_dir):
     """Test that load() falls back to remote when cache check fails."""
-    from unittest.mock import Mock, patch
     from tempfile import TemporaryDirectory
-    
+    from unittest.mock import patch
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Mock cache.has_object to raise exception
-    with patch.object(registry._cache, 'has_object', side_effect=Exception("Cache error")):
+    with patch.object(registry._cache, "has_object", side_effect=Exception("Cache error")):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
-            
+
             # Mock remote metadata
             expected_hash = compute_dir_hash(temp_path)
             mock_backend.fetch_metadata.return_value = {
@@ -2775,25 +2772,24 @@ def test_load_cache_error_fallback(temp_registry_dir):
                 "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                 "hash": expected_hash,
             }
-            
+
             # Mock pull to copy our temp directory
             def mock_pull(name, version, local_path):
                 shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
-            
+
             mock_backend.pull = Mock(side_effect=mock_pull)
-            
+
             # Load should fall back to remote
             result = registry.load("test:obj", "1.0.0")
             assert result == "value"
-            
+
             # Verify remote pull was called
             mock_backend.pull.assert_called_once()
 
 
 def test_delete_with_cache(temp_registry_dir):
     """Test that delete() removes from both remote and cache."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -2803,19 +2799,19 @@ def test_delete_with_cache(temp_registry_dir):
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     registry._cache.save("test:obj", "value", version="1.0.0")
     assert registry._cache.has_object("test:obj", "1.0.0")
-    
+
     # Delete should remove from both
     registry.delete("test:obj", "1.0.0")
-    
+
     # Verify cache no longer has object
     assert not registry._cache.has_object("test:obj", "1.0.0")
-    
+
     # Verify remote delete was called
     mock_backend.delete.assert_called_once_with("test:obj", "1.0.0")
     mock_backend.delete_metadata.assert_called_once_with("test:obj", "1.0.0")
@@ -2823,8 +2819,7 @@ def test_delete_with_cache(temp_registry_dir):
 
 def test_delete_cache_error_handling(temp_registry_dir):
     """Test that delete() continues even if cache delete fails."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -2834,22 +2829,21 @@ def test_delete_cache_error_handling(temp_registry_dir):
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Mock cache.delete to raise exception
-    with patch.object(registry._cache, 'delete', side_effect=Exception("Cache delete error")):
+    with patch.object(registry._cache, "delete", side_effect=Exception("Cache delete error")):
         # Delete should still succeed
         registry.delete("test:obj", "1.0.0")
-        
+
         # Verify remote delete was called
         mock_backend.delete.assert_called_once()
 
 
 def test_save_cache_error_handling(temp_registry_dir):
     """Test that save() continues even if cache save fails."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -2861,14 +2855,14 @@ def test_save_cache_error_handling(temp_registry_dir):
     mock_backend.overwrite = Mock()
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Mock cache.save to raise exception
-    with patch.object(registry._cache, 'save', side_effect=Exception("Cache save error")):
+    with patch.object(registry._cache, "save", side_effect=Exception("Cache save error")):
         # Save should still succeed
         registry.save("test:obj", "value", version="1.0.0")
-        
+
         # Verify remote save was called
         assert mock_backend.push.called
         assert mock_backend.save_metadata.called
@@ -2876,21 +2870,20 @@ def test_save_cache_error_handling(temp_registry_dir):
 
 def test_load_cache_metadata_sync(temp_registry_dir):
     """Test that loading from cache syncs metadata from remote."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     registry._cache.save("test:obj", "value", version="1.0.0")
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
-    
+
     # Mock remote metadata with updated metadata field
     remote_metadata = {
         "class": "builtins.str",
@@ -2899,10 +2892,10 @@ def test_load_cache_metadata_sync(temp_registry_dir):
         "metadata": {"updated": "true"},
     }
     mock_backend.fetch_metadata.return_value = remote_metadata
-    
+
     # Load from cache
     registry.load("test:obj", "1.0.0")
-    
+
     # Verify cache metadata was updated
     cached_info = registry._cache.info("test:obj", "1.0.0")
     assert cached_info["metadata"] == {"updated": "true"}
@@ -2910,52 +2903,50 @@ def test_load_cache_metadata_sync(temp_registry_dir):
 
 def test_cache_deterministic_directory(temp_registry_dir):
     """Test that same backend URI produces same cache directory."""
-    from unittest.mock import Mock
-    
+
     backend_uri = Path(temp_registry_dir) / "remote"
-    
+
     # Create two registries with same backend URI
     mock_backend1 = Mock(spec=RegistryBackend)
     mock_backend1.uri = backend_uri
     mock_backend1.registered_materializers = Mock(return_value={})
     registry1 = Registry(backend=mock_backend1)
-    
+
     mock_backend2 = Mock(spec=RegistryBackend)
     mock_backend2.uri = backend_uri
     mock_backend2.registered_materializers = Mock(return_value={})
     registry2 = Registry(backend=mock_backend2)
-    
+
     # Cache directories should be the same
     assert registry1._cache.backend.uri == registry2._cache.backend.uri
 
 
 def test_cache_different_backends_different_directories(temp_registry_dir):
     """Test that different backend URIs produce different cache directories."""
-    from unittest.mock import Mock
-    
+
     backend_uri1 = Path(temp_registry_dir) / "remote1"
     backend_uri2 = Path(temp_registry_dir) / "remote2"
-    
+
     # Create two registries with different backend URIs
     mock_backend1 = Mock(spec=RegistryBackend)
     mock_backend1.uri = backend_uri1
     mock_backend1.registered_materializers = Mock(return_value={})
     registry1 = Registry(backend=mock_backend1)
-    
+
     mock_backend2 = Mock(spec=RegistryBackend)
     mock_backend2.uri = backend_uri2
     mock_backend2.registered_materializers = Mock(return_value={})
     registry2 = Registry(backend=mock_backend2)
-    
+
     # Cache directories should be different
     assert registry1._cache.backend.uri != registry2._cache.backend.uri
 
 
 def test_save_cache_directory_not_exists(temp_registry_dir):
     """Test that save() handles case where cache directory doesn't exist after save."""
-    from unittest.mock import Mock, patch
     import shutil
-    
+    from unittest.mock import patch
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -2967,15 +2958,15 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
     mock_backend.overwrite = Mock()
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Patch _full_path to delete the directory after cache.save() completes
     # This simulates the edge case where the directory doesn't exist after save
     original_full_path = registry._cache.backend._full_path
     original_save = registry._cache.save
     call_tracker = [0]
-    
+
     def mock_cache_save(*args, **kwargs):
         # Call the real save
         result = original_save(*args, **kwargs)
@@ -2983,25 +2974,23 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
         # After save completes, delete the directory to simulate it not existing
         if call_tracker[0] == 1:
             # Get the path that was created
-            name = args[0] if args else kwargs.get('name')
-            version = kwargs.get('version') or 'latest'
-            cache_path = original_full_path(
-                registry._cache.backend._object_key(name, version)
-            )
+            name = args[0] if args else kwargs.get("name")
+            version = kwargs.get("version") or "latest"
+            cache_path = original_full_path(registry._cache.backend._object_key(name, version))
             # Delete it to simulate the edge case
             if cache_path.exists():
                 shutil.rmtree(cache_path)
         return result
-    
+
     def mock_full_path(key):
         real_path = original_full_path(key)
         return real_path
-    
-    with patch.object(registry._cache, 'save', side_effect=mock_cache_save):
-        with patch.object(registry._cache.backend, '_full_path', side_effect=mock_full_path):
+
+    with patch.object(registry._cache, "save", side_effect=mock_cache_save):
+        with patch.object(registry._cache.backend, "_full_path", side_effect=mock_full_path):
             # Save - cache.save() succeeds but directory is deleted, then exists() check returns False
             registry.save("test:obj", "value", version="1.0.0")
-            
+
             # Verify remote save was called (fallback path)
             assert mock_backend.push.called
             assert mock_backend.save_metadata.called
@@ -3009,27 +2998,26 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
 
 def test_load_cache_delete_stale_error(temp_registry_dir):
     """Test that load() handles error when deleting stale cache entry."""
-    from unittest.mock import Mock
     from tempfile import TemporaryDirectory
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save old version to cache
     registry._cache.save("test:obj", "old_value", version="1.0.0")
-    
+
     # Mock cache.delete to raise exception
-    with patch.object(registry._cache, 'delete', side_effect=Exception("Delete error")):
+    with patch.object(registry._cache, "delete", side_effect=Exception("Delete error")):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             (temp_path / "data.json").write_text('"new_value"')
-            
+
             # Mock remote metadata with different hash
             expected_hash = compute_dir_hash(temp_path)
             mock_backend.fetch_metadata.return_value = {
@@ -3037,13 +3025,13 @@ def test_load_cache_delete_stale_error(temp_registry_dir):
                 "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                 "hash": expected_hash,
             }
-            
+
             # Mock pull to copy our temp directory
             def mock_pull(name, version, local_path):
                 shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
-            
+
             mock_backend.pull = Mock(side_effect=mock_pull)
-            
+
             # Load should still succeed despite delete error
             result = registry.load("test:obj", "1.0.0")
             assert result == "new_value"
@@ -3051,8 +3039,8 @@ def test_load_cache_delete_stale_error(temp_registry_dir):
 
 def test_delete_cache_delete_error(temp_registry_dir):
     """Test that delete() handles error when deleting from cache."""
-    from unittest.mock import Mock, patch
-    
+    from unittest.mock import patch
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -3062,17 +3050,17 @@ def test_delete_cache_delete_error(temp_registry_dir):
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     registry._cache.save("test:obj", "value", version="1.0.0")
-    
+
     # Mock cache.delete to raise exception
-    with patch.object(registry._cache, 'delete', side_effect=Exception("Cache delete error")):
+    with patch.object(registry._cache, "delete", side_effect=Exception("Cache delete error")):
         # Delete should still succeed
         registry.delete("test:obj", "1.0.0")
-        
+
         # Verify remote delete was called
         mock_backend.delete.assert_called_once_with("test:obj", "1.0.0")
         mock_backend.delete_metadata.assert_called_once_with("test:obj", "1.0.0")
@@ -3087,128 +3075,125 @@ def test_registry_invalid_backend_type(temp_registry_dir):
 
 def test_load_verify_cache_false_with_cache_hit(temp_registry_dir):
     """Test that load() uses cache immediately when verify_cache=False and cache has object."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     test_value = "cached_value"
     registry._cache.save("test:obj", test_value, version="1.0.0")
-    
+
     # Load with verify_cache=False - should return immediately from cache
     result = registry.load("test:obj", version="1.0.0", verify_cache=False)
     assert result == test_value
-    
+
     # Verify remote backend was not called
-    assert not hasattr(mock_backend, 'pull') or not mock_backend.pull.called
+    assert not hasattr(mock_backend, "pull") or not mock_backend.pull.called
 
 
 def test_load_verify_hash_false_cache_dir_not_exists(temp_registry_dir):
     """Test that load() handles cache directory not existing when verify_hash=True."""
-    from unittest.mock import Mock
     import shutil
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     test_value = "test_value"
     registry._cache.save("test:obj", test_value, version="1.0.0")
-    
+
     # Delete the cache directory to simulate it not existing
     object_key = registry._cache.backend._object_key("test:obj", "1.0.0")
     cache_dir = registry._cache.backend._full_path(object_key)
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
-    
+
     # Mock pull to create temp directory with data and compute actual hash
     from tempfile import TemporaryDirectory
+
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"test_value"')
         expected_hash = compute_dir_hash(temp_path)
-        
+
         def mock_pull(name, version, local_path):
             shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
-        
+
         mock_backend.pull = Mock(side_effect=mock_pull)
-        
+
         # Mock remote metadata with correct hash
         mock_backend.fetch_metadata.return_value = {
             "class": "builtins.str",
             "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
             "hash": expected_hash,
         }
-        
+
         # Load with verify_hash=True - should fall through to remote since cache dir doesn't exist
         result = registry.load("test:obj", version="1.0.0", verify_hash=True)
     assert result == test_value
-    
+
     # Verify remote pull was called
     mock_backend.pull.assert_called_once()
 
 
 def test_load_verify_hash_false_uses_cache(temp_registry_dir):
     """Test that load() uses cache when verify_hash=False without checking hash."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.has_object = Mock(return_value=True)
     mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     test_value = "cached_value"
     registry._cache.save("test:obj", test_value, version="1.0.0")
-    
+
     # Mock remote metadata
     mock_backend.fetch_metadata.return_value = {
         "class": "builtins.str",
         "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
         "hash": "test_hash",
     }
-    
+
     # Load with verify_hash=False - should use cache without checking hash
     result = registry.load("test:obj", version="1.0.0", verify_hash=False)
     assert result == test_value
-    
+
     # Verify remote pull was not called (cache was used)
-    assert not hasattr(mock_backend, 'pull') or not mock_backend.pull.called
+    assert not hasattr(mock_backend, "pull") or not mock_backend.pull.called
 
 
 def test_clear_cache(temp_registry_dir):
     """Test that clear_cache() clears the cache."""
-    from unittest.mock import Mock
-    
+
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
-    
+
     registry = Registry(backend=mock_backend, version_objects=True)
-    
+
     # Save to cache
     registry._cache.save("test:obj", "value", version="1.0.0")
     assert registry._cache.has_object("test:obj", "1.0.0")
-    
+
     # Clear cache
     registry.clear_cache()
-    
+
     # Verify cache is empty
     assert not registry._cache.has_object("test:obj", "1.0.0")
     assert len(registry._cache.list_objects()) == 0
@@ -3219,6 +3204,6 @@ def test_clear_cache_no_cache(temp_registry_dir):
     # Create registry with local backend (no cache)
     registry = Registry(backend=temp_registry_dir, version_objects=True)
     assert registry._cache is None
-    
+
     # clear_cache should not raise an error
     registry.clear_cache()

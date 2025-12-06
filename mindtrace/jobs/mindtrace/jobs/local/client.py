@@ -43,11 +43,11 @@ class LocalClient(OrchestratorBackend):
         """
         super().__init__()
         self.broker_id = ifnone(broker_id, default="mindtrace.default_broker")
-        
+
         # Preserve client_dir for job results even when backend is provided
         if client_dir is not None:
             client_dir = Path(client_dir).expanduser().resolve()
-        
+
         if backend is None:
             if client_dir is None:
                 client_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]

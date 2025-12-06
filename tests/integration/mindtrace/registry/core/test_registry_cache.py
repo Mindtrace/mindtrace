@@ -5,7 +5,6 @@ import shutil
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 
@@ -18,9 +17,7 @@ def gcs_client():
     """Create a GCS client for testing."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
     if not credentials_path:
         pytest.skip("No GCP credentials path provided")
     if not os.path.exists(credentials_path):
@@ -60,9 +57,7 @@ def gcp_backend(test_bucket):
     """Create a GCPRegistryBackend instance with a test bucket."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
 
     try:
         return GCPRegistryBackend(
@@ -166,7 +161,7 @@ def test_cache_performance_with_large_dataset(gcp_registry, gcs_client, test_buc
         assert loaded_images1[i].mode == loaded_images3[i].mode
 
     # Performance assertions
-    print(f"\nPerformance comparison:")
+    print("\nPerformance comparison:")
     print(f"  First load (download):  {load1_time:.2f}s")
     print(f"  Second load (cache):    {load2_time:.2f}s")
     print(f"  Third load (redownload): {load3_time:.2f}s")
@@ -335,4 +330,3 @@ def test_cache_load_with_verify_cache_false(gcp_registry):
     # Test with verify_cache=True (default) - should work normally
     loaded_with_verify = gcp_registry.load("test:verify:cache", version="1.0.0", verify_cache=True)
     assert loaded_with_verify == test_data, "Should load normally when verify_cache=True"
-
