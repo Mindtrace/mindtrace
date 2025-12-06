@@ -111,6 +111,21 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     assert "path" in fetched_metadata  # Should be added by fetch_metadata
 
 
+def test_fetch_metadata_empty_file(backend):
+    """Test that fetch_metadata raises ValueError when metadata file is empty."""
+    # Create an empty metadata file (yaml.safe_load will return None for empty files)
+    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path.touch()  # Create empty file
+    
+    # Also create the object directory so the path update doesn't fail
+    obj_dir = backend.uri / "test:object" / "1.0.0"
+    obj_dir.mkdir(parents=True)
+    
+    # fetch_metadata should raise ValueError when file is empty
+    with pytest.raises(ValueError, match="Metadata file for test:object@1.0.0 is empty or corrupted"):
+        backend.fetch_metadata("test:object", "1.0.0")
+
+
 def test_delete_metadata(backend, sample_metadata):
     """Test deleting metadata."""
     # Save metadata first
