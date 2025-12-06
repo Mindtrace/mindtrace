@@ -852,8 +852,7 @@ class Registry(Mindtrace):
                 result[obj_name] = {}
                 for ver in self.list_versions(obj_name):
                     try:
-                        lock_context = self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
-                        with lock_context:
+                        with self._get_lock_context(obj_name, ver, acquire_lock, shared=True):
                             meta = self.backend.fetch_metadata(obj_name, ver)
                             result[obj_name][ver] = meta
                     except Exception as e:
@@ -864,16 +863,14 @@ class Registry(Mindtrace):
             # Return info for a specific object
             if version == "latest":
                 version = self._latest(name)
-            lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-            with lock_context:
+            with self._get_lock_context(name, version, acquire_lock, shared=True):
                 info = self.backend.fetch_metadata(name, version)
                 info.update({"version": version})
                 return info
         else:  # name is not None and version is None, return all versions for the given object name
             result = {}
             for ver in self.list_versions(name):
-                lock_context = self.get_lock(name, ver, shared=True) if acquire_lock else nullcontext()
-                with lock_context:
+                with self._get_lock_context(name, ver, acquire_lock, shared=True):
                     info = self.backend.fetch_metadata(name, ver)
                     info.update({"version": ver})
                     result[ver] = info
