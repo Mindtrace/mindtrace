@@ -932,8 +932,6 @@ class TestOpenCVCameraBackendCapture:
         await cam.initialize()
         cam.img_quality_enhancement = True
 
-        original_enhance = cam._enhance_image_quality
-
         def failing_enhance(image):
             raise RuntimeError("Enhancement failed")
 

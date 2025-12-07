@@ -982,7 +982,7 @@ class TestMockAllenBradleyPLCEdgeCases:
         mock_plc._cache_timestamp = time.time() - 400
 
         # Third call should refresh
-        tags3 = await mock_plc.get_all_tags()
+        await mock_plc.get_all_tags()
         timestamp3 = mock_plc._cache_timestamp
 
         # Timestamp should be updated
