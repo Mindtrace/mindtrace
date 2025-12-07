@@ -360,5 +360,7 @@ class TestLocalClient:
     def test_consumer_backend_args_raises_not_implemented(self, temp_local_client):
         """Test that consumer_backend_args property raises NotImplementedError (line 70)."""
         client = temp_local_client
-        with pytest.raises(NotImplementedError, match="LocalConsumerBackend needs to be created with access to a LocalClient instance"):
+        with pytest.raises(
+            NotImplementedError, match="LocalConsumerBackend needs to be created with access to a LocalClient instance"
+        ):
             _ = client.consumer_backend_args

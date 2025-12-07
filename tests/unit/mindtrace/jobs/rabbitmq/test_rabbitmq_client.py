@@ -262,9 +262,7 @@ def test_channel_property_exchange_declare_raises_channel_closed():
             # Set _channel to None to trigger the property logic
             client._channel = None
             # Make exchange_declare raise ChannelClosedByBroker on first call, then succeed
-            dc.exchange_declare = MagicMock(
-                side_effect=[ChannelClosedByBroker(406, "closed"), None]
-            )
+            dc.exchange_declare = MagicMock(side_effect=[ChannelClosedByBroker(406, "closed"), None])
             # Accessing channel property should handle the exception and retry
             channel = client.channel
             assert channel is not None
@@ -285,12 +283,12 @@ def test_create_connection():
     dc = DummyChannel()
     mock_connection = MagicMock()
     mock_connection.get_channel.return_value = dc
-    
+
     with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection") as mock_connection_class:
         mock_connection_class.return_value = mock_connection
         client = RabbitMQClient(host="localhost", port=5672, username="test_user", password="test_pass")
         result = client.create_connection()
-        
+
         # Verify RabbitMQConnection was created with correct parameters
         mock_connection_class.assert_called_once_with(
             host="localhost", port=5672, username="test_user", password="test_pass"
@@ -306,7 +304,7 @@ def test_consumer_backend_args_property():
     """Test consumer_backend_args property (line 74)."""
     client = RabbitMQClient(host="localhost", port=5672, username="user", password="pass")
     args = client.consumer_backend_args
-    
+
     assert isinstance(args, dict)
     assert args["cls"] == "mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend"
     assert "kwargs" in args
@@ -320,12 +318,12 @@ def test_create_consumer_backend():
     """Test create_consumer_backend method (line 85)."""
     mock_consumer = MagicMock()
     mock_backend = MagicMock()
-    
+
     with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConsumerBackend") as mock_backend_class:
         mock_backend_class.return_value = mock_backend
         client = RabbitMQClient(host="localhost", port=5672, username="user", password="pass")
         result = client.create_consumer_backend(mock_consumer, "test_queue")
-        
+
         # Verify RabbitMQConsumerBackend was created with correct arguments
         mock_backend_class.assert_called_once_with(
             "test_queue",
@@ -343,9 +341,9 @@ def test_declare_queue_with_queue_type_warning():
     client = make_client()
     client.channel.queue_declare = MagicMock(return_value=None)
     client.logger.warning = MagicMock()
-    
+
     result = client.declare_queue("q", queue_type="FIFO")
-    
+
     # Verify warning was logged
     client.logger.warning.assert_called_once_with(
         "queue_type is not available for RabbitMQClient. Creating a FIFO queue."

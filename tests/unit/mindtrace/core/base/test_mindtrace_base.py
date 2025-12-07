@@ -111,9 +111,10 @@ class TestMindtraceMeta:
 
     def test_logger_recreation_when_kwargs_change(self):
         """Test that logger is recreated when logger kwargs change.
-        
+
         Tests that the logger is reset when cached kwargs differ from current kwargs.
         """
+
         class TestClass(metaclass=MindtraceMeta):
             pass
 
@@ -125,10 +126,10 @@ class TestMindtraceMeta:
 
         # Change the logger kwargs
         TestClass._logger_kwargs = {"logger_level": logging.DEBUG}
-        
+
         # Access logger property - should trigger recreation
         new_logger = TestClass.logger
-        
+
         # Verify logger was recreated (different object)
         assert new_logger is not None
         assert TestClass._cached_logger_kwargs == {"logger_level": logging.DEBUG}
@@ -138,18 +139,19 @@ class TestMindtraceMeta:
 
     def test_config_property_getter(self):
         """Test config property getter when _config is None.
-        
+
         Tests that config is initialized if None.
         """
+
         class TestClass(metaclass=MindtraceMeta):
             pass
 
         # Ensure _config is None
         TestClass._config = None
-        
+
         # Access config property - should initialize it
         config = TestClass.config
-        
+
         # Verify config was created
         assert config is not None
         assert isinstance(config, CoreConfig)
@@ -157,9 +159,10 @@ class TestMindtraceMeta:
 
     def test_config_setter(self):
         """Test config property setter.
-        
+
         Tests that config setter assigns new_config.
         """
+
         class TestClass(metaclass=MindtraceMeta):
             pass
 

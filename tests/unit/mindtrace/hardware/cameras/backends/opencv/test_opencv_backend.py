@@ -613,6 +613,7 @@ class TestOpenCVCameraBackendSDKMethods:
 
         def slow_func():
             import time
+
             time.sleep(0.1)  # Reduced from 1s to 0.1s to speed up test
             return "result"
 
@@ -906,6 +907,7 @@ class TestOpenCVCameraBackendCapture:
 
         def slow_read():
             import time
+
             time.sleep(0.1)  # Reduced from 1s to 0.1s to speed up test
             return True, np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -1115,6 +1117,7 @@ class TestOpenCVCameraBackendExposure:
         async def failing_sdk(func, *args, **kwargs):
             # Only fail on set/get operations, not on isOpened check
             import cv2
+
             if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_EXPOSURE):
                 raise RuntimeError("SDK error")
             return await original_sdk(func, *args, **kwargs)
@@ -1170,6 +1173,7 @@ class TestOpenCVCameraBackendGain:
         async def failing_sdk(func, *args, **kwargs):
             # Only fail on set/get operations, not on isOpened check
             import cv2
+
             if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAIN):
                 raise RuntimeError("SDK error")
             return await original_sdk(func, *args, **kwargs)
@@ -1322,7 +1326,7 @@ class TestOpenCVCameraBackendWhiteBalance:
 
         async def failing_sdk(func, *args, **kwargs):
             # Only fail on set operations, not on isOpened or ensure_open checks
-            import cv2
+
             if func == cam.cap.set:
                 raise RuntimeError("SDK error")
             return await original_sdk(func, *args, **kwargs)
