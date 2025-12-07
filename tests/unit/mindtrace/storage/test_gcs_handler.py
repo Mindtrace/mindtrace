@@ -513,7 +513,7 @@ def test_load_credentials_service_account(mock_client_cls, tmp_path):
     with mock_patch("mindtrace.storage.gcs.service_account.Credentials.from_service_account_file") as mock_creds:
         mock_creds.return_value = MagicMock(name="ServiceAccountCredentials")
         _prepare_client(mock_client_cls)
-        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        _ = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
         mock_creds.assert_called_once_with(str(creds_file))
 
 
@@ -536,7 +536,7 @@ def test_load_credentials_user_credentials(mock_client_cls, tmp_path):
     with mock_patch("google.oauth2.credentials.Credentials.from_authorized_user_file") as mock_creds:
         mock_creds.return_value = MagicMock(name="UserCredentials")
         _prepare_client(mock_client_cls)
-        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        _ = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
         mock_creds.assert_called_once_with(str(creds_file))
 
 
@@ -553,7 +553,7 @@ def test_load_credentials_backward_compatibility(mock_client_cls, tmp_path):
     with mock_patch("mindtrace.storage.gcs.service_account.Credentials.from_service_account_file") as mock_creds:
         mock_creds.return_value = MagicMock(name="LegacyCredentials")
         _prepare_client(mock_client_cls)
-        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        _ = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
         # Should fall back to service account loader
         mock_creds.assert_called_once_with(str(creds_file))
 
@@ -573,7 +573,7 @@ def test_load_credentials_invalid_json(mock_client_cls, tmp_path):
 def test_load_credentials_file_read_error(mock_client_cls, tmp_path):
     """Test error handling when credentials file cannot be read."""
     import json
-    from unittest.mock import patch as mock_patch, mock_open
+    from unittest.mock import patch as mock_patch
 
     creds_file = tmp_path / "creds.json"
     creds_file.write_text(json.dumps({"type": "service_account"}))
@@ -603,7 +603,7 @@ def test_ctor_with_ensure_bucket_false(mock_client_cls):
     """Test constructor with ensure_bucket=False."""
     mock_client, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=False)
     # Should not raise even if bucket doesn't exist
-    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    _ = GCSStorageHandler("bucket", ensure_bucket=False)
     # Should not check or create bucket
     bucket.exists.assert_not_called()
     bucket.create.assert_not_called()
@@ -613,7 +613,7 @@ def test_ctor_with_ensure_bucket_false(mock_client_cls):
 def test_ctor_without_credentials(mock_client_cls):
     """Test constructor without credentials (uses default credentials)."""
     mock_client, _, _ = _prepare_client(mock_client_cls)
-    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    _ = GCSStorageHandler("bucket", ensure_bucket=False)
     # Should call Client with None credentials (uses default)
     mock_client_cls.assert_called_once_with(project=None, credentials=None)
 
