@@ -669,15 +669,15 @@ class TestMQTTSensorBackendCoverage:
 
         await backend.connect()
 
-        # Test with empty string - caught by first check (line 167)
+        # Test with empty string - caught by first validation check
         with pytest.raises(ValueError, match="Topic name must be a non-empty string"):
             await backend.read_data("")
 
-        # Test with whitespace only - caught by second check after strip (line 171)
+        # Test with whitespace only - caught by second validation check after strip
         with pytest.raises(ValueError, match="Topic name cannot be empty"):
             await backend.read_data("   ")
 
-        # Test with newlines and tabs - caught by second check after strip (line 171)
+        # Test with newlines and tabs - caught by second validation check after strip
         with pytest.raises(ValueError, match="Topic name cannot be empty"):
             await backend.read_data("\t\n  ")
 

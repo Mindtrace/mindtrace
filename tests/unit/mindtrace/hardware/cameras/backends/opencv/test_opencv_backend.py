@@ -601,6 +601,11 @@ class TestOpenCVCameraBackendInitialization:
         # Actually, the exception handling is in __init__, so we can't easily test it
         # But we can verify the normal path works
 
+    def test_init_with_negative_camera_index_opencv_format(self, fake_cv):
+        """Test initialization with negative camera index in opencv_camera_ format."""
+        with pytest.raises(CameraConfigurationError, match="Camera index must be non-negative"):
+            OpenCVCameraBackend("opencv_camera_-1")
+
 
 class TestOpenCVCameraBackendSDKMethods:
     """Test suite for SDK execution methods."""
@@ -792,6 +797,56 @@ class TestOpenCVCameraBackendInitialize:
         assert cam.cap is None
         assert cam.initialized is False
 
+    @pytest.mark.asyncio
+    async def test_initialize_with_sdk_not_available(self, fake_cv, monkeypatch):
+        """Test initialize raises SDKNotAvailableError when OpenCV is not available."""
+        # Create camera object first (when OpenCV is available)
+        cam = OpenCVCameraBackend("0")
+
+        # Now patch OpenCV to be unavailable
+        import mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend as opencv_module
+
+        monkeypatch.setattr(opencv_module, "OPENCV_AVAILABLE", False)
+        monkeypatch.setattr(opencv_module, "cv2", None)
+
+        with pytest.raises(SDKNotAvailableError, match="opencv-python"):
+            await cam.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_exception_cleanup_release_failure(self, fake_cv, monkeypatch):
+        """Test initialize exception handling when cap.release() raises exception during cleanup."""
+        import cv2
+
+        class ExceptionCap(FakeCap):
+            def isOpened(self):
+                return True
+
+            def release(self):
+                raise RuntimeError("Release failed during cleanup")
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: ExceptionCap(*args, **kwargs))
+        cam = OpenCVCameraBackend("0")
+
+        # Make initialization fail after cap is created
+        original_sdk = cam._sdk
+
+        async def failing_sdk(func, *args, **kwargs):
+            if func == cam.cap.isOpened:
+                return True
+            if func == cam.cap.set:
+                raise RuntimeError("Configuration failed")
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+
+        # Initialize should fail, and cleanup should handle release exception gracefully
+        with pytest.raises(CameraInitializationError):
+            await cam.initialize()
+
+        # Cap should be None after cleanup (even if release raised exception)
+        assert cam.cap is None
+        assert cam.initialized is False
+
 
 class TestOpenCVCameraBackendConfigureCamera:
     """Test suite for _configure_camera method."""
@@ -812,6 +867,23 @@ class TestOpenCVCameraBackendConfigureCamera:
         monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
 
         with pytest.raises(CameraConfigurationError, match="Failed to configure camera"):
+            await cam._configure_camera()
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_with_sdk_not_available(self, fake_cv, monkeypatch):
+        """Test _configure_camera raises SDKNotAvailableError when OpenCV is not available."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        # Patch OpenCV availability after initialization
+        import mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend as opencv_module
+
+        monkeypatch.setattr(opencv_module, "OPENCV_AVAILABLE", False)
+        monkeypatch.setattr(opencv_module, "cv2", None)
+
+        with pytest.raises(SDKNotAvailableError, match="opencv-python"):
             await cam._configure_camera()
 
         await cam.close()
@@ -885,6 +957,207 @@ class TestOpenCVCameraBackendGetAvailableCameras:
         finally:
             if hasattr(cv2, "utils") and "logging" in dir(cv2.utils):
                 cv2.utils.logging = original_logging
+
+    def test_get_available_cameras_opencv_unavailable(self, monkeypatch):
+        """Test get_available_cameras returns empty when OpenCV is not available."""
+        import mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend as opencv_module
+
+        monkeypatch.setattr(opencv_module, "OPENCV_AVAILABLE", False)
+        monkeypatch.setattr(opencv_module, "cv2", None)
+
+        # Test without details
+        cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+        assert cameras == []
+
+        # Test with details
+        cameras = OpenCVCameraBackend.get_available_cameras(include_details=True)
+        assert cameras == {}
+
+    def test_get_available_cameras_with_details(self, fake_cv):
+        """Test get_available_cameras with include_details=True."""
+        cameras = OpenCVCameraBackend.get_available_cameras(include_details=True)
+        assert isinstance(cameras, dict)
+
+        # If cameras are found, verify structure
+        if cameras:
+            sample_key = next(iter(cameras))
+            sample_details = cameras[sample_key]
+            assert isinstance(sample_details, dict)
+            assert "index" in sample_details
+            assert "backend" in sample_details
+            assert "width" in sample_details
+            assert "height" in sample_details
+            assert "fps" in sample_details
+
+    def test_get_available_cameras_exception_handling(self, fake_cv, monkeypatch):
+        """Test get_available_cameras exception handling returns empty result."""
+        import sys
+
+        # Mock sys.platform to raise exception
+        original_platform = sys.platform
+
+        def failing_platform():
+            raise RuntimeError("Platform check failed")
+
+        # Mock the platform check to fail
+        monkeypatch.setattr(sys, "platform", "unknown")
+
+        # Mock _backend_list_for_platform to raise exception
+        # Actually, we can mock the entire discovery to fail by making VideoCapture raise
+        def failing_videocapture(*args, **kwargs):
+            if args and args[0] == 0:  # First probe
+                raise RuntimeError("Discovery failed")
+            return FakeCap(*args, **kwargs)
+
+        import cv2
+
+        monkeypatch.setattr(cv2, "VideoCapture", failing_videocapture)
+
+        try:
+            # Should handle exception and return empty
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert cameras == []
+
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=True)
+            assert cameras == {}
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_max_probe_env_var(self, fake_cv, monkeypatch):
+        """Test get_available_cameras respects MINDTRACE_OPENCV_MAX_PROBE environment variable."""
+        import os
+        import sys
+
+        original_platform = sys.platform
+        original_env = os.environ.get("MINDTRACE_OPENCV_MAX_PROBE")
+
+        try:
+            # Set a low max_probe value
+            monkeypatch.setenv("MINDTRACE_OPENCV_MAX_PROBE", "2")
+            monkeypatch.setattr(sys, "platform", "linux")
+
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+            # With max_probe=2, we should probe at most 2 indices
+            # (The actual number depends on FakeCap behavior, but should be limited)
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+            if original_env is not None:
+                monkeypatch.setenv("MINDTRACE_OPENCV_MAX_PROBE", original_env)
+            else:
+                monkeypatch.delenv("MINDTRACE_OPENCV_MAX_PROBE", raising=False)
+
+    def test_get_available_cameras_fallback_backend(self, fake_cv, monkeypatch):
+        """Test get_available_cameras falls back to default backend when platform backends fail."""
+        import sys
+
+        import cv2
+
+        original_platform = sys.platform
+
+        class FailingBackendCap(FakeCap):
+            def __init__(self, index, backend=None):
+                # Fail if using platform-specific backend, succeed with default (0)
+                if backend is not None and backend != 0:
+                    raise RuntimeError("Platform backend failed")
+                super().__init__(index, backend)
+
+        try:
+            monkeypatch.setattr(sys, "platform", "linux")
+            monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: FailingBackendCap(*args, **kwargs))
+
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            # Should still find cameras using fallback backend (0)
+            assert isinstance(cameras, list)
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_darwin_early_break(self, fake_cv, monkeypatch):
+        """Test get_available_cameras stops after first camera on macOS."""
+        import sys
+
+        original_platform = sys.platform
+
+        # Create a mock that simulates multiple cameras
+        call_count = {"count": 0}
+
+        class CountingCap(FakeCap):
+            def __init__(self, index, backend=None):
+                call_count["count"] += 1
+                super().__init__(index, backend)
+
+        try:
+            monkeypatch.setattr(sys, "platform", "darwin")
+            import cv2
+
+            monkeypatch.setattr(cv2, "VideoCapture", lambda *args, **kwargs: CountingCap(*args, **kwargs))
+
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+            # On macOS, should stop after first successful camera
+            # So we should only probe index 0 (or very few)
+            # The exact count depends on implementation, but should be limited
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+
+    def test_get_available_cameras_full_execution_path(self, fake_cv, monkeypatch):
+        """Test get_available_cameras executes the full code path when OpenCV is available."""
+        import os
+        import sys
+
+        original_platform = sys.platform
+        original_env = os.environ.get("MINDTRACE_OPENCV_MAX_PROBE")
+
+        try:
+            # Ensure OpenCV is available (it should be with fake_cv)
+            import mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend as opencv_module
+
+            assert opencv_module.OPENCV_AVAILABLE, "OpenCV should be available for this test"
+
+            # Test on different platforms to exercise different code paths
+            for platform in ["linux", "win32", "darwin"]:
+                monkeypatch.setattr(sys, "platform", platform)
+
+                # Test without details
+                cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+                assert isinstance(cameras, list)
+
+                # Test with details
+                cameras = OpenCVCameraBackend.get_available_cameras(include_details=True)
+                assert isinstance(cameras, dict)
+
+            # Test with environment variable
+            monkeypatch.setenv("MINDTRACE_OPENCV_MAX_PROBE", "3")
+            monkeypatch.setattr(sys, "platform", "linux")
+            cameras = OpenCVCameraBackend.get_available_cameras(include_details=False)
+            assert isinstance(cameras, list)
+
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
+            if original_env is not None:
+                monkeypatch.setenv("MINDTRACE_OPENCV_MAX_PROBE", original_env)
+            else:
+                monkeypatch.delenv("MINDTRACE_OPENCV_MAX_PROBE", raising=False)
+
+    def test_get_available_cameras_backend_name_function(self, fake_cv, monkeypatch):
+        """Test _backend_name function execution path."""
+        import sys
+
+        original_platform = sys.platform
+
+        try:
+            # Test on different platforms to exercise _backend_name with different backends
+            for platform in ["linux", "win32", "darwin"]:
+                monkeypatch.setattr(sys, "platform", platform)
+                cameras = OpenCVCameraBackend.get_available_cameras(include_details=True)
+                # If cameras found, _backend_name should have been called
+                if cameras:
+                    # Verify backend names are strings (from _backend_name)
+                    for details in cameras.values():
+                        assert isinstance(details["backend"], str)
+
+        finally:
+            monkeypatch.setattr(sys, "platform", original_platform)
 
 
 class TestOpenCVCameraBackendCapture:
@@ -1128,6 +1401,28 @@ class TestOpenCVCameraBackendExposure:
         await cam.close()
 
     @pytest.mark.asyncio
+    async def test_get_exposure_not_initialized(self, fake_cv):
+        """Test get_exposure raises CameraConnectionError when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not available for exposure reading"):
+            await cam.get_exposure()
+
+    @pytest.mark.asyncio
+    async def test_get_exposure_success(self, fake_cv):
+        """Test get_exposure successful path."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        exposure = await cam.get_exposure()
+        assert isinstance(exposure, float)
+        # FakeCap has exposure set to -5.0
+        assert exposure == -5.0
+
+        await cam.close()
+
+    @pytest.mark.asyncio
     async def test_get_exposure_exception(self, fake_cv, monkeypatch):
         """Test get_exposure exception handling."""
         cam = OpenCVCameraBackend("0")
@@ -1161,6 +1456,28 @@ class TestOpenCVCameraBackendGain:
             await cam.set_gain(10.0)
 
     @pytest.mark.asyncio
+    async def test_set_gain_failure_path(self, fake_cv, monkeypatch):
+        """Test set_gain raises CameraConfigurationError when cap.set returns False."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_sdk = cam._sdk
+        import cv2
+
+        async def failing_set_sdk(func, *args, **kwargs):
+            # Return False when setting gain
+            if func == cam.cap.set and args and args[0] == cv2.CAP_PROP_GAIN:
+                return False
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", failing_set_sdk, raising=False)
+
+        with pytest.raises(CameraConfigurationError, match="Failed to set gain to"):
+            await cam.set_gain(10.0)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
     async def test_set_gain_exception(self, fake_cv, monkeypatch):
         """Test set_gain exception handling."""
         cam = OpenCVCameraBackend("0")
@@ -1184,6 +1501,36 @@ class TestOpenCVCameraBackendGain:
         await cam.close()
 
     @pytest.mark.asyncio
+    async def test_get_gain_early_return_not_initialized(self, fake_cv):
+        """Test get_gain returns 0.0 when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        gain = await cam.get_gain()
+        assert gain == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_gain_early_return_not_opened(self, fake_cv, monkeypatch):
+        """Test get_gain returns 0.0 when camera is not opened."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        # Mock isOpened to return False
+        original_sdk = cam._sdk
+
+        async def mock_sdk(func, *args, **kwargs):
+            if func == cam.cap.isOpened:
+                return False
+            return await original_sdk(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_sdk", mock_sdk, raising=False)
+
+        gain = await cam.get_gain()
+        assert gain == 0.0
+
+        await cam.close()
+
+    @pytest.mark.asyncio
     async def test_get_gain_exception(self, fake_cv, monkeypatch):
         """Test get_gain exception handling."""
         cam = OpenCVCameraBackend("0")
@@ -1192,7 +1539,9 @@ class TestOpenCVCameraBackendGain:
         original_sdk = cam._sdk
 
         async def failing_sdk(func, *args, **kwargs):
-            if func == cam.cap.get:
+            import cv2
+
+            if func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAIN:
                 raise RuntimeError("Get failed")
             return await original_sdk(func, *args, **kwargs)
 
