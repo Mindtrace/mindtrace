@@ -134,11 +134,12 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             The gs:// URI of the uploaded file.
         """
-        blob = self._bucket().blob(self._sanitize_blob_path(remote_path))
+        sanitized_path = self._sanitize_blob_path(remote_path)
+        blob = self._bucket().blob(sanitized_path)
         if metadata:
             blob.metadata = metadata
         blob.upload_from_filename(local_path)
-        return f"gs://{self.bucket_name}/{remote_path}"
+        return f"gs://{self.bucket_name}/{sanitized_path}"
 
     def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:
         """Download a file from GCS to a local path.

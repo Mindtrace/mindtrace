@@ -487,3 +487,237 @@ def test_sanitize_blob_path_normal_and_error(mock_client_cls):
     # Error case: bucket name mismatch
     with pytest.raises(ValueError, match="initialized bucket name 'bucket' is not in the path"):
         handler._sanitize_blob_path("gs://other-bucket/path/to/file.txt")
+
+
+# ---------------------------------------------------------------------------
+# Credentials Loading
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_load_credentials_service_account(mock_client_cls, tmp_path):
+    """Test loading service account credentials."""
+    import json
+    from unittest.mock import patch as mock_patch
+
+    creds_file = tmp_path / "service_account.json"
+    creds_data = {
+        "type": "service_account",
+        "project_id": "test-project",
+        "private_key_id": "test-key-id",
+        "private_key": "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n",
+        "client_email": "test@test.iam.gserviceaccount.com",
+    }
+    creds_file.write_text(json.dumps(creds_data))
+
+    with mock_patch("mindtrace.storage.gcs.service_account.Credentials.from_service_account_file") as mock_creds:
+        mock_creds.return_value = MagicMock(name="ServiceAccountCredentials")
+        _prepare_client(mock_client_cls)
+        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        mock_creds.assert_called_once_with(str(creds_file))
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_load_credentials_user_credentials(mock_client_cls, tmp_path):
+    """Test loading user credentials (application default credentials)."""
+    import json
+    from unittest.mock import patch as mock_patch
+
+    creds_file = tmp_path / "user_creds.json"
+    creds_data = {
+        "client_id": "test-client-id",
+        "client_secret": "test-secret",
+        "refresh_token": "test-refresh-token",
+        "type": "authorized_user",
+    }
+    creds_file.write_text(json.dumps(creds_data))
+
+    # Patch the import that happens inside _load_credentials
+    with mock_patch("google.oauth2.credentials.Credentials.from_authorized_user_file") as mock_creds:
+        mock_creds.return_value = MagicMock(name="UserCredentials")
+        _prepare_client(mock_client_cls)
+        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        mock_creds.assert_called_once_with(str(creds_file))
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_load_credentials_backward_compatibility(mock_client_cls, tmp_path):
+    """Test backward compatibility with credentials that don't match known types."""
+    import json
+    from unittest.mock import patch as mock_patch
+
+    creds_file = tmp_path / "legacy.json"
+    creds_data = {"some": "unknown", "format": "here"}
+    creds_file.write_text(json.dumps(creds_data))
+
+    with mock_patch("mindtrace.storage.gcs.service_account.Credentials.from_service_account_file") as mock_creds:
+        mock_creds.return_value = MagicMock(name="LegacyCredentials")
+        _prepare_client(mock_client_cls)
+        handler = GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+        # Should fall back to service account loader
+        mock_creds.assert_called_once_with(str(creds_file))
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_load_credentials_invalid_json(mock_client_cls, tmp_path):
+    """Test error handling when credentials file contains invalid JSON."""
+    creds_file = tmp_path / "invalid.json"
+    creds_file.write_text("not valid json {")
+
+    _prepare_client(mock_client_cls)
+    with pytest.raises(ValueError, match="Could not load credentials"):
+        GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_load_credentials_file_read_error(mock_client_cls, tmp_path):
+    """Test error handling when credentials file cannot be read."""
+    import json
+    from unittest.mock import patch as mock_patch, mock_open
+
+    creds_file = tmp_path / "creds.json"
+    creds_file.write_text(json.dumps({"type": "service_account"}))
+
+    _prepare_client(mock_client_cls)
+    with mock_patch("builtins.open", side_effect=IOError("Permission denied")):
+        with pytest.raises(ValueError, match="Could not load credentials"):
+            GCSStorageHandler("bucket", credentials_path=str(creds_file), ensure_bucket=False)
+
+
+# ---------------------------------------------------------------------------
+# Constructor Additional Cases
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_with_project_id(mock_client_cls):
+    """Test constructor with project_id parameter."""
+    mock_client, _, _ = _prepare_client(mock_client_cls)
+    handler = GCSStorageHandler("bucket", project_id="test-project-id", ensure_bucket=False)
+    mock_client_cls.assert_called_once_with(project="test-project-id", credentials=None)
+    assert handler.bucket_name == "bucket"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_with_ensure_bucket_false(mock_client_cls):
+    """Test constructor with ensure_bucket=False."""
+    mock_client, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=False)
+    # Should not raise even if bucket doesn't exist
+    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    # Should not check or create bucket
+    bucket.exists.assert_not_called()
+    bucket.create.assert_not_called()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_without_credentials(mock_client_cls):
+    """Test constructor without credentials (uses default credentials)."""
+    mock_client, _, _ = _prepare_client(mock_client_cls)
+    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    # Should call Client with None credentials (uses default)
+    mock_client_cls.assert_called_once_with(project=None, credentials=None)
+
+
+# ---------------------------------------------------------------------------
+# list_objects with max_results
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_list_objects_with_max_results(mock_client_cls):
+    """Test list_objects with max_results parameter."""
+    mock_client, _, _ = _prepare_client(mock_client_cls)
+    mock_blob1 = MagicMock(name="Blob1")
+    mock_blob1.name = "a.txt"
+    mock_blob2 = MagicMock(name="Blob2")
+    mock_blob2.name = "b.txt"
+    mock_client.list_blobs.return_value = [mock_blob1, mock_blob2]
+
+    h = GCSStorageHandler("bucket")
+    result = h.list_objects(max_results=10)
+    assert result == ["a.txt", "b.txt"]
+    mock_client.list_blobs.assert_called_once_with("bucket", prefix="", max_results=10)
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_list_objects_with_prefix_and_max_results(mock_client_cls):
+    """Test list_objects with both prefix and max_results."""
+    mock_client, _, _ = _prepare_client(mock_client_cls)
+    mock_blob = MagicMock(name="Blob")
+    mock_blob.name = "prefix/file.txt"
+    mock_client.list_blobs.return_value = [mock_blob]
+
+    h = GCSStorageHandler("bucket")
+    result = h.list_objects(prefix="prefix/", max_results=5)
+    assert result == ["prefix/file.txt"]
+    mock_client.list_blobs.assert_called_once_with("bucket", prefix="prefix/", max_results=5)
+
+
+# ---------------------------------------------------------------------------
+# Additional Edge Cases
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_sanitize_blob_path_with_trailing_slash(mock_client_cls):
+    """Test _sanitize_blob_path with trailing slash in gs:// URI."""
+    _, _, _ = _prepare_client(mock_client_cls)
+    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    # Should handle trailing slash correctly
+    assert handler._sanitize_blob_path("gs://bucket/path/to/") == "path/to/"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_sanitize_blob_path_root_path(mock_client_cls):
+    """Test _sanitize_blob_path with root path."""
+    _, _, _ = _prepare_client(mock_client_cls)
+    handler = GCSStorageHandler("bucket", ensure_bucket=False)
+    # Root path should be handled
+    assert handler._sanitize_blob_path("gs://bucket/") == ""
+    assert handler._sanitize_blob_path("") == ""
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_get_object_metadata_calls_reload(mock_client_cls):
+    """Test that get_object_metadata calls blob.reload()."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.name = "test.txt"
+    blob.size = 100
+    blob.content_type = "text/plain"
+    blob.time_created = datetime(2025, 1, 1)
+    blob.updated = datetime(2025, 1, 2)
+    blob.metadata = {"key": "value"}
+
+    h = GCSStorageHandler("bucket")
+    meta = h.get_object_metadata("test.txt")
+    blob.reload.assert_called_once()
+    assert meta["name"] == "test.txt"
+    assert meta["size"] == 100
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_creates_parent_dir_for_root_file(mock_client_cls, tmp_path):
+    """Test download creates parent directory even for files in root."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    dest = tmp_path / "file.txt"  # No nested directory
+
+    h = GCSStorageHandler("bucket")
+    h.download("remote/file.txt", str(dest))
+    blob.download_to_filename.assert_called_once_with(str(dest))
+    # Parent directory should exist (even if it's just tmp_path)
+    assert dest.parent.exists()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_with_gs_uri_remote_path(mock_client_cls, tmp_path):
+    """Test upload with gs:// URI as remote_path."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("content")
+
+    h = GCSStorageHandler("my-bucket")
+    uri = h.upload(str(local_file), "gs://my-bucket/remote/path.txt")
+    assert uri == "gs://my-bucket/remote/path.txt"
+    blob.upload_from_filename.assert_called_once_with(str(local_file))
+    # Should sanitize the path correctly
+    bucket.blob.assert_called_once_with("remote/path.txt")
