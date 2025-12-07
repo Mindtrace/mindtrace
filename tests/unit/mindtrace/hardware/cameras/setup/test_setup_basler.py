@@ -495,7 +495,6 @@ class TestElevatePrivileges:
         mock_windll.shell32 = mock_shell32
         mock_ctypes.windll = mock_windll
         mock_executable.return_value = "/usr/bin/python"
-        mock_argv = ["setup_basler.py"]
 
         installer = PylonSDKInstaller()
         result = installer._elevate_privileges()
@@ -514,7 +513,6 @@ class TestElevatePrivileges:
         mock_windll.shell32 = mock_shell32
         mock_ctypes.windll = mock_windll
         mock_executable.return_value = "/usr/bin/python"
-        mock_argv = ["setup_basler.py"]
 
         installer = PylonSDKInstaller()
         result = installer._elevate_privileges()
