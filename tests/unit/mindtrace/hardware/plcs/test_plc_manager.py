@@ -7,7 +7,7 @@ batch operations, and error handling.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -76,8 +76,8 @@ class TestPLCManagerInitialization:
 
     def test_init_inherits_from_mindtrace(self):
         """Test that PLCManager inherits from Mindtrace."""
-        from mindtrace.hardware.plcs.plc_manager import PLCManager
         from mindtrace.core import Mindtrace
+        from mindtrace.hardware.plcs.plc_manager import PLCManager
 
         manager = PLCManager()
         assert isinstance(manager, Mindtrace)
@@ -88,9 +88,11 @@ class TestPLCManagerBackendManagement:
 
     def test_get_enabled_backends_allen_bradley_enabled(self, mock_plc_manager):
         """Test getting enabled backends when Allen Bradley is enabled."""
-        with patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True), patch.object(
-            mock_plc_manager.config.get_config().plc_backends, "mock_enabled", False
-        ), patch("mindtrace.hardware.plcs.backends.allen_bradley.AllenBradleyPLC") as MockAB:
+        with (
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True),
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "mock_enabled", False),
+            patch("mindtrace.hardware.plcs.backends.allen_bradley.AllenBradleyPLC") as MockAB,
+        ):
             backends = mock_plc_manager._get_enabled_backends()
 
             assert "AllenBradley" in backends
@@ -98,9 +100,11 @@ class TestPLCManagerBackendManagement:
 
     def test_get_enabled_backends_mock_enabled(self, mock_plc_manager):
         """Test getting enabled backends when mock is enabled."""
-        with patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", False), patch.object(
-            mock_plc_manager.config.get_config().plc_backends, "mock_enabled", True
-        ), patch("mindtrace.hardware.plcs.backends.allen_bradley.MockAllenBradleyPLC") as MockMock:
+        with (
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", False),
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "mock_enabled", True),
+            patch("mindtrace.hardware.plcs.backends.allen_bradley.MockAllenBradleyPLC") as MockMock,
+        ):
             backends = mock_plc_manager._get_enabled_backends()
 
             assert "AllenBradley" in backends
@@ -108,9 +112,11 @@ class TestPLCManagerBackendManagement:
 
     def test_get_enabled_backends_mock_overrides_allen_bradley(self, mock_plc_manager):
         """Test that mock backend overrides Allen Bradley when both enabled."""
-        with patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True), patch.object(
-            mock_plc_manager.config.get_config().plc_backends, "mock_enabled", True
-        ), patch("mindtrace.hardware.plcs.backends.allen_bradley.MockAllenBradleyPLC") as MockMock:
+        with (
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True),
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "mock_enabled", True),
+            patch("mindtrace.hardware.plcs.backends.allen_bradley.MockAllenBradleyPLC") as MockMock,
+        ):
             backends = mock_plc_manager._get_enabled_backends()
 
             assert "AllenBradley" in backends
@@ -118,8 +124,12 @@ class TestPLCManagerBackendManagement:
 
     def test_get_enabled_backends_import_error(self, mock_plc_manager):
         """Test handling of import errors when getting backends."""
-        with patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True), patch(
-            "mindtrace.hardware.plcs.backends.allen_bradley.AllenBradleyPLC", side_effect=ImportError("Module not found")
+        with (
+            patch.object(mock_plc_manager.config.get_config().plc_backends, "allen_bradley_enabled", True),
+            patch(
+                "mindtrace.hardware.plcs.backends.allen_bradley.AllenBradleyPLC",
+                side_effect=ImportError("Module not found"),
+            ),
         ):
             backends = mock_plc_manager._get_enabled_backends()
 
@@ -168,7 +178,9 @@ class TestPLCManagerDiscovery:
         mock_backend2.get_available_plcs.return_value = ["PLC3"]
 
         with patch.object(
-            mock_plc_manager, "_get_enabled_backends", return_value={"Backend1": mock_backend1, "Backend2": mock_backend2}
+            mock_plc_manager,
+            "_get_enabled_backends",
+            return_value={"Backend1": mock_backend1, "Backend2": mock_backend2},
         ):
             discovered = await mock_plc_manager.discover_plcs()
 
@@ -199,9 +211,7 @@ class TestPLCManagerRegistration:
             assert success is True
             assert "TestPLC" in mock_plc_manager.plcs
             assert mock_plc_manager.plcs["TestPLC"] == mock_plc_instance
-            mock_backend_class.assert_called_once_with(
-                plc_name="TestPLC", ip_address="192.168.1.100", plc_type="logix"
-            )
+            mock_backend_class.assert_called_once_with(plc_name="TestPLC", ip_address="192.168.1.100", plc_type="logix")
 
     @pytest.mark.asyncio
     async def test_register_plc_duplicate(self, mock_plc_manager, mock_plc_instance):
@@ -819,7 +829,9 @@ class TestPLCManagerUtilityMethods:
         mock_backend2.get_backend_info.return_value = {"name": "Backend2"}
 
         with patch.object(
-            mock_plc_manager, "_get_enabled_backends", return_value={"Backend1": mock_backend1, "Backend2": mock_backend2}
+            mock_plc_manager,
+            "_get_enabled_backends",
+            return_value={"Backend1": mock_backend1, "Backend2": mock_backend2},
         ):
             info = mock_plc_manager.get_backend_info()
 
@@ -939,4 +951,3 @@ class TestPLCManagerEdgeCases:
         # All operations should succeed
         assert status["name"] == "TestPLC"
         assert len(tags) > 0
-

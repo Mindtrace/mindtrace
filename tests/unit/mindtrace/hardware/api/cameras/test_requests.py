@@ -188,7 +188,7 @@ class TestCaptureImageRequest:
         """Test CaptureImageRequest with invalid output format raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             CaptureImageRequest(camera="Basler:device1", output_format="invalid")
-        
+
         errors = exc_info.value.errors()
         assert len(errors) > 0
         # Check that the error is about output_format
@@ -220,7 +220,7 @@ class TestCaptureBatchRequest:
         """Test CaptureBatchRequest with invalid output format raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             CaptureBatchRequest(cameras=["Basler:device1"], output_format="invalid")
-        
+
         errors = exc_info.value.errors()
         assert len(errors) > 0
         # Check that the error is about output_format
@@ -284,7 +284,7 @@ class TestCaptureHDRRequest:
         """Test CaptureHDRRequest with invalid output format raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             CaptureHDRRequest(camera="Basler:device1", output_format="invalid")
-        
+
         errors = exc_info.value.errors()
         assert len(errors) > 0
         # Check that the error is about output_format
@@ -328,7 +328,7 @@ class TestCaptureHDRBatchRequest:
         """Test CaptureHDRBatchRequest with invalid output format raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             CaptureHDRBatchRequest(cameras=["Basler:device1"], output_format="invalid")
-        
+
         errors = exc_info.value.errors()
         assert len(errors) > 0
         # Check that the error is about output_format
@@ -491,4 +491,3 @@ class TestInterPacketDelayRequest:
         request = InterPacketDelayRequest(camera="Basler:device1", delay=100.5)
         assert request.camera == "Basler:device1"
         assert request.delay == 100.5
-

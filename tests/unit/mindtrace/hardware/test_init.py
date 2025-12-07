@@ -116,4 +116,3 @@ class TestHardwareModuleLazyImports:
         assert isinstance(CalibrationData, type) or callable(CalibrationData)
         assert isinstance(PlanarHomographyMeasurer, type) or callable(PlanarHomographyMeasurer)
         assert isinstance(MeasuredBox, type) or callable(MeasuredBox)
-

@@ -3,10 +3,7 @@
 import json
 import os
 import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
-
-import pytest
+from unittest.mock import patch
 
 from mindtrace.hardware.core.config import (
     HardwareConfigManager,
@@ -362,6 +359,8 @@ class TestHardwareConfigManagerInitialization:
         assert hasattr(config, "plcs")
         assert hasattr(config, "plc_backends")
         assert hasattr(config, "gcs")
+
+
 class TestHardwareConfigManagerEnvironmentVariables:
     """Test suite for environment variable loading."""
 
@@ -1291,7 +1290,10 @@ class TestHardwareConfigManagerFileOperations:
         """Test loading configuration from file when exception is raised."""
         # Mock the _load_from_file method to raise an exception
         # This tests the exception handling in _load_config
-        with patch("mindtrace.hardware.core.config.HardwareConfigManager._load_from_file", side_effect=IOError("File read error")):
+        with patch(
+            "mindtrace.hardware.core.config.HardwareConfigManager._load_from_file",
+            side_effect=IOError("File read error"),
+        ):
             # Should handle file read errors gracefully
             config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
             config = config_mgr.get_config()
@@ -1563,7 +1565,10 @@ class TestHardwareConfigManagerEdgeCases:
         """Test loading config when file operations raise exceptions."""
         # Mock the _load_from_file method to raise an exception
         # This tests the exception handling in _load_config
-        with patch("mindtrace.hardware.core.config.HardwareConfigManager._load_from_file", side_effect=PermissionError("Permission denied")):
+        with patch(
+            "mindtrace.hardware.core.config.HardwareConfigManager._load_from_file",
+            side_effect=PermissionError("Permission denied"),
+        ):
             # Should handle permission errors gracefully
             config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
             config = config_mgr.get_config()
@@ -1599,4 +1604,3 @@ class TestHardwareConfigManagerEdgeCases:
 
         finally:
             os.unlink(config_file)
-

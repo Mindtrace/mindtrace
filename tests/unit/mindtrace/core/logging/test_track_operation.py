@@ -697,7 +697,7 @@ class TestTrackOperationClassMethodWithoutLogger:
     @pytest.mark.asyncio
     async def test_context_manager_timeout_without_fastapi_raises_timeout_error(self):
         """Test context manager timeout raises TimeoutError when FastAPI is not available.
-        
+
         Tests the fallback raise statement when _HTTPException is None.
         """
         logger = get_logger("test", use_structlog=True)
@@ -723,7 +723,7 @@ class TestTrackOperationClassMethodWithoutLogger:
     @pytest.mark.asyncio
     async def test_async_decorator_with_metrics_snapshot(self):
         """Test async decorator includes metrics snapshot in context.
-        
+
         Tests that metrics are added to context when metrics_snapshot is not None.
         """
         logger = get_logger("test", use_structlog=True)

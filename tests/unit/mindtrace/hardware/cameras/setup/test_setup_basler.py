@@ -1,12 +1,8 @@
 """Tests for Basler SDK setup functionality."""
 
-import argparse
-import os
 import subprocess
-import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -78,7 +74,6 @@ class TestPylonSDKInstaller:
         mock_subprocess.return_value.returncode = 0
 
         # Mock download functions to return a fake directory
-        from pathlib import Path
 
         mock_download_tarball.return_value = Path("/tmp/fake_extracted")
         mock_download_zip.return_value = Path("/tmp/fake_extracted")
@@ -103,7 +98,6 @@ class TestPylonSDKInstaller:
         mock_subprocess.return_value.returncode = 0
 
         # Mock download functions to return a fake directory
-        from pathlib import Path
 
         mock_download_tarball.return_value = Path("/tmp/fake_extracted")
         mock_download_zip.return_value = Path("/tmp/fake_extracted")

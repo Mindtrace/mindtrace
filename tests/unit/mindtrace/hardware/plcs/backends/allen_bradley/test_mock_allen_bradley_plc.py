@@ -846,6 +846,7 @@ class TestMockAllenBradleyPLCPLCInfo:
         # by making plc_name something that causes hash to fail
         # Actually, hash() rarely fails, so let's make the f-string formatting fail
         original_plc_name = mock_plc.plc_name
+
         # Create a class that raises when hash() is called
         class HashError:
             def __hash__(self):
@@ -986,4 +987,3 @@ class TestMockAllenBradleyPLCEdgeCases:
 
         # Timestamp should be updated
         assert timestamp3 > timestamp2
-

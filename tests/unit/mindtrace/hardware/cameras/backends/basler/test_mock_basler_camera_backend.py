@@ -34,18 +34,19 @@ async def test_set_triggermode_exception_handling():
     """Test exception handling in set_triggermode."""
     camera = MockBaslerCameraBackend("test_cam")
     await camera.initialize()
-    
+
     # Mock the attribute assignment to raise an exception
     original_setattr = type(camera).__setattr__
+
     def mock_setattr(self, name, value):
         if name == "triggermode" and value == "continuous":
             raise RuntimeError("Setting error")
         return original_setattr(self, name, value)
-    
+
     with patch.object(type(camera), "__setattr__", mock_setattr):
         with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
             await camera.set_triggermode("continuous")
-    
+
     await camera.close()
 
 
@@ -54,10 +55,10 @@ async def test_get_current_pixel_format():
     """Test get_current_pixel_format method."""
     camera = MockBaslerCameraBackend("test_cam")
     await camera.initialize()
-    
+
     pixel_format = await camera.get_current_pixel_format()
     assert pixel_format == "BGR8"
-    
+
     await camera.close()
 
 
@@ -67,22 +68,23 @@ class TestMockBaslerExceptionHandling:
     @pytest.mark.asyncio
     async def test_init_exception_handling_synthetic_dimensions(self):
         """Test exception handling when setting synthetic dimensions fails."""
+
         # Test with a value that would cause an exception during processing
         # We'll create a mock object that raises an exception when accessed
         class InvalidValue:
             def __int__(self):
                 raise ValueError("Invalid value")
-        
+
         # Test width exception handling
         camera = MockBaslerCameraBackend("test_cam", synthetic_width=InvalidValue())
         assert camera.synthetic_width == 1920  # Default from ROI
         assert camera.synthetic_height == 1080  # Default from ROI
-        
+
         # Test height exception handling
         camera2 = MockBaslerCameraBackend("test_cam2", synthetic_height=InvalidValue())
         assert camera2.synthetic_width == 1920  # Default from ROI
         assert camera2.synthetic_height == 1080  # Default from ROI
-        
+
         # Test both width and height exception handling
         camera3 = MockBaslerCameraBackend("test_cam3", synthetic_width=InvalidValue(), synthetic_height=InvalidValue())
         assert camera3.synthetic_width == 1920  # Default from ROI
@@ -256,35 +258,36 @@ class TestMockBaslerImageGeneration:
             assert image.var() > 0, f"Pattern {pattern} should produce varied pixel values"
 
             await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -309,35 +312,36 @@ class TestMockBaslerImageGeneration:
             f"Expected pattern rotation to create different images, got {len(unique_stats)} unique patterns from {len(image_stats)} captures"
         )
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -349,35 +353,36 @@ class TestMockBaslerImageGeneration:
         await camera.capture()
         assert camera.synthetic_checker_size == 100
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -429,35 +434,36 @@ class TestMockBaslerImageGeneration:
         assert stats3 != stats4, f"Gain should affect image: low_gain={stats3}, high_gain={stats4}"
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -485,35 +491,36 @@ class TestMockBaslerROIOperations:
             await camera.set_ROI(0, -5, 640, 480)  # Negative y
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -543,35 +550,36 @@ class TestMockBaslerROIOperations:
         assert image.shape == (600, 800, 3), f"Expected (600, 800, 3) for custom ROI, got {image.shape}"
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -594,35 +602,36 @@ class TestMockBaslerROIOperations:
         assert roi["height"] == 1080
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -657,35 +666,36 @@ class TestMockBaslerConfigurationValidation:
             await camera.set_exposure(2000000)  # Above maximum
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -706,35 +716,36 @@ class TestMockBaslerConfigurationValidation:
             await camera.set_gain(20.0)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -752,35 +763,36 @@ class TestMockBaslerConfigurationValidation:
             await camera.set_triggermode("invalid_mode")
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -797,35 +809,36 @@ class TestMockBaslerConfigurationValidation:
             await camera.set_pixel_format("INVALID_FORMAT")
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -851,35 +864,36 @@ class TestMockBaslerStateManagement:
         assert camera.IsGrabbing() is False
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -897,35 +911,36 @@ class TestMockBaslerStateManagement:
         assert camera.IsGrabbing() is True
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -959,35 +974,36 @@ class TestMockBaslerConfigurationFiles:
             await camera.import_config("/nonexistent/path/config.json")
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1008,35 +1024,36 @@ class TestMockBaslerConfigurationFiles:
             os.unlink(invalid_path)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1059,35 +1076,36 @@ class TestMockBaslerConfigurationFiles:
             assert config["camera_name"] == "test_cam"
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1117,35 +1135,36 @@ class TestMockBaslerConfigurationFiles:
             os.unlink(partial_path)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1170,35 +1189,36 @@ class TestMockBaslerWhiteBalance:
             assert current_wb == mode
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1224,35 +1244,36 @@ class TestMockBaslerImageEnhancement:
         assert await camera.get_image_quality_enhancement() is False
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1270,35 +1291,36 @@ class TestMockBaslerImageEnhancement:
         assert camera._enhancement_initialized is True
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1324,35 +1346,36 @@ class TestMockBaslerImageEnhancement:
         assert image_with_enhancement.dtype == np.uint8
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1379,35 +1402,36 @@ class TestMockBaslerPerformanceAndTiming:
         assert short_duration < 0.2
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1425,35 +1449,36 @@ class TestMockBaslerPerformanceAndTiming:
             assert isinstance(image, np.ndarray)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1496,35 +1521,36 @@ class TestMockBaslerDiscoveryAndStaticMethods:
         assert remote_obj is None
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1544,35 +1570,36 @@ class TestMockBaslerCleanupAndResourceManagement:
 
         # Close camera
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
         # Verify cleanup
@@ -1588,97 +1615,100 @@ class TestMockBaslerCleanupAndResourceManagement:
 
         # Multiple close calls should not raise errors
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
         assert camera.initialized is False
@@ -1689,35 +1719,36 @@ class TestMockBaslerCleanupAndResourceManagement:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
         # Should raise error
@@ -1747,35 +1778,36 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
                 await camera.capture()
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1793,35 +1825,36 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
             assert isinstance(image, np.ndarray)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1838,35 +1871,36 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
         assert image.shape == (1, 1, 3), f"Expected (1, 1, 3) for 1x1 ROI, got {image.shape}"
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -1891,35 +1925,36 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
             assert isinstance(image, np.ndarray)
 
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -1929,22 +1964,23 @@ class TestMockBaslerExceptionHandling:
     @pytest.mark.asyncio
     async def test_init_exception_handling_synthetic_dimensions(self):
         """Test exception handling when setting synthetic dimensions fails."""
+
         # Test with a value that would cause an exception during processing
         # We'll create a mock object that raises an exception when accessed
         class InvalidValue:
             def __int__(self):
                 raise ValueError("Invalid value")
-        
+
         # Test width exception handling
         camera = MockBaslerCameraBackend("test_cam", synthetic_width=InvalidValue())
         assert camera.synthetic_width == 1920  # Default from ROI
         assert camera.synthetic_height == 1080  # Default from ROI
-        
+
         # Test height exception handling
         camera2 = MockBaslerCameraBackend("test_cam2", synthetic_height=InvalidValue())
         assert camera2.synthetic_width == 1920  # Default from ROI
         assert camera2.synthetic_height == 1080  # Default from ROI
-        
+
         # Test both width and height exception handling
         camera3 = MockBaslerCameraBackend("test_cam3", synthetic_width=InvalidValue(), synthetic_height=InvalidValue())
         assert camera3.synthetic_width == 1920  # Default from ROI
@@ -1954,21 +1990,25 @@ class TestMockBaslerExceptionHandling:
     async def test_initialize_exception_handling(self):
         """Test exception handling in initialize method."""
         camera = MockBaslerCameraBackend("test_cam")
-        
+
         # Test exception during initialization that's not CameraNotFoundError or CameraConnectionError
         with patch.object(camera, "get_available_cameras", side_effect=RuntimeError("Unexpected error")):
             with pytest.raises(CameraInitializationError, match="Unexpected error initializing mock camera"):
                 await camera.initialize()
-        
+
         # Test CameraNotFoundError re-raise
         camera2 = MockBaslerCameraBackend("test_cam2")
-        with patch.object(MockBaslerCameraBackend, "get_available_cameras", side_effect=CameraNotFoundError("Camera not found")):
+        with patch.object(
+            MockBaslerCameraBackend, "get_available_cameras", side_effect=CameraNotFoundError("Camera not found")
+        ):
             with pytest.raises(CameraNotFoundError):
                 await camera2.initialize()
-        
+
         # Test CameraConnectionError re-raise
         camera3 = MockBaslerCameraBackend("test_cam3")
-        with patch.object(MockBaslerCameraBackend, "get_available_cameras", side_effect=CameraConnectionError("Connection error")):
+        with patch.object(
+            MockBaslerCameraBackend, "get_available_cameras", side_effect=CameraConnectionError("Connection error")
+        ):
             with pytest.raises(CameraConnectionError):
                 await camera3.initialize()
 
@@ -1976,12 +2016,12 @@ class TestMockBaslerExceptionHandling:
     async def test_initialize_with_existing_config_file(self):
         """Test initialize when config file exists."""
         camera = MockBaslerCameraBackend("test_cam")
-        
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {"exposure_time": 30000.0}
             json.dump(config_data, f)
             config_path = f.name
-        
+
         try:
             camera.camera_config_path = config_path
             success, _, _ = await camera.initialize()
@@ -1989,37 +2029,38 @@ class TestMockBaslerExceptionHandling:
             assert await camera.get_exposure() == 30000.0
         finally:
             os.unlink(config_path)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2028,43 +2069,44 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
         await camera.set_image_quality_enhancement(True)
-        
+
         # Mock _enhance_image to raise an exception
         with patch.object(camera, "_enhance_image", side_effect=RuntimeError("Enhancement error")):
             image = await camera.capture()
             # Should still return an image (original, not enhanced)
             assert isinstance(image, np.ndarray)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2072,99 +2114,101 @@ class TestMockBaslerExceptionHandling:
         """Test that CancelledError is properly propagated."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Simulate cancellation during capture
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await camera.capture()
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_capture_exception_re_raise(self):
         """Test that specific exceptions are re-raised in capture."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Test CameraConnectionError re-raise
         with patch.object(camera, "IsGrabbing", side_effect=CameraConnectionError("Connection error")):
             with pytest.raises(CameraConnectionError):
                 await camera.capture()
-        
+
         # Test CameraCaptureError re-raise
         camera2 = MockBaslerCameraBackend("test_cam2")
         await camera2.initialize()
         with patch.object(camera2, "IsGrabbing", side_effect=CameraCaptureError("Capture error")):
             with pytest.raises(CameraCaptureError):
                 await camera2.capture()
-        
+
         # Test CameraTimeoutError re-raise
         camera3 = MockBaslerCameraBackend("test_cam3")
         await camera3.initialize()
         with patch.object(camera3, "IsGrabbing", side_effect=CameraTimeoutError("Timeout error")):
             with pytest.raises(CameraTimeoutError):
                 await camera3.capture()
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
         await camera2.close()
         await camera3.close()
@@ -2174,42 +2218,43 @@ class TestMockBaslerExceptionHandling:
         """Test generic exception handling in capture."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock _generate_synthetic_image to raise an exception
         with patch.object(camera, "_generate_synthetic_image", side_effect=RuntimeError("Generation error")):
             with pytest.raises(CameraCaptureError, match="Failed to capture image from mock camera"):
                 await camera.capture()
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2217,42 +2262,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in set_exposure."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock get_exposure_range to raise an exception
         with patch.object(camera, "get_exposure_range", side_effect=RuntimeError("Range error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set exposure"):
                 await camera.set_exposure(20000)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2260,42 +2306,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in check_connection."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock capture to raise an exception
         with patch.object(camera, "capture", side_effect=RuntimeError("Capture error")):
             result = await camera.check_connection()
             assert result is False
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2303,24 +2350,24 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in import_config."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Test with a file that exists but causes an exception during processing
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"exposure_time": "invalid"}')  # Invalid type
             config_path = f.name
-        
+
         try:
             # This should raise CameraConfigurationError due to ValueError in float conversion
             with pytest.raises(CameraConfigurationError):
                 await camera.import_config(config_path)
         finally:
             os.unlink(config_path)
-        
+
         # Test generic exception handling
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"exposure_time": 30000}, f)
             config_path = f.name
-        
+
         try:
             # Mock open to raise an exception
             with patch("builtins.open", side_effect=IOError("File error")):
@@ -2328,37 +2375,38 @@ class TestMockBaslerExceptionHandling:
                     await camera.import_config(config_path)
         finally:
             os.unlink(config_path)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2366,42 +2414,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in export_config."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock open to raise an exception
         with patch("builtins.open", side_effect=IOError("File error")):
             result = await camera.export_config("/nonexistent/path/config.json")
             assert result is False
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2409,42 +2458,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in set_ROI."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock asyncio.sleep to raise an exception
         with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set ROI"):
                 await camera.set_ROI(0, 0, 640, 480)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2452,42 +2502,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in reset_ROI."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock asyncio.sleep to raise an exception
         with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
             result = await camera.reset_ROI()
             assert result is False
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2495,42 +2546,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in set_gain."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock asyncio.sleep to raise an exception
         with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set gain"):
                 await camera.set_gain(5.0)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2538,42 +2590,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in set_auto_wb_once."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock logger to raise an exception
         with patch.object(camera.logger, "debug", side_effect=RuntimeError("Logger error")):
             result = await camera.set_auto_wb_once("auto")
             assert result is False
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2581,42 +2634,43 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in set_pixel_format."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock asyncio.sleep to raise an exception
         with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set pixel format"):
                 await camera.set_pixel_format("BGR8")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2624,70 +2678,72 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in close."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock logger to raise an exception
         with patch.object(camera.logger, "info", side_effect=RuntimeError("Logger error")):
             # Should handle exception gracefully
             await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2695,43 +2751,44 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in _initialize_image_enhancement."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock logger to raise an exception
         with patch.object(camera.logger, "debug", side_effect=RuntimeError("Logger error")):
             # Should handle exception gracefully
             camera._initialize_image_enhancement()
             assert hasattr(camera, "_enhancement_initialized")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2739,21 +2796,22 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in _generate_synthetic_image."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Test that exception in _generate_synthetic_image is caught in capture and re-raised
         original_method = camera._generate_synthetic_image
+
         def failing_method():
             raise RuntimeError("Simulated error in image generation")
-        
+
         camera._generate_synthetic_image = failing_method
-        
+
         # The exception should be caught in the capture method and re-raised as CameraCaptureError
         with pytest.raises(CameraCaptureError, match="Failed to capture image from mock camera"):
             await camera.capture()
-        
+
         # Restore original method
         camera._generate_synthetic_image = original_method
-        
+
         # Test the exception handling path in _generate_synthetic_image itself
         # Patch the method to simulate an exception during image generation
         def generate_with_exception(self):
@@ -2766,10 +2824,10 @@ class TestMockBaslerExceptionHandling:
                 self.logger.error(f"Failed to generate synthetic image: {str(e)}")
                 # Return simple pattern as fallback
                 return np.full((height, width, 3), 128, dtype=np.uint8)
-        
+
         # Temporarily replace the method
         camera._generate_synthetic_image = generate_with_exception.__get__(camera, type(camera))
-        
+
         image = camera._generate_synthetic_image()
         # Should return fallback image
         assert isinstance(image, np.ndarray)
@@ -2777,37 +2835,38 @@ class TestMockBaslerExceptionHandling:
         assert image.shape[2] == 3
         # Verify it's the fallback (all 128s)
         assert np.all(image == 128)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2815,68 +2874,69 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling in _enhance_image."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Create a test image
         test_image = np.zeros((100, 100, 3), dtype=np.uint8)
-        
+
         # Mock cv2.cvtColor to raise an exception
         with patch("cv2.cvtColor", side_effect=RuntimeError("OpenCV error")):
             result = camera._enhance_image(test_image)
             # Should return original image on error
             assert np.array_equal(result, test_image)
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_width_range(self):
         """Test get_width_range method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         width_range = await camera.get_width_range()
         assert width_range == [320, 1920]
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_height_range(self):
         """Test get_height_range method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         height_range = await camera.get_height_range()
         assert height_range == [240, 1080]
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
 
@@ -2888,40 +2948,41 @@ class TestMockBaslerNetworkMethods:
         """Test set_bandwidth_limit method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         await camera.set_bandwidth_limit(100.0)
         # Should not raise
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2929,40 +2990,41 @@ class TestMockBaslerNetworkMethods:
         """Test get_bandwidth_limit method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         limit = await camera.get_bandwidth_limit()
         assert limit == 125.0
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -2970,40 +3032,41 @@ class TestMockBaslerNetworkMethods:
         """Test set_packet_size method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         await camera.set_packet_size(1500)
         # Should not raise
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -3011,40 +3074,41 @@ class TestMockBaslerNetworkMethods:
         """Test get_packet_size method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         size = await camera.get_packet_size()
         assert size == 1500
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -3052,40 +3116,41 @@ class TestMockBaslerNetworkMethods:
         """Test set_inter_packet_delay method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         await camera.set_inter_packet_delay(100)
         # Should not raise
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()
 
     @pytest.mark.asyncio
@@ -3093,38 +3158,39 @@ class TestMockBaslerNetworkMethods:
         """Test get_inter_packet_delay method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         delay = await camera.get_inter_packet_delay()
         assert delay == 0
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         # Mock the attribute assignment to raise an exception
         original_setattr = type(camera).__setattr__
+
         def mock_setattr(self, name, value):
             if name == "triggermode" and value == "continuous":
                 raise RuntimeError("Setting error")
             return original_setattr(self, name, value)
-        
+
         with patch.object(type(camera), "__setattr__", mock_setattr):
             with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
                 await camera.set_triggermode("continuous")
-        
+
         await camera.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_current_pixel_format(self):
         """Test get_current_pixel_format method."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        
+
         pixel_format = await camera.get_current_pixel_format()
         assert pixel_format == "BGR8"
-        
+
         await camera.close()

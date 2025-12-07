@@ -1,10 +1,6 @@
 """Tests for mindtrace.core.utils.paths module."""
 
-import os
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from mindtrace.core.utils.paths import expand_tilde, expand_tilde_str
 
@@ -142,4 +138,3 @@ class TestExpandTilde:
         assert result["list"][2].startswith("/")
         assert result["nested"]["key"].startswith("/")
         assert result["nested"]["num"] == 0
-

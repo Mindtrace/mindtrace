@@ -402,7 +402,7 @@ class TestStructLogger:
 
     def test_setup_logger_with_structlog_no_log_dir_uses_struct_logger_dir(self):
         """Test setup_logger with structlog when log_dir is None uses STRUCT_LOGGER_DIR.
-        
+
         Tests that when log_dir is None and use_structlog is True, it uses STRUCT_LOGGER_DIR.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -432,7 +432,7 @@ class TestStructLogger:
 
     def test_setup_logger_with_structlog_bind_dict_exception(self):
         """Test setup_logger with structlog_bind that fails when converting to dict.
-        
+
         Tests exception handling when structlog_bind is not callable and dict() conversion fails.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
