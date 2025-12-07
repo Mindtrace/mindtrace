@@ -204,8 +204,6 @@ class AllenBradleyPLC(BasePLC):
                         f"Failed to connect to Allen Bradley PLC at {self.ip_address} after {self.retry_count} attempts"
                     )
 
-        return False
-
     async def disconnect(self) -> bool:
         """
         Disconnect from the Allen Bradley PLC.
