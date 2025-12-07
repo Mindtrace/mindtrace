@@ -1,7 +1,5 @@
 """Tests for mindtrace.core.utils.paths module."""
 
-
-
 from mindtrace.core.utils.paths import expand_tilde, expand_tilde_str
 
 
