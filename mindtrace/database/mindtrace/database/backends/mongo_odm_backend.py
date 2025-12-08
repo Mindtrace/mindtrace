@@ -152,6 +152,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         """
         await self.initialize()
         doc = self.model_cls(**obj.model_dump())
+        doc.id = None
         try:
             return await doc.insert()
         except DuplicateKeyError as e:
