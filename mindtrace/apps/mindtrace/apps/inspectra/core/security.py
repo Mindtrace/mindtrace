@@ -1,17 +1,16 @@
-from datetime import datetime, timedelta
-from typing import Any, Dict
-
 import base64
 import hashlib
 import hmac
 import os
+from datetime import datetime, timedelta
+from typing import Any, Dict
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from .settings import settings
+from .settings import get_inspectra_config
 
 _PBKDF2_ALGO = "sha256"
 _PBKDF2_ITERATIONS = 100_000
@@ -19,11 +18,13 @@ _SALT_BYTES = 16
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
 class TokenData(BaseModel):
     """Decoded JWT payload."""
     sub: str
     iat: int
     exp: int
+
 
 def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
     """Derive a key using PBKDF2-SHA256."""
@@ -34,6 +35,7 @@ def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
         _PBKDF2_ITERATIONS,
     )
 
+
 def hash_password(password: str) -> str:
     """Hash a plain-text password using PBKDF2-SHA256.
 
@@ -42,6 +44,7 @@ def hash_password(password: str) -> str:
     salt = os.urandom(_SALT_BYTES)
     dk = _pbkdf2_hash(password, salt)
     return base64.b64encode(salt + dk).decode("ascii")
+
 
 def verify_password(plain_password: str, stored_hash: str) -> bool:
     """Verify a plain password against the stored PBKDF2 hash."""
@@ -59,29 +62,34 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
 
     return hmac.compare_digest(stored_dk, new_dk)
 
+
 def create_access_token(subject: str) -> str:
     """Create a signed JWT for the given subject (user id/username)."""
+    config = get_inspectra_config()
+    inspectra = config.INSPECTRA
+
     now = datetime.utcnow()
     payload: Dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(seconds=settings.jwt_expires_in)).timestamp()),
+        "exp": int((now + timedelta(seconds=inspectra.JWT_EXPIRES_IN)).timestamp()),
     }
     token = jwt.encode(
         payload,
-        settings.jwt_secret,
-        algorithm=settings.jwt_algorithm,
+        inspectra.JWT_SECRET.get_secret_value(),
+        algorithm=inspectra.JWT_ALGORITHM,
     )
     return token
 
 
 def decode_token(token: str) -> TokenData:
     """Decode and validate a JWT, returning a typed payload."""
+    inspectra = get_inspectra_config().INSPECTRA
     try:
         payload = jwt.decode(
             token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm],
+            inspectra.JWT_SECRET.get_secret_value(),
+            algorithms=[inspectra.JWT_ALGORITHM],
         )
         return TokenData(**payload)
     except jwt.ExpiredSignatureError:

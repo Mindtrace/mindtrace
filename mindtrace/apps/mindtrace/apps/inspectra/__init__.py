@@ -1,14 +1,8 @@
-"""Inspectra - Backend service for Inspectra.
+"""Inspectra - Service-based backend for plant/line management."""
 
-This package exposes InspectraService and configuration helpers,
-following the same pattern as the Horizon reference app.
-"""
 
-from .inspectra import InspectraService, ConfigSchema
-from .core.settings import settings
+from .inspectra import InspectraService
 
 __all__ = [
     "InspectraService",
-    "ConfigSchema",
-    "settings",
 ]

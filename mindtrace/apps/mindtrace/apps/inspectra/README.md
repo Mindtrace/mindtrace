@@ -1,234 +1,318 @@
-# Inspectra Backend — Modern Service Architecture (MongoDB + Mindtrace)
+# Inspectra Backend — Mindtrace Service Architecture (MongoDB + TaskSchemas)
 
-This backend is a production-ready Inspectra service built using:
+This is the **official Inspectra backend**, built using the **Mindtrace Service Framework**.  
+It provides a clean, modular and production-ready architecture with:
 
-- **Mindtrace Service Framework (`mindtrace.services.Service`)**
-- **FastAPI**
-- **MongoDB** (via motor)
+- **Mindtrace `Service` framework**
+- **JSON-schema-driven TaskSchemas**
+- **MongoDB (Motor async driver)**
 - **JWT-based authentication**
-- **Role-based access structure**
-- **Separation into routers / services / repositories / schemas / models**
-- **Docker Compose with Mongo & Mongo Express**
-- **Environment-driven configuration (`.env`)**
-
-This setup is clean, extensible, and aligns with best practices for microservices.
-
----
-
-## 🚀 Features Included
-
-- Mindtrace-native service (`inspectra.py`)
-- Modular FastAPI architecture
-- MongoDB-backed repositories
-- User authentication (JWT)
-- Role management
-- Plant & Line CRUD
-- Environment-based settings system
-- Dockerfile + Compose setup
-- Mongo Express admin panel
-- Health & config endpoints
-- Production-ready folder structure
+- **Role-based access**
+- **Plants / Lines CRUD**
+- **Repository + Model architecture**
+- **Environment-driven configuration**
+- **Zero FastAPI routers — everything is handled via `Service.add_endpoint()`**
 
 ---
 
-## 📁 Folder Structure
+# 🚀 Overview
+
+Inspectra is built around a **single service**:
 
 ```
-mindtrace/apps/inspecttra/
-│
-├── inspectra.py              # Mindtrace Service definition
-├── run.py                    # Service launcher
-│
-├── app/
-│   ├── api/
-│   │   ├── core/
-│   │   │   ├── settings.py   # Pydantic settings from .env
-│   │   │   ├── db.py         # Mongo client
-│   │   │   └── security.py   # JWT + password hashing + auth deps
-│   │   │
-│   │   └── routers/
-│   │       ├── auth.py
-│   │       ├── roles.py
-│   │       ├── plants.py
-│   │       └── lines.py
-│   │
-│   ├── models/
-│   │   ├── user.py
-│   │   ├── role.py
-│   │   ├── plant.py
-│   │   └── line.py
-│   │
-│   ├── schemas/
-│   │   ├── auth.py
-│   │   ├── role.py
-│   │   ├── plant.py
-│   │   └── line.py
-│   │
-│   ├── repositories/
-│   │   ├── user_repository.py
-│   │   ├── role_repository.py
-│   │   ├── plant_repository.py
-│   │   └── line_repository.py
-│   │
-│   └── services/
-│       ├── auth_service.py
-│       ├── role_service.py
-│       ├── plant_service.py
-│       └── line_service.py
-│
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── README.md  (this file)
+InspectraService
 ```
+
+This service registers all endpoints using Mindtrace’s built-in routing layer (not FastAPI routes):
+
+```python
+self.add_endpoint("/plants", self.list_plants, schema=ListPlantsSchema, methods=["GET"])
+```
+
+All endpoints have:
+
+- **input schemas**
+- **output schemas**
+- **internal repositories**
+- **Mongo-backed models**
+- **JWT-protected auth**
 
 ---
 
-## ⚙️ Environment Variables (`.env.example`)
+# 📁 Final Folder Structure
 
 ```
-# General
-ENVIRONMENT=development
-API_PORT=8000
+mindtrace/apps/inspectra/
+│
+├── __init__.py
+├── __main__.py
+├── db.py                  # MongoDB client (Motor)
+├── inspectra.py           # Main Inspectra Mindtrace Service
+│
+├── core/
+│   ├── __init__.py
+│   ├── settings.py            # Environment-based config (INSPECTRA__*)
+│   ├── security.py            # JWT + password hashing + auth dependencies
+│
+├── models/
+│   ├── plant.py
+│   ├── line.py
+│   ├── role.py
+│   └── user.py
+│
+├── repositories/
+│   ├── user_repository.py
+│   ├── role_repository.py
+│   ├── plant_repository.py
+│   └── line_repository.py
+│
+├── schemas/
+│   ├── auth.py
+│   ├── plant.py
+│   ├── line.py
+│   └── role.py
+│
+└── README.md
+```
 
-# Service metadata
-SERVICE_NAME=inspectra
-SERVICE_DESCRIPTION=Inspectra Platform
-SERVICE_VERSION=1.0.0
-SERVICE_AUTHOR=Inspectra
-SERVICE_AUTHOR_EMAIL=inspectra@inspectra.com
-SERVICE_URL=https://inspectra.com
+✔ Clean  
+✔ Extensible  
+✔ Fully service-based  
+✔ Aligned with Mindtrace standards  
 
-# JWT Auth
-JWT_SECRET=change_me_super_secret
-JWT_ALGORITHM=HS256
-JWT_EXPIRES_IN=86400
+---
+
+# ⚙️ Environment Variables (`.env.example`)
+
+The Inspectra backend loads its config from environment variables using:
+
+```
+INSPECTRA__<SETTING_NAME>
+```
+
+Example `.env.example`:
+
+```
+# Inspectra Service Config
+INSPECTRA__URL=http://localhost:8082
 
 # MongoDB
-MONGO_INITDB_ROOT_USERNAME=inspectra_root
-MONGO_INITDB_ROOT_PASSWORD=inspectra_root_password
-MONGO_INITDB_DATABASE=inspectra
-MONGO_URI=mongodb://inspectra_root:inspectra_root_password@mongo:27017/inspectra?authSource=admin
-MONGO_DB_NAME=inspectra
+INSPECTRA__DB_URI=mongodb://localhost:27017
+INSPECTRA__DB_NAME=inspectra
 
-# Mongo Express UI login
-ME_CONFIG_MONGODB_ADMINUSERNAME=inspectra_root
-ME_CONFIG_MONGODB_ADMINPASSWORD=inspectra_root_password
-ME_CONFIG_MONGODB_SERVER=mongo
-ME_CONFIG_BASICAUTH_USERNAME=admin
-ME_CONFIG_BASICAUTH_PASSWORD=admin
+# Auth
+INSPECTRA__AUTH_SECRET_KEY=super_secret_key
+INSPECTRA__AUTH_ENABLED=True
+
+# Logging
+INSPECTRA__LOG_LEVEL=INFO
+INSPECTRA__DEBUG=False
 ```
 
 ---
 
-## 🐳 Docker Compose Setup
+# 🧱 Core Components
 
-Start everything:
+## 1. **Settings System**
 
-```bash
-docker compose up --build
+`core/settings.py` provides fully dynamic settings loaded via Mindtrace `Config`.
+
+```python
+get_inspectra_config().INSPECTRA.URL
 ```
 
-### API →
+Supports environment overrides like:
 
 ```
-http://localhost:8000
-```
-
-### Mongo Express →
-
-```
-http://localhost:8081
+INSPECTRA__DB_URI=mongodb://mongo:27017
 ```
 
 ---
 
-## 🔐 Authentication Flow
+## 2. **MongoDB (`motor`) Integration**
 
-### Register:
+`core/db.py` provides:
 
+```python
+get_client()
+get_db()
+close_client()
+```
+
+This creates a reusable async Mongo client for all repositories.
+
+---
+
+## 3. **Security**
+
+`core/security.py` includes:
+
+- PBKDF2 password hashing
+- JWT generation & decoding
+- FastAPI-style dependency wrapper for Mindtrace auth (`require_user`)
+- TokenData model
+
+---
+
+## 4. **Models (dataclasses)**
+
+Every domain object is a lightweight `@dataclass`, e.g.:
+
+```python
+@dataclass
+class Plant:
+    id: str
+    name: str
+    code: str
+    location: Optional[str]
+    is_active: bool
+```
+
+---
+
+## 5. **Repositories**
+
+Each repository:
+
+- Connects to Mongo
+- Performs CRUD
+- Converts raw BSON → dataclass models
+
+Example:
+
+```python
+class PlantRepository:
+    async def list(self):
+        cursor = self.collection.find({})
+```
+
+---
+
+## 6. **TaskSchemas**
+
+Schemas describe API contracts:
+
+```python
+CreatePlantSchema = TaskSchema(
+    name="create_plant",
+    input_schema=PlantCreateRequest,
+    output_schema=PlantResponse,
+)
+```
+
+These are used by the service when defining endpoints.
+
+---
+
+## 7. **InspectraService**
+
+`inspectra.py` is the heart of the system.
+
+It:
+
+- Registers all endpoints (auth, plants, lines, roles)
+- Assigns schemas
+- Calls repository methods
+- Handles authentication
+- Uses Mindtrace logging & middleware
+- Supports MCP tools
+
+Example endpoint:
+
+```python
+self.add_endpoint(
+    "/plants",
+    self.create_plant,
+    schema=CreatePlantSchema,
+    methods=["POST"],
+)
+```
+
+---
+
+# 📡 Endpoints
+
+### 🔐 **Authentication**
 ```
 POST /auth/register
-{
-  "username": "user",
-  "password": "secret"
-}
-```
-
-### Login:
-
-```
 POST /auth/login
 ```
 
-Response:
-
-```
-{ "access_token": "<JWT>", "token_type": "bearer" }
-```
-
-Include token:
-
-```
-Authorization: Bearer <JWT>
-```
-
----
-
-## 🧠 Roles System
-
-- Each user has **one `role_id`**
-- Default `user` role created automatically
-- Endpoints:
-
+### 👥 **Roles**
 ```
 GET /roles
 POST /roles
+GET /roles/{id}
+PUT /roles/{id}
 ```
 
----
-
-## 🌱 Plant API
-
+### 🌱 **Plants**
 ```
 GET /plants
 POST /plants
+GET /plants/{id}
+PUT /plants/{id}
 ```
 
----
-
-## 🔗 Line API
-
+### 🔗 **Lines**
 ```
 GET /lines
 POST /lines
 ```
 
----
+Each endpoint uses proper:
 
-## 🚦 Health Check
-
-```
-GET /health
-```
-
----
-
-## 🧪 Config Endpoint
-
-```
-GET /config
-```
-
-Shows active service config.
+- request models  
+- response models  
+- repository methods  
+- error handling via HTTPException  
+- JWT enforcement using `require_user` when desired  
 
 ---
 
-## 🛠 Development Commands
+# 🐳 Docker Support
+
+A minimal docker-compose example:
 
 ```
 docker compose up --build
-docker compose logs -f api
+```
+
+Mongo shell:
+
+```
+docker exec -it inspectra-mongo mongosh
 ```
 
 ---
+
+# 🛠 Development Commands
+
+```
+python -m mindtrace.apps.inspectra          # Run service directly
+docker compose up --build                   # Run with Mongo
+```
+
+---
+
+# 🧪 Health + Config Endpoints
+
+Mindtrace services automatically exposes:
+
+```
+GET /health
+GET /config
+```
+
+---
+
+# 🎯 Summary
+
+The Inspectra backend is:
+
+- Lightweight  
+- Fully service-based  
+- MongoDB-backed  
+- JWT-secured  
+- Extensible  
+- Production-ready  
