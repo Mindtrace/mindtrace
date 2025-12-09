@@ -1,6 +1,4 @@
-# mindtrace/apps/inspectra/schemas/user.py
-
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel, Field
 
