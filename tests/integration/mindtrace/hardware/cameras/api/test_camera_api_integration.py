@@ -18,7 +18,6 @@ import pytest
 from mindtrace.hardware.api.cameras.models import (
     BackendFilterRequest,
     BackendsResponse,
-    BandwidthLimitRequest,
     BatchCaptureResponse,
     BoolResponse,
     CameraCloseRequest,
