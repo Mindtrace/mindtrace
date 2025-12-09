@@ -1,9 +1,23 @@
 import requests
 
-def test_register_returns_token(inspectra_cm):
-    payload = {"username": "alice", "password": "secret123"}
 
-    resp = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
+def _register(cm, username: str, password: str):
+    """Helper to register a user via the running Inspectra service."""
+    payload = {"username": username, "password": password}
+    resp = requests.post(f"{cm.url}/auth/register", json=payload)
+    return resp
+
+
+def _login(cm, username: str, password: str):
+    """Helper to login via the running Inspectra service."""
+    payload = {"username": username, "password": password}
+    resp = requests.post(f"{cm.url}/auth/login", json=payload)
+    return resp
+
+
+def test_register_returns_token(inspectra_cm):
+    resp = _register(inspectra_cm, "alice", "secret123")
+
     assert resp.status_code == 200
 
     body = resp.json()
@@ -11,34 +25,34 @@ def test_register_returns_token(inspectra_cm):
     assert body["token_type"] == "bearer"
 
 
-def test_register_duplicate_username_fails(inspectra_cm, temp_dir):
-    payload = {"username": "bob", "password": "secret123"}
+def test_register_duplicate_username_fails(inspectra_cm):
+    username = "bob"
+    password = "secret123"
 
-    first = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
+    first = _register(inspectra_cm, username, password)
     assert first.status_code == 200
 
-    dup = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
+    dup = _register(inspectra_cm, username, password)
     assert dup.status_code == 400
     assert "Username already exists" in dup.text
 
-#TODO: use cm and requests
-def test_login_success(client):
-    payload = {"username": "charlie", "password": "secret123"}
+
+def test_login_success(inspectra_cm):
+    username = "charlie"
+    password = "secret123"
 
     # ensure user exists
-    client.post("/auth/register", json=payload)
+    resp_register = _register(inspectra_cm, username, password)
+    assert resp_register.status_code == 200
 
-    resp = client.post("/auth/login", json=payload)
-    assert resp.status_code == 200
+    resp_login = _login(inspectra_cm, username, password)
+    assert resp_login.status_code == 200
 
-    data = resp.json()
+    data = resp_login.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
 
 
-def test_login_invalid_credentials(client):
-    resp = client.post(
-        "/auth/login",
-        json={"username": "ghost", "password": "wrong"},
-    )
+def test_login_invalid_credentials(inspectra_cm):
+    resp = _login(inspectra_cm, "ghost", "wrong")
     assert resp.status_code == 401

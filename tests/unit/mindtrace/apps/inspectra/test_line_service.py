@@ -1,19 +1,29 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import pytest
 
-from mindtrace.apps.inspectra.services.line_service import LineService
-from mindtrace.apps.inspectra.schemas.line import LineCreate, LineResponse
-from mindtrace.apps.inspectra.models.line import Line
+from mindtrace.apps.inspectra.inspectra import InspectraService
+from mindtrace.apps.inspectra.models import (
+    Line,
+    LineCreateRequest,
+    LineListResponse,
+    LineResponse,
+)
+
+# ---------------------------------------------------------------------------
+# Fake repository
+# ---------------------------------------------------------------------------
+
 
 @dataclass
 class _FakeLine(Line):
     """Concrete Line dataclass for fake repo."""
     pass
 
+
 class FakeLineRepository:
-    """In-memory fake line repository."""
+    """In-memory fake line repository for unit testing."""
 
     def __init__(self) -> None:
         self._lines: List[_FakeLine] = []
@@ -21,7 +31,7 @@ class FakeLineRepository:
     async def list(self) -> List[_FakeLine]:
         return list(self._lines)
 
-    async def create(self, payload: LineCreate) -> _FakeLine:
+    async def create(self, payload: LineCreateRequest) -> _FakeLine:
         line = _FakeLine(
             id=str(len(self._lines) + 1),
             name=payload.name,
@@ -30,33 +40,49 @@ class FakeLineRepository:
         self._lines.append(line)
         return line
 
-class TestLineService:
-    """Unit tests for LineService."""
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+class TestLineBehaviour:
+    """Unit tests for line-related behaviour on InspectraService."""
 
     @pytest.fixture
-    def service(self) -> LineService:
-        """Create LineService with fake repository."""
-        return LineService(repo=FakeLineRepository())
+    def service(self) -> InspectraService:
+        """
+        Create InspectraService wired to a fake line repository.
+
+        No real Mongo involved; this is pure unit-level logic.
+        """
+        svc = InspectraService(enable_db=False)
+        svc.line_repo = FakeLineRepository()
+        return svc
 
     @pytest.mark.asyncio
-    async def test_create_line(self, service: LineService):
+    async def test_create_line(self, service: InspectraService):
         """create_line should persist a line and return LineResponse."""
-        payload = LineCreate(name="Line 1", plant_id="plant-1")
+        payload = LineCreateRequest(name="Line 1", plant_id="plant-1")
 
         result: LineResponse = await service.create_line(payload)
 
+        assert isinstance(result, LineResponse)
         assert result.id
         assert result.name == "Line 1"
         assert result.plant_id == "plant-1"
 
     @pytest.mark.asyncio
-    async def test_list_lines(self, service: LineService):
-        """list_lines should return all lines as DTOs."""
-        await service.create_line(LineCreate(name="Line 1", plant_id="plant-1"))
-        await service.create_line(LineCreate(name="Line 2", plant_id=None))
+    async def test_list_lines(self, service: InspectraService):
+        """list_lines should return all lines wrapped in LineListResponse."""
+        await service.create_line(LineCreateRequest(name="Line 1", plant_id="plant-1"))
+        await service.create_line(LineCreateRequest(name="Line 2", plant_id=None))
 
-        lines = await service.list_lines()
+        resp: LineListResponse = await service.list_lines()
 
-        names = {l.name for l in lines}
+        assert isinstance(resp, LineListResponse)
+        assert resp.total == 2
+
+        names = {line.name for line in resp.items}
         assert names == {"Line 1", "Line 2"}
-        assert all(isinstance(l, LineResponse) for l in lines)
+        assert all(isinstance(line, LineResponse) for line in resp.items)

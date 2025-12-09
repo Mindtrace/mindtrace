@@ -266,12 +266,30 @@ class InspectraService(Service):
     async def list_plants(self) -> PlantListResponse:
         """List plants."""
         plants = await self.plant_repo.list()
-        return PlantListResponse(items=plants, total=len(plants))
+
+        items = [
+            PlantResponse(
+                id=p.id,
+                name=p.name,
+                code=p.code,
+                location=getattr(p, "location", None),
+                is_active=getattr(p, "is_active", True),
+            )
+            for p in plants
+        ]
+
+        return PlantListResponse(items=items, total=len(items))
 
     async def create_plant(self, req: PlantCreateRequest) -> PlantResponse:
         """Create a new plant."""
         plant = await self.plant_repo.create(req)
-        return plant
+        return PlantResponse(
+            id=plant.id,
+            name=plant.name,
+            code=plant.code,
+            location=getattr(plant, "location", None),
+            is_active=getattr(plant, "is_active", True),
+        )
 
     async def get_plant(self, req: PlantIdRequest) -> PlantResponse:
         """Get a plant by ID."""
@@ -281,7 +299,14 @@ class InspectraService(Service):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plant with id '{req.id}' not found",
             )
-        return plant
+
+        return PlantResponse(
+            id=plant.id,
+            name=plant.name,
+            code=plant.code,
+            location=getattr(plant, "location", None),
+            is_active=getattr(plant, "is_active", True),
+        )
 
     async def update_plant(self, req: PlantUpdateRequest) -> PlantResponse:
         """Update a plant."""
@@ -291,7 +316,14 @@ class InspectraService(Service):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plant with id '{req.id}' not found",
             )
-        return plant
+
+        return PlantResponse(
+            id=plant.id,
+            name=plant.name,
+            code=plant.code,
+            location=getattr(plant, "location", None),
+            is_active=getattr(plant, "is_active", True),
+        )
 
     # -------------------------------------------------------------------------
     # Line handlers
@@ -300,12 +332,26 @@ class InspectraService(Service):
     async def list_lines(self) -> LineListResponse:
         """List production lines."""
         lines = await self.line_repo.list()
-        return LineListResponse(items=lines, total=len(lines))
+
+        items = [
+            LineResponse(
+                id=l.id,
+                name=l.name,
+                plant_id=getattr(l, "plant_id", None),
+            )
+            for l in lines
+        ]
+
+        return LineListResponse(items=items, total=len(items))
 
     async def create_line(self, payload: LineCreateRequest) -> LineResponse:
         """Create a new production line."""
         line = await self.line_repo.create(payload)
-        return line
+        return LineResponse(
+            id=line.id,
+            name=line.name,
+            plant_id=getattr(line, "plant_id", None),
+        )
 
     # -------------------------------------------------------------------------
     # Role handlers
@@ -314,7 +360,18 @@ class InspectraService(Service):
     async def list_roles(self) -> RoleListResponse:
         """List all roles."""
         roles = await self.role_repo.list()
-        return RoleListResponse(items=roles, total=len(roles))
+
+        items = [
+            RoleResponse(
+                id=r.id,
+                name=r.name,
+                description=getattr(r, "description", None),
+                permissions=getattr(r, "permissions", None),
+            )
+            for r in roles
+        ]
+
+        return RoleListResponse(items=items, total=len(items))
 
     async def create_role(self, payload: RoleCreateRequest) -> RoleResponse:
         """Create a new role."""
@@ -325,7 +382,12 @@ class InspectraService(Service):
                 detail=f"Role '{payload.name}' already exists",
             )
         role = await self.role_repo.create(payload)
-        return role
+        return RoleResponse(
+            id=role.id,
+            name=role.name,
+            description=getattr(role, "description", None),
+            permissions=getattr(role, "permissions", None),
+        )
 
     async def get_role(self, req: RoleIdRequest) -> RoleResponse:
         """Get a role by ID."""
@@ -335,7 +397,12 @@ class InspectraService(Service):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Role with id '{req.id}' not found",
             )
-        return role
+        return RoleResponse(
+            id=role.id,
+            name=role.name,
+            description=getattr(role, "description", None),
+            permissions=getattr(role, "permissions", None),
+        )
 
     async def update_role(self, payload: RoleUpdateRequest) -> RoleResponse:
         """Update an existing role."""
@@ -345,7 +412,12 @@ class InspectraService(Service):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Role with id '{payload.id}' not found",
             )
-        return role
+        return RoleResponse(
+            id=role.id,
+            name=role.name,
+            description=getattr(role, "description", None),
+            permissions=getattr(role, "permissions", None),
+        )
 
     # -------------------------------------------------------------------------
     # Lifecycle hooks
