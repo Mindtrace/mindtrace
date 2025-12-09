@@ -63,21 +63,29 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
     return hmac.compare_digest(stored_dk, new_dk)
 
 
+
 def create_access_token(subject: str) -> str:
     """Create a signed JWT for the given subject (user id/username)."""
     config = get_inspectra_config()
     inspectra = config.INSPECTRA
 
     now = datetime.utcnow()
+
+    expires_in = int(getattr(inspectra, "JWT_EXPIRES_IN", 86400))
+
     payload: Dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(seconds=inspectra.JWT_EXPIRES_IN)).timestamp()),
+        "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
     }
+
+    secret = getattr(inspectra, "JWT_SECRET", "dev-secret")
+    algorithm = getattr(inspectra, "JWT_ALGORITHM", "HS256")
+
     token = jwt.encode(
         payload,
-        inspectra.JWT_SECRET.get_secret_value(),
-        algorithm=inspectra.JWT_ALGORITHM,
+        secret,
+        algorithm=algorithm,
     )
     return token
 

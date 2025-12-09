@@ -1,7 +1,15 @@
+from dataclasses import dataclass
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+
+@dataclass
+class Role:
+    id: str
+    name: str
+    description: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 class RoleBase(BaseModel):
     """Base attributes shared by all role models."""

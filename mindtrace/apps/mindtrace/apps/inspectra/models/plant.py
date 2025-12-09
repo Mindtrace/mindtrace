@@ -1,7 +1,16 @@
+from dataclasses import dataclass
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+
+@dataclass
+class Plant:
+    id: str
+    name: str
+    code: str
+    location: Optional[str] = None
+    is_active: bool = True
 
 class PlantBase(BaseModel):
     """Base attributes shared by all plant models."""
