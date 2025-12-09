@@ -1,11 +1,25 @@
-from pydantic import BaseModel
-from typing import Optional
+"""TaskSchemas for line-related operations in Inspectra."""
 
-class LineCreate(BaseModel):
-    name: str
-    plant_id: Optional[str] = None
+from mindtrace.apps.inspectra.models import (
+    LineCreateRequest,
+    LineListResponse,
+    LineResponse,
+)
+from mindtrace.core import TaskSchema
 
-class LineResponse(BaseModel):
-    id: str
-    name: str
-    plant_id: Optional[str] = None
+CreateLineSchema = TaskSchema(
+    name="inspectra_create_line",
+    input_schema=LineCreateRequest,
+    output_schema=LineResponse,
+)
+
+ListLinesSchema = TaskSchema(
+    name="inspectra_list_lines",
+    input_schema=None,
+    output_schema=LineListResponse,
+)
+
+__all__ = [
+    "CreateLineSchema",
+    "ListLinesSchema",
+]
