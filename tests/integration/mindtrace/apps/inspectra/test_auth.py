@@ -1,7 +1,9 @@
-def test_register_returns_token(client):
+import requests
+
+def test_register_returns_token(inspectra_cm):
     payload = {"username": "alice", "password": "secret123"}
 
-    resp = client.post("/auth/register", json=payload)
+    resp = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
     assert resp.status_code == 200
 
     body = resp.json()
@@ -9,17 +11,17 @@ def test_register_returns_token(client):
     assert body["token_type"] == "bearer"
 
 
-def test_register_duplicate_username_fails(client):
+def test_register_duplicate_username_fails(inspectra_cm, temp_dir):
     payload = {"username": "bob", "password": "secret123"}
 
-    first = client.post("/auth/register", json=payload)
+    first = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
     assert first.status_code == 200
 
-    dup = client.post("/auth/register", json=payload)
+    dup = requests.post(f"{inspectra_cm.url}/auth/register", json=payload)
     assert dup.status_code == 400
     assert "Username already exists" in dup.text
 
-
+#TODO: use cm and requests
 def test_login_success(client):
     payload = {"username": "charlie", "password": "secret123"}
 

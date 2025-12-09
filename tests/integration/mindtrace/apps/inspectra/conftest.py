@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 
+from mindtrace.apps.inspectra.inspectra import InspectraService
+
 TEST_MONGO_URI = "mongodb://localhost:27018"
 TEST_DB_NAME = "inspectra_test"
 
@@ -30,6 +32,12 @@ def client(_set_inspectra_test_env) -> TestClient:
 
     service = InspectraService()
     return TestClient(service.app)
+
+
+@pytest.fixture(scope="session")
+def inspectra_cm():
+    with InspectraService.launch(url="http://localhost:8001") as cm:
+        yield cm
 
 
 @pytest.fixture(autouse=True)
