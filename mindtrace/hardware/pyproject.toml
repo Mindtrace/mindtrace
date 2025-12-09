@@ -48,7 +48,7 @@ mindtrace-stereo-basler-uninstall = "mindtrace.hardware.stereo_cameras.setup.set
 cameras-basler = ["pypylon>=3.0.0"]
 cameras-genicam = ["harvesters>=1.4.0", "genicam>=1.5.0"]
 cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]"]
-stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0", "open3d>=0.17.0"]
+stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
 stereo-all = ["mindtrace-hardware[stereo-basler]"]
 hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]"]
 setup-tools = [
