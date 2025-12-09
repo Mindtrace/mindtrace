@@ -172,6 +172,7 @@ class CaptureResult(BaseModel):
     """Capture result model."""
 
     success: bool
+    error: Optional[str] = None
     image_data: Optional[str] = None  # Base64 encoded image
     image_path: Optional[str] = None
     gcs_url: Optional[str] = None
