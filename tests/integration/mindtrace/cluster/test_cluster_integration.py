@@ -1037,14 +1037,19 @@ def test_node_shutdown_worker():
         )
 
         worker_url = "http://localhost:8157"
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
         node.shutdown_worker(worker_name="echoworker")
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
 
     finally:
         node.shutdown()
         cluster_cm.clear_databases()
         cluster_cm.shutdown()
+
 
 @pytest.mark.integration
 def test_node_shutdown_worker_by_id():
@@ -1062,11 +1067,15 @@ def test_node_shutdown_worker_by_id():
         )
 
         worker_url = "http://localhost:8160"
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
         worker_cm = EchoWorker.connect(worker_url)
         worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
         node.shutdown_worker_by_id(worker_id=worker_id)
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
 
     finally:
         node.shutdown()
@@ -1090,9 +1099,13 @@ def test_node_shutdown_worker_by_port():
         )
 
         worker_url = "http://localhost:8163"
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
         node.shutdown_worker_by_port(worker_port=8163)
-        cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
 
     finally:
         node.shutdown()

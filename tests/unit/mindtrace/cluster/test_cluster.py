@@ -12,7 +12,7 @@ from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
-from mindtrace.services import ServerStatus, Service
+from mindtrace.services import ServerStatus
 
 
 def create_mock_database():
@@ -562,7 +562,12 @@ def test_register_job_schema_to_worker_type_worker_not_found(cluster_manager):
 
 def test_launch_worker_with_auto_connect(cluster_manager):
     """Test launch_worker when worker is in auto-connect database."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -591,7 +596,12 @@ def test_launch_worker_with_auto_connect(cluster_manager):
 
 def test_launch_worker_without_auto_connect(cluster_manager):
     """Test launch_worker when worker is not in auto-connect database."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock no auto-connect entries
     cluster_manager.worker_auto_connect_database.find.return_value = []
@@ -619,7 +629,12 @@ def test_launch_worker_without_auto_connect(cluster_manager):
 
 def test_launch_worker_node_connection_failure(cluster_manager):
     """Test launch_worker when node connection fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
         MockNode.connect.side_effect = Exception("Connection failed")
@@ -630,7 +645,12 @@ def test_launch_worker_node_connection_failure(cluster_manager):
 
 def test_launch_worker_node_launch_failure(cluster_manager):
     """Test launch_worker when node worker launch fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
         mock_node_instance = MockNode.connect.return_value
@@ -642,7 +662,12 @@ def test_launch_worker_node_launch_failure(cluster_manager):
 
 def test_launch_worker_with_different_ports(cluster_manager):
     """Test launch_worker with different node and worker ports."""
-    payload = {"node_url": "http://node:9090", "worker_type": "test_worker", "worker_url": "http://worker:9091", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:9090",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:9091",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -669,7 +694,12 @@ def test_launch_worker_with_different_ports(cluster_manager):
 
 def test_launch_worker_logging(cluster_manager):
     """Test launch_worker logging behavior."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -2141,7 +2171,12 @@ def test_register_job_to_worker_with_connect_to_cluster_failure(cluster_manager)
 
 def test_launch_worker_with_worker_connection_failure(cluster_manager):
     """Test launch_worker when Worker.connect fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8080", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8080",
+        "worker_name": "test_worker",
+    }
 
     # Mock Node.connect and related methods
     mock_node_cm = MagicMock()
@@ -2158,7 +2193,12 @@ def test_launch_worker_with_worker_connection_failure(cluster_manager):
 
 def test_launch_worker_with_heartbeat_failure(cluster_manager):
     """Test launch_worker when worker heartbeat() fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8080", "worker_name": "test_worker"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8080",
+        "worker_name": "test_worker",
+    }
 
     # Mock Node.connect and related methods
     mock_node_cm = MagicMock()
