@@ -58,7 +58,7 @@ class MINDTRACE_CLUSTER(BaseModel):
     RABBITMQ_PORT: int
     RABBITMQ_USERNAME: str
     RABBITMQ_PASSWORD: str
-    WORKER_PORTS_RANGE: str
+    WORKER_PORTS_RANGE: str # comma separated list of two integers; any integer in the range (inclusive) is available to be used as a worker port
 
 
 class MINDTRACE_MCP(BaseModel):
