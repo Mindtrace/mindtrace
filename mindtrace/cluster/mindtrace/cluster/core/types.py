@@ -92,6 +92,7 @@ class NodeWorker(UnifiedMindtraceDocument):
         indexed_fields = ["worker_port", "worker_id", "worker_name"]
         unique_fields = ["worker_id"]
 
+
 class WorkerStatusLocal(UnifiedMindtraceDocument):
     worker_id: str = Field(description="Worker id")
     status: WorkerStatusEnum = Field(description="Worker status")
@@ -210,11 +211,14 @@ class QueryWorkerStatusByUrlInput(BaseModel):
 class ClearJobSchemaQueueInput(BaseModel):
     job_schema_name: str
 
+
 class ShutdownWorkerInput(BaseModel):
     worker_name: str
 
+
 class ShutdownWorkerByIdInput(BaseModel):
     worker_id: str
+
 
 class ShutdownWorkerByPortInput(BaseModel):
     worker_port: int

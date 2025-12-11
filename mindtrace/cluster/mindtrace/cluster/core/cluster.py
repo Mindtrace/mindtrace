@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.parse
 import uuid
 from abc import abstractmethod
 from datetime import datetime
@@ -7,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import requests
-import urllib.parse
 from fastapi import HTTPException
 from pydantic import BaseModel
 
@@ -737,7 +737,7 @@ class Node(Service):
             try:
                 worker_cm = Worker.connect(entry.worker_url)
                 worker_cm.shutdown()
-            except Exception:
+            except Exception as e:
                 self.logger.error(f"Failed to shutdown worker {entry.worker_name}: {e}")
             self.node_worker_database.delete(entry.pk)
 
@@ -754,7 +754,6 @@ class Node(Service):
             self.node_worker_database.redis_backend.model_cls.worker_name == worker_name
         )
         self._shutdown_workers(entries)
-
 
     def shutdown_worker_by_id(self, payload: dict):
         """
