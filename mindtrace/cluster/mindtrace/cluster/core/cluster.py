@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.parse
 import uuid
 from abc import abstractmethod
 from datetime import datetime
@@ -7,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import requests
-import urllib.parse
 from fastapi import HTTPException
 from pydantic import BaseModel
 
@@ -594,16 +594,19 @@ class ClusterManager(Gateway):
         worker_url = payload["worker_url"]
         worker_name = payload["worker_name"]
         node_cm = Node.connect(node_url)
-        node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url, worker_name=worker_name)
+        output = node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url, worker_name=worker_name)
         worker_auto_connect_list = self.worker_auto_connect_database.find(
             self.worker_auto_connect_database.redis_backend.model_cls.worker_type == worker_type
         )
         if worker_auto_connect_list:
             worker_auto_connect = worker_auto_connect_list[0]
-            self.register_job_to_worker(payload={"job_type": worker_auto_connect.schema_name, "worker_url": worker_url})
-        worker_cm = Worker.connect(worker_url)
+            self.register_job_to_worker(
+                payload={"job_type": worker_auto_connect.schema_name, "worker_url": output.worker_url}
+            )
         return {
-            "worker_id": str(worker_cm.heartbeat().heartbeat.server_id),
+            "worker_id": output.worker_id,
+            "worker_name": output.worker_name,
+            "worker_url": output.worker_url,
         }
 
     def clear_databases(self):
@@ -631,7 +634,7 @@ class ClusterManager(Gateway):
 
 
 class Node(Service):
-    def __init__(self, cluster_url: str | None = None, **kwargs):
+    def __init__(self, cluster_url: str | None = None, worker_ports: list[int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.worker_registry: Registry = None  # type: ignore
         self.cluster_url = cluster_url
@@ -653,12 +656,22 @@ class Node(Service):
             self.worker_registry = None  # type: ignore
             self.node_worker_database = None  # type: ignore
 
+        if worker_ports is not None:
+            self.worker_ports = worker_ports
+        else:
+            config_range = self.config["MINDTRACE_CLUSTER"]["WORKER_PORTS_RANGE"]
+            config_range = config_range.split(",")
+            config_range = tuple(int(port) for port in config_range)
+            self.worker_ports = list[int](range(config_range[0], config_range[1] + 1))
+            self.logger.debug(f"Using worker ports range {config_range} for node {self.id}")
+
         self.add_endpoint(
             "/launch_worker",
             func=self.launch_worker,
             schema=TaskSchema(
                 name="launch_worker",
                 input_schema=cluster_types.LaunchWorkerInput,
+                output_schema=cluster_types.LaunchWorkerOutput,
             ),
             methods=["POST"],
         )
@@ -698,6 +711,34 @@ class Node(Service):
             methods=["POST"],
         )
 
+    def _get_worker_port(self):
+        """
+        Get a worker port from the list of worker ports.
+        """
+        for port in self.worker_ports:
+            matches = self.node_worker_database.find(
+                self.node_worker_database.redis_backend.model_cls.worker_port == port
+            )
+            if not matches:
+                return port
+        # see if any worker has crashed so the port is available
+        for port in self.worker_ports:
+            matches = self.node_worker_database.find(
+                self.node_worker_database.redis_backend.model_cls.worker_port == port
+            )
+            for match in matches:
+                try:
+                    worker_cm = Worker.connect(match.worker_url)
+                    worker_cm.heartbeat()
+                except Exception:
+                    self.node_worker_database.delete(match.pk)
+            matches = self.node_worker_database.find(
+                self.node_worker_database.redis_backend.model_cls.worker_port == port
+            )
+            if not matches:
+                return port
+        raise ValueError(f"No worker ports available in range {self.worker_ports}")
+
     def launch_worker(self, payload: dict):
         """
         Launch a worker from the Worker registry.
@@ -705,12 +746,23 @@ class Node(Service):
         Args:
             payload (dict): The payload containing the worker type and worker URL.
                 worker_name (optional): str: The name of the worker. If not provided, the worker id will be used.
+        Returns:
+            LaunchWorkerOutput:
+                worker_id: str: The id of the worker.
+                worker_name: str: The name of the worker.
+                worker_url: str: The URL of the worker.
+        Raises:
+            ValueError: If no worker ports are available in range.
         """
         worker_type = payload["worker_type"]
-        worker_url = payload["worker_url"]
-        port = urllib.parse.urlparse(worker_url).port
-        if port is None:
-            raise ValueError(f"Worker URL {worker_url} does not have a port")
+        if payload["worker_url"] is None:
+            port = self._get_worker_port()
+            worker_url = f"http://{self._url.hostname}:{port}"
+        else:
+            worker_url = payload["worker_url"]
+            port = urllib.parse.urlparse(worker_url).port
+            if port is None:
+                raise ValueError(f"Worker URL {worker_url} does not have a port")
         worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
         worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
         worker_name = payload.get("worker_name")
@@ -725,6 +777,11 @@ class Node(Service):
                 worker_url=worker_url,
             )
         )
+        return {
+            "worker_id": worker_id,
+            "worker_name": worker_name,
+            "worker_url": worker_url,
+        }
 
     def _shutdown_workers(self, entries: list[cluster_types.NodeWorker]):
         """
@@ -737,7 +794,7 @@ class Node(Service):
             try:
                 worker_cm = Worker.connect(entry.worker_url)
                 worker_cm.shutdown()
-            except Exception:
+            except Exception as e:
                 self.logger.error(f"Failed to shutdown worker {entry.worker_name}: {e}")
             self.node_worker_database.delete(entry.pk)
 
@@ -754,7 +811,6 @@ class Node(Service):
             self.node_worker_database.redis_backend.model_cls.worker_name == worker_name
         )
         self._shutdown_workers(entries)
-
 
     def shutdown_worker_by_id(self, payload: dict):
         """

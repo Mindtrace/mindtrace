@@ -92,6 +92,7 @@ class NodeWorker(UnifiedMindtraceDocument):
         indexed_fields = ["worker_port", "worker_id", "worker_name"]
         unique_fields = ["worker_id"]
 
+
 class WorkerStatusLocal(UnifiedMindtraceDocument):
     worker_id: str = Field(description="Worker id")
     status: WorkerStatusEnum = Field(description="Worker status")
@@ -144,6 +145,12 @@ class WorkerAlertCompletedJobInput(BaseModel):
 class LaunchWorkerInput(BaseModel):
     worker_type: str
     worker_name: str | None = None
+    worker_url: str | None = None
+
+
+class LaunchWorkerOutput(BaseModel):
+    worker_id: str
+    worker_name: str
     worker_url: str
 
 
@@ -174,11 +181,13 @@ class ClusterLaunchWorkerInput(BaseModel):
     node_url: str
     worker_type: str
     worker_name: str | None = None
-    worker_url: str
+    worker_url: str | None = None
 
 
 class ClusterLaunchWorkerOutput(BaseModel):
     worker_id: str
+    worker_name: str
+    worker_url: str
 
 
 class ClusterRegisterJobToWorkerInput(BaseModel):
@@ -210,11 +219,14 @@ class QueryWorkerStatusByUrlInput(BaseModel):
 class ClearJobSchemaQueueInput(BaseModel):
     job_schema_name: str
 
+
 class ShutdownWorkerInput(BaseModel):
     worker_name: str
 
+
 class ShutdownWorkerByIdInput(BaseModel):
     worker_id: str
+
 
 class ShutdownWorkerByPortInput(BaseModel):
     worker_port: int
