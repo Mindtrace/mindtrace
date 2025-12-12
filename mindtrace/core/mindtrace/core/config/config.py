@@ -845,13 +845,11 @@ class CoreConfig(Config):
         Additional overrides passed to CoreConfig take the highest precedence.
     """
 
-    def __init__(self, extra_settings: SettingsLike = None):
+    def __init__(self, extra_settings: SettingsLike = None, *, apply_env_overrides: bool = False):
         if extra_settings is None:
             extras: List[Any] = [CoreSettings()]
         elif isinstance(extra_settings, list):
             extras = [CoreSettings()] + extra_settings
         else:
             extras = [CoreSettings(), extra_settings]
-        # Do not re-apply env here; CoreSettings already applied env and
-        # we want provided overrides to remain highest precedence
-        super().__init__(extra_settings=extras, apply_env_overrides=False)
+        super().__init__(extra_settings=extras, apply_env_overrides=apply_env_overrides)

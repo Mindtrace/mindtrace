@@ -1,0 +1,22 @@
+# Grafana Datasource Configuration
+# This file automatically configures Loki as a datasource in Grafana
+# No manual setup required - Grafana will use this on startup
+
+apiVersion: 1
+
+datasources:
+  # Loki Datasource Configuration
+  # Connects Grafana to your Loki instance for log visualization
+  - name: Loki                    # Display name in Grafana
+    type: loki                    # Datasource type (Loki for logs)
+    access: proxy                 # Access mode (proxy through Grafana)
+    url: http://loki:3100          # Loki API endpoint (Docker service name)
+    isDefault: true               # Make this the default datasource
+    jsonData:
+      # Derived Fields - Create clickable links from log data
+      derivedFields:
+        - name: request_id         # Field name for the derived field
+          matcherRegex: "request_id=(.*)"  # Regex to extract request_id from logs
+          url: ""                  # URL template (empty = no link)
+          datasourceUid: ""        # Target datasource (empty = same datasource)
+    editable: true                # Allow users to modify this datasource 
