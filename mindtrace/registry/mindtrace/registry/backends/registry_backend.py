@@ -1,270 +1,450 @@
+"""Abstract base class for registry backends.
+
+Registry backends handle three concerns:
+1. Artifacts: raw files for each (name, version)
+2. Object metadata: recording what's stored, how to deserialize, and file manifest
+3. Registry-level metadata: global settings like version_objects and materializers
+
+The canonical invariant: an object "exists" if and only if its metadata exists.
+"""
+
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
 
+# Type aliases for cleaner signatures
+NameArg = Union[str, List[str]]
+VersionArg = Union[str, None, List[Union[str, None]]]
+PathArg = Union[str, Path, List[Union[str, Path]]]
+MetadataArg = Union[dict, List[dict], None]
+
 
 class RegistryBackend(MindtraceABC):  # pragma: no cover
+    """Abstract base class for registry backends.
+
+    Registry backends handle three concerns:
+    1. Artifacts: raw files for each (name, version)
+    2. Object metadata: recording what's stored, how to deserialize, and file manifest
+    3. Registry-level metadata: global settings like version_objects and materializers
+
+    The canonical invariant: an object "exists" if and only if its metadata exists.
+
+    Key design principles:
+    - Backend handles locking internally (not exposed to Registry)
+    - push() with metadata is atomic (artifacts + metadata succeed/fail together)
+    - Version auto-increment happens atomically in backend when version=None
+    - Single/batch operations unified via str|list parameter types
+    """
+
     @property
     @abstractmethod
     def uri(self) -> Path:
+        """The resolved base URI for the backend."""
         pass
 
     @abstractmethod
     def __init__(self, uri: str | Path, **kwargs):
         super().__init__(**kwargs)
 
-    @abstractmethod
-    def push(self, name: str, version: str, local_path: str | Path):
-        """Upload a local object version to the remote backend.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Input Normalization Helpers
+    # ─────────────────────────────────────────────────────────────────────────
 
-        Args:
-            name: Name of the object (e.g., "yolo8:x").
-            version: Version string (e.g., "1.0.0").
-            local_path: Local source directory to upload from.
-        """
-        pass
+    def _normalize_to_list(self, value: Union[str, List[str]], name: str = "value") -> List[str]:
+        """Convert single value or list to list."""
+        if isinstance(value, str):
+            return [value]
+        return list(value)
 
-    @abstractmethod
-    def pull(self, name: str, version: str, local_path: str | Path):
-        """Download a remote object version into a local path.
+    def _normalize_versions(
+        self, version: VersionArg, length: int
+    ) -> List[Union[str, None]]:
+        """Normalize version argument to list matching expected length."""
+        if version is None or isinstance(version, str):
+            return [version] * length
+        return list(version)
 
-        Args:
-            name: Name of the object.
-            version: Version string.
-            local_path: Local target directory to download into.
-        """
-        pass
+    def _normalize_paths(self, local_path: PathArg, length: int) -> List[Path]:
+        """Normalize path argument to list of Paths."""
+        if isinstance(local_path, (str, Path)):
+            return [Path(local_path)] * length
+        return [Path(p) for p in local_path]
 
-    @abstractmethod
-    def delete(self, name: str, version: str):
-        """Delete an object version from the backend.
+    def _normalize_metadata(self, metadata: MetadataArg, length: int) -> List[Union[dict, None]]:
+        """Normalize metadata argument to list."""
+        if metadata is None:
+            return [None] * length
+        if isinstance(metadata, dict):
+            return [metadata] * length
+        return list(metadata)
 
-        Args:
-            name: Name of the object.
-            version: Version string.
-        """
-        pass
-
-    @abstractmethod
-    def save_metadata(self, name: str, version: str, metadata: dict):
-        """Upload metadata for a specific object version.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-            metadata: Dictionary of object metadata.
-        """
-        pass
-
-    @abstractmethod
-    def fetch_metadata(self, name: str, version: str) -> dict:
-        """Fetch metadata for a specific object version.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
+    def _normalize_inputs(
+        self,
+        name: NameArg,
+        version: VersionArg,
+        local_path: PathArg | None = None,
+        metadata: MetadataArg = None,
+    ) -> List[Tuple[str, Union[str, None], Union[Path, None], Union[dict, None]]]:
+        """Normalize all inputs to list of tuples for processing.
 
         Returns:
-            Metadata dictionary.
+            List of (name, version, path, metadata) tuples
+        """
+        names = self._normalize_to_list(name, "name")
+        n = len(names)
+
+        versions = self._normalize_versions(version, n)
+        paths = self._normalize_paths(local_path, n) if local_path is not None else [None] * n
+        metadatas = self._normalize_metadata(metadata, n)
+
+        if not (len(names) == len(versions) == len(paths) == len(metadatas)):
+            raise ValueError(
+                f"Input list lengths must match: names={len(names)}, "
+                f"versions={len(versions)}, paths={len(paths)}, metadata={len(metadatas)}"
+            )
+
+        return list(zip(names, versions, paths, metadatas))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Artifact + Metadata Operations (atomic)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def push(
+        self,
+        name: NameArg,
+        version: VersionArg,
+        local_path: PathArg,
+        metadata: MetadataArg = None,
+    ) -> Dict[Tuple[str, str], str]:
+        """Atomically push artifacts and metadata.
+
+        This is the primary write operation. Artifacts and metadata are committed
+        together - either both succeed or both fail (with rollback).
+
+        If version is None, auto-increments to next version atomically.
+        Backend handles locking internally.
+
+        Args:
+            name: Object name(s). Single string or list.
+            version: Version string(s), None for auto-increment, or list.
+            local_path: Local source directory/directories to upload from.
+            metadata: Metadata dict(s) to store. Should contain at minimum:
+                - "class": fully-qualified class name
+                - "materializer": fully-qualified materializer class
+                - "init_params": dict for materializer
+                - "metadata": user metadata
+                - "_files": list of relative file paths
+                - "hash": content hash for verification
+
+        Returns:
+            Dict mapping (name, resolved_version) to "ok" on success.
+
+        Raises:
+            RegistryVersionConflict: If version already exists.
+            ValueError: If inputs are invalid.
         """
         pass
 
     @abstractmethod
-    def delete_metadata(self, name: str, version: str):
-        """Delete metadata for a specific model version.
+    def pull(
+        self,
+        name: NameArg,
+        version: NameArg,
+        local_path: PathArg,
+    ) -> None:
+        """Download artifacts to local path(s).
+
+        Uses the "_files" manifest from metadata to know exactly which
+        files to download, avoiding expensive blob storage listing.
+
+        No locking needed - metadata is the commit point, so reads are
+        always consistent.
 
         Args:
-            name: Name of the model.
-            version: Version string.
+            name: Object name(s).
+            version: Version string(s).
+            local_path: Local target directory/directories to download into.
+
+        Raises:
+            RegistryObjectNotFound: If object doesn't exist.
         """
         pass
 
     @abstractmethod
-    def save_registry_metadata(self, metadata: dict):
-        """Save registry-level metadata to the backend.
+    def delete(
+        self,
+        name: NameArg,
+        version: NameArg,
+    ) -> None:
+        """Delete artifact(s) and metadata.
 
-        This method saves metadata that applies to the entire registry (e.g., version_objects setting,
-        materializers registry). This is distinct from object-level metadata which is stored per object version.
+        Backend handles locking internally.
 
         Args:
-            metadata: Dictionary containing registry metadata to save. Should include keys like
-                "version_objects" and "materializers".
+            name: Object name(s).
+            version: Version string(s).
+        """
+        pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metadata-Only Operations
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def save_metadata(
+        self,
+        name: NameArg,
+        version: NameArg,
+        metadata: Union[dict, List[dict]],
+    ) -> None:
+        """Save metadata only (insert-only, raises on conflict).
+
+        This is separate from push() for cases where metadata needs to be
+        updated independently of artifacts.
+
+        Args:
+            name: Object name(s).
+            version: Version string(s).
+            metadata: Metadata dict(s).
+
+        Raises:
+            RegistryVersionConflict: If (name, version) already exists.
+        """
+        pass
+
+    @abstractmethod
+    def fetch_metadata(
+        self,
+        name: NameArg,
+        version: NameArg,
+    ) -> Dict[Tuple[str, str], dict]:
+        """Fetch metadata for object version(s).
+
+        This is the canonical existence check - if metadata doesn't exist,
+        the object doesn't exist.
+
+        Args:
+            name: Object name(s).
+            version: Version string(s).
+
+        Returns:
+            Dict mapping (name, version) tuples to their metadata dicts.
+            Missing entries are omitted from the result.
+        """
+        pass
+
+    @abstractmethod
+    def delete_metadata(
+        self,
+        name: NameArg,
+        version: NameArg,
+    ) -> None:
+        """Delete metadata for object version(s).
+
+        Args:
+            name: Object name(s).
+            version: Version string(s).
+        """
+        pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Registry-Level Metadata
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def save_registry_metadata(self, metadata: dict) -> None:
+        """Save registry-level metadata.
+
+        This stores global registry settings like version_objects.
+
+        Args:
+            metadata: Dictionary containing registry metadata.
         """
         pass
 
     @abstractmethod
     def fetch_registry_metadata(self) -> dict:
-        """Fetch registry-level metadata from the backend.
-
-        This method retrieves metadata that applies to the entire registry (e.g., version_objects setting,
-        materializers registry). This is distinct from object-level metadata which is stored per object version.
+        """Fetch registry-level metadata.
 
         Returns:
-            Dictionary containing registry metadata. Should include keys like "version_objects" and
-            "materializers". Returns empty dict if no metadata exists.
+            Dictionary containing registry metadata. Empty dict if none exists.
         """
         pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Discovery
+    # ─────────────────────────────────────────────────────────────────────────
 
     @abstractmethod
     def list_objects(self) -> List[str]:
-        """List all objects in the backend.
+        """List all unique object names in the backend.
 
         Returns:
-            List of object names.
+            Sorted list of object names.
         """
         pass
 
     @abstractmethod
-    def list_versions(self, name: str) -> List[str]:
-        """List all versions for an object in the backend.
+    def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
+        """List all versions for object(s).
 
         Args:
-            name: Optional object name to filter results.
+            name: Object name(s).
 
         Returns:
-            List of versions for the given object.
+            Dict mapping object names to sorted lists of version strings.
         """
         pass
 
     @abstractmethod
-    def has_object(self, name: str, version: str) -> bool:
-        """Check if a specific object version exists in the backend.
+    def has_object(
+        self,
+        name: NameArg,
+        version: NameArg,
+    ) -> Dict[Tuple[str, str], bool]:
+        """Check if object version(s) exist.
 
         Args:
-            name: Name of the object.
-            version: Version string.
+            name: Object name(s).
+            version: Version string(s).
 
         Returns:
-            True if the object version exists, False otherwise.
+            Dict mapping (name, version) tuples to existence booleans.
+        """
+        pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Materializer Registry
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def register_materializer(
+        self,
+        object_class: NameArg,
+        materializer_class: NameArg,
+    ) -> None:
+        """Register materializer(s) for object class(es).
+
+        Args:
+            object_class: Fully-qualified object class name(s).
+            materializer_class: Fully-qualified materializer class name(s).
         """
         pass
 
     @abstractmethod
-    def register_materializer(self, object_class: str, materializer_class: str):
-        """Register a materializer for an object class.
+    def registered_materializers(
+        self,
+        object_class: Union[str, None, List[str]] = None,
+    ) -> Dict[str, str]:
+        """Get registered materializers.
 
         Args:
-            object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
-        """
-        pass
-
-    def register_materializers_batch(self, materializers: Dict[str, str]):
-        """Register multiple materializers in a single operation for better performance.
-
-        Default implementation loops through and calls register_materializer for each. Subclasses can override this
-        method to provide optimized batch operations.
-
-        Args:
-            materializers: Dictionary mapping object classes to materializer classes.
-        """
-        for object_class, materializer_class in materializers.items():
-            self.register_materializer(object_class, materializer_class)
-
-    @abstractmethod
-    def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class.
-
-        Args:
-            object_class: Object class to get the registered materializer for.
+            object_class: If None, return all materializers.
+                If string or list, return only matching object classes.
 
         Returns:
-            Materializer class string, or None if no materializer is registered for the object class.
+            Dict mapping object classes to materializer classes.
         """
         pass
 
-    @abstractmethod
-    def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Validation
+    # ─────────────────────────────────────────────────────────────────────────
 
-        Returns:
-            Dictionary mapping object classes to their registered materializer classes.
-        """
-        pass
-
-    def validate_object_name(self, name: str) -> None:
-        """Validate that the object name contains only allowed characters.
-
-        This method is to be used by subclasses to validate object names, ensuring a unified naming convention is
-        followed between all backends.
+    def validate_object_name(self, name: NameArg) -> None:
+        """Validate object name(s).
 
         Args:
-            name: Name of the object to validate
+            name: Name(s) to validate.
 
         Raises:
-            ValueError: If the object name contains invalid characters
+            ValueError: If any name is invalid.
         """
-        if not name or not name.strip():
-            raise ValueError("Object names cannot be empty.")
-        elif "_" in name:
-            raise ValueError("Object names cannot contain underscores. Use colons (':') for namespacing.")
-        elif "@" in name:
-            raise ValueError("Object names cannot contain '@'.")
+        names = self._normalize_to_list(name, "name")
+        for n in names:
+            if not n or not n.strip():
+                raise ValueError("Object names cannot be empty.")
+            elif "_" in n:
+                raise ValueError(
+                    f"Object name '{n}' cannot contain underscores. "
+                    "Use colons (':') for namespacing."
+                )
+            elif "@" in n:
+                raise ValueError(f"Object name '{n}' cannot contain '@'.")
 
-    @abstractmethod
-    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Atomically acquire a lock for the given key.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal Locking (protected, not part of public API)
+    # ─────────────────────────────────────────────────────────────────────────
 
-        This method should be implemented to provide atomic lock acquisition. The implementation should ensure that
-        only one client can acquire an exclusive lock at a time, or multiple clients can acquire a shared lock,
-        even in a distributed environment.
+    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int) -> bool:
+        """Acquire internal lock for operation.
+
+        Override in subclass for locking support. Default is no-op.
 
         Args:
-            key: The key to lock
-            lock_id: Unique identifier for this lock attempt
-            timeout: Lock timeout in seconds
-            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
+            key: Lock key (e.g., "{name}@push").
+            lock_id: Unique identifier for this lock attempt.
+            timeout: Lock timeout in seconds.
 
         Returns:
-            True if lock was acquired, False otherwise
+            True if lock acquired, False otherwise.
         """
-        pass
+        return True  # Default: no-op
 
-    @abstractmethod
-    def release_lock(self, key: str, lock_id: str) -> bool:
-        """Atomically release a lock for the given key.
+    def _release_internal_lock(self, key: str, lock_id: str) -> bool:
+        """Release internal lock.
 
-        This method should be implemented to provide atomic lock release. The implementation should ensure that only
-        the lock owner can release it.
+        Override in subclass for locking support. Default is no-op.
 
         Args:
-            key: The key to unlock
-            lock_id: The lock ID that was used to acquire the lock
+            key: Lock key.
+            lock_id: Lock ID used during acquisition.
 
         Returns:
-            True if lock was released, False otherwise
+            True if released, False otherwise.
         """
-        pass
+        return True  # Default: no-op
 
-    @abstractmethod
-    def check_lock(self, key: str) -> tuple[bool, str | None]:
-        """Check if a key is currently locked.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Version Resolution (protected)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _resolve_version(self, name: str, version: Union[str, None]) -> str:
+        """Resolve version, auto-incrementing if None.
 
         Args:
-            key: The key to check
+            name: Object name.
+            version: Version string or None for auto-increment.
 
         Returns:
-            Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID. If not locked,
-            lock_id will be None.
+            Resolved version string.
         """
-        pass
+        if version is not None:
+            return version
 
-    @abstractmethod
-    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
-        """Overwrite an object.
+        # Auto-increment: find latest and increment
+        versions_dict = self.list_versions(name)
+        versions = versions_dict.get(name, [])
 
-        This method should support saving objects to a temporary source location first, and then moving it to a target
-        object in a single atomic operation.
+        if not versions:
+            return "1"
 
-        After the overwrite method completes, the source object should be deleted, and the target object should be
-        updated to be the new source version.
+        # Filter temporary versions
+        versions = [v for v in versions if not v.startswith("__temp__")]
+        if not versions:
+            return "1"
 
-        Args:
-            source_name: Name of the source object.
-            source_version: Version of the source object.
-            target_name: Name of the target object.
-            target_version: Version of the target object.
-        """
-        pass
+        # Semantic sort and increment
+        def version_key(v):
+            try:
+                return [int(x) for x in v.split(".")]
+            except ValueError:
+                return [0]
+
+        latest = max(versions, key=version_key)
+        components = latest.split(".")
+        components[-1] = str(int(components[-1]) + 1)
+        return ".".join(components)
