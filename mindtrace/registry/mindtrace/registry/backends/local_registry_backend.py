@@ -198,7 +198,7 @@ class LocalRegistryBackend(RegistryBackend):
             self._release_internal_lock(key, lock_id)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Artifact + Metadata Operations 
+    # Artifact + Metadata Operations
     # ─────────────────────────────────────────────────────────────────────────
 
     def push(
@@ -207,6 +207,7 @@ class LocalRegistryBackend(RegistryBackend):
         version: VersionArg,
         local_path: PathArg,
         metadata: MetadataArg = None,
+        on_conflict: str = "error",
     ) -> Dict[Tuple[str, str], str]:
         """Atomically push artifacts and metadata with rollback on failure."""
         entries = self._normalize_inputs(name, version, local_path, metadata)
@@ -224,6 +225,9 @@ class LocalRegistryBackend(RegistryBackend):
 
                 # Check for existing version
                 if meta_path.exists():
+                    if on_conflict == "skip":
+                        results[(obj_name, resolved_version)] = "skipped"
+                        continue
                     raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
 
                 try:
@@ -505,4 +509,3 @@ class LocalRegistryBackend(RegistryBackend):
             obj_classes = object_class
 
         return {k: v for k, v in all_materializers.items() if k in obj_classes}
-
