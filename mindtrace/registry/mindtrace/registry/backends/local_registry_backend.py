@@ -21,7 +21,6 @@ if platform.system() == "Windows":
 
     fcntl = None
 else:
-
     msvcrt = None
 
 from mindtrace.registry.backends.registry_backend import (
