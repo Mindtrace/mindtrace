@@ -619,7 +619,10 @@ class Registry(Mindtrace):
         """
         is_batch = isinstance(name, list)
         names = name if is_batch else [name]
-        versions = version if isinstance(version, list) else [version] * len(names)
+        if not self.version_objects: # override version if version_objects is False but user provided a version
+            versions = ["1"] * len(names)
+        else:
+            versions = version if isinstance(version, list) else [version] * len(names)
 
         if len(names) != len(versions):
             raise ValueError("name and version lists must have same length")
