@@ -1,4 +1,5 @@
 import uuid
+from typing import Type
 
 from pydantic import BaseModel
 
@@ -166,4 +167,69 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
                 documents = backend.all()
                 print(f"Found {len(documents)} documents")
         """
-        return self.registry.values()
+        return list(self.registry.values())
+
+    def find(self, *args, **kwargs) -> list[BaseModel]:
+        """Find documents matching the specified criteria.
+
+        Args:
+            *args: Query conditions. Currently not supported in Registry backend.
+            **kwargs: Field-value pairs to match against documents.
+
+        Returns:
+            list[BaseModel]: A list of documents matching the query criteria.
+                If no criteria are provided, returns all documents.
+
+        Example:
+            .. code-block:: python
+
+                # Find documents with specific field values
+                users = backend.find(name="John", email="john@example.com")
+
+                # Find all documents if no criteria specified
+                all_docs = backend.find()
+        """
+        all_docs = list(self.registry.values())
+
+        # If no criteria provided, return all documents
+        if not args and not kwargs:
+            return all_docs
+
+        # Filter documents based on kwargs (field-value pairs)
+        if kwargs:
+            results = []
+            for doc in all_docs:
+                match = True
+                for field, value in kwargs.items():
+                    if not hasattr(doc, field) or getattr(doc, field) != value:
+                        match = False
+                        break
+                if match:
+                    results.append(doc)
+            return results
+
+        # If args are provided but not supported, return empty list
+        # (Registry backend doesn't support complex query syntax)
+        if args:
+            self.logger.warning(
+                "Registry backend does not support complex query syntax via *args. "
+                "Use **kwargs for field-value matching instead."
+            )
+        
+        # Return empty list if only args provided (without kwargs)
+        return []
+
+    def get_raw_model(self) -> Type[BaseModel]:
+        """Get the raw document model class used by this backend.
+
+        Returns:
+            Type[BaseModel]: The base BaseModel class, as Registry backend
+                doesn't use a specific model class but accepts any BaseModel.
+
+        Example:
+            .. code-block:: python
+
+                model_class = backend.get_raw_model()
+                print(f"Using model: {model_class.__name__}")  # Output: BaseModel
+        """
+        return BaseModel
