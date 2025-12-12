@@ -198,7 +198,7 @@ class LocalRegistryBackend(RegistryBackend):
             self._release_internal_lock(key, lock_id)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Artifact + Metadata Operations (atomic)
+    # Artifact + Metadata Operations 
     # ─────────────────────────────────────────────────────────────────────────
 
     def push(
@@ -506,44 +506,3 @@ class LocalRegistryBackend(RegistryBackend):
 
         return {k: v for k, v in all_materializers.items() if k in obj_classes}
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Legacy Support (for overwrite operations)
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
-        """Overwrite an object (atomic move from source to target)."""
-        source_path = self._full_path(self._object_key(source_name, source_version))
-        target_path = self._full_path(self._object_key(target_name, target_version))
-        source_meta_path = self._object_metadata_path(source_name, source_version)
-        target_meta_path = self._object_metadata_path(target_name, target_version)
-
-        self.logger.debug(f"Overwriting {target_name}@{target_version} with {source_name}@{source_version}")
-
-        try:
-            # Remove target if exists
-            if target_path.exists():
-                shutil.rmtree(target_path)
-            if target_meta_path.exists():
-                target_meta_path.unlink()
-
-            # Move source to target
-            source_path.rename(target_path)
-
-            if source_meta_path.exists():
-                source_meta_path.rename(target_meta_path)
-
-            # Update metadata path
-            if target_meta_path.exists():
-                with open(target_meta_path, "r") as f:
-                    metadata = yaml.safe_load(f)
-                metadata["path"] = str(target_path)
-                with open(target_meta_path, "w") as f:
-                    yaml.dump(metadata, f)
-
-            self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
-
-        except Exception as e:
-            self.logger.error(f"Error during overwrite operation: {e}")
-            if target_path.exists() and not source_path.exists():
-                shutil.rmtree(target_path)
-            raise
