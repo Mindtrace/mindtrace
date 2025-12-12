@@ -351,6 +351,17 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """
         pass
 
+    def registered_materializer(self, object_class: str) -> Union[str, None]:
+        """Get the registered materializer for an object class.
+
+        Args:
+            object_class: Object class to get the registered materializer for.
+
+        Returns:
+            Materializer class string, or None if no materializer is registered for the object class.
+        """
+        return self.registered_materializers(object_class).get(object_class, None)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Validation
     # ─────────────────────────────────────────────────────────────────────────

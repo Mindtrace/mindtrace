@@ -21,7 +21,6 @@ if platform.system() == "Windows":
 
     fcntl = None
 else:
-    import fcntl
 
     msvcrt = None
 
@@ -42,16 +41,16 @@ from mindtrace.registry.core.exceptions import (
 class LocalRegistryBackend(RegistryBackend):
     """A simple local filesystem-based registry backend.
 
-    All object directories and registry files are stored under a configurable base directory.
-    Provides atomic operations with rollback support.
+    All object directories and registry files are stored under a configurable base directory. The backend provides
+    methods for uploading, downloading, and managing object files and metadata.
     """
 
     def __init__(self, uri: str | Path, **kwargs):
         """Initialize the LocalRegistryBackend.
 
         Args:
-            uri: The base directory path where all object files and metadata will be stored.
-                Supports "file://" URI scheme which will be automatically stripped.
+            uri (str | Path): The base directory path where all object files and metadata will be stored.
+                              Supports "file://" URI scheme which will be automatically stripped.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         if isinstance(uri, str) and uri.startswith("file://"):
@@ -77,19 +76,49 @@ class LocalRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _full_path(self, remote_key: str) -> Path:
-        """Convert a remote key to a full filesystem path."""
+        """Convert a remote key to a full filesystem path.
+
+        Args:
+            remote_key (str): The remote key (relative path) to resolve.
+
+        Returns:
+            Path: The full resolved filesystem path.
+        """
         return self.uri / remote_key
 
     def _object_key(self, name: str, version: str) -> str:
-        """Convert object name and version to a storage key."""
+        """Convert object name and version to a storage key.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Storage key for the object version.
+        """
         return f"{name}/{version}"
 
     def _object_metadata_path(self, name: str, version: str) -> Path:
-        """Generate the metadata file path for an object version."""
+        """Generate the metadata file path for an object version.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Metadata file path (e.g., Path("_meta_object_name@1.0.0.yaml")).
+        """
         return self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
 
     def _object_metadata_prefix(self, name: str) -> str:
-        """Generate the metadata file prefix for listing versions of an object."""
+        """Generate the metadata file prefix for listing versions of an object.
+
+        Args:
+            name: Name of the object.
+
+        Returns:
+            Metadata file prefix (e.g., "_meta_object_name@").
+        """
         return f"_meta_{name.replace(':', '_')}@"
 
     def _lock_path(self, key: str) -> Path:
@@ -100,34 +129,20 @@ class LocalRegistryBackend(RegistryBackend):
     # Internal Locking
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _acquire_file_lock(self, file_obj) -> bool:
-        """Acquire a file lock using the appropriate mechanism for the OS."""
-        try:
-            if platform.system() == "Windows":
-                assert msvcrt is not None
-                msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
-                return True
-            else:
-                assert fcntl is not None
-                fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
-        except (IOError, OSError):
-            return False
-
-    def _release_file_lock(self, file_obj) -> None:
-        """Release a file lock using the appropriate mechanism for the OS."""
-        try:
-            if platform.system() == "Windows":
-                assert msvcrt is not None
-                msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                assert fcntl is not None
-                fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
-        except (IOError, OSError) as e:
-            self.logger.warning(f"Error releasing file lock: {e}")
-
     def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int) -> bool:
-        """Acquire internal lock using atomic file operations."""
+        """Acquire internal lock using atomic file operations.
+
+        Uses atomic file creation with O_EXCL to ensure only one process can create the lock file.
+        The lock file contains both the lock_id and expiration time in JSON format.
+
+        Args:
+            key: The key to acquire the lock for.
+            lock_id: The ID of the lock to acquire.
+            timeout: The timeout in seconds for the lock.
+
+        Returns:
+            True if the lock was acquired, False otherwise.
+        """
         lock_path = self._lock_path(key)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -168,7 +183,15 @@ class LocalRegistryBackend(RegistryBackend):
             return False
 
     def _release_internal_lock(self, key: str, lock_id: str) -> bool:
-        """Release internal lock by removing the lock file."""
+        """Release internal lock by verifying ownership and removing the file.
+
+        Args:
+            key: The key to release the lock for.
+            lock_id: The ID of the lock to release.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
         lock_path = self._lock_path(key)
 
         try:
@@ -188,7 +211,18 @@ class LocalRegistryBackend(RegistryBackend):
 
     @contextmanager
     def _internal_lock(self, key: str, timeout: int = 30):
-        """Context manager for internal locking."""
+        """Context manager for internal locking.
+
+        Args:
+            key: The key to acquire the lock for.
+            timeout: The timeout in seconds for the lock.
+
+        Yields:
+            None
+
+        Raises:
+            LockAcquisitionError: If the lock cannot be acquired.
+        """
         lock_id = str(uuid.uuid4())
         if not self._acquire_internal_lock(key, lock_id, timeout):
             raise LockAcquisitionError(f"Cannot acquire lock for {key}")
@@ -209,7 +243,19 @@ class LocalRegistryBackend(RegistryBackend):
         metadata: MetadataArg = None,
         on_conflict: str = "error",
     ) -> Dict[Tuple[str, str], str]:
-        """Atomically push artifacts and metadata with rollback on failure."""
+        """Atomically push artifacts and metadata with rollback on failure.
+
+        Args:
+            name: Object name(s). Single string or list.
+            version: Version string(s), None for auto-increment, or list.
+            local_path: Local source directory/directories to upload from.
+            metadata: Metadata dict(s) to store.
+            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
+                "skip" silently skips. Default is "error".
+
+        Returns:
+            Dict mapping (name, resolved_version) to "ok" or "skipped".
+        """
         entries = self._normalize_inputs(name, version, local_path, metadata)
         results: Dict[Tuple[str, str], str] = {}
 
@@ -232,7 +278,9 @@ class LocalRegistryBackend(RegistryBackend):
 
                 try:
                     # 1. Copy artifacts
+                    self.logger.debug(f"Uploading directory from {obj_path} to {artifact_dst}")
                     shutil.copytree(obj_path, artifact_dst, dirs_exist_ok=True)
+                    self.logger.debug(f"Upload complete. Contents: {list(artifact_dst.rglob('*'))}")
 
                     # 2. Write metadata (commit point)
                     if obj_meta is not None:
@@ -240,6 +288,7 @@ class LocalRegistryBackend(RegistryBackend):
                         obj_meta = dict(obj_meta)
                         obj_meta["path"] = str(artifact_dst)
 
+                        self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
                         with open(meta_path, "w") as f:
                             yaml.safe_dump(obj_meta, f)
 
@@ -261,7 +310,13 @@ class LocalRegistryBackend(RegistryBackend):
         version: NameArg,
         local_path: PathArg,
     ) -> None:
-        """Download artifacts to local path(s)."""
+        """Copy a directory from the backend store to a local path.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+            local_path: Destination directory path(s) to copy to.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
         paths = self._normalize_paths(local_path, len(names))
@@ -275,15 +330,23 @@ class LocalRegistryBackend(RegistryBackend):
             if not src.exists():
                 raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
 
-            self.logger.debug(f"Downloading from {src} to {dest_path}")
+            self.logger.debug(f"Downloading directory from {src} to {dest_path}")
             shutil.copytree(src, dest_path, dirs_exist_ok=True)
+            self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
 
     def delete(
         self,
         name: NameArg,
         version: NameArg,
     ) -> None:
-        """Delete artifact(s) and metadata."""
+        """Delete a directory from the backend store.
+
+        Also removes empty parent directories.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -292,19 +355,20 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             with self._internal_lock(f"{obj_name}@{obj_version}"):
-                # Delete artifacts
                 target = self._full_path(self._object_key(obj_name, obj_version))
-                if target.exists():
-                    shutil.rmtree(target, ignore_errors=True)
+                self.logger.debug(f"Deleting directory: {target}")
+                shutil.rmtree(target, ignore_errors=True)
 
                 # Delete metadata
                 meta_path = self._object_metadata_path(obj_name, obj_version)
+                self.logger.debug(f"Deleting metadata file: {meta_path}")
                 if meta_path.exists():
                     meta_path.unlink()
 
-                # Cleanup empty parent directories
+                # Cleanup parent if empty
                 parent = target.parent
                 if parent.exists() and not any(parent.iterdir()):
+                    self.logger.debug(f"Removing empty parent directory: {parent}")
                     try:
                         parent.rmdir()
                     except Exception:
@@ -320,7 +384,13 @@ class LocalRegistryBackend(RegistryBackend):
         version: NameArg,
         metadata: Union[dict, List[dict]],
     ) -> None:
-        """Save metadata only (insert-only)."""
+        """Save metadata for a object version.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+            metadata: Metadata to save.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
         metadatas = self._normalize_metadata(metadata, len(names))
@@ -335,6 +405,7 @@ class LocalRegistryBackend(RegistryBackend):
             if meta_path.exists():
                 raise RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists.")
 
+            self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
             with open(meta_path, "w") as f:
                 yaml.safe_dump(obj_meta, f)
 
@@ -343,7 +414,16 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: NameArg,
     ) -> Dict[Tuple[str, str], dict]:
-        """Fetch metadata for object version(s)."""
+        """Load metadata for a object version.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+
+        Returns:
+            Dict mapping (name, version) tuples to their metadata dicts.
+            Missing entries are omitted from the result.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -354,19 +434,28 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             meta_path = self._object_metadata_path(obj_name, obj_version)
+            self.logger.debug(f"Loading metadata from: {meta_path}")
 
             try:
                 with open(meta_path, "r") as f:
                     meta = yaml.safe_load(f)
 
+                # Handle case where yaml.safe_load returns None (empty file or whitespace only)
                 if meta is None:
-                    continue  # Skip empty/corrupted files
+                    self.logger.warning(
+                        f"Metadata file for {obj_name}@{obj_version} is empty or corrupted. "
+                        f"This may indicate a race condition during concurrent writes."
+                    )
+                    continue
 
-                # Add path to metadata
+                # Add the path to the object directory to the metadata
                 object_key = self._object_key(obj_name, obj_version)
-                meta["path"] = str(self._full_path(object_key))
+                object_path = self._full_path(object_key)
+                meta["path"] = str(object_path)
 
+                self.logger.debug(f"Loaded metadata: {meta}")
                 results[(obj_name, obj_version)] = meta
+
             except FileNotFoundError:
                 continue  # Skip missing entries
 
@@ -377,7 +466,12 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: NameArg,
     ) -> None:
-        """Delete metadata for object version(s)."""
+        """Delete metadata for a object version.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -386,6 +480,7 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             meta_path = self._object_metadata_path(obj_name, obj_version)
+            self.logger.debug(f"Deleting metadata file: {meta_path}")
             if meta_path.exists():
                 meta_path.unlink()
 
@@ -394,12 +489,24 @@ class LocalRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def save_registry_metadata(self, metadata: dict) -> None:
-        """Save registry-level metadata."""
-        with open(self._metadata_path, "w") as f:
-            json.dump(metadata, f)
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
 
     def fetch_registry_metadata(self) -> dict:
-        """Fetch registry-level metadata."""
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
         try:
             if not self._metadata_path.exists():
                 return {}
@@ -414,25 +521,44 @@ class LocalRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def list_objects(self) -> List[str]:
-        """List all objects in the backend."""
+        """List all objects in the backend.
+
+        Returns:
+            List of object names sorted alphabetically.
+        """
         objects = set()
+        # Look for metadata files that follow the pattern _meta_objectname@version.yaml
         for meta_file in self.uri.glob("_meta_*.yaml"):
+            # Extract the object name from the metadata filename
+            # Remove '_meta_' prefix and split at '@' to get the object name part
             name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
+            # Convert back from filesystem-safe format to original object name
             name = name_part.replace("_", ":")
             objects.add(name)
+
         return sorted(list(objects))
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
-        """List all versions for object(s)."""
+        """List all versions available for the given object(s).
+
+        Args:
+            name: Name of the object(s)
+
+        Returns:
+            Dict mapping object names to sorted lists of version strings.
+        """
         names = self._normalize_to_list(name)
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
+            # Build the prefix used in metadata filenames for this object.
             prefix = self._object_metadata_prefix(obj_name)
             versions = []
 
+            # Search for metadata files matching the prefix pattern in the base directory.
             for meta_file in self.uri.glob(f"{prefix}*.yaml"):
-                version = meta_file.name[len(prefix) : -5]  # Remove prefix and .yaml
+                # Extract the version from the filename by removing the prefix and the '.yaml' extension.
+                version = meta_file.name[len(prefix) : -5]
                 versions.append(version)
 
             # Semantic sort
@@ -451,7 +577,18 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: NameArg,
     ) -> Dict[Tuple[str, str], bool]:
-        """Check if object version(s) exist."""
+        """Check if a specific object version exists in the backend.
+
+        This method uses direct existence checks instead of listing all objects
+        for better performance, especially with large registries.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+
+        Returns:
+            Dict mapping (name, version) tuples to existence booleans.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -461,6 +598,7 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[Tuple[str, str], bool] = {}
 
         for obj_name, obj_version in zip(names, versions):
+            # Check if metadata file exists directly (much faster than listing all objects)
             meta_path = self._object_metadata_path(obj_name, obj_version)
             results[(obj_name, obj_version)] = meta_path.exists()
 
@@ -475,30 +613,72 @@ class LocalRegistryBackend(RegistryBackend):
         object_class: NameArg,
         materializer_class: NameArg,
     ) -> None:
-        """Register materializer(s) for object class(es)."""
+        """Register a materializer for an object class.
+
+        Args:
+            object_class: Object class(es) to register the materializer for.
+            materializer_class: Materializer class(es) to register.
+        """
         obj_classes = self._normalize_to_list(object_class)
         mat_classes = self._normalize_to_list(materializer_class)
 
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")
 
-        metadata = self.fetch_registry_metadata()
-        if "materializers" not in metadata:
-            metadata["materializers"] = {}
+        try:
+            if not self._metadata_path.exists():
+                metadata = {"materializers": {}}
+            else:
+                with open(self._metadata_path, "r") as f:
+                    metadata = json.load(f)
 
-        for obj_cls, mat_cls in zip(obj_classes, mat_classes):
-            metadata["materializers"][obj_cls] = mat_cls
+            if "materializers" not in metadata:
+                metadata["materializers"] = {}
 
-        self.save_registry_metadata(metadata)
-        self.logger.debug(f"Registered {len(obj_classes)} materializer(s)")
+            for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+                metadata["materializers"][obj_cls] = mat_cls
+
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
+
+        except Exception as e:
+            self.logger.error(f"Error registering materializers: {e}")
+            raise e
+        else:
+            self.logger.debug(f"Registered {len(obj_classes)} materializer(s)")
+
+    def registered_materializer(self, object_class: str) -> str | None:
+        """Get the registered materializer for an object class.
+
+        Args:
+            object_class: Object class to get the registered materializer for.
+
+        Returns:
+            Materializer class string, or None if no materializer is registered for the object class.
+        """
+        return self.registered_materializers().get(object_class, None)
 
     def registered_materializers(
         self,
         object_class: Union[str, None, List[str]] = None,
     ) -> Dict[str, str]:
-        """Get registered materializers."""
-        metadata = self.fetch_registry_metadata()
-        all_materializers = metadata.get("materializers", {})
+        """Get all registered materializers.
+
+        Args:
+            object_class: If None, return all materializers.
+                If string or list, return only matching object classes.
+
+        Returns:
+            Dictionary mapping object classes to their registered materializer classes.
+        """
+        try:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
+                all_materializers = json.load(f).get("materializers", {})
+        except Exception as e:
+            self.logger.error(f"Error loading materializers: {e}")
+            raise e
 
         if object_class is None:
             return all_materializers
