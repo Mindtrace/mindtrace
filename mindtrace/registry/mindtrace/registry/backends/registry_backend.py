@@ -1,13 +1,3 @@
-"""Abstract base class for registry backends.
-
-Registry backends handle three concerns:
-1. Artifacts: raw files for each (name, version)
-2. Object metadata: recording what's stored, how to deserialize, and file manifest
-3. Registry-level metadata: global settings like version_objects and materializers
-
-The canonical invariant: an object "exists" if and only if its metadata exists.
-"""
-
 from abc import abstractmethod
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
@@ -31,10 +21,10 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
 
     The canonical invariant: an object "exists" if and only if its metadata exists.
 
-    Key design principles:
+    Key Behaviors:
     - Backend handles locking internally (not exposed to Registry)
     - push() with metadata is atomic (artifacts + metadata succeed/fail together)
-    - Version auto-increment happens atomically in backend when version=None
+    - Version auto-increment happens atomically in backend when version=None. 
     - Single/batch operations unified via str|list parameter types
     """
 
@@ -106,7 +96,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         return list(zip(names, versions, paths, metadatas))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Artifact + Metadata Operations (atomic)
+    # Artifact + Metadata Operations
     # ─────────────────────────────────────────────────────────────────────────
 
     @abstractmethod
@@ -203,8 +193,6 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     ) -> None:
         """Save metadata only (insert-only, raises on conflict).
 
-        This is separate from push() for cases where metadata needs to be
-        updated independently of artifacts.
 
         Args:
             name: Object name(s).
@@ -434,19 +422,20 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         if version is not None:
             return version
 
-        # Auto-increment: find latest and increment
+        # find latest and increment
         versions_dict = self.list_versions(name)
         versions = versions_dict.get(name, [])
 
+        #if doesnt exists, it's the first version.
         if not versions:
             return "1"
 
-        # Filter temporary versions
+        # filter temporary versions
         versions = [v for v in versions if not v.startswith("__temp__")]
         if not versions:
             return "1"
 
-        # Semantic sort and increment
+        # semantic sort and increment
         def version_key(v):
             try:
                 return [int(x) for x in v.split(".")]
