@@ -24,7 +24,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     Key Behaviors:
     - Backend handles locking internally (not exposed to Registry)
     - push() with metadata is atomic (artifacts + metadata succeed/fail together)
-    - Version auto-increment happens atomically in backend when version=None. 
+    - Version auto-increment happens atomically in backend when version=None.
     - Single/batch operations unified via str|list parameter types
     """
 
@@ -426,7 +426,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         versions_dict = self.list_versions(name)
         versions = versions_dict.get(name, [])
 
-        #if doesnt exists, it's the first version.
+        # if doesnt exists, it's the first version.
         if not versions:
             return "1"
 
