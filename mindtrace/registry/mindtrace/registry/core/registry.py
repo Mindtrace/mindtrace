@@ -500,7 +500,11 @@ class Registry(Mindtrace):
         # Normalize inputs to lists
         names = name if is_batch else [name]
         objs = obj if is_batch else [obj]
-        versions = version if isinstance(version, list) else [version] * len(names)
+        if not self.version_objects: # override version if version_objects is False but user provided a version
+            versions = ["1"] * len(names)
+
+        else:
+            versions = version if isinstance(version, list) else [version] * len(names)
         init_params_list = init_params if isinstance(init_params, list) else [init_params] * len(names)
         metadata_list = metadata if isinstance(metadata, list) else [metadata] * len(names)
 
