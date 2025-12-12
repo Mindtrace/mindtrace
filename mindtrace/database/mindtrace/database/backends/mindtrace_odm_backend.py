@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Type
 
 from pydantic import BaseModel
 
@@ -132,4 +133,43 @@ class MindtraceODMBackend(MindtraceABC):
                 print(f"Found {len(all_users)} users")
                 for user in all_users:
                     print(f"- {user.name}")
+        """
+
+    @abstractmethod
+    def find(self, *args, **kwargs) -> list[BaseModel]:
+        """
+        Find documents matching the specified criteria.
+
+        Args:
+            *args: Query conditions and filters. The exact format depends on the backend.
+            **kwargs: Additional query parameters.
+
+        Returns:
+            list[BaseModel]: A list of documents matching the query criteria.
+
+        Example:
+            .. code-block:: python
+
+                # Find users with specific email (backend-specific syntax)
+                users = backend.find(User.email == "john@example.com")
+
+                # Find all users if no criteria specified
+                all_users = backend.find()
+        """
+
+    @abstractmethod
+    def get_raw_model(self) -> Type[BaseModel]:
+        """
+        Get the raw document model class used by this backend.
+
+        Returns:
+            Type[BaseModel]: The document model class used by this backend.
+                For backends that don't use a specific model class, this may
+                return the base BaseModel type or None.
+
+        Example:
+            .. code-block:: python
+
+                model_class = backend.get_raw_model()
+                print(f"Using model: {model_class.__name__}")
         """

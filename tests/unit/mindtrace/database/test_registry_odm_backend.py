@@ -322,3 +322,246 @@ class TestRegistryMindtraceODMBackend:
         assert backend.registry is not None
         # The registry should have been created with default settings
         # This is tested indirectly through the registry initialization
+
+    # Tests for find() method
+    def test_find_no_criteria(self, registry_odm_backend):
+        """Test find() with no criteria returns all documents."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("Jane", 25, "jane@example.com")
+        expected_documents = [user1, user2]
+
+        # Mock the registry to return our test documents
+        registry_odm_backend.registry.values.return_value = expected_documents
+
+        result = registry_odm_backend.find()
+
+        # Verify the registry was queried for all values
+        registry_odm_backend.registry.values.assert_called_once()
+        assert result == expected_documents
+
+    def test_find_with_kwargs_single_match(self, registry_odm_backend):
+        """Test find() with kwargs matching a single document."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("Jane", 25, "jane@example.com")
+        all_documents = [user1, user2]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="John")
+
+        # Should return only the matching document
+        assert len(result) == 1
+        assert result[0] == user1
+        assert result[0].name == "John"
+
+    def test_find_with_kwargs_multiple_fields(self, registry_odm_backend):
+        """Test find() with multiple kwargs fields."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("John", 25, "jane@example.com")
+        user3 = create_test_user("Jane", 30, "jane2@example.com")
+        all_documents = [user1, user2, user3]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="John", age=30)
+
+        # Should return only user1 (matches both name and age)
+        assert len(result) == 1
+        assert result[0] == user1
+        assert result[0].name == "John"
+        assert result[0].age == 30
+
+    def test_find_with_kwargs_no_match(self, registry_odm_backend):
+        """Test find() with kwargs that match no documents."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("Jane", 25, "jane@example.com")
+        all_documents = [user1, user2]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="Bob")
+
+        # Should return empty list
+        assert result == []
+
+    def test_find_with_kwargs_partial_match(self, registry_odm_backend):
+        """Test find() where some fields match but not all."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("John", 25, "jane@example.com")
+        all_documents = [user1, user2]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="John", age=30)
+
+        # Should return only user1 (matches both criteria)
+        assert len(result) == 1
+        assert result[0] == user1
+
+    def test_find_with_kwargs_missing_field(self, registry_odm_backend):
+        """Test find() with kwargs for a field that doesn't exist on documents."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        all_documents = [user1]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(nonexistent_field="value")
+
+        # Should return empty list (field doesn't exist)
+        assert result == []
+
+    def test_find_with_kwargs_complex_document(self, registry_odm_backend):
+        """Test find() with kwargs on complex documents."""
+        user1 = create_complex_user("Jane", 25, "jane@example.com")
+        user2 = create_complex_user("Bob", 30, "bob@example.com")
+        all_documents = [user1, user2]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="Jane", is_active=True)
+
+        # Should return only user1
+        assert len(result) == 1
+        assert result[0] == user1
+        assert result[0].name == "Jane"
+        assert result[0].is_active is True
+
+    def test_find_with_args_only(self, registry_odm_backend):
+        """Test find() with args only (not supported, should warn and return empty)."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        all_documents = [user1]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        # Mock logger to capture warning
+        with patch.object(registry_odm_backend.logger, "warning") as mock_warning:
+            result = registry_odm_backend.find("some_query")
+
+            # Should log a warning
+            mock_warning.assert_called_once()
+            assert "does not support complex query syntax" in mock_warning.call_args[0][0]
+            # Should return empty list (covers the final return statement on line 220)
+            assert result == []
+            assert isinstance(result, list)
+            assert len(result) == 0
+
+    def test_find_with_args_only_no_kwargs_explicit(self, registry_odm_backend):
+        """Test find() with args only, explicitly testing the final return path."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        all_documents = [user1]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        # Mock logger to capture warning
+        with patch.object(registry_odm_backend.logger, "warning") as mock_warning:
+            # Call with args but no kwargs - this should hit the final return []
+            result = registry_odm_backend.find("query1", "query2")
+
+            # Should log a warning
+            mock_warning.assert_called_once()
+            # Should return empty list - this ensures line 220 is covered
+            assert result == []
+            # Verify it's the exact empty list return
+            assert result is not None
+            assert type(result) == list
+
+    def test_find_with_args_and_kwargs(self, registry_odm_backend):
+        """Test find() with both args and kwargs (should use kwargs)."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("Jane", 25, "jane@example.com")
+        all_documents = [user1, user2]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find("some_query", name="John")
+
+        # Should use kwargs and return matching document
+        assert len(result) == 1
+        assert result[0] == user1
+        assert result[0].name == "John"
+
+    def test_find_with_empty_registry(self, registry_odm_backend):
+        """Test find() when registry is empty."""
+        # Mock the registry to return empty list
+        registry_odm_backend.registry.values.return_value = []
+
+        result = registry_odm_backend.find(name="John")
+
+        # Should return empty list
+        assert result == []
+
+    def test_find_with_kwargs_multiple_matches(self, registry_odm_backend):
+        """Test find() with kwargs that match multiple documents."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        user2 = create_test_user("John", 25, "john2@example.com")
+        user3 = create_test_user("Jane", 30, "jane@example.com")
+        all_documents = [user1, user2, user3]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="John")
+
+        # Should return both John documents
+        assert len(result) == 2
+        assert all(user.name == "John" for user in result)
+        assert user1 in result
+        assert user2 in result
+        assert user3 not in result
+
+    def test_find_with_kwargs_case_sensitive(self, registry_odm_backend):
+        """Test find() with kwargs is case sensitive."""
+        user1 = create_test_user("John", 30, "john@example.com")
+        all_documents = [user1]
+
+        # Mock the registry to return all documents
+        registry_odm_backend.registry.values.return_value = all_documents
+
+        result = registry_odm_backend.find(name="john")  # lowercase
+
+        # Should return empty (case sensitive)
+        assert result == []
+
+    # Tests for get_raw_model() method
+    def test_get_raw_model_returns_base_model(self, registry_odm_backend):
+        """Test get_raw_model() returns BaseModel."""
+        result = registry_odm_backend.get_raw_model()
+
+        # Should return BaseModel class
+        assert result == BaseModel
+        assert result is BaseModel
+
+    def test_get_raw_model_type(self, registry_odm_backend):
+        """Test get_raw_model() returns correct type."""
+        from typing import Type
+
+        result = registry_odm_backend.get_raw_model()
+
+        # Should be a class type
+        assert isinstance(result, type)
+        assert issubclass(result, BaseModel)
+
+    def test_get_raw_model_callable(self, registry_odm_backend):
+        """Test get_raw_model() returns a callable class."""
+        result = registry_odm_backend.get_raw_model()
+
+        # Should be callable (can instantiate)
+        assert callable(result)
+
+    def test_get_raw_model_consistency(self, registry_odm_backend):
+        """Test get_raw_model() returns consistent result."""
+        result1 = registry_odm_backend.get_raw_model()
+        result2 = registry_odm_backend.get_raw_model()
+
+        # Should always return the same BaseModel class
+        assert result1 == result2
+        assert result1 is result2
