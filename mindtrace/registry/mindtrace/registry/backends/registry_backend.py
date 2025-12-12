@@ -58,9 +58,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             return [value]
         return list(value)
 
-    def _normalize_versions(
-        self, version: VersionArg, length: int
-    ) -> List[Union[str, None]]:
+    def _normalize_versions(self, version: VersionArg, length: int) -> List[Union[str, None]]:
         """Normalize version argument to list matching expected length."""
         if version is None or isinstance(version, str):
             return [version] * length
@@ -118,6 +116,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         version: VersionArg,
         local_path: PathArg,
         metadata: MetadataArg = None,
+        on_conflict: str = "error",
     ) -> Dict[Tuple[str, str], str]:
         """Atomically push artifacts and metadata.
 
@@ -138,12 +137,14 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 - "metadata": user metadata
                 - "_files": list of relative file paths
                 - "hash": content hash for verification
+            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
+                "skip" silently skips. Default is "error".
 
         Returns:
-            Dict mapping (name, resolved_version) to "ok" on success.
+            Dict mapping (name, resolved_version) to "ok" or "skipped".
 
         Raises:
-            RegistryVersionConflict: If version already exists.
+            RegistryVersionConflict: If version already exists and on_conflict="error".
             ValueError: If inputs are invalid.
         """
         pass
@@ -368,10 +369,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             if not n or not n.strip():
                 raise ValueError("Object names cannot be empty.")
             elif "_" in n:
-                raise ValueError(
-                    f"Object name '{n}' cannot contain underscores. "
-                    "Use colons (':') for namespacing."
-                )
+                raise ValueError(f"Object name '{n}' cannot contain underscores. Use colons (':') for namespacing.")
             elif "@" in n:
                 raise ValueError(f"Object name '{n}' cannot contain '@'.")
 
