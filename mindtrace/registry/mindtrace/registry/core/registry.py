@@ -339,19 +339,19 @@ class Registry(Mindtrace):
             RegistryObjectNotFound: If any object has no versions
         """
         if not self.version_objects:
+            # Hot path for non-versioned mode
             return [(n, "1") for n in names]
 
-        # Find which names need "latest" resolution
-        needs_latest = [n for n, v in zip(names, versions) if v == "latest" or v is None]
+        # Find unique names that need "latest" resolution
+        needs_latest_set = {n for n, v in zip(names, versions) if v == "latest" or v is None}
         latest_map = {}
 
-        if needs_latest:
-            all_versions = self.backend.list_versions(needs_latest)
-            for n in needs_latest:
-                vers = [v for v in all_versions.get(n, []) if not v.startswith("__temp__")]
-                if not vers:
-                    raise RegistryObjectNotFound(f"Object {n} has no versions.")
-                latest_map[n] = sorted(vers, key=lambda v: [int(x) for x in v.split(".")])[-1]
+        # Use cached list_versions instead of direct backend call
+        for n in needs_latest_set:
+            vers = [v for v in self.list_versions(n) if not v.startswith("__temp__")]
+            if not vers:
+                raise RegistryObjectNotFound(f"Object {n} has no versions.")
+            latest_map[n] = sorted(vers, key=lambda v: [int(x) for x in v.split(".")])[-1]
 
         return [(n, latest_map[n] if v == "latest" or v is None else v) for n, v in zip(names, versions)]
 
@@ -480,7 +480,8 @@ class Registry(Mindtrace):
             init_params: Additional parameters for the materializer(s).
             metadata: Additional metadata to store with the object(s).
             on_conflict: Behavior when version already exists. "error" (default) raises
-                RegistryVersionConflict, "skip" silently skips existing versions.
+                RegistryVersionConflict, "skip" silently skips existing versions,
+                "overwrite" replaces existing.
 
         Returns:
             Resolved version string (single input) or list of version strings (list input).
@@ -489,20 +490,20 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If no materializer is found for any object.
             ValueError: If version string is invalid.
-            ValueError: If on_conflict is not "error" or "skip".
+            ValueError: If on_conflict is not "error", "skip", or "overwrite".
             RegistryVersionConflict: If version already exists and on_conflict="error".
         """
-        if on_conflict not in ("error", "skip"):
-            raise ValueError(f"on_conflict must be 'error' or 'skip', got '{on_conflict}'")
+        if on_conflict not in ("error", "skip", "overwrite"):
+            raise ValueError(f"on_conflict must be 'error', 'skip', or 'overwrite', got '{on_conflict}'")
 
         is_batch = isinstance(name, list)
 
         # Normalize inputs to lists
         names = name if is_batch else [name]
         objs = obj if is_batch else [obj]
-        if not self.version_objects: # override version if version_objects is False but user provided a version
+        # In non-versioned mode, always use "1" regardless of user input
+        if not self.version_objects:
             versions = ["1"] * len(names)
-
         else:
             versions = version if isinstance(version, list) else [version] * len(names)
         init_params_list = init_params if isinstance(init_params, list) else [init_params] * len(names)
@@ -521,8 +522,8 @@ class Registry(Mindtrace):
         with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
             push_paths, push_metadata = [], []
 
-            for idx, (n, o, v, ip, m) in enumerate(
-                zip(names, objs, validated_versions, init_params_list, metadata_list)
+            for idx, (n, o, ip, m) in enumerate(
+                zip(names, objs, init_params_list, metadata_list)
             ):
                 object_class = f"{type(o).__module__}.{type(o).__name__}"
                 materializer_class = self._find_materializer(o, materializer)
@@ -575,6 +576,70 @@ class Registry(Mindtrace):
 
         return results if is_batch else results[0]
 
+    def _verify_and_refresh_if_stale(
+        self,
+        name: str,
+        version: str,
+        temp_dir: Path,
+        metadata: dict,
+        base_temp_dir: str,
+        cache_misses_set: set,
+    ) -> tuple[Path, bool]:
+        """Verify hash and refresh from remote if cache is stale.
+
+        Args:
+            name: Object name.
+            version: Object version.
+            temp_dir: Current temp directory with pulled artifacts.
+            metadata: Object metadata (from remote when verify_hash=True).
+            base_temp_dir: Base temp directory for creating fresh pulls.
+            cache_misses_set: Set of (name, version) that were cache misses.
+                              Modified in-place to include refreshed entries.
+
+        Returns:
+            Tuple of (temp_dir, was_refreshed) where temp_dir may be a new
+            directory if cache was stale, and was_refreshed indicates if
+            a refresh occurred.
+
+        Raises:
+            ValueError: If hash verification fails after refresh attempt.
+        """
+        expected = metadata.get("hash")
+        if not expected:
+            self.logger.warning(f"No hash found in metadata for {name}@{version}. Skipping hash verification.")
+            return temp_dir, False
+
+        computed = compute_dir_hash(str(temp_dir))
+        if computed == expected:
+            return temp_dir, False
+
+        # Hash mismatch - check if this was a cache hit (stale cache)
+        is_cache_hit = (name, version) not in cache_misses_set and self._cache is not None
+        if is_cache_hit:
+            self.logger.warning(f"Cache stale for {name}@{version}, fetching from remote.")
+            # Re-pull from remote backend
+            fresh_temp_dir = Path(base_temp_dir) / f"{name}_{version}_fresh".replace(":", "_")
+            fresh_temp_dir.mkdir(parents=True, exist_ok=True)
+            self.backend.pull([name], [version], [fresh_temp_dir])
+
+            # Re-verify hash
+            computed = compute_dir_hash(str(fresh_temp_dir))
+            if computed != expected:
+                raise ValueError(
+                    f"Artifact hash verification failed for {name}@{version}. "
+                    f"Expected hash: {expected}, computed hash: {computed}"
+                )
+
+            # Mark as needing cache update
+            cache_misses_set.add((name, version))
+            return fresh_temp_dir, True
+
+        # Not a cache hit - direct remote fetch failed verification
+        raise ValueError(
+            f"Artifact hash verification failed for {name}@{version}. "
+            f"Expected hash: {expected}, computed hash: {computed}"
+        )
+
     def _materialize(self, temp_dir: Path, metadata: dict, **kwargs) -> Any:
         """Materialize an object from a temp directory using metadata."""
         object_class = metadata["class"]
@@ -619,24 +684,33 @@ class Registry(Mindtrace):
         """
         is_batch = isinstance(name, list)
         names = name if is_batch else [name]
-        if not self.version_objects: # override version if version_objects is False but user provided a version
-            versions = ["1"] * len(names)
-        else:
-            versions = version if isinstance(version, list) else [version] * len(names)
+        versions = version if isinstance(version, list) else [version] * len(names)
 
         if len(names) != len(versions):
             raise ValueError("name and version lists must have same length")
 
+        # _resolve_versions handles non-versioned mode internally
         resolved = self._resolve_versions(names, versions)
 
         # Partition into cache hits/misses
         cache_hits, cache_misses = [], []
         if self._cache is not None:
-            for n, v in resolved:
-                if (n, v) in self._cache.backend.fetch_metadata(n, v):
-                    cache_hits.append((n, v))
-                else:
-                    cache_misses.append((n, v))
+            try:
+                # Batch check cache existence using has_object (avoids N individual fetch_metadata calls)
+                unique_resolved = list(set(resolved))
+                cache_existence = self._cache.backend.has_object(
+                    [n for n, _ in unique_resolved], [v for _, v in unique_resolved]
+                )
+                cache_hit_set = {(n, v) for (n, v), exists in cache_existence.items() if exists}
+                for n, v in resolved:
+                    if (n, v) in cache_hit_set:
+                        cache_hits.append((n, v))
+                    else:
+                        cache_misses.append((n, v))
+            except Exception as e:
+                # Cache check failed - treat all as cache misses
+                self.logger.warning(f"Cache check failed, falling back to remote: {e}")
+                cache_misses = resolved
         else:
             cache_misses = resolved
 
@@ -686,14 +760,17 @@ class Registry(Mindtrace):
                 metadata = all_metadata[(n, v)]
                 temp_dir = temp_dirs[(n, v)]
 
-                if verify_hash and (expected := metadata.get("hash")):
-                    computed = compute_dir_hash(str(temp_dir))
-                    if computed != expected:
-                        raise ValueError(f"Hash verification failed for {n}@{v}.")
+                # Hash verification with automatic cache refresh on mismatch
+                if verify_hash:
+                    temp_dir, was_refreshed = self._verify_and_refresh_if_stale(
+                        n, v, temp_dir, metadata, base_temp_dir, cache_misses_set
+                    )
+                    if was_refreshed:
+                        temp_dirs[(n, v)] = temp_dir
 
                 obj = self._materialize(temp_dir, metadata, **kwargs)
 
-                # Save cache misses to cache
+                # Save cache misses to cache (includes refreshed stale entries)
                 if self._cache is not None and (n, v) in cache_misses_set:
                     try:
                         self._cache.save(
@@ -703,6 +780,7 @@ class Registry(Mindtrace):
                             materializer=metadata.get("materializer"),
                             init_params=metadata.get("init_params", {}),
                             metadata=metadata.get("metadata", {}),
+                            on_conflict="overwrite",  # Overwrite stale cache entries
                         )
                     except Exception as e:
                         self.logger.warning(f"Error saving {n}@{v} to cache: {e}")
@@ -821,7 +899,7 @@ class Registry(Mindtrace):
             registry.info("model", "latest")  # Latest version
         """
         if name is None:
-            # Return info for all objects using batch fetch
+            # Return info for all objects using batch fetch for performance
             all_names = []
             all_versions = []
             for obj_name in self.list_objects():
@@ -832,9 +910,8 @@ class Registry(Mindtrace):
             if not all_names:
                 return {}
 
-            # Use unified fetch_metadata API with lists
-            all_metadata = self.backend.fetch_metadata(all_names, all_versions)
-
+            # Batch fetch with on_error="skip" for resilience - corrupted entries are skipped
+            all_metadata = self.backend.fetch_metadata(all_names, all_versions, on_error="skip")
             result = {}
             for (obj_name, ver), meta in all_metadata.items():
                 if obj_name not in result:

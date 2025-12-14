@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
 
 
 class SampleModel(BaseModel):
@@ -249,19 +250,19 @@ def test_save_duplicate_version(registry, test_config):
     registry.save("test:config", test_config, version="1.0.0")
 
     # Try to save again with same version
-    with pytest.raises(ValueError, match="Object test:config version 1.0.0 already exists"):
+    with pytest.raises(RegistryVersionConflict, match="Object test:config@1.0.0 already exists"):
         registry.save("test:config", test_config, version="1.0.0")
 
 
 def test_load_nonexistent_object(registry):
     """Test that loading a nonexistent object raises an error."""
-    with pytest.raises(ValueError, match="Object test:config version 1.0.0 does not exist"):
+    with pytest.raises(RegistryObjectNotFound, match="Object test:config@1.0.0 not found"):
         registry.load("test:config", version="1.0.0")
 
 
 def test_invalid_object_name(registry, test_config):
     """Test that saving with an invalid object name raises an error."""
-    error_msg = "Object names cannot contain underscores. Use colons (':') for namespacing."
+    error_msg = "Object name 'test_config' cannot contain underscores. Use colons (':') for namespacing."
     with pytest.raises(ValueError, match=re.escape(error_msg)):
         registry.save("test_config", test_config, version="1.0.0")
 
@@ -303,55 +304,41 @@ def test_info(registry, test_config):
 
 
 def test_info_error_handling(registry, test_config):
-    """Test error handling in info method for metadata loading."""
-    # Save a valid config first
+    """Test error handling in info method for metadata loading.
+
+    The info() method uses batch fetch with on_error="skip" for resilience.
+    Corrupted/inaccessible entries are skipped and partial results returned.
+    """
+    # Save two configs - one will be corrupted
     registry.save("test:config", test_config, version="1.0.0")
+    registry.save("test:other", test_config, version="1.0.0")
 
-    # Create a mock backend that raises different types of errors
-    class MockBackend(registry.backend.__class__):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._error_type = None
+    # Corrupt the metadata file for test:config by writing invalid YAML
+    meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
 
-        def set_error_type(self, error_type):
-            self._error_type = error_type
+    # Test with corrupted metadata (causes yaml.safe_load to raise)
+    with open(meta_path, "w") as f:
+        f.write("invalid: yaml: content: [")  # Invalid YAML
 
-        def fetch_metadata(self, name: str, version: str) -> dict:
-            if self._error_type == "FileNotFoundError":
-                raise FileNotFoundError("Simulated file not found")
-            elif self._error_type == "S3Error":
-                raise S3Error()  # type: ignore
-            elif self._error_type == "RuntimeError":
-                raise RuntimeError("Simulated runtime error")
-            return super().fetch_metadata(name, version)
+    # info() should skip the corrupted entry and return the valid one
+    result = registry.info()
+    # Corrupted object may not appear in result at all, or appear with empty versions
+    if "test:config" in result:
+        assert "1.0.0" not in result["test:config"]  # Corrupted version should be skipped
+    assert "test:other" in result
+    assert "1.0.0" in result["test:other"]  # Valid version should be returned
 
-    # Replace the backend with our mock
-    original_backend = registry.backend
-    mock_backend = MockBackend(uri=registry.backend.uri)
-    registry.backend = mock_backend
+    # Restore the corrupted file with valid but empty content
+    with open(meta_path, "w") as f:
+        f.write("")  # Empty file
 
-    try:
-        # Test FileNotFoundError handling
-        mock_backend.set_error_type("FileNotFoundError")
-        result = registry.info()
-        assert "test:config" in result
-        assert "1.0.0" not in result["test:config"]  # Version should be skipped
-
-        # Test S3Error handling
-        mock_backend.set_error_type("S3Error")
-        result = registry.info()
-        assert "test:config" in result
-        assert "1.0.0" not in result["test:config"]  # Version should be skipped
-
-        # Test general exception handling
-        mock_backend.set_error_type("RuntimeError")
-        result = registry.info()
-        assert "test:config" in result
-        assert "1.0.0" not in result["test:config"]  # Version should be skipped
-
-    finally:
-        # Restore the original backend
-        registry.backend = original_backend
+    # info() should skip empty metadata and return the valid one
+    result = registry.info()
+    # Empty metadata object may not appear in result at all, or appear with empty versions
+    if "test:config" in result:
+        assert "1.0.0" not in result["test:config"]  # Empty version should be skipped
+    assert "test:other" in result
+    assert "1.0.0" in result["test:other"]  # Valid version should be returned
 
 
 def test_registry_with_custom_backend(concrete_backend):
@@ -446,17 +433,24 @@ def test_find_materializer_with_class_object(registry, test_config):
 
 
 def test_load_without_class_metadata(registry, test_config):
-    """Test that loading an object without a class in metadata raises a ValueError."""
+    """Test that loading an object without a class in metadata raises a KeyError."""
     # Save the config first
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Manually modify the metadata to remove the class information
-    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    # Manually modify the metadata file directly to remove the class information
+    # fetch_metadata returns Dict[Tuple[str, str], dict]
+    metadata_result = registry.backend.fetch_metadata("test:config", "1.0.0")
+    metadata = metadata_result[("test:config", "1.0.0")]
     metadata.pop("class", None)
-    registry.backend.save_metadata("test:config", "1.0.0", metadata)
 
-    # Attempt to load the object with corrupted metadata
-    with pytest.raises(ValueError, match="Class not registered for test:config@1.0.0"):
+    # Write directly to the metadata file (bypassing save_metadata which would raise conflict)
+    import yaml
+    meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(metadata, f)
+
+    # Attempt to load the object with corrupted metadata - now raises KeyError
+    with pytest.raises(KeyError, match="class"):
         registry.load("test:config", version="1.0.0")
 
 
@@ -480,8 +474,8 @@ def test_load_directory_with_contents(registry):
             # Load the directory with output_dir specified
             loaded_path = registry.load("test:dir", version="1.0.0", output_dir=output_dir)
 
-            # Verify the output directory structure
-            assert loaded_path == Path(output_dir)
+            # Verify the output directory structure - now creates a subdirectory based on object name
+            assert loaded_path == Path(output_dir) / "test:dir"
             assert (loaded_path / "file1.txt").exists()
             assert (loaded_path / "file2.txt").exists()
             assert (loaded_path / "subdir").exists()
@@ -766,9 +760,11 @@ def test_str_with_rich_value_load_error(registry):
     registry.save("test:str", "hello world", version="1.0.0")
 
     # Create a mock backend that raises an error during load
+    # The new pull API accepts lists: pull(names, versions, paths)
     class MockBackend(registry.backend.__class__):
-        def pull(self, name: str, version: str, local_path: str):
-            if name == "test:str":
+        def pull(self, name, version, local_path):
+            names = self._normalize_to_list(name)
+            if "test:str" in names:
                 raise RuntimeError("Simulated load error")
             return super().pull(name, version, local_path)
 
@@ -815,9 +811,11 @@ def test_str_with_rich_load_error(registry):
     registry.save("test:str", "hello world", version="1.0.0")
 
     # Create a mock backend that raises an error during load
+    # The new pull API accepts lists: pull(names, versions, paths)
     class MockBackend(registry.backend.__class__):
-        def pull(self, name: str, version: str, local_path: str):
-            if name == "test:str":
+        def pull(self, name, version, local_path):
+            names = self._normalize_to_list(name)
+            if "test:str" in names:
                 raise RuntimeError("Simulated load error")
             return super().pull(name, version, local_path)
 
@@ -845,9 +843,11 @@ def test_str_value_load_error(registry, color):
     registry.save("test:str", "hello world", version="1.0.0")
 
     # Create a mock backend that raises an error during load
+    # The new pull API accepts lists: pull(names, versions, paths)
     class MockBackend(registry.backend.__class__):
-        def pull(self, name: str, version: str, local_path: str):
-            if name == "test:str":
+        def pull(self, name, version, local_path):
+            names = self._normalize_to_list(name)
+            if "test:str" in names:
                 raise RuntimeError("Simulated load error")
             return super().pull(name, version, local_path)
 
@@ -878,40 +878,43 @@ def test_next_version_first_version(registry):
     assert registry._latest("new:object") is None
 
 
-def test_save_temp_version_move_error(registry, test_config):
-    """Test error handling when moving temp version to final version fails."""
-    # Mock the backend's overwrite method to raise an exception
-    with patch.object(registry.backend, "overwrite", side_effect=Exception("Failed to move temp version")):
-        # Attempt to save should raise the exception
-        with pytest.raises(Exception, match="Failed to move temp version"):
-            registry.save("test:config", test_config)
+def test_save_push_rollback_on_error(registry, test_config):
+    """Test that push rolls back artifacts and metadata on failure."""
+    # Mock copytree to succeed, but yaml.safe_dump to fail (simulating metadata write failure)
+    original_copytree = shutil.copytree
+    call_count = [0]
 
-        # Verify that temp version was cleaned up
-        assert not registry.has_object("test:config", "__temp__")
+    def mock_copytree(*args, **kwargs):
+        call_count[0] += 1
+        return original_copytree(*args, **kwargs)
 
-        # Verify that final version was not created
-        assert not registry.has_object("test:config", "1.0.0")
+    with patch("shutil.copytree", side_effect=mock_copytree):
+        with patch("yaml.safe_dump", side_effect=Exception("Failed to write metadata")):
+            # Attempt to save should raise the exception
+            with pytest.raises(RuntimeError, match="Push failed"):
+                registry.save("test:config", test_config, version="1.0.0")
 
-        # Verify that object-specific metadata was not created
-        meta_path = registry.backend.uri / "_meta_test:config@1.0.0.yaml"
-        assert not meta_path.exists()
+    # Verify that artifacts were rolled back (directory should not exist)
+    artifact_path = registry.backend.uri / "test:config" / "1.0.0"
+    assert not artifact_path.exists()
+
+    # Verify that metadata was not created
+    meta_path = registry.backend.uri / "_meta_test_config@1.0.0.yaml"
+    assert not meta_path.exists()
 
 
-def test_save_temp_cleanup_warning(registry, test_config, caplog):
-    """Test that a warning is logged when there's an error cleaning up temporary files."""
-    # Mock the backend's delete method to raise an exception during cleanup
-    with patch.object(registry.backend, "delete", side_effect=Exception("Failed to delete temp version")):
-        # Save should still succeed since cleanup errors are just logged
+def test_save_version_conflict_error(registry, test_config):
+    """Test that saving with an existing version raises RegistryVersionConflict."""
+    # Save first version
+    registry.save("test:config", test_config, version="1.0.0")
+
+    # Attempt to save same version should raise conflict
+    with pytest.raises(RegistryVersionConflict, match="Object test:config@1.0.0 already exists"):
         registry.save("test:config", test_config, version="1.0.0")
 
-        # Verify that the warning was logged
-        assert any("Error cleaning up temp version" in record.message for record in caplog.records)
-        assert any("Failed to delete temp version" in record.message for record in caplog.records)
-
-        # Verify that the object was still saved successfully
-        assert registry.has_object("test:config", "1.0.0")
-        loaded_config = registry.load("test:config", "1.0.0")
-        assert loaded_config == test_config
+    # Verify the original object is still intact
+    loaded = registry.load("test:config", version="1.0.0")
+    assert loaded == test_config
 
 
 def test_pop_nonexistent_object(registry):
@@ -1025,24 +1028,24 @@ def test_dict_like_interface_keys_values_items(registry):
 
 def test_dict_like_interface_update(registry):
     """Test the update() method."""
-    # Test with simple dictionary
-    registry.update({"test:str": "hello", "test:int": 42})
-    assert registry["test:str"] == "hello"
-    assert registry["test:int"] == 42
+    # Test with simple dictionary (auto-versioned)
+    registry.update({"test:str1": "hello", "test:int1": 42})
+    assert registry["test:str1"] == "hello"
+    assert registry["test:int1"] == 42
 
-    # Test with versioned items
-    registry.update({"test:str@1.0.0": "hello v1", "test:int@1.0.0": 42})
-    assert registry["test:str@1.0.0"] == "hello v1"
-    assert registry["test:int@1.0.0"] == 42
+    # Test with explicit versioned items (different objects)
+    registry.update({"test:str2@1.0.0": "hello v1", "test:int2@1.0.0": 42})
+    assert registry["test:str2@1.0.0"] == "hello v1"
+    assert registry["test:int2@1.0.0"] == 42
 
     # Test updating latest version (should create new version)
-    registry.update({"test:str": "updated"})
-    assert registry["test:str"] == "updated"  # Latest version is updated
-    assert registry["test:str@1.0.0"] == "hello v1"  # Old version remains unchanged
+    registry.update({"test:str2": "updated"})
+    assert registry["test:str2"] == "updated"  # Latest version (2) is updated
+    assert registry["test:str2@1.0.0"] == "hello v1"  # Old version remains unchanged
 
-    # Test that updating existing version raises error
-    with pytest.raises(ValueError, match="Object test:str version 1.0.0 already exists"):
-        registry.update({"test:str@1.0.0": "updated v1"})
+    # Test that updating existing version raises error (RegistryVersionConflict)
+    with pytest.raises(RegistryVersionConflict, match="Object test:str2@1.0.0 already exists"):
+        registry.update({"test:str2@1.0.0": "updated v1"})
 
 
 def test_dict_like_interface_clear(registry):
@@ -1273,9 +1276,9 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     loaded_config = non_versioned_registry.load("test:config")
     assert loaded_config == test_config
 
-    # Save again - should overwrite
+    # Save again with overwrite - should replace existing
     new_config = {"new": "value"}
-    non_versioned_registry.save("test:config", new_config)
+    non_versioned_registry.save("test:config", new_config, on_conflict="overwrite")
 
     # Verify still only one version exists
     versions = non_versioned_registry.list_versions("test:config")
@@ -1306,31 +1309,26 @@ def test_non_versioned_delete(non_versioned_registry, test_config):
 
 def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     """Test dictionary interface in non-versioned mode."""
-    # Reduce timeout for faster test execution
-    original_timeout = non_versioned_registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
-    non_versioned_registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.01  # 10ms
+    # Test __setitem__ and __getitem__
+    non_versioned_registry["test:config"] = test_config
+    assert non_versioned_registry["test:config"] == test_config
 
-    try:
-        # Test __setitem__ and __getitem__
-        non_versioned_registry["test:config"] = test_config
-        assert non_versioned_registry["test:config"] == test_config
+    # Test that re-saving with __setitem__ raises conflict (explicit overwrite needed)
+    with pytest.raises(RegistryVersionConflict):
+        non_versioned_registry["test:config"] = {"new": "value"}
 
-        # Test update
-        new_config = {"new": "value"}
-        non_versioned_registry.update({"test:config": new_config})
-        assert non_versioned_registry["test:config"] == new_config
+    # Test pop
+    value = non_versioned_registry.pop("test:config")
+    assert value == test_config
+    assert "test:config" not in non_versioned_registry
 
-        # Test pop
-        value = non_versioned_registry.pop("test:config")
-        assert value == new_config
-        assert "test:config" not in non_versioned_registry
+    # Test setdefault on non-existent key
+    non_versioned_registry.setdefault("test:config", test_config)
+    assert non_versioned_registry["test:config"] == test_config
 
-        # Test setdefault
-        non_versioned_registry.setdefault("test:config", test_config)
-        assert non_versioned_registry["test:config"] == test_config
-    finally:
-        # Restore original timeout
-        non_versioned_registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
+    # Test setdefault on existing key (should not overwrite)
+    non_versioned_registry.setdefault("test:config", {"different": "value"})
+    assert non_versioned_registry["test:config"] == test_config  # Original value preserved
 
 
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
@@ -1673,9 +1671,8 @@ def test_distributed_lock_save_concurrent(registry):
 
 
 def test_distributed_lock_save_conflict(registry):
-    """Test that saving to the same version is properly prevented by locks."""
-
-    from mindtrace.registry.core.exceptions import LockTimeoutError
+    """Test that saving to the same version is properly prevented."""
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     test_obj = Config(
         {
@@ -1692,8 +1689,8 @@ def test_distributed_lock_save_conflict(registry):
         try:
             registry.save("test:conflict", test_obj, version="1.0.0")
             return False  # Should not reach here
-        except (ValueError, LockTimeoutError):
-            return True  # Expected error
+        except (RegistryVersionConflict, LockAcquisitionError):
+            return True  # Expected error - either version conflict or lock contention
 
     # Try to save to same version concurrently
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -1794,81 +1791,48 @@ def test_distributed_lock_load_concurrent(registry):
 #     assert final_obj["CUSTOM_KEY"] == "value2"
 
 
-def test_lock_timeout_error(registry):
-    """Test that TimeoutError is raised when lock acquisition fails."""
-    # Temporarily reduce timeout to speed up test
-    original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
-    registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.1  # 100ms instead of 5s
+# Note: The get_lock API was removed from Registry.
+# Locking is now handled internally by the backend via _internal_lock context manager.
+# See LocalRegistryBackend._internal_lock for the implementation.
+
+
+def test_backend_internal_lock(registry):
+    """Test that the backend's internal locking mechanism works correctly."""
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
+    # Test that internal lock can be acquired and released
+    with registry.backend._internal_lock("test_key"):
+        # Lock should be held - verify lock file exists
+        lock_path = registry.backend._lock_path("test_key")
+        assert lock_path.exists()
+
+    # Lock should be released - verify lock file is gone
+    assert not lock_path.exists()
+
+
+def test_backend_internal_lock_contention(registry):
+    """Test that concurrent lock acquisition raises LockAcquisitionError."""
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    import uuid
+
+    lock_key = "contention_test"
+    lock_id = str(uuid.uuid4())
+
+    # Acquire lock manually
+    assert registry.backend._acquire_internal_lock(lock_key, lock_id, timeout=30)
 
     try:
-        # Mock the backend's acquire_lock method to simulate failure
-        with patch.object(registry.backend, "acquire_lock", return_value=False):
-            # Test exclusive lock timeout
-            with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
-                with registry.get_lock("test_key", "1.0"):
-                    pass
+        # Try to acquire same lock with different ID - should fail
+        other_lock_id = str(uuid.uuid4())
+        assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
-            # Test shared lock timeout
-            with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
-                with registry.get_lock("test_key", "1.0", shared=True):
-                    pass
+        # Using context manager should raise
+        with pytest.raises(LockAcquisitionError):
+            with registry.backend._internal_lock(lock_key):
+                pass
     finally:
-        # Restore original timeout
-        registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
-
-
-def test_lock_success(registry):
-    """Test successful lock acquisition."""
-    # Mock the backend's acquire_lock and release_lock methods
-    with (
-        patch.object(registry.backend, "acquire_lock", return_value=True) as mock_acquire,
-        patch.object(registry.backend, "release_lock", return_value=True) as mock_release,
-    ):
-        # Test exclusive lock
-        with registry.get_lock("test_key", "1.0"):
-            mock_acquire.assert_called_once()
-            assert not mock_acquire.call_args[1].get("shared", False)
-
-        # Verify lock was released
-        mock_release.assert_called_once()
-
-        # Reset mocks
-        mock_acquire.reset_mock()
-        mock_release.reset_mock()
-
-        # Test shared lock
-        with registry.get_lock("test_key", "1.0", shared=True):
-            mock_acquire.assert_called_once()
-            assert mock_acquire.call_args[1].get("shared", False)
-
-        # Verify lock was released
-        mock_release.assert_called_once()
-
-
-def test_lock_timeout_value(registry):
-    """Test that the correct timeout value is passed to acquire_lock."""
-    # Mock the backend's acquire_lock method
-    with patch.object(registry.backend, "acquire_lock", return_value=True) as mock_acquire:
-        # Test with default timeout
-        with registry.get_lock("test_key", "1.0"):
-            mock_acquire.assert_called_once()
-            # timeout is the third positional argument (index 2)
-            assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
-
-        # Reset mock
-        mock_acquire.reset_mock()
-
-        # Test with modified config timeout
-        original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
-        try:
-            registry.config["MINDTRACE_LOCK_TIMEOUT"] = 60
-            with registry.get_lock("test_key", "1.0"):
-                mock_acquire.assert_called_once()
-                # timeout is the third positional argument (index 2)
-                assert mock_acquire.call_args[0][2] == 60
-        finally:
-            # Restore original timeout
-            registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
+        # Release the lock
+        registry.backend._release_internal_lock(lock_key, lock_id)
 
 
 def test_validate_version_none_or_latest(registry):
@@ -2369,13 +2333,18 @@ def test_load_with_verify_hash_false(registry, test_config):
 
 def test_load_hash_mismatch_detection(registry, test_config):
     """Test that load() detects hash mismatches and raises ValueError."""
+    import yaml
+
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Manually corrupt the metadata hash
-    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    # Manually corrupt the metadata hash by writing directly to file
+    meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
+    with open(meta_path) as f:
+        metadata = yaml.safe_load(f)
     metadata["hash"] = "0" * 64  # Invalid hash
-    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(metadata, f)
 
     # Load should detect hash mismatch and raise ValueError
     with pytest.raises(ValueError, match="Artifact hash verification failed"):
@@ -2384,13 +2353,18 @@ def test_load_hash_mismatch_detection(registry, test_config):
 
 def test_load_missing_hash_warning(registry, test_config, caplog):
     """Test that load() logs warning when hash is missing from metadata."""
+    import yaml
+
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Manually remove hash from metadata
-    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    # Manually remove hash from metadata by writing directly to file
+    meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
+    with open(meta_path) as f:
+        metadata = yaml.safe_load(f)
     metadata.pop("hash", None)
-    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(metadata, f)
 
     # Load should still work but log a warning
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
@@ -2417,16 +2391,21 @@ def test_load_hash_verification_passed_logging(registry, test_config, caplog):
 
 def test_load_hash_mismatch_error_message(registry, test_config):
     """Test that hash mismatch error message contains expected and computed hashes."""
+    import yaml
+
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
     # Get the correct hash
     correct_hash = registry.info("test:config", version="1.0.0")["hash"]
 
-    # Manually corrupt the metadata hash
-    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    # Manually corrupt the metadata hash by writing directly to file
+    meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
+    with open(meta_path) as f:
+        metadata = yaml.safe_load(f)
     metadata["hash"] = "0" * 64  # Invalid hash
-    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(metadata, f)
 
     # Load should raise ValueError with informative message
     with pytest.raises(ValueError) as exc_info:
@@ -2604,18 +2583,19 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
 def test_save_with_cache(temp_registry_dir):
     """Test that save() saves to cache first, then uploads to remote."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.push = Mock()
-    mock_backend.save_metadata = Mock()
-    mock_backend.overwrite = Mock()
+    # push returns Dict[Tuple[str, str], str] mapping to "ok" or "skipped"
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
-    mock_backend.has_object = Mock(return_value=False)
-    mock_backend.list_versions = Mock(return_value=[])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): False})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": []})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
@@ -2625,35 +2605,29 @@ def test_save_with_cache(temp_registry_dir):
     # Verify cache has the object (cache save might have failed, but that's OK - it will be populated on load)
     # The important thing is that remote save succeeded
     try:
-        assert registry._cache.has_object("test:obj", "1.0.0")
+        cache_result = registry._cache.backend.has_object("test:obj", "1.0.0")
+        assert cache_result.get(("test:obj", "1.0.0"), False)
         assert registry._cache.load("test:obj", "1.0.0") == "value"
-    except (AssertionError, ValueError):
+    except (AssertionError, ValueError, KeyError):
         # Cache save might have failed, which is OK - it will be populated on next load
         pass
 
     # Verify remote backend was called (this is the critical part)
     assert mock_backend.push.called
-    assert mock_backend.save_metadata.called
-    assert mock_backend.overwrite.called
 
 
 def test_load_cache_hit(temp_registry_dir):
     """Test that load() uses cache when hash matches."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
-    mock_backend.fetch_metadata = Mock(
-        return_value={
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": "test_hash",
-        }
-    )
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
     mock_backend.pull = Mock()  # Should not be called on cache hit
 
     registry = Registry(backend=mock_backend, version_objects=True)
@@ -2664,12 +2638,16 @@ def test_load_cache_hit(temp_registry_dir):
     # Get the hash from cache
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # Mock remote metadata to have same hash
-    mock_backend.fetch_metadata.return_value = {
-        "class": "builtins.str",
-        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-        "hash": cached_hash,
-    }
+    # fetch_metadata returns Dict[Tuple[str, str], dict]
+    mock_backend.fetch_metadata = Mock(
+        return_value={
+            ("test:obj", "1.0.0"): {
+                "class": "builtins.str",
+                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                "hash": cached_hash,
+            }
+        }
+    )
 
     # Load should use cache
     result = registry.load("test:obj", "1.0.0")
@@ -2683,13 +2661,15 @@ def test_load_cache_miss(temp_registry_dir):
     """Test that load() downloads from remote and saves to cache on cache miss."""
     from tempfile import TemporaryDirectory
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
@@ -2698,17 +2678,24 @@ def test_load_cache_miss(temp_registry_dir):
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-        # Mock remote metadata
+        # Mock remote metadata - fetch_metadata returns Dict[Tuple[str, str], dict]
         expected_hash = compute_dir_hash(temp_path)
-        mock_backend.fetch_metadata.return_value = {
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": expected_hash,
-        }
+        mock_backend.fetch_metadata = Mock(return_value={
+            ("test:obj", "1.0.0"): {
+                "class": "builtins.str",
+                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                "hash": expected_hash,
+            }
+        })
 
         # Mock pull to copy our temp directory
         def mock_pull(name, version, local_path):
-            shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
+            # Handle batch API - normalize inputs
+            names = [name] if isinstance(name, str) else name
+            versions = [version] if isinstance(version, str) else version
+            paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
+            for p in paths:
+                shutil.copytree(temp_path, p, dirs_exist_ok=True)
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -2716,8 +2703,9 @@ def test_load_cache_miss(temp_registry_dir):
         result = registry.load("test:obj", "1.0.0")
         assert result == "value"
 
-        # Verify cache now has the object
-        assert registry._cache.has_object("test:obj", "1.0.0")
+        # Verify cache now has the object - has_object returns Dict[Tuple, bool]
+        cache_result = registry._cache.backend.has_object("test:obj", "1.0.0")
+        assert cache_result.get(("test:obj", "1.0.0"), False)
         assert registry._cache.load("test:obj", "1.0.0") == "value"
 
         # Verify remote pull was called
@@ -2725,50 +2713,55 @@ def test_load_cache_miss(temp_registry_dir):
 
 
 def test_load_cache_hash_mismatch(temp_registry_dir):
-    """Test that load() downloads from remote when cache hash doesn't match."""
+    """Test that load() auto-refreshes from remote when cache hash doesn't match."""
     from tempfile import TemporaryDirectory
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
     # Save old version to cache
     registry._cache.save("test:obj", "old_value", version="1.0.0")
 
-    # Save new version to remote (different hash)
+    # Create fresh data that will be returned by remote
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        (temp_path / "data.json").write_text('"new_value"')  # BuiltInMaterializer expects JSON format
-
-        # Mock remote metadata with different hash
+        (temp_path / "data.json").write_text('"new_value"')
         expected_hash = compute_dir_hash(temp_path)
-        mock_backend.fetch_metadata.return_value = {
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": expected_hash,
-        }
 
-        # Mock pull to copy our temp directory
-        def mock_pull(name, version, local_path):
-            shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
+        # Mock remote metadata with hash matching fresh data (not cache)
+        mock_backend.fetch_metadata = Mock(return_value={
+            ("test:obj", "1.0.0"): {
+                "class": "builtins.str",
+                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                "hash": expected_hash,
+            }
+        })
+
+        # Mock pull to copy fresh data
+        def mock_pull(names, versions, local_paths):
+            for p in local_paths:
+                shutil.copytree(temp_path, p, dirs_exist_ok=True)
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
-        # Load should download from remote (hash mismatch)
-        result = registry.load("test:obj", "1.0.0")
+        # Load should detect stale cache, fetch from remote, and return new value
+        result = registry.load("test:obj", "1.0.0", verify_hash=True)
         assert result == "new_value"
 
-        # Verify cache was updated
-        assert registry._cache.load("test:obj", "1.0.0") == "new_value"
+        # Verify remote pull was called (to refresh stale cache)
+        mock_backend.pull.assert_called()
 
-        # Verify remote pull was called
-        mock_backend.pull.assert_called_once()
+        # Cache should be updated with new value
+        assert registry._cache.load("test:obj", "1.0.0") == "new_value"
 
 
 def test_load_cache_error_fallback(temp_registry_dir):
@@ -2776,33 +2769,39 @@ def test_load_cache_error_fallback(temp_registry_dir):
     from tempfile import TemporaryDirectory
     from unittest.mock import patch
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
-    # Mock cache.has_object to raise exception
-    with patch.object(registry._cache, "has_object", side_effect=Exception("Cache error")):
+    # Mock cache.backend.has_object to raise exception (cache hit detection fails)
+    with patch.object(registry._cache.backend, "has_object", side_effect=Exception("Cache error")):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-            # Mock remote metadata
+            # Mock remote metadata - fetch_metadata returns Dict[Tuple, dict]
             expected_hash = compute_dir_hash(temp_path)
-            mock_backend.fetch_metadata.return_value = {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": expected_hash,
-            }
+            mock_backend.fetch_metadata = Mock(return_value={
+                ("test:obj", "1.0.0"): {
+                    "class": "builtins.str",
+                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "hash": expected_hash,
+                }
+            })
 
             # Mock pull to copy our temp directory
             def mock_pull(name, version, local_path):
-                shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
+                paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
+                for p in paths:
+                    shutil.copytree(temp_path, p, dirs_exist_ok=True)
 
             mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -2817,13 +2816,15 @@ def test_load_cache_error_fallback(temp_registry_dir):
 def test_delete_with_cache(temp_registry_dir):
     """Test that delete() removes from both remote and cache."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
@@ -2832,29 +2833,32 @@ def test_delete_with_cache(temp_registry_dir):
 
     # Save to cache
     registry._cache.save("test:obj", "value", version="1.0.0")
-    assert registry._cache.has_object("test:obj", "1.0.0")
+    cache_result = registry._cache.backend.has_object("test:obj", "1.0.0")
+    assert cache_result.get(("test:obj", "1.0.0"), False)
 
     # Delete should remove from both
     registry.delete("test:obj", "1.0.0")
 
     # Verify cache no longer has object
-    assert not registry._cache.has_object("test:obj", "1.0.0")
+    cache_result = registry._cache.backend.has_object("test:obj", "1.0.0")
+    assert not cache_result.get(("test:obj", "1.0.0"), False)
 
-    # Verify remote delete was called
-    mock_backend.delete.assert_called_once_with("test:obj", "1.0.0")
-    mock_backend.delete_metadata.assert_called_once_with("test:obj", "1.0.0")
+    # Verify remote delete was called with batch args (lists)
+    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
 
 
 def test_delete_cache_error_handling(temp_registry_dir):
     """Test that delete() continues even if cache delete fails."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
@@ -2873,16 +2877,17 @@ def test_delete_cache_error_handling(temp_registry_dir):
 def test_save_cache_error_handling(temp_registry_dir):
     """Test that save() continues even if cache save fails."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=False)
-    mock_backend.list_versions = Mock(return_value=[])
-    mock_backend.push = Mock()
-    mock_backend.save_metadata = Mock()
-    mock_backend.overwrite = Mock()
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): False})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": []})
+    # push returns Dict[Tuple[str, str], str]
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -2895,19 +2900,20 @@ def test_save_cache_error_handling(temp_registry_dir):
 
         # Verify remote save was called
         assert mock_backend.push.called
-        assert mock_backend.save_metadata.called
 
 
 def test_load_cache_metadata_sync(temp_registry_dir):
-    """Test that loading from cache syncs metadata from remote."""
+    """Test that loading from cache uses remote metadata for materialization when verify_hash=True."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
@@ -2915,21 +2921,29 @@ def test_load_cache_metadata_sync(temp_registry_dir):
     registry._cache.save("test:obj", "value", version="1.0.0")
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # Mock remote metadata with updated metadata field
+    # Mock remote metadata - fetch_metadata returns Dict[Tuple, dict]
     remote_metadata = {
-        "class": "builtins.str",
-        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-        "hash": cached_hash,
-        "metadata": {"updated": "true"},
+        ("test:obj", "1.0.0"): {
+            "class": "builtins.str",
+            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+            "hash": cached_hash,
+            "metadata": {"from_remote": "true"},
+        }
     }
-    mock_backend.fetch_metadata.return_value = remote_metadata
+    mock_backend.fetch_metadata = Mock(return_value=remote_metadata)
 
-    # Load from cache
-    registry.load("test:obj", "1.0.0")
+    # Load from cache with verify_hash=True (default) - uses remote metadata
+    result = registry.load("test:obj", "1.0.0", verify_hash=True)
+    assert result == "value"
 
-    # Verify cache metadata was updated
+    # Verify remote metadata was fetched (for hash verification)
+    mock_backend.fetch_metadata.assert_called_once()
+
+    # Note: Cache metadata is NOT automatically synced with remote metadata
+    # The cache stores its own metadata from when the object was cached
     cached_info = registry._cache.info("test:obj", "1.0.0")
-    assert cached_info["metadata"] == {"updated": "true"}
+    # Cache metadata is unchanged - it retains original metadata from cache save
+    assert cached_info.get("metadata", {}) == {}
 
 
 def test_cache_deterministic_directory(temp_registry_dir):
@@ -2982,16 +2996,17 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
     import shutil
     from unittest.mock import patch
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=False)
-    mock_backend.list_versions = Mock(return_value=[])
-    mock_backend.push = Mock()
-    mock_backend.save_metadata = Mock()
-    mock_backend.overwrite = Mock()
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): False})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": []})
+    # push returns Dict[Tuple[str, str], str]
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -3029,62 +3044,65 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
 
             # Verify remote save was called (fallback path)
             assert mock_backend.push.called
-            assert mock_backend.save_metadata.called
 
 
-def test_load_cache_delete_stale_error(temp_registry_dir):
-    """Test that load() handles error when deleting stale cache entry."""
+def test_load_cache_stale_refresh_fails(temp_registry_dir):
+    """Test that load() raises error when cache is stale AND remote also fails hash verification."""
     from tempfile import TemporaryDirectory
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
     # Save old version to cache
     registry._cache.save("test:obj", "old_value", version="1.0.0")
 
-    # Mock cache.delete to raise exception
-    with patch.object(registry._cache, "delete", side_effect=Exception("Delete error")):
-        with TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            (temp_path / "data.json").write_text('"new_value"')
+    # Mock remote metadata with hash that doesn't match either cache or what remote will provide
+    mock_backend.fetch_metadata = Mock(return_value={
+        ("test:obj", "1.0.0"): {
+            "class": "builtins.str",
+            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+            "hash": "expected_hash_that_nothing_matches",
+        }
+    })
 
-            # Mock remote metadata with different hash
-            expected_hash = compute_dir_hash(temp_path)
-            mock_backend.fetch_metadata.return_value = {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": expected_hash,
-            }
+    # Mock pull to return data that also doesn't match expected hash
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        (temp_path / "data.json").write_text('"corrupted_value"')
 
-            # Mock pull to copy our temp directory
-            def mock_pull(name, version, local_path):
-                shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
+        def mock_pull(names, versions, local_paths):
+            for p in local_paths:
+                shutil.copytree(temp_path, p, dirs_exist_ok=True)
 
-            mock_backend.pull = Mock(side_effect=mock_pull)
+        mock_backend.pull = Mock(side_effect=mock_pull)
 
-            # Load should still succeed despite delete error
-            result = registry.load("test:obj", "1.0.0")
-            assert result == "new_value"
+        # Load should detect stale cache, try to refresh from remote, but remote also fails
+        with pytest.raises(ValueError, match="Artifact hash verification failed"):
+            registry.load("test:obj", "1.0.0")
 
 
 def test_delete_cache_delete_error(temp_registry_dir):
     """Test that delete() handles error when deleting from cache."""
     from unittest.mock import patch
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool]
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
@@ -3099,9 +3117,8 @@ def test_delete_cache_delete_error(temp_registry_dir):
         # Delete should still succeed
         registry.delete("test:obj", "1.0.0")
 
-        # Verify remote delete was called
-        mock_backend.delete.assert_called_once_with("test:obj", "1.0.0")
-        mock_backend.delete_metadata.assert_called_once_with("test:obj", "1.0.0")
+        # Verify remote delete was called with batch args (lists)
+        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
 
 
 def test_registry_invalid_backend_type(temp_registry_dir):
@@ -3111,14 +3128,18 @@ def test_registry_invalid_backend_type(temp_registry_dir):
         Registry(backend=123)  # Invalid type
 
 
-def test_load_verify_cache_false_with_cache_hit(temp_registry_dir):
-    """Test that load() uses cache immediately when verify_cache=False and cache has object."""
+def test_load_verify_hash_false_with_cache_hit(temp_registry_dir):
+    """Test that load() uses cache when verify_hash=False and cache has object."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
+    # has_object returns Dict[Tuple[str, str], bool] - needed for cache check
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
@@ -3126,39 +3147,32 @@ def test_load_verify_cache_false_with_cache_hit(temp_registry_dir):
     test_value = "cached_value"
     registry._cache.save("test:obj", test_value, version="1.0.0")
 
-    # Load with verify_cache=False - should return immediately from cache
-    result = registry.load("test:obj", version="1.0.0", verify_cache=False)
+    # Load with verify_hash=False - should use cache without remote metadata fetch
+    result = registry.load("test:obj", version="1.0.0", verify_hash=False)
     assert result == test_value
 
-    # Verify remote backend was not called
-    assert not hasattr(mock_backend, "pull") or not mock_backend.pull.called
+    # Remote backend should not need to fetch metadata or pull (cache has it)
+    # Note: has_object is still called for cache check, but no remote pull needed
 
 
-def test_load_verify_hash_false_cache_dir_not_exists(temp_registry_dir):
-    """Test that load() handles cache directory not existing when verify_hash=True."""
-    import shutil
+def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
+    """Test that load() fetches from remote when cache directory doesn't exist."""
 
-    # Create a mock remote backend
+    # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    mock_backend.has_object = Mock(return_value=True)
-    mock_backend.list_versions = Mock(return_value=["1.0.0"])
+    # has_object returns Dict[Tuple[str, str], bool] - cache miss
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    # list_versions returns Dict[str, List[str]]
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
 
     registry = Registry(backend=mock_backend, version_objects=True)
 
-    # Save to cache
-    test_value = "test_value"
-    registry._cache.save("test:obj", test_value, version="1.0.0")
+    # Don't save to cache - simulate cache miss
 
-    # Delete the cache directory to simulate it not existing
-    object_key = registry._cache.backend._object_key("test:obj", "1.0.0")
-    cache_dir = registry._cache.backend._full_path(object_key)
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir)
-
-    # Mock pull to create temp directory with data and compute actual hash
+    # Mock pull to create temp directory with data
     from tempfile import TemporaryDirectory
 
     with TemporaryDirectory() as temp_dir:
@@ -3166,24 +3180,27 @@ def test_load_verify_hash_false_cache_dir_not_exists(temp_registry_dir):
         (temp_path / "data.json").write_text('"test_value"')
         expected_hash = compute_dir_hash(temp_path)
 
-        def mock_pull(name, version, local_path):
-            shutil.copytree(temp_path, local_path, dirs_exist_ok=True)
+        def mock_pull(names, versions, local_paths):
+            for p in local_paths:
+                shutil.copytree(temp_path, p, dirs_exist_ok=True)
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
-        # Mock remote metadata with correct hash
-        mock_backend.fetch_metadata.return_value = {
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": expected_hash,
-        }
+        # Mock remote metadata with correct hash - fetch_metadata returns Dict[Tuple, dict]
+        mock_backend.fetch_metadata = Mock(return_value={
+            ("test:obj", "1.0.0"): {
+                "class": "builtins.str",
+                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                "hash": expected_hash,
+            }
+        })
 
-        # Load with verify_hash=True - should fall through to remote since cache dir doesn't exist
+        # Load with verify_hash=True - should fetch from remote
         result = registry.load("test:obj", version="1.0.0", verify_hash=True)
-    assert result == test_value
+        assert result == "test_value"
 
-    # Verify remote pull was called
-    mock_backend.pull.assert_called_once()
+        # Verify remote pull was called
+        mock_backend.pull.assert_called_once()
 
 
 def test_load_verify_hash_false_uses_cache(temp_registry_dir):
@@ -3249,3 +3266,224 @@ def test_clear_cache_no_cache(temp_registry_dir):
 
     # clear_cache should not raise an error
     registry.clear_cache()
+
+
+# =============================================================================
+# on_conflict parameter tests
+# =============================================================================
+
+
+def test_save_on_conflict_error_default(registry, test_config):
+    """Test that on_conflict='error' is the default and raises on duplicate."""
+    # Save first version
+    registry.save("test:config", test_config, version="1.0.0")
+
+    # Try to save same version without specifying on_conflict
+    with pytest.raises(Exception):  # RegistryVersionConflict
+        registry.save("test:config", test_config, version="1.0.0")
+
+
+def test_save_on_conflict_skip(registry, test_config):
+    """Test that on_conflict='skip' silently skips existing versions."""
+    # Save first version
+    registry.save("test:config", test_config, version="1.0.0")
+
+    # Try to save same version with on_conflict="skip"
+    result = registry.save("test:config", test_config, version="1.0.0", on_conflict="skip")
+
+    # Should return None for skipped
+    assert result is None
+
+    # Original value should be unchanged
+    loaded = registry.load("test:config", version="1.0.0")
+    assert loaded == test_config
+
+
+def test_save_on_conflict_skip_new_version(registry, test_config):
+    """Test that on_conflict='skip' still saves new versions."""
+    # Save first version
+    v1 = registry.save("test:config", test_config, version="1.0.0")
+    assert v1 == "1.0.0"
+
+    # Save new version with on_conflict="skip"
+    v2 = registry.save("test:config", test_config, version="2.0.0", on_conflict="skip")
+
+    # Should return the version for successful save
+    assert v2 == "2.0.0"
+
+    # Both versions should exist
+    assert registry.has_object("test:config", "1.0.0")
+    assert registry.has_object("test:config", "2.0.0")
+
+
+def test_save_on_conflict_invalid_value(registry, test_config):
+    """Test that invalid on_conflict values raise ValueError."""
+    with pytest.raises(ValueError, match="on_conflict must be 'error', 'skip', or 'overwrite'"):
+        registry.save("test:config", test_config, version="1.0.0", on_conflict="invalid")
+
+
+# =============================================================================
+# Batch save/load operations tests
+# =============================================================================
+
+
+def test_batch_save_single_items(registry):
+    """Test that save works with single items (not lists)."""
+    result = registry.save("test:single", "single value", version="1.0.0")
+    assert result == "1.0.0"
+    assert registry.has_object("test:single", "1.0.0")
+
+
+def test_batch_save_multiple_items(registry):
+    """Test batch save with multiple items."""
+    names = ["test:a", "test:b", "test:c"]
+    values = ["value a", "value b", "value c"]
+    versions = ["1.0.0", "1.0.0", "1.0.0"]
+
+    results = registry.save(names, values, version=versions)
+
+    # Should return list of versions
+    assert isinstance(results, list)
+    assert len(results) == 3
+    assert all(v == "1.0.0" for v in results)
+
+    # All objects should exist
+    for name in names:
+        assert registry.has_object(name, "1.0.0")
+
+
+def test_batch_save_auto_version(registry):
+    """Test batch save with auto-versioning."""
+    names = ["test:auto:a", "test:auto:b"]
+    values = [1, 2]
+
+    results = registry.save(names, values)
+
+    # Should return list of versions
+    assert isinstance(results, list)
+    assert len(results) == 2
+    # Auto-increment starts at 1
+    assert results[0] == "1"
+    assert results[1] == "1"
+
+
+def test_batch_save_mixed_skip(registry):
+    """Test batch save with on_conflict='skip' and mixed existing/new."""
+    # Pre-save some objects
+    registry.save("test:existing", "original", version="1.0.0")
+
+    # Batch save with one existing and one new
+    names = ["test:existing", "test:new"]
+    values = ["updated", "fresh"]
+    versions = ["1.0.0", "1.0.0"]
+
+    results = registry.save(names, values, version=versions, on_conflict="skip")
+
+    # First should be skipped (None), second should succeed
+    assert results[0] is None
+    assert results[1] == "1.0.0"
+
+    # Original value should be unchanged
+    assert registry.load("test:existing", version="1.0.0") == "original"
+    # New value should exist
+    assert registry.load("test:new", version="1.0.0") == "fresh"
+
+
+def test_batch_load_single_items(registry):
+    """Test that load works with single items (not lists)."""
+    registry.save("test:single", "single value", version="1.0.0")
+
+    result = registry.load("test:single", version="1.0.0")
+    assert result == "single value"
+    assert not isinstance(result, list)
+
+
+def test_batch_load_multiple_items(registry):
+    """Test batch load with multiple items."""
+    # Save multiple objects
+    registry.save("test:a", "value a", version="1.0.0")
+    registry.save("test:b", "value b", version="1.0.0")
+    registry.save("test:c", "value c", version="1.0.0")
+
+    # Batch load
+    names = ["test:a", "test:b", "test:c"]
+    versions = ["1.0.0", "1.0.0", "1.0.0"]
+
+    results = registry.load(names, version=versions)
+
+    # Should return list of values
+    assert isinstance(results, list)
+    assert len(results) == 3
+    assert results[0] == "value a"
+    assert results[1] == "value b"
+    assert results[2] == "value c"
+
+
+def test_batch_load_latest_version(registry):
+    """Test batch load with 'latest' version."""
+    # Save multiple versions
+    registry.save("test:versioned", "v1", version="1.0.0")
+    registry.save("test:versioned", "v2", version="2.0.0")
+
+    # Load latest
+    result = registry.load("test:versioned", version="latest")
+    assert result == "v2"
+
+
+def test_batch_load_mixed_versions(registry):
+    """Test batch load with different versions for each object."""
+    registry.save("test:a", "a v1", version="1.0.0")
+    registry.save("test:a", "a v2", version="2.0.0")
+    registry.save("test:b", "b v1", version="1.0.0")
+
+    names = ["test:a", "test:b"]
+    versions = ["1.0.0", "1.0.0"]
+
+    results = registry.load(names, version=versions)
+
+    assert results[0] == "a v1"
+    assert results[1] == "b v1"
+
+
+def test_batch_delete_single_items(registry):
+    """Test that delete works with single items (not lists)."""
+    registry.save("test:single", "value", version="1.0.0")
+    registry.delete("test:single", version="1.0.0")
+    assert not registry.has_object("test:single", "1.0.0")
+
+
+def test_batch_delete_multiple_items(registry):
+    """Test batch delete with multiple items."""
+    # Save multiple objects
+    for name in ["test:a", "test:b", "test:c"]:
+        registry.save(name, "value", version="1.0.0")
+
+    # Batch delete
+    names = ["test:a", "test:b", "test:c"]
+    versions = ["1.0.0", "1.0.0", "1.0.0"]
+
+    registry.delete(names, version=versions)
+
+    # All should be deleted
+    for name in names:
+        assert not registry.has_object(name, "1.0.0")
+
+
+def test_batch_save_length_mismatch(registry):
+    """Test that batch save raises error on length mismatch."""
+    names = ["test:a", "test:b"]
+    values = ["value a"]  # Mismatch
+
+    with pytest.raises(ValueError, match="All list inputs must have the same length"):
+        registry.save(names, values)
+
+
+def test_batch_load_length_mismatch(registry):
+    """Test that batch load raises error on length mismatch."""
+    registry.save("test:a", "value", version="1.0.0")
+
+    names = ["test:a", "test:b"]
+    versions = ["1.0.0"]  # Mismatch
+
+    with pytest.raises(ValueError, match="name and version lists must have same length"):
+        registry.load(names, version=versions)

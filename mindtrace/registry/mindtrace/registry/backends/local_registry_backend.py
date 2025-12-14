@@ -250,10 +250,10 @@ class LocalRegistryBackend(RegistryBackend):
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
             on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
-                "skip" silently skips. Default is "error".
+                "skip" silently skips, "overwrite" replaces existing. Default is "error".
 
         Returns:
-            Dict mapping (name, resolved_version) to "ok" or "skipped".
+            Dict mapping (name, resolved_version) to "ok", "skipped", or "overwritten".
         """
         entries = self._normalize_inputs(name, version, local_path, metadata)
         results: Dict[Tuple[str, str], str] = {}
@@ -269,11 +269,19 @@ class LocalRegistryBackend(RegistryBackend):
                 meta_path = self._object_metadata_path(obj_name, resolved_version)
 
                 # Check for existing version
+                is_overwrite = False
                 if meta_path.exists():
                     if on_conflict == "skip":
                         results[(obj_name, resolved_version)] = "skipped"
                         continue
-                    raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+                    elif on_conflict == "overwrite":
+                        # Remove existing artifacts and metadata before overwriting
+                        if artifact_dst.exists():
+                            shutil.rmtree(artifact_dst, ignore_errors=True)
+                        meta_path.unlink(missing_ok=True)
+                        is_overwrite = True
+                    else:
+                        raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
 
                 try:
                     # 1. Copy artifacts
@@ -291,7 +299,7 @@ class LocalRegistryBackend(RegistryBackend):
                         with open(meta_path, "w") as f:
                             yaml.safe_dump(obj_meta, f)
 
-                    results[(obj_name, resolved_version)] = "ok"
+                    results[(obj_name, resolved_version)] = "overwritten" if is_overwrite else "ok"
 
                 except Exception as e:
                     # Rollback: remove artifacts and metadata
@@ -412,12 +420,16 @@ class LocalRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: NameArg,
+        on_error: str = "skip",
     ) -> Dict[Tuple[str, str], dict]:
         """Load metadata for a object version.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
+            on_error: Behavior when fetching individual metadata fails.
+                "skip" (default): Skip failed entries, return partial results.
+                "raise": Raise the exception immediately.
 
         Returns:
             Dict mapping (name, version) tuples to their metadata dicts.
@@ -456,7 +468,13 @@ class LocalRegistryBackend(RegistryBackend):
                 results[(obj_name, obj_version)] = meta
 
             except FileNotFoundError:
-                continue  # Skip missing entries
+                continue  # Always skip missing entries
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                # on_error == "skip": log and continue
+                self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
+                continue
 
         return results
 
