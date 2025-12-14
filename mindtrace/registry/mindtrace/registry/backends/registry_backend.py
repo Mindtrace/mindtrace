@@ -128,10 +128,10 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 - "_files": list of relative file paths
                 - "hash": content hash for verification
             on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
-                "skip" silently skips. Default is "error".
+                "skip" silently skips, "overwrite" replaces existing. Default is "error".
 
         Returns:
-            Dict mapping (name, resolved_version) to "ok" or "skipped".
+            Dict mapping (name, resolved_version) to "ok", "skipped", or "overwritten".
 
         Raises:
             RegistryVersionConflict: If version already exists and on_conflict="error".
@@ -209,6 +209,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: NameArg,
+        on_error: str = "skip",
     ) -> Dict[Tuple[str, str], dict]:
         """Fetch metadata for object version(s).
 
@@ -218,10 +219,14 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Args:
             name: Object name(s).
             version: Version string(s).
+            on_error: Behavior when fetching individual metadata fails.
+                "skip" (default): Skip failed entries, return partial results.
+                "raise": Raise the exception immediately.
 
         Returns:
             Dict mapping (name, version) tuples to their metadata dicts.
-            Missing entries are omitted from the result.
+            Missing entries (FileNotFoundError) are always omitted from the result.
+            Other errors are handled according to on_error parameter.
         """
         pass
 
