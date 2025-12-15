@@ -8,7 +8,7 @@ from uuid import uuid4
 from beanie import PydanticObjectId
 
 from mindtrace.core import Mindtrace
-from mindtrace.database import MongoMindtraceODMBackend
+from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.types import Datum
 from mindtrace.registry import Registry
@@ -44,7 +44,7 @@ class Datalake(Mindtrace):
         super().__init__()
         self.mongo_db_name: str = mongo_db_name
         self.mongo_db_uri: str = mongo_db_uri
-        self.datum_database: MongoMindtraceODMBackend[Datum] = MongoMindtraceODMBackend(
+        self.datum_database: MongoMindtraceODM[Datum] = MongoMindtraceODM(
             model_cls=Datum,
             db_name=self.mongo_db_name,
             db_uri=self.mongo_db_uri,

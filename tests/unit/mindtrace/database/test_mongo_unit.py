@@ -112,19 +112,19 @@ async def test_mongo_backend_initialize(mock_mongo_backend):
 @pytest.mark.asyncio
 async def test_mongo_backend_is_async():
     """Test that MongoDB backend is async."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     assert backend.is_async() is True
 
 
 @pytest.mark.asyncio
 async def test_mongo_backend_aggregate():
     """Test aggregate operation."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -151,10 +151,10 @@ async def test_mongo_backend_aggregate():
 @pytest.mark.asyncio
 async def test_mongo_backend_aggregate_with_empty_pipeline():
     """Test aggregate operation with empty pipeline."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -179,10 +179,10 @@ async def test_mongo_backend_aggregate_with_empty_pipeline():
 @pytest.mark.asyncio
 async def test_mongo_backend_aggregate_with_complex_pipeline():
     """Test aggregate operation with complex pipeline."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -211,10 +211,10 @@ async def test_mongo_backend_aggregate_with_complex_pipeline():
 @pytest.mark.asyncio
 async def test_mongo_backend_find_with_complex_query():
     """Test find operation with complex query."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the find method to return results
@@ -244,10 +244,10 @@ async def test_mongo_backend_find_with_complex_query():
 @pytest.mark.asyncio
 async def test_mongo_backend_find_with_kwargs():
     """Test find operation with kwargs."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the find method to return results
@@ -274,10 +274,10 @@ async def test_mongo_backend_find_with_kwargs():
 @pytest.mark.asyncio
 async def test_mongo_backend_all_with_empty_results():
     """Test all operation with empty results."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -299,10 +299,10 @@ async def test_mongo_backend_all_with_empty_results():
 @pytest.mark.asyncio
 async def test_mongo_backend_all_with_multiple_results():
     """Test all operation with multiple results."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the find_all method to return multiple results
@@ -332,11 +332,11 @@ async def test_mongo_backend_all_with_multiple_results():
 @pytest.mark.asyncio
 async def test_mongo_backend_insert_with_duplicate_key_error():
     """Test MongoDB insert with DuplicateKeyError."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -361,11 +361,11 @@ async def test_mongo_backend_insert_with_duplicate_key_error():
 @pytest.mark.asyncio
 async def test_mongo_backend_insert_with_generic_exception():
     """Test MongoDB insert with generic Exception."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -388,11 +388,11 @@ async def test_mongo_backend_insert_with_generic_exception():
 @pytest.mark.asyncio
 async def test_mongo_backend_get_with_not_found():
     """Test MongoDB get with document not found."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -408,11 +408,11 @@ async def test_mongo_backend_get_with_not_found():
 @pytest.mark.asyncio
 async def test_mongo_backend_delete_with_not_found():
     """Test MongoDB delete with document not found."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -428,10 +428,10 @@ async def test_mongo_backend_delete_with_not_found():
 @pytest.mark.asyncio
 async def test_mongo_backend_delete_with_document_found():
     """Test MongoDB delete with document found."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Mock the initialize method to avoid actual MongoDB connections
@@ -451,10 +451,10 @@ async def test_mongo_backend_delete_with_document_found():
 @pytest.mark.asyncio
 async def test_mongo_backend_get_raw_model():
     """Test MongoDB get_raw_model method."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Mock the backend with proper model class
-    backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
     # Test get_raw_model method
@@ -464,15 +464,15 @@ async def test_mongo_backend_get_raw_model():
 
 async def test_mongo_backend_get_with_none_result():
     """Test MongoDB backend get method with None result."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.mongo_odm_backend.AsyncIOMotorClient") as mock_client:
+    with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client:
         mock_client_instance = MagicMock()
         mock_client.return_value = mock_client_instance
 
-        backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+        backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -485,27 +485,27 @@ async def test_mongo_backend_get_with_none_result():
                 await backend.get("test_id")
 
 
-@patch("mindtrace.database.backends.mongo_odm_backend.init_beanie")
+@patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_backend_initialize_error_handling(mock_init_beanie):
     """Test MongoDB backend initialization error handling."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     mock_init_beanie.side_effect = Exception("Connection failed")
 
-    backend = MongoMindtraceODMBackend(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
+    backend = MongoMindtraceODM(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
 
     with pytest.raises(Exception, match="Connection failed"):
         await backend.initialize()
 
 
-@patch("mindtrace.database.backends.mongo_odm_backend.init_beanie")
+@patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_backend_initialize_second_call(mock_init_beanie):
     """Test MongoDB backend initialization when already initialized (covers line 112)."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    backend = MongoMindtraceODMBackend(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
+    backend = MongoMindtraceODM(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
 
     # First initialization
     await backend.initialize()
@@ -521,13 +521,13 @@ async def test_mongo_backend_initialize_second_call(mock_init_beanie):
 @pytest.mark.asyncio
 async def test_mongo_backend_get_with_document_found():
     """Test MongoDB backend get method when document is found (covers line 188)."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    with patch("mindtrace.database.backends.mongo_odm_backend.AsyncIOMotorClient") as mock_client:
+    with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client:
         mock_client_instance = MagicMock()
         mock_client.return_value = mock_client_instance
 
-        backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+        backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
         backend.model_cls = UserDoc
         backend._is_initialized = True  # Skip initialization
 
@@ -545,10 +545,10 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
     """Test MongoDB sync wrapper methods when called from sync context (covers asyncio.run paths)."""
     from unittest.mock import AsyncMock, patch
 
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    with patch("mindtrace.database.backends.mongo_odm_backend.AsyncIOMotorClient"):
-        backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
+    with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient"):
+        backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
         backend.model_cls = UserDoc
 
         # Mock the async methods

@@ -13,14 +13,14 @@ from pydantic import BaseModel
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
 from mindtrace.core import TaskSchema, Timeout, get_class, ifnone
-from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
+from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.services import ConnectionManager, Gateway, ServerStatus, Service
 
 
-def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
+def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str, update_dict: dict):
     entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)
     if len(entries) != 1:
         raise ValueError(f"Expected 1 entry for {sort_key} == {find_key}, got {len(entries)}")
@@ -48,23 +48,23 @@ class ClusterManager(Gateway):
                 )
             )
             self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
-            self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
+            self.job_schema_targeting_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.JobSchemaTargeting,
                 redis_url=self.redis_url,
                 preferred_backend=BackendType.REDIS,
             )
             self.job_schema_targeting_database.initialize_sync()
-            self.job_status_database = UnifiedMindtraceODMBackend(
+            self.job_status_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
             )
             self.job_status_database.initialize_sync()
-            self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
+            self.worker_auto_connect_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.WorkerAutoConnect,
                 redis_url=self.redis_url,
                 preferred_backend=BackendType.REDIS,
             )
             self.worker_auto_connect_database.initialize_sync()
-            self.worker_status_database = UnifiedMindtraceODMBackend(
+            self.worker_status_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.WorkerStatus,
                 redis_url=self.redis_url,
                 preferred_backend=BackendType.REDIS,
@@ -681,7 +681,7 @@ class Worker(Service, Consumer):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
-            self.worker_status_local_database = UnifiedMindtraceODMBackend(
+            self.worker_status_local_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.WorkerStatusLocal,
                 redis_url=self.redis_url,
                 preferred_backend=BackendType.REDIS,

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from mindtrace.core import MindtraceABC
 
 
-class MindtraceODMBackend(MindtraceABC):
+class MindtraceODM(MindtraceABC):
     """
     Abstract base class for all Mindtrace Object Document Mapping (ODM) backends.
 
@@ -17,9 +17,9 @@ class MindtraceODMBackend(MindtraceABC):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
+            from mindtrace.database.backends.mindtrace_odm import MindtraceODM
 
-            class CustomBackend(MindtraceODMBackend):
+            class CustomBackend(MindtraceODM):
                 def is_async(self) -> bool:
                     return False
 

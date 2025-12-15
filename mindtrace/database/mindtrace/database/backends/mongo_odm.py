@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm import MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
 
@@ -20,7 +20,7 @@ class MindtraceDocument(Document):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
+            from mindtrace.database.backends.mongo_odm import MindtraceDocument
 
             class User(MindtraceDocument):
                 name: str
@@ -45,7 +45,7 @@ class MindtraceDocument(Document):
 ModelType = TypeVar("ModelType", bound=MindtraceDocument)
 
 
-class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
+class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
     """
     MongoDB implementation of the Mindtrace ODM backend.
 
@@ -61,13 +61,13 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+            from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
             class User(MindtraceDocument):
                 name: str
                 email: str
 
-            backend = MongoMindtraceODMBackend(
+            backend = MongoMindtraceODM(
                 model_cls=User,
                 db_uri="mongodb://localhost:27017",
                 db_name="mindtrace_db"
@@ -93,7 +93,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         self.db_name = db_name
         self._is_initialized = False
 
-    async def initialize(self):
+    async def initialize(self, allow_index_dropping: bool = False):
         """
         Initialize the MongoDB connection and document models.
 
@@ -101,14 +101,22 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         registers the document models. It should be called before performing
         any database operations.
 
+        Args:
+            allow_index_dropping (bool): If True, allows Beanie to drop and recreate
+                conflicting indexes. Useful in test environments.
+
         Example:
             .. code-block:: python
 
-                backend = MongoMindtraceODMBackend(User, "mongodb://localhost:27017", "mydb")
+                backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 await backend.initialize()
         """
         if not self._is_initialized:
-            await init_beanie(database=self.client[self.db_name], document_models=[self.model_cls])
+            await init_beanie(
+                database=self.client[self.db_name],
+                document_models=[self.model_cls],
+                allow_index_dropping=allow_index_dropping,
+            )
             self._is_initialized = True
 
     def is_async(self) -> bool:
@@ -121,7 +129,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = MongoMindtraceODMBackend(User, "mongodb://localhost:27017", "mydb")
+                backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 if backend.is_async():
                     result = await backend.insert(user)
         """
@@ -304,7 +312,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = MongoMindtraceODMBackend(User, "mongodb://localhost:27017", "mydb")
+                backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 backend.initialize_sync()  # Can be called from sync code
         """
         try:
