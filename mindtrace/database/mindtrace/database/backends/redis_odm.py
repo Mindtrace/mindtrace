@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from redis_om import JsonModel, Migrator, get_redis_connection
 from redis_om.model.model import NotFoundError
 
-from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm import MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
 
@@ -18,7 +18,7 @@ class MindtraceRedisDocument(JsonModel):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.redis_odm_backend import MindtraceRedisDocument
+            from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
             from redis_om import Field
 
             class User(MindtraceRedisDocument):
@@ -43,7 +43,7 @@ class MindtraceRedisDocument(JsonModel):
 ModelType = TypeVar("ModelType", bound=MindtraceRedisDocument)
 
 
-class RedisMindtraceODMBackend(MindtraceODMBackend):
+class RedisMindtraceODM(MindtraceODM):
     """
     Redis implementation of the Mindtrace ODM backend.
 
@@ -58,14 +58,14 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+            from mindtrace.database.backends.redis_odm import RedisMindtraceODM
             from redis_om import Field
 
             class User(MindtraceRedisDocument):
                 name: str
                 email: str = Field(index=True)
 
-            backend = RedisMindtraceODMBackend(
+            backend = RedisMindtraceODM(
                 model_cls=User,
                 redis_url="redis://localhost:6379"
             )
@@ -99,7 +99,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RedisMindtraceODMBackend(User, "redis://localhost:6379")
+                backend = RedisMindtraceODM(User, "redis://localhost:6379")
                 backend.initialize()  # Usually called automatically
         """
         if not self._is_initialized:
@@ -128,7 +128,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RedisMindtraceODMBackend(User, "redis://localhost:6379")
+                backend = RedisMindtraceODM(User, "redis://localhost:6379")
                 if not backend.is_async():
                     result = backend.insert(user)
         """
@@ -337,7 +337,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RedisMindtraceODMBackend(User, "redis://localhost:6379")
+                backend = RedisMindtraceODM(User, "redis://localhost:6379")
                 await backend.initialize_async()  # Can be called from async code
         """
         # For sync operations, we can just call them directly

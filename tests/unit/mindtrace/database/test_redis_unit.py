@@ -112,13 +112,13 @@ def test_redis_backend_is_async(mock_redis_backend):
 
 def test_redis_backend_is_async_direct():
     """Test Redis backend is_async method directly (covers line 135)."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+        backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
         assert backend.is_async() is False  # Covers line 135
 
 
@@ -130,13 +130,13 @@ def test_redis_backend_get_raw_model(mock_redis_backend):
 
 def test_redis_backend_get_raw_model_direct():
     """Test Redis backend get_raw_model method directly (covers line 327)."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+        backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
         model = backend.get_raw_model()
         assert model == UserDoc  # Covers line 327
 
@@ -144,13 +144,13 @@ def test_redis_backend_get_raw_model_direct():
 @pytest.mark.asyncio
 async def test_redis_backend_async_wrappers():
     """Test Redis async wrapper methods (covers lines 371, 396, 418, 436, 459)."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+        backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
 
         # Mock the sync methods
         mock_user = create_mock_redis_user()
@@ -220,10 +220,10 @@ def test_redis_backend_all_multiple(mock_redis_backend):
 # Fix the failing test cases
 def test_redis_backend_insert_with_email_duplicate_check_success(mock_redis_backend):
     """Test insert with email duplicate check that succeeds."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -247,11 +247,11 @@ def test_redis_backend_insert_with_email_duplicate_check_success(mock_redis_back
 
 def test_redis_backend_insert_with_email_duplicate_found(mock_redis_backend):
     """Test insert with email duplicate check that finds duplicate."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -272,15 +272,15 @@ def test_redis_backend_insert_with_email_duplicate_found(mock_redis_backend):
 
 def test_redis_backend_insert_with_email_query_fails_fallback(mock_redis_backend):
     """Test insert with email duplicate check that fails and uses fallback."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -319,14 +319,14 @@ def test_redis_backend_insert_with_email_query_fails_fallback(mock_redis_backend
 
 def test_redis_backend_insert_with_email_query_fails_no_duplicate(mock_redis_backend):
     """Test insert with email duplicate check that fails but no duplicate found."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -351,14 +351,14 @@ def test_redis_backend_insert_with_email_query_fails_no_duplicate(mock_redis_bac
 
 def test_redis_backend_insert_with_email_query_fails_fallback_also_fails(mock_redis_backend):
     """Test insert with email duplicate check where both primary and fallback fail."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -380,14 +380,14 @@ def test_redis_backend_insert_with_email_query_fails_fallback_also_fails(mock_re
 
 def test_redis_backend_insert_without_email(mock_redis_backend):
     """Test insert without email field."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -409,14 +409,14 @@ def test_redis_backend_insert_without_email(mock_redis_backend):
 
 def test_redis_backend_insert_with_empty_email(mock_redis_backend):
     """Test insert with empty email field."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -435,11 +435,11 @@ def test_redis_backend_insert_with_empty_email(mock_redis_backend):
 def test_redis_backend_get_not_found(mock_redis_backend):
     """Test get operation when document is not found."""
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -454,11 +454,11 @@ def test_redis_backend_get_not_found_error(mock_redis_backend):
     """Test get operation when NotFoundError is raised."""
     from redis_om import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -473,11 +473,11 @@ def test_redis_backend_delete_not_found(mock_redis_backend):
     """Test delete operation when document is not found."""
     from redis_om import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -490,10 +490,10 @@ def test_redis_backend_delete_not_found(mock_redis_backend):
 
 def test_redis_backend_delete_success(mock_redis_backend):
     """Test delete operation when document exists."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -517,10 +517,10 @@ def test_redis_backend_delete_success(mock_redis_backend):
 
 def test_redis_backend_delete_no_keys_found(mock_redis_backend):
     """Test delete operation when no associated keys are found."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -544,10 +544,10 @@ def test_redis_backend_delete_no_keys_found(mock_redis_backend):
 
 def test_redis_backend_find_with_args(mock_redis_backend):
     """Test find operation with arguments."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -564,10 +564,10 @@ def test_redis_backend_find_with_args(mock_redis_backend):
 
 def test_redis_backend_find_without_args(mock_redis_backend):
     """Test find operation without arguments."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -584,10 +584,10 @@ def test_redis_backend_find_without_args(mock_redis_backend):
 
 def test_redis_backend_find_query_fails(mock_redis_backend):
     """Test find operation when query fails."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -603,10 +603,10 @@ def test_redis_backend_find_query_fails(mock_redis_backend):
 
 def test_redis_backend_find_query_fails_fallback_also_fails(mock_redis_backend):
     """Test find operation when both primary query and fallback fail."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
@@ -622,21 +622,21 @@ def test_redis_backend_find_query_fails_fallback_also_fails(mock_redis_backend):
 # Add comprehensive test cases to cover missing lines
 def test_redis_backend_initialization_with_exception():
     """Test Redis backend initialization with exception handling."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
         # Test initialization with exception by patching the Migrator
         with patch.object(backend, "_is_initialized", False):
             # Mock the Migrator to raise an exception
-            with patch("mindtrace.database.backends.redis_odm_backend.Migrator") as mock_migrator_class:
+            with patch("mindtrace.database.backends.redis_odm.Migrator") as mock_migrator_class:
                 mock_migrator = MagicMock()
                 mock_migrator.run.side_effect = Exception("Migration failed")
                 mock_migrator_class.return_value = mock_migrator
@@ -651,14 +651,14 @@ def test_redis_backend_initialization_with_exception():
 
 def test_redis_backend_initialization_with_indexed_fields():
     """Test Redis backend initialization with indexed fields."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.logger = MagicMock()
 
         # Test initialization with indexed fields
@@ -679,15 +679,15 @@ def test_redis_backend_get_with_not_found_error():
     """Test Redis backend get with NotFoundError."""
     from redis_om.model.model import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -702,15 +702,15 @@ def test_redis_backend_get_with_not_found_error():
 
 def test_redis_backend_get_with_none_result():
     """Test Redis backend get with None result."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -725,14 +725,14 @@ def test_redis_backend_get_with_none_result():
 
 def test_redis_backend_insert_with_model_dump():
     """Test Redis backend insert with model_dump method."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -755,14 +755,14 @@ def test_redis_backend_insert_with_model_dump():
 
 def test_redis_backend_insert_with_dict_attr():
     """Test Redis backend insert with __dict__ attribute."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -786,14 +786,14 @@ def test_redis_backend_insert_with_dict_attr():
 # Add more comprehensive test cases to cover remaining missing lines
 def test_redis_backend_initialization_with_indexed_fields_metadata():
     """Test Redis backend initialization with indexed fields metadata."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.logger = MagicMock()
 
         # Test initialization with indexed fields metadata
@@ -811,14 +811,14 @@ def test_redis_backend_initialization_with_indexed_fields_metadata():
 
 def test_redis_backend_delete_with_keys_found():
     """Test Redis backend delete when keys are found."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -847,14 +847,14 @@ def test_redis_backend_delete_with_keys_found():
 
 def test_redis_backend_delete_with_no_keys_found():
     """Test Redis backend delete when no keys are found."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -884,14 +884,14 @@ def test_redis_backend_delete_with_no_keys_found():
 
 def test_redis_backend_find_with_query_failure():
     """Test Redis backend find with query failure."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -915,14 +915,14 @@ def test_redis_backend_find_with_query_failure():
 
 def test_redis_backend_find_with_both_query_and_fallback_failure():
     """Test Redis backend find with both query and fallback failure."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -939,15 +939,15 @@ def test_redis_backend_find_with_both_query_and_fallback_failure():
 
 def test_redis_backend_insert_with_duplicate_check_fallback():
     """Test Redis backend insert with duplicate check fallback."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -980,14 +980,14 @@ def test_redis_backend_insert_with_duplicate_check_fallback():
 
 def test_redis_backend_insert_with_duplicate_check_fallback_no_duplicate():
     """Test Redis backend insert with duplicate check fallback but no duplicate found."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1020,14 +1020,14 @@ def test_redis_backend_insert_with_duplicate_check_fallback_no_duplicate():
 
 def test_redis_backend_insert_with_fallback_exception():
     """Test Redis backend insert with exception in fallback."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -1054,15 +1054,15 @@ def test_redis_backend_get_with_not_found_error_specific():
     """Test Redis backend get with specific NotFoundError."""
     from redis_om.model.model import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -1078,15 +1078,15 @@ def test_redis_backend_delete_with_not_found_error_specific():
     """Test Redis backend delete with specific NotFoundError."""
     from redis_om.model.model import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -1100,14 +1100,14 @@ def test_redis_backend_delete_with_not_found_error_specific():
 
 def test_redis_backend_all_with_empty_results():
     """Test Redis backend all method with empty results."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -1121,14 +1121,14 @@ def test_redis_backend_all_with_empty_results():
 
 def test_redis_backend_find_with_complex_query():
     """Test Redis backend find method with complex query."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
@@ -1148,14 +1148,14 @@ def test_redis_backend_find_with_complex_query():
 
 def test_redis_backend_initialization_with_indexed_fields_pass_statement():
     """Test Redis backend initialization to cover the indexed fields pass statement."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.logger = MagicMock()
 
         # Test initialization with indexed fields metadata to cover the pass statement
@@ -1167,7 +1167,7 @@ def test_redis_backend_initialization_with_indexed_fields_pass_statement():
             backend.model_cls = mock_model
 
             # Mock Migrator to not raise exception
-            with patch("mindtrace.database.backends.redis_odm_backend.Migrator") as mock_migrator:
+            with patch("mindtrace.database.backends.redis_odm.Migrator") as mock_migrator:
                 mock_migrator_instance = MagicMock()
                 mock_migrator.return_value = mock_migrator_instance
 
@@ -1178,14 +1178,14 @@ def test_redis_backend_initialization_with_indexed_fields_pass_statement():
 
 def test_redis_backend_insert_with_dict_data():
     """Test Redis backend insert with dict data instead of model_dump."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1218,14 +1218,14 @@ def test_redis_backend_insert_with_dict_data():
 
 def test_redis_backend_insert_without_email_field():
     """Test Redis backend insert without email field in data."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1251,14 +1251,14 @@ def test_redis_backend_insert_without_email_field():
 
 def test_redis_backend_insert_without_model_email_attribute():
     """Test Redis backend insert without email attribute on model class."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1281,14 +1281,14 @@ def test_redis_backend_insert_without_model_email_attribute():
 
 def test_redis_backend_get_successful():
     """Test Redis backend get method with successful retrieval."""
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1310,14 +1310,14 @@ def test_redis_backend_get_successful():
 def test_redis_backend_delete_with_no_doc_found():
     """Test Redis backend delete method when no document is found."""
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1335,15 +1335,15 @@ def test_redis_backend_delete_with_not_found_error():
     """Test Redis backend delete method with NotFoundError."""
     from redis_om.model.model import NotFoundError
 
-    from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
     # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
-        backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
+        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
         backend._is_initialized = True  # Skip initialization
@@ -1360,27 +1360,27 @@ def test_redis_backend_delete_with_not_found_error():
 class TestRedisBackendEdgeCases:
     """Test edge cases in Redis backend."""
 
-    @patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection")
+    @patch("mindtrace.database.backends.redis_odm.get_redis_connection")
     def test_redis_backend_connection_error(self, mock_get_redis):
         """Test Redis backend connection error handling."""
-        from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+        from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
         mock_get_redis.side_effect = Exception("Redis connection failed")
 
         with pytest.raises(Exception, match="Redis connection failed"):
-            RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+            RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
 
     def test_redis_backend_get_not_found(self):
         """Test Redis backend get with non-existent document."""
-        with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+        with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
             from mindtrace.database import DocumentNotFoundError
-            from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+            from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
             # Mock the Redis connection
             mock_redis = MagicMock()
             mock_get_redis.return_value = mock_redis
 
-            backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+            backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
 
             # Mock the model's get method to raise NotFoundError
             with patch.object(UserDoc, "get") as mock_get:
@@ -1393,15 +1393,15 @@ class TestRedisBackendEdgeCases:
 
     def test_redis_backend_delete_not_found(self):
         """Test Redis backend delete with non-existent document."""
-        with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
+        with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
             from mindtrace.database import DocumentNotFoundError
-            from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
+            from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
             # Mock the Redis connection
             mock_redis = MagicMock()
             mock_get_redis.return_value = mock_redis
 
-            backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
+            backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
 
             # Mock the model's get method to raise NotFoundError
             with patch.object(UserDoc, "get") as mock_get:

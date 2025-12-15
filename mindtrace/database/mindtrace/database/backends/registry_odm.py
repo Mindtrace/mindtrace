@@ -3,11 +3,11 @@ from typing import Type
 
 from pydantic import BaseModel
 
-from mindtrace.database import MindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm import MindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
 
 
-class RegistryMindtraceODMBackend(MindtraceODMBackend):
+class RegistryMindtraceODM(MindtraceODM):
     """Implementation of the Mindtrace ODM backend that uses the Registry backend.
 
     Pass in a RegistryBackend to select the storage source. By default, a local directory store will be used.
@@ -19,7 +19,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.registry_odm_backend import RegistryMindtraceODMBackend
+            from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
             from pydantic import BaseModel
 
             class MyDocument(BaseModel):
@@ -27,7 +27,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
                 value: int
 
             # Create backend instance
-            backend = RegistryMindtraceODMBackend()
+            backend = RegistryMindtraceODM()
 
             # Insert a document
             doc = MyDocument(name="test", value=42)
@@ -53,7 +53,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 print(backend.is_async())  # Output: False
         """
         return False
@@ -75,7 +75,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
                 class MyDocument(BaseModel):
                     name: str
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 doc_id = backend.insert(MyDocument(name="example"))
                 print(f"Inserted document with ID: {doc_id}")
         """
@@ -96,7 +96,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     success = backend.update("some_id", updated_document)
                     if success:
@@ -126,7 +126,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     document = backend.get("some_id")
                 except KeyError:
@@ -146,7 +146,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     backend.delete("some_id")
                 except KeyError:
@@ -163,7 +163,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 documents = backend.all()
                 print(f"Found {len(documents)} documents")
         """

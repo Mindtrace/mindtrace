@@ -13,7 +13,7 @@ from mindtrace.database import (
     MindtraceDocument,
     MindtraceRedisDocument,
     UnifiedMindtraceDocument,
-    UnifiedMindtraceODMBackend,
+    UnifiedMindtraceODM,
 )
 
 # Configuration
@@ -65,7 +65,7 @@ class IntegrationUnifiedUserDoc(UnifiedMindtraceDocument):
 @pytest_asyncio.fixture(scope="function")
 async def mongo_unified_backend():
     """Create a unified backend with only MongoDB configured."""
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -98,7 +98,7 @@ async def mongo_unified_backend():
 @pytest.fixture(scope="function")
 def redis_unified_backend():
     """Create a unified backend with only Redis configured."""
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         redis_model_cls=RedisUserDoc, redis_url=REDIS_URL, preferred_backend=BackendType.REDIS
     )
 
@@ -120,7 +120,7 @@ def redis_unified_backend():
 @pytest_asyncio.fixture(scope="function")
 async def dual_unified_backend():
     """Create a unified backend with both MongoDB and Redis configured."""
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -167,7 +167,7 @@ async def dual_unified_backend():
 @pytest_asyncio.fixture(scope="function")
 async def unified_model_backend():
     """Create a unified backend with unified document model."""
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=IntegrationUnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -176,7 +176,8 @@ async def unified_model_backend():
     )
 
     # Initialize both backends (async method handles both MongoDB and Redis)
-    await backend.initialize_async()
+    # Use allow_index_dropping=True to handle index conflicts in test environment
+    await backend.initialize_async(allow_index_dropping=True)
 
     # Clean up existing data before test starts
     if backend.has_mongo_backend():

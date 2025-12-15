@@ -4,9 +4,9 @@ from typing import List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
 
-from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument, MongoMindtraceODMBackend
-from mindtrace.database.backends.redis_odm_backend import MindtraceRedisDocument, RedisMindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
+from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
 
 
 class BackendType(Enum):
@@ -339,7 +339,7 @@ class DataWrapper:
         return self.data
 
 
-class UnifiedMindtraceODMBackend(MindtraceODMBackend):
+class UnifiedMindtraceODM(MindtraceODM):
     """
     A unified backend that works with both MongoDB and Redis backends.
 
@@ -386,18 +386,18 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         if unified_model_cls:
             if mongo_db_uri and mongo_db_name:
                 mongo_model_cls = unified_model_cls._auto_generate_mongo_model()
-                self.mongo_backend = MongoMindtraceODMBackend(mongo_model_cls, mongo_db_uri, mongo_db_name)
+                self.mongo_backend = MongoMindtraceODM(mongo_model_cls, mongo_db_uri, mongo_db_name)
 
             if redis_url:
                 redis_model_cls = unified_model_cls._auto_generate_redis_model()
-                self.redis_backend = RedisMindtraceODMBackend(redis_model_cls, redis_url)
+                self.redis_backend = RedisMindtraceODM(redis_model_cls, redis_url)
         else:
             # Fallback to individual model classes
             if mongo_model_cls and mongo_db_uri and mongo_db_name:
-                self.mongo_backend = MongoMindtraceODMBackend(mongo_model_cls, mongo_db_uri, mongo_db_name)
+                self.mongo_backend = MongoMindtraceODM(mongo_model_cls, mongo_db_uri, mongo_db_name)
 
             if redis_model_cls and redis_url:
-                self.redis_backend = RedisMindtraceODMBackend(redis_model_cls, redis_url)
+                self.redis_backend = RedisMindtraceODM(redis_model_cls, redis_url)
 
         if not self.mongo_backend and not self.redis_backend:
             raise ValueError("At least one backend (MongoDB or Redis) must be configured")
@@ -411,7 +411,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         the result to avoid repeated lookups.
 
         Returns:
-            MindtraceODMBackend: The active backend instance.
+            MindtraceODM: The active backend instance.
 
         Raises:
             RuntimeError: If no backend is available.
@@ -504,12 +504,16 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         return self._get_active_backend().is_async()
 
-    async def initialize_async(self):
+    async def initialize_async(self, allow_index_dropping: bool = False):
         """
         Initialize all configured backends asynchronously.
 
         This method initializes both MongoDB (native async) and Redis (via async wrapper)
         backends. It should be called in an async context.
+
+        Args:
+            allow_index_dropping (bool): If True, allows MongoDB to drop and recreate
+                conflicting indexes. Useful in test environments.
 
         Example:
             .. code-block:: python
@@ -519,7 +523,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         # Initialize MongoDB backend (native async)
         if self.mongo_backend:
-            await self.mongo_backend.initialize()
+            await self.mongo_backend.initialize(allow_index_dropping=allow_index_dropping)
 
         # Initialize Redis backend (via async wrapper)
         if self.redis_backend:
@@ -978,12 +982,12 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         return self.redis_backend is not None
 
-    def get_mongo_backend(self) -> MongoMindtraceODMBackend:
+    def get_mongo_backend(self) -> MongoMindtraceODM:
         """
         Get the MongoDB backend instance.
 
         Returns:
-            MongoMindtraceODMBackend: The MongoDB backend instance.
+            MongoMindtraceODM: The MongoDB backend instance.
 
         Raises:
             ValueError: If MongoDB backend is not configured.
@@ -1002,12 +1006,12 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
             raise ValueError("MongoDB backend is not configured")
         return self.mongo_backend
 
-    def get_redis_backend(self) -> RedisMindtraceODMBackend:
+    def get_redis_backend(self) -> RedisMindtraceODM:
         """
         Get the Redis backend instance.
 
         Returns:
-            RedisMindtraceODMBackend: The Redis backend instance.
+            RedisMindtraceODM: The Redis backend instance.
 
         Raises:
             ValueError: If Redis backend is not configured.

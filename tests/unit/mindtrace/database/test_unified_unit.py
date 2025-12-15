@@ -12,7 +12,7 @@ from mindtrace.database import (
     MindtraceDocument,
     MindtraceRedisDocument,
     UnifiedMindtraceDocument,
-    UnifiedMindtraceODMBackend,
+    UnifiedMindtraceODM,
 )
 
 
@@ -78,7 +78,7 @@ def create_mock_redis_user(name="John", age=30, email="john@example.com", pk="01
 @pytest.fixture
 def mock_mongo_backend():
     """Create a mocked MongoDB backend."""
-    with patch("mindtrace.database.backends.unified_odm_backend.MongoMindtraceODMBackend") as mock_backend_cls:
+    with patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
         # Async methods (native)
         backend.insert = AsyncMock()
@@ -103,7 +103,7 @@ def mock_mongo_backend():
 @pytest.fixture
 def mock_redis_backend():
     """Create a mocked Redis backend."""
-    with patch("mindtrace.database.backends.unified_odm_backend.RedisMindtraceODMBackend") as mock_backend_cls:
+    with patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
         # Sync methods (native)
         backend.insert = MagicMock()
@@ -128,7 +128,7 @@ def mock_redis_backend():
 @pytest.fixture
 def unified_backend_mongo_only(mock_mongo_backend):
     """Create a unified backend with only MongoDB configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -139,7 +139,7 @@ def unified_backend_mongo_only(mock_mongo_backend):
 @pytest.fixture
 def unified_backend_redis_only(mock_redis_backend):
     """Create a unified backend with only Redis configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         redis_model_cls=RedisUserDoc, redis_url="redis://localhost:6380", preferred_backend=BackendType.REDIS
     )
 
@@ -147,7 +147,7 @@ def unified_backend_redis_only(mock_redis_backend):
 @pytest.fixture
 def unified_backend_both(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with both MongoDB and Redis configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -160,7 +160,7 @@ def unified_backend_both(mock_mongo_backend, mock_redis_backend):
 @pytest.fixture
 def unified_backend_with_unified_model(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with a unified document model."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -193,7 +193,7 @@ def test_unified_backend_initialization_both(unified_backend_both):
 def test_unified_backend_initialization_error():
     """Test initialization error when no backend is configured."""
     with pytest.raises(ValueError, match="At least one backend"):
-        UnifiedMindtraceODMBackend()
+        UnifiedMindtraceODM()
 
 
 def test_backend_switching(unified_backend_both):
@@ -538,7 +538,7 @@ def test_unified_backend_auto_generation_with_field_default_factory():
 
     from pydantic import Field
 
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     # Test model with default_factory
     class DefaultFactoryUser(UnifiedMindtraceDocument):
@@ -567,7 +567,7 @@ def test_unified_backend_auto_generation_with_optional_indexed_fields():
     """Test auto-generation with optional indexed fields."""
     from typing import Optional
 
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     # Test model with optional indexed fields
     class OptionalIndexedUser(UnifiedMindtraceDocument):
@@ -594,10 +594,10 @@ def test_unified_backend_auto_generation_with_optional_indexed_fields():
 
 def test_unified_backend_get_active_backend_with_no_backends():
     """Test _get_active_backend with no backends configured."""
-    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+    from mindtrace.database.backends.unified_odm import BackendType, UnifiedMindtraceODM
 
     # Create a backend with valid configuration first
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -616,9 +616,9 @@ def test_unified_backend_get_active_backend_with_no_backends():
 
 def test_unified_backend_switch_backend_with_unknown_type():
     """Test switch_backend with unknown backend type."""
-    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+    from mindtrace.database.backends.unified_odm import BackendType, UnifiedMindtraceODM
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -633,7 +633,7 @@ def test_unified_backend_switch_backend_with_unknown_type():
 def test_unified_backend_initialize_async_no_mongo_backend():
     """Test initialize_async when no MongoDB backend is configured (should work with Redis)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -647,7 +647,7 @@ def test_unified_backend_initialize_async_no_mongo_backend():
 def test_unified_backend_initialize_sync():
     """Test initialize_sync method."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -658,7 +658,7 @@ def test_unified_backend_initialize_sync():
 def test_unified_backend_get_current_backend_type_unknown():
     """Test get_current_backend_type with unknown active backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -675,7 +675,7 @@ def test_unified_backend_get_current_backend_type_unknown():
 def test_unified_backend_switch_backend_invalid_type():
     """Test switch_backend with invalid backend type."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -689,7 +689,7 @@ def test_unified_backend_switch_backend_invalid_type():
 def test_unified_backend_switch_backend_mongo_not_configured():
     """Test switch_backend to MongoDB when not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -700,7 +700,7 @@ def test_unified_backend_switch_backend_mongo_not_configured():
 def test_unified_backend_switch_backend_redis_not_configured():
     """Test switch_backend to Redis when not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -714,7 +714,7 @@ def test_unified_backend_switch_backend_redis_not_configured():
 def test_unified_backend_get_active_backend_no_backends_available():
     """Test _get_active_backend when no backends are available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -785,7 +785,7 @@ def test_unified_backend_auto_generate_redis_model_with_default_factory():
 async def test_unified_backend_delete_async_sync_backend():
     """Test delete_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -803,7 +803,7 @@ async def test_unified_backend_delete_async_sync_backend():
 async def test_unified_backend_delete_async_async_backend():
     """Test delete_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -824,7 +824,7 @@ async def test_unified_backend_delete_async_async_backend():
 async def test_unified_backend_all_async_sync_backend():
     """Test all_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -843,7 +843,7 @@ async def test_unified_backend_all_async_sync_backend():
 async def test_unified_backend_all_async_async_backend():
     """Test all_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -867,7 +867,7 @@ async def test_unified_backend_all_async_async_backend():
 async def test_unified_backend_find_async_sync_backend():
     """Test find_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -886,7 +886,7 @@ async def test_unified_backend_find_async_sync_backend():
 async def test_unified_backend_find_async_async_backend():
     """Test find_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -910,7 +910,7 @@ def test_unified_backend_get_unified_model_no_model():
     """Test get_unified_model when no model is configured."""
 
     # Create a backend with a model first, then manually set it to None
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -924,7 +924,7 @@ def test_unified_backend_get_unified_model_no_model():
 def test_unified_backend_get_mongo_backend_not_configured():
     """Test get_mongo_backend when MongoDB is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -935,7 +935,7 @@ def test_unified_backend_get_mongo_backend_not_configured():
 def test_unified_backend_get_redis_backend_not_configured():
     """Test get_redis_backend when Redis is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -949,7 +949,7 @@ def test_unified_backend_get_redis_backend_not_configured():
 def test_unified_backend_has_mongo_backend_true():
     """Test has_mongo_backend when MongoDB is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -962,7 +962,7 @@ def test_unified_backend_has_mongo_backend_true():
 def test_unified_backend_has_mongo_backend_false():
     """Test has_mongo_backend when MongoDB is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -972,7 +972,7 @@ def test_unified_backend_has_mongo_backend_false():
 def test_unified_backend_has_redis_backend_true():
     """Test has_redis_backend when Redis is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -982,7 +982,7 @@ def test_unified_backend_has_redis_backend_true():
 def test_unified_backend_has_redis_backend_false():
     """Test has_redis_backend when Redis is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -995,7 +995,7 @@ def test_unified_backend_has_redis_backend_false():
 def test_unified_backend_get_mongo_backend_configured():
     """Test get_mongo_backend when MongoDB is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1009,7 +1009,7 @@ def test_unified_backend_get_mongo_backend_configured():
 def test_unified_backend_get_redis_backend_configured():
     """Test get_redis_backend when Redis is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1020,7 +1020,7 @@ def test_unified_backend_get_redis_backend_configured():
 def test_unified_backend_get_raw_model():
     """Test get_raw_model method."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1036,7 +1036,7 @@ def test_unified_backend_get_raw_model():
 def test_unified_backend_get_unified_model_configured():
     """Test get_unified_model when model is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1047,7 +1047,7 @@ def test_unified_backend_get_unified_model_configured():
 def test_unified_backend_initialize_async_context_warning():
     """Test initialize method when called from async context."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1066,7 +1066,7 @@ def test_unified_backend_initialize_async_context_warning():
 def test_unified_backend_handle_async_call_sync_backend():
     """Test _handle_async_call with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1086,7 +1086,7 @@ def test_unified_backend_handle_async_call_sync_backend():
 def test_unified_backend_handle_async_call_async_backend():
     """Test _handle_async_call with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1109,7 +1109,7 @@ def test_unified_backend_handle_async_call_async_backend():
 def test_unified_backend_convert_unified_to_backend_data_mongo():
     """Test _convert_unified_to_backend_data for MongoDB backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1134,7 +1134,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo():
 def test_unified_backend_convert_unified_to_backend_data_redis():
     """Test _convert_unified_to_backend_data for Redis backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1157,7 +1157,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis():
 def test_unified_backend_convert_unified_to_backend_data_redis_none_id():
     """Test _convert_unified_to_backend_data for Redis backend with None id."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1180,7 +1180,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_none_id():
 def test_unified_backend_convert_unified_to_backend_data_non_unified():
     """Test _convert_unified_to_backend_data with non-unified model."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1284,7 +1284,7 @@ def test_unified_backend_auto_generate_mongo_model_with_no_fields():
 def test_unified_backend_initialize_sync_no_redis_backend(mock_mongo_backend):
     """Test initialize_sync when no Redis backend is configured (should work with MongoDB)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1301,7 +1301,7 @@ def test_unified_backend_initialize_sync_no_redis_backend(mock_mongo_backend):
 def test_unified_backend_initialize_sync_with_redis_backend(mock_redis_backend):
     """Test initialize_sync when Redis backend is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1314,7 +1314,7 @@ def test_unified_backend_initialize_sync_with_redis_backend(mock_redis_backend):
 def test_unified_backend_get_active_backend_prefer_mongo_mongo_available():
     """Test _get_active_backend when preferring MongoDB and it's available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1328,7 +1328,7 @@ def test_unified_backend_get_active_backend_prefer_mongo_mongo_available():
 def test_unified_backend_get_active_backend_prefer_redis_redis_available():
     """Test _get_active_backend when preferring Redis and it's available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1339,7 +1339,7 @@ def test_unified_backend_get_active_backend_prefer_redis_redis_available():
 def test_unified_backend_get_active_backend_prefer_mongo_redis_available():
     """Test _get_active_backend when preferring MongoDB but only Redis is available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.MONGO
     )
 
@@ -1350,7 +1350,7 @@ def test_unified_backend_get_active_backend_prefer_mongo_redis_available():
 def test_unified_backend_get_active_backend_prefer_redis_mongo_available():
     """Test _get_active_backend when preferring Redis but only MongoDB is available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1364,7 +1364,7 @@ def test_unified_backend_get_active_backend_prefer_redis_mongo_available():
 def test_unified_backend_get_active_backend_cached():
     """Test _get_active_backend when result is cached."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1381,7 +1381,7 @@ def test_unified_backend_get_active_backend_cached():
 def test_unified_backend_convert_unified_to_backend_data_mongo_with_id():
     """Test _convert_unified_to_backend_data for MongoDB with id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1406,7 +1406,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo_with_id():
 def test_unified_backend_convert_unified_to_backend_data_mongo_without_id():
     """Test _convert_unified_to_backend_data for MongoDB without id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1431,7 +1431,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo_without_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_with_id():
     """Test _convert_unified_to_backend_data for Redis with id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1454,7 +1454,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_with_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_without_id():
     """Test _convert_unified_to_backend_data for Redis without id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1477,7 +1477,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_without_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_with_none_id():
     """Test _convert_unified_to_backend_data for Redis with None id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1805,7 +1805,7 @@ def test_unified_backend_to_mongo_dict_without_id_field():
 def test_unified_backend_initialize_with_async_context_and_running_loop():
     """Test initialize method when called from async context with running loop."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1824,7 +1824,7 @@ def test_unified_backend_initialize_with_async_context_and_running_loop():
 def test_unified_backend_initialize_with_no_running_loop():
     """Test initialize method when called from sync context (no running loop)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1889,9 +1889,9 @@ def test_mongo_sync_find_method(unified_backend_mongo_only, mock_mongo_backend):
 @pytest.mark.asyncio
 async def test_mongo_sync_methods_from_async_context_raises_error():
     """Test that MongoDB sync methods raise error when called from async context."""
-    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    backend = MongoMindtraceODMBackend(MongoUserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(MongoUserDoc, "mongodb://localhost:27017", "test_db")
 
     # All sync methods should raise RuntimeError when called from async context
     with pytest.raises(RuntimeError, match="called from async context"):
@@ -2160,7 +2160,7 @@ async def test_unified_backend_async_methods_with_unified_model(unified_backend_
 
 def test_unified_backend_auto_generate_mongo_model_skips_id_field():
     """Test that MongoDB model generation skips id field (covers line 90)."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
         id: str = "test_id"  # This should be skipped
@@ -2177,7 +2177,7 @@ def test_unified_backend_auto_generate_mongo_model_skips_id_field():
 
 def test_unified_backend_auto_generate_redis_model_skips_id_field():
     """Test that Redis model generation skips id field (covers line 147)."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
         id: str = "test_id"  # This should be skipped
@@ -2194,7 +2194,7 @@ def test_unified_backend_auto_generate_redis_model_skips_id_field():
 
 def test_unified_backend_auto_generate_mongo_model_has_field_attr():
     """Test MongoDB model generation when field has attr (covers line 80)."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
         name: str = "test"
@@ -2327,7 +2327,7 @@ async def test_unified_backend_initialize_async_redis_fallback():
     """Test unified backend initialize_async with Redis fallback (covers line 530)."""
     from pydantic import Field
 
-    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
 
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
@@ -2335,7 +2335,7 @@ async def test_unified_backend_initialize_async_redis_fallback():
         class Meta:
             collection_name = "test"
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=TestDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -2361,7 +2361,7 @@ def test_unified_backend_initialize_sync_mongo_fallback():
 
     from pydantic import Field
 
-    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
 
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
@@ -2369,7 +2369,7 @@ def test_unified_backend_initialize_sync_mongo_fallback():
         class Meta:
             collection_name = "test"
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=TestDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -2400,7 +2400,7 @@ def test_unified_backend_handle_async_call_fallback():
 
     from pydantic import Field
 
-    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
 
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
@@ -2408,7 +2408,7 @@ def test_unified_backend_handle_async_call_fallback():
         class Meta:
             collection_name = "test"
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=TestDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",

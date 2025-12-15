@@ -29,7 +29,7 @@ def create_mock_database():
 def cluster_manager():
     # Patch Database to avoid file I/O
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase,
+        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
         patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient,
         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend,
     ):
@@ -74,7 +74,7 @@ def mock_worker():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -875,7 +875,7 @@ def test_clear_databases_logging_verification(cluster_manager):
 def mock_node():
     """Create a mock node for testing."""
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase,
+        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend"),
         patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry,
         patch("mindtrace.cluster.core.cluster.ClusterManager.connect") as MockClusterManagerConnect,
@@ -914,7 +914,7 @@ def test_node_initialization_with_cluster(mock_node):
 
 def test_node_initialization_without_cluster():
     """Test Node initialization without cluster_url."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -1092,7 +1092,7 @@ def test_worker_connect_to_cluster(mock_worker):
 
 def test_worker_abstract_run_method():
     """Test that Worker abstract _run method raises NotImplementedError."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         MockDatabase.return_value = create_mock_database()
         worker = Worker()
 
@@ -1432,7 +1432,7 @@ def test_worker_concrete_implementation():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
