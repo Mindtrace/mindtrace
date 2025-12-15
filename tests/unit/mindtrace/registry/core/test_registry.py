@@ -8,7 +8,6 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import pytest
-from minio import S3Error
 from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
@@ -85,9 +84,9 @@ def test_path():
 
 @pytest.fixture
 def non_versioned_registry():
-    """Create a registry with versioning disabled."""
+    """Create a registry with versioning disabled and mutable=True for overwrites."""
     with TemporaryDirectory() as temp_dir:
-        yield Registry(backend=temp_dir, version_objects=False)
+        yield Registry(backend=temp_dir, version_objects=False, mutable=True)
 
 
 def test_registry_initialization(registry, temp_registry_dir):
@@ -300,7 +299,7 @@ def test_info(registry, test_config):
     # Get info for specific version
     version_info = registry.info("test:config", version="1.0.0")
     assert version_info["class"] == "mindtrace.core.config.config.Config"
-    assert version_info["version"] == "1.0.0"
+    # Note: info() no longer adds 'version' key to metadata
 
 
 def test_info_error_handling(registry, test_config):
@@ -445,6 +444,7 @@ def test_load_without_class_metadata(registry, test_config):
 
     # Write directly to the metadata file (bypassing save_metadata which would raise conflict)
     import yaml
+
     meta_path = registry.backend._object_metadata_path("test:config", "1.0.0")
     with open(meta_path, "w") as f:
         yaml.safe_dump(metadata, f)
@@ -474,8 +474,8 @@ def test_load_directory_with_contents(registry):
             # Load the directory with output_dir specified
             loaded_path = registry.load("test:dir", version="1.0.0", output_dir=output_dir)
 
-            # Verify the output directory structure - now creates a subdirectory based on object name
-            assert loaded_path == Path(output_dir) / "test:dir"
+            # Verify the output directory structure - creates a subdirectory based on object name and version
+            assert loaded_path == Path(output_dir) / "test:dir@1.0.0"
             assert (loaded_path / "file1.txt").exists()
             assert (loaded_path / "file2.txt").exists()
             assert (loaded_path / "subdir").exists()
@@ -494,7 +494,7 @@ def test_load_error_handling(registry, test_config):
 
     # Create a mock backend that raises an exception during pull
     class MockBackend(registry.backend.__class__):
-        def pull(self, name: str, version: str, local_path: str):
+        def pull(self, name, version, local_path, acquire_lock=False, on_error="raise"):
             raise RuntimeError("Simulated pull error")
 
     # Replace the backend with our mock
@@ -520,13 +520,11 @@ def test_info_latest_version(registry, test_config):
     # Test getting info with version="latest"
     info = registry.info("test:config", version="latest")
 
-    # Verify that we got the latest version (1.0.2)
-    assert info["version"] == "1.0.2"
-
     # Verify that the version was resolved using _latest
     assert registry._latest("test:config") == "1.0.2"
 
     # Test that the info contains the correct metadata
+    # Note: info() no longer adds 'version' key to metadata
     assert "class" in info
     assert info["class"] == "mindtrace.core.config.config.Config"
 
@@ -1798,22 +1796,24 @@ def test_distributed_lock_load_concurrent(registry):
 
 def test_backend_internal_lock(registry):
     """Test that the backend's internal locking mechanism works correctly."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     # Test that internal lock can be acquired and released
     with registry.backend._internal_lock("test_key"):
-        # Lock should be held - verify lock file exists
-        lock_path = registry.backend._lock_path("test_key")
-        assert lock_path.exists()
+        # Lock should be held - verify lock directory exists with exclusive lock
+        lock_dir = registry.backend._lock_dir("test_key")
+        assert lock_dir.exists()
+        assert registry.backend._exclusive_lock_path("test_key").exists()
 
-    # Lock should be released - verify lock file is gone
-    assert not lock_path.exists()
+    # Lock should be released - verify lock directory is cleaned up
+    # (directory may or may not exist depending on cleanup, but exclusive lock should be gone)
+    assert not registry.backend._exclusive_lock_path("test_key").exists()
 
 
 def test_backend_internal_lock_contention(registry):
     """Test that concurrent lock acquisition raises LockAcquisitionError."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
     import uuid
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     lock_key = "contention_test"
     lock_id = str(uuid.uuid4())
@@ -2588,8 +2588,8 @@ def test_save_with_cache(temp_registry_dir):
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    # push returns Dict[Tuple[str, str], str] mapping to "ok" or "skipped"
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
+    # push returns Dict[Tuple[str, str], status_dict]
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     # has_object returns Dict[Tuple[str, str], bool]
@@ -2638,13 +2638,16 @@ def test_load_cache_hit(temp_registry_dir):
     # Get the hash from cache
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # fetch_metadata returns Dict[Tuple[str, str], dict]
+    # fetch_metadata returns Dict[Tuple[str, str], status_dict] with status and metadata
     mock_backend.fetch_metadata = Mock(
         return_value={
             ("test:obj", "1.0.0"): {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": cached_hash,
+                "status": "ok",
+                "metadata": {
+                    "class": "builtins.str",
+                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "hash": cached_hash,
+                },
             }
         }
     )
@@ -2678,24 +2681,32 @@ def test_load_cache_miss(temp_registry_dir):
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-        # Mock remote metadata - fetch_metadata returns Dict[Tuple[str, str], dict]
+        # Mock remote metadata - fetch_metadata returns Dict[Tuple[str, str], status_dict]
         expected_hash = compute_dir_hash(temp_path)
-        mock_backend.fetch_metadata = Mock(return_value={
-            ("test:obj", "1.0.0"): {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": expected_hash,
+        mock_backend.fetch_metadata = Mock(
+            return_value={
+                ("test:obj", "1.0.0"): {
+                    "status": "ok",
+                    "metadata": {
+                        "class": "builtins.str",
+                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "hash": expected_hash,
+                    },
+                }
             }
-        })
+        )
 
-        # Mock pull to copy our temp directory
-        def mock_pull(name, version, local_path):
+        # Mock pull to copy our temp directory and return status dict
+        def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise"):
             # Handle batch API - normalize inputs
             names = [name] if isinstance(name, str) else name
             versions = [version] if isinstance(version, str) else version
             paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
-            for p in paths:
+            results = {}
+            for n, v, p in zip(names, versions, paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
+                results[(n, v)] = {"status": "ok"}
+            return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -2738,18 +2749,26 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
         expected_hash = compute_dir_hash(temp_path)
 
         # Mock remote metadata with hash matching fresh data (not cache)
-        mock_backend.fetch_metadata = Mock(return_value={
-            ("test:obj", "1.0.0"): {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": expected_hash,
+        mock_backend.fetch_metadata = Mock(
+            return_value={
+                ("test:obj", "1.0.0"): {
+                    "status": "ok",
+                    "metadata": {
+                        "class": "builtins.str",
+                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "hash": expected_hash,
+                    },
+                }
             }
-        })
+        )
 
-        # Mock pull to copy fresh data
-        def mock_pull(names, versions, local_paths):
-            for p in local_paths:
+        # Mock pull to copy fresh data and return status dict
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+            results = {}
+            for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
+                results[(n, v)] = {"status": "ok"}
+            return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -2787,21 +2806,31 @@ def test_load_cache_error_fallback(temp_registry_dir):
             temp_path = Path(temp_dir)
             (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-            # Mock remote metadata - fetch_metadata returns Dict[Tuple, dict]
+            # Mock remote metadata - fetch_metadata returns Dict[Tuple, status_dict]
             expected_hash = compute_dir_hash(temp_path)
-            mock_backend.fetch_metadata = Mock(return_value={
-                ("test:obj", "1.0.0"): {
-                    "class": "builtins.str",
-                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                    "hash": expected_hash,
+            mock_backend.fetch_metadata = Mock(
+                return_value={
+                    ("test:obj", "1.0.0"): {
+                        "status": "ok",
+                        "metadata": {
+                            "class": "builtins.str",
+                            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                            "hash": expected_hash,
+                        },
+                    }
                 }
-            })
+            )
 
-            # Mock pull to copy our temp directory
-            def mock_pull(name, version, local_path):
+            # Mock pull to copy our temp directory and return status dict
+            def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise"):
+                names = [name] if isinstance(name, str) else name
+                versions = [version] if isinstance(version, str) else version
                 paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
-                for p in paths:
+                results = {}
+                for n, v, p in zip(names, versions, paths):
                     shutil.copytree(temp_path, p, dirs_exist_ok=True)
+                    results[(n, v)] = {"status": "ok"}
+                return results
 
             mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -2887,7 +2916,7 @@ def test_save_cache_error_handling(temp_registry_dir):
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": []})
     # push returns Dict[Tuple[str, str], str]
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -2921,13 +2950,16 @@ def test_load_cache_metadata_sync(temp_registry_dir):
     registry._cache.save("test:obj", "value", version="1.0.0")
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # Mock remote metadata - fetch_metadata returns Dict[Tuple, dict]
+    # Mock remote metadata - fetch_metadata returns Dict[Tuple, status_dict]
     remote_metadata = {
         ("test:obj", "1.0.0"): {
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": cached_hash,
-            "metadata": {"from_remote": "true"},
+            "status": "ok",
+            "metadata": {
+                "class": "builtins.str",
+                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                "hash": cached_hash,
+                "metadata": {"from_remote": "true"},
+            },
         }
     }
     mock_backend.fetch_metadata = Mock(return_value=remote_metadata)
@@ -3006,7 +3038,7 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": []})
     # push returns Dict[Tuple[str, str], str]
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): "ok"})
+    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -3066,22 +3098,30 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
     registry._cache.save("test:obj", "old_value", version="1.0.0")
 
     # Mock remote metadata with hash that doesn't match either cache or what remote will provide
-    mock_backend.fetch_metadata = Mock(return_value={
-        ("test:obj", "1.0.0"): {
-            "class": "builtins.str",
-            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-            "hash": "expected_hash_that_nothing_matches",
+    mock_backend.fetch_metadata = Mock(
+        return_value={
+            ("test:obj", "1.0.0"): {
+                "status": "ok",
+                "metadata": {
+                    "class": "builtins.str",
+                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "hash": "expected_hash_that_nothing_matches",
+                },
+            }
         }
-    })
+    )
 
     # Mock pull to return data that also doesn't match expected hash
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"corrupted_value"')
 
-        def mock_pull(names, versions, local_paths):
-            for p in local_paths:
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+            results = {}
+            for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
+                results[(n, v)] = {"status": "ok"}
+            return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
@@ -3180,20 +3220,28 @@ def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
         (temp_path / "data.json").write_text('"test_value"')
         expected_hash = compute_dir_hash(temp_path)
 
-        def mock_pull(names, versions, local_paths):
-            for p in local_paths:
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+            results = {}
+            for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
+                results[(n, v)] = {"status": "ok"}
+            return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
-        # Mock remote metadata with correct hash - fetch_metadata returns Dict[Tuple, dict]
-        mock_backend.fetch_metadata = Mock(return_value={
-            ("test:obj", "1.0.0"): {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": expected_hash,
+        # Mock remote metadata with correct hash - fetch_metadata returns Dict[Tuple, status_dict]
+        mock_backend.fetch_metadata = Mock(
+            return_value={
+                ("test:obj", "1.0.0"): {
+                    "status": "ok",
+                    "metadata": {
+                        "class": "builtins.str",
+                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "hash": expected_hash,
+                    },
+                }
             }
-        })
+        )
 
         # Load with verify_hash=True - should fetch from remote
         result = registry.load("test:obj", version="1.0.0", verify_hash=True)
@@ -3336,16 +3384,19 @@ def test_batch_save_single_items(registry):
 
 def test_batch_save_multiple_items(registry):
     """Test batch save with multiple items."""
+    from mindtrace.registry.core.types import BatchResult
+
     names = ["test:a", "test:b", "test:c"]
     values = ["value a", "value b", "value c"]
     versions = ["1.0.0", "1.0.0", "1.0.0"]
 
     results = registry.save(names, values, version=versions)
 
-    # Should return list of versions
-    assert isinstance(results, list)
+    # Should return BatchResult
+    assert isinstance(results, BatchResult)
     assert len(results) == 3
-    assert all(v == "1.0.0" for v in results)
+    assert results.all_succeeded
+    assert all(v == "1.0.0" for v in results.results)
 
     # All objects should exist
     for name in names:
@@ -3354,17 +3405,20 @@ def test_batch_save_multiple_items(registry):
 
 def test_batch_save_auto_version(registry):
     """Test batch save with auto-versioning."""
+    from mindtrace.registry.core.types import BatchResult
+
     names = ["test:auto:a", "test:auto:b"]
     values = [1, 2]
 
     results = registry.save(names, values)
 
-    # Should return list of versions
-    assert isinstance(results, list)
+    # Should return BatchResult
+    assert isinstance(results, BatchResult)
     assert len(results) == 2
+    assert results.all_succeeded
     # Auto-increment starts at 1
-    assert results[0] == "1"
-    assert results[1] == "1"
+    assert results.results[0] == "1"
+    assert results.results[1] == "1"
 
 
 def test_batch_save_mixed_skip(registry):
@@ -3400,6 +3454,8 @@ def test_batch_load_single_items(registry):
 
 def test_batch_load_multiple_items(registry):
     """Test batch load with multiple items."""
+    from mindtrace.registry.core.types import BatchResult
+
     # Save multiple objects
     registry.save("test:a", "value a", version="1.0.0")
     registry.save("test:b", "value b", version="1.0.0")
@@ -3411,12 +3467,13 @@ def test_batch_load_multiple_items(registry):
 
     results = registry.load(names, version=versions)
 
-    # Should return list of values
-    assert isinstance(results, list)
+    # Should return BatchResult
+    assert isinstance(results, BatchResult)
     assert len(results) == 3
-    assert results[0] == "value a"
-    assert results[1] == "value b"
-    assert results[2] == "value c"
+    assert results.all_succeeded
+    assert results.results[0] == "value a"
+    assert results.results[1] == "value b"
+    assert results.results[2] == "value c"
 
 
 def test_batch_load_latest_version(registry):
@@ -3441,8 +3498,8 @@ def test_batch_load_mixed_versions(registry):
 
     results = registry.load(names, version=versions)
 
-    assert results[0] == "a v1"
-    assert results[1] == "b v1"
+    assert results.results[0] == "a v1"
+    assert results.results[1] == "b v1"
 
 
 def test_batch_delete_single_items(registry):

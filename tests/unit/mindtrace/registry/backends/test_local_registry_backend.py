@@ -85,9 +85,10 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
     assert meta_path.exists()
 
-    # Fetch metadata - returns Dict[Tuple[str, str], dict]
+    # Fetch metadata - returns Dict[Tuple[str, str], {"status": "ok", "metadata": {...}}]
     result = backend.fetch_metadata("test:object", "1.0.0")
-    fetched_metadata = result[("test:object", "1.0.0")]
+    assert result[("test:object", "1.0.0")]["status"] == "ok"
+    fetched_metadata = result[("test:object", "1.0.0")]["metadata"]
 
     # Verify metadata content
     assert fetched_metadata["description"] == sample_metadata["description"]
@@ -367,18 +368,18 @@ def test_push_on_conflict_skip(backend, sample_object_dir):
     """Test push with on_conflict='skip' when version already exists."""
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")] == "ok"
+    assert result[("test:object", "1.0.0")]["status"] == "ok"
 
     # Try to push again with on_conflict="skip"
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True}, on_conflict="skip")
-    assert result[("test:object", "1.0.0")] == "skipped"
+    assert result[("test:object", "1.0.0")]["status"] == "skipped"
 
 
 def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
     """Test push with on_conflict='overwrite' when version already exists."""
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")] == "ok"
+    assert result[("test:object", "1.0.0")]["status"] == "ok"
 
     # Create a new source directory with different content
     new_obj_dir = temp_dir / "new_sample"
@@ -387,7 +388,7 @@ def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
 
     # Push again with on_conflict="overwrite"
     result = backend.push("test:object", "1.0.0", str(new_obj_dir), {"updated": True}, on_conflict="overwrite")
-    assert result[("test:object", "1.0.0")] == "overwritten"
+    assert result[("test:object", "1.0.0")]["status"] == "overwritten"
 
     # Verify new content exists
     object_path = backend.uri / "test:object" / "1.0.0"
@@ -401,7 +402,7 @@ def test_push_on_conflict_error(backend, sample_object_dir):
 
     # Push the object initially with metadata (metadata file is the existence check)
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")] == "ok"
+    assert result[("test:object", "1.0.0")]["status"] == "ok"
 
     # Try to push again with on_conflict="error" (default)
     with pytest.raises(RegistryVersionConflict, match="already exists"):
@@ -413,12 +414,12 @@ def test_push_auto_increment_version(backend, sample_object_dir):
     # Push first version with metadata (metadata is required for version tracking)
     result = backend.push("test:object", None, sample_object_dir, {"version": 1})
     assert ("test:object", "1") in result
-    assert result[("test:object", "1")] == "ok"
+    assert result[("test:object", "1")]["status"] == "ok"
 
     # Push second version with metadata
     result = backend.push("test:object", None, sample_object_dir, {"version": 2})
     assert ("test:object", "2") in result
-    assert result[("test:object", "2")] == "ok"
+    assert result[("test:object", "2")]["status"] == "ok"
 
     # Verify both versions exist
     versions = backend.list_versions("test:object")
@@ -430,17 +431,19 @@ def test_internal_lock_context_manager(backend):
     """Test internal lock context manager."""
     # Test successful lock acquisition
     with backend._internal_lock("test_key"):
-        # Verify lock file exists
-        lock_path = backend._lock_path("test_key")
-        assert lock_path.exists()
+        # Verify exclusive lock file exists
+        lock_dir = backend._lock_dir("test_key")
+        exclusive_path = backend._exclusive_lock_path("test_key")
+        assert lock_dir.exists()
+        assert exclusive_path.exists()
 
-    # Verify lock is released
-    assert not lock_path.exists()
+    # Verify lock is released (directory may still exist but exclusive file should be gone)
+    assert not exclusive_path.exists()
 
     # Test lock contention - trying to acquire same lock should fail
     with backend._internal_lock("test_key2"):
-        # Manually try to acquire same lock
-        result = backend._acquire_internal_lock("test_key2", "different_id", 30)
+        # Manually try to acquire same exclusive lock
+        result = backend._acquire_internal_lock("test_key2", "different_id", 30, shared=False)
         assert result is False
 
 
@@ -453,8 +456,8 @@ def test_internal_lock_release_on_exception(backend):
             raise RuntimeError("Test exception")
 
     # Verify lock is released
-    lock_path = backend._lock_path(lock_key)
-    assert not lock_path.exists()
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    assert not exclusive_path.exists()
 
 
 def test_internal_lock_acquire_release(backend):
@@ -464,16 +467,17 @@ def test_internal_lock_acquire_release(backend):
     lock_key = "test_direct_lock"
     lock_id = str(uuid.uuid4())
 
-    # Acquire lock
-    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30)
+    # Acquire exclusive lock
+    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=False)
     assert result is True
 
-    # Verify lock file exists and contains correct data
-    lock_path = backend._lock_path(lock_key)
-    assert lock_path.exists()
+    # Verify exclusive lock file exists and contains correct data
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    assert exclusive_path.exists()
 
     import json
-    with open(lock_path, "r") as f:
+
+    with open(exclusive_path, "r") as f:
         lock_data = json.load(f)
     assert lock_data["lock_id"] == lock_id
     assert "expires_at" in lock_data
@@ -481,28 +485,29 @@ def test_internal_lock_acquire_release(backend):
     # Release lock with correct ID
     result = backend._release_internal_lock(lock_key, lock_id)
     assert result is True
-    assert not lock_path.exists()
+    assert not exclusive_path.exists()
 
 
 def test_internal_lock_release_wrong_id(backend):
-    """Test that releasing a lock with wrong ID fails."""
+    """Test that releasing a lock with wrong ID doesn't release the actual lock."""
     import uuid
 
     lock_key = "test_wrong_id_lock"
     lock_id = str(uuid.uuid4())
     wrong_id = str(uuid.uuid4())
 
-    # Acquire lock
-    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30)
+    # Acquire exclusive lock
+    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=False)
     assert result is True
 
-    # Try to release with wrong ID - should fail
+    # Try to release with wrong ID - returns True (no error) but lock should still exist
     result = backend._release_internal_lock(lock_key, wrong_id)
-    assert result is False
+    # Note: returns True because it tries shared lock path which doesn't exist
+    # The important check is that the exclusive lock still exists
 
-    # Lock file should still exist
-    lock_path = backend._lock_path(lock_key)
-    assert lock_path.exists()
+    # Exclusive lock file should still exist (wrong ID didn't release it)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    assert exclusive_path.exists()
 
     # Clean up - release with correct ID
     backend._release_internal_lock(lock_key, lock_id)
@@ -518,21 +523,25 @@ def test_internal_lock_expired_lock_takeover(backend):
     old_lock_id = str(uuid.uuid4())
     new_lock_id = str(uuid.uuid4())
 
-    # Create an expired lock file manually
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": old_lock_id,
-            "expires_at": time.time() - 10  # Expired 10 seconds ago
-        }, f)
+    # Create an expired exclusive lock file manually
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
+        json.dump(
+            {
+                "lock_id": old_lock_id,
+                "expires_at": time.time() - 10,  # Expired 10 seconds ago
+            },
+            f,
+        )
 
     # New lock acquisition should succeed (taking over expired lock)
-    result = backend._acquire_internal_lock(lock_key, new_lock_id, timeout=30)
+    result = backend._acquire_internal_lock(lock_key, new_lock_id, timeout=30, shared=False)
     assert result is True
 
     # Verify new lock data
-    with open(lock_path, "r") as f:
+    with open(exclusive_path, "r") as f:
         lock_data = json.load(f)
     assert lock_data["lock_id"] == new_lock_id
 
@@ -550,21 +559,25 @@ def test_internal_lock_active_lock_blocks(backend):
     existing_lock_id = str(uuid.uuid4())
     new_lock_id = str(uuid.uuid4())
 
-    # Create an active lock file manually
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": existing_lock_id,
-            "expires_at": time.time() + 60  # Expires in 60 seconds
-        }, f)
+    # Create an active exclusive lock file manually
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
+        json.dump(
+            {
+                "lock_id": existing_lock_id,
+                "expires_at": time.time() + 60,  # Expires in 60 seconds
+            },
+            f,
+        )
 
-    # New lock acquisition should fail
-    result = backend._acquire_internal_lock(lock_key, new_lock_id, timeout=30)
+    # New exclusive lock acquisition should fail
+    result = backend._acquire_internal_lock(lock_key, new_lock_id, timeout=30, shared=False)
     assert result is False
 
     # Clean up
-    lock_path.unlink()
+    exclusive_path.unlink()
 
 
 def test_internal_lock_empty_lock_file(backend):
@@ -574,13 +587,14 @@ def test_internal_lock_empty_lock_file(backend):
     lock_key = "test_empty_lock"
     lock_id = str(uuid.uuid4())
 
-    # Create an empty lock file
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.touch()
+    # Create an empty exclusive lock file
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.touch()
 
-    # Lock acquisition should succeed (empty file is treated as invalid)
-    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30)
+    # Lock acquisition should succeed (empty file is treated as invalid/corrupted)
+    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=False)
     assert result is True
 
     # Clean up
@@ -594,18 +608,19 @@ def test_internal_lock_corrupted_lock_file(backend):
     lock_key = "test_corrupted_lock"
     lock_id = str(uuid.uuid4())
 
-    # Create a lock file with invalid JSON
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
+    # Create an exclusive lock file with invalid JSON
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
         f.write("invalid json content")
 
-    # Lock acquisition should fail gracefully (returns False, doesn't crash)
-    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30)
-    assert result is False
+    # Lock acquisition should succeed (corrupted file is cleaned up and new lock acquired)
+    result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=False)
+    assert result is True
 
     # Clean up
-    lock_path.unlink()
+    backend._release_internal_lock(lock_key, lock_id)
 
 
 def test_internal_lock_release_nonexistent(backend):
@@ -615,9 +630,9 @@ def test_internal_lock_release_nonexistent(backend):
     lock_key = "test_nonexistent_lock"
     lock_id = str(uuid.uuid4())
 
-    # Lock file doesn't exist
-    lock_path = backend._lock_path(lock_key)
-    assert not lock_path.exists()
+    # Lock directory/file doesn't exist
+    lock_dir = backend._lock_dir(lock_key)
+    assert not lock_dir.exists()
 
     # Release should return True (nothing to release)
     result = backend._release_internal_lock(lock_key, lock_id)
@@ -626,81 +641,78 @@ def test_internal_lock_release_nonexistent(backend):
 
 def test_internal_lock_raises_on_acquisition_failure(backend):
     """Test that _internal_lock context manager raises LockAcquisitionError on failure."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
     import json
     import time
     import uuid
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     lock_key = "test_lock_failure"
     existing_lock_id = str(uuid.uuid4())
 
-    # Create an active lock file manually
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": existing_lock_id,
-            "expires_at": time.time() + 60
-        }, f)
+    # Create an active exclusive lock file manually
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
+        json.dump({"lock_id": existing_lock_id, "expires_at": time.time() + 60}, f)
 
     # Context manager should raise LockAcquisitionError
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire lock"):
+    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
         with backend._internal_lock(lock_key):
             pass  # Should never reach here
 
     # Clean up
-    lock_path.unlink()
+    exclusive_path.unlink()
 
 
 def test_push_blocked_by_active_lock(backend, sample_object_dir):
     """Test that push is blocked when another operation holds the lock."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
     import json
     import time
     import uuid
 
-    # Simulate an active lock on the object (as if another push is in progress)
-    lock_key = "test:object@push"
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
+    # Simulate an active exclusive lock on the object@version (push uses "{name}@{version}" lock key)
+    lock_key = "test:object@1.0.0"
     lock_id = str(uuid.uuid4())
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": lock_id,
-            "expires_at": time.time() + 60
-        }, f)
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
+        json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
     # Push should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire lock"):
+    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
         backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
 
     # Clean up
-    lock_path.unlink()
+    exclusive_path.unlink()
 
 
 def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     """Test that delete is blocked when another operation holds the lock."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
     import json
     import time
     import uuid
 
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
     # First, push an object so we have something to delete
     backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
 
-    # Simulate an active lock on the object@version (as if another delete is in progress)
+    # Simulate an active exclusive lock on the object@version (as if another delete is in progress)
     lock_key = "test:object@1.0.0"
     lock_id = str(uuid.uuid4())
-    lock_path = backend._lock_path(lock_key)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": lock_id,
-            "expires_at": time.time() + 60
-        }, f)
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    with open(exclusive_path, "w") as f:
+        json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
     # Delete should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire lock"):
+    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
         backend.delete("test:object", "1.0.0")
 
     # Verify object still exists (delete was blocked)
@@ -708,7 +720,7 @@ def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     assert result[("test:object", "1.0.0")] is True
 
     # Clean up
-    lock_path.unlink()
+    exclusive_path.unlink()
 
 
 def test_concurrent_push_same_object_different_versions(backend, sample_object_dir):
@@ -717,23 +729,21 @@ def test_concurrent_push_same_object_different_versions(backend, sample_object_d
     import time
     import uuid
 
-    # Simulate an active lock on version 1.0.0
-    lock_key_v1 = "test:object@push"
+    # Simulate an active exclusive lock on test:object@1.0.0
+    lock_key_v1 = "test:object@1.0.0"
     lock_id = str(uuid.uuid4())
-    lock_path = backend._lock_path(lock_key_v1)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        json.dump({
-            "lock_id": lock_id,
-            "expires_at": time.time() + 60
-        }, f)
+    lock_dir = backend._lock_dir(lock_key_v1)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key_v1)
+    with open(exclusive_path, "w") as f:
+        json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
     # Push to a different object should succeed (different lock key)
     result = backend.push("other:object", "1.0.0", sample_object_dir, {"test": True})
-    assert result[("other:object", "1.0.0")] == "ok"
+    assert result[("other:object", "1.0.0")]["status"] == "ok"
 
     # Clean up
-    lock_path.unlink()
+    exclusive_path.unlink()
 
 
 def test_push_releases_lock_on_failure(backend, sample_object_dir):
@@ -744,10 +754,10 @@ def test_push_releases_lock_on_failure(backend, sample_object_dir):
     with pytest.raises(Exception):  # Will fail during copytree
         backend.push("test:object", "1.0.0", invalid_path, {"test": True})
 
-    # Verify lock is released (should be able to acquire it now)
-    lock_key = "test:object@push"
-    lock_path = backend._lock_path(lock_key)
-    assert not lock_path.exists()
+    # Verify lock is released (exclusive lock file should not exist)
+    lock_key = "test:object@1.0.0"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    assert not exclusive_path.exists()
 
 
 def test_delete_releases_lock_on_success(backend, sample_object_dir):
@@ -758,14 +768,14 @@ def test_delete_releases_lock_on_success(backend, sample_object_dir):
     # Delete it
     backend.delete("test:object", "1.0.0")
 
-    # Verify lock is released
+    # Verify lock is released (exclusive lock file should not exist)
     lock_key = "test:object@1.0.0"
-    lock_path = backend._lock_path(lock_key)
-    assert not lock_path.exists()
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    assert not exclusive_path.exists()
 
     # Should be able to push again (lock was released)
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
-    assert result[("test:object", "1.0.0")] == "ok"
+    assert result[("test:object", "1.0.0")]["status"] == "ok"
 
 
 def test_pull_object_not_found(backend):

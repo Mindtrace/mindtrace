@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
 
@@ -107,7 +107,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         local_path: PathArg,
         metadata: MetadataArg = None,
         on_conflict: str = "error",
-    ) -> Dict[Tuple[str, str], str]:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Atomically push artifacts and metadata.
 
         This is the primary write operation. Artifacts and metadata are committed
@@ -129,12 +130,20 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 - "hash": content hash for verification
             on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
                 "skip" silently skips, "overwrite" replaces existing. Default is "error".
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
 
         Returns:
-            Dict mapping (name, resolved_version) to "ok", "skipped", or "overwritten".
+            Dict mapping (name, resolved_version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "skipped"} when on_conflict="skip" and version exists
+            - {"status": "overwritten"} when on_conflict="overwrite" and version existed
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
 
         Raises:
-            RegistryVersionConflict: If version already exists and on_conflict="error".
+            RegistryVersionConflict: If version already exists and on_conflict="error" (when on_error="raise").
+            LockAcquisitionError: If lock cannot be acquired (when on_error="raise").
             ValueError: If inputs are invalid.
         """
         pass
@@ -145,22 +154,33 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: NameArg,
         local_path: PathArg,
-    ) -> None:
+        acquire_lock: bool = False,
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Download artifacts to local path(s).
 
         Uses the "_files" manifest from metadata to know exactly which
         files to download, avoiding expensive blob storage listing.
 
-        No locking needed - metadata is the commit point, so reads are
-        always consistent.
-
         Args:
             name: Object name(s).
             version: Version string(s).
             local_path: Local target directory/directories to download into.
+            acquire_lock: If True, acquire a shared (read) lock before pulling.
+                This is needed for mutable registries to prevent read-write races.
+                Default is False (no locking, for immutable registries).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
 
         Raises:
-            RegistryObjectNotFound: If object doesn't exist.
+            RegistryObjectNotFound: If object doesn't exist (when on_error="raise").
+            LockAcquisitionError: If lock cannot be acquired (when on_error="raise").
         """
         pass
 
@@ -169,7 +189,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: NameArg,
-    ) -> None:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete artifact(s) and metadata.
 
         Backend handles locking internally.
@@ -177,6 +198,14 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Args:
             name: Object name(s).
             version: Version string(s).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         pass
 
@@ -210,7 +239,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: NameArg,
         on_error: str = "skip",
-    ) -> Dict[Tuple[str, str], dict]:
+    ) -> Dict[Tuple[str, str], Union[dict, Dict[str, Any]]]:
         """Fetch metadata for object version(s).
 
         This is the canonical existence check - if metadata doesn't exist,
@@ -224,9 +253,10 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 "raise": Raise the exception immediately.
 
         Returns:
-            Dict mapping (name, version) tuples to their metadata dicts.
-            Missing entries (FileNotFoundError) are always omitted from the result.
-            Other errors are handled according to on_error parameter.
+            Dict mapping (name, version) tuples to status dicts:
+            - {"status": "ok", "metadata": {...}} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure (when on_error="skip")
+            Missing entries (FileNotFoundError) are omitted from the result.
         """
         pass
 
@@ -235,12 +265,21 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: NameArg,
-    ) -> None:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete metadata for object version(s).
 
         Args:
             name: Object name(s).
             version: Version string(s).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         pass
 
@@ -381,15 +420,20 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     # Internal Locking (protected, not part of public API)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int) -> bool:
+    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire internal lock for operation.
 
         Override in subclass for locking support. Default is no-op.
 
+        Supports both shared (read) and exclusive (write) locks:
+        - Shared locks: Multiple readers can hold shared locks simultaneously
+        - Exclusive locks: Only one writer can hold an exclusive lock, and no readers
+
         Args:
-            key: Lock key (e.g., "{name}@push").
+            key: Lock key (e.g., "{name}@{version}").
             lock_id: Unique identifier for this lock attempt.
             timeout: Lock timeout in seconds.
+            shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
 
         Returns:
             True if lock acquired, False otherwise.

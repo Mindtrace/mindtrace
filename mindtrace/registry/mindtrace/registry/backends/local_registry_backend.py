@@ -11,7 +11,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import yaml
 
@@ -120,69 +120,169 @@ class LocalRegistryBackend(RegistryBackend):
         """
         return f"_meta_{name.replace(':', '_')}@"
 
-    def _lock_path(self, key: str) -> Path:
-        """Get the path for a lock file."""
-        return self._full_path(f"_lock_{key}")
+    def _lock_dir(self, key: str) -> Path:
+        """Get the directory for lock files for a given key."""
+        return self._full_path(f"_locks_{key}")
+
+    def _exclusive_lock_path(self, key: str) -> Path:
+        """Get the path for an exclusive lock file."""
+        return self._lock_dir(key) / "_exclusive"
+
+    def _shared_lock_path(self, key: str, lock_id: str) -> Path:
+        """Get the path for a shared lock file."""
+        return self._lock_dir(key) / f"_shared_{lock_id}"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal Locking
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int) -> bool:
-        """Acquire internal lock using atomic file operations.
+    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Acquire internal lock using one-file-per-holder approach.
 
-        Uses atomic file creation with O_EXCL to ensure only one process can create the lock file.
-        The lock file contains both the lock_id and expiration time in JSON format.
+        Supports both shared (read) and exclusive (write) locks:
+        - Shared locks: Multiple readers can hold shared locks simultaneously
+        - Exclusive locks: Only one writer can hold an exclusive lock, and no readers
+
+        Lock files are stored in a directory per key:
+        - _locks_{key}/_exclusive           - exclusive lock file
+        - _locks_{key}/_shared_{lock_id}    - shared lock file per holder
 
         Args:
             key: The key to acquire the lock for.
             lock_id: The ID of the lock to acquire.
             timeout: The timeout in seconds for the lock.
+            shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
 
         Returns:
             True if the lock was acquired, False otherwise.
         """
-        lock_path = self._lock_path(key)
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_dir = self._lock_dir(key)
+        lock_dir.mkdir(parents=True, exist_ok=True)
+
+        exclusive_path = self._exclusive_lock_path(key)
+        expires_at = time.time() + timeout
 
         try:
-            # Try atomic file creation with O_EXCL
-            if platform.system() == "Windows":
-                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            if shared:
+                # For shared lock: check no exclusive lock exists, then create shared lock file
+                # First, clean up expired exclusive lock if any
+                if exclusive_path.exists():
+                    try:
+                        with open(exclusive_path, "r") as f:
+                            meta = json.loads(f.read().strip())
+                        if time.time() > meta.get("expires_at", 0):
+                            exclusive_path.unlink()
+                        else:
+                            # Valid exclusive lock exists - cannot acquire shared
+                            return False
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        # Corrupted or deleted - try to clean up
+                        try:
+                            exclusive_path.unlink()
+                        except FileNotFoundError:
+                            pass
+
+                # Create shared lock file atomically
+                shared_path = self._shared_lock_path(key, lock_id)
+                try:
+                    if platform.system() == "Windows":
+                        fd = os.open(shared_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    else:
+                        fd = os.open(shared_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+
+                    with os.fdopen(fd, "w") as f:
+                        f.write(json.dumps({"lock_id": lock_id, "expires_at": expires_at}))
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Double-check no exclusive lock was created while we were writing
+                    if exclusive_path.exists():
+                        try:
+                            with open(exclusive_path, "r") as f:
+                                meta = json.loads(f.read().strip())
+                            if time.time() <= meta.get("expires_at", 0):
+                                # Exclusive lock appeared - rollback our shared lock
+                                shared_path.unlink()
+                                return False
+                        except (json.JSONDecodeError, IOError, FileNotFoundError):
+                            pass
+
+                    return True
+                except FileExistsError:
+                    # Our lock file already exists (shouldn't happen with UUID)
+                    return True
+
             else:
-                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+                # For exclusive lock: check no locks exist, then create exclusive lock file
+                # First, clean up expired locks
+                self._cleanup_expired_locks(key)
 
-            # File created - we have the lock
-            with os.fdopen(fd, "r+") as f:
-                metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout}
-                f.write(json.dumps(metadata))
-                f.flush()
-                os.fsync(f.fileno())
-                return True
+                # Check for any existing shared locks
+                for f in lock_dir.glob("_shared_*"):
+                    try:
+                        with open(f, "r") as fp:
+                            meta = json.loads(fp.read().strip())
+                        if time.time() <= meta.get("expires_at", 0):
+                            # Valid shared lock exists - cannot acquire exclusive
+                            return False
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        pass
 
-        except FileExistsError:
-            # Check if existing lock is expired
-            try:
-                with open(lock_path, "r") as f:
-                    content = f.read().strip()
-                    if not content:
-                        lock_path.unlink()
-                        return self._acquire_internal_lock(key, lock_id, timeout)
-                    meta = json.loads(content)
+                # Try to create exclusive lock atomically
+                try:
+                    if platform.system() == "Windows":
+                        fd = os.open(exclusive_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    else:
+                        fd = os.open(exclusive_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
 
-                if time.time() > meta.get("expires_at", 0):
-                    # Expired - remove and retry
-                    lock_path.unlink()
-                    return self._acquire_internal_lock(key, lock_id, timeout)
-                return False
-            except (json.JSONDecodeError, IOError, FileNotFoundError):
-                return False
+                    with os.fdopen(fd, "w") as f:
+                        f.write(json.dumps({"lock_id": lock_id, "expires_at": expires_at}))
+                        f.flush()
+                        os.fsync(f.fileno())
+                    return True
+
+                except FileExistsError:
+                    # Exclusive lock exists - check if expired
+                    try:
+                        with open(exclusive_path, "r") as f:
+                            meta = json.loads(f.read().strip())
+                        if time.time() > meta.get("expires_at", 0):
+                            # Expired - remove and retry
+                            exclusive_path.unlink()
+                            return self._acquire_internal_lock(key, lock_id, timeout, shared=False)
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        pass
+                    return False
+
         except Exception as e:
-            self.logger.error(f"Error acquiring lock for {key}: {e}")
+            self.logger.error(f"Error acquiring {'shared' if shared else 'exclusive'} lock for {key}: {e}")
             return False
 
+    def _cleanup_expired_locks(self, key: str) -> None:
+        """Remove expired lock files for a key."""
+        lock_dir = self._lock_dir(key)
+        if not lock_dir.exists():
+            return
+
+        now = time.time()
+        for lock_file in lock_dir.iterdir():
+            try:
+                with open(lock_file, "r") as f:
+                    meta = json.loads(f.read().strip())
+                if now > meta.get("expires_at", 0):
+                    lock_file.unlink()
+            except (json.JSONDecodeError, IOError, FileNotFoundError):
+                # Corrupted or already deleted - try to clean up
+                try:
+                    lock_file.unlink()
+                except FileNotFoundError:
+                    pass
+
     def _release_internal_lock(self, key: str, lock_id: str) -> bool:
-        """Release internal lock by verifying ownership and removing the file.
+        """Release internal lock by removing the appropriate lock file.
+
+        For exclusive locks: removes _exclusive file if we own it.
+        For shared locks: removes our _shared_{lock_id} file.
 
         Args:
             key: The key to release the lock for.
@@ -191,30 +291,51 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             True if the lock was released, False otherwise.
         """
-        lock_path = self._lock_path(key)
-
         try:
-            if not lock_path.exists():
+            # Try to release exclusive lock first
+            exclusive_path = self._exclusive_lock_path(key)
+            if exclusive_path.exists():
+                try:
+                    with open(exclusive_path, "r") as f:
+                        meta = json.loads(f.read().strip())
+                    if meta.get("lock_id") == lock_id:
+                        exclusive_path.unlink()
+                        self._cleanup_lock_dir(key)
+                        return True
+                except (json.JSONDecodeError, IOError, FileNotFoundError):
+                    pass
+
+            # Try to release shared lock
+            shared_path = self._shared_lock_path(key, lock_id)
+            if shared_path.exists():
+                shared_path.unlink()
+                self._cleanup_lock_dir(key)
                 return True
 
-            with open(lock_path, "r") as f:
-                meta = json.loads(f.read().strip())
-                if meta.get("lock_id") != lock_id:
-                    return False
-
-            lock_path.unlink()
+            # Lock file doesn't exist - consider it released
             return True
+
         except Exception as e:
             self.logger.error(f"Error releasing lock for {key}: {e}")
             return False
 
+    def _cleanup_lock_dir(self, key: str) -> None:
+        """Remove lock directory if empty."""
+        lock_dir = self._lock_dir(key)
+        try:
+            if lock_dir.exists() and not any(lock_dir.iterdir()):
+                lock_dir.rmdir()
+        except (OSError, FileNotFoundError):
+            pass
+
     @contextmanager
-    def _internal_lock(self, key: str, timeout: int = 30):
+    def _internal_lock(self, key: str, timeout: int = 30, shared: bool = False):
         """Context manager for internal locking.
 
         Args:
             key: The key to acquire the lock for.
             timeout: The timeout in seconds for the lock.
+            shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
 
         Yields:
             None
@@ -223,8 +344,9 @@ class LocalRegistryBackend(RegistryBackend):
             LockAcquisitionError: If the lock cannot be acquired.
         """
         lock_id = str(uuid.uuid4())
-        if not self._acquire_internal_lock(key, lock_id, timeout):
-            raise LockAcquisitionError(f"Cannot acquire lock for {key}")
+        if not self._acquire_internal_lock(key, lock_id, timeout, shared=shared):
+            lock_type = "shared" if shared else "exclusive"
+            raise LockAcquisitionError(f"Cannot acquire {lock_type} lock for {key}")
         try:
             yield
         finally:
@@ -241,7 +363,8 @@ class LocalRegistryBackend(RegistryBackend):
         local_path: PathArg,
         metadata: MetadataArg = None,
         on_conflict: str = "error",
-    ) -> Dict[Tuple[str, str], str]:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Atomically push artifacts and metadata with rollback on failure.
 
         Args:
@@ -251,63 +374,83 @@ class LocalRegistryBackend(RegistryBackend):
             metadata: Metadata dict(s) to store.
             on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
                 "skip" silently skips, "overwrite" replaces existing. Default is "error".
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
 
         Returns:
-            Dict mapping (name, resolved_version) to "ok", "skipped", or "overwritten".
+            Dict mapping (name, resolved_version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "skipped"} when on_conflict="skip" and version exists
+            - {"status": "overwritten"} when on_conflict="overwrite" and version existed
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         entries = self._normalize_inputs(name, version, local_path, metadata)
-        results: Dict[Tuple[str, str], str] = {}
+        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         for obj_name, obj_version, obj_path, obj_meta in entries:
-            self.validate_object_name(obj_name)
+            resolved_version = None
+            try:
+                self.validate_object_name(obj_name)
 
-            with self._internal_lock(f"{obj_name}@push"):
-                # Resolve version (auto-increment if None)
+                # Resolve version first (outside lock to avoid deadlock with list_versions)
                 resolved_version = self._resolve_version(obj_name, obj_version)
 
-                artifact_dst = self._full_path(self._object_key(obj_name, resolved_version))
-                meta_path = self._object_metadata_path(obj_name, resolved_version)
+                # Lock on the specific object@version for proper coordination with pull() and delete()
+                with self._internal_lock(f"{obj_name}@{resolved_version}"):
+                    artifact_dst = self._full_path(self._object_key(obj_name, resolved_version))
+                    meta_path = self._object_metadata_path(obj_name, resolved_version)
 
-                # Check for existing version
-                is_overwrite = False
-                if meta_path.exists():
-                    if on_conflict == "skip":
-                        results[(obj_name, resolved_version)] = "skipped"
-                        continue
-                    elif on_conflict == "overwrite":
-                        # Remove existing artifacts and metadata before overwriting
+                    # Check for existing version
+                    is_overwrite = False
+                    if meta_path.exists():
+                        if on_conflict == "skip":
+                            results[(obj_name, resolved_version)] = {"status": "skipped"}
+                            continue
+                        elif on_conflict == "overwrite":
+                            # Remove existing artifacts and metadata before overwriting
+                            if artifact_dst.exists():
+                                shutil.rmtree(artifact_dst, ignore_errors=True)
+                            meta_path.unlink(missing_ok=True)
+                            is_overwrite = True
+                        else:
+                            raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+
+                    try:
+                        # 1. Copy artifacts
+                        self.logger.debug(f"Uploading directory from {obj_path} to {artifact_dst}")
+                        shutil.copytree(obj_path, artifact_dst, dirs_exist_ok=True)
+                        self.logger.debug(f"Upload complete. Contents: {list(artifact_dst.rglob('*'))}")
+
+                        # 2. Write metadata (commit point)
+                        if obj_meta is not None:
+                            # Add path to metadata
+                            obj_meta = dict(obj_meta)
+                            obj_meta["path"] = str(artifact_dst)
+
+                            self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
+                            with open(meta_path, "w") as f:
+                                yaml.safe_dump(obj_meta, f)
+
+                        results[(obj_name, resolved_version)] = {"status": "overwritten" if is_overwrite else "ok"}
+
+                    except Exception as e:
+                        # Rollback: remove artifacts and metadata
                         if artifact_dst.exists():
                             shutil.rmtree(artifact_dst, ignore_errors=True)
-                        meta_path.unlink(missing_ok=True)
-                        is_overwrite = True
-                    else:
-                        raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+                        if meta_path.exists():
+                            meta_path.unlink(missing_ok=True)
+                        raise RuntimeError(f"Push failed for {obj_name}@{resolved_version}: {e}") from e
 
-                try:
-                    # 1. Copy artifacts
-                    self.logger.debug(f"Uploading directory from {obj_path} to {artifact_dst}")
-                    shutil.copytree(obj_path, artifact_dst, dirs_exist_ok=True)
-                    self.logger.debug(f"Upload complete. Contents: {list(artifact_dst.rglob('*'))}")
-
-                    # 2. Write metadata (commit point)
-                    if obj_meta is not None:
-                        # Add path to metadata
-                        obj_meta = dict(obj_meta)
-                        obj_meta["path"] = str(artifact_dst)
-
-                        self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
-                        with open(meta_path, "w") as f:
-                            yaml.safe_dump(obj_meta, f)
-
-                    results[(obj_name, resolved_version)] = "overwritten" if is_overwrite else "ok"
-
-                except Exception as e:
-                    # Rollback: remove artifacts and metadata
-                    if artifact_dst.exists():
-                        shutil.rmtree(artifact_dst, ignore_errors=True)
-                    if meta_path.exists():
-                        meta_path.unlink(missing_ok=True)
-                    raise RuntimeError(f"Push failed for {obj_name}@{resolved_version}: {e}") from e
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                key = (obj_name, resolved_version or obj_version or "unknown")
+                results[key] = {
+                    "status": "error",
+                    "error": type(e).__name__,
+                    "message": str(e),
+                }
 
         return results
 
@@ -316,13 +459,26 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: NameArg,
         local_path: PathArg,
-    ) -> None:
+        acquire_lock: bool = False,
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Copy a directory from the backend store to a local path.
 
         Args:
             name: Name of the object(s).
             version: Version string(s).
             local_path: Destination directory path(s) to copy to.
+            acquire_lock: If True, acquire a shared (read) lock before pulling.
+                This is needed for mutable registries to prevent read-write races.
+                Default is False (no locking, for immutable registries).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -331,21 +487,46 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
 
+        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
-            src = self._full_path(self._object_key(obj_name, obj_version))
+            try:
+                src = self._full_path(self._object_key(obj_name, obj_version))
 
-            if not src.exists():
-                raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+                if not src.exists():
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
 
-            self.logger.debug(f"Downloading directory from {src} to {dest_path}")
-            shutil.copytree(src, dest_path, dirs_exist_ok=True)
-            self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
+                if acquire_lock:
+                    # Acquire shared lock for read operation in mutable registries
+                    with self._internal_lock(f"{obj_name}@{obj_version}", shared=True):
+                        self.logger.debug(f"Downloading directory from {src} to {dest_path} (with shared lock)")
+                        shutil.copytree(src, dest_path, dirs_exist_ok=True)
+                        self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
+                else:
+                    # No locking for immutable registries (fast path)
+                    self.logger.debug(f"Downloading directory from {src} to {dest_path}")
+                    shutil.copytree(src, dest_path, dirs_exist_ok=True)
+                    self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
+
+                results[(obj_name, obj_version)] = {"status": "ok"}
+
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                results[(obj_name, obj_version)] = {
+                    "status": "error",
+                    "error": type(e).__name__,
+                    "message": str(e),
+                }
+
+        return results
 
     def delete(
         self,
         name: NameArg,
         version: NameArg,
-    ) -> None:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete a directory from the backend store.
 
         Also removes empty parent directories.
@@ -353,6 +534,14 @@ class LocalRegistryBackend(RegistryBackend):
         Args:
             name: Name of the object(s).
             version: Version string(s).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -360,26 +549,41 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
         for obj_name, obj_version in zip(names, versions):
-            with self._internal_lock(f"{obj_name}@{obj_version}"):
-                target = self._full_path(self._object_key(obj_name, obj_version))
-                self.logger.debug(f"Deleting directory: {target}")
-                shutil.rmtree(target, ignore_errors=True)
+            try:
+                with self._internal_lock(f"{obj_name}@{obj_version}"):
+                    target = self._full_path(self._object_key(obj_name, obj_version))
+                    self.logger.debug(f"Deleting directory: {target}")
+                    shutil.rmtree(target, ignore_errors=True)
 
-                # Delete metadata
-                meta_path = self._object_metadata_path(obj_name, obj_version)
-                self.logger.debug(f"Deleting metadata file: {meta_path}")
-                if meta_path.exists():
-                    meta_path.unlink()
+                    # Delete metadata
+                    meta_path = self._object_metadata_path(obj_name, obj_version)
+                    self.logger.debug(f"Deleting metadata file: {meta_path}")
+                    if meta_path.exists():
+                        meta_path.unlink()
 
-                # Cleanup parent if empty
-                parent = target.parent
-                if parent.exists() and not any(parent.iterdir()):
-                    self.logger.debug(f"Removing empty parent directory: {parent}")
-                    try:
-                        parent.rmdir()
-                    except Exception:
-                        pass
+                    # Cleanup parent if empty
+                    parent = target.parent
+                    if parent.exists() and not any(parent.iterdir()):
+                        self.logger.debug(f"Removing empty parent directory: {parent}")
+                        try:
+                            parent.rmdir()
+                        except Exception:
+                            pass
+
+                results[(obj_name, obj_version)] = {"status": "ok"}
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                results[(obj_name, obj_version)] = {
+                    "status": "error",
+                    "error": type(e).__name__,
+                    "message": str(e),
+                }
+
+        return results
 
     # ─────────────────────────────────────────────────────────────────────────
     # Metadata-Only Operations
@@ -421,7 +625,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: NameArg,
         on_error: str = "skip",
-    ) -> Dict[Tuple[str, str], dict]:
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Load metadata for a object version.
 
         Args:
@@ -432,8 +636,10 @@ class LocalRegistryBackend(RegistryBackend):
                 "raise": Raise the exception immediately.
 
         Returns:
-            Dict mapping (name, version) tuples to their metadata dicts.
-            Missing entries are omitted from the result.
+            Dict mapping (name, version) tuples to status dicts:
+            - {"status": "ok", "metadata": {...}} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            Missing entries (FileNotFoundError) are omitted from the result.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -441,7 +647,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        results: Dict[Tuple[str, str], dict] = {}
+        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         for obj_name, obj_version in zip(names, versions):
             meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -465,7 +671,7 @@ class LocalRegistryBackend(RegistryBackend):
                 meta["path"] = str(object_path)
 
                 self.logger.debug(f"Loaded metadata: {meta}")
-                results[(obj_name, obj_version)] = meta
+                results[(obj_name, obj_version)] = {"status": "ok", "metadata": meta}
 
             except FileNotFoundError:
                 continue  # Always skip missing entries
@@ -474,7 +680,11 @@ class LocalRegistryBackend(RegistryBackend):
                     raise
                 # on_error == "skip": log and continue
                 self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
-                continue
+                results[(obj_name, obj_version)] = {
+                    "status": "error",
+                    "error": type(e).__name__,
+                    "message": str(e),
+                }
 
         return results
 
@@ -482,12 +692,21 @@ class LocalRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: NameArg,
-    ) -> None:
+        on_error: str = "raise",
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete metadata for a object version.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+
+        Returns:
+            Dict mapping (name, version) to status dict:
+            - {"status": "ok"} on success
+            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -495,11 +714,25 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
         for obj_name, obj_version in zip(names, versions):
-            meta_path = self._object_metadata_path(obj_name, obj_version)
-            self.logger.debug(f"Deleting metadata file: {meta_path}")
-            if meta_path.exists():
-                meta_path.unlink()
+            try:
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                self.logger.debug(f"Deleting metadata file: {meta_path}")
+                if meta_path.exists():
+                    meta_path.unlink()
+                results[(obj_name, obj_version)] = {"status": "ok"}
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                results[(obj_name, obj_version)] = {
+                    "status": "error",
+                    "error": type(e).__name__,
+                    "message": str(e),
+                }
+
+        return results
 
     # ─────────────────────────────────────────────────────────────────────────
     # Registry-Level Metadata
