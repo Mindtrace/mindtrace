@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from redis_om import JsonModel, Migrator, get_redis_connection
 from redis_om.model.model import NotFoundError
 
-from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
 
@@ -74,13 +74,25 @@ class RedisMindtraceODM(MindtraceODM):
             user = backend.insert(User(name="John", email="john@example.com"))
     """
 
-    def __init__(self, model_cls: Type[ModelType], redis_url: str):
+    def __init__(
+        self,
+        model_cls: Type[ModelType],
+        redis_url: str,
+        auto_init: bool = False,
+        init_mode: InitMode | None = None,
+    ):
         """
         Initialize the Redis ODM backend.
 
         Args:
             model_cls (Type[ModelType]): The document model class to use for operations.
             redis_url (str): Redis connection URL string.
+            auto_init (bool): If True, automatically initializes the backend.
+                Defaults to False for backward compatibility. Operations will auto-initialize
+                on first use regardless.
+            init_mode (InitMode | None): Initialization mode. If None, defaults to InitMode.SYNC
+                for Redis. If InitMode.SYNC, initialization will be synchronous. If InitMode.ASYNC,
+                initialization will be deferred to first operation.
         """
         super().__init__()
         self.model_cls = model_cls
@@ -88,20 +100,24 @@ class RedisMindtraceODM(MindtraceODM):
         self.model_cls.Meta.database = self.redis
         self._is_initialized = False
 
-    def initialize(self):
-        """
-        Initialize the Redis connection and run migrations.
+        # Default to sync for Redis if not specified
+        if init_mode is None:
+            init_mode = InitMode.SYNC
+        
+        # Store init_mode for later reference
+        self._init_mode = init_mode
+        
+        # Auto-initialize if requested (otherwise operations will auto-init on first use)
+        if auto_init:
+            if init_mode == InitMode.SYNC:
+                # Sync initialization
+                self._do_initialize()
+            else:
+                # Async mode - defer initialization (operations will auto-init)
+                pass
 
-        This method runs migrations to create necessary indexes and ensures
-        the Redis connection is properly set up. It's called automatically
-        before database operations.
-
-        Example:
-            .. code-block:: python
-
-                backend = RedisMindtraceODM(User, "redis://localhost:6379")
-                backend.initialize()  # Usually called automatically
-        """
+    def _do_initialize(self):
+        """Internal method to perform the actual initialization."""
         if not self._is_initialized:
             try:
                 # Run migrations to create indexes
@@ -117,6 +133,27 @@ class RedisMindtraceODM(MindtraceODM):
             except Exception as e:
                 self.logger.warning(f"Redis migration failed: {e}")
                 self._is_initialized = True  # Continue anyway
+
+    def initialize(self):
+        """
+        Initialize the Redis connection and run migrations.
+
+        This method runs migrations to create necessary indexes and ensures
+        the Redis connection is properly set up. If auto_init was True in __init__,
+        this is already done and calling this is a no-op.
+
+        Example:
+            .. code-block:: python
+
+                # Auto-initialized in __init__
+                backend = RedisMindtraceODM(User, "redis://localhost:6379")
+                # Ready to use immediately
+
+                # Or disable auto-init and call manually
+                backend = RedisMindtraceODM(User, "redis://localhost:6379", auto_init=False)
+                backend.initialize()
+        """
+        self._do_initialize()
 
     def is_async(self) -> bool:
         """

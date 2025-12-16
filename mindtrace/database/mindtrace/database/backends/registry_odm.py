@@ -3,7 +3,7 @@ from typing import Type
 
 from pydantic import BaseModel
 
-from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
 
 
@@ -34,14 +34,26 @@ class RegistryMindtraceODM(MindtraceODM):
             doc_id = backend.insert(doc)
     """
 
-    def __init__(self, backend: RegistryBackend | None = None, **kwargs):
+    def __init__(
+        self,
+        backend: RegistryBackend | None = None,
+        init_mode: InitMode | None = None,
+        **kwargs,
+    ):
         """Initialize the registry ODM backend.
 
         Args:
             backend (RegistryBackend | None): Optional registry backend to use for storage.
+            init_mode (InitMode | None): Initialization mode. If None, defaults to InitMode.SYNC
+                for Registry. Note: Registry is always synchronous and doesn't require initialization.
             **kwargs: Additional configuration parameters.
         """
         super().__init__(**kwargs)
+        # Default to sync for Registry if not specified (Registry is sync by nature)
+        if init_mode is None:
+            init_mode = InitMode.SYNC
+        # Store init_mode for consistency, though Registry doesn't use it
+        self._init_mode = init_mode
         self.registry = Registry(backend=backend, version_objects=False)
 
     def is_async(self) -> bool:

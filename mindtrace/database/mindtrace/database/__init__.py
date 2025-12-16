@@ -1,4 +1,4 @@
-from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
 from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
@@ -11,6 +11,7 @@ from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateI
 
 __all__ = [
     "BackendType",
+    "InitMode",
     "MindtraceODM",
     "DocumentNotFoundError",
     "DuplicateInsertError",
