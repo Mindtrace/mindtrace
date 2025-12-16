@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.parse
 import uuid
 from abc import abstractmethod
 from datetime import datetime
@@ -586,13 +587,14 @@ class ClusterManager(Gateway):
         Launch a worker on a node. If the worker type is registered to a job schema, the worker will be automatically connected to the job schema.
 
         Args:
-            payload (dict): The payload containing the node URL, worker type, and worker URL.
+            payload (dict): The payload containing the node URL, worker type, worker URL, and (optional) worker name.
         """
         node_url = payload["node_url"]
         worker_type = payload["worker_type"]
         worker_url = payload["worker_url"]
+        worker_name = payload["worker_name"]
         node_cm = Node.connect(node_url)
-        node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url)
+        node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url, worker_name=worker_name)
         worker_auto_connect_list = self.worker_auto_connect_database.find(
             self.worker_auto_connect_database.redis_backend.model_cls.worker_type == worker_type
         )
@@ -640,17 +642,58 @@ class Node(Service):
                 uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
             )
             self.worker_registry = Registry(backend=minio_backend)
+            self.node_worker_database: UnifiedMindtraceODMBackend = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.NodeWorker,
+                redis_url=self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"],
+                preferred_backend=BackendType.REDIS,
+            )
+            self.node_worker_database.initialize_sync()
         else:
             self.cluster_cm = None  # type: ignore
             self.worker_registry = None  # type: ignore
+            self.node_worker_database = None  # type: ignore
 
-        self.workers = []
         self.add_endpoint(
             "/launch_worker",
             func=self.launch_worker,
             schema=TaskSchema(
                 name="launch_worker",
                 input_schema=cluster_types.LaunchWorkerInput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/shutdown_worker",
+            func=self.shutdown_worker,
+            schema=TaskSchema(
+                name="shutdown_worker",
+                input_schema=cluster_types.ShutdownWorkerInput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/shutdown_worker_by_id",
+            func=self.shutdown_worker_by_id,
+            schema=TaskSchema(
+                name="shutdown_worker_by_id",
+                input_schema=cluster_types.ShutdownWorkerByIdInput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/shutdown_worker_by_port",
+            func=self.shutdown_worker_by_port,
+            schema=TaskSchema(
+                name="shutdown_worker_by_port",
+                input_schema=cluster_types.ShutdownWorkerByPortInput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/shutdown_all_workers",
+            func=self.shutdown_all_workers,
+            schema=TaskSchema(
+                name="shutdown_all_workers",
             ),
             methods=["POST"],
         )
@@ -661,18 +704,97 @@ class Node(Service):
 
         Args:
             payload (dict): The payload containing the worker type and worker URL.
+                worker_name (optional): str: The name of the worker. If not provided, the worker id will be used.
         """
         worker_type = payload["worker_type"]
         worker_url = payload["worker_url"]
+        port = urllib.parse.urlparse(worker_url).port
+        if port is None:
+            raise ValueError(f"Worker URL {worker_url} does not have a port")
         worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
-        self.workers.append(worker_cm)
+        worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+        worker_name = payload.get("worker_name")
+        if worker_name is None:
+            worker_name = worker_id
+        self.node_worker_database.insert(
+            cluster_types.NodeWorker(
+                worker_type=worker_type,
+                worker_port=port,
+                worker_id=worker_id,
+                worker_name=worker_name,
+                worker_url=worker_url,
+            )
+        )
+
+    def _shutdown_workers(self, entries: list[cluster_types.NodeWorker]):
+        """
+        Shutdown workers.
+
+        Args:
+            entries (list[cluster_types.NodeWorker]): The list of workers to shutdown.
+        """
+        for entry in entries:
+            try:
+                worker_cm = Worker.connect(entry.worker_url)
+                worker_cm.shutdown()
+            except Exception as e:
+                self.logger.error(f"Failed to shutdown worker {entry.worker_name}: {e}")
+            self.node_worker_database.delete(entry.pk)
+
+    def shutdown_worker(self, payload: dict):
+        """
+        Shutdown a worker by name.
+
+        Args:
+            payload (dict): The payload containing the worker name.
+                worker_name (str): The name of the worker to shutdown.
+        """
+        worker_name = payload["worker_name"]
+        entries = self.node_worker_database.find(
+            self.node_worker_database.redis_backend.model_cls.worker_name == worker_name
+        )
+        self._shutdown_workers(entries)
+
+    def shutdown_worker_by_id(self, payload: dict):
+        """
+        Shutdown a worker by id.
+
+        Args:
+            payload (dict): The payload containing the worker id.
+                worker_id (str): The id of the worker to shutdown.
+        """
+        worker_id = payload["worker_id"]
+        entries = self.node_worker_database.find(
+            self.node_worker_database.redis_backend.model_cls.worker_id == worker_id
+        )
+        self._shutdown_workers(entries)
+
+    def shutdown_worker_by_port(self, payload: dict):
+        """
+        Shutdown a worker by port.
+
+        Args:
+            payload (dict): The payload containing the worker port.
+                worker_port (int): The port of the worker to shutdown.
+        """
+        worker_port = payload["worker_port"]
+        entries = self.node_worker_database.find(
+            self.node_worker_database.redis_backend.model_cls.worker_port == worker_port
+        )
+        self._shutdown_workers(entries)
+
+    def shutdown_all_workers(self):
+        """
+        Shutdown all workers.
+        """
+        for entry in self.node_worker_database.all():
+            self._shutdown_workers([entry])
 
     def shutdown(self):
         """
         Shutdown the node and all workers connected to it.
         """
-        for worker in self.workers:
-            worker.shutdown()
+        self.shutdown_all_workers()
         return super().shutdown()
 
 
