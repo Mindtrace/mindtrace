@@ -461,6 +461,7 @@ class LocalRegistryBackend(RegistryBackend):
         local_path: PathArg,
         acquire_lock: bool = False,
         on_error: str = "raise",
+        metadata: MetadataArg = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Copy a directory from the backend store to a local path.
 
@@ -474,12 +475,16 @@ class LocalRegistryBackend(RegistryBackend):
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            metadata: Optional pre-fetched metadata (unused for local backend,
+                but accepted for API compatibility with remote backends).
 
         Returns:
             Dict mapping (name, version) to status dict:
             - {"status": "ok"} on success
             - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
+        # Note: metadata parameter is ignored for local backend since we copy
+        # the entire directory. Remote backends use it for _files manifest.
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
         paths = self._normalize_paths(local_path, len(names))
@@ -600,14 +605,25 @@ class LocalRegistryBackend(RegistryBackend):
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
-            metadata: Metadata to save.
+            metadata: Metadata to save (single dict for one object, or list of dicts).
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
-        metadatas = self._normalize_metadata(metadata, len(names))
 
-        if not (len(names) == len(versions) == len(metadatas)):
-            raise ValueError("Input list lengths must match")
+        # Validate metadata - must be list with matching length for multiple objects
+        if isinstance(metadata, dict):
+            if len(names) != 1:
+                raise ValueError(
+                    "metadata must be a list of dicts when saving multiple objects. "
+                    "Use metadata=[meta_dict, ...] with one dict per object."
+                )
+            metadatas = [metadata]
+        else:
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(
+                    f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})"
+                )
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
             self.validate_object_name(obj_name)

@@ -156,6 +156,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         local_path: PathArg,
         acquire_lock: bool = False,
         on_error: str = "raise",
+        metadata: MetadataArg = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Download artifacts to local path(s).
 
@@ -172,6 +173,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
+                If provided, avoids re-fetching metadata. Single dict or list of dicts.
 
         Returns:
             Dict mapping (name, version) to status dict:
