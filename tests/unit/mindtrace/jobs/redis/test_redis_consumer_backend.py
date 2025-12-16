@@ -242,3 +242,17 @@ def test_receive_message_get_raises_empty_returns_none(backend):
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
     assert backend.receive_message("q") is None
+
+
+def test_del_handles_exceptions_gracefully(backend):
+    """Test that __del__ method handles exceptions gracefully (lines 95-96)."""
+    backend, mock_conn = backend
+    # Make close() raise an exception
+    backend.close = MagicMock(side_effect=Exception("close failed"))
+    # __del__ should catch the exception and not raise
+    try:
+        backend.__del__()
+    except Exception:
+        pytest.fail("__del__ should catch all exceptions from close()")
+    # Verify close was called
+    backend.close.assert_called_once()
