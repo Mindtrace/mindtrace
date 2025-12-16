@@ -102,7 +102,7 @@ def test_start_worker_from_git():
 
             # Worker is ready, but launch_worker timed out before completing the setup.
             # We need to manually complete the worker registration to the cluster and job queue.
-            # This is what launch_worker does after the worker launches (lines 596-601 in cluster.py)
+            # This is what launch_worker does after the worker launches
             print("Completing worker registration to cluster after timeout...")
             try:
                 Worker.connect(worker_url)

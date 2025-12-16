@@ -398,4 +398,4 @@ For more information, visit: https://www.baslerweb.com/en/downloads/software-dow
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pragma: no cover
