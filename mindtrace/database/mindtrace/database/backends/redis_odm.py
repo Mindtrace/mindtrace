@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Type, TypeVar
 
 from pydantic import BaseModel
@@ -377,9 +378,8 @@ class RedisMindtraceODM(MindtraceODM):
                 backend = RedisMindtraceODM(User, "redis://localhost:6379")
                 await backend.initialize_async()  # Can be called from async code
         """
-        # For sync operations, we can just call them directly
-        # They're fast enough that blocking the event loop briefly is acceptable
-        self.initialize()
+        # Run blocking initialization in thread pool to avoid blocking event loop
+        await asyncio.to_thread(self.initialize)
 
     async def insert_async(self, obj: BaseModel) -> ModelType:
         """
@@ -404,8 +404,7 @@ class RedisMindtraceODM(MindtraceODM):
                 except DuplicateInsertError as e:
                     print(f"Duplicate entry: {e}")
         """
-        # Call sync method directly - Redis operations are fast
-        return self.insert(obj)
+        return await asyncio.to_thread(self.insert, obj)
 
     async def get_async(self, id: str) -> ModelType:
         """
@@ -429,8 +428,7 @@ class RedisMindtraceODM(MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        # Call sync method directly - Redis operations are fast
-        return self.get(id)
+        return await asyncio.to_thread(self.get, id)
 
     async def delete_async(self, id: str):
         """
@@ -451,8 +449,7 @@ class RedisMindtraceODM(MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        # Call sync method directly - Redis operations are fast
-        return self.delete(id)
+        await asyncio.to_thread(self.delete, id)
 
     async def all_async(self) -> List[ModelType]:
         """
@@ -469,8 +466,7 @@ class RedisMindtraceODM(MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
-        # Call sync method directly - Redis operations are fast
-        return self.all()
+        return await asyncio.to_thread(self.all)
 
     async def find_async(self, *args, **kwargs) -> List[ModelType]:
         """
@@ -492,5 +488,4 @@ class RedisMindtraceODM(MindtraceODM):
                 # Find all users if no criteria specified
                 all_users = await backend.find_async()
         """
-        # Call sync method directly - Redis operations are fast
-        return self.find(*args, **kwargs)
+        return await asyncio.to_thread(self.find, *args, **kwargs)
