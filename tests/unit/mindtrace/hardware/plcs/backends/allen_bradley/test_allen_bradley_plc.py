@@ -1939,7 +1939,7 @@ class TestAllenBradleyPLCPLCInfo:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        # Make is_connected raise an exception when called inside the try block (line 854)
+        # Make is_connected raise an exception when called inside the try block
         original_is_connected = plc.is_connected
         call_count = 0
 

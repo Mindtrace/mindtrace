@@ -245,7 +245,7 @@ def test_receive_message_get_raises_empty_returns_none(backend):
 
 
 def test_del_handles_exceptions_gracefully(backend):
-    """Test that __del__ method handles exceptions gracefully (lines 95-96)."""
+    """Test that __del__ method handles exceptions gracefully."""
     backend, mock_conn = backend
     # Make close() raise an exception
     backend.close = MagicMock(side_effect=Exception("close failed"))

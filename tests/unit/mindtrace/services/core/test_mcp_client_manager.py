@@ -70,7 +70,7 @@ class TestMCPClientManagerLaunch:
 
 class TestMCPClientManagerGetDescriptor:
     def test_get_descriptor_from_class_returns_new_manager(self):
-        """Test that accessing mcp from class returns new MCPClientManager (line 24)."""
+        """Test that accessing mcp from class returns new MCPClientManager."""
         # When accessing from class (obj is None), should return new manager
         manager = MyService.mcp
         # Accessing from class should return a new manager instance

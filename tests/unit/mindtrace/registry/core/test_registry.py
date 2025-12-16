@@ -2189,7 +2189,7 @@ def test_save_registry_metadata_exception_handling(registry, monkeypatch):
 
 
 def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
-    """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
+    """Test _initialize_version_objects exception handler when metadata can't be read."""
     # Create a fresh registry that hasn't been initialized yet
     # We'll patch _get_registry_metadata to raise an exception during initialization
     save_calls = []
@@ -2568,7 +2568,7 @@ def test_list_versions_cache_expiration(temp_registry_dir):
     # Wait for cache to expire
     time.sleep(0.2)
 
-    # Second call should trigger cache expiration deletion (line 838)
+    # Second call should trigger cache expiration deletion
     versions2 = registry.list_versions("test:obj")
     assert versions2 == ["1.0.0", "1.0.1"]
 
