@@ -603,6 +603,7 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
 def test_mongo_init_mode_sync_in_sync_context(mock_init_beanie):
     """Test MongoDB __init__ with InitMode.SYNC in sync context (covers lines 130-140)."""
     import asyncio
+
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
@@ -630,18 +631,19 @@ def test_mongo_init_mode_sync_in_sync_context(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_init_mode_sync_uses_asyncio_run(mock_init_beanie):
     """Test MongoDB __init__ with InitMode.SYNC uses asyncio.run() for sync initialization.
-    
+
     This test verifies that sync initialization works correctly using asyncio.run()
     instead of manual event loop management. The old code path (get_event_loop/new_event_loop)
     has been replaced with the simpler asyncio.run() approach.
     """
     import asyncio
+
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     # Ensure no running loop
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         pytest.skip("Cannot test sync init in async context")
     except RuntimeError:
         pass
@@ -727,7 +729,6 @@ async def test_mongo_initialize_with_allow_index_dropping(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_initialize_sync_already_initialized(mock_init_beanie):
     """Test MongoDB initialize_sync() when already initialized (covers line 417)."""
-    import asyncio
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(

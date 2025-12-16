@@ -398,7 +398,9 @@ class UnifiedMindtraceODM(MindtraceODM):
             if mongo_db_uri and mongo_db_name:
                 mongo_model_cls = unified_model_cls._auto_generate_mongo_model()
                 self.mongo_backend = MongoMindtraceODM(
-                    mongo_model_cls, mongo_db_uri, mongo_db_name,
+                    mongo_model_cls,
+                    mongo_db_uri,
+                    mongo_db_name,
                     allow_index_dropping=allow_index_dropping,
                     auto_init=auto_init,
                     init_mode=init_mode,
@@ -407,7 +409,8 @@ class UnifiedMindtraceODM(MindtraceODM):
             if redis_url:
                 redis_model_cls = unified_model_cls._auto_generate_redis_model()
                 self.redis_backend = RedisMindtraceODM(
-                    redis_model_cls, redis_url,
+                    redis_model_cls,
+                    redis_url,
                     auto_init=auto_init,
                     init_mode=init_mode,
                 )
@@ -415,7 +418,9 @@ class UnifiedMindtraceODM(MindtraceODM):
             # Fallback to individual model classes
             if mongo_model_cls and mongo_db_uri and mongo_db_name:
                 self.mongo_backend = MongoMindtraceODM(
-                    mongo_model_cls, mongo_db_uri, mongo_db_name,
+                    mongo_model_cls,
+                    mongo_db_uri,
+                    mongo_db_name,
                     allow_index_dropping=allow_index_dropping,
                     auto_init=auto_init,
                     init_mode=init_mode,
@@ -423,7 +428,8 @@ class UnifiedMindtraceODM(MindtraceODM):
 
             if redis_model_cls and redis_url:
                 self.redis_backend = RedisMindtraceODM(
-                    redis_model_cls, redis_url,
+                    redis_model_cls,
+                    redis_url,
                     auto_init=auto_init,
                     init_mode=init_mode,
                 )
@@ -567,17 +573,17 @@ class UnifiedMindtraceODM(MindtraceODM):
         # Only initialize if not already initialized and not in ASYNC mode
         if self.redis_backend:
             # Check if Redis is in ASYNC mode - if so, defer to first operation
-            redis_init_mode = getattr(self.redis_backend, '_init_mode', None)
+            redis_init_mode = getattr(self.redis_backend, "_init_mode", None)
             # Default to SYNC mode if not set (backward compatible)
             is_async_mode = redis_init_mode == InitMode.ASYNC
             # Check if already initialized (handle missing attribute gracefully)
-            if hasattr(self.redis_backend, '_is_initialized'):
+            if hasattr(self.redis_backend, "_is_initialized"):
                 attr_value = self.redis_backend._is_initialized
                 # Only treat as initialized if it's explicitly a boolean True
                 is_initialized = isinstance(attr_value, bool) and attr_value is True
             else:
                 is_initialized = False
-            
+
             if is_async_mode and not is_initialized:
                 # Skip initialization - will auto-init on first operation
                 pass

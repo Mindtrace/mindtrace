@@ -2469,34 +2469,34 @@ def test_unified_initialize_sync_fallback_path_with_allow_index_dropping(mock_mo
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
-    
+
     # Mock hasattr to return False for initialize_sync to trigger fallback path
-    with patch('mindtrace.database.backends.unified_odm.hasattr') as mock_hasattr:
+    with patch("mindtrace.database.backends.unified_odm.hasattr") as mock_hasattr:
+
         def hasattr_side_effect(obj, attr):
-            if obj is backend.mongo_backend and attr == 'initialize_sync':
+            if obj is backend.mongo_backend and attr == "initialize_sync":
                 return False
             return hasattr(obj, attr)
-        
+
         mock_hasattr.side_effect = hasattr_side_effect
-        
+
         # Mock asyncio.run to avoid actual event loop execution
-        with patch('mindtrace.database.backends.unified_odm.asyncio.run') as mock_asyncio_run:
+        with patch("mindtrace.database.backends.unified_odm.asyncio.run") as mock_asyncio_run:
             # Mock the initialize method to return a coroutine
             mock_initialize = AsyncMock()
             backend.mongo_backend.initialize = mock_initialize
-            
+
             # Test with allow_index_dropping=True (covers line 619-620)
             backend.initialize_sync(allow_index_dropping=True)
             mock_asyncio_run.assert_called_once()
             # Verify the call was made with allow_index_dropping=True
-            call_args = mock_asyncio_run.call_args[0][0]
             # The call should be to initialize with allow_index_dropping
             assert mock_initialize.called
-            
+
             # Reset mocks
             mock_asyncio_run.reset_mock()
             mock_initialize.reset_mock()
-            
+
             # Test with allow_index_dropping=None (covers line 621-622)
             backend.initialize_sync(allow_index_dropping=None)
             mock_asyncio_run.assert_called_once()
@@ -2511,11 +2511,11 @@ def test_unified_initialize_sync_with_allow_index_dropping(mock_mongo_backend):
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
-    
+
     # Test with allow_index_dropping=True
     backend.initialize_sync(allow_index_dropping=True)
     mock_mongo_backend.initialize_sync.assert_called_once_with(allow_index_dropping=True)
-    
+
     # Reset and test with allow_index_dropping=None
     mock_mongo_backend.reset_mock()
     backend.initialize_sync(allow_index_dropping=None)
@@ -2530,7 +2530,7 @@ def test_unified_initialize_with_allow_index_dropping(mock_mongo_backend):
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
-    
+
     # Test with allow_index_dropping=True
     backend.initialize(allow_index_dropping=True)
     mock_mongo_backend.initialize_sync.assert_called_once_with(allow_index_dropping=True)

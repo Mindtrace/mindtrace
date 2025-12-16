@@ -227,7 +227,7 @@ class RegistryMindtraceODM(MindtraceODM):
                 "Registry backend does not support complex query syntax via *args. "
                 "Use **kwargs for field-value matching instead."
             )
-        
+
         # Return empty list if only args provided (without kwargs)
         return []
 

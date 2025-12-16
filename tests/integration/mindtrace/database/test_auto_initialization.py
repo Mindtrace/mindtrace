@@ -5,13 +5,13 @@ These tests verify that database operations work correctly without explicit
 initialization, ensuring that auto-initialization happens on first operation.
 """
 
+import asyncio
 from typing import Annotated, List
 
-import asyncio
 import pytest
 import pytest_asyncio
 from beanie import Indexed
-from pydantic import BaseModel, Field
+from pydantic import Field
 from redis_om import Field as RedisField
 
 from mindtrace.database import (
@@ -368,7 +368,7 @@ async def clean_mongo_backend_init_mode_sync():
         init_mode=InitMode.SYNC,  # Explicit sync mode
     )
     # In async context, even SYNC mode defers initialization (can't use asyncio.run() when loop is running)
-    assert hasattr(backend, '_needs_init') and backend._needs_init
+    assert hasattr(backend, "_needs_init") and backend._needs_init
     yield backend
 
     # Cleanup
@@ -483,7 +483,7 @@ async def test_mongo_explicit_init_insert(clean_mongo_backend):
     # Explicitly initialize
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Now create and insert - operations should work
     user = MongoUserDoc(name="Alice", age=30, email="alice@test.com")
     inserted = await backend.insert(user)
@@ -504,7 +504,7 @@ async def test_mongo_explicit_init_full_crud(clean_mongo_backend):
     # Explicitly initialize
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Create
     user = MongoUserDoc(name="Bob", age=25, email="bob@test.com")
     inserted = await backend.insert(user)
@@ -541,7 +541,7 @@ async def test_mongo_auto_init_insert(clean_mongo_backend_auto_init):
     """Test that MongoDB auto-initializes on first operation (deferred in async context)."""
     backend = clean_mongo_backend_auto_init
     # In async context, initialization is deferred
-    assert hasattr(backend, '_needs_init') and backend._needs_init
+    assert hasattr(backend, "_needs_init") and backend._needs_init
 
     # First operation should auto-initialize
     await backend.initialize()  # Need to call explicitly in async context
@@ -560,10 +560,10 @@ async def test_mongo_auto_init_insert(clean_mongo_backend_auto_init):
 async def test_mongo_auto_init_full_crud(clean_mongo_backend_auto_init):
     """Test full CRUD operations with auto-initialization."""
     backend = clean_mongo_backend_auto_init
-    
+
     # Initialize first (required in async context for document creation)
     await backend.initialize()
-    
+
     # Create
     user = MongoUserDoc(name="Bob", age=25, email="bob@test.com")
     inserted = await backend.insert(user)
@@ -600,10 +600,10 @@ async def test_mongo_explicit_init_error_handling(clean_mongo_backend):
     # Explicitly initialize
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Insert first user
     user1 = MongoUserDoc(name="Charlie", age=35, email="charlie@test.com")
-    inserted1 = await backend.insert(user1)
+    await backend.insert(user1)
 
     # Try to insert duplicate (unique constraint on email)
     user2 = MongoUserDoc(name="Charlie2", age=36, email="charlie@test.com")
@@ -742,7 +742,7 @@ def test_redis_explicit_init_error_handling(clean_redis_backend):
 
     # Insert first user
     user1 = RedisUserDoc(name="Frank", age=40, email="frank@test.com")
-    inserted1 = backend.insert(user1)
+    backend.insert(user1)
 
     # Try to get non-existent user
     with pytest.raises(DocumentNotFoundError):
@@ -756,7 +756,7 @@ def test_redis_auto_init_error_handling(clean_redis_backend_auto_init):
 
     # Insert first user
     user1 = RedisUserDoc(name="Frank", age=40, email="frank@test.com")
-    inserted1 = backend.insert(user1)
+    backend.insert(user1)
 
     # Try to get non-existent user
     with pytest.raises(DocumentNotFoundError):
@@ -1119,7 +1119,7 @@ async def test_unified_dual_explicit_init_sync_operations(clean_unified_backend_
 
     # Use async operations in async context (will use MongoDB)
     user = UnifiedUserDoc(name="Mia", age=38, email="mia@test.com")
-    
+
     # Insert using async method (will use MongoDB)
     inserted = await backend.insert_async(user)
     assert inserted.name == "Mia"
@@ -1149,7 +1149,7 @@ async def test_unified_dual_auto_init_sync_operations(clean_unified_backend_dual
 
     # Use async operations in async context (will use MongoDB)
     user = UnifiedUserDoc(name="Mia", age=38, email="mia@test.com")
-    
+
     # Insert using async method (will use MongoDB)
     inserted = await backend.insert_async(user)
     assert inserted.name == "Mia"
@@ -1238,10 +1238,7 @@ def test_redis_explicit_init_concurrent_operations(clean_redis_backend):
     assert backend._is_initialized
 
     # Insert multiple users rapidly
-    users = [
-        RedisUserDoc(name=f"User{i}", age=20 + i, email=f"user{i}@test.com")
-        for i in range(5)
-    ]
+    users = [RedisUserDoc(name=f"User{i}", age=20 + i, email=f"user{i}@test.com") for i in range(5)]
 
     for user in users:
         inserted = backend.insert(user)
@@ -1259,10 +1256,7 @@ def test_redis_auto_init_concurrent_operations(clean_redis_backend_auto_init):
     assert backend._is_initialized  # Should be initialized immediately
 
     # Insert multiple users rapidly
-    users = [
-        RedisUserDoc(name=f"User{i}", age=20 + i, email=f"user{i}@test.com")
-        for i in range(5)
-    ]
+    users = [RedisUserDoc(name=f"User{i}", age=20 + i, email=f"user{i}@test.com") for i in range(5)]
 
     for user in users:
         inserted = backend.insert(user)
@@ -1290,10 +1284,10 @@ async def test_unified_explicit_init_with_backend_switching(clean_unified_backen
 
     # Switch to Redis
     backend.switch_backend(BackendType.REDIS)
-    
+
     # Insert in Redis
     user2 = UnifiedUserDoc(name="Quinn", age=43, email="quinn@test.com")
-    inserted2 = backend.insert(user2)
+    backend.insert(user2)
     redis_backend = backend.get_redis_backend()
     assert redis_backend._is_initialized
 
@@ -1323,10 +1317,10 @@ async def test_unified_auto_init_with_backend_switching(clean_unified_backend_du
     # Switch to Redis (should already be initialized)
     backend.switch_backend(BackendType.REDIS)
     assert backend.get_redis_backend()._is_initialized
-    
+
     # Insert in Redis
     user2 = UnifiedUserDoc(name="Quinn", age=43, email="quinn@test.com")
-    inserted2 = backend.insert(user2)
+    backend.insert(user2)
     redis_backend = backend.get_redis_backend()
     assert redis_backend._is_initialized
 
@@ -1339,7 +1333,6 @@ async def test_unified_auto_init_with_backend_switching(clean_unified_backend_du
     assert fetched.name == "Paul"
 
 
-
 # ============================================================================
 # InitMode Tests - MongoDB
 # ============================================================================
@@ -1349,17 +1342,17 @@ async def test_unified_auto_init_with_backend_switching(clean_unified_backend_du
 async def test_mongo_init_mode_async_auto_init(clean_mongo_backend_init_mode_async):
     """Test MongoDB with InitMode.ASYNC and auto_init=True."""
     backend = clean_mongo_backend_init_mode_async
-    
+
     # In async context, initialization is deferred
-    assert hasattr(backend, '_needs_init') and backend._needs_init
-    
+    assert hasattr(backend, "_needs_init") and backend._needs_init
+
     # Initialize first (required in async context)
     await backend.initialize()
-    
+
     # Insert
     user = MongoUserDoc(name="InitModeAsync", age=30, email="initmodeasync@test.com")
     inserted = await backend.insert(user)
-    
+
     # Verify it worked
     assert backend._is_initialized
     assert inserted.name == "InitModeAsync"
@@ -1371,18 +1364,18 @@ async def test_mongo_init_mode_async_auto_init(clean_mongo_backend_init_mode_asy
 async def test_mongo_init_mode_sync_auto_init(clean_mongo_backend_init_mode_sync):
     """Test MongoDB with InitMode.SYNC and auto_init=True."""
     backend = clean_mongo_backend_init_mode_sync
-    
+
     # In async context, even with SYNC mode, initialization is deferred
     # (because we're in an async test context)
-    assert hasattr(backend, '_needs_init') and backend._needs_init
-    
+    assert hasattr(backend, "_needs_init") and backend._needs_init
+
     # Initialize first (required in async context)
     await backend.initialize()
-    
+
     # Insert
     user = MongoUserDoc(name="InitModeSync", age=31, email="initmodesync@test.com")
     inserted = await backend.insert(user)
-    
+
     # Verify it worked
     assert backend._is_initialized
     assert inserted.name == "InitModeSync"
@@ -1400,18 +1393,18 @@ async def test_mongo_init_mode_default_behavior():
         auto_init=True,
         # init_mode not specified - should default to ASYNC
     )
-    
+
     # In async context, initialization is deferred
-    assert hasattr(backend, '_needs_init') and backend._needs_init
-    
+    assert hasattr(backend, "_needs_init") and backend._needs_init
+
     # Initialize and test
     await backend.initialize()
     user = MongoUserDoc(name="DefaultMode", age=32, email="defaultmode@test.com")
     inserted = await backend.insert(user)
-    
+
     assert backend._is_initialized
     assert inserted.name == "DefaultMode"
-    
+
     # Cleanup
     try:
         collection = backend.client[MONGO_DB_NAME]["auto_init_users"]
@@ -1429,14 +1422,14 @@ async def test_mongo_init_mode_default_behavior():
 def test_redis_init_mode_sync_auto_init(clean_redis_backend_init_mode_sync):
     """Test Redis with InitMode.SYNC and auto_init=True."""
     backend = clean_redis_backend_init_mode_sync
-    
+
     # Should be initialized immediately (sync mode)
     assert backend._is_initialized
-    
+
     # Insert
     user = RedisUserDoc(name="InitModeSync", age=33, email="initmodesync@test.com")
     inserted = backend.insert(user)
-    
+
     # Verify it worked
     assert inserted.name == "InitModeSync"
     assert inserted.email == "initmodesync@test.com"
@@ -1446,14 +1439,14 @@ def test_redis_init_mode_sync_auto_init(clean_redis_backend_init_mode_sync):
 def test_redis_init_mode_async_auto_init(clean_redis_backend_init_mode_async):
     """Test Redis with InitMode.ASYNC and auto_init=True."""
     backend = clean_redis_backend_init_mode_async
-    
+
     # Should NOT be initialized immediately (async mode defers)
     assert not backend._is_initialized
-    
+
     # First operation should auto-initialize
     user = RedisUserDoc(name="InitModeAsync", age=34, email="initmodeasync@test.com")
     inserted = backend.insert(user)
-    
+
     # Should be initialized after first operation
     assert backend._is_initialized
     assert inserted.name == "InitModeAsync"
@@ -1469,16 +1462,16 @@ def test_redis_init_mode_default_behavior():
         auto_init=True,
         # init_mode not specified - should default to SYNC
     )
-    
+
     # Should be initialized immediately (default is SYNC)
     assert backend._is_initialized
-    
+
     # Insert
     user = RedisUserDoc(name="DefaultMode", age=35, email="defaultmode@test.com")
     inserted = backend.insert(user)
-    
+
     assert inserted.name == "DefaultMode"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1495,18 +1488,18 @@ def test_redis_init_mode_sync_without_auto_init():
         auto_init=False,
         init_mode=InitMode.SYNC,
     )
-    
+
     # Should NOT be initialized (auto_init=False)
     assert not backend._is_initialized
-    
+
     # First operation should auto-initialize
     user = RedisUserDoc(name="SyncNoAuto", age=36, email="syncnoauto@test.com")
     inserted = backend.insert(user)
-    
+
     # Should be initialized after first operation
     assert backend._is_initialized
     assert inserted.name == "SyncNoAuto"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1523,18 +1516,18 @@ def test_redis_init_mode_async_without_auto_init():
         auto_init=False,
         init_mode=InitMode.ASYNC,
     )
-    
+
     # Should NOT be initialized (auto_init=False)
     assert not backend._is_initialized
-    
+
     # First operation should auto-initialize
     user = RedisUserDoc(name="AsyncNoAuto", age=37, email="asyncnoauto@test.com")
     inserted = backend.insert(user)
-    
+
     # Should be initialized after first operation
     assert backend._is_initialized
     assert inserted.name == "AsyncNoAuto"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1552,28 +1545,28 @@ def test_redis_init_mode_async_without_auto_init():
 async def test_unified_init_modes_custom(clean_unified_backend_init_modes):
     """Test unified backend with custom init modes for MongoDB and Redis."""
     backend = clean_unified_backend_init_modes
-    
+
     # Redis should be initialized immediately (sync mode)
     assert backend.get_redis_backend()._is_initialized
-    
+
     # MongoDB should not be initialized yet (async mode, deferred)
     mongo_backend = backend.get_mongo_backend()
-    assert hasattr(mongo_backend, '_needs_init') and mongo_backend._needs_init
-    
+    assert hasattr(mongo_backend, "_needs_init") and mongo_backend._needs_init
+
     # Initialize MongoDB
     await backend.initialize_async()
     assert mongo_backend._is_initialized
-    
+
     # Insert in MongoDB
     user1 = UnifiedUserDoc(name="MongoInitMode", age=38, email="mongoinitmode@test.com")
     inserted1 = await backend.insert_async(user1)
     assert inserted1.id is not None
     assert inserted1.name == "MongoInitMode"
-    
+
     # Switch to Redis (already initialized)
     backend.switch_backend(BackendType.REDIS)
     assert backend.get_redis_backend()._is_initialized
-    
+
     # Insert in Redis
     user2 = UnifiedUserDoc(name="RedisInitMode", age=39, email="redisinitmode@test.com")
     inserted2 = backend.insert(user2)
@@ -1593,23 +1586,23 @@ async def test_unified_init_modes_defaults():
         auto_init=True,
         # init_modes not specified - should use defaults (ASYNC for MongoDB, SYNC for Redis)
     )
-    
+
     # Redis should be initialized immediately (default is SYNC)
     assert backend.get_redis_backend()._is_initialized
-    
+
     # MongoDB should not be initialized yet (default is ASYNC, deferred)
     mongo_backend = backend.get_mongo_backend()
-    assert hasattr(mongo_backend, '_needs_init') and mongo_backend._needs_init
-    
+    assert hasattr(mongo_backend, "_needs_init") and mongo_backend._needs_init
+
     # Initialize MongoDB
     await backend.initialize_async()
     assert mongo_backend._is_initialized
-    
+
     # Test operations
     user = UnifiedUserDoc(name="DefaultModes", age=40, email="defaultmodes@test.com")
     inserted = await backend.insert_async(user)
     assert inserted.name == "DefaultModes"
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -1617,7 +1610,7 @@ async def test_unified_init_modes_defaults():
         await collection.delete_many({})
     except Exception:
         pass
-    
+
     try:
         pattern = f"{UnifiedUserDoc.get_meta().global_key_prefix}:*"
         keys = backend.get_redis_backend().redis.keys(pattern)
@@ -1639,32 +1632,32 @@ async def test_unified_init_modes_both_async():
         auto_init=True,
         init_mode=InitMode.ASYNC,  # Both backends use ASYNC mode
     )
-    
+
     # Both backends should NOT be initialized (ASYNC mode defers in async context)
     assert not backend.get_redis_backend()._is_initialized
     mongo_backend = backend.get_mongo_backend()
-    assert hasattr(mongo_backend, '_needs_init') and mongo_backend._needs_init
-    
+    assert hasattr(mongo_backend, "_needs_init") and mongo_backend._needs_init
+
     # Initialize MongoDB (both backends in ASYNC mode, but MongoDB gets initialized, Redis skipped)
     await backend.initialize_async()
     assert mongo_backend._is_initialized
     # Redis should NOT be initialized (ASYNC mode defers, initialize_async respects this)
     assert not backend.get_redis_backend()._is_initialized
-    
+
     # Insert in MongoDB
     user1 = UnifiedUserDoc(name="MongoSync", age=41, email="mongosync@test.com")
     inserted1 = await backend.insert_async(user1)
     assert inserted1.name == "MongoSync"
-    
+
     # Switch to Redis and insert (should auto-initialize)
     backend.switch_backend(BackendType.REDIS)
     assert not backend.get_redis_backend()._is_initialized  # Still not initialized
-    
+
     user2 = UnifiedUserDoc(name="RedisAsync", age=42, email="redisasync@test.com")
     inserted2 = backend.insert(user2)  # This should auto-initialize
     assert backend.get_redis_backend()._is_initialized  # Now initialized
     assert inserted2.name == "RedisAsync"
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -1672,7 +1665,7 @@ async def test_unified_init_modes_both_async():
         await collection.delete_many({})
     except Exception:
         pass
-    
+
     try:
         pattern = f"{UnifiedUserDoc.get_meta().global_key_prefix}:*"
         keys = backend.get_redis_backend().redis.keys(pattern)
@@ -1697,18 +1690,18 @@ async def test_mongo_init_mode_explicit_init_override():
         auto_init=False,
         init_mode=InitMode.ASYNC,
     )
-    
+
     assert not backend._is_initialized
-    
+
     # Explicit initialization should work
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Operations should work
     user = MongoUserDoc(name="ExplicitInit", age=43, email="explicitinit@test.com")
     inserted = await backend.insert(user)
     assert inserted.name == "ExplicitInit"
-    
+
     # Cleanup
     try:
         collection = backend.client[MONGO_DB_NAME]["auto_init_users"]
@@ -1726,18 +1719,18 @@ def test_redis_init_mode_explicit_init_override():
         auto_init=False,
         init_mode=InitMode.ASYNC,
     )
-    
+
     assert not backend._is_initialized
-    
+
     # Explicit initialization should work
     backend.initialize()
     assert backend._is_initialized
-    
+
     # Operations should work
     user = RedisUserDoc(name="ExplicitInit", age=44, email="explicitinit@test.com")
     inserted = backend.insert(user)
     assert inserted.name == "ExplicitInit"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1756,20 +1749,20 @@ async def test_mongo_init_mode_idempotent():
         auto_init=False,
         init_mode=InitMode.SYNC,
     )
-    
+
     # First initialization
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Second initialization (should be idempotent)
     await backend.initialize()
     assert backend._is_initialized
-    
+
     # Operations should work
     user = MongoUserDoc(name="Idempotent", age=45, email="idempotent@test.com")
     inserted = await backend.insert(user)
     assert inserted.name == "Idempotent"
-    
+
     # Cleanup
     try:
         collection = backend.client[MONGO_DB_NAME]["auto_init_users"]
@@ -1787,20 +1780,20 @@ def test_redis_init_mode_idempotent():
         auto_init=False,
         init_mode=InitMode.ASYNC,
     )
-    
+
     # First initialization
     backend.initialize()
     assert backend._is_initialized
-    
+
     # Second initialization (should be idempotent)
     backend.initialize()
     assert backend._is_initialized
-    
+
     # Operations should work
     user = RedisUserDoc(name="Idempotent", age=46, email="idempotent@test.com")
     inserted = backend.insert(user)
     assert inserted.name == "Idempotent"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1823,19 +1816,19 @@ async def test_mongo_initialize_with_allow_index_dropping():
         db_name=MONGO_DB_NAME,
         auto_init=False,
     )
-    
+
     # Initialize with allow_index_dropping=True
     await backend.initialize(allow_index_dropping=True)
     assert backend._is_initialized
     assert backend._allow_index_dropping is True
-    
+
     # Initialize again with allow_index_dropping=False (should NOT update - already initialized)
     # This tests the idempotent behavior and early return (line 196-197)
     await backend.initialize(allow_index_dropping=False)
     assert backend._is_initialized
     # Should still be True because initialize() returns early when already initialized
     assert backend._allow_index_dropping is True
-    
+
     # Cleanup
     try:
         collection = backend.client[MONGO_DB_NAME]["auto_init_users"]
@@ -1855,13 +1848,13 @@ async def test_unified_initialize_async_with_allow_index_dropping():
         preferred_backend=BackendType.MONGO,
         auto_init=False,
     )
-    
+
     # Initialize with allow_index_dropping=True
     await backend.initialize_async(allow_index_dropping=True)
     mongo_backend = backend.get_mongo_backend()
     assert mongo_backend._is_initialized
     assert mongo_backend._allow_index_dropping is True
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -1880,13 +1873,13 @@ def test_unified_initialize_sync_with_allow_index_dropping():
         preferred_backend=BackendType.MONGO,
         auto_init=False,
     )
-    
+
     # Initialize with allow_index_dropping=True
     backend.initialize_sync(allow_index_dropping=True)
     mongo_backend = backend.get_mongo_backend()
     assert mongo_backend._is_initialized
     assert mongo_backend._allow_index_dropping is True
-    
+
     # Cleanup
     try:
         asyncio.run(mongo_backend.client.close())
@@ -1904,13 +1897,13 @@ def test_unified_initialize_sync_with_allow_index_dropping_none():
         auto_init=False,
         allow_index_dropping=False,  # Set in __init__
     )
-    
+
     # Initialize with allow_index_dropping=None (should use value from __init__)
     backend.initialize_sync(allow_index_dropping=None)
     mongo_backend = backend.get_mongo_backend()
     assert mongo_backend._is_initialized
     assert mongo_backend._allow_index_dropping is False  # Should use value from __init__
-    
+
     # Cleanup
     try:
         asyncio.run(mongo_backend.client.close())
@@ -1927,13 +1920,13 @@ def test_unified_initialize_with_allow_index_dropping():
         preferred_backend=BackendType.MONGO,
         auto_init=False,
     )
-    
+
     # Initialize with allow_index_dropping=True
     backend.initialize(allow_index_dropping=True)
     mongo_backend = backend.get_mongo_backend()
     assert mongo_backend._is_initialized
     assert mongo_backend._allow_index_dropping is True
-    
+
     # Cleanup
     try:
         asyncio.run(mongo_backend.client.close())
@@ -1953,10 +1946,10 @@ def test_redis_init_mode_sync_path():
         auto_init=True,
         init_mode=InitMode.SYNC,  # Should initialize immediately
     )
-    
+
     # Should be initialized immediately (SYNC mode)
     assert backend._is_initialized
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -1973,16 +1966,16 @@ def test_redis_init_mode_async_path():
         auto_init=True,
         init_mode=InitMode.ASYNC,  # Should defer initialization
     )
-    
+
     # Should NOT be initialized immediately (ASYNC mode defers)
     assert not backend._is_initialized
-    
+
     # First operation should auto-initialize
     user = RedisUserDoc(name="AsyncPath", age=47, email="asyncpath@test.com")
     inserted = backend.insert(user)
     assert backend._is_initialized
     assert inserted.name == "AsyncPath"
-    
+
     # Cleanup
     try:
         for user in backend.all():
@@ -2003,16 +1996,16 @@ async def test_unified_redis_async_mode_skip_initialization():
         auto_init=False,
         init_mode=InitMode.ASYNC,  # Both backends in ASYNC mode
     )
-    
+
     # Initialize - should skip Redis (ASYNC mode)
     await backend.initialize_async()
-    
+
     # MongoDB should be initialized
     assert backend.get_mongo_backend()._is_initialized
-    
+
     # Redis should NOT be initialized (ASYNC mode defers)
     assert not backend.get_redis_backend()._is_initialized
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -2034,14 +2027,14 @@ async def test_unified_redis_sync_mode_initialization():
         auto_init=False,
         init_mode=InitMode.SYNC,  # Both backends in SYNC mode
     )
-    
+
     # Initialize - should initialize both
     await backend.initialize_async()
-    
+
     # Both should be initialized
     assert backend.get_mongo_backend()._is_initialized
     assert backend.get_redis_backend()._is_initialized
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -2062,17 +2055,17 @@ async def test_unified_redis_already_initialized_skip():
         preferred_backend=BackendType.MONGO,
         auto_init=True,  # This will initialize Redis immediately (SYNC mode default)
     )
-    
+
     # Redis should be initialized immediately (auto_init=True, default SYNC mode)
     assert backend.get_redis_backend()._is_initialized
-    
+
     # Call initialize_async again - should skip Redis (already initialized)
     await backend.initialize_async()
-    
+
     # Both should still be initialized
     assert backend.get_mongo_backend()._is_initialized
     assert backend.get_redis_backend()._is_initialized
-    
+
     # Cleanup
     try:
         collection_name = UnifiedUserDoc.get_meta().collection_name
@@ -2092,7 +2085,7 @@ def test_mongo_init_mode_sync_in_sync_context():
     # This test runs in sync context (not async), so SYNC mode should actually initialize
     # We clear the event loop to ensure we're in a true sync context for testing
     import asyncio
-    
+
     # Check if we're in an async context (can't test sync init if loop is running)
     try:
         asyncio.get_running_loop()
@@ -2100,13 +2093,13 @@ def test_mongo_init_mode_sync_in_sync_context():
     except RuntimeError:
         # No running loop - we can test sync initialization
         pass
-    
+
     # Try to clear the event loop to ensure we're in a true sync context
     try:
         asyncio.set_event_loop(None)
     except Exception:
         pass
-    
+
     backend = MongoMindtraceODM(
         model_cls=MongoUserDoc,
         db_uri=MONGO_URI,
@@ -2114,12 +2107,12 @@ def test_mongo_init_mode_sync_in_sync_context():
         auto_init=True,
         init_mode=InitMode.SYNC,  # Should initialize synchronously in sync context
     )
-    
+
     # In sync context, SYNC mode should initialize immediately
     # Note: This covers lines 127-135 in mongo_odm.py (sync initialization path)
     assert backend._is_initialized
-    assert not hasattr(backend, '_needs_init') or not backend._needs_init
-    
+    assert not hasattr(backend, "_needs_init") or not backend._needs_init
+
     # Cleanup - need to close client properly
     try:
         # Close client synchronously using asyncio.run() (simpler than manual loop management)
@@ -2137,17 +2130,17 @@ def test_mongo_initialize_sync_idempotent():
         auto_init=False,
         init_mode=InitMode.SYNC,
     )
-    
+
     assert not backend._is_initialized
-    
+
     # First initialization
     backend.initialize_sync()
     assert backend._is_initialized
-    
+
     # Second initialization (should be idempotent - covers early return path)
     backend.initialize_sync()
     assert backend._is_initialized
-    
+
     # Cleanup
     try:
         backend.client.close()
@@ -2165,11 +2158,11 @@ def test_mongo_init_mode_async_in_sync_context():
         auto_init=True,
         init_mode=InitMode.ASYNC,  # Should defer even in sync context
     )
-    
+
     # In sync context, ASYNC mode should defer initialization
-    assert hasattr(backend, '_needs_init') and backend._needs_init
+    assert hasattr(backend, "_needs_init") and backend._needs_init
     assert not backend._is_initialized
-    
+
     # Cleanup
     try:
         backend.client.close()
