@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
 
@@ -78,7 +78,15 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             user = await backend.insert(User(name="John", email="john@example.com"))
     """
 
-    def __init__(self, model_cls: Type[T], db_uri: str, db_name: str):
+    def __init__(
+        self,
+        model_cls: Type[T],
+        db_uri: str,
+        db_name: str,
+        allow_index_dropping: bool = False,
+        auto_init: bool = False,
+        init_mode: InitMode | None = None,
+    ):
         """
         Initialize the MongoDB ODM backend.
 
@@ -86,38 +94,97 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             model_cls (Type[ModelType]): The document model class to use for operations.
             db_uri (str): MongoDB connection URI string.
             db_name (str): Name of the MongoDB database to use.
+            allow_index_dropping (bool): If True, allows Beanie to drop and recreate
+                conflicting indexes. Useful in test environments. Defaults to False.
+            auto_init (bool): If True, attempts to initialize the backend during construction.
+                In sync contexts, initialization only occurs if init_mode=InitMode.SYNC.
+                In async contexts, initialization is always deferred regardless of init_mode.
+                Defaults to False for backward compatibility. Operations will auto-initialize
+                on first use regardless.
+            init_mode (InitMode | None): Initialization mode. If None, defaults to InitMode.ASYNC
+                for MongoDB. If InitMode.SYNC and auto_init=True, initialization happens
+                synchronously in sync contexts. If InitMode.ASYNC, initialization is always
+                deferred to first operation.
         """
         super().__init__()
         self.model_cls: Type[T] = model_cls
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
+        self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
+        
+        # Default to async for MongoDB if not specified
+        if init_mode is None:
+            init_mode = InitMode.ASYNC
+        
+        # Store init_mode for later reference
+        self._init_mode = init_mode
+        
+        # Auto-initialize in sync contexts (if requested)
+        # Note: MongoDB/Beanie is always async, so in async contexts we always defer
+        if auto_init:
+            # First check if we're in an async context
+            try:
+                asyncio.get_running_loop()
+                # We're in an async context - defer initialization regardless of init_mode
+                self._needs_init = True
+            except RuntimeError:
+                # We're in a sync context
+                if init_mode == InitMode.SYNC:
+                    asyncio.run(self._do_initialize())
+                    self._needs_init = False
+                else:
+                    # Async mode in sync context - defer to first operation
+                    self._needs_init = True
+        else:
+            # Defer initialization - operations will auto-init on first use
+            self._needs_init = True
 
-    async def initialize(self, allow_index_dropping: bool = False):
+    async def _do_initialize(self):
+        """Internal method to perform the actual initialization."""
+        if not self._is_initialized:
+            await init_beanie(
+                database=self.client[self.db_name],
+                document_models=[self.model_cls],
+                allow_index_dropping=self._allow_index_dropping,
+            )
+            self._is_initialized = True
+
+    async def initialize(self, allow_index_dropping: bool | None = None):
         """
         Initialize the MongoDB connection and document models.
 
         This method sets up the Beanie ODM with the specified database and
         registers the document models. It should be called before performing
-        any database operations.
+        any database operations. If auto_init was True in __init__, this is
+        only needed when called from async contexts.
 
         Args:
-            allow_index_dropping (bool): If True, allows Beanie to drop and recreate
-                conflicting indexes. Useful in test environments.
+            allow_index_dropping (bool | None): If provided, overrides the value
+                set in __init__. If None, uses the value from __init__.
 
         Example:
             .. code-block:: python
 
+                # Auto-initialized in sync context
+                backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
+                # Ready to use immediately
+
+                # In async context, explicit init needed
                 backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 await backend.initialize()
+        
+        Note:
+            This method is idempotent - calling it multiple times is safe and
+            will only initialize once.
         """
-        if not self._is_initialized:
-            await init_beanie(
-                database=self.client[self.db_name],
-                document_models=[self.model_cls],
-                allow_index_dropping=allow_index_dropping,
-            )
-            self._is_initialized = True
+        # Idempotent - return early if already initialized
+        if self._is_initialized:
+            return
+        
+        if allow_index_dropping is not None:
+            self._allow_index_dropping = allow_index_dropping
+        await self._do_initialize()
 
     def is_async(self) -> bool:
         """
@@ -158,7 +225,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 except DuplicateInsertError as e:
                     print(f"Duplicate entry: {e}")
         """
-        await self.initialize()
+        # Auto-initialize if needed (backward compatible - works with or without explicit init)
+        if not self._is_initialized:
+            await self.initialize()
+
         doc = self.model_cls(**obj.model_dump())
         doc.id = None
         try:
@@ -190,7 +260,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        await self.initialize()
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
+
         doc = await self.model_cls.get(id)
         if not doc:
             raise DocumentNotFoundError(f"Object with id {id} not found")
@@ -215,7 +288,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        await self.initialize()
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
+
         doc = await self.model_cls.get(id)
         if doc:
             await doc.delete()
@@ -237,10 +313,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
-        await self.initialize()
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
+
         return await self.model_cls.find_all().to_list()
 
     async def find(self, *args, **kwargs) -> List[T]:
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
         """
         Find documents matching the specified criteria.
 
@@ -260,7 +342,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 # Find users with name containing "John"
                 users = await backend.find({"name": {"$regex": "John"}})
         """
-        await self.initialize()
         return await self.model_cls.find(*args, **kwargs).to_list()
 
     async def aggregate(self, pipeline: list) -> List[T]:
@@ -283,7 +364,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 ]
                 results = await backend.aggregate(pipeline)
         """
-        await self.initialize()
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
     def get_raw_model(self) -> Type[T]:
@@ -302,19 +385,26 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return self.model_cls
 
     # Synchronous wrapper methods for compatibility
-    def initialize_sync(self):
+    def initialize_sync(self, allow_index_dropping: bool = False):
         """
         Initialize the MongoDB connection synchronously (wrapper around async initialize).
-
         This method provides a synchronous interface to the async initialize method.
         It should be called before performing any database operations in a sync context.
-
+    
+        Args:
+            allow_index_dropping: If True, allows Beanie to drop and recreate conflicting indexes.
+                Useful in test environments. Defaults to False.
+    
         Example:
             .. code-block:: python
-
+    
                 backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 backend.initialize_sync()  # Can be called from sync code
         """
+        # Idempotent - return early if already initialized
+        if self._is_initialized:
+            return
+        
         try:
             # Check if we're already in an async context
             _ = asyncio.get_running_loop()
@@ -325,7 +415,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
                 # No running loop, safe to use asyncio.run()
-                asyncio.run(self.initialize())
+                # Call initialize() to maintain consistency and allow mocking
+                asyncio.run(self.initialize(allow_index_dropping=allow_index_dropping))
             else:
                 # Re-raise if it's a different RuntimeError (like our custom one)
                 raise

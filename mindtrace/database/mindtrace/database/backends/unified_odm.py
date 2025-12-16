@@ -4,7 +4,7 @@ from typing import List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
 
-from mindtrace.database.backends.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
 
@@ -362,6 +362,9 @@ class UnifiedMindtraceODM(MindtraceODM):
         mongo_db_name: Optional[str] = None,
         redis_url: Optional[str] = None,
         preferred_backend: BackendType = BackendType.MONGO,
+        allow_index_dropping: bool = False,
+        auto_init: bool = False,
+        init_mode: InitMode | None = None,
     ):
         """
         Initialize the unified backend with both MongoDB and Redis configurations.
@@ -374,6 +377,14 @@ class UnifiedMindtraceODM(MindtraceODM):
             mongo_db_name: MongoDB database name
             redis_url: Redis connection URL
             preferred_backend: Which backend to prefer when both are available
+            allow_index_dropping: If True, allows MongoDB to drop and recreate
+                conflicting indexes. Useful in test environments. Defaults to False.
+            auto_init: If True, automatically initializes backends in sync contexts.
+                In async contexts, initialization is deferred. Defaults to False for backward
+                compatibility. Operations will auto-initialize on first use regardless.
+            init_mode: Initialization mode for both backends. If None, MongoDB defaults to
+                InitMode.ASYNC and Redis defaults to InitMode.SYNC. If provided, both backends
+                will use the same initialization mode.
         """
         super().__init__()
         self.mongo_backend = None
@@ -386,18 +397,36 @@ class UnifiedMindtraceODM(MindtraceODM):
         if unified_model_cls:
             if mongo_db_uri and mongo_db_name:
                 mongo_model_cls = unified_model_cls._auto_generate_mongo_model()
-                self.mongo_backend = MongoMindtraceODM(mongo_model_cls, mongo_db_uri, mongo_db_name)
+                self.mongo_backend = MongoMindtraceODM(
+                    mongo_model_cls, mongo_db_uri, mongo_db_name,
+                    allow_index_dropping=allow_index_dropping,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
 
             if redis_url:
                 redis_model_cls = unified_model_cls._auto_generate_redis_model()
-                self.redis_backend = RedisMindtraceODM(redis_model_cls, redis_url)
+                self.redis_backend = RedisMindtraceODM(
+                    redis_model_cls, redis_url,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
         else:
             # Fallback to individual model classes
             if mongo_model_cls and mongo_db_uri and mongo_db_name:
-                self.mongo_backend = MongoMindtraceODM(mongo_model_cls, mongo_db_uri, mongo_db_name)
+                self.mongo_backend = MongoMindtraceODM(
+                    mongo_model_cls, mongo_db_uri, mongo_db_name,
+                    allow_index_dropping=allow_index_dropping,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
 
             if redis_model_cls and redis_url:
-                self.redis_backend = RedisMindtraceODM(redis_model_cls, redis_url)
+                self.redis_backend = RedisMindtraceODM(
+                    redis_model_cls, redis_url,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
 
         if not self.mongo_backend and not self.redis_backend:
             raise ValueError("At least one backend (MongoDB or Redis) must be configured")
@@ -504,41 +533,72 @@ class UnifiedMindtraceODM(MindtraceODM):
         """
         return self._get_active_backend().is_async()
 
-    async def initialize_async(self, allow_index_dropping: bool = False):
+    async def initialize_async(self, allow_index_dropping: bool | None = None):
         """
         Initialize all configured backends asynchronously.
 
         This method initializes both MongoDB (native async) and Redis (via async wrapper)
-        backends. It should be called in an async context.
+        backends. It should be called in an async context. If auto_init was True in __init__,
+        this is only needed when called from async contexts.
 
         Args:
-            allow_index_dropping (bool): If True, allows MongoDB to drop and recreate
-                conflicting indexes. Useful in test environments.
+            allow_index_dropping (bool | None): If provided, overrides the value
+                set in __init__ for MongoDB. If None, uses the value from __init__.
 
         Example:
             .. code-block:: python
 
-                # In an async function
-                await unified_backend.initialize_async()
+                # Auto-initialized in sync context
+                backend = UnifiedMindtraceODM(...)
+                # Ready to use immediately
+
+                # In async context, explicit init needed
+                backend = UnifiedMindtraceODM(...)
+                await backend.initialize_async()
         """
         # Initialize MongoDB backend (native async)
         if self.mongo_backend:
-            await self.mongo_backend.initialize(allow_index_dropping=allow_index_dropping)
+            if allow_index_dropping is not None:
+                await self.mongo_backend.initialize(allow_index_dropping=allow_index_dropping)
+            else:
+                await self.mongo_backend.initialize()
 
         # Initialize Redis backend (via async wrapper)
+        # Only initialize if not already initialized and not in ASYNC mode
         if self.redis_backend:
-            if hasattr(self.redis_backend, "initialize_async"):
-                await self.redis_backend.initialize_async()
+            # Check if Redis is in ASYNC mode - if so, defer to first operation
+            redis_init_mode = getattr(self.redis_backend, '_init_mode', None)
+            # Default to SYNC mode if not set (backward compatible)
+            is_async_mode = redis_init_mode == InitMode.ASYNC
+            # Check if already initialized (handle missing attribute gracefully)
+            if hasattr(self.redis_backend, '_is_initialized'):
+                attr_value = self.redis_backend._is_initialized
+                # Only treat as initialized if it's explicitly a boolean True
+                is_initialized = isinstance(attr_value, bool) and attr_value is True
             else:
-                # Fallback to sync method if async wrapper doesn't exist
-                self.redis_backend.initialize()
+                is_initialized = False
+            
+            if is_async_mode and not is_initialized:
+                # Skip initialization - will auto-init on first operation
+                pass
+            elif not is_initialized:
+                # Initialize Redis (either SYNC mode or default)
+                if hasattr(self.redis_backend, "initialize_async"):
+                    await self.redis_backend.initialize_async()
+                else:
+                    # Fallback to sync method if async wrapper doesn't exist
+                    self.redis_backend.initialize()
 
-    def initialize_sync(self):
+    def initialize_sync(self, allow_index_dropping: bool | None = None):
         """
         Initialize all configured backends synchronously.
 
         This method initializes both Redis (native sync) and MongoDB (via sync wrapper)
         backends. It should be called in a synchronous context.
+
+        Args:
+            allow_index_dropping (bool | None): If provided, overrides the value
+                set in __init__ for MongoDB. If None, uses the value from __init__.
 
         Example:
             .. code-block:: python
@@ -553,12 +613,15 @@ class UnifiedMindtraceODM(MindtraceODM):
         # Initialize MongoDB backend (via sync wrapper)
         if self.mongo_backend:
             if hasattr(self.mongo_backend, "initialize_sync"):
-                self.mongo_backend.initialize_sync()
+                self.mongo_backend.initialize_sync(allow_index_dropping=allow_index_dropping)
             else:
                 # Fallback to async method in event loop if sync wrapper doesn't exist
-                asyncio.run(self.mongo_backend.initialize())
+                if allow_index_dropping is not None:
+                    asyncio.run(self.mongo_backend.initialize(allow_index_dropping=allow_index_dropping))
+                else:
+                    asyncio.run(self.mongo_backend.initialize())
 
-    def initialize(self):
+    def initialize(self, allow_index_dropping: bool | None = None):
         """
         Initialize all configured backends.
 
@@ -570,6 +633,10 @@ class UnifiedMindtraceODM(MindtraceODM):
         This method is a convenience wrapper that calls initialize_sync() for sync
         initialization. For explicit control, use initialize_sync() or initialize_async().
 
+        Args:
+            allow_index_dropping (bool | None): If provided, overrides the value
+                set in __init__ for MongoDB. If None, uses the value from __init__.
+
         Example:
             .. code-block:: python
 
@@ -580,7 +647,7 @@ class UnifiedMindtraceODM(MindtraceODM):
                 # await unified_backend.initialize_async()
         """
         # Use initialize_sync which now handles both backends
-        self.initialize_sync()
+        self.initialize_sync(allow_index_dropping=allow_index_dropping)
 
     def _handle_async_call(self, method_name: str, *args, **kwargs):
         """

@@ -1411,3 +1411,56 @@ class TestRedisBackendEdgeCases:
 
                 with pytest.raises(DocumentNotFoundError):
                     backend.delete("non_existent_id")
+
+
+# ============================================================================
+# Tests for init_mode coverage
+# ============================================================================
+
+
+@patch("mindtrace.database.backends.redis_odm.Migrator")
+@patch("mindtrace.database.backends.redis_odm.get_redis_connection")
+def test_redis_init_mode_sync_auto_init(mock_get_redis, mock_migrator_cls):
+    """Test Redis __init__ with InitMode.SYNC and auto_init=True (covers lines 113-115)."""
+    from mindtrace.database.backends.mindtrace_odm import InitMode
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    mock_redis = MagicMock()
+    mock_get_redis.return_value = mock_redis
+    mock_migrator = MagicMock()
+    mock_migrator_cls.return_value = mock_migrator
+
+    backend = RedisMindtraceODM(
+        model_cls=UserDoc,
+        redis_url="redis://localhost:6379",
+        auto_init=True,
+        init_mode=InitMode.SYNC,
+    )
+
+    # Should be initialized immediately (SYNC mode)
+    assert backend._is_initialized is True
+    mock_migrator.run.assert_called_once()
+
+
+@patch("mindtrace.database.backends.redis_odm.Migrator")
+@patch("mindtrace.database.backends.redis_odm.get_redis_connection")
+def test_redis_init_mode_async_auto_init(mock_get_redis, mock_migrator_cls):
+    """Test Redis __init__ with InitMode.ASYNC and auto_init=True (covers lines 116-119)."""
+    from mindtrace.database.backends.mindtrace_odm import InitMode
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    mock_redis = MagicMock()
+    mock_get_redis.return_value = mock_redis
+    mock_migrator = MagicMock()
+    mock_migrator_cls.return_value = mock_migrator
+
+    backend = RedisMindtraceODM(
+        model_cls=UserDoc,
+        redis_url="redis://localhost:6379",
+        auto_init=True,
+        init_mode=InitMode.ASYNC,
+    )
+
+    # Should NOT be initialized immediately (ASYNC mode defers)
+    assert backend._is_initialized is False
+    mock_migrator.run.assert_not_called()

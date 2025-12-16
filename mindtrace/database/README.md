@@ -74,6 +74,8 @@ from mindtrace.database import MongoMindtraceODM, UnifiedMindtraceODM, RedisMind
 
 ## Quick Start
 
+> **⚠️ Important**: Initialization is **deprecated and not required**! All operations automatically initialize the backend on first use. You can skip the `initialize()` step entirely - just create the backend and start using it!
+
 ### The Simple Way: Unified Documents
 
 Define your document model once and use it with any backend:
@@ -102,14 +104,15 @@ backend = UnifiedMindtraceODM(
     mongo_db_name="myapp",
     redis_url="redis://localhost:6379",
     preferred_backend=BackendType.MONGO  # Start with MongoDB
+    # No initialization needed! Operations auto-initialize on first use.
+    # If you need to control initialization, use auto_init and init_mode parameters:
+    # auto_init=True,
+    # init_mode=InitMode.ASYNC,  # Both backends use ASYNC (or SYNC)
+    # If None, MongoDB defaults to ASYNC and Redis defaults to SYNC
 )
 
-# 3. Initialize (both methods work with both backends!)
-await backend.initialize_async()  # Works with both MongoDB and Redis
-# or
-backend.initialize_sync()  # Also works with both MongoDB and Redis
-
-# 4. Use it! (Same API regardless of backend - both sync and async work!)
+# 3. Use it! (No initialization needed - operations auto-initialize on first use!)
+# (Same API regardless of backend - both sync and async work!)
 user = User(name="Alice", age=30, email="alice@example.com", skills=["Python"])
 
 # Async operations (work with both MongoDB and Redis)
@@ -240,9 +243,17 @@ backend = MongoMindtraceODM(
     db_name="myapp"
 )
 
-# Initialize (both methods available)
-await backend.initialize()  # Native async
-backend.initialize_sync()   # Sync wrapper
+# The initialize() methods are deprecated and not necessary.
+
+# If you need to control initialization timing, use constructor parameters:
+# from mindtrace.database import InitMode
+# backend = MongoMindtraceODM(
+#     model_cls=User,
+#     db_uri="mongodb://localhost:27017",
+#     db_name="myapp",
+#     auto_init=True,           # Auto-initialize in sync contexts
+#     init_mode=InitMode.SYNC   # or InitMode.ASYNC (default for MongoDB)
+# )
 
 # Async operations (native)
 user = await backend.insert(User(name="Alice", email="alice@example.com"))
@@ -278,9 +289,16 @@ backend = RedisMindtraceODM(
     redis_url="redis://localhost:6379"
 )
 
-# Initialize (both methods available)
-backend.initialize()        # Native sync
-await backend.initialize_async()  # Async wrapper
+# The initialize() methods are deprecated and not necessary.
+
+# If you need to control initialization timing, use constructor parameters:
+# from mindtrace.database import InitMode
+# backend = RedisMindtraceODM(
+#     model_cls=User,
+#     redis_url="redis://localhost:6379",
+#     auto_init=True,           # Auto-initialize immediately
+#     init_mode=InitMode.SYNC   # or InitMode.ASYNC (default is SYNC for Redis)
+# )
 
 # Sync operations (native)
 user = backend.insert(User(name="Alice", email="alice@example.com"))
@@ -308,6 +326,7 @@ class User(BaseModel):
 
 backend = LocalMindtraceODM(model_cls=User)
 # No initialization needed - works immediately!
+# (Same applies to all backends - initialization is optional and deprecated)
 ```
 
 ## API Reference
@@ -594,9 +613,7 @@ async def main():
         preferred_backend=BackendType.MONGO
     )
     
-    # Initialize (both methods work with both backends!)
-    await backend.initialize_async()  # Initializes MongoDB (async) and Redis (via async wrapper)
-    # Alternative: backend.initialize_sync()  # Initializes Redis (sync) and MongoDB (via sync wrapper)
+    # (The initialize() methods are deprecated and not necessary)
     
     # Create some users
     users = [
@@ -732,15 +749,15 @@ else:
     backend.switch_backend(BackendType.MONGO)  # Complex queries
 ```
 
-### 4. Initialization
+### 4. Initialization (Deprecated - Not Required)
 
-Both `initialize_async()` and `initialize_sync()` work with both MongoDB and Redis backends:
+**⚠️ Initialization is deprecated and not necessary!** All operations automatically initialize the backend on first use.
+
+The `initialize()` and `initialize_sync()` methods are still available for backward compatibility and specific use cases, but you can safely skip them:
 
 ```python
-# Initialize once at application startup
-class DatabaseService:
-    def __init__(self):
-        self.backend = UnifiedMindtraceODM(
+# Recommended: Just use the backend - it auto-initializes!
+backend = UnifiedMindtraceODM(
             unified_model_cls=User,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="myapp",
@@ -748,24 +765,41 @@ class DatabaseService:
             preferred_backend=BackendType.MONGO
         )
     
-    async def initialize_async(self):
-        # This initializes both MongoDB (native async) and Redis (via async wrapper)
-        await self.backend.initialize_async()
-    
-    def initialize_sync(self):
-        # This initializes both Redis (native sync) and MongoDB (via sync wrapper)
-        self.backend.initialize_sync()
-    
-    async def cleanup(self):
-        # Cleanup if needed
-        pass
+# No initialization needed - operations auto-initialize!
+user = await backend.insert_async(User(name="Alice", email="alice@example.com"))
 ```
 
-**Important**: 
-- `initialize_async()` can be called from async code and initializes both backends
-- `initialize_sync()` can be called from sync code and initializes both backends
-- You typically only need to call one, based on your code style
-- Both methods handle the initialization of all configured backends automatically
+**Recommended: Use constructor parameters for initialization control:**
+
+```python
+from mindtrace.database import InitMode
+
+# Recommended: Control initialization via constructor parameters
+backend = UnifiedMindtraceODM(
+    unified_model_cls=User,
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="myapp",
+    redis_url="redis://localhost:6379",
+    preferred_backend=BackendType.MONGO,
+    auto_init=True,                    # Auto-initialize in sync contexts
+    init_mode=InitMode.ASYNC,          # Both backends use ASYNC (or SYNC)
+    # If None, MongoDB defaults to ASYNC and Redis defaults to SYNC
+)
+# Backend is ready to use immediately (in sync contexts) or on first operation (in async contexts)
+```
+
+**Why initialization is deprecated:**
+- **Lazy initialization**: Backends are created but NOT initialized until the first operation is called. Each operation (insert, get, delete, etc.) automatically checks if initialization is needed and initializes on-demand.
+- **Simpler code**: No need to remember to call `initialize()` before using the backend - just use it!
+- **Efficient**: Backends only connect to the database when actually needed (on first operation)
+- **Constructor control**: Use `auto_init=True` and `init_mode` parameters if you want to initialize at creation time instead of on first operation
+
+**When to use `auto_init=True` with `init_mode`:**
+- **Performance**: Initialize once upfront rather than on first operation
+- **Error handling**: Fail fast if database is unavailable at startup
+- **Control**: Know exactly when database connections are established
+
+**Note**: The `initialize()` and `initialize_sync()` methods are still available for backward compatibility, but using constructor parameters (`auto_init` and `init_mode`) is the recommended approach.
 
 ## Contributing
 

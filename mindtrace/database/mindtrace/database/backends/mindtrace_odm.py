@@ -1,9 +1,16 @@
 from abc import abstractmethod
+from enum import Enum
 from typing import Type
 
 from pydantic import BaseModel
 
 from mindtrace.core import MindtraceABC
+
+
+class InitMode(Enum):
+    """Initialization mode for database backends."""
+    SYNC = "sync"
+    ASYNC = "async"
 
 
 class MindtraceODM(MindtraceABC):
