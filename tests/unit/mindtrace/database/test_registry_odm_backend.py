@@ -34,6 +34,8 @@ class ComplexUserDoc(BaseModel):
 def mock_registry_backend():
     """Create a mocked Registry backend."""
     mock_backend = MagicMock(spec=RegistryBackend)
+    # Mock fetch_registry_metadata to return empty dict (no existing metadata)
+    mock_backend.fetch_registry_metadata = MagicMock(return_value={})
     return mock_backend
 
 

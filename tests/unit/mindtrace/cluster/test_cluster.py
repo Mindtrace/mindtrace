@@ -1,7 +1,8 @@
 import json
 import uuid
 from datetime import datetime
-from unittest.mock import ANY, MagicMock, patch
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.services import ServerStatus
 
 
@@ -43,12 +45,18 @@ def cluster_manager():
         mock_rabbitmq_client = MockRabbitMQClient.return_value
         mock_rabbitmq_client.publish = MagicMock()
         mock_rabbitmq_client.register = MagicMock()
-        mock_minio_backend = MockMinioBackend.return_value
+        # Use Mock with spec=RegistryBackend so it passes isinstance checks
+        mock_minio_backend = Mock(spec=RegistryBackend)
+        mock_minio_backend.uri = Path("/tmp/test_registry")
         mock_minio_backend.load = MagicMock()
         mock_minio_backend.save = MagicMock()
         mock_minio_backend.delete = MagicMock()
         mock_minio_backend.list = MagicMock()
         mock_minio_backend.get = MagicMock()
+        mock_minio_backend.registered_materializers = MagicMock(return_value={})
+        # Mock fetch_registry_metadata to return empty dict (no existing metadata)
+        mock_minio_backend.fetch_registry_metadata = MagicMock(return_value={})
+        MockMinioBackend.return_value = mock_minio_backend
         mock_logger = MagicMock()
         mock_logger.error = MagicMock()
         mock_logger.info = MagicMock()

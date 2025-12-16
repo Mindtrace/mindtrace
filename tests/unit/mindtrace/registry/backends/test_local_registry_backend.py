@@ -111,6 +111,21 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     assert "path" in fetched_metadata  # Should be added by fetch_metadata
 
 
+def test_fetch_metadata_empty_file(backend):
+    """Test that fetch_metadata raises ValueError when metadata file is empty."""
+    # Create an empty metadata file (yaml.safe_load will return None for empty files)
+    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path.touch()  # Create empty file
+
+    # Also create the object directory so the path update doesn't fail
+    obj_dir = backend.uri / "test:object" / "1.0.0"
+    obj_dir.mkdir(parents=True)
+
+    # fetch_metadata should raise ValueError when file is empty
+    with pytest.raises(ValueError, match="Metadata file for test:object@1.0.0 is empty or corrupted"):
+        backend.fetch_metadata("test:object", "1.0.0")
+
+
 def test_delete_metadata(backend, sample_metadata):
     """Test deleting metadata."""
     # Save metadata first
@@ -194,7 +209,7 @@ def test_invalid_object_name(backend):
 
 
 def test_register_materializer_metadata_not_exists(backend):
-    """Test register_materializer when metadata file doesn't exist (line 248)."""
+    """Test register_materializer when metadata file doesn't exist."""
     # Ensure metadata file doesn't exist
     if backend.metadata_path.exists():
         backend.metadata_path.unlink()
@@ -974,7 +989,7 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
 
 
 def test_acquire_lock_windows_atomic_creation(backend):
-    """Test Windows-specific atomic file creation in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation in acquire_lock."""
     import os
 
     lock_key = "test_lock"
@@ -1008,7 +1023,7 @@ def test_acquire_lock_windows_atomic_creation(backend):
 
 
 def test_acquire_lock_windows_atomic_creation_failure(backend):
-    """Test Windows-specific atomic file creation failure in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation failure in acquire_lock."""
 
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
@@ -1025,7 +1040,7 @@ def test_acquire_lock_windows_atomic_creation_failure(backend):
 
 
 def test_acquire_lock_windows_os_error(backend):
-    """Test Windows-specific atomic file creation with OS error in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation with OS error in acquire_lock."""
 
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
@@ -1040,7 +1055,7 @@ def test_acquire_lock_windows_os_error(backend):
 
 
 def test_acquire_existing_lock_file_not_exists(backend):
-    """Test _acquire_existing_lock when the lock file doesn't exist (lines 402-403)."""
+    """Test _acquire_existing_lock when the lock file doesn't exist."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1057,7 +1072,7 @@ def test_acquire_existing_lock_file_not_exists(backend):
 
 
 def test_acquire_existing_lock_file_not_found_error(backend):
-    """Test _acquire_existing_lock FileNotFoundError handling when removing corrupted lock file (lines 424-425)."""
+    """Test _acquire_existing_lock FileNotFoundError handling when removing corrupted lock file."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1078,7 +1093,7 @@ def test_acquire_existing_lock_file_not_found_error(backend):
 
 
 def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
-    """Test _acquire_existing_lock FileNotFoundError during unlink operation (lines 424-425)."""
+    """Test _acquire_existing_lock FileNotFoundError during unlink operation."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1163,7 +1178,7 @@ def test_release_lock_file_not_found_error(backend):
 
 
 def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
-    """Test _acquire_existing_lock when trying to acquire exclusive lock but existing lock is held (line 485)."""
+    """Test _acquire_existing_lock when trying to acquire exclusive lock but existing lock is held."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1183,12 +1198,12 @@ def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
     # Try to acquire an exclusive lock (shared=False) when an existing exclusive lock is held
     result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
 
-    # Verify that the method returns False (line 485)
+    # Verify that the method returns False
     assert result is False
 
 
 def test_overwrite_with_metadata_update(backend, temp_dir):
-    """Test overwrite method with metadata file handling (lines 565, 567)."""
+    """Test overwrite method with metadata file handling."""
     # Create source metadata and directory
     source_meta = {
         "name": "test:source",
@@ -1219,7 +1234,7 @@ def test_overwrite_with_metadata_update(backend, temp_dir):
 
 
 def test_overwrite_with_metadata_file_exists_check(backend, temp_dir):
-    """Test overwrite method specifically for the metadata file exists check (line 565)."""
+    """Test overwrite method specifically for the metadata file exists check."""
     # Create source metadata and directory
     source_meta = {
         "name": "test:source",
@@ -1260,3 +1275,77 @@ def test_init_with_file_uri(temp_dir):
     backend = LocalRegistryBackend(uri=file_uri)
     assert backend.uri == temp_dir.resolve()
     assert str(backend.uri).startswith(str(temp_dir))
+
+
+def test_save_registry_metadata(backend):
+    """Test save_registry_metadata method."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {
+            "test.Object": "TestMaterializer",
+            "another.Object": "AnotherMaterializer",
+        },
+    }
+
+    # Save registry metadata
+    backend.save_registry_metadata(metadata)
+
+    # Verify metadata file was created
+    assert backend.metadata_path.exists()
+
+    # Verify metadata content
+    with open(backend.metadata_path, "r") as f:
+        saved_metadata = json.load(f)
+    assert saved_metadata == metadata
+
+
+def test_save_registry_metadata_error(backend, caplog):
+    """Test save_registry_metadata error handling."""
+    # Make the metadata path directory read-only to cause an error
+    backend.metadata_path.parent.chmod(0o444)
+
+    try:
+        metadata = {"version_objects": True}
+        with pytest.raises(Exception):
+            backend.save_registry_metadata(metadata)
+    finally:
+        # Restore permissions for cleanup
+        backend.metadata_path.parent.chmod(0o755)
+
+
+def test_fetch_registry_metadata_exists(backend):
+    """Test fetch_registry_metadata when metadata file exists."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {"test.Object": "TestMaterializer"},
+    }
+
+    # Save metadata first
+    backend.save_registry_metadata(metadata)
+
+    # Fetch metadata
+    fetched_metadata = backend.fetch_registry_metadata()
+
+    # Verify metadata content
+    assert fetched_metadata == metadata
+
+
+def test_fetch_registry_metadata_not_exists(backend):
+    """Test fetch_registry_metadata when metadata file doesn't exist."""
+    # Ensure metadata file doesn't exist
+    if backend.metadata_path.exists():
+        backend.metadata_path.unlink()
+
+    # Fetch metadata - should return empty dict
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_error(backend):
+    """Test fetch_registry_metadata error handling."""
+    # Create metadata file with invalid JSON
+    backend.metadata_path.write_text("invalid json content")
+
+    # Fetch metadata - should return empty dict on error
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
