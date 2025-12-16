@@ -550,7 +550,6 @@ def test_redis_backend_find_query_fails_fallback_also_fails(mock_redis_backend):
         assert len(results) == 0
 
 
-# Add comprehensive test cases to cover missing lines
 def test_redis_backend_initialization_with_exception():
     """Test Redis backend initialization with exception handling."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
@@ -714,7 +713,6 @@ def test_redis_backend_insert_with_dict_attr():
             assert result is not None
 
 
-# Add more comprehensive test cases to cover remaining missing lines
 def test_redis_backend_initialization_with_indexed_fields_metadata():
     """Test Redis backend initialization with indexed fields metadata."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
@@ -1078,7 +1076,7 @@ def test_redis_backend_find_with_complex_query():
 
 
 def test_redis_backend_initialization_with_indexed_fields_pass_statement():
-    """Test Redis backend initialization to cover the indexed fields pass statement."""
+    """Test Redis backend initialization with indexed fields."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
 
     # Mock the backend with proper model class
@@ -1089,7 +1087,7 @@ def test_redis_backend_initialization_with_indexed_fields_pass_statement():
         backend = RedisMindtraceODMBackend(UserDoc, "redis://localhost:6379")
         backend.logger = MagicMock()
 
-        # Test initialization with indexed fields metadata to cover the pass statement
+        # Test initialization with indexed fields metadata
         with patch.object(backend, "_is_initialized", False):
             # Mock the model to have indexed fields metadata
             mock_model = MagicMock()
@@ -1102,7 +1100,7 @@ def test_redis_backend_initialization_with_indexed_fields_pass_statement():
                 mock_migrator_instance = MagicMock()
                 mock_migrator.return_value = mock_migrator_instance
 
-                # This should execute the pass statement in the indexed fields check
+                # This should pass the indexed fields check
                 backend.initialize()
                 assert backend._is_initialized is True
 
