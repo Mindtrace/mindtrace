@@ -253,7 +253,7 @@ def test_count_queue_messages_delegates():
 
 
 def test_channel_property_exchange_declare_raises_channel_closed():
-    """Test channel property when exchange_declare raises ChannelClosedByBroker (lines 51-56)."""
+    """Test channel property when exchange_declare raises ChannelClosedByBroker."""
     dc = DummyChannel()
     with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.connect"):
         with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.get_channel", return_value=dc):
@@ -279,7 +279,7 @@ def test_channel_property_exchange_declare_raises_channel_closed():
 
 
 def test_create_connection():
-    """Test create_connection method (lines 66-70)."""
+    """Test create_connection method."""
     dc = DummyChannel()
     mock_connection = MagicMock()
     mock_connection.get_channel.return_value = dc
@@ -301,7 +301,7 @@ def test_create_connection():
 
 
 def test_consumer_backend_args_property():
-    """Test consumer_backend_args property (line 74)."""
+    """Test consumer_backend_args property."""
     client = RabbitMQClient(host="localhost", port=5672, username="user", password="pass")
     args = client.consumer_backend_args
 
@@ -315,7 +315,7 @@ def test_consumer_backend_args_property():
 
 
 def test_create_consumer_backend():
-    """Test create_consumer_backend method (line 85)."""
+    """Test create_consumer_backend method."""
     mock_consumer = MagicMock()
     mock_backend = MagicMock()
 
@@ -337,7 +337,7 @@ def test_create_consumer_backend():
 
 
 def test_declare_queue_with_queue_type_warning():
-    """Test declare_queue with queue_type parameter triggers warning (line 142)."""
+    """Test declare_queue with queue_type parameter triggers warning."""
     client = make_client()
     client.channel.queue_declare = MagicMock(return_value=None)
     client.logger.warning = MagicMock()

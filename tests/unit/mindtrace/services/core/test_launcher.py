@@ -370,7 +370,7 @@ class TestMain:
             assert "usage:" in result.stdout
 
     def test_main_entry_point_direct(self):
-        """Test that if __name__ == '__main__' calls main() (line 64)."""
+        """Test that if __name__ == '__main__' calls main()."""
         import mindtrace.services.core.launcher as launcher_module
 
         # Simulate running as main by directly calling the code path

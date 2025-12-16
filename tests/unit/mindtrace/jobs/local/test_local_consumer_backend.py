@@ -307,7 +307,7 @@ class TestLocalConsumerBackend:
 
         def mock_sleep(duration):
             sleep_calls.append(duration)
-            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls to cover line 54
+            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls
                 raise KeyboardInterrupt("Break out of loop")
             # Return immediately without actually sleeping to speed up test
             return None

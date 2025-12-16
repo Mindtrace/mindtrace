@@ -209,7 +209,7 @@ def test_invalid_object_name(backend):
 
 
 def test_register_materializer_metadata_not_exists(backend):
-    """Test register_materializer when metadata file doesn't exist (line 248)."""
+    """Test register_materializer when metadata file doesn't exist."""
     # Ensure metadata file doesn't exist
     if backend.metadata_path.exists():
         backend.metadata_path.unlink()
@@ -989,7 +989,7 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
 
 
 def test_acquire_lock_windows_atomic_creation(backend):
-    """Test Windows-specific atomic file creation in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation in acquire_lock."""
     import os
 
     lock_key = "test_lock"
@@ -1023,7 +1023,7 @@ def test_acquire_lock_windows_atomic_creation(backend):
 
 
 def test_acquire_lock_windows_atomic_creation_failure(backend):
-    """Test Windows-specific atomic file creation failure in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation failure in acquire_lock."""
 
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
@@ -1040,7 +1040,7 @@ def test_acquire_lock_windows_atomic_creation_failure(backend):
 
 
 def test_acquire_lock_windows_os_error(backend):
-    """Test Windows-specific atomic file creation with OS error in acquire_lock (lines 356-358)."""
+    """Test Windows-specific atomic file creation with OS error in acquire_lock."""
 
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
@@ -1055,7 +1055,7 @@ def test_acquire_lock_windows_os_error(backend):
 
 
 def test_acquire_existing_lock_file_not_exists(backend):
-    """Test _acquire_existing_lock when the lock file doesn't exist (lines 402-403)."""
+    """Test _acquire_existing_lock when the lock file doesn't exist."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1072,7 +1072,7 @@ def test_acquire_existing_lock_file_not_exists(backend):
 
 
 def test_acquire_existing_lock_file_not_found_error(backend):
-    """Test _acquire_existing_lock FileNotFoundError handling when removing corrupted lock file (lines 424-425)."""
+    """Test _acquire_existing_lock FileNotFoundError handling when removing corrupted lock file."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1093,7 +1093,7 @@ def test_acquire_existing_lock_file_not_found_error(backend):
 
 
 def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
-    """Test _acquire_existing_lock FileNotFoundError during unlink operation (lines 424-425)."""
+    """Test _acquire_existing_lock FileNotFoundError during unlink operation."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1178,7 +1178,7 @@ def test_release_lock_file_not_found_error(backend):
 
 
 def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
-    """Test _acquire_existing_lock when trying to acquire exclusive lock but existing lock is held (line 485)."""
+    """Test _acquire_existing_lock when trying to acquire exclusive lock but existing lock is held."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
 
@@ -1198,12 +1198,12 @@ def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
     # Try to acquire an exclusive lock (shared=False) when an existing exclusive lock is held
     result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
 
-    # Verify that the method returns False (line 485)
+    # Verify that the method returns False
     assert result is False
 
 
 def test_overwrite_with_metadata_update(backend, temp_dir):
-    """Test overwrite method with metadata file handling (lines 565, 567)."""
+    """Test overwrite method with metadata file handling."""
     # Create source metadata and directory
     source_meta = {
         "name": "test:source",
@@ -1234,7 +1234,7 @@ def test_overwrite_with_metadata_update(backend, temp_dir):
 
 
 def test_overwrite_with_metadata_file_exists_check(backend, temp_dir):
-    """Test overwrite method specifically for the metadata file exists check (line 565)."""
+    """Test overwrite method specifically for the metadata file exists check."""
     # Create source metadata and directory
     source_meta = {
         "name": "test:source",
@@ -1342,7 +1342,7 @@ def test_fetch_registry_metadata_not_exists(backend):
 
 
 def test_fetch_registry_metadata_error(backend):
-    """Test fetch_registry_metadata error handling (lines 340-342)."""
+    """Test fetch_registry_metadata error handling."""
     # Create metadata file with invalid JSON
     backend.metadata_path.write_text("invalid json content")
 
