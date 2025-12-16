@@ -814,10 +814,10 @@ class Registry(Mindtrace):
         is_cache_hit = (name, version) not in cache_misses_set and self._cache is not None
         if is_cache_hit:
             self.logger.warning(f"Cache stale for {name}@{version}, fetching from remote.")
-            # Re-pull from remote backend
+            # Re-pull from remote backend (pass metadata to avoid re-fetch)
             fresh_temp_dir = Path(base_temp_dir) / f"{name}_{version}_fresh".replace(":", "_")
             fresh_temp_dir.mkdir(parents=True, exist_ok=True)
-            self.backend.pull([name], [version], [fresh_temp_dir], acquire_lock=self.mutable)
+            self.backend.pull([name], [version], [fresh_temp_dir], acquire_lock=self.mutable, metadata=[metadata])
 
             # Re-verify hash
             computed = compute_dir_hash(str(fresh_temp_dir))
@@ -921,7 +921,7 @@ class Registry(Mindtrace):
 
             backend = self._cache.backend if use_cache else self.backend
             acquire_lock = self.mutable and not use_cache
-            backend.pull([n], [v], [temp_dir], acquire_lock=acquire_lock, on_error="raise")
+            backend.pull([n], [v], [temp_dir], acquire_lock=acquire_lock, on_error="raise", metadata=[metadata])
 
             # Hash verification
             if verify_hash:
@@ -1007,12 +1007,15 @@ class Registry(Mindtrace):
                 paths.append(temp_dir)
 
             if items_to_pull:
+                # Pass pre-fetched metadata to avoid double-fetch
+                pull_metadata = [all_metadata[(n, v)] for n, v in items_to_pull]
                 pull_status = self.backend.pull(
                     [n for n, _ in items_to_pull],
                     [v for _, v in items_to_pull],
                     paths,
                     acquire_lock=self.mutable,
                     on_error="skip",
+                    metadata=pull_metadata,
                 )
                 # Record pull errors
                 for (n, v), status in pull_status.items():

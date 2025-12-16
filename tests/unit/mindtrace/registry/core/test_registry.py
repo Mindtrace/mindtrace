@@ -494,7 +494,7 @@ def test_load_error_handling(registry, test_config):
 
     # Create a mock backend that raises an exception during pull
     class MockBackend(registry.backend.__class__):
-        def pull(self, name, version, local_path, acquire_lock=False, on_error="raise"):
+        def pull(self, name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
             raise RuntimeError("Simulated pull error")
 
     # Replace the backend with our mock
@@ -2697,7 +2697,7 @@ def test_load_cache_miss(temp_registry_dir):
         )
 
         # Mock pull to copy our temp directory and return status dict
-        def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise"):
+        def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
             # Handle batch API - normalize inputs
             names = [name] if isinstance(name, str) else name
             versions = [version] if isinstance(version, str) else version
@@ -2763,7 +2763,7 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
         )
 
         # Mock pull to copy fresh data and return status dict
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
             results = {}
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
@@ -2822,7 +2822,7 @@ def test_load_cache_error_fallback(temp_registry_dir):
             )
 
             # Mock pull to copy our temp directory and return status dict
-            def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise"):
+            def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
                 names = [name] if isinstance(name, str) else name
                 versions = [version] if isinstance(version, str) else version
                 paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
@@ -3116,7 +3116,7 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"corrupted_value"')
 
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
             results = {}
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
@@ -3220,7 +3220,7 @@ def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
         (temp_path / "data.json").write_text('"test_value"')
         expected_hash = compute_dir_hash(temp_path)
 
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise"):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
             results = {}
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
