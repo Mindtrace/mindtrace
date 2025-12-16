@@ -66,3 +66,14 @@ class TestMCPClientManagerLaunch:
         mock_launch.assert_called_once()
         mock_client.assert_called_once_with("http://localhost:7777/mcp-server/mcp")
         assert result is mock_client_instance
+
+
+class TestMCPClientManagerGetDescriptor:
+    def test_get_descriptor_from_class_returns_new_manager(self):
+        """Test that accessing mcp from class returns new MCPClientManager (line 24)."""
+        # When accessing from class (obj is None), should return new manager
+        manager = MyService.mcp
+        # Accessing from class should return a new manager instance
+        class_access = MCPClientManager.__get__(manager, None, MyService)
+        assert isinstance(class_access, MCPClientManager)
+        assert class_access.service_cls is MyService

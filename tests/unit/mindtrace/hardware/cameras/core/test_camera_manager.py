@@ -157,10 +157,11 @@ def test_shutdown_bound_timeout(monkeypatch):
     mgr = CameraManager(include_mocks=True)
     try:
         # Monkeypatch async manager's close to a slow coroutine to trigger bound timeout
+        # Use shorter sleep (0.1s) to speed up test while still testing timeout behavior
         async def _slow_close(names=None):  # noqa: ARG001
             import asyncio as aio
 
-            await aio.sleep(2.0)
+            await aio.sleep(0.1)
 
         monkeypatch.setattr(mgr._manager, "close", _slow_close, raising=False)
     finally:

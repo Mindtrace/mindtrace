@@ -693,3 +693,50 @@ class TestTrackOperationClassMethodWithoutLogger:
         instance = TestClass()
         result = test_method(instance)
         assert result == "success"
+
+    @pytest.mark.asyncio
+    async def test_context_manager_timeout_without_fastapi_raises_timeout_error(self):
+        """Test context manager timeout raises TimeoutError when FastAPI is not available.
+
+        Tests the fallback raise statement when _HTTPException is None.
+        """
+        logger = get_logger("test", use_structlog=True)
+
+        # Mock FastAPI import to fail (simulating it not being installed)
+        with patch.dict(sys.modules, {"fastapi": None, "fastapi.exceptions": None}):
+            # Need to reimport to get the None value for _HTTPException
+            from mindtrace.core import logging as logging_module
+
+            importlib.reload(logging_module.logger)
+            from mindtrace.core.logging.logger import track_operation as track_op_no_fastapi
+
+            # Test context manager with timeout that will be exceeded
+            with pytest.raises(asyncio.TimeoutError):
+                async with track_op_no_fastapi("op", logger=logger, timeout=0.1):
+                    # Directly raise asyncio.TimeoutError to trigger the timeout path in __aexit__
+                    # This tests the raise statement when _HTTPException is None
+                    raise asyncio.TimeoutError()
+
+            # Reload again to restore FastAPI
+            importlib.reload(logging_module.logger)
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_with_metrics_snapshot(self):
+        """Test async decorator includes metrics snapshot in context.
+
+        Tests that metrics are added to context when metrics_snapshot is not None.
+        """
+        logger = get_logger("test", use_structlog=True)
+
+        @track_operation(
+            "op",
+            logger=logger,
+            include_system_metrics=True,
+            system_metrics=["cpu_percent"],
+        )
+        async def async_function_with_metrics():
+            await asyncio.sleep(0.01)
+            return "success"
+
+        result = await async_function_with_metrics()
+        assert result == "success"

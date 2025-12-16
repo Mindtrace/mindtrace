@@ -393,6 +393,36 @@ class TestServiceMCP:
         assert called["tool_name"] == "dummy"
         assert called["func"] is dummy_func
 
+    def test_get_mcp_paths_normalizes_paths(self, monkeypatch):
+        """Test get_mcp_paths normalizes paths that don't start with / (lines 538, 540)."""
+        # Set config to paths without leading slashes
+        monkeypatch.setenv("MINDTRACE_MCP__HTTP_APP_PATH", "mcp")
+        monkeypatch.setenv("MINDTRACE_MCP__MOUNT_PATH", "mcp-server")
+        from mindtrace.core import CoreConfig
+
+        Service.config = CoreConfig()
+
+        mount_path, http_app_path = Service.get_mcp_paths()
+
+        # Should add leading slashes
+        assert mount_path == "/mcp-server"
+        assert http_app_path == "/mcp"
+
+    def test_get_mcp_paths_preserves_existing_slashes(self, monkeypatch):
+        """Test get_mcp_paths preserves paths that already start with /."""
+        # Set config to paths with leading slashes
+        monkeypatch.setenv("MINDTRACE_MCP__HTTP_APP_PATH", "/mcp")
+        monkeypatch.setenv("MINDTRACE_MCP__MOUNT_PATH", "/mcp-server")
+        from mindtrace.core import CoreConfig
+
+        Service.config = CoreConfig()
+
+        mount_path, http_app_path = Service.get_mcp_paths()
+
+        # Should keep leading slashes
+        assert mount_path == "/mcp-server"
+        assert http_app_path == "/mcp"
+
 
 class TestServiceUrlBuilding:
     """Test Service URL building functionality."""
@@ -706,8 +736,9 @@ class TestServiceLaunchExceptionHandling:
             Launcher.run(*args, *kwargs)
 
         with patch("mindtrace.services.core.launcher.Launcher.run", side_effect=fake_run):
+            # Use shorter timeout (0.01s) to speed up test while still testing timeout behavior
             with pytest.raises(TimeoutError):
-                Service.launch(timeout=1)
+                Service.launch(timeout=0.01)
 
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
@@ -963,6 +994,17 @@ class TestServiceInterruption:
         mock_process.returncode = 1  # Error exit
 
         with pytest.raises(RuntimeError, match="Server exited with code 1"):
+            Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+    def test_connect_with_interrupt_handling_process_sigint(self):
+        """Test _connect_with_interrupt_handling when process terminated by SIGINT (line 238)."""
+        import signal
+
+        mock_process = Mock()
+        mock_process.poll.return_value = 0  # Process has exited
+        mock_process.returncode = -signal.SIGINT  # Terminated by SIGINT
+
+        with pytest.raises(KeyboardInterrupt, match="Service terminated by SIGINT"):
             Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
     def test_connect_with_interrupt_handling_process_running(self):
@@ -1225,6 +1267,56 @@ class TestServiceInterruption:
 
             # Should return None when wait_for_launch=False
             assert result is None
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_signal_valueerror_handling(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method handles ValueError from signal.signal (lines 377-378)."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Make signal.signal raise ValueError (e.g., when called from non-main thread)
+        mock_signal.side_effect = ValueError("signal only works in main thread")
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Should not raise, but log a warning
+            # Patch logger.warning directly since logger is a property
+            original_logger = Service.logger
+            mock_logger = Mock()
+            mock_logger.warning = Mock()
+            Service.logger = mock_logger
+
+            try:
+                result = Service.launch(wait_for_launch=False)
+
+                # Should still work and return None
+                assert result is None
+                # Should log warning about signal handler registration failure
+                mock_logger.warning.assert_called()
+                warning_call = str(mock_logger.warning.call_args)
+                assert "Could not register signal handlers" in warning_call
+                assert "normal if you launch a Service from another Service" in warning_call
+            finally:
+                Service.logger = original_logger
 
         finally:
             # Restore original state

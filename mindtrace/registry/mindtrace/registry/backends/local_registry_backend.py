@@ -207,10 +207,11 @@ class LocalRegistryBackend(RegistryBackend):
         with open(meta_path, "r") as f:
             metadata = yaml.safe_load(f)
 
+        # Handle case where yaml.safe_load returns None (empty file or whitespace only)
         if metadata is None:
             raise ValueError(
                 f"Metadata file for {name}@{version} is empty or corrupted. "
-                f"This may be due to a concurrent write operation. Please retry."
+                f"This may indicate a race condition during concurrent writes."
             )
 
         # Add the path to the object directory to the metadata:
@@ -336,6 +337,34 @@ class LocalRegistryBackend(RegistryBackend):
             self.logger.error(f"Error loading materializers: {e}")
             raise e
         return materializers
+
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
 
     def _lock_path(self, key: str) -> Path:
         """Get the path for a lock file."""
