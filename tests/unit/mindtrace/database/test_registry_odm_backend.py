@@ -471,7 +471,7 @@ class TestRegistryMindtraceODM:
             assert result == []
             # Verify it's the exact empty list return
             assert result is not None
-            assert type(result) == list
+            assert isinstance(result, list)
 
     def test_find_with_args_and_kwargs(self, registry_odm):
         """Test find() with both args and kwargs (should use kwargs)."""
@@ -542,7 +542,6 @@ class TestRegistryMindtraceODM:
 
     def test_get_raw_model_type(self, registry_odm):
         """Test get_raw_model() returns correct type."""
-        from typing import Type
 
         result = registry_odm.get_raw_model()
 

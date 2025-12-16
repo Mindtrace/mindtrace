@@ -103,10 +103,10 @@ class RedisMindtraceODM(MindtraceODM):
         # Default to sync for Redis if not specified
         if init_mode is None:
             init_mode = InitMode.SYNC
-        
+
         # Store init_mode for later reference
         self._init_mode = init_mode
-        
+
         # Auto-initialize if requested (otherwise operations will auto-init on first use)
         if auto_init:
             if init_mode == InitMode.SYNC:

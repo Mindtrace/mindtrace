@@ -9,6 +9,7 @@ from mindtrace.core import MindtraceABC
 
 class InitMode(Enum):
     """Initialization mode for database backends."""
+
     SYNC = "sync"
     ASYNC = "async"
 

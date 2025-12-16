@@ -112,14 +112,14 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         self.db_name = db_name
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
-        
+
         # Default to async for MongoDB if not specified
         if init_mode is None:
             init_mode = InitMode.ASYNC
-        
+
         # Store init_mode for later reference
         self._init_mode = init_mode
-        
+
         # Auto-initialize in sync contexts (if requested)
         # Note: MongoDB/Beanie is always async, so in async contexts we always defer
         if auto_init:
@@ -173,7 +173,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 # In async context, explicit init needed
                 backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 await backend.initialize()
-        
+
         Note:
             This method is idempotent - calling it multiple times is safe and
             will only initialize once.
@@ -181,7 +181,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Idempotent - return early if already initialized
         if self._is_initialized:
             return
-        
+
         if allow_index_dropping is not None:
             self._allow_index_dropping = allow_index_dropping
         await self._do_initialize()
@@ -390,21 +390,21 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         Initialize the MongoDB connection synchronously (wrapper around async initialize).
         This method provides a synchronous interface to the async initialize method.
         It should be called before performing any database operations in a sync context.
-    
+
         Args:
             allow_index_dropping: If True, allows Beanie to drop and recreate conflicting indexes.
                 Useful in test environments. Defaults to False.
-    
+
         Example:
             .. code-block:: python
-    
+
                 backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 backend.initialize_sync()  # Can be called from sync code
         """
         # Idempotent - return early if already initialized
         if self._is_initialized:
             return
-        
+
         try:
             # Check if we're already in an async context
             _ = asyncio.get_running_loop()
