@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 
 
-def compute_dir_hash(directory_path: str | Path, chunk_size: int = 2 ** 20) -> str:
+def compute_dir_hash(directory_path: str | Path, chunk_size: int = 2**20) -> str:
     """Compute SHA256 hash of directory contents.
 
     Hash is deterministic: files are sorted by path, then each file's content is hashed and combined. This ensures the
