@@ -108,7 +108,6 @@ async def test_mongo_backend_initialize(mock_mongo_backend):
     mock_mongo_backend.initialize.assert_called_once()
 
 
-# Fix the failing test cases
 @pytest.mark.asyncio
 async def test_mongo_backend_is_async():
     """Test that MongoDB backend is async."""
@@ -328,7 +327,6 @@ async def test_mongo_backend_all_with_multiple_results():
             assert results[2].name == "Bob"
 
 
-# Add comprehensive test cases to cover missing lines
 @pytest.mark.asyncio
 async def test_mongo_backend_insert_with_duplicate_key_error():
     """Test MongoDB insert with DuplicateKeyError."""
