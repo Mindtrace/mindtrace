@@ -297,6 +297,9 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
+        # Reduce poll_timeout to speed up receive_message calls (default is 1s)
+        consumer.consumer_backend.poll_timeout = 0.01
+
         import time
 
         original_sleep = time.sleep
@@ -306,7 +309,8 @@ class TestLocalConsumerBackend:
             sleep_calls.append(duration)
             if len(sleep_calls) >= 2:  # Stop after 2 sleep calls to cover line 54
                 raise KeyboardInterrupt("Break out of loop")
-            return original_sleep(duration)
+            # Return immediately without actually sleeping to speed up test
+            return None
 
         time.sleep = mock_sleep
 

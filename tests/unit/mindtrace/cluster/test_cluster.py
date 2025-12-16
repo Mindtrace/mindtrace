@@ -54,6 +54,8 @@ def cluster_manager():
         mock_minio_backend.list = MagicMock()
         mock_minio_backend.get = MagicMock()
         mock_minio_backend.registered_materializers = MagicMock(return_value={})
+        # Mock fetch_registry_metadata to return empty dict (no existing metadata)
+        mock_minio_backend.fetch_registry_metadata = MagicMock(return_value={})
         MockMinioBackend.return_value = mock_minio_backend
         mock_logger = MagicMock()
         mock_logger.error = MagicMock()

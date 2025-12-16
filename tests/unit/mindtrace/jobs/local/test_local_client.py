@@ -356,3 +356,11 @@ class TestLocalClient:
 
             assert results_dir.exists(), "results directory was not created under provided client_dir"
             assert len(meta_files) > 0, "no registry metadata found under client_dir/results after storing a job result"
+
+    def test_consumer_backend_args_raises_not_implemented(self, temp_local_client):
+        """Test that consumer_backend_args property raises NotImplementedError (line 70)."""
+        client = temp_local_client
+        with pytest.raises(
+            NotImplementedError, match="LocalConsumerBackend needs to be created with access to a LocalClient instance"
+        ):
+            _ = client.consumer_backend_args
