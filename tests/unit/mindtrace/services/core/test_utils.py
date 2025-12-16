@@ -572,13 +572,188 @@ class TestGenerateConnectionManager:
         assert result == {"raw": "async_response_data"}
         mock_endpoint1.output_schema.assert_not_called()
 
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_multiple_args_error(self, mock_httpx, mock_service_class):
+        """Test that method raises error when called with multiple args."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with multiple args
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            manager.test_endpoint(TestInput(value="test"), "extra_arg")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
+        """Test that method raises error when arg is wrong type."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with wrong type
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            manager.test_endpoint("not_a_test_input")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
+        """Test that method raises error when called with both args and kwargs."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with both args and kwargs
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            manager.test_endpoint(TestInput(value="test"), extra_param="value")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_multiple_args_error(self, mock_httpx, mock_service_class):
+        """Test that async method raises error when called with multiple args."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with multiple args
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            await manager.atest_endpoint(TestInput(value="test"), "extra_arg")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
+        """Test that async method raises error when arg is wrong type."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with wrong type
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            await manager.atest_endpoint("not_a_test_input")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
+        """Test that async method raises error when called with both args and kwargs."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should raise ValueError when called with both args and kwargs
+        with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
+            await manager.atest_endpoint(TestInput(value="test"), extra_param="value")
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_single_valid_arg(self, mock_httpx, mock_service_class):
+        """Test that method works with a single valid arg."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_httpx.post.return_value = mock_response
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Call with single valid arg
+        result = manager.test_endpoint(TestInput(value="test"))
+
+        # Should call httpx with dumped payload
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
+        assert result == {"result": "success"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_single_valid_arg(self, mock_httpx, mock_service_class):
+        """Test that async method works with a single valid arg."""
+        from pydantic import BaseModel
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        # Setup mock async client and response
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "async_success"}
+        mock_client.post.return_value = mock_response
+        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Call async method with single valid arg
+        result = await manager.atest_endpoint(TestInput(value="test"))
+
+        # Should call async client with dumped payload
+        mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
+        assert result == {"result": "async_success"}
+
 
 class TestTypeCheckingImport:
-    """Test suite to cover the TYPE_CHECKING import block."""
+    """Test suite for the TYPE_CHECKING import block."""
 
     def test_type_checking_import_coverage(self):
-        """Test that covers the TYPE_CHECKING import block."""
-        # This test covers line 7 by importing the module and checking the imports
+        """Test the TYPE_CHECKING import block."""
         from typing import TYPE_CHECKING
 
         # Verify TYPE_CHECKING is False at runtime
