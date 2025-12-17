@@ -1,4 +1,4 @@
-from mindtrace.agents.composer.config import BaseAgentWorkflowConfig, BaseAgentSettings
+from mindtrace.agents.composer.config import BaseAgentWorkflowConfig, BaseAgentWorkflowSettings
 from mindtrace.agents.providers.llm.strands import (
     get_ollama_model,
     get_openai_model,

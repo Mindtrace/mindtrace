@@ -153,7 +153,7 @@ class MonitorAgent(BaseAgent):
             #     return {"AI_message": f"Loki Query: {response} resulted in no logs, Would you like to try again with a different query?"}
             # else:
                 for i in range(max_retries):
-                    prompt = f"Previous query failed with error: {res["error"]}.Generate a corrected LogQL query for: {prompt}\n\nReturn ONLY the LogQL query string.Do not add time ranges."
+                    prompt = f"Previous query failed with error: {res["error"]}.Generate a corrected LogQL query for: {query}\n\nReturn ONLY the LogQL query string.Do not add time ranges."
                     # Suppress stdout/stderr to prevent unwanted output
                     with open(os.devnull, 'w') as devnull:
                         with redirect_stdout(devnull), redirect_stderr(devnull):
@@ -165,13 +165,29 @@ class MonitorAgent(BaseAgent):
                                 break
         else:
             valid_logql = suggested_logql
+
+        if not res["success"]:
+            return {"AI_message": "Unable to generate a valid LogQL query. Would you like provide a correct query?","logql": suggested_logql}
         logs = self.extract_logs(logql=valid_logql, log_limit=2000)
         if logs:
             with open(os.devnull, 'w') as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
-                    response = self.analyzer_agent.structured_output(LogAssistantResponse,prompt=f"Given service logs {logs}, Answer the human query: {query}")
-            print(response)
-            return {"sample_logs": logs["logs"][:5],"logql": valid_logql, "AI_message": response.result}
+                    response = self.analyzer_agent.structured_output(
+                        LogAssistantResponse,
+                        prompt=f"create a summary for the human query: {query},analyze the service logs {logs}, "
+                    )
+            return {
+                "logql": valid_logql,
+                "AI_message": str(response.result),
+            }
+        else:
+            return {"AI_message": "Failed to extract logs for analysis.", "logql": valid_logql}
+    
+
+if __name__ == "__main__":
+    import asyncio
+    agent = MonitorAgent()
+    result = asyncio.run(agent.query(query="analyze any errors in the logs", service="LoggingService"))
 
     
    

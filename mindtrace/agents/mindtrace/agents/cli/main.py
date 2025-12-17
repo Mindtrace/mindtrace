@@ -1,6 +1,7 @@
 import click
 
 from mindtrace.agents.catalogue.agents import AgentRegistry
+from mindtrace.agents.catalogue.cli_adapter import AgentCLIAdapter
 
 
 AgentRegistry.register(
@@ -8,6 +9,7 @@ AgentRegistry.register(
     description="AI-powered log monitoring and analysis agent",
     cli_module="mindtrace.agents.monitor.cli",
     cli_class="MonitorAgentCLI",
+    version="1.0.0"
 )
 
 
@@ -28,7 +30,7 @@ def agents(ctx, show_list):
         click.echo(ctx.get_help())
 
 
-AgentRegistry.register_all_commands(agents)
+AgentCLIAdapter.register_all_commands(agents)
 
 
 if __name__ == "__main__":
