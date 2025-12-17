@@ -46,7 +46,8 @@ class LoggingService(Service):
     ):
         kwargs["use_structlog"] = use_structlog
         super().__init__(**kwargs)
-        
+
+        self.logger = self.logger.bind(service_name=self.name)
         self.error_rate = error_rate
         self.timeout_rate = timeout_rate
         self.auto_scan_interval = auto_scan_interval

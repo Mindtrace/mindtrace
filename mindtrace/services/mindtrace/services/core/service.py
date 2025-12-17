@@ -80,8 +80,6 @@ class Service(Mindtrace):
         considered private internal use.
         """
         super().__init__(**kwargs)
-        # Bind service_name to logger so it appears in every log entry
-        self.logger = self.logger.bind(service_name=self.name)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file()
