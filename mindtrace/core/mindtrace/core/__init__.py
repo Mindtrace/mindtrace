@@ -6,6 +6,7 @@ from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
 from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.utils.async_runner import AsyncRunner
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.conversions import (
     ascii_to_pil,
@@ -35,6 +36,7 @@ setup_logger()  # Initialize the default logger
 
 __all__ = [
     "ascii_to_pil",
+    "AsyncRunner",
     "base64_to_pil",
     "bytes_to_pil",
     "check_libs",
