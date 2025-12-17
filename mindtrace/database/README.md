@@ -484,40 +484,29 @@ tests/
 
 #### Quick Start - All Tests
 ```bash
-# Use the test script (handles everything automatically)
-./scripts/run_tests.sh tests/unit/mindtrace/database tests/integration/mindtrace/database
+ds test: database
 ```
 
-#### Unit Tests Only (No Database Required)
+#### Unit Tests Only
 ```bash
-# From project root
-PYTHONPATH=mindtrace/core:mindtrace/database:$PYTHONPATH \
-python -m pytest tests/unit/mindtrace/database/ -v
+ds test: database --unit
 ```
 
-#### Integration Tests (Requires Databases)
+#### Integration Tests (Containers managed by test script)
 ```bash
-# Start test databases
-docker compose -f tests/docker-compose.yml up -d
-
-# Run integration tests
-PYTHONPATH=mindtrace/core:mindtrace/database:$PYTHONPATH \
-python -m pytest tests/integration/mindtrace/database/ -v
-
-# Stop test databases
-docker compose -f tests/docker-compose.yml down
+ds test: database --integration
 ```
 
 #### Targeted Testing
 ```bash
 # Test only unified backend
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_unified.py
+ds test: tests/integration/mindtrace/database/test_unified.py
 
 # Test only MongoDB
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_mongo.py
+ds test: tests/integration/mindtrace/database/test_mongo.py
 
 # Test only Redis
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_redis_odm.py
+ds test: tests/integration/mindtrace/database/test_redis_odm.py
 ```
 
 ### Test Coverage
