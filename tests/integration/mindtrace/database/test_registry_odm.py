@@ -4,7 +4,6 @@ These tests verify the actual functionality of the Registry-based ODM backend
 with real file system operations using temporary directories.
 """
 
-import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -567,4 +566,3 @@ class TestRegistryMindtraceODMEdgeCases:
         names = {user.name for user in result}
         assert "Bob" not in names
         assert names == {"Alice", "Charlie"}
-
