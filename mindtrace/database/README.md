@@ -287,13 +287,13 @@ class UserArchiver(Archiver):
 
 Registry.register_default_materializer(User, UserArchiver)
 
-gcp_storage = GCPRegistryBackend(
+gcp_registry_backend = GCPRegistryBackend(
     uri="gs://my-bucket",
     project_id="my-project",
     bucket_name="my-bucket",
 )
 
-db = RegistryMindtraceODM(model_cls=User, backend=gcp_storage)
+db = RegistryMindtraceODM(model_cls=User, backend=gcp_registry_backend)
 
 user = User(name="John Doe", email="john.doe@example.com")
 user_id = db.insert(user)
