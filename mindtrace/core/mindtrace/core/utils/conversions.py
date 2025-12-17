@@ -1,6 +1,7 @@
 """Utility methods relating to image conversion."""
 
 import base64
+import importlib.util
 import io
 from typing import TYPE_CHECKING
 
@@ -23,11 +24,7 @@ def _check_numpy():
     """Lazy check for numpy availability."""
     global _HAS_NUMPY
     if _HAS_NUMPY is None:
-        try:
-            import numpy as np
-            _HAS_NUMPY = True
-        except ImportError:
-            _HAS_NUMPY = False
+        _HAS_NUMPY = importlib.util.find_spec("numpy") is not None
     return _HAS_NUMPY
 
 
@@ -35,11 +32,7 @@ def _check_torch():
     """Lazy check for torch availability."""
     global _HAS_TORCH
     if _HAS_TORCH is None:
-        try:
-            import torch
-            _HAS_TORCH = True
-        except ImportError:
-            _HAS_TORCH = False
+        _HAS_TORCH = importlib.util.find_spec("torch") is not None
     return _HAS_TORCH
 
 
@@ -47,11 +40,7 @@ def _check_torchvision():
     """Lazy check for torchvision availability."""
     global _HAS_TORCHVISION
     if _HAS_TORCHVISION is None:
-        try:
-            from torchvision.transforms.v2 import functional as F
-            _HAS_TORCHVISION = True
-        except ImportError:
-            _HAS_TORCHVISION = False
+        _HAS_TORCHVISION = importlib.util.find_spec("torchvision") is not None
     return _HAS_TORCHVISION
 
 
@@ -59,11 +48,7 @@ def _check_cv2():
     """Lazy check for cv2 availability."""
     global _HAS_CV2
     if _HAS_CV2 is None:
-        try:
-            import cv2
-            _HAS_CV2 = True
-        except ImportError:
-            _HAS_CV2 = False
+        _HAS_CV2 = importlib.util.find_spec("cv2") is not None
     return _HAS_CV2
 
 
@@ -71,11 +56,7 @@ def _check_discord():
     """Lazy check for discord availability."""
     global _HAS_DISCORD
     if _HAS_DISCORD is None:
-        try:
-            from discord import Attachment, File
-            _HAS_DISCORD = True
-        except ImportError:
-            _HAS_DISCORD = False
+        _HAS_DISCORD = importlib.util.find_spec("discord") is not None
     return _HAS_DISCORD
 
 
@@ -83,6 +64,7 @@ def _get_numpy():
     if not _check_numpy():
         raise ImportError("numpy is required but is not installed.")
     import numpy as np
+
     return np
 
 
@@ -90,6 +72,7 @@ def _get_torch():
     if not _check_torch():
         raise ImportError("torch is required but is not installed.")
     import torch
+
     return torch
 
 
@@ -97,6 +80,7 @@ def _get_torchvision_functional():
     if not _check_torchvision():
         raise ImportError("torchvision is required but is not installed.")
     from torchvision.transforms.v2 import functional as F
+
     return F
 
 
@@ -104,6 +88,7 @@ def _get_cv2():
     if not _check_cv2():
         raise ImportError("cv2 is required but is not installed.")
     import cv2
+
     return cv2
 
 
@@ -111,6 +96,7 @@ def _get_discord():
     if not _check_discord():
         raise ImportError("discord.py is required but is not installed.")
     from discord import Attachment, File
+
     return Attachment, File
 
 
