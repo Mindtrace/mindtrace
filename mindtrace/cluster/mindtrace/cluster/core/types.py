@@ -145,6 +145,12 @@ class WorkerAlertCompletedJobInput(BaseModel):
 class LaunchWorkerInput(BaseModel):
     worker_type: str
     worker_name: str | None = None
+    worker_url: str | None = None
+
+
+class LaunchWorkerOutput(BaseModel):
+    worker_id: str
+    worker_name: str
     worker_url: str
 
 
@@ -175,11 +181,13 @@ class ClusterLaunchWorkerInput(BaseModel):
     node_url: str
     worker_type: str
     worker_name: str | None = None
-    worker_url: str
+    worker_url: str | None = None
 
 
 class ClusterLaunchWorkerOutput(BaseModel):
     worker_id: str
+    worker_name: str
+    worker_url: str
 
 
 class ClusterRegisterJobToWorkerInput(BaseModel):
