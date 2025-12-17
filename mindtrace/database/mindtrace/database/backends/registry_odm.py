@@ -1,12 +1,13 @@
 import uuid
+from typing import Type
 
 from pydantic import BaseModel
 
-from mindtrace.database import MindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
 
 
-class RegistryMindtraceODMBackend(MindtraceODMBackend):
+class RegistryMindtraceODM(MindtraceODM):
     """Implementation of the Mindtrace ODM backend that uses the Registry backend.
 
     Pass in a RegistryBackend to select the storage source. By default, a local directory store will be used.
@@ -18,7 +19,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.registry_odm_backend import RegistryMindtraceODMBackend
+            from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
             from pydantic import BaseModel
 
             class MyDocument(BaseModel):
@@ -26,21 +27,33 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
                 value: int
 
             # Create backend instance
-            backend = RegistryMindtraceODMBackend()
+            backend = RegistryMindtraceODM()
 
             # Insert a document
             doc = MyDocument(name="test", value=42)
             doc_id = backend.insert(doc)
     """
 
-    def __init__(self, backend: RegistryBackend | None = None, **kwargs):
+    def __init__(
+        self,
+        backend: RegistryBackend | None = None,
+        init_mode: InitMode | None = None,
+        **kwargs,
+    ):
         """Initialize the registry ODM backend.
 
         Args:
             backend (RegistryBackend | None): Optional registry backend to use for storage.
+            init_mode (InitMode | None): Initialization mode. If None, defaults to InitMode.SYNC
+                for Registry. Note: Registry is always synchronous and doesn't require initialization.
             **kwargs: Additional configuration parameters.
         """
         super().__init__(**kwargs)
+        # Default to sync for Registry if not specified (Registry is sync by nature)
+        if init_mode is None:
+            init_mode = InitMode.SYNC
+        # Store init_mode for consistency, though Registry doesn't use it
+        self._init_mode = init_mode
         self.registry = Registry(backend=backend, version_objects=False)
 
     def is_async(self) -> bool:
@@ -52,7 +65,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 print(backend.is_async())  # Output: False
         """
         return False
@@ -74,7 +87,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
                 class MyDocument(BaseModel):
                     name: str
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 doc_id = backend.insert(MyDocument(name="example"))
                 print(f"Inserted document with ID: {doc_id}")
         """
@@ -95,7 +108,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     success = backend.update("some_id", updated_document)
                     if success:
@@ -125,7 +138,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     document = backend.get("some_id")
                 except KeyError:
@@ -145,7 +158,7 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 try:
                     backend.delete("some_id")
                 except KeyError:
@@ -162,8 +175,73 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODMBackend()
+                backend = RegistryMindtraceODM()
                 documents = backend.all()
                 print(f"Found {len(documents)} documents")
         """
-        return self.registry.values()
+        return list(self.registry.values())
+
+    def find(self, *args, **kwargs) -> list[BaseModel]:
+        """Find documents matching the specified criteria.
+
+        Args:
+            *args: Query conditions. Currently not supported in Registry backend.
+            **kwargs: Field-value pairs to match against documents.
+
+        Returns:
+            list[BaseModel]: A list of documents matching the query criteria.
+                If no criteria are provided, returns all documents.
+
+        Example:
+            .. code-block:: python
+
+                # Find documents with specific field values
+                users = backend.find(name="John", email="john@example.com")
+
+                # Find all documents if no criteria specified
+                all_docs = backend.find()
+        """
+        all_docs = list(self.registry.values())
+
+        # If no criteria provided, return all documents
+        if not args and not kwargs:
+            return all_docs
+
+        # Filter documents based on kwargs (field-value pairs)
+        if kwargs:
+            results = []
+            for doc in all_docs:
+                match = True
+                for field, value in kwargs.items():
+                    if not hasattr(doc, field) or getattr(doc, field) != value:
+                        match = False
+                        break
+                if match:
+                    results.append(doc)
+            return results
+
+        # If args are provided but not supported, return empty list
+        # (Registry backend doesn't support complex query syntax)
+        if args:
+            self.logger.warning(
+                "Registry backend does not support complex query syntax via *args. "
+                "Use **kwargs for field-value matching instead."
+            )
+
+        # Return empty list if only args provided (without kwargs)
+        return []
+
+    def get_raw_model(self) -> Type[BaseModel]:
+        """Get the raw document model class used by this backend.
+
+        Returns:
+            Type[BaseModel]: The base BaseModel class, as Registry backend
+                doesn't use a specific model class but accepts any BaseModel.
+
+        Example:
+            .. code-block:: python
+
+                model_class = backend.get_raw_model()
+                print(f"Using model: {model_class.__name__}")  # Output: BaseModel
+        """
+        return BaseModel

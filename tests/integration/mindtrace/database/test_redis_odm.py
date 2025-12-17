@@ -8,7 +8,7 @@ from mindtrace.database import (
     DocumentNotFoundError,
     DuplicateInsertError,
     MindtraceRedisDocument,
-    RedisMindtraceODMBackend,
+    RedisMindtraceODM,
 )
 
 REDIS_URL = "redis://localhost:6380"
@@ -33,7 +33,7 @@ class UserDoc(MindtraceRedisDocument):
 @pytest.fixture(scope="function")
 def redis_backend():
     """Create a Redis backend instance."""
-    backend = RedisMindtraceODMBackend(UserDoc, REDIS_URL)
+    backend = RedisMindtraceODM(UserDoc, REDIS_URL)
     backend.initialize()
 
     # Clean up any existing data before test
