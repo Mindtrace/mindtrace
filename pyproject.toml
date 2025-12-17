@@ -26,7 +26,11 @@ dependencies = [
   "mindtrace-ui>=0.6.0",
   "mindtrace-datalake>=0.6.0",
   "mindtrace-storage>=0.6.0",
+  "mindtrace-agents>=0.6.0",
 ]
+
+[project.scripts]
+mindtrace = "mindtrace.agents.cli.main:cli"
 
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]"]
@@ -73,6 +77,7 @@ mindtrace-registry = { workspace = true }
 mindtrace-ui = { workspace = true }
 mindtrace-datalake = { workspace = true }
 mindtrace-storage = { workspace = true }
+mindtrace-agents = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -89,6 +94,7 @@ members = [
   "mindtrace/ui",
   "mindtrace/datalake",
   "mindtrace/storage",
+  "mindtrace/agents",
 ]
 
 [tool.ds.scripts]
@@ -134,6 +140,7 @@ publish_to_pypi = """
 [tool.ruff]
 src = [
     ".",
+    "mindtrace/agents",
     "mindtrace/apps",
     "mindtrace/automation",
     "mindtrace/cluster",

@@ -19,6 +19,7 @@ nav:
     - Jobs: jobs/README.md
     - Database: database/README.md
     - Storage: storage/README.md
+    - Agents: agents/README.md
     
     
   - API Reference: 
@@ -29,6 +30,7 @@ nav:
     - Jobs: jobs/api.md
     - Database: database/api.md
     - Storage: storage/api.md
+    - Agents: agents/api.md
 
 plugins:
   - search

@@ -1,52 +1,103 @@
 """Utility methods relating to image conversion."""
 
 import base64
+import importlib.util
 import io
+from typing import TYPE_CHECKING
 
 import PIL
 from PIL.Image import Image
 
-try:
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
+    from discord import Attachment, File
+
+_HAS_NUMPY = None
+_HAS_TORCH = None
+_HAS_TORCHVISION = None
+_HAS_CV2 = None
+_HAS_DISCORD = None
+
+
+def _check_numpy():
+    """Lazy check for numpy availability."""
+    global _HAS_NUMPY
+    if _HAS_NUMPY is None:
+        _HAS_NUMPY = importlib.util.find_spec("numpy") is not None
+    return _HAS_NUMPY
+
+
+def _check_torch():
+    """Lazy check for torch availability."""
+    global _HAS_TORCH
+    if _HAS_TORCH is None:
+        _HAS_TORCH = importlib.util.find_spec("torch") is not None
+    return _HAS_TORCH
+
+
+def _check_torchvision():
+    """Lazy check for torchvision availability."""
+    global _HAS_TORCHVISION
+    if _HAS_TORCHVISION is None:
+        _HAS_TORCHVISION = importlib.util.find_spec("torchvision") is not None
+    return _HAS_TORCHVISION
+
+
+def _check_cv2():
+    """Lazy check for cv2 availability."""
+    global _HAS_CV2
+    if _HAS_CV2 is None:
+        _HAS_CV2 = importlib.util.find_spec("cv2") is not None
+    return _HAS_CV2
+
+
+def _check_discord():
+    """Lazy check for discord availability."""
+    global _HAS_DISCORD
+    if _HAS_DISCORD is None:
+        _HAS_DISCORD = importlib.util.find_spec("discord") is not None
+    return _HAS_DISCORD
+
+
+def _get_numpy():
+    if not _check_numpy():
+        raise ImportError("numpy is required but is not installed.")
     import numpy as np
 
-    _HAS_NUMPY = True
-except ImportError:  # pragma: no cover
-    _HAS_NUMPY = False
+    return np
 
-try:
+
+def _get_torch():
+    if not _check_torch():
+        raise ImportError("torch is required but is not installed.")
     import torch
 
-    _HAS_TORCH = True
-except ImportError:  # pragma: no cover
-    _HAS_TORCH = False
+    return torch
 
-try:
+
+def _get_torchvision_functional():
+    if not _check_torchvision():
+        raise ImportError("torchvision is required but is not installed.")
     from torchvision.transforms.v2 import functional as F
 
-    _HAS_TORCHVISION = True
-except ImportError:  # pragma: no cover
-    _HAS_TORCHVISION = False
+    return F
 
-try:
+
+def _get_cv2():
+    if not _check_cv2():
+        raise ImportError("cv2 is required but is not installed.")
     import cv2
 
-    _HAS_CV2 = True
-except ImportError:  # pragma: no cover
-    _HAS_CV2 = False
+    return cv2
 
-try:
+
+def _get_discord():
+    if not _check_discord():
+        raise ImportError("discord.py is required but is not installed.")
     from discord import Attachment, File
 
-    _HAS_DISCORD = True
-except ImportError:  # pragma: no cover
-    _HAS_DISCORD = False
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover
-    import numpy as np
-    import torch
-    from discord import Attachment, File
+    return Attachment, File
 
 
 def pil_to_ascii(image: Image) -> str:
@@ -136,10 +187,11 @@ def pil_to_tensor(image: Image) -> "torch.Tensor":
         tensor = pil_to_tensor(image)
         ```
     """
-    if not _HAS_TORCH:
+    if not _check_torch():
         raise ImportError("torch is required for pil_to_tensor but is not installed.")
-    if not _HAS_TORCHVISION:
+    if not _check_torchvision():
         raise ImportError("torchvision is required for pil_to_tensor but is not installed.")
+    F = _get_torchvision_functional()
     return F.pil_to_tensor(image)
 
 
@@ -168,10 +220,12 @@ def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) 
         pil_image = tensor_to_pil(tensor_image)
         ```
     """
-    if not _HAS_TORCH:
+    if not _check_torch():
         raise ImportError("torch is required for tensor_to_pil but is not installed.")
-    if not _HAS_TORCHVISION:
+    if not _check_torchvision():
         raise ImportError("torchvision is required for tensor_to_pil but is not installed.")
+    torch = _get_torch()
+    F = _get_torchvision_functional()
     min_ = min_val if min_val is not None else torch.min(image)
     max_ = max_val if max_val is not None else torch.max(image)
     return F.to_pil_image((image - min_) / (max_ - min_), mode=mode)
@@ -189,9 +243,12 @@ def pil_to_ndarray(image: Image, image_format="RGB") -> "np.ndarray":
     Returns:
         An np.ndarray image in the specified format.
     """
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for pil_to_ndarray but is not installed.")
-    if image.mode in ["LA", "RGBA"]:  # Alpha channel present
+    if image_format == "BGR" and not _check_cv2():
+        raise ImportError("cv2 is required for BGR conversion but is not installed.")
+    np = _get_numpy()
+    if image.mode in ["LA", "RGBA"]:
         if image_format == "L":
             image = image.convert(mode="L")
             return np.array(image)
@@ -200,9 +257,10 @@ def pil_to_ndarray(image: Image, image_format="RGB") -> "np.ndarray":
             if image_format == "RGB":
                 return np.array(image)
             elif image_format == "BGR":
+                cv2 = _get_cv2()
                 return cv2.cvtColor(np.array(image), cv2.COLOR_RGBA2BGRA)
 
-    else:  # No alpha channel
+    else:
         if image_format == "L":
             image = image.convert(mode="L")
             return np.array(image)
@@ -211,8 +269,7 @@ def pil_to_ndarray(image: Image, image_format="RGB") -> "np.ndarray":
             if image_format == "RGB":
                 return np.array(image)
             elif image_format == "BGR":
-                if not _HAS_CV2:
-                    raise ImportError("cv2 is required for BGR conversion but is not installed.")
+                cv2 = _get_cv2()
                 return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
 
@@ -238,8 +295,11 @@ def ndarray_to_pil(image: "np.ndarray", image_format: str = "RGB"):
         pil_image = ndarray_to_pil(ndarray_image, image_format='RGB')
         ```
     """
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for ndarray_to_pil but is not installed.")
+    if image_format == "BGR" and not _check_cv2():
+        raise ImportError("cv2 is required for BGR conversion but is not installed.")
+    np = _get_numpy()
     if np.issubdtype(image.dtype, np.floating):
         image = (image * 255).astype(np.uint8)
     elif not np.issubdtype(image.dtype, np.integer) and image.dtype != bool:
@@ -253,8 +313,7 @@ def ndarray_to_pil(image: "np.ndarray", image_format: str = "RGB"):
     elif num_channels == 1 or image_format == "RGB" or image.dtype == bool:
         return PIL.Image.fromarray(image)
     elif image_format == "BGR":
-        if not _HAS_CV2:
-            raise ImportError("cv2 is required for BGR conversion but is not installed.")
+        cv2 = _get_cv2()
         if num_channels == 3:
             return PIL.Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         elif num_channels == 4:
@@ -284,9 +343,9 @@ def pil_to_cv2(image: Image) -> "np.ndarray":
         cv2_image = pil_to_cv2(pil_image)
         ```
     """
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for pil_to_cv2 but is not installed.")
-    if not _HAS_CV2:
+    if not _check_cv2():
         raise ImportError("cv2 is required for pil_to_cv2 but is not installed.")
     return pil_to_ndarray(image, image_format="BGR")
 
@@ -313,9 +372,9 @@ def cv2_to_pil(image: "np.ndarray") -> Image:
         pil_image = cv2_to_pil(cv2_image)
         ```
     """
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for cv2_to_pil but is not installed.")
-    if not _HAS_CV2:
+    if not _check_cv2():
         raise ImportError("cv2 is required for cv2_to_pil but is not installed.")
     return ndarray_to_pil(image, image_format="BGR")
 
@@ -386,8 +445,9 @@ def pil_to_discord_file(image: Image, filename: str = "image.png") -> "File":
         await message.reply(file=discord_file)
         ```
     """
-    if not _HAS_DISCORD:
+    if not _check_discord():
         raise ImportError("discord.py is required for pil_to_discord_file but is not installed.")
+    _, File = _get_discord()
     image_bytes = io.BytesIO()
     image.save(image_bytes, format="PNG")
     image_bytes.seek(0)
@@ -422,10 +482,11 @@ async def discord_file_to_pil(attachment: "Attachment") -> Image:
                     await ctx.send(f"Attachment {i} is not a valid image file.")
         ```
     """
-    if not _HAS_DISCORD:
+    if not _check_discord():
         raise ImportError("discord.py is required for discord_file_to_pil but is not installed.")
-    image_bytes = await attachment.read()  # Read bytes from the attachment asynchronously
-    return PIL.Image.open(io.BytesIO(image_bytes))  # Convert the bytes to a PIL Image
+    _get_discord()
+    image_bytes = await attachment.read()
+    return PIL.Image.open(io.BytesIO(image_bytes))
 
 
 def tensor_to_ndarray(tensor: "torch.Tensor") -> "np.ndarray":
@@ -441,10 +502,11 @@ def tensor_to_ndarray(tensor: "torch.Tensor") -> "np.ndarray":
             For batched tensors: a list of numpy arrays in HWC format
             For single image: a numpy array in HWC format
     """
-    if not _HAS_TORCH:
+    if not _check_torch():
         raise ImportError("torch is required for tensor_to_ndarray but is not installed.")
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for tensor_to_ndarray but is not installed.")
+    np = _get_numpy()
 
     if tensor.device.type != "cpu":
         tensor = tensor.cpu()
@@ -474,10 +536,12 @@ def ndarray_to_tensor(image: "np.ndarray") -> "torch.Tensor":
     Returns:
         The PyTorch tensor.
     """
-    if not _HAS_TORCH:
+    if not _check_torch():
         raise ImportError("torch is required for ndarray_to_tensor but is not installed.")
-    if not _HAS_NUMPY:
+    if not _check_numpy():
         raise ImportError("numpy is required for ndarray_to_tensor but is not installed.")
+    torch = _get_torch()
+    _get_numpy()
     if not image.flags.writeable:
         image = image.copy()
     return torch.from_numpy(image)

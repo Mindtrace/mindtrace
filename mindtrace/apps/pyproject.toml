@@ -21,7 +21,8 @@ dependencies = [
     "mindtrace-jobs",
     "mindtrace-hardware",
     "mindtrace-ui",
-    "mindtrace-automation"
+    "mindtrace-automation",
+    "mindtrace-agents",
 ]
 
 [project.urls]
