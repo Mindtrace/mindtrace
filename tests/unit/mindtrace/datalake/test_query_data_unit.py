@@ -61,7 +61,7 @@ class TestQueryDataUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()

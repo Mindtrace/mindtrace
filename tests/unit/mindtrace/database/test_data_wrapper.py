@@ -11,7 +11,7 @@ class TestDataWrapper:
         """Test DataWrapper creation and access."""
         # Check if DataWrapper is defined in the unified backend
         try:
-            from mindtrace.database.backends.unified_odm_backend import DataWrapper
+            from mindtrace.database.backends.unified_odm import DataWrapper
 
             data = {"name": "John", "age": 30}
             wrapper = DataWrapper(data)
@@ -27,7 +27,7 @@ class TestDataWrapper:
     def test_data_wrapper_model_dump(self):
         """Test DataWrapper model_dump method."""
         try:
-            from mindtrace.database.backends.unified_odm_backend import DataWrapper
+            from mindtrace.database.backends.unified_odm import DataWrapper
 
             data = {"name": "John", "age": 30}
             wrapper = DataWrapper(data)
@@ -41,7 +41,7 @@ class TestDataWrapper:
     def test_data_wrapper_str_representation(self):
         """Test DataWrapper string representation."""
         try:
-            from mindtrace.database.backends.unified_odm_backend import DataWrapper
+            from mindtrace.database.backends.unified_odm import DataWrapper
 
             data = {"name": "John", "age": 30}
             wrapper = DataWrapper(data)
@@ -55,7 +55,7 @@ class TestDataWrapper:
     def test_data_wrapper_repr_representation(self):
         """Test DataWrapper repr representation."""
         try:
-            from mindtrace.database.backends.unified_odm_backend import DataWrapper
+            from mindtrace.database.backends.unified_odm import DataWrapper
 
             data = {"name": "John", "age": 30}
             wrapper = DataWrapper(data)
