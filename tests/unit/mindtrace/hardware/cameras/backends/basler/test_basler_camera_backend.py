@@ -2142,7 +2142,7 @@ class TestBaslerCameraBackendCameraNotFoundError:
     """Test CameraNotFoundError with available cameras list when no camera matches."""
 
     @pytest.mark.asyncio
-    async def test_camera_not_found_with_available_cameras_lines_344_350(self, mock_pypylon):
+    async def test_camera_not_found_with_available_cameras(self, mock_pypylon):
         """Test CameraNotFoundError with available cameras list when no matching camera is found."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import CameraNotFoundError
@@ -2266,7 +2266,7 @@ class TestBaslerCameraBackendUnexpectedInitializationError:
     """Test unexpected exception handling during initialization."""
 
     @pytest.mark.asyncio
-    async def test_unexpected_exception_during_initialization_lines_354_356(self, mock_pypylon):
+    async def test_unexpected_exception_during_initialization(self, mock_pypylon):
         """Test that unexpected exceptions during initialization get converted to CameraInitializationError."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
@@ -2296,7 +2296,7 @@ class TestBaslerCameraBackendCameraAvailabilityCheck:
     """Test camera availability check before operations."""
 
     @pytest.mark.asyncio
-    async def test_camera_not_available_ensure_open_lines_364_365(self, mock_pypylon):
+    async def test_camera_not_available_ensure_open(self, mock_pypylon):
         """Test that _ensure_open raises CameraConnectionError when camera is None."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import CameraConnectionError
@@ -2390,7 +2390,7 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
     """Test _grabbing_suspended context manager functionality."""
 
     @pytest.mark.asyncio
-    async def test_grabbing_suspended_camera_availability_check_line_401(self, mock_pypylon):
+    async def test_grabbing_suspended_camera_availability_check(self, mock_pypylon):
         """Test that _grabbing_suspended checks camera availability."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
@@ -2410,7 +2410,7 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
         # No camera operations should have been attempted when camera is None
 
     @pytest.mark.asyncio
-    async def test_grabbing_suspended_is_grabbing_check_line_402(self, mock_pypylon):
+    async def test_grabbing_suspended_is_grabbing_check(self, mock_pypylon):
         """Test that _grabbing_suspended checks IsGrabbing status."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
@@ -2507,7 +2507,7 @@ class TestBaslerCameraBackendExceptionHandlingAndChecks:
     """Test exception handling and initialization checks in various methods."""
 
     @pytest.mark.asyncio
-    async def test_configure_camera_exception_handling_lines_442_444(self, mock_pypylon, monkeypatch):
+    async def test_configure_camera_exception_handling(self, mock_pypylon, monkeypatch):
         """Test that _configure_camera catches exceptions and re-raises as CameraConfigurationError."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import CameraConfigurationError
@@ -4475,7 +4475,7 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         # Create camera instance but don't initialize it
         camera = BaslerCameraBackend("12345670")
 
-        # Try to set trigger mode on uninitialized camera - this should hit line 590
+        # Try to set trigger mode on uninitialized camera
         with pytest.raises(CameraConnectionError) as exc_info:
             await camera.set_triggermode("trigger")
 
@@ -4692,7 +4692,6 @@ class TestBaslerCameraBackendRemainingLineCoverage:
         await camera.initialize()
 
         # The mock camera already has TriggerSource property, so hasattr() will return True
-        # This should trigger line 810 when importing trigger mode
 
         # Create config file with trigger mode setting
         config_path = tmp_path / "test_config.json"
@@ -4725,8 +4724,6 @@ class TestBaslerCameraBackendRemainingLineCoverage:
 
         # Import should succeed and white balance should be set to off
         await camera.import_config(str(config_path))
-
-        # This should exercise line 826
 
     @pytest.mark.asyncio
     async def test_import_config_white_balance_continuous_setting(self, mock_pypylon, tmp_path):

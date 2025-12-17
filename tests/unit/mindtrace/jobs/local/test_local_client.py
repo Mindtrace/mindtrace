@@ -168,15 +168,16 @@ class TestLocalClient:
     def test_publish_receive_priority(self, temp_local_client):
         """Test publishing and receiving messages with priority."""
         client = temp_local_client
-        client.declare_queue("priority-queue", queue_type="priority")
+        queue_name = f"priority-queue-{int(time.time())}"
+        client.declare_queue(queue_name, queue_type="priority")
 
         msg1 = SampleMessage(data="low")
         msg2 = SampleMessage(data="high")
-        client.publish("priority-queue", msg1, priority=1)
-        client.publish("priority-queue", msg2, priority=10)
+        client.publish(queue_name, msg1, priority=1)
+        client.publish(queue_name, msg2, priority=10)
 
-        received1 = client.receive_message("priority-queue")
-        received2 = client.receive_message("priority-queue")
+        received1 = client.receive_message(queue_name)
+        received2 = client.receive_message(queue_name)
 
         assert received1["data"] == "high"
         assert received2["data"] == "low"
@@ -355,3 +356,11 @@ class TestLocalClient:
 
             assert results_dir.exists(), "results directory was not created under provided client_dir"
             assert len(meta_files) > 0, "no registry metadata found under client_dir/results after storing a job result"
+
+    def test_consumer_backend_args_raises_not_implemented(self, temp_local_client):
+        """Test that consumer_backend_args property raises NotImplementedError."""
+        client = temp_local_client
+        with pytest.raises(
+            NotImplementedError, match="LocalConsumerBackend needs to be created with access to a LocalClient instance"
+        ):
+            _ = client.consumer_backend_args

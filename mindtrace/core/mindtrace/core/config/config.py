@@ -58,6 +58,7 @@ class MINDTRACE_CLUSTER(BaseModel):
     RABBITMQ_PORT: int
     RABBITMQ_USERNAME: str
     RABBITMQ_PASSWORD: str
+    WORKER_PORTS_RANGE: str
 
 
 class MINDTRACE_MCP(BaseModel):
