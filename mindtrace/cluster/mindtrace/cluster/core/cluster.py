@@ -660,9 +660,7 @@ class Node(Service):
             self.worker_ports = worker_ports
         else:
             config_range = self.config["MINDTRACE_CLUSTER"]["WORKER_PORTS_RANGE"]
-            config_range = config_range.split(",")
-            config_range = tuple(int(port) for port in config_range)
-            self.worker_ports = list[int](range(config_range[0], config_range[1] + 1))
+            self.worker_ports = self._parse_port_range(config_range)
             self.logger.debug(f"Using worker ports range {config_range} for node {self.id}")
 
         self.add_endpoint(
@@ -710,6 +708,31 @@ class Node(Service):
             ),
             methods=["POST"],
         )
+
+    def _parse_port_range(self, port_range: str) -> list[int]:
+        """
+        Parse a port range string into a list of ports.
+        Args:
+            port_range (str): The port range string, e.g. "8080-8090" or "8080,8090".
+        Returns:
+            list[int]: The list of ports.
+        Raises:
+            ValueError: If the port range is invalid.
+        """
+        if "-" in port_range:
+            parts = port_range.split("-")
+        elif "," in port_range:
+            parts = port_range.split(",")
+        else:
+            raise ValueError(f"Invalid port range: {port_range}: expected separator '-' or ','")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid port range: {port_range}: expected 'start-end' or 'start,end'")
+        start = int(parts[0])
+        end = int(parts[1])
+        if start > end:
+            raise ValueError(f"Invalid port range: {start} > {end}")
+        ports = list[int](range(start, end + 1))
+        return ports
 
     def _get_worker_port(self):
         """
