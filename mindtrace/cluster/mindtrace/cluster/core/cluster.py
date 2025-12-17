@@ -645,7 +645,7 @@ class Node(Service):
                 uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
             )
             self.worker_registry = Registry(backend=minio_backend)
-            self.node_worker_database: UnifiedMindtraceODMBackend = UnifiedMindtraceODMBackend(
+            self.node_worker_database: UnifiedMindtraceODM = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.NodeWorker,
                 redis_url=self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"],
                 preferred_backend=BackendType.REDIS,
