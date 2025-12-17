@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 def _get_numpy():
     try:
         import numpy as np
+
         return np
     except ImportError:
         raise ImportError("numpy is required but is not installed.")
@@ -24,6 +25,7 @@ def _get_numpy():
 def _get_torch():
     try:
         import torch
+
         return torch
     except ImportError:
         raise ImportError("torch is required but is not installed.")
@@ -32,6 +34,7 @@ def _get_torch():
 def _get_torchvision_functional():
     try:
         from torchvision.transforms.v2 import functional as F
+
         return F
     except ImportError:
         raise ImportError("torchvision is required but is not installed.")
@@ -40,6 +43,7 @@ def _get_torchvision_functional():
 def _get_cv2():
     try:
         import cv2
+
         return cv2
     except ImportError:
         raise ImportError("cv2 is required but is not installed.")
@@ -48,6 +52,7 @@ def _get_cv2():
 def _get_discord():
     try:
         from discord import Attachment, File
+
         return Attachment, File
     except ImportError:
         raise ImportError("discord.py is required but is not installed.")
@@ -427,7 +432,6 @@ def tensor_to_ndarray(tensor: "torch.Tensor") -> "np.ndarray":
             For batched tensors: a list of numpy arrays in HWC format
             For single image: a numpy array in HWC format
     """
-    torch = _get_torch()
     np = _get_numpy()
 
     if tensor.device.type != "cpu":

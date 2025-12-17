@@ -1,8 +1,6 @@
 import asyncio
 import json
 from pathlib import Path
-from re import M
-from datetime import datetime
 
 import click
 from rich.console import Console
@@ -46,7 +44,7 @@ class MonitorAgentCLI(BaseAgentCLI):
                 config = config.load_json(Path(config.MT_AGENT_PATHS.config_dir) / f"{MonitorAgent.agent_name}.json")
             agent = cls.agent_class(config_override=config)
             result = asyncio.run(agent.query(query, service))
-            
+
             # Pretty print JSON with syntax highlighting
             json_str = json.dumps(result, indent=2)
             json_syntax = Syntax(json_str, "json", theme="monokai", line_numbers=False, word_wrap=True)

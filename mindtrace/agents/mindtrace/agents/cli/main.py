@@ -3,13 +3,12 @@ import click
 from mindtrace.agents.catalogue.agents import AgentRegistry
 from mindtrace.agents.catalogue.cli_adapter import AgentCLIAdapter
 
-
 AgentRegistry.register(
     name="monitor",
     description="AI-powered log monitoring and analysis agent",
     cli_module="mindtrace.agents.monitor.cli",
     cli_class="MonitorAgentCLI",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 

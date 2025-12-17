@@ -3,4 +3,3 @@
 from mindtrace.agents.cli.main import cli
 
 __all__ = ["cli"]
-

@@ -1,8 +1,8 @@
-from pydantic import BaseModel
-from pydantic_settings import BaseSettings
 from typing import Dict
-from mindtrace.agents.composer.config import BaseAgentWorkflowConfig, SettingsLike, AgentConfig, AgentModelConfig
 
+from pydantic_settings import BaseSettings
+
+from mindtrace.agents.composer.config import AgentConfig, AgentModelConfig, BaseAgentWorkflowConfig, SettingsLike
 
 
 class MonitorAgentSettings(BaseSettings):
@@ -11,9 +11,10 @@ class MonitorAgentSettings(BaseSettings):
         "monitor": AgentConfig(
             description="Monitor agent",
             models={
-                "log_analyzer": AgentModelConfig(provider="ollama", 
-                model_name="llama3.1", 
-                system_prompt="""You are a professional log analysis assistant. 
+                "log_analyzer": AgentModelConfig(
+                    provider="ollama",
+                    model_name="llama3.1",
+                    system_prompt="""You are a professional log analysis assistant. 
                 
 Your primary task is to ANALYZE logs and provide INSIGHTS, not to return raw log entries.
 
@@ -34,11 +35,12 @@ Always return the result in exact JSON format without any other text:
     "result": "<your analysis and insights answering the query - NO raw logs>"
 }
                 """,
-                callback_handler=None,),
-
-                "query_generator": AgentModelConfig(provider="ollama", 
-                model_name="llama3.1", 
-                system_prompt="""You are a LogQL query generator. Generate valid LogQL queries from natural language.
+                    callback_handler=None,
+                ),
+                "query_generator": AgentModelConfig(
+                    provider="ollama",
+                    model_name="llama3.1",
+                    system_prompt="""You are a LogQL query generator. Generate valid LogQL queries from natural language.
                 If required, you can use the extract_logs tool to extract sample logs from Loki.
                 Example: extract_logs(logql="{service_name=\"LoggingService\"}", log_limit=1000)
                 If the user query is not clear, return the error message: "Query is not clear, please provide a more specific query"
@@ -70,12 +72,12 @@ To extract logs with error code 422:
 INVALID Examples (DO NOT USE):
 ✗ log{service="LoggingService"}  (no 'log' prefix!)
 ✗ logs | filter(service=="value")  (no filter function!)
-✗ service="value"  (missing curly braces!)""",callback_handler=None,),
-
-            }
+✗ service="value"  (missing curly braces!)""",
+                    callback_handler=None,
+                ),
+            },
         )
     }
-
 
 
 class MonitorAgentConfig(BaseAgentWorkflowConfig):
