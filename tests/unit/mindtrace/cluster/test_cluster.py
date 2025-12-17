@@ -587,6 +587,11 @@ def test_launch_worker_with_auto_connect(cluster_manager):
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            worker_id=str(uuid.uuid4()),
+            worker_name="test_worker",
+            worker_url="http://worker:8081",
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
@@ -620,6 +625,11 @@ def test_launch_worker_without_auto_connect(cluster_manager):
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            worker_id=str(uuid.uuid4()),
+            worker_name="test_worker",
+            worker_url="http://worker:8081",
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
@@ -687,6 +697,11 @@ def test_launch_worker_with_different_ports(cluster_manager):
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            worker_id=str(uuid.uuid4()),
+            worker_name="test_worker",
+            worker_url="http://worker:9091",
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
@@ -937,6 +952,7 @@ def mock_node():
         node = Node(cluster_url="http://cluster:8080")
         node.id = uuid4()
         node.worker_registry = mock_registry
+        node.node_worker_database = mock_database
         object.__setattr__(node, "_url", "http://localhost:8081")
 
         return node
@@ -975,7 +991,11 @@ def test_node_launch_worker(mock_node):
 
     result = mock_node.launch_worker(payload)
 
-    assert result is None
+    assert result == dict(
+        worker_id=str(mock_worker.heartbeat().heartbeat.server_id),
+        worker_name="test_worker",
+        worker_url="http://worker:8080",
+    )
     mock_node.node_worker_database.insert.assert_called_once()
     mock_node.worker_registry.load.assert_called_once_with("worker:test_worker", url="http://worker:8080")
 
@@ -2177,29 +2197,7 @@ def test_register_job_to_worker_with_connect_to_cluster_failure(cluster_manager)
             cluster_manager.register_job_to_worker(payload)
 
 
-def test_launch_worker_with_worker_connection_failure(cluster_manager):
-    """Test launch_worker when Worker.connect fails."""
-    payload = {
-        "node_url": "http://node:8080",
-        "worker_type": "test_worker",
-        "worker_url": "http://worker:8080",
-        "worker_name": "test_worker",
-    }
-
-    # Mock Node.connect and related methods
-    mock_node_cm = MagicMock()
-    mock_node_cm.launch_worker.return_value = None
-
-    # Mock Worker.connect to raise an exception
-    with (
-        patch("mindtrace.cluster.core.cluster.Node.connect", return_value=mock_node_cm),
-        patch("mindtrace.cluster.core.cluster.Worker.connect", side_effect=ConnectionError("Worker connection failed")),
-    ):
-        with pytest.raises(ConnectionError, match="Worker connection failed"):
-            cluster_manager.launch_worker(payload)
-
-
-def test_launch_worker_with_heartbeat_failure(cluster_manager):
+def test_launch_worker_with_heartbeat_failure(mock_node):
     """Test launch_worker when worker heartbeat() fails."""
     payload = {
         "node_url": "http://node:8080",
@@ -2208,20 +2206,12 @@ def test_launch_worker_with_heartbeat_failure(cluster_manager):
         "worker_name": "test_worker",
     }
 
-    # Mock Node.connect and related methods
-    mock_node_cm = MagicMock()
-    mock_node_cm.launch_worker.return_value = None
-
     # Mock Worker.connect and heartbeat
     mock_worker_cm = MagicMock()
     mock_worker_cm.heartbeat.side_effect = Exception("Heartbeat failed")
-
-    with (
-        patch("mindtrace.cluster.core.cluster.Node.connect", return_value=mock_node_cm),
-        patch("mindtrace.cluster.core.cluster.Worker.connect", return_value=mock_worker_cm),
-    ):
-        with pytest.raises(Exception, match="Heartbeat failed"):
-            cluster_manager.launch_worker(payload)
+    mock_node.worker_registry.load.return_value = mock_worker_cm
+    with pytest.raises(Exception, match="Heartbeat failed"):
+        mock_node.launch_worker(payload)
 
 
 def test_worker_run_with_exception_in_run_method(mock_worker):
