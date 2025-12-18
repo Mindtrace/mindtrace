@@ -109,6 +109,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         metadata: MetadataArg = None,
         on_conflict: str = "error",
         on_error: str = "raise",
+        acquire_lock: bool = False,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Atomically push artifacts and metadata.
 
@@ -116,7 +117,6 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         together - either both succeed or both fail (with rollback).
 
         If version is None, auto-increments to next version atomically.
-        Backend handles locking internally.
 
         Args:
             name: Object name(s). Single string or list.
@@ -134,6 +134,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            acquire_lock: If True, acquire locks before push (for mutable registries).
+                If False, rely on atomic operations for immutability. Default is False.
 
         Returns:
             Dict mapping (name, resolved_version) to status dict:
@@ -194,10 +196,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "raise",
+        acquire_lock: bool = False,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete artifact(s) and metadata.
-
-        Backend handles locking internally.
 
         Args:
             name: Object name(s).
@@ -205,6 +206,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            acquire_lock: If True, acquire locks before delete (for mutable registries).
+                Default is False.
 
         Returns:
             Dict mapping (name, version) to status dict:
