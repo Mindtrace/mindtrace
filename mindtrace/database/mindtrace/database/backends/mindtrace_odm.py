@@ -106,6 +106,35 @@ class MindtraceODM(MindtraceABC):
         """
 
     @abstractmethod
+    def update(self, obj: BaseModel):
+        """
+        Update an existing document in the database.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            BaseModel: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = backend.get("user_123")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = backend.update(user)
+        """
+
+    @abstractmethod
     def delete(self, id: str):
         """
         Delete a document by its unique identifier.

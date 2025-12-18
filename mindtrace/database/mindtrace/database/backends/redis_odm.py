@@ -16,6 +16,9 @@ class MindtraceRedisDocument(JsonModel):
     This class extends redis-om's JsonModel to provide a standardized
     base for all Redis document models in the Mindtrace ecosystem.
 
+    The `id` property automatically returns the `pk` value for consistency
+    with MongoDB, eliminating the need to set it manually on each document.
+
     Example:
         .. code-block:: python
 
@@ -39,6 +42,27 @@ class MindtraceRedisDocument(JsonModel):
         """
 
         global_key_prefix = "mindtrace"
+
+    @property
+    def id(self) -> str | None:
+        """
+        Return the primary key as 'id' for consistency with MongoDB.
+
+        This property automatically returns the `pk` value, allowing
+        code to use `doc.id` instead of `doc.pk` for unified access
+        across MongoDB and Redis backends.
+        """
+        return getattr(self, "pk", None)
+
+    @id.setter
+    def id(self, value: str | None) -> None:
+        """
+        Set the primary key when 'id' is set.
+
+        This allows Redis-OM deserialization to work properly while
+        maintaining the unified 'id' interface. Setting 'id' sets 'pk'.
+        """
+        object.__setattr__(self, "pk", value)
 
 
 ModelType = TypeVar("ModelType", bound=MindtraceRedisDocument)
@@ -219,7 +243,7 @@ class RedisMindtraceODM(MindtraceODM):
                 except DuplicateInsertError:
                     # Re-raise DuplicateInsertError
                     raise
-                except Exception:
+                except Exception as e:
                     # If all fails, continue without duplicate check but log warning
                     self.logger.warning(f"Could not check for duplicates: {e}")
 
@@ -257,6 +281,66 @@ class RedisMindtraceODM(MindtraceODM):
             return doc
         except NotFoundError:
             raise DocumentNotFoundError(f"Object with id {id} not found")
+
+    def update(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document in the Redis database.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = backend.get("01234567-89ab-cdef-0123-456789abcdef")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = backend.update(user)
+        """
+        self.initialize()
+        
+        # Check if obj is already a document instance
+        if isinstance(obj, self.model_cls):
+            # If it's already a document instance, just save it
+            if not hasattr(obj, "pk") or not obj.pk:
+                raise DocumentNotFoundError("Document must have a pk to be updated")
+            obj.save()
+            # id property automatically returns pk, no need to set it
+            return obj
+        else:
+            # If it's a BaseModel, we need to get the existing document first
+            obj_id = getattr(obj, "pk", None) or getattr(obj, "id", None)
+            if not obj_id:
+                raise DocumentNotFoundError("Document must have an id or pk to be updated")
+            
+            try:
+                doc = self.model_cls.get(obj_id)
+                if not doc:
+                    raise DocumentNotFoundError(f"Object with id {obj_id} not found")
+            except NotFoundError:
+                raise DocumentNotFoundError(f"Object with id {obj_id} not found")
+            
+            # Update the document fields
+            obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
+            for key, value in obj_data.items():
+                if key not in ("id", "pk"):
+                    setattr(doc, key, value)
+            
+            doc.save()
+            # id property automatically returns pk, no need to set it
+            return doc
 
     def delete(self, id: str):
         """
@@ -335,9 +419,7 @@ class RedisMindtraceODM(MindtraceODM):
         self.initialize()
         try:
             if args:
-                # Execute the query with proper error handling
-                result = self.model_cls.find(*args).all()
-                return result
+                return self.model_cls.find(*args).all()
             else:
                 return self.model_cls.find().all()
         except Exception as e:
@@ -450,6 +532,32 @@ class RedisMindtraceODM(MindtraceODM):
                     print("User not found")
         """
         await asyncio.to_thread(self.delete, id)
+
+    async def update_async(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document asynchronously (wrapper around sync update).
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = await backend.get_async("01234567-89ab-cdef-0123-456789abcdef")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = await backend.update_async(user)
+        """
+        return await asyncio.to_thread(self.update, obj)
 
     async def all_async(self) -> List[ModelType]:
         """

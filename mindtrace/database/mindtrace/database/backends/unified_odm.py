@@ -767,6 +767,35 @@ class UnifiedMindtraceODM(MindtraceODM):
         """
         return self._handle_async_call("get", id)
 
+    def update(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document using the active backend.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = unified_backend.get("user_123")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = unified_backend.update(user)
+        """
+        return self._handle_async_call("update", obj)
+
     def delete(self, id: str):
         """
         Delete a document by its unique identifier.
@@ -894,6 +923,45 @@ class UnifiedMindtraceODM(MindtraceODM):
             else:
                 # Fallback to sync method
                 return backend.get(id)
+
+    async def update_async(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document using the active backend (async version).
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = await unified_backend.get_async("user_123")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = await unified_backend.update_async(user)
+        """
+        backend = self._get_active_backend()
+        if backend.is_async():
+            # For async backends (MongoDB), call async method directly
+            return await backend.update(obj)
+        else:
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "update_async"):
+                return await backend.update_async(obj)
+            else:
+                # Fallback to sync method
+                return backend.update(obj)
 
     async def delete_async(self, id: str):
         """

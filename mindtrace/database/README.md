@@ -58,12 +58,16 @@ user = User(name="Alice", age=30, email="alice@example.com", skills=["Python"])
 # Async operations (work with both MongoDB and Redis)
 inserted_user = await db.insert_async(user)
 retrieved_user = await db.get_async(inserted_user.id)
+retrieved_user.age = 31
+updated_user = await db.update_async(retrieved_user)
 python_users = await db.find_async({"skills": "Python"})
 all_users = await db.all_async()
 
 # Sync operations (also work with both MongoDB and Redis)
 inserted_user = db.insert(user)
 retrieved_user = db.get(inserted_user.id)
+retrieved_user.age = 31
+updated_user = db.update(retrieved_user)
 python_users = db.find({"skills": "Python"})
 all_users = db.all()
 
@@ -185,10 +189,14 @@ db = MongoMindtraceODM(
 
 # Async operations (native)
 user = await db.insert(User(name="Alice", email="alice@example.com"))
+user.age = 31
+updated_user = await db.update(user)
 all_users = await db.all()
 
 # Sync operations (wrapper methods - use from sync code)
 user = db.insert_sync(User(name="Bob", email="bob@example.com"))
+user.age = 32
+updated_user = db.update_sync(user)
 all_users = db.all_sync()
 
 # Supports MongoDB-specific features
@@ -219,10 +227,14 @@ db = RedisMindtraceODM(
 
 # Sync operations (native)
 user = db.insert(User(name="Alice", email="alice@example.com"))
+user.age = 31
+updated_user = db.update(user)
 all_users = db.all()
 
 # Async operations (wrapper methods - use from async code)
 user = await db.insert_async(User(name="Bob", email="bob@example.com"))
+user.age = 32
+updated_user = await db.update_async(user)
 all_users = await db.all_async()
 
 # Supports Redis-specific queries
@@ -258,9 +270,14 @@ Registry.register_default_materializer(User, UserArchiver)
 db = RegistryMindtraceODM(model_cls=User)
 
 user = User(name="John Doe", email="john.doe@example.com")
-user_id = db.insert(user)
+inserted_user = db.insert(user)
 
-user = db.get(user_id)
+# Update the user
+inserted_user.name = "John Smith"
+updated_user = db.update(inserted_user)
+
+# Retrieve by ID
+user = db.get(inserted_user.id)
 ```
 
 **With GCP Storage:**
@@ -296,9 +313,14 @@ gcp_registry_backend = GCPRegistryBackend(
 db = RegistryMindtraceODM(model_cls=User, backend=gcp_registry_backend)
 
 user = User(name="John Doe", email="john.doe@example.com")
-user_id = db.insert(user)
+inserted_user = db.insert(user)
 
-user = db.get(user_id)
+# Update the user
+inserted_user.name = "John Smith"
+updated_user = db.update(inserted_user)
+
+# Retrieve by ID
+user = db.get(inserted_user.id)
 ```
 
 ## API Reference
@@ -315,6 +337,10 @@ inserted_doc = await db.insert_async(doc)
 
 # Get document by ID
 doc = await db.get_async("doc_id")
+
+# Update document
+doc.name = "Updated Name"
+updated_doc = await db.update_async(doc)
 
 # Delete document
 await db.delete_async("doc_id")
@@ -335,6 +361,10 @@ inserted_doc = db.insert(doc)
 # Get document by ID
 doc = db.get("doc_id")
 
+# Update document
+doc.name = "Updated Name"
+updated_doc = db.update(doc)
+
 # Delete document
 db.delete("doc_id")
 
@@ -349,6 +379,7 @@ results = db.find({"name": "Alice"})
 - **MongoDB**: Sync methods use wrapper functions that run async code in an event loop
 - **Redis**: Async methods run sync operations in a thread pool to avoid blocking the event loop
 - **Unified ODM**: Automatically routes to the appropriate method based on the active database
+- **Document IDs**: All backends provide a consistent `id` attribute on returned documents (MongoDB uses `id`, Redis uses `pk` internally but exposes it as `id`)
 
 ### Sync/Async Compatibility
 

@@ -44,6 +44,9 @@ class ConcreteBackend(MindtraceODM):
     def get_raw_model(self):
         return UserModel
 
+    def update(self, obj: BaseModel) -> BaseModel:
+        return obj
+
 
 class AsyncConcreteBackend(MindtraceODM):
     def is_async(self) -> bool:
@@ -72,6 +75,9 @@ class AsyncConcreteBackend(MindtraceODM):
 
     def get_raw_model(self):
         return UserModel
+
+    async def update(self, obj: BaseModel) -> BaseModel:
+        return obj
 
 
 # Tests for abstract base class

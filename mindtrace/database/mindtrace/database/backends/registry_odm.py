@@ -4,6 +4,7 @@ from typing import Type
 from pydantic import BaseModel
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.registry import Registry, RegistryBackend
 
 
@@ -70,14 +71,14 @@ class RegistryMindtraceODM(MindtraceODM):
         """
         return False
 
-    def insert(self, obj: BaseModel) -> str:
+    def insert(self, obj: BaseModel) -> BaseModel:
         """Insert a new document into the database.
 
         Args:
             obj (BaseModel): The document object to insert.
 
         Returns:
-            str: The unique identifier assigned to the inserted document.
+            BaseModel: The inserted document with an 'id' attribute set.
 
         Example:
             .. code-block:: python
@@ -88,40 +89,71 @@ class RegistryMindtraceODM(MindtraceODM):
                     name: str
 
                 backend = RegistryMindtraceODM()
-                doc_id = backend.insert(MyDocument(name="example"))
-                print(f"Inserted document with ID: {doc_id}")
+                inserted_doc = backend.insert(MyDocument(name="example"))
+                print(f"Inserted document with ID: {inserted_doc.id}")
         """
         unique_id = str(uuid.uuid1())
         self.registry[unique_id] = obj
-        return unique_id
+        # Set id attribute on the document for consistency
+        if not hasattr(obj, "id"):
+            object.__setattr__(obj, "id", unique_id)
+        return obj
 
-    def update(self, id: str, obj: BaseModel) -> bool:
+    def update(self, id_or_obj, obj: BaseModel | None = None) -> BaseModel | bool:
         """Update an existing document in the database.
 
+        Supports two calling conventions for backward compatibility:
+        1. update(id: str, obj: BaseModel) -> bool  (legacy)
+        2. update(obj: BaseModel) -> BaseModel      (new, matches abstract interface)
+
         Args:
-            id (str): The unique identifier of the document to update.
-            obj (BaseModel): The updated document object.
+            id_or_obj: Either a document ID (str) for legacy calls, or a BaseModel object (new style).
+            obj: Optional BaseModel object (only used in legacy calls).
 
         Returns:
-            bool: True if the document was successfully updated, False if the document doesn't exist.
+            BaseModel: The updated document (new style), or bool (legacy style: True if updated, False if not found).
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database
+                or if the object doesn't have an 'id' attribute (new style only).
 
         Example:
             .. code-block:: python
 
-                backend = RegistryMindtraceODM()
-                try:
-                    success = backend.update("some_id", updated_document)
-                    if success:
-                        print("Document updated successfully")
-                    else:
-                        print("Document not found")
-                except Exception as e:
-                    print(f"Update failed: {e}")
+                # Legacy style
+                backend.update("some_id", updated_user)
+
+                # New style (matches abstract interface)
+                doc = backend.get("some_id")
+                doc.name = "Updated Name"
+                updated_doc = backend.update(doc)
         """
-        if id in self.registry:
-            self.registry[id] = obj
+        # Legacy style: update(id: str, obj: BaseModel) -> bool
+        if isinstance(id_or_obj, str) and obj is not None:
+            doc_id = id_or_obj
+            if doc_id not in self.registry:
+                return False
+            # Set id attribute on the document so it's available for future operations
+            if not hasattr(obj, "id"):
+                object.__setattr__(obj, "id", doc_id)
+            self.registry[doc_id] = obj
             return True
-        return False
+        
+        # New style: update(obj: BaseModel) -> BaseModel
+        if isinstance(id_or_obj, BaseModel):
+            obj = id_or_obj
+            # Check if object has an id attribute
+            if not hasattr(obj, "id") or not obj.id:
+                raise DocumentNotFoundError("Document must have an 'id' attribute to be updated")
+            
+            doc_id = str(obj.id)
+            if doc_id not in self.registry:
+                raise DocumentNotFoundError(f"Object with id {doc_id} not found")
+            
+            self.registry[doc_id] = obj
+            return obj
+        
+        raise TypeError("update() requires either (id: str, obj: BaseModel) or (obj: BaseModel)")
 
     def get(self, id: str) -> BaseModel:
         """Retrieve a document by its unique identifier.
@@ -130,7 +162,7 @@ class RegistryMindtraceODM(MindtraceODM):
             id (str): The unique identifier of the document to retrieve.
 
         Returns:
-            BaseModel: The retrieved document.
+            BaseModel: The retrieved document with an 'id' attribute set.
 
         Raises:
             KeyError: If the document with the given ID doesn't exist.
@@ -144,7 +176,10 @@ class RegistryMindtraceODM(MindtraceODM):
                 except KeyError:
                     print("Document not found")
         """
-        return self.registry[id]
+        doc = self.registry[id]
+        # Set id attribute (Registry deserializes documents, so id is lost)
+        object.__setattr__(doc, "id", id)
+        return doc
 
     def delete(self, id: str):
         """Delete a document by its unique identifier.
@@ -170,16 +205,22 @@ class RegistryMindtraceODM(MindtraceODM):
         """Retrieve all documents from the collection.
 
         Returns:
-            list[BaseModel]: List of all documents in the registry.
+            list[BaseModel]: List of all documents in the registry, each with an 'id' attribute set.
 
         Example:
             .. code-block:: python
 
                 backend = RegistryMindtraceODM()
                 documents = backend.all()
-                print(f"Found {len(documents)} documents")
+                for doc in documents:
+                    print(f"Document ID: {doc.id}")
         """
-        return list(self.registry.values())
+        # Use items() to get both ID and document, set id on each (Registry deserializes, so id is lost)
+        results = []
+        for doc_id, doc in self.registry.items():
+            object.__setattr__(doc, "id", doc_id)
+            results.append(doc)
+        return results
 
     def find(self, *args, **kwargs) -> list[BaseModel]:
         """Find documents matching the specified criteria.
@@ -189,7 +230,7 @@ class RegistryMindtraceODM(MindtraceODM):
             **kwargs: Field-value pairs to match against documents.
 
         Returns:
-            list[BaseModel]: A list of documents matching the query criteria.
+            list[BaseModel]: A list of documents matching the query criteria, each with an 'id' attribute set.
                 If no criteria are provided, returns all documents.
 
         Example:
@@ -197,20 +238,26 @@ class RegistryMindtraceODM(MindtraceODM):
 
                 # Find documents with specific field values
                 users = backend.find(name="John", email="john@example.com")
+                for user in users:
+                    print(f"User ID: {user.id}")
 
                 # Find all documents if no criteria specified
                 all_docs = backend.find()
         """
-        all_docs = list(self.registry.values())
+        # Get all documents with their IDs (Registry deserializes, so we need to set id)
+        all_docs_with_ids = []
+        for doc_id, doc in self.registry.items():
+            object.__setattr__(doc, "id", doc_id)
+            all_docs_with_ids.append(doc)
 
         # If no criteria provided, return all documents
         if not args and not kwargs:
-            return all_docs
+            return all_docs_with_ids
 
         # Filter documents based on kwargs (field-value pairs)
         if kwargs:
             results = []
-            for doc in all_docs:
+            for doc in all_docs_with_ids:
                 match = True
                 for field, value in kwargs.items():
                     if not hasattr(doc, field) or getattr(doc, field) != value:

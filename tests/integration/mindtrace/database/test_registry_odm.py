@@ -138,7 +138,10 @@ class TestRegistryMindtraceODMBasicOperations:
         user = User(name="John Doe", email="john.doe@example.com")
 
         # Insert
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        assert inserted_user == user
+        assert hasattr(inserted_user, "id")
+        user_id = inserted_user.id
         assert isinstance(user_id, str)
         assert len(user_id) > 0
 
@@ -146,6 +149,7 @@ class TestRegistryMindtraceODMBasicOperations:
         retrieved_user = registry_backend.get(user_id)
         assert retrieved_user.name == "John Doe"
         assert retrieved_user.email == "john.doe@example.com"
+        assert hasattr(retrieved_user, "id")
 
     def test_insert_multiple_documents(self, registry_backend):
         """Test inserting multiple documents."""
@@ -157,8 +161,9 @@ class TestRegistryMindtraceODMBasicOperations:
 
         user_ids = []
         for user in users:
-            user_id = registry_backend.insert(user)
-            user_ids.append(user_id)
+            inserted_user = registry_backend.insert(user)
+            assert hasattr(inserted_user, "id")
+            user_ids.append(inserted_user.id)
 
         # Verify all IDs are unique
         assert len(set(user_ids)) == len(user_ids)
@@ -168,13 +173,15 @@ class TestRegistryMindtraceODMBasicOperations:
             retrieved = registry_backend.get(user_id)
             assert retrieved.name == users[idx].name
             assert retrieved.email == users[idx].email
+            assert hasattr(retrieved, "id")
 
     def test_update_document(self, registry_backend):
         """Test updating an existing document."""
         user = User(name="John Doe", email="john.doe@example.com")
 
         # Insert
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
 
         # Update
         updated_user = User(name="John Doe Updated", email="john.updated@example.com")
@@ -185,6 +192,7 @@ class TestRegistryMindtraceODMBasicOperations:
         retrieved = registry_backend.get(user_id)
         assert retrieved.name == "John Doe Updated"
         assert retrieved.email == "john.updated@example.com"
+        assert hasattr(retrieved, "id")
 
     def test_update_nonexistent_document(self, registry_backend):
         """Test updating a document that doesn't exist."""
@@ -197,7 +205,8 @@ class TestRegistryMindtraceODMBasicOperations:
         user = User(name="John Doe", email="john.doe@example.com")
 
         # Insert
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
 
         # Delete
         registry_backend.delete(user_id)
@@ -241,6 +250,10 @@ class TestRegistryMindtraceODMAllAndFind:
 
         names = {user.name for user in result}
         assert names == {"Alice", "Bob", "Charlie"}
+        
+        # Verify all documents have id attribute set
+        for doc in result:
+            assert hasattr(doc, "id")
 
     def test_find_no_criteria(self, registry_backend):
         """Test find() with no criteria returns all documents."""
@@ -328,7 +341,8 @@ class TestRegistryMindtraceODMComplexDocuments:
             is_active=True,
         )
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
         retrieved = registry_backend.get(user_id)
 
         assert retrieved.name == "Jane Doe"
@@ -349,7 +363,8 @@ class TestRegistryMindtraceODMComplexDocuments:
             is_active=True,
         )
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
 
         # Update with new values
         updated_user = ComplexUser(
@@ -410,7 +425,9 @@ class TestRegistryMindtraceODMWorkflow:
         """Test a complete CRUD workflow."""
         # Create
         user = User(name="Test User", email="test@example.com")
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        assert hasattr(inserted_user, "id")
+        user_id = inserted_user.id
         assert isinstance(user_id, str)
 
         # Read
@@ -443,8 +460,10 @@ class TestRegistryMindtraceODMWorkflow:
             tags=["tag1"],
         )
 
-        simple_id = registry_backend.insert(simple_user)
-        complex_id = registry_backend.insert(complex_user)
+        inserted_simple = registry_backend.insert(simple_user)
+        inserted_complex = registry_backend.insert(complex_user)
+        simple_id = inserted_simple.id
+        complex_id = inserted_complex.id
 
         # Verify both can be retrieved
         retrieved_simple = registry_backend.get(simple_id)
@@ -461,7 +480,8 @@ class TestRegistryMindtraceODMWorkflow:
         # Create first backend instance and insert data
         backend1 = RegistryMindtraceODM(backend=local_backend)
         user = User(name="Persistent User", email="persistent@example.com")
-        user_id = backend1.insert(user)
+        inserted_user = backend1.insert(user)
+        user_id = inserted_user.id
 
         # Create second backend instance pointing to same location
         local_backend2 = LocalRegistryBackend(uri=temp_registry_dir)
@@ -480,7 +500,8 @@ class TestRegistryMindtraceODMEdgeCases:
         """Test handling documents with empty string fields."""
         user = User(name="", email="empty@example.com")
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
         retrieved = registry_backend.get(user_id)
 
         assert retrieved.name == ""
@@ -493,7 +514,8 @@ class TestRegistryMindtraceODMEdgeCases:
             email="john.o'connor+test@example.com",
         )
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
         retrieved = registry_backend.get(user_id)
 
         assert retrieved.name == "John O'Connor-Smith"
@@ -506,7 +528,8 @@ class TestRegistryMindtraceODMEdgeCases:
             email="unicode@example.com",
         )
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
         retrieved = registry_backend.get(user_id)
 
         assert retrieved.name == "日本語テスト 🎉"
@@ -524,7 +547,8 @@ class TestRegistryMindtraceODMEdgeCases:
             tags=large_tags,
         )
 
-        user_id = registry_backend.insert(user)
+        inserted_user = registry_backend.insert(user)
+        user_id = inserted_user.id
         retrieved = registry_backend.get(user_id)
 
         assert len(retrieved.tags) == 100
@@ -555,7 +579,8 @@ class TestRegistryMindtraceODMEdgeCases:
 
         user_ids = []
         for user in users:
-            user_ids.append(registry_backend.insert(user))
+            inserted_user = registry_backend.insert(user)
+            user_ids.append(inserted_user.id)
 
         # Delete middle user
         registry_backend.delete(user_ids[1])
