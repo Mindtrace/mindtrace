@@ -358,7 +358,6 @@ class TestRegistryMindtraceODM:
         inserted_user = registry_odm.insert(user)
         assert inserted_user == user
         assert hasattr(inserted_user, "id")
-        user_id = inserted_user.id
 
         # Verify document is stored
         registry_odm.registry.__setitem__.assert_called_once()
