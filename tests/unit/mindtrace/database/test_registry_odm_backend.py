@@ -195,11 +195,10 @@ class TestRegistryMindtraceODM:
 
     def test_update_with_object_new_style(self, registry_odm):
         """Test updating a document using new style update(obj)."""
-        from mindtrace.database import DocumentNotFoundError
 
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "test-id-123"
-        
+
         # Set id attribute on the user object
         object.__setattr__(updated_user, "id", test_id)
 
@@ -231,7 +230,7 @@ class TestRegistryMindtraceODM:
 
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "nonexistent-id"
-        
+
         # Set id attribute on the user object
         object.__setattr__(updated_user, "id", test_id)
 
@@ -243,7 +242,6 @@ class TestRegistryMindtraceODM:
 
     def test_update_with_invalid_args(self, registry_odm):
         """Test updating with invalid arguments."""
-        from mindtrace.database import DocumentNotFoundError
 
         with pytest.raises(TypeError, match="update\\(\\) requires either"):
             registry_odm.update(123)  # Invalid type

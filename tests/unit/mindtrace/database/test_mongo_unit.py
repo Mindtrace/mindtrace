@@ -799,8 +799,8 @@ async def test_mongo_backend_update_auto_initializes():
 @pytest.mark.asyncio
 async def test_mongo_backend_update_with_document_instance_no_id():
     """Test MongoDB update method with document instance without id."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
         model_cls=UserDoc,
@@ -839,7 +839,7 @@ async def test_mongo_backend_update_with_basemodel():
     mock_doc = MagicMock(spec=UserDoc)
     mock_doc.save = AsyncMock(return_value=mock_doc)
     mock_doc.model_dump = MagicMock(return_value={"name": "John Updated", "age": 31, "email": "john@example.com"})
-    
+
     with patch.object(backend.model_cls, "get", new_callable=AsyncMock, return_value=mock_doc):
         result = await backend.update(user_data)
 
@@ -851,8 +851,8 @@ async def test_mongo_backend_update_with_basemodel():
 @pytest.mark.asyncio
 async def test_mongo_backend_update_with_basemodel_no_id():
     """Test MongoDB update method with BaseModel without id."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
         model_cls=UserDoc,
@@ -872,8 +872,8 @@ async def test_mongo_backend_update_with_basemodel_no_id():
 @pytest.mark.asyncio
 async def test_mongo_backend_update_with_basemodel_not_found():
     """Test MongoDB update method with BaseModel when document not found."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
         model_cls=UserDoc,

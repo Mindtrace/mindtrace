@@ -138,21 +138,21 @@ class RegistryMindtraceODM(MindtraceODM):
                 object.__setattr__(obj, "id", doc_id)
             self.registry[doc_id] = obj
             return True
-        
+
         # New style: update(obj: BaseModel) -> BaseModel
         if isinstance(id_or_obj, BaseModel):
             obj = id_or_obj
             # Check if object has an id attribute
             if not hasattr(obj, "id") or not obj.id:
                 raise DocumentNotFoundError("Document must have an 'id' attribute to be updated")
-            
+
             doc_id = str(obj.id)
             if doc_id not in self.registry:
                 raise DocumentNotFoundError(f"Object with id {doc_id} not found")
-            
+
             self.registry[doc_id] = obj
             return obj
-        
+
         raise TypeError("update() requires either (id: str, obj: BaseModel) or (obj: BaseModel)")
 
     def get(self, id: str) -> BaseModel:
