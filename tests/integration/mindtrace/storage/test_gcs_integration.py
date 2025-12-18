@@ -331,14 +331,15 @@ def test_credentials_loading(gcs_handler):
 
 def test_error_handling_nonexistent_file(gcs_handler):
     """Test error handling for nonexistent files."""
-    with pytest.raises(FileNotFoundError):
-        gcs_handler.upload("nonexistent/file.txt", "remote/path.txt")
+    result = gcs_handler.upload("nonexistent/file.txt", "remote/path.txt")
+    assert result.status == "error"
+    assert "FileNotFoundError" in (result.error_type or "") or "No such file" in (result.error_message or "")
 
 
 def test_error_handling_nonexistent_download(gcs_handler):
     """Test error handling for downloading nonexistent files."""
-    with pytest.raises(Exception):  # Should raise NotFound or similar
-        gcs_handler.download("nonexistent/remote/file.txt", "local/file.txt")
+    result = gcs_handler.download("nonexistent/remote/file.txt", "local/file.txt")
+    assert result.status == "not_found"
 
 
 def test_concurrent_operations(gcs_handler, sample_files):
@@ -399,3 +400,57 @@ def test_concurrent_operations(gcs_handler, sample_files):
     assert len([r for r in results if "uploaded" in r]) == 3
     assert len([r for r in results if "downloaded" in r]) == 3
     assert len(results) == 6  # 3 uploads + 3 downloads
+
+
+# ---------------------------------------------------------------------------
+# String Operations (upload_string / download_string)
+# ---------------------------------------------------------------------------
+
+
+def test_upload_string_basic(gcs_handler):
+    """Test basic string upload and download."""
+    content = '{"key": "value", "number": 42}'
+    remote_path = "test/string/data.json"
+
+    # Upload string
+    result = gcs_handler.upload_string(content, remote_path)
+    assert result.status == "ok"
+
+    # Download and verify
+    download_result = gcs_handler.download_string(remote_path)
+    assert download_result.status == "ok"
+    assert download_result.content == content.encode("utf-8")
+
+
+def test_upload_string_with_bytes(gcs_handler):
+    """Test uploading bytes content."""
+    content = b"\x00\x01\x02\x03binary data"
+    remote_path = "test/string/binary.bin"
+
+    result = gcs_handler.upload_string(content, remote_path, content_type="application/octet-stream")
+    assert result.status == "ok"
+
+    download_result = gcs_handler.download_string(remote_path)
+    assert download_result.status == "ok"
+    assert download_result.content == content
+
+
+def test_upload_string_fail_if_exists(gcs_handler):
+    """Test upload_string with fail_if_exists=True."""
+    content = "test content"
+    remote_path = "test/string/exists_test.txt"
+
+    # First upload should succeed
+    result1 = gcs_handler.upload_string(content, remote_path, fail_if_exists=True)
+    assert result1.status == "ok"
+
+    # Second upload should fail
+    result2 = gcs_handler.upload_string("different content", remote_path, fail_if_exists=True)
+    assert result2.status == "already_exists"
+
+
+def test_download_string_not_found(gcs_handler):
+    """Test downloading nonexistent content."""
+    result = gcs_handler.download_string("test/string/nonexistent.txt")
+    assert result.status == "not_found"
+    assert result.content is None
