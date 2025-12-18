@@ -18,6 +18,12 @@ from mindtrace.apps.inspectra.models import (
 
 @dataclass
 class _FakeUser:
+    """
+    Lightweight in-memory User model used by FakeUserRepository.
+
+    Mirrors the shape required by InspectraService auth logic
+    without any persistence or database dependency.
+    """
     id: str
     username: str
     password_hash: str
@@ -26,15 +32,23 @@ class _FakeUser:
 
 
 class FakeUserRepository:
-    """In-memory fake user repository for unit testing."""
+    """
+    In-memory fake user repository for unit testing auth behaviour.
+
+    Simulates:
+    - user lookup by username
+    - user creation
+    """
 
     def __init__(self) -> None:
         self._users: dict[str, _FakeUser] = {}
 
     async def get_by_username(self, username: str) -> Optional[_FakeUser]:
+        """Return a user by username if it exists."""
         return self._users.get(username)
 
     async def create_user(self, username: str, password_hash: str, role_id: str) -> _FakeUser:
+        """Create and store a new fake user."""
         user = _FakeUser(
             id=str(len(self._users) + 1),
             username=username,
@@ -47,18 +61,28 @@ class FakeUserRepository:
 
 
 class FakeRoleRepository:
-    """In-memory fake role repository for unit testing."""
+    """
+    In-memory fake role repository for unit testing.
+
+    Pre-seeded with a default 'user' role to mirror
+    Inspectra's real startup behaviour.
+    """
 
     def __init__(self) -> None:
-        # Pre-seed with default "user" role (mirrors real behaviour)
         self._roles_by_name: dict[str, Role] = {
-            "user": Role(id="role_user", name="user", description="Default user role"),
+            "user": Role(
+                id="role_user",
+                name="user",
+                description="Default user role",
+            ),
         }
 
     async def get_by_name(self, name: str) -> Optional[Role]:
+        """Return a role by name if it exists."""
         return self._roles_by_name.get(name)
 
     async def create(self, payload) -> Role:
+        """Create and store a new role."""
         role = Role(
             id=f"role_{len(self._roles_by_name) + 1}",
             name=payload.name,
@@ -74,18 +98,29 @@ class FakeRoleRepository:
 # ---------------------------------------------------------------------------
 
 class TestAuthBehaviour:
-    """Unit tests for Inspectra auth logic using fake repositories."""
+    """
+    Unit tests for Inspectra authentication logic.
+
+    These tests validate:
+    - user registration behaviour
+    - duplicate username handling
+    - login success and failure cases
+
+    All tests run with in-memory fake repositories (no DB).
+    """
 
     @pytest.fixture
     def service(self) -> InspectraService:
         """
-        Create an InspectraService wired to fake repositories.
+        Create an InspectraService instance wired to fake repositories.
 
-        We don't care about DB wiring here – this is pure unit-level logic.
+        This isolates auth logic from:
+        - MongoDB
+        - networking
+        - middleware
         """
         svc = InspectraService(enable_db=False)
 
-        # IMPORTANT: InspectraService now uses lazy properties backed by private fields.
         svc._user_repo = FakeUserRepository()
         svc._role_repo = FakeRoleRepository()
 
@@ -93,6 +128,12 @@ class TestAuthBehaviour:
 
     @pytest.mark.asyncio
     async def test_register_creates_user_and_returns_token(self, service: InspectraService):
+        """
+        Registering a new user should:
+        - persist the user
+        - assign a default role
+        - return a bearer access token
+        """
         payload = RegisterPayload(username="alice", password="secret123")
 
         token = await service.register(payload)
@@ -100,17 +141,20 @@ class TestAuthBehaviour:
         assert isinstance(token, TokenResponse)
         assert token.access_token
 
-        # token_type may be defaulted or omitted depending on your TokenResponse model
         if hasattr(token, "token_type"):
             assert token.token_type == "bearer"
 
         user = await service.user_repo.get_by_username("alice")
         assert user is not None
         assert user.username == "alice"
-        assert user.role_id  # default role id set
+        assert user.role_id
 
     @pytest.mark.asyncio
     async def test_register_existing_username_raises(self, service: InspectraService):
+        """
+        Registering with an existing username should fail
+        with HTTP 400.
+        """
         payload = RegisterPayload(username="bob", password="pass1")
         await service.register(payload)
 
@@ -122,17 +166,28 @@ class TestAuthBehaviour:
 
     @pytest.mark.asyncio
     async def test_login_success_returns_token(self, service: InspectraService):
+        """
+        Logging in with valid credentials should return
+        a bearer access token.
+        """
         await service.register(RegisterPayload(username="charlie", password="secret123"))
 
-        token = await service.login(LoginPayload(username="charlie", password="secret123"))
+        token = await service.login(
+            LoginPayload(username="charlie", password="secret123")
+        )
 
         assert isinstance(token, TokenResponse)
         assert token.access_token
+
         if hasattr(token, "token_type"):
             assert token.token_type == "bearer"
 
     @pytest.mark.asyncio
     async def test_login_invalid_credentials_raise(self, service: InspectraService):
+        """
+        Logging in with invalid credentials should raise
+        HTTP 401 Unauthorized.
+        """
         with pytest.raises(HTTPException) as exc:
             await service.login(LoginPayload(username="nobody", password="wrong"))
 

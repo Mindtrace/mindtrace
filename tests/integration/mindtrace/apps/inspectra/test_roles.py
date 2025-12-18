@@ -1,4 +1,13 @@
 def test_list_roles_shape(client):
+    """
+    GET /roles should always return a stable list response shape.
+
+    Verifies:
+    - response is a dictionary
+    - `items` is a list
+    - `total` is an integer
+    - `total` matches len(items)
+    """
     resp = client.get("/roles")
     assert resp.status_code == 200, resp.text
 
@@ -10,9 +19,21 @@ def test_list_roles_shape(client):
 
 
 def test_create_role(client):
+    """
+    POST /roles should create a new role and return its representation.
+
+    Verifies:
+    - role creation succeeds
+    - returned payload contains expected fields
+    - a non-empty role ID is generated
+    """
     resp = client.post(
         "/roles",
-        json={"name": "admin", "description": "Administrator role", "permissions": None},
+        json={
+            "name": "admin",
+            "description": "Administrator role",
+            "permissions": None,
+        },
     )
     assert resp.status_code == 200, resp.text
 
@@ -23,6 +44,15 @@ def test_create_role(client):
 
 
 def test_create_and_list_roles(client):
+    """
+    Creating a role should increase the total count and appear in listings.
+
+    Verifies:
+    - roles can be listed before creation
+    - POST /roles persists the role
+    - subsequent GET /roles includes the new role
+    - total count increments correctly
+    """
     before = client.get("/roles")
     assert before.status_code == 200, before.text
     before_payload = before.json()
@@ -30,7 +60,11 @@ def test_create_and_list_roles(client):
 
     create_resp = client.post(
         "/roles",
-        json={"name": "admin", "description": "Administrator role", "permissions": None},
+        json={
+            "name": "admin",
+            "description": "Administrator role",
+            "permissions": None,
+        },
     )
     assert create_resp.status_code == 200, create_resp.text
     created = create_resp.json()

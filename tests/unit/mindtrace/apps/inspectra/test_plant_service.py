@@ -14,8 +14,16 @@ from mindtrace.apps.inspectra.models import (
 # Fake repository
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _FakePlant:
+    """
+    Lightweight in-memory Plant model used by FakePlantRepository.
+
+    Represents the minimal fields required by InspectraService
+    without involving any database layer.
+    """
+
     id: str
     name: str
     code: str = ""
@@ -24,15 +32,25 @@ class _FakePlant:
 
 
 class FakePlantRepository:
-    """In-memory fake plant repository."""
+    """
+    In-memory fake plant repository for unit testing.
+
+    Simulates:
+    - plant creation
+    - listing plants
+
+    Used to validate InspectraService logic without MongoDB.
+    """
 
     def __init__(self) -> None:
         self._plants: List[_FakePlant] = []
 
     async def list(self) -> List[_FakePlant]:
+        """Return all stored plants."""
         return list(self._plants)
 
     async def create(self, payload: PlantCreateRequest) -> _FakePlant:
+        """Create and store a new plant from a PlantCreateRequest."""
         plant = _FakePlant(
             id=str(len(self._plants) + 1),
             name=payload.name,
@@ -48,11 +66,26 @@ class FakePlantRepository:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestPlantBehaviour:
-    """Unit tests for plant-related behaviour on InspectraService."""
+    """
+    Unit tests for plant-related behaviour in InspectraService.
+
+    These tests verify:
+    - plant creation logic
+    - plant listing logic
+    - correct API response models
+
+    All tests use a fake in-memory repository.
+    """
 
     @pytest.fixture
     def service(self) -> InspectraService:
+        """
+        Create an InspectraService instance wired to FakePlantRepository.
+
+        This avoids database access and isolates business logic.
+        """
         svc = InspectraService(enable_db=False)
 
         # IMPORTANT: lazy property backed by private field
@@ -62,6 +95,11 @@ class TestPlantBehaviour:
 
     @pytest.mark.asyncio
     async def test_create_plant(self, service: InspectraService):
+        """
+        create_plant should:
+        - persist a new plant via the repository
+        - return a PlantResponse with correct fields
+        """
         payload = PlantCreateRequest(
             name="Plant A",
             code="PLANT-A",
@@ -80,6 +118,10 @@ class TestPlantBehaviour:
 
     @pytest.mark.asyncio
     async def test_list_plants(self, service: InspectraService):
+        """
+        list_plants should return all plants wrapped
+        in a PlantListResponse.
+        """
         await service.create_plant(
             PlantCreateRequest(
                 name="Plant A",
