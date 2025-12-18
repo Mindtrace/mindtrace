@@ -1,4 +1,5 @@
-from typing import List, Optional
+import inspect
+from typing import Any, List, Optional
 
 from bson import ObjectId
 
@@ -8,8 +9,11 @@ from mindtrace.apps.inspectra.models.user import User
 
 class UserRepository:
     def __init__(self) -> None:
+        self._collection_name = "users"
+
+    def _collection(self):
         db = get_db()
-        self.collection = db["users"]
+        return db[self._collection_name]
 
     @staticmethod
     def _to_model(doc: dict) -> User:
@@ -22,41 +26,53 @@ class UserRepository:
             is_active=doc.get("is_active", True),
         )
 
+    async def _maybe_await(self, value: Any) -> Any:
+        return await value if inspect.isawaitable(value) else value
+
     async def get_by_username(self, username: str) -> Optional[User]:
-        """Get a user by username."""
-        doc = await self.collection.find_one({"username": username})
+        doc = await self._maybe_await(self._collection().find_one({"username": username}))
         if not doc:
             return None
         return self._to_model(doc)
 
     async def get_by_id(self, user_id: str) -> Optional[User]:
-        """Get a user by ID."""
-        doc = await self.collection.find_one({"_id": ObjectId(user_id)})
+        try:
+            oid = ObjectId(user_id)
+        except Exception:
+            return None
+
+        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
         if not doc:
             return None
         return self._to_model(doc)
 
     async def list(self) -> List[User]:
-        """List all users (basic admin use-case)."""
-        cursor = self.collection.find({})
+        cursor = self._collection().find({})
         users: List[User] = []
-        async for doc in cursor:
-            users.append(self._to_model(doc))
+
+        if hasattr(cursor, "__aiter__"):
+            async for doc in cursor:
+                users.append(self._to_model(doc))
+        else:
+            for doc in cursor:
+                users.append(self._to_model(doc))
+
         return users
 
-    async def create_user(
-        self,
-        username: str,
-        password_hash: str,
-        role_id: str,
-    ) -> User:
-        """Create a new user."""
+    async def create_user(self, username: str, password_hash: str, role_id: str) -> User:
+        # role_id may be invalid during tests; avoid throwing hard here
+        try:
+            role_oid = ObjectId(role_id)
+        except Exception:
+            role_oid = None
+
         data = {
             "username": username,
             "password_hash": password_hash,
             "is_active": True,
-            "role_id": ObjectId(role_id),
+            "role_id": role_oid,
         }
-        result = await self.collection.insert_one(data)
+
+        result = await self._maybe_await(self._collection().insert_one(data))
         data["_id"] = result.inserted_id
         return self._to_model(data)

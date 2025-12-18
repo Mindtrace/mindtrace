@@ -57,6 +57,7 @@ from mindtrace.apps.inspectra.schemas.role import (
 )
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
+from typing import Optional
 
 
 class InspectraService(Service):
@@ -89,10 +90,10 @@ class InspectraService(Service):
         self.db_enabled = enable_db
 
         # Repositories
-        self.user_repo = UserRepository()
-        self.role_repo = RoleRepository()
-        self.line_repo = LineRepository()
-        self.plant_repo = PlantRepository()
+        self._user_repo: Optional[UserRepository] = None
+        self._role_repo: Optional[RoleRepository] = None
+        self._line_repo: Optional[LineRepository] = None
+        self._plant_repo: Optional[PlantRepository] = None
 
         # Middleware
         self.app.add_middleware(
@@ -108,6 +109,34 @@ class InspectraService(Service):
         self._register_plant_endpoints()
         self._register_line_endpoints()
         self._register_role_endpoints()
+
+    # -------------------------------------------------------------------------
+    # Lazy repo accessors (created during request handling, inside live loop)
+    # -------------------------------------------------------------------------
+
+    @property
+    def user_repo(self) -> UserRepository:
+        if self._user_repo is None:
+            self._user_repo = UserRepository()
+        return self._user_repo
+
+    @property
+    def role_repo(self) -> RoleRepository:
+        if self._role_repo is None:
+            self._role_repo = RoleRepository()
+        return self._role_repo
+
+    @property
+    def line_repo(self) -> LineRepository:
+        if self._line_repo is None:
+            self._line_repo = LineRepository()
+        return self._line_repo
+
+    @property
+    def plant_repo(self) -> PlantRepository:
+        if self._plant_repo is None:
+            self._plant_repo = PlantRepository()
+        return self._plant_repo
 
     # -------------------------------------------------------------------------
     # Endpoint registration
@@ -330,9 +359,7 @@ class InspectraService(Service):
     # -------------------------------------------------------------------------
 
     async def list_lines(self) -> LineListResponse:
-        """List production lines."""
         lines = await self.line_repo.list()
-
         items = [
             LineResponse(
                 id=l.id,
@@ -341,7 +368,6 @@ class InspectraService(Service):
             )
             for l in lines
         ]
-
         return LineListResponse(items=items, total=len(items))
 
     async def create_line(self, payload: LineCreateRequest) -> LineResponse:

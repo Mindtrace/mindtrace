@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import pytest
 
 from mindtrace.apps.inspectra.inspectra import InspectraService
 from mindtrace.apps.inspectra.models import (
-    Line,
     LineCreateRequest,
     LineListResponse,
     LineResponse,
@@ -15,11 +14,11 @@ from mindtrace.apps.inspectra.models import (
 # Fake repository
 # ---------------------------------------------------------------------------
 
-
 @dataclass
-class _FakeLine(Line):
-    """Concrete Line dataclass for fake repo."""
-    pass
+class _FakeLine:
+    id: str
+    name: str
+    plant_id: Optional[str] = None
 
 
 class FakeLineRepository:
@@ -45,7 +44,6 @@ class FakeLineRepository:
 # Tests
 # ---------------------------------------------------------------------------
 
-
 class TestLineBehaviour:
     """Unit tests for line-related behaviour on InspectraService."""
 
@@ -57,15 +55,16 @@ class TestLineBehaviour:
         No real Mongo involved; this is pure unit-level logic.
         """
         svc = InspectraService(enable_db=False)
-        svc.line_repo = FakeLineRepository()
+
+        svc._line_repo = FakeLineRepository()
+
         return svc
 
     @pytest.mark.asyncio
     async def test_create_line(self, service: InspectraService):
-        """create_line should persist a line and return LineResponse."""
         payload = LineCreateRequest(name="Line 1", plant_id="plant-1")
 
-        result: LineResponse = await service.create_line(payload)
+        result = await service.create_line(payload)
 
         assert isinstance(result, LineResponse)
         assert result.id
@@ -74,11 +73,10 @@ class TestLineBehaviour:
 
     @pytest.mark.asyncio
     async def test_list_lines(self, service: InspectraService):
-        """list_lines should return all lines wrapped in LineListResponse."""
         await service.create_line(LineCreateRequest(name="Line 1", plant_id="plant-1"))
         await service.create_line(LineCreateRequest(name="Line 2", plant_id=None))
 
-        resp: LineListResponse = await service.list_lines()
+        resp = await service.list_lines()
 
         assert isinstance(resp, LineListResponse)
         assert resp.total == 2

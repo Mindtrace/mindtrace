@@ -1,19 +1,19 @@
-from typing import List, Optional
+import inspect
+from typing import Any, List, Optional
 
 from bson import ObjectId
 
 from mindtrace.apps.inspectra.db import get_db
-from mindtrace.apps.inspectra.models import (
-    PlantCreateRequest,
-    PlantResponse,
-    PlantUpdateRequest,
-)
+from mindtrace.apps.inspectra.models import PlantCreateRequest, PlantResponse, PlantUpdateRequest
 
 
 class PlantRepository:
     def __init__(self):
+        self._collection_name = "plants"
+
+    def _collection(self):
         db = get_db()
-        self.collection = db["plants"]
+        return db[self._collection_name]
 
     @staticmethod
     def _to_model(doc: dict) -> PlantResponse:
@@ -25,11 +25,20 @@ class PlantRepository:
             is_active=doc.get("is_active", True),
         )
 
+    async def _maybe_await(self, value: Any) -> Any:
+        return await value if inspect.isawaitable(value) else value
+
     async def list(self) -> List[PlantResponse]:
-        cursor = self.collection.find({})
+        cursor = self._collection().find({})
         items: List[PlantResponse] = []
-        async for doc in cursor:
-            items.append(self._to_model(doc))
+
+        if hasattr(cursor, "__aiter__"):
+            async for doc in cursor:
+                items.append(self._to_model(doc))
+        else:
+            for doc in cursor:
+                items.append(self._to_model(doc))
+
         return items
 
     async def create(self, payload: PlantCreateRequest) -> PlantResponse:
@@ -39,7 +48,8 @@ class PlantRepository:
             "location": payload.location,
             "is_active": payload.is_active,
         }
-        result = await self.collection.insert_one(data)
+
+        result = await self._maybe_await(self._collection().insert_one(data))
         data["_id"] = result.inserted_id
         return self._to_model(data)
 
@@ -49,7 +59,7 @@ class PlantRepository:
         except Exception:
             return None
 
-        doc = await self.collection.find_one({"_id": oid})
+        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
         if not doc:
             return None
         return self._to_model(doc)
@@ -60,7 +70,7 @@ class PlantRepository:
         except Exception:
             return None
 
-        update_data = {}
+        update_data: dict[str, Any] = {}
         if payload.name is not None:
             update_data["name"] = payload.name
         if payload.location is not None:
@@ -68,14 +78,12 @@ class PlantRepository:
         if payload.is_active is not None:
             update_data["is_active"] = payload.is_active
 
-        if not update_data:
-            doc = await self.collection.find_one({"_id": oid})
-            if not doc:
-                return None
-            return self._to_model(doc)
+        if update_data:
+            await self._maybe_await(
+                self._collection().update_one({"_id": oid}, {"$set": update_data})
+            )
 
-        await self.collection.update_one({"_id": oid}, {"$set": update_data})
-        doc = await self.collection.find_one({"_id": oid})
+        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
         if not doc:
             return None
         return self._to_model(doc)
