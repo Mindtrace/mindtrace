@@ -24,6 +24,7 @@ else:
     msvcrt = None
 
 from mindtrace.registry.backends.registry_backend import (
+    ConcreteVersionArg,
     MetadataArg,
     NameArg,
     PathArg,
@@ -457,7 +458,7 @@ class LocalRegistryBackend(RegistryBackend):
     def pull(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         local_path: PathArg,
         acquire_lock: bool = False,
         on_error: str = "raise",
@@ -529,7 +530,7 @@ class LocalRegistryBackend(RegistryBackend):
     def delete(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "raise",
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete a directory from the backend store.
@@ -597,7 +598,7 @@ class LocalRegistryBackend(RegistryBackend):
     def save_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         metadata: Union[dict, List[dict]],
     ) -> None:
         """Save metadata for a object version.
@@ -639,7 +640,7 @@ class LocalRegistryBackend(RegistryBackend):
     def fetch_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "skip",
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Load metadata for a object version.
@@ -707,7 +708,7 @@ class LocalRegistryBackend(RegistryBackend):
     def delete_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "raise",
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete metadata for a object version.
@@ -841,7 +842,7 @@ class LocalRegistryBackend(RegistryBackend):
     def has_object(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
     ) -> Dict[Tuple[str, str], bool]:
         """Check if a specific object version exists in the backend.
 

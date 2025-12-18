@@ -6,7 +6,8 @@ from mindtrace.core import MindtraceABC
 
 # Type aliases for cleaner signatures
 NameArg = Union[str, List[str]]
-VersionArg = Union[str, None, List[Union[str, None]]]
+VersionArg = Union[str, None, List[Union[str, None]]]  # Allows None for auto-increment (push)
+ConcreteVersionArg = Union[str, List[str]]  # Requires specific version (pull/delete)
 PathArg = Union[str, Path, List[Union[str, Path]]]
 MetadataArg = Union[dict, List[dict], None]
 
@@ -152,7 +153,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def pull(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         local_path: PathArg,
         acquire_lock: bool = False,
         on_error: str = "raise",
@@ -191,7 +192,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def delete(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "raise",
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete artifact(s) and metadata.
@@ -220,7 +221,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def save_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         metadata: Union[dict, List[dict]],
     ) -> None:
         """Save metadata only (insert-only, raises on conflict).
@@ -240,7 +241,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def fetch_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "skip",
     ) -> Dict[Tuple[str, str], Union[dict, Dict[str, Any]]]:
         """Fetch metadata for object version(s).
@@ -267,7 +268,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def delete_metadata(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
         on_error: str = "raise",
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete metadata for object version(s).
@@ -339,7 +340,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def has_object(
         self,
         name: NameArg,
-        version: NameArg,
+        version: ConcreteVersionArg,
     ) -> Dict[Tuple[str, str], bool]:
         """Check if object version(s) exist.
 
