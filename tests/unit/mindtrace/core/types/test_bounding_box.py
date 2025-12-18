@@ -190,7 +190,7 @@ def test_draw_on_pil_label_font_metrics_branches(monkeypatch):
 
 
 def test_draw_on_pil_label_font_default_dims(monkeypatch):
-    # Trigger branch where font is provided but has neither getbbox nor getsize (line 129)
+    # Trigger branch where font is provided but has neither getbbox nor getsize
     img = Image.new("RGB", (100, 80), color=(255, 255, 255))
     bb = BoundingBox(5, 5, 10, 10)
 

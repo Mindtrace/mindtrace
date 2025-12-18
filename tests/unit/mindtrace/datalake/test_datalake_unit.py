@@ -71,7 +71,7 @@ class TestDatalakeUnit:
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
@@ -489,7 +489,7 @@ class TestDatalakeUnit:
                 self.added_at = added_at if added_at is not None else datetime.now()
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -526,7 +526,7 @@ class TestDatalakeUnit:
                 self.added_at = added_at if added_at is not None else datetime.now()
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -563,7 +563,7 @@ class TestDatalakeUnit:
                 self.added_at = added_at if added_at is not None else datetime.now()
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -593,7 +593,7 @@ class TestDatalakeUnit:
                 self.added_at = added_at if added_at is not None else datetime.now()
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -633,7 +633,7 @@ class TestDatalakeUnit:
                 self.added_at = added_at if added_at is not None else datetime.now()
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):

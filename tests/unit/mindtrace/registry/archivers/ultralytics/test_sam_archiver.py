@@ -36,7 +36,7 @@ def test_sam_archiver_save_unknown_model(sam_archiver):
 
 
 def test_sam_archiver_save_success(sam_archiver):
-    """Test save method success path (lines 35-37)."""
+    """Test save method success path."""
     # Mock SAM model with valid number of parameters (sam2.1_t = 38962498)
     mock_model = MagicMock(spec=SAM)
     mock_model.info = MagicMock(return_value=(None, 38962498))
@@ -56,7 +56,7 @@ def test_sam_archiver_save_success(sam_archiver):
 
 
 def test_sam_archiver_load_no_pt_file(sam_archiver):
-    """Test load method raises FileNotFoundError when no .pt file exists (line 43)."""
+    """Test load method raises FileNotFoundError when no .pt file exists."""
     # Ensure directory is empty (no .pt files)
     assert len([f for f in os.listdir(sam_archiver.uri) if f.endswith(".pt")]) == 0
 
@@ -66,7 +66,7 @@ def test_sam_archiver_load_no_pt_file(sam_archiver):
 
 
 def test_sam_archiver_load_success(sam_archiver):
-    """Test load method success path (lines 41-42)."""
+    """Test load method success path."""
     # Create a dummy .pt file in the directory
     pt_file = Path(sam_archiver.uri) / "sam2.1_t.pt"
     pt_file.write_bytes(b"dummy model data")
