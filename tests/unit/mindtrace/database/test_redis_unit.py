@@ -1488,8 +1488,8 @@ def test_redis_backend_update_with_document_instance():
 
 def test_redis_backend_update_with_document_instance_no_pk():
     """Test Redis update method with document instance without pk."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
@@ -1520,7 +1520,7 @@ def test_redis_backend_update_with_basemodel():
     mock_doc.pk = "01H0000000000000000000"
     mock_doc.save = MagicMock()
     mock_doc.model_dump = MagicMock(return_value={"name": "John Updated", "age": 31, "email": "john@example.com"})
-    
+
     with patch.object(UserDoc, "get", return_value=mock_doc):
         result = backend.update(user_data)
 
@@ -1531,8 +1531,8 @@ def test_redis_backend_update_with_basemodel():
 
 def test_redis_backend_update_with_basemodel_no_id():
     """Test Redis update method with BaseModel without id or pk."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
@@ -1547,9 +1547,10 @@ def test_redis_backend_update_with_basemodel_no_id():
 
 def test_redis_backend_update_with_basemodel_not_found():
     """Test Redis update method with BaseModel when document not found."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
-    from mindtrace.database import DocumentNotFoundError
     from redis_om import NotFoundError
+
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
@@ -1567,8 +1568,8 @@ def test_redis_backend_update_with_basemodel_not_found():
 
 def test_redis_backend_update_with_basemodel_get_returns_none():
     """Test Redis update method with BaseModel when get returns None."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
@@ -1610,7 +1611,7 @@ async def test_redis_backend_update_async():
 
 def test_redis_backend_all_id_property_works():
     """Test Redis all method - id property returns pk automatically."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM, MindtraceRedisDocument
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
@@ -1621,18 +1622,18 @@ def test_redis_backend_all_id_property_works():
     mock_doc1.pk = "01H0000000000000000001"
     # Mock the id property to return pk
     type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
-    
+
     mock_doc2 = MagicMock(spec=UserDoc)
     mock_doc2.pk = "01H0000000000000000002"
     type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
-    
+
     mock_doc3 = MagicMock(spec=UserDoc)
     mock_doc3.pk = None
     type(mock_doc3).id = property(lambda self: getattr(self, "pk", None))
 
     with patch.object(UserDoc, "find") as mock_find:
         mock_find.return_value.all.return_value = [mock_doc1, mock_doc2, mock_doc3]
-        
+
         result = backend.all()
 
         assert len(result) == 3
@@ -1655,14 +1656,14 @@ def test_redis_backend_find_id_property_works():
     mock_doc1 = MagicMock(spec=UserDoc)
     mock_doc1.pk = "01H0000000000000000001"
     type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
-    
+
     mock_doc2 = MagicMock(spec=UserDoc)
     mock_doc2.pk = "01H0000000000000000002"
     type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
 
     with patch.object(UserDoc, "find") as mock_find:
         mock_find.return_value.all.return_value = [mock_doc1, mock_doc2]
-        
+
         result = backend.find()
 
         assert len(result) == 2
@@ -1684,7 +1685,7 @@ def test_redis_backend_find_fallback_id_property_works():
     mock_doc1 = MagicMock(spec=UserDoc)
     mock_doc1.pk = "01H0000000000000000001"
     type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
-    
+
     mock_doc2 = MagicMock(spec=UserDoc)
     mock_doc2.pk = "01H0000000000000000002"
     type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
@@ -1694,12 +1695,12 @@ def test_redis_backend_find_fallback_id_property_works():
         # Second call (no args) succeeds and returns docs
         mock_query_result = MagicMock()
         mock_query_result.all.side_effect = Exception("Query failed")
-        
+
         mock_fallback_result = MagicMock()
         mock_fallback_result.all.return_value = [mock_doc1, mock_doc2]
-        
+
         mock_find.side_effect = [mock_query_result, mock_fallback_result]
-        
+
         result = backend.find("some", "args")
 
         assert len(result) == 2
@@ -1720,10 +1721,10 @@ def test_mindtrace_redis_document_id_property():
     doc = TestDoc(name="Test")
     # Set pk manually for testing
     object.__setattr__(doc, "pk", "test-pk-123")
-    
+
     # Verify id property returns pk
     assert doc.id == "test-pk-123"
-    
+
     # Test with None pk
     object.__setattr__(doc, "pk", None)
     assert doc.id is None
@@ -1739,12 +1740,12 @@ def test_mindtrace_redis_document_id_setter():
 
     # Create instance
     doc = TestDoc(name="Test")
-    
+
     # Test setting id sets pk
     doc.id = "test-id-456"
     assert doc.pk == "test-id-456"
     assert doc.id == "test-id-456"
-    
+
     # Test setting id to None
     doc.id = None
     assert doc.pk is None

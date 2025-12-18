@@ -233,7 +233,7 @@ class RedisMindtraceODM(MindtraceODM):
             except DuplicateInsertError:
                 # Re-raise DuplicateInsertError
                 raise
-            except Exception as e:
+            except Exception:
                 # If query fails, try a different approach
                 try:
                     all_docs = self.model_cls.find().all()
@@ -310,7 +310,7 @@ class RedisMindtraceODM(MindtraceODM):
                 updated_user = backend.update(user)
         """
         self.initialize()
-        
+
         # Check if obj is already a document instance
         if isinstance(obj, self.model_cls):
             # If it's already a document instance, just save it
@@ -324,20 +324,20 @@ class RedisMindtraceODM(MindtraceODM):
             obj_id = getattr(obj, "pk", None) or getattr(obj, "id", None)
             if not obj_id:
                 raise DocumentNotFoundError("Document must have an id or pk to be updated")
-            
+
             try:
                 doc = self.model_cls.get(obj_id)
                 if not doc:
                     raise DocumentNotFoundError(f"Object with id {obj_id} not found")
             except NotFoundError:
                 raise DocumentNotFoundError(f"Object with id {obj_id} not found")
-            
+
             # Update the document fields
             obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
             for key, value in obj_data.items():
                 if key not in ("id", "pk"):
                     setattr(doc, key, value)
-            
+
             doc.save()
             # id property automatically returns pk, no need to set it
             return doc

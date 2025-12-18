@@ -250,7 +250,7 @@ class TestRegistryMindtraceODMAllAndFind:
 
         names = {user.name for user in result}
         assert names == {"Alice", "Bob", "Charlie"}
-        
+
         # Verify all documents have id attribute set
         for doc in result:
             assert hasattr(doc, "id")

@@ -311,15 +311,15 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             # If it's a BaseModel, we need to get the existing document first
             if not hasattr(obj, "id") or not obj.id:
                 raise DocumentNotFoundError("Document must have an id to be updated")
-            
+
             doc = await self.model_cls.get(obj.id)
             if not doc:
                 raise DocumentNotFoundError(f"Object with id {obj.id} not found")
-            
+
             # Update the document fields
             for key, value in obj.model_dump(exclude={"id"}).items():
                 setattr(doc, key, value)
-            
+
             await doc.save()
             return doc
 
