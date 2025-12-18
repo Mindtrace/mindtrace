@@ -2513,7 +2513,7 @@ def test_overwrite_rollback_source_check_exception_handled(backend, mock_gcs_han
                 target_name="test:target",
                 target_version="2.0.0",
             )
-        # The source check exception should be silently caught (lines 885-886)
+        # The source check exception should be silently caught
         # Verify that list_objects was called for source check during rollback
         # (at least once for initial listing, and once more during rollback)
         assert list_call_count[0] >= 2
@@ -3047,13 +3047,13 @@ def test_overwrite_rollback_errors_logging(backend, mock_gcs_handler, caplog):
     def mock_reload():
         reload_count[0] += 1
         # Reload is called for:
-        # 1. Target metadata blob during verification (line 790)
-        # 2. Source object blob during source deletion (line 822) - we want this to fail
-        # 3. Source metadata blob during source metadata deletion (line 844)
+        # 1. Target metadata blob during verification
+        # 2. Source object blob during source deletion - we want this to fail
+        # 3. Source metadata blob during source metadata deletion
         # We want to fail on the source object blob reload, which happens after metadata operations
         # This is typically the 2nd call (after target metadata verification)
         if reload_count[0] == 2:
-            # Fail with a non-"not found" error so it raises at line 834
+            # Fail with a non-"not found" error so it raises
             raise Exception("Source deletion failed - non-not-found error")
 
     # Make delete fail for target objects/metadata (these are only deleted during rollback)
@@ -3174,7 +3174,7 @@ def test_save_registry_metadata_error(backend, mock_gcs_handler, monkeypatch):
 
 
 def test_save_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, monkeypatch):
-    """Test save_registry_metadata cleans up temp file even on error (lines 475-476)."""
+    """Test save_registry_metadata cleans up temp file even on error."""
     temp_files_created = []
 
     original_named_temporary_file = tempfile.NamedTemporaryFile
@@ -3262,7 +3262,7 @@ def test_fetch_registry_metadata_not_exists(backend, mock_gcs_handler):
 
 
 def test_fetch_registry_metadata_error_during_download(backend, mock_gcs_handler, monkeypatch):
-    """Test fetch_registry_metadata error handling during download (lines 495-497)."""
+    """Test fetch_registry_metadata error handling during download."""
 
     # Mock download to raise an exception
     def mock_download(remote_path, local_path):
@@ -3276,7 +3276,7 @@ def test_fetch_registry_metadata_error_during_download(backend, mock_gcs_handler
 
 
 def test_fetch_registry_metadata_error_during_json_load(backend, mock_gcs_handler, monkeypatch):
-    """Test fetch_registry_metadata error handling during JSON load (lines 495-497)."""
+    """Test fetch_registry_metadata error handling during JSON load."""
     # Use the backend's actual GCS handler instance
     gcs_handler = backend.gcs
 
@@ -3300,14 +3300,14 @@ def test_fetch_registry_metadata_error_during_json_load(backend, mock_gcs_handle
         os.unlink(temp_path)
 
     # Fetch metadata - should return empty dict on JSON decode error
-    # The inner exception handler (lines 495-497) catches the JSONDecodeError
+    # The inner exception handler catches the JSONDecodeError
     fetched_metadata = backend.fetch_registry_metadata()
     # Should return empty dict when JSON parsing fails
     assert fetched_metadata == {}
 
 
 def test_fetch_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, monkeypatch):
-    """Test fetch_registry_metadata cleans up temp file even on error (lines 499-500)."""
+    """Test fetch_registry_metadata cleans up temp file even on error."""
     temp_files_created = []
 
     original_named_temporary_file = tempfile.NamedTemporaryFile
@@ -3335,7 +3335,7 @@ def test_fetch_registry_metadata_temp_file_cleanup(backend, mock_gcs_handler, mo
 
 
 def test_fetch_registry_metadata_outer_exception(backend, mock_gcs_handler, monkeypatch):
-    """Test fetch_registry_metadata outer exception handler (lines 501-503)."""
+    """Test fetch_registry_metadata outer exception handler."""
 
     # Mock NamedTemporaryFile to raise an exception (outer try block)
     def mock_named_temporary_file(*args, **kwargs):

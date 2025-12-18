@@ -574,7 +574,7 @@ class TestGenerateConnectionManager:
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_multiple_args_error(self, mock_httpx, mock_service_class):
-        """Test that method raises error when called with multiple args (line 140-141)."""
+        """Test that method raises error when called with multiple args."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -593,7 +593,7 @@ class TestGenerateConnectionManager:
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
-        """Test that method raises error when arg is wrong type (line 144-147)."""
+        """Test that method raises error when arg is wrong type."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -612,7 +612,7 @@ class TestGenerateConnectionManager:
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
-        """Test that method raises error when called with both args and kwargs (line 148-151)."""
+        """Test that method raises error when called with both args and kwargs."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -632,7 +632,7 @@ class TestGenerateConnectionManager:
     @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_async_method_multiple_args_error(self, mock_httpx, mock_service_class):
-        """Test that async method raises error when called with multiple args (line 174-176)."""
+        """Test that async method raises error when called with multiple args."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -652,7 +652,7 @@ class TestGenerateConnectionManager:
     @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_async_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
-        """Test that async method raises error when arg is wrong type (line 178-181)."""
+        """Test that async method raises error when arg is wrong type."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -672,7 +672,7 @@ class TestGenerateConnectionManager:
     @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_async_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
-        """Test that async method raises error when called with both args and kwargs (line 182-185)."""
+        """Test that async method raises error when called with both args and kwargs."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -691,7 +691,7 @@ class TestGenerateConnectionManager:
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_single_valid_arg(self, mock_httpx, mock_service_class):
-        """Test that method works with a single valid arg (covers line 152)."""
+        """Test that method works with a single valid arg."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -720,7 +720,7 @@ class TestGenerateConnectionManager:
     @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_async_method_single_valid_arg(self, mock_httpx, mock_service_class):
-        """Test that async method works with a single valid arg (covers line 186)."""
+        """Test that async method works with a single valid arg."""
         from pydantic import BaseModel
 
         class TestInput(BaseModel):
@@ -750,11 +750,10 @@ class TestGenerateConnectionManager:
 
 
 class TestTypeCheckingImport:
-    """Test suite to cover the TYPE_CHECKING import block."""
+    """Test suite for the TYPE_CHECKING import block."""
 
     def test_type_checking_import_coverage(self):
-        """Test that covers the TYPE_CHECKING import block."""
-        # This test covers line 7 by importing the module and checking the imports
+        """Test the TYPE_CHECKING import block."""
         from typing import TYPE_CHECKING
 
         # Verify TYPE_CHECKING is False at runtime

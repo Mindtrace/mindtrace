@@ -536,7 +536,7 @@ class TestTrackOperationContextManagerWithActualTimeout:
         """Test context manager properly handles generic exceptions in __aexit__."""
         logger = get_logger("test", use_structlog=True)
 
-        # Test the generic exception path in __aexit__ (lines 534-541)
+        # Test the generic exception path in __aexit__
         class CustomError(Exception):
             pass
 
