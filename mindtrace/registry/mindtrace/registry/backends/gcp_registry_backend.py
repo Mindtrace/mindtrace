@@ -67,6 +67,7 @@ class GCPRegistryBackend(RegistryBackend):
         bucket_name: str,
         credentials_path: str | None = None,
         prefix: str = "",
+        max_workers: int = 4,
         **kwargs,
     ):
         """Initialize the GCPRegistryBackend.
@@ -77,12 +78,14 @@ class GCPRegistryBackend(RegistryBackend):
             bucket_name: GCS bucket name.
             credentials_path: Optional path to service account JSON file.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
+            max_workers: Maximum number of parallel workers for batch operations. Default is 4.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
         self._prefix = prefix.strip("/") if prefix else ""
         self._uri = Path(uri or f"gs://{bucket_name}/{self._prefix}".rstrip("/"))
         self._metadata_path = self._prefixed("registry_metadata.json")
+        self._max_workers = max_workers
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}, prefix: {self._prefix}")
 
         self.gcs = GCSStorageHandler(
@@ -289,6 +292,114 @@ class GCPRegistryBackend(RegistryBackend):
     # Artifact + Metadata Operations (atomic)
     # ─────────────────────────────────────────────────────────────────────────
 
+    def _push_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        obj_path: Path,
+        obj_meta: dict,
+        on_conflict: str,
+        fail_if_exists: bool,
+        max_workers: int = 4,
+    ) -> Dict[str, Any]:
+        """Push a single object's files and metadata.
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            obj_path: Local path to upload from.
+            obj_meta: Metadata dict.
+            on_conflict: "error", "skip", or "overwrite".
+            fail_if_exists: If True, fail if files already exist.
+            max_workers: Maximum parallel workers for file uploads.
+
+        Returns:
+            Status dict with "status" key and optionally "error"/"message".
+        """
+        try:
+            remote_key = self._object_key(obj_name, obj_version)
+
+            # Collect files to upload
+            files = self._collect_files(obj_path, remote_key)
+
+            # Prepare metadata with path
+            prepared_meta = dict(obj_meta) if obj_meta else {}
+            prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
+
+            if files:
+                batch_result = self.gcs.upload_batch(
+                    files, on_error="skip", fail_if_exists=fail_if_exists, max_workers=max_workers
+                )
+
+                # Check for conflicts (already_exists) or errors
+                conflict_files = [r for r in batch_result.results if r.status == "already_exists"]
+                error_files = [r for r in batch_result.results if r.status == "error"]
+
+                if conflict_files:
+                    # Rollback any successful uploads
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    if uploaded:
+                        self.gcs.delete_batch(uploaded)
+
+                    if on_conflict == "skip":
+                        return {"status": "skipped"}
+                    else:
+                        return {
+                            "status": "error",
+                            "error": "RegistryVersionConflict",
+                            "message": f"Object {obj_name}@{obj_version} already exists",
+                        }
+
+                if error_files:
+                    # Rollback any successful uploads
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    if uploaded:
+                        self.gcs.delete_batch(uploaded)
+                    return {
+                        "status": "error",
+                        "error": "RuntimeError",
+                        "message": f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}",
+                    }
+
+            # Write metadata LAST (the "commit point")
+            meta_result = self._write_metadata(obj_name, obj_version, prepared_meta, on_conflict)
+
+            if meta_result.status == "already_exists":
+                # Rollback uploaded files
+                uploaded = [remote for _, remote in files]
+                if uploaded:
+                    self.gcs.delete_batch(uploaded)
+
+                if on_conflict == "skip":
+                    return {"status": "skipped"}
+                else:
+                    return {
+                        "status": "error",
+                        "error": "RegistryVersionConflict",
+                        "message": f"Object {obj_name}@{obj_version} already exists",
+                    }
+            elif meta_result.status == "error":
+                # Rollback uploaded files
+                uploaded = [remote for _, remote in files]
+                if uploaded:
+                    self.gcs.delete_batch(uploaded)
+                return {
+                    "status": "error",
+                    "error": "RuntimeError",
+                    "message": meta_result.error_message or "Metadata write failed",
+                }
+            elif meta_result.status == "overwritten":
+                return {"status": "overwritten"}
+            else:
+                return {"status": "ok"}
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": type(e).__name__,
+                "message": str(e),
+            }
+
     def push(
         self,
         name: NameArg,
@@ -298,8 +409,12 @@ class GCPRegistryBackend(RegistryBackend):
         on_conflict: str = "error",
         on_error: str = "raise",
         acquire_lock: bool = False,
+        max_workers: int | None = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Push artifacts and metadata to the registry.
+
+        Objects are processed in parallel for maximum efficiency. Each object's
+        push is atomic with proper rollback on failure.
 
         Atomicity strategy depends on acquire_lock:
         - acquire_lock=False (immutable): Use generation_match=0 on files to detect conflicts.
@@ -318,6 +433,7 @@ class GCPRegistryBackend(RegistryBackend):
                 "skip": Continue on errors, report status in return dict.
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on generation_match=0 for atomicity (immutable registries).
+            max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             Dict mapping (name, version) to status dict:
@@ -334,6 +450,13 @@ class GCPRegistryBackend(RegistryBackend):
 
         if not (len(names) == len(versions) == len(paths) == len(metadatas)):
             raise ValueError("Input list lengths must match")
+
+        # Validate on_conflict + acquire_lock combination
+        if on_conflict == "overwrite" and not acquire_lock:
+            raise ValueError(
+                "on_conflict='overwrite' requires acquire_lock=True. "
+                "Overwriting without a lock is unsafe for concurrent access."
+            )
 
         # Validate all names upfront
         for obj_name in names:
@@ -363,96 +486,49 @@ class GCPRegistryBackend(RegistryBackend):
                     }
 
         try:
-            for obj_name, obj_version, obj_path, obj_meta in zip(names, versions, paths, metadatas):
-                key = (obj_name, obj_version)
+            # Use provided max_workers or fall back to instance default
+            workers = max_workers or self._max_workers
 
-                # Skip if already failed (lock acquisition)
-                if key in results:
-                    continue
+            # Limit file-level parallelism 
+            file_workers = min(2, workers)
 
-                try:
-                    remote_key = self._object_key(obj_name, obj_version)
+            # Determine fail_if_exists based on lock and conflict settings
+            # - Immutable (no lock): fail_if_exists=True (generation_match=0)
+            # - Mutable (with lock): fail_if_exists=False (overwrite)
+            fail_if_exists = not acquire_lock
 
-                    # Collect files to upload
-                    files = self._collect_files(obj_path, remote_key)
+            # Prepare tasks for object. skip failed locks 
+            push_tasks = [
+                (n, v, p, m)
+                for n, v, p, m in zip(names, versions, paths, metadatas)
+                if (n, v) not in results
+            ]
 
-                    # Prepare metadata with path
-                    prepared_meta = dict(obj_meta) if obj_meta else {}
-                    prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
+            def push_one(args: Tuple[str, str, Path, dict]) -> Tuple[Tuple[str, str], Dict[str, Any]]:
+                obj_name, obj_version, obj_path, obj_meta = args
+                result = self._push_single_object(
+                    obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
+                )
+                return ((obj_name, obj_version), result)
 
-                    # Upload files
-                    # - Immutable (no lock): fail_if_exists=True (generation_match=0)
-                    # - Mutable (with lock): fail_if_exists=False (overwrite)
-                    fail_if_exists = not acquire_lock and on_conflict != "overwrite"
+            # Process objects in parallel (file uploads within each use limited parallelism)
+            first_error: Exception | None = None
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for key, result in executor.map(push_one, push_tasks):
+                    results[key] = result
 
-                    if files:
-                        batch_result = self.gcs.upload_batch(files, on_error="skip", fail_if_exists=fail_if_exists)
-
-                        # Check for conflicts (already_exists) or errors
-                        conflict_files = [r for r in batch_result.results if r.status == "already_exists"]
-                        error_files = [r for r in batch_result.results if r.status == "error"]
-
-                        if conflict_files:
-                            # Rollback any successful uploads
-                            uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
-                            if uploaded:
-                                self.gcs.delete_batch(uploaded)
-
-                            if on_conflict == "skip":
-                                results[key] = {"status": "skipped"}
-                                continue
-                            else:
-                                raise RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists")
-
-                        if error_files:
-                            # Rollback any successful uploads
-                            uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
-                            if uploaded:
-                                self.gcs.delete_batch(uploaded)
-                            raise RuntimeError(
-                                f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}"
-                            )
-
-                    # Write metadata LAST (the "commit point")
-                    meta_result = self._write_metadata(obj_name, obj_version, prepared_meta, on_conflict)
-
-                    if meta_result.status == "already_exists":
-                        # Rollback uploaded files
-                        uploaded = [remote for _, remote in files]
-                        if uploaded:
-                            self.gcs.delete_batch(uploaded)
-
-                        if on_conflict == "skip":
-                            results[key] = {"status": "skipped"}
+                    # Track first error for on_error="raise"
+                    if result.get("status") == "error" and on_error == "raise" and first_error is None:
+                        error_type = result.get("error", "RuntimeError")
+                        message = result.get("message", "Unknown error")
+                        if error_type == "RegistryVersionConflict":
+                            first_error = RegistryVersionConflict(message)
                         else:
-                            raise RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists")
-                    elif meta_result.status == "error":
-                        # Rollback uploaded files
-                        uploaded = [remote for _, remote in files]
-                        if uploaded:
-                            self.gcs.delete_batch(uploaded)
-                        raise RuntimeError(meta_result.error_message or "Metadata write failed")
-                    elif meta_result.status == "overwritten":
-                        results[key] = {"status": "overwritten"}
-                    else:
-                        results[key] = {"status": "ok"}
+                            first_error = RuntimeError(message)
 
-                except RegistryVersionConflict as e:
-                    if on_error == "raise":
-                        raise
-                    results[key] = {
-                        "status": "error",
-                        "error": "RegistryVersionConflict",
-                        "message": str(e),
-                    }
-                except Exception as e:
-                    if on_error == "raise":
-                        raise
-                    results[key] = {
-                        "status": "error",
-                        "error": type(e).__name__,
-                        "message": str(e),
-                    }
+            # Raise first error if on_error="raise"
+            if first_error:
+                raise first_error
 
         finally:
             if acquired_locks:
@@ -468,11 +544,13 @@ class GCPRegistryBackend(RegistryBackend):
         acquire_lock: bool = False,
         on_error: str = "raise",
         metadata: MetadataArg = None,
+        max_workers: int | None = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Download artifacts to local path(s).
 
         Uses the `_files` manifest from metadata when available to avoid
-        expensive blob storage listing operations.
+        expensive blob storage listing operations. All files across all objects
+        are downloaded in a single batch for maximum efficiency.
 
         Note: The acquire_lock parameter is accepted for API compatibility but
         ignored. Read locks are not implemented for GCS because:
@@ -490,12 +568,14 @@ class GCPRegistryBackend(RegistryBackend):
                 "skip": Continue on errors, report status in return dict.
             metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
                 If provided, avoids re-fetching metadata. Single dict or list of dicts.
+            max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             Dict mapping (name, version) to status dict:
             - {"status": "ok"} on success
             - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
         """
+        workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
         paths = self._normalize_paths(local_path, len(names))
@@ -533,7 +613,6 @@ class GCPRegistryBackend(RegistryBackend):
                 files_manifest = obj_metadata.get("_files")
 
                 if files_manifest:
-                    print(f"Files manifest FOUND: {files_manifest}")
                     for relative_path in files_manifest:
                         remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
                         dest_file = dest_path / relative_path
@@ -541,7 +620,6 @@ class GCPRegistryBackend(RegistryBackend):
                         all_files_to_download.append((remote_path, str(dest_file)))
                         file_to_object[str(dest_file)] = (obj_name, obj_version)
                 else:
-                    print(" not found")
                     # Fallback to listing (expensive)
                     objects_list = self.gcs.list_objects(prefix=remote_key)
                     if not objects_list:
@@ -567,7 +645,9 @@ class GCPRegistryBackend(RegistryBackend):
 
         # Batch download all files
         if all_files_to_download:
-            download_result = self.gcs.download_batch(all_files_to_download, on_error="skip")
+            download_result = self.gcs.download_batch(
+                all_files_to_download, max_workers=workers, on_error="skip"
+            )
 
             for file_result in download_result.failed_results:
                 dest_path_str = file_result.local_path
@@ -592,14 +672,54 @@ class GCPRegistryBackend(RegistryBackend):
 
         return results
 
+    def _delete_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        max_workers: int = 4,
+    ) -> Dict[str, Any]:
+        """Delete a single object's files and metadata.
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            max_workers: Maximum parallel workers for batch delete.
+
+        Returns:
+            Status dict with "status" key and optionally "error"/"message".
+        """
+        try:
+            # Collect all paths to delete (artifacts + metadata)
+            remote_key = self._object_key(obj_name, obj_version)
+            paths_to_delete = self.gcs.list_objects(prefix=remote_key)
+
+            # Add metadata path
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            paths_to_delete.append(meta_path)
+
+            # Batch delete all files
+            self.gcs.delete_batch(paths_to_delete, max_workers=max_workers)
+
+            return {"status": "ok"}
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": type(e).__name__,
+                "message": str(e),
+            }
+
     def delete(
         self,
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "raise",
         acquire_lock: bool = False,
+        max_workers: int | None = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete artifact(s) and metadata.
+
+        Objects are processed in parallel for maximum efficiency.
 
         Args:
             name: Name of the object(s).
@@ -609,6 +729,7 @@ class GCPRegistryBackend(RegistryBackend):
                 "skip": Continue on errors, report status in return dict.
             acquire_lock: If True, acquire locks before delete (for mutable registries).
                 Default is False (no locking, for immutable registries).
+            max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             Dict mapping (name, version) to status dict:
@@ -621,6 +742,7 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        workers = max_workers or self._max_workers
         results: Dict[Tuple[str, str], Dict[str, Any]] = {}
         acquired_locks: Dict[str, str] = {}
 
@@ -645,33 +767,34 @@ class GCPRegistryBackend(RegistryBackend):
                     }
 
         try:
-            for obj_name, obj_version in zip(names, versions):
-                # Skip if already failed (lock acquisition)
-                if (obj_name, obj_version) in results:
-                    continue
+            # Limit file-level parallelism to avoid thread explosion with nested pools
+            file_workers = min(2, workers)
 
-                try:
-                    # Collect all paths to delete (artifacts + metadata)
-                    remote_key = self._object_key(obj_name, obj_version)
-                    paths_to_delete = self.gcs.list_objects(prefix=remote_key)
+            # Prepare tasks for objects that haven't already failed (e.g., lock acquisition)
+            delete_tasks = [
+                (n, v) for n, v in zip(names, versions)
+                if (n, v) not in results
+            ]
 
-                    # Add metadata path
-                    meta_path = self._object_metadata_path(obj_name, obj_version)
-                    paths_to_delete.append(meta_path)
+            def delete_one(args: Tuple[str, str]) -> Tuple[Tuple[str, str], Dict[str, Any]]:
+                obj_name, obj_version = args
+                result = self._delete_single_object(obj_name, obj_version, file_workers)
+                return ((obj_name, obj_version), result)
 
-                    # Batch delete all files
-                    self.gcs.delete_batch(paths_to_delete)
+            # Process objects in parallel (file deletes within each use limited parallelism)
+            first_error: Exception | None = None
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for key, result in executor.map(delete_one, delete_tasks):
+                    results[key] = result
 
-                    results[(obj_name, obj_version)] = {"status": "ok"}
+                    # Track first error for on_error="raise"
+                    if result.get("status") == "error" and on_error == "raise" and first_error is None:
+                        first_error = RuntimeError(result.get("message", "Unknown error"))
 
-                except Exception as e:
-                    if on_error == "raise":
-                        raise
-                    results[(obj_name, obj_version)] = {
-                        "status": "error",
-                        "error": type(e).__name__,
-                        "message": str(e),
-                    }
+            # Raise first error if on_error="raise"
+            if first_error:
+                raise first_error
+
         finally:
             if acquired_locks:
                 self._release_locks_batch(acquired_locks)
