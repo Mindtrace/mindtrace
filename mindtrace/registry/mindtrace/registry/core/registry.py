@@ -633,8 +633,10 @@ class Registry(Mindtrace):
                 "_files": self._build_file_manifest(temp_dir),
             }
 
+
             push_result = self.backend.push(
-                [name], [validated_version], [temp_dir], [push_metadata], on_conflict=on_conflict, on_error="raise"
+                [name], [validated_version], [temp_dir], [push_metadata],
+                on_conflict=on_conflict, on_error="raise", acquire_lock=self.mutable,
             )
 
             # Get result - single item
@@ -724,7 +726,8 @@ class Registry(Mindtrace):
             push_status = {}
             if push_names:
                 push_status = self.backend.push(
-                    push_names, push_versions, push_paths, push_metas, on_conflict=on_conflict, on_error="skip"
+                    push_names, push_versions, push_paths, push_metas,
+                    on_conflict=on_conflict, on_error="skip", acquire_lock=self.mutable,
                 )
 
             # Stage 4: Build result in original order
@@ -1113,9 +1116,9 @@ class Registry(Mindtrace):
                 all_names.append(n)
                 all_versions.append(v)
 
-        # Batch delete - backend handles locking internally
+        # Batch delete
         if all_names:
-            self.backend.delete(all_names, all_versions)
+            self.backend.delete(all_names, all_versions, acquire_lock=self.mutable)
 
         # Delete from cache
         if self._cache is not None:

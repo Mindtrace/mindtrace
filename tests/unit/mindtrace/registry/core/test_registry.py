@@ -2873,7 +2873,7 @@ def test_delete_with_cache(temp_registry_dir):
     assert not cache_result.get(("test:obj", "1.0.0"), False)
 
     # Verify remote delete was called with batch args (lists)
-    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
+    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_delete_cache_error_handling(temp_registry_dir):
@@ -3158,7 +3158,7 @@ def test_delete_cache_delete_error(temp_registry_dir):
         registry.delete("test:obj", "1.0.0")
 
         # Verify remote delete was called with batch args (lists)
-        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
+        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_registry_invalid_backend_type(temp_registry_dir):

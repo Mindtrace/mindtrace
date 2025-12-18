@@ -365,6 +365,7 @@ class LocalRegistryBackend(RegistryBackend):
         metadata: MetadataArg = None,
         on_conflict: str = "error",
         on_error: str = "raise",
+        acquire_lock: bool = False,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Atomically push artifacts and metadata with rollback on failure.
 
@@ -378,6 +379,8 @@ class LocalRegistryBackend(RegistryBackend):
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            acquire_lock: Accepted for API compatibility. Local backend always uses
+                internal locking regardless of this parameter.
 
         Returns:
             Dict mapping (name, resolved_version) to status dict:
@@ -532,6 +535,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "raise",
+        acquire_lock: bool = False,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Delete a directory from the backend store.
 
@@ -543,6 +547,8 @@ class LocalRegistryBackend(RegistryBackend):
             on_error: Error handling strategy.
                 "raise" (default): First error stops and raises exception.
                 "skip": Continue on errors, report status in return dict.
+            acquire_lock: Accepted for API compatibility. Local backend always uses
+                internal locking regardless of this parameter.
 
         Returns:
             Dict mapping (name, version) to status dict:
