@@ -1,5 +1,7 @@
 """Inspectra Service - Reference implementation for plant/line management."""
 
+from typing import Optional
+
 from fastapi import HTTPException, status
 
 from mindtrace.apps.inspectra.core import (
@@ -57,7 +59,6 @@ from mindtrace.apps.inspectra.schemas.role import (
 )
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
-from typing import Optional
 
 
 class InspectraService(Service):

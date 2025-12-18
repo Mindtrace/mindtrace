@@ -1,4 +1,12 @@
 def test_create_plant(client):
+    """
+    POST /plants should create a new plant and return its full representation.
+
+    Verifies:
+    - request succeeds
+    - all provided fields are persisted
+    - a non-empty string ID is generated
+    """
     resp = client.post(
         "/plants",
         json={
@@ -19,6 +27,14 @@ def test_create_plant(client):
 
 
 def test_list_plants_shape(client):
+    """
+    GET /plants should always return a stable list response shape.
+
+    The response must include:
+    - an `items` array
+    - a numeric `total`
+    - total must equal len(items)
+    """
     resp = client.get("/plants")
     assert resp.status_code == 200, resp.text
 
@@ -30,6 +46,15 @@ def test_list_plants_shape(client):
 
 
 def test_create_and_list_plants(client):
+    """
+    Creating a plant should increase the total count and appear in listings.
+
+    Verifies:
+    - list endpoint is callable before creation
+    - POST /plants persists data
+    - subsequent GET /plants reflects the new plant
+    - returned IDs are consistent
+    """
     before = client.get("/plants")
     assert before.status_code == 200, before.text
     before_total = before.json()["total"]
@@ -54,4 +79,7 @@ def test_create_and_list_plants(client):
     assert payload["total"] == len(payload["items"])
     assert payload["total"] == before_total + 1
     assert any(p["id"] == created_id for p in payload["items"])
-    assert any(p["name"] == "Plant A" and p["location"] == "Factory 1" for p in payload["items"])
+    assert any(
+        p["name"] == "Plant A" and p["location"] == "Factory 1"
+        for p in payload["items"]
+    )
