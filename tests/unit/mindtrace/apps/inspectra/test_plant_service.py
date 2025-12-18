@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import pytest
 
 from mindtrace.apps.inspectra.inspectra import InspectraService
 from mindtrace.apps.inspectra.models import (
-    Plant,
     PlantCreateRequest,
     PlantListResponse,
     PlantResponse,
@@ -15,11 +14,13 @@ from mindtrace.apps.inspectra.models import (
 # Fake repository
 # ---------------------------------------------------------------------------
 
-
 @dataclass
-class _FakePlant(Plant):
-    """Concrete Plant dataclass for fake repo."""
-    pass
+class _FakePlant:
+    id: str
+    name: str
+    code: str = ""
+    location: Optional[str] = None
+    is_active: bool = True
 
 
 class FakePlantRepository:
@@ -37,7 +38,7 @@ class FakePlantRepository:
             name=payload.name,
             code=payload.code,
             location=payload.location,
-            is_active=True,
+            is_active=payload.is_active,
         )
         self._plants.append(plant)
         return plant
@@ -47,24 +48,20 @@ class FakePlantRepository:
 # Tests
 # ---------------------------------------------------------------------------
 
-
 class TestPlantBehaviour:
     """Unit tests for plant-related behaviour on InspectraService."""
 
     @pytest.fixture
     def service(self) -> InspectraService:
-        """
-        Create InspectraService with a fake plant repository.
-
-        No real Mongo involved; this is pure unit-level logic.
-        """
         svc = InspectraService(enable_db=False)
-        svc.plant_repo = FakePlantRepository()
+
+        # IMPORTANT: lazy property backed by private field
+        svc._plant_repo = FakePlantRepository()
+
         return svc
 
     @pytest.mark.asyncio
     async def test_create_plant(self, service: InspectraService):
-        """create_plant should persist a plant and return PlantResponse."""
         payload = PlantCreateRequest(
             name="Plant A",
             code="PLANT-A",
@@ -72,7 +69,7 @@ class TestPlantBehaviour:
             is_active=True,
         )
 
-        result: PlantResponse = await service.create_plant(payload)
+        result = await service.create_plant(payload)
 
         assert isinstance(result, PlantResponse)
         assert result.id
@@ -83,7 +80,6 @@ class TestPlantBehaviour:
 
     @pytest.mark.asyncio
     async def test_list_plants(self, service: InspectraService):
-        """list_plants should return all plants wrapped in PlantListResponse."""
         await service.create_plant(
             PlantCreateRequest(
                 name="Plant A",
@@ -101,7 +97,7 @@ class TestPlantBehaviour:
             )
         )
 
-        resp: PlantListResponse = await service.list_plants()
+        resp = await service.list_plants()
 
         assert isinstance(resp, PlantListResponse)
         assert resp.total == 2

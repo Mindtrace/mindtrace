@@ -1,5 +1,3 @@
-# mindtrace/apps/inspectra/db.py
-
 from typing import Optional
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
