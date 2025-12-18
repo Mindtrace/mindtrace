@@ -622,9 +622,7 @@ class LocalRegistryBackend(RegistryBackend):
         else:
             metadatas = list(metadata)
             if len(metadatas) != len(names):
-                raise ValueError(
-                    f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})"
-                )
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
             self.validate_object_name(obj_name)
