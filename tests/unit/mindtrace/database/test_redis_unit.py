@@ -1600,7 +1600,7 @@ async def test_redis_backend_update_async():
     mock_doc.save = MagicMock()
     mock_doc.id = None
 
-    with patch.object(backend, "update", return_value=mock_doc) as mock_update:
+    with patch.object(backend, "update", return_value=mock_doc):
         with patch("asyncio.to_thread") as mock_to_thread:
             mock_to_thread.return_value = mock_doc
             result = await backend.update_async(mock_doc)
