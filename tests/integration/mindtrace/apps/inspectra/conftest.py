@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 
+from mindtrace.apps.inspectra.core import reset_inspectra_config
 from mindtrace.apps.inspectra.inspectra import InspectraService
 
 TEST_MONGO_URI = "mongodb://localhost:27018"
@@ -22,8 +23,10 @@ def _set_inspectra_test_env() -> Generator[None, None, None]:
     environment variables that `InspectraSettings` / `get_inspectra_config`
     will read.
     """
-    os.environ["INSPECTRA__DB_URI"] = TEST_MONGO_URI
-    os.environ["INSPECTRA__DB_NAME"] = TEST_DB_NAME
+    os.environ["INSPECTRA__MONGO_URI"] = TEST_MONGO_URI
+    os.environ["INSPECTRA__MONGO_DB"] = TEST_DB_NAME
+
+    reset_inspectra_config()
     yield
 
 @pytest.fixture(scope="session")
