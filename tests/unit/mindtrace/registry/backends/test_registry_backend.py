@@ -70,6 +70,18 @@ def concrete_backend():
         def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
             pass
 
+        def save_registry_metadata(self, metadata: dict):
+            """Test implementation of save_registry_metadata."""
+            if not hasattr(self, "_registry_metadata"):
+                self._registry_metadata = {}
+            self._registry_metadata.update(metadata)
+
+        def fetch_registry_metadata(self) -> dict:
+            """Test implementation of fetch_registry_metadata."""
+            if not hasattr(self, "_registry_metadata"):
+                return {}
+            return self._registry_metadata.copy()
+
     with tempfile.TemporaryDirectory() as temp_dir:
         yield ConcreteBackend(temp_dir)
 

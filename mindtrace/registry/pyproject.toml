@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-registry"
-version = "0.6.0"
+version = "0.7.0"
 description = "Registry functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"

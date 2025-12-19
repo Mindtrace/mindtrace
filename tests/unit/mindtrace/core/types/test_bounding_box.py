@@ -7,6 +7,8 @@ from mindtrace.core.types.bounding_box import BoundingBox
 
 def test_basic_properties_and_area():
     bb = BoundingBox(10.0, 20.0, 30.0, 40.0)
+    assert bb.x1 == pytest.approx(10.0)
+    assert bb.y1 == pytest.approx(20.0)
     assert bb.x2 == pytest.approx(40.0)
     assert bb.y2 == pytest.approx(60.0)
     assert bb.right == pytest.approx(40.0)
@@ -188,7 +190,7 @@ def test_draw_on_pil_label_font_metrics_branches(monkeypatch):
 
 
 def test_draw_on_pil_label_font_default_dims(monkeypatch):
-    # Trigger branch where font is provided but has neither getbbox nor getsize (line 129)
+    # Trigger branch where font is provided but has neither getbbox nor getsize
     img = Image.new("RGB", (100, 80), color=(255, 255, 255))
     bb = BoundingBox(5, 5, 10, 10)
 

@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from mindtrace.core.base.mindtrace_base import Mindtrace, MindtraceABC, MindtraceMeta
+from mindtrace.core.config import CoreConfig
 
 
 class TestMindtraceMeta:
@@ -107,6 +108,76 @@ class TestMindtraceMeta:
         # Verify internal attributes are set correctly
         assert TestClass1._logger is logger1
         assert TestClass2._logger is logger2
+
+    def test_logger_recreation_when_kwargs_change(self):
+        """Test that logger is recreated when logger kwargs change.
+
+        Tests that the logger is reset when cached kwargs differ from current kwargs.
+        """
+
+        class TestClass(metaclass=MindtraceMeta):
+            pass
+
+        # Create initial logger with specific kwargs
+        TestClass._logger_kwargs = {"logger_level": logging.INFO}
+        initial_logger = TestClass.logger
+        assert initial_logger is not None
+        assert TestClass._cached_logger_kwargs == {"logger_level": logging.INFO}
+
+        # Change the logger kwargs
+        TestClass._logger_kwargs = {"logger_level": logging.DEBUG}
+
+        # Access logger property - should trigger recreation
+        new_logger = TestClass.logger
+
+        # Verify logger was recreated (different object)
+        assert new_logger is not None
+        assert TestClass._cached_logger_kwargs == {"logger_level": logging.DEBUG}
+        # The logger should be different (recreated)
+        # Note: We can't guarantee they're different objects since get_logger might cache,
+        # but the cached_kwargs should be updated
+
+    def test_config_property_getter(self):
+        """Test config property getter when _config is None.
+
+        Tests that config is initialized if None.
+        """
+
+        class TestClass(metaclass=MindtraceMeta):
+            pass
+
+        # Ensure _config is None
+        TestClass._config = None
+
+        # Access config property - should initialize it
+        config = TestClass.config
+
+        # Verify config was created
+        assert config is not None
+        assert isinstance(config, CoreConfig)
+        assert TestClass._config is config
+
+    def test_config_setter(self):
+        """Test config property setter.
+
+        Tests that config setter assigns new_config.
+        """
+
+        class TestClass(metaclass=MindtraceMeta):
+            pass
+
+        # Get initial config
+        initial_config = TestClass.config
+        assert initial_config is not None
+
+        # Create a new config and set it
+        new_config = CoreConfig()
+        TestClass.config = new_config
+
+        # Verify config was set
+        assert TestClass.config is new_config
+        assert TestClass._config is new_config
+        assert TestClass.config is not initial_config
 
 
 class TestMindtrace:
@@ -869,7 +940,7 @@ class TestMindtraceSyncWrapper:
         decorated_func = Mindtrace.autolog(self=logger_owner)(standalone_sync_function)
 
         with patch.object(logger_owner.logger, "log") as mock_log:
-            # Test the success branch (else clause) - this triggers lines 316-317
+            # Test the success branch (else clause)
             result = decorated_func(3, 7, multiplier=2)
 
             # Verify the result is correct
