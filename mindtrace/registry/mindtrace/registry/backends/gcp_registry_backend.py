@@ -233,24 +233,6 @@ class GCPRegistryBackend(RegistryBackend):
     # Push Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _collect_files(self, local_path: Path, remote_key: str) -> List[Tuple[str, str]]:
-        """Collect all files from a local directory for upload.
-
-        Args:
-            local_path: Local directory path.
-            remote_key: Remote key prefix for the files.
-
-        Returns:
-            List of (local_path, remote_path) tuples.
-        """
-        files: List[Tuple[str, str]] = []
-        for file_path in local_path.rglob("*"):
-            if file_path.is_file():
-                relative_path = file_path.relative_to(local_path)
-                remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
-                files.append((str(file_path), remote_path))
-        return files
-
     def _write_metadata(self, name: str, version: str, metadata: dict, on_conflict: str = "error") -> StringResult:
         """Write a single metadata file atomically.
 
@@ -319,8 +301,12 @@ class GCPRegistryBackend(RegistryBackend):
         try:
             remote_key = self._object_key(obj_name, obj_version)
 
-            # Collect files to upload
-            files = self._collect_files(obj_path, remote_key)
+            # Use _files manifest from metadata (built by Registry)
+            files_manifest = obj_meta.get("_files", [])
+            files = [
+                (str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/"))
+                for f in files_manifest
+            ]
 
             # Prepare metadata with path
             prepared_meta = dict(obj_meta) if obj_meta else {}
@@ -493,9 +479,7 @@ class GCPRegistryBackend(RegistryBackend):
             file_workers = min(2, workers)
 
             # Determine fail_if_exists based on lock and conflict settings
-            # - Immutable (no lock): fail_if_exists=True (generation_match=0)
-            # - Mutable (with lock): fail_if_exists=False (overwrite)
-            fail_if_exists = not acquire_lock
+            fail_if_exists = not acquire_lock # acquire_lock==mutable. 
 
             # Prepare tasks for object. skip failed locks 
             push_tasks = [
@@ -677,6 +661,7 @@ class GCPRegistryBackend(RegistryBackend):
         obj_name: str,
         obj_version: str,
         max_workers: int = 4,
+        metadata: dict | None = None,
     ) -> Dict[str, Any]:
         """Delete a single object's files and metadata.
 
@@ -684,14 +669,23 @@ class GCPRegistryBackend(RegistryBackend):
             obj_name: Object name.
             obj_version: Object version.
             max_workers: Maximum parallel workers for batch delete.
+            metadata: Optional pre-fetched metadata containing "_files" manifest.
 
         Returns:
             Status dict with "status" key and optionally "error"/"message".
         """
         try:
-            # Collect all paths to delete (artifacts + metadata)
             remote_key = self._object_key(obj_name, obj_version)
-            paths_to_delete = self.gcs.list_objects(prefix=remote_key)
+
+            # Use _files manifest if available, otherwise fallback to listing
+            if metadata and "_files" in metadata:
+                paths_to_delete = [
+                    f"{remote_key}/{f}".replace("\\", "/")
+                    for f in metadata["_files"]
+                ]
+            else:
+                # Fallback to listing (expensive)
+                paths_to_delete = self.gcs.list_objects(prefix=remote_key)
 
             # Add metadata path
             meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -776,9 +770,19 @@ class GCPRegistryBackend(RegistryBackend):
                 if (n, v) not in results
             ]
 
+            # Fetch metadata for all objects to get _files manifests (avoids listing during delete)
+            metadata_results = self.fetch_metadata(
+                [n for n, v in delete_tasks],
+                [v for n, v in delete_tasks],
+                on_error="skip",
+            )
+
             def delete_one(args: Tuple[str, str]) -> Tuple[Tuple[str, str], Dict[str, Any]]:
                 obj_name, obj_version = args
-                result = self._delete_single_object(obj_name, obj_version, file_workers)
+                # Get metadata for this object (may be None if not found)
+                meta_result = metadata_results.get((obj_name, obj_version))
+                obj_metadata = meta_result.get("metadata") if meta_result and meta_result.get("status") == "ok" else None
+                result = self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
                 return ((obj_name, obj_version), result)
 
             # Process objects in parallel (file deletes within each use limited parallelism)
