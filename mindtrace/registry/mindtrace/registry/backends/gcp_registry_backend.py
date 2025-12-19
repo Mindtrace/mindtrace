@@ -303,10 +303,7 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Use _files manifest from metadata (built by Registry)
             files_manifest = obj_meta.get("_files", [])
-            files = [
-                (str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/"))
-                for f in files_manifest
-            ]
+            files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
 
             # Prepare metadata with path
             prepared_meta = dict(obj_meta) if obj_meta else {}
@@ -475,17 +472,15 @@ class GCPRegistryBackend(RegistryBackend):
             # Use provided max_workers or fall back to instance default
             workers = max_workers or self._max_workers
 
-            # Limit file-level parallelism 
+            # Limit file-level parallelism
             file_workers = min(2, workers)
 
             # Determine fail_if_exists based on lock and conflict settings
-            fail_if_exists = not acquire_lock # acquire_lock==mutable. 
+            fail_if_exists = not acquire_lock  # acquire_lock==mutable.
 
-            # Prepare tasks for object. skip failed locks 
+            # Prepare tasks for object. skip failed locks
             push_tasks = [
-                (n, v, p, m)
-                for n, v, p, m in zip(names, versions, paths, metadatas)
-                if (n, v) not in results
+                (n, v, p, m) for n, v, p, m in zip(names, versions, paths, metadatas) if (n, v) not in results
             ]
 
             def push_one(args: Tuple[str, str, Path, dict]) -> Tuple[Tuple[str, str], Dict[str, Any]]:
@@ -629,9 +624,7 @@ class GCPRegistryBackend(RegistryBackend):
 
         # Batch download all files
         if all_files_to_download:
-            download_result = self.gcs.download_batch(
-                all_files_to_download, max_workers=workers, on_error="skip"
-            )
+            download_result = self.gcs.download_batch(all_files_to_download, max_workers=workers, on_error="skip")
 
             for file_result in download_result.failed_results:
                 dest_path_str = file_result.local_path
@@ -679,10 +672,7 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Use _files manifest if available, otherwise fallback to listing
             if metadata and "_files" in metadata:
-                paths_to_delete = [
-                    f"{remote_key}/{f}".replace("\\", "/")
-                    for f in metadata["_files"]
-                ]
+                paths_to_delete = [f"{remote_key}/{f}".replace("\\", "/") for f in metadata["_files"]]
             else:
                 # Fallback to listing (expensive)
                 paths_to_delete = self.gcs.list_objects(prefix=remote_key)
@@ -765,10 +755,7 @@ class GCPRegistryBackend(RegistryBackend):
             file_workers = min(2, workers)
 
             # Prepare tasks for objects that haven't already failed (e.g., lock acquisition)
-            delete_tasks = [
-                (n, v) for n, v in zip(names, versions)
-                if (n, v) not in results
-            ]
+            delete_tasks = [(n, v) for n, v in zip(names, versions) if (n, v) not in results]
 
             # Fetch metadata for all objects to get _files manifests (avoids listing during delete)
             metadata_results = self.fetch_metadata(
@@ -781,7 +768,9 @@ class GCPRegistryBackend(RegistryBackend):
                 obj_name, obj_version = args
                 # Get metadata for this object (may be None if not found)
                 meta_result = metadata_results.get((obj_name, obj_version))
-                obj_metadata = meta_result.get("metadata") if meta_result and meta_result.get("status") == "ok" else None
+                obj_metadata = (
+                    meta_result.get("metadata") if meta_result and meta_result.get("status") == "ok" else None
+                )
                 result = self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
                 return ((obj_name, obj_version), result)
 
