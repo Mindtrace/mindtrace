@@ -1,0 +1,2797 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://mindtrace.ai/v0.7.0/database/">
+      
+      
+        <link rel="prev" href="../jobs/">
+      
+      
+        <link rel="next" href="../storage/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Database - Mindtrace Package Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#mindtrace-database-module" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Mindtrace Package Docs" class="md-header__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mindtrace Package Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Database
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="deep-orange"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../core/" class="md-tabs__link">
+          
+  
+  
+  Mindtrace
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../core/api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Mindtrace Package Docs" class="md-nav__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Mindtrace Package Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindtrace
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Mindtrace
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../services/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#key-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Features
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-simple-way-unified-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Simple Way: Unified Documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#traditional-way-database-specific-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Traditional Way: Database-Specific Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-odms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available ODMs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available ODMs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-unifiedmindtraceodm-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. UnifiedMindtraceODM (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-mongomindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. MongoMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-redismindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. RedisMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-registrymindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. RegistryMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#async-operations-recommended-for-async-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Operations (Recommended for async code)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-operations-works-with-both-mongodb-and-redis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync Operations (Works with both MongoDB and Redis)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncasync-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync/Async Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unifiedmindtraceodm-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UnifiedMindtraceODM Specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-querying" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Querying
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advanced Querying">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mongodb-through-unifiedmindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MongoDB (through UnifiedMindtraceODM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis-through-unifiedmindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis (through UnifiedMindtraceODM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#initialization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initialization Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quick-start-all-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start - All Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unit-tests-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit Tests Only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integration-tests-containers-managed-by-test-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests (Containers managed by test script)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#targeted-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Targeted Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#complete-example-user-management-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Example: User Management System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#more-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        More Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-model-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Model Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-database-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Database Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#need-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Need Help?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#class-name-changes-v060" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Class Name Changes (v0.6.0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../services/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#key-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Features
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-simple-way-unified-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Simple Way: Unified Documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#traditional-way-database-specific-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Traditional Way: Database-Specific Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-odms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available ODMs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available ODMs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-unifiedmindtraceodm-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. UnifiedMindtraceODM (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-mongomindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. MongoMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-redismindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. RedisMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-registrymindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. RegistryMindtraceODM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#async-operations-recommended-for-async-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Operations (Recommended for async code)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-operations-works-with-both-mongodb-and-redis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync Operations (Works with both MongoDB and Redis)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncasync-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync/Async Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unifiedmindtraceodm-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UnifiedMindtraceODM Specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-querying" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Querying
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advanced Querying">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mongodb-through-unifiedmindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MongoDB (through UnifiedMindtraceODM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis-through-unifiedmindtraceodm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis (through UnifiedMindtraceODM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#initialization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initialization Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quick-start-all-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start - All Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unit-tests-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit Tests Only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integration-tests-containers-managed-by-test-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests (Containers managed by test script)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#targeted-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Targeted Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#complete-example-user-management-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Example: User Management System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#more-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        More Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-model-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Model Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-database-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Database Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#need-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Need Help?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#class-name-changes-v060" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Class Name Changes (v0.6.0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<p><a href="https://pypi.org/project/mindtrace-database/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/mindtrace-database" /></a>
+<a href="https://github.com/mindtrace/mindtrace/blob/main/mindtrace/database/LICENSE"><img alt="License" src="https://img.shields.io/pypi/l/mindtrace-database" /></a>
+<a href="https://pepy.tech/projects/mindtrace-database"><img alt="Downloads" src="https://static.pepy.tech/badge/mindtrace-database" /></a></p>
+<h1 id="mindtrace-database-module">Mindtrace Database Module</h1>
+<p>A powerful, flexible Object-Document Mapping (ODM) system that provides a <strong>unified interface</strong> for working with multiple database backends in the Mindtrace project. Write once, run on MongoDB, Redis, or both.</p>
+<h2 id="key-features">Key Features</h2>
+<ul>
+<li><strong>Unified Interface</strong> - One API for multiple databases</li>
+<li><strong>Dynamic Switching</strong> - Switch between MongoDB and Redis at runtime</li>
+<li><strong>Simplified Document Models</strong> - Define once, use everywhere</li>
+<li><strong>Full Async/Sync Support</strong> - Both MongoDB and Redis support sync and async interfaces</li>
+<li><strong>Seamless Interface Compatibility</strong> - Use sync code with async databases and vice versa</li>
+<li><strong>Advanced Querying</strong> - Rich query capabilities across all databases</li>
+<li><strong>Comprehensive Error Handling</strong> - Clear, actionable error messages</li>
+<li><strong>Full Test Coverage</strong> - Thoroughly tested with unit and integration tests</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="the-simple-way-unified-documents">The Simple Way: Unified Documents</h3>
+<p>Define your document model once and use it with any database:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnifiedMindtraceDocument</span><span class="p">,</span> <span class="n">UnifiedMindtraceODM</span><span class="p">,</span> <span class="n">BackendType</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">Field</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 1. Define your document model (works with both MongoDB and Redis)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">UnifiedMindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;User&#39;s full name&quot;</span><span class="p">)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">age</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;User&#39;s age&quot;</span><span class="p">)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;User&#39;s email address&quot;</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">skills</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        <span class="n">collection_name</span> <span class="o">=</span> <span class="s2">&quot;users&quot;</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        <span class="n">global_key_prefix</span> <span class="o">=</span> <span class="s2">&quot;myapp&quot;</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>        <span class="n">indexed_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">]</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        <span class="n">unique_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># 2. Create ODM instance (supports both MongoDB and Redis)</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="n">unified_model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;myapp&quot;</span><span class="p">,</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span><span class="p">,</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span>  <span class="c1"># Start with MongoDB</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="c1"># init_mode=InitMode.ASYNC,  # Both use ASYNC (or SYNC)</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="c1"># If None, MongoDB defaults to ASYNC and Redis defaults to SYNC</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="p">)</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="c1"># 3. Use it (Same API regardless of database - both sync and async work)</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="n">age</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span> <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Python&quot;</span><span class="p">])</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="c1"># Async operations (work with both MongoDB and Redis)</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="n">inserted_user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="n">retrieved_user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">get_async</span><span class="p">(</span><span class="n">inserted_user</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="n">python_users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">find_async</span><span class="p">({</span><span class="s2">&quot;skills&quot;</span><span class="p">:</span> <span class="s2">&quot;Python&quot;</span><span class="p">})</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="n">all_users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">all_async</span><span class="p">()</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="c1"># Sync operations (also work with both MongoDB and Redis)</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="n">inserted_user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="n">retrieved_user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">inserted_user</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="n">python_users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">({</span><span class="s2">&quot;skills&quot;</span><span class="p">:</span> <span class="s2">&quot;Python&quot;</span><span class="p">})</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="n">all_users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="c1"># Switch databases on the fly</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span><span class="p">)</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="n">redis_user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>  <span class="c1"># Now using Redis (sync)</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="c1"># or</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="n">redis_user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>  <span class="c1"># Redis with async interface</span>
+</span></code></pre></div>
+<h3 id="traditional-way-database-specific-models">Traditional Way: Database-Specific Models</h3>
+<p>If you prefer more control, you can define database-specific models:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">MongoMindtraceODM</span><span class="p">,</span> 
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">RedisMindtraceODM</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">MindtraceDocument</span><span class="p">,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">MindtraceRedisDocument</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">)</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">beanie</span><span class="w"> </span><span class="kn">import</span> <span class="n">Indexed</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="kn">from</span><span class="w"> </span><span class="nn">redis_om</span><span class="w"> </span><span class="kn">import</span> <span class="n">Field</span> <span class="k">as</span> <span class="n">RedisField</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="c1"># MongoDB model</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">class</span><span class="w"> </span><span class="nc">MongoUser</span><span class="p">(</span><span class="n">MindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">email</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Indexed</span><span class="p">(</span><span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)]</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">age</span><span class="p">:</span> <span class="nb">int</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">:</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;users&quot;</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="c1"># Redis model</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="k">class</span><span class="w"> </span><span class="nc">RedisUser</span><span class="p">(</span><span class="n">MindtraceRedisDocument</span><span class="p">):</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">RedisField</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">RedisField</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    <span class="n">age</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">RedisField</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>        <span class="n">global_key_prefix</span> <span class="o">=</span> <span class="s2">&quot;myapp&quot;</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="c1"># Use them separately</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="n">mongo_db</span> <span class="o">=</span> <span class="n">MongoMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>    <span class="n">model_cls</span><span class="o">=</span><span class="n">MongoUser</span><span class="p">,</span>
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>    <span class="n">db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-1-33"><a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>    <span class="n">db_name</span><span class="o">=</span><span class="s2">&quot;myapp&quot;</span>
+</span><span id="__span-1-34"><a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="p">)</span>
+</span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>
+</span><span id="__span-1-36"><a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="n">redis_db</span> <span class="o">=</span> <span class="n">RedisMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-1-37"><a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>    <span class="n">model_cls</span><span class="o">=</span><span class="n">RedisUser</span><span class="p">,</span>
+</span><span id="__span-1-38"><a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span>
+</span><span id="__span-1-39"><a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="p">)</span>
+</span></code></pre></div>
+<h2 id="available-odms">Available ODMs</h2>
+<h3 id="1-unifiedmindtraceodm-recommended">1. UnifiedMindtraceODM (Recommended)</h3>
+<p>The flagship ODM that provides a unified interface for multiple databases:</p>
+<p><strong>Key Features:</strong>
+- <strong>Single Interface</strong>: One API for all databases
+- <strong>Runtime Switching</strong>: Change databases without code changes
+- <strong>Automatic Model Generation</strong>: Converts unified models to database-specific formats
+- <strong>Flexible Configuration</strong>: Use one or multiple databases</p>
+<p><strong>Configuration Options:</strong>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Option 1: Unified model (recommended)</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">unified_model_cls</span><span class="o">=</span><span class="n">MyUnifiedDoc</span><span class="p">,</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;mydb&quot;</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">)</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Option 2: Separate models</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">mongo_model_cls</span><span class="o">=</span><span class="n">MyMongoDoc</span><span class="p">,</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">redis_model_cls</span><span class="o">=</span><span class="n">MyRedisDoc</span><span class="p">,</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;mydb&quot;</span><span class="p">,</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span><span class="p">,</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="p">)</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="c1"># Option 3: Single database</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>    <span class="n">unified_model_cls</span><span class="o">=</span><span class="n">MyUnifiedDoc</span><span class="p">,</span>
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>    <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>    <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;mydb&quot;</span><span class="p">,</span>
+</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>    <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span>
+</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="p">)</span>
+</span></code></pre></div></p>
+<h3 id="2-mongomindtraceodm">2. MongoMindtraceODM</h3>
+<p>Specialized MongoDB ODM using Beanie. <strong>Natively async, but supports sync interface too</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">MongoMindtraceODM</span><span class="p">,</span> <span class="n">MindtraceDocument</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">MindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;users&quot;</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="n">use_cache</span> <span class="o">=</span> <span class="kc">False</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">db</span> <span class="o">=</span> <span class="n">MongoMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">db_name</span><span class="o">=</span><span class="s2">&quot;myapp&quot;</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="p">)</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="c1"># Async operations (native)</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="n">user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">))</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="n">all_users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="c1"># Sync operations (wrapper methods - use from sync code)</span>
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_sync</span><span class="p">(</span><span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;bob@example.com&quot;</span><span class="p">))</span>
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="n">all_users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">all_sync</span><span class="p">()</span>
+</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>
+</span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="c1"># Supports MongoDB-specific features</span>
+</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="n">pipeline</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;$match&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;$gte&quot;</span><span class="p">:</span> <span class="mi">18</span><span class="p">}}}]</span>
+</span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">pipeline</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="3-redismindtraceodm">3. RedisMindtraceODM</h3>
+<p>High-performance Redis ODM with JSON support. <strong>Natively sync, but supports async interface too</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisMindtraceODM</span><span class="p">,</span> <span class="n">MindtraceRedisDocument</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">redis_om</span><span class="w"> </span><span class="kn">import</span> <span class="n">Field</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">MindtraceRedisDocument</span><span class="p">):</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">age</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>        <span class="n">global_key_prefix</span> <span class="o">=</span> <span class="s2">&quot;myapp&quot;</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">db</span> <span class="o">=</span> <span class="n">RedisMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="p">)</span>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="c1"># Sync operations (native)</span>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">))</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="n">all_users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="c1"># Async operations (wrapper methods - use from async code)</span>
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="n">user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;bob@example.com&quot;</span><span class="p">))</span>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="n">all_users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">all_async</span><span class="p">()</span>
+</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>
+</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="c1"># Supports Redis-specific queries</span>
+</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="n">users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">User</span><span class="o">.</span><span class="n">age</span> <span class="o">&gt;=</span> <span class="mi">18</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="4-registrymindtraceodm">4. RegistryMindtraceODM</h3>
+<p>Flexible ODM using the Mindtrace Registry system, supporting local storage, GCP, and other storage options:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">RegistryMindtraceODM</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">Registry</span><span class="p">,</span> <span class="n">Archiver</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Type</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="k">class</span><span class="w"> </span><span class="nc">UserArchiver</span><span class="p">(</span><span class="n">Archiver</span><span class="p">):</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user</span><span class="p">:</span> <span class="n">User</span><span class="p">):</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">uri</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;user.json&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">model_dump_json</span><span class="p">())</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">User</span><span class="p">:</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">uri</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;user.json&quot;</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>            <span class="k">return</span> <span class="n">User</span><span class="o">.</span><span class="n">model_validate_json</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="n">Registry</span><span class="o">.</span><span class="n">register_default_materializer</span><span class="p">(</span><span class="n">User</span><span class="p">,</span> <span class="n">UserArchiver</span><span class="p">)</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="n">db</span> <span class="o">=</span> <span class="n">RegistryMindtraceODM</span><span class="p">(</span><span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">)</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;John Doe&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;john.doe@example.com&quot;</span><span class="p">)</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="n">user_id</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+</span></code></pre></div>
+<p><strong>With GCP Storage:</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">RegistryMindtraceODM</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">Registry</span><span class="p">,</span> <span class="n">GCPRegistryBackend</span><span class="p">,</span> <span class="n">Archiver</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Type</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="k">class</span><span class="w"> </span><span class="nc">UserArchiver</span><span class="p">(</span><span class="n">Archiver</span><span class="p">):</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user</span><span class="p">:</span> <span class="n">User</span><span class="p">):</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">uri</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;user.json&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">model_dump_json</span><span class="p">())</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">User</span><span class="p">:</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">uri</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;user.json&quot;</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>            <span class="k">return</span> <span class="n">User</span><span class="o">.</span><span class="n">model_validate_json</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="n">Registry</span><span class="o">.</span><span class="n">register_default_materializer</span><span class="p">(</span><span class="n">User</span><span class="p">,</span> <span class="n">UserArchiver</span><span class="p">)</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="n">gcp_registry_backend</span> <span class="o">=</span> <span class="n">GCPRegistryBackend</span><span class="p">(</span>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>    <span class="n">uri</span><span class="o">=</span><span class="s2">&quot;gs://my-bucket&quot;</span><span class="p">,</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>    <span class="n">project_id</span><span class="o">=</span><span class="s2">&quot;my-project&quot;</span><span class="p">,</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>    <span class="n">bucket_name</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="p">)</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="n">db</span> <span class="o">=</span> <span class="n">RegistryMindtraceODM</span><span class="p">(</span><span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="n">gcp_registry_backend</span><span class="p">)</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;John Doe&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;john.doe@example.com&quot;</span><span class="p">)</span>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="n">user_id</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+</span></code></pre></div>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="core-operations">Core Operations</h3>
+<p>All ODMs support both <strong>sync and async</strong> interfaces for all operations. Choose the style that fits your codebase.</p>
+<h4 id="async-operations-recommended-for-async-code">Async Operations (Recommended for async code)</h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Insert a document</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">inserted_doc</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Get document by ID</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">doc</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">get_async</span><span class="p">(</span><span class="s2">&quot;doc_id&quot;</span><span class="p">)</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Delete document</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">delete_async</span><span class="p">(</span><span class="s2">&quot;doc_id&quot;</span><span class="p">)</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="c1"># Get all documents</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="n">all_docs</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">all_async</span><span class="p">()</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="c1"># Find documents with filters</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">find_async</span><span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">})</span>
+</span></code></pre></div>
+<h4 id="sync-operations-works-with-both-mongodb-and-redis">Sync Operations (Works with both MongoDB and Redis)</h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Insert a document</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">inserted_doc</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Get document by ID</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">doc</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;doc_id&quot;</span><span class="p">)</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="c1"># Delete document</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">db</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="s2">&quot;doc_id&quot;</span><span class="p">)</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="c1"># Get all documents</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="n">all_docs</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># Find documents with filters</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="n">results</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">})</span>
+</span></code></pre></div>
+<p><strong>Note</strong>: 
+- <strong>MongoDB</strong>: Sync methods use wrapper functions that run async code in an event loop
+- <strong>Redis</strong>: Async methods run sync operations in a thread pool to avoid blocking the event loop
+- <strong>Unified ODM</strong>: Automatically routes to the appropriate method based on the active database</p>
+<h3 id="syncasync-compatibility">Sync/Async Compatibility</h3>
+<p>Both MongoDB and Redis ODMs support both interfaces:</p>
+<table>
+<thead>
+<tr>
+<th>Database</th>
+<th>Native Interface</th>
+<th>Wrapper Interface</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MongoDB</td>
+<td>Async (<code>insert</code>, <code>get</code>, etc.)</td>
+<td>Sync (<code>insert_sync</code>, <code>get_sync</code>, etc.)</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>Sync (<code>insert</code>, <code>get</code>, etc.)</td>
+<td>Async (<code>insert_async</code>, <code>get_async</code>, etc.)</td>
+</tr>
+</tbody>
+</table>
+<p>This means you can:
+- Use sync code with MongoDB (via sync wrappers)
+- Use async code with Redis (via async wrappers)
+- Mix and match based on your needs</p>
+<h3 id="unifiedmindtraceodm-specific">UnifiedMindtraceODM Specific</h3>
+<p>Additional methods for the unified ODM:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Database management</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span><span class="p">)</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">current_type</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_current_backend_type</span><span class="p">()</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">is_async</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">is_async</span><span class="p">()</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="c1"># Database availability</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">has_mongo</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">has_mongo_backend</span><span class="p">()</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">has_redis</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">has_redis_backend</span><span class="p">()</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="c1"># Direct access to underlying ODMs</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="n">mongo_odm</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_mongo_backend</span><span class="p">()</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">redis_odm</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_redis_backend</span><span class="p">()</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="c1"># Model access</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="n">raw_model</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_raw_model</span><span class="p">()</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="n">unified_model</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_unified_model</span><span class="p">()</span>
+</span></code></pre></div>
+<h3 id="advanced-querying">Advanced Querying</h3>
+<h4 id="mongodb-through-unifiedmindtraceodm">MongoDB (through UnifiedMindtraceODM)</h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># MongoDB-style queries</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">find_async</span><span class="p">({</span><span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;$gte&quot;</span><span class="p">:</span> <span class="mi">18</span><span class="p">}})</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">users</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">find_async</span><span class="p">({</span><span class="s2">&quot;skills&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;$in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Python&quot;</span><span class="p">,</span> <span class="s2">&quot;JavaScript&quot;</span><span class="p">]}})</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># Aggregation pipelines (when using MongoDB)</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="k">if</span> <span class="n">db</span><span class="o">.</span><span class="n">get_current_backend_type</span><span class="p">()</span> <span class="o">==</span> <span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span><span class="p">:</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">pipeline</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="p">{</span><span class="s2">&quot;$match&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;$gte&quot;</span><span class="p">:</span> <span class="mi">18</span><span class="p">}}},</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        <span class="p">{</span><span class="s2">&quot;$group&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;_id&quot;</span><span class="p">:</span> <span class="s2">&quot;$department&quot;</span><span class="p">,</span> <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;$sum&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}}}</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="p">]</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">get_mongo_backend</span><span class="p">()</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">pipeline</span><span class="p">)</span>
+</span></code></pre></div>
+<h4 id="redis-through-unifiedmindtraceodm">Redis (through UnifiedMindtraceODM)</h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Switch to Redis for these queries</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span><span class="p">)</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Redis OM expressions</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">Model</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_raw_model</span><span class="p">()</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">Model</span><span class="o">.</span><span class="n">age</span> <span class="o">&gt;=</span> <span class="mi">18</span><span class="p">)</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">Model</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Alice&quot;</span><span class="p">)</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="n">users</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">Model</span><span class="o">.</span><span class="n">skills</span> <span class="o">&lt;&lt;</span> <span class="s2">&quot;Python&quot;</span><span class="p">)</span>  <span class="c1"># Contains</span>
+</span></code></pre></div>
+<h2 id="initialization-options">Initialization Options</h2>
+<p>By default, ODMs auto-initialize on first operation. For more control, use constructor parameters:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">InitMode</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">unified_model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;myapp&quot;</span><span class="p">,</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span><span class="p">,</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span><span class="p">,</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    <span class="n">auto_init</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>              <span class="c1"># Initialize at creation time</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    <span class="n">init_mode</span><span class="o">=</span><span class="n">InitMode</span><span class="o">.</span><span class="n">SYNC</span><span class="p">,</span>     <span class="c1"># Use sync initialization</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><strong>InitMode options:</strong>
+- <code>InitMode.SYNC</code> - Synchronous initialization (blocks until complete)
+- <code>InitMode.ASYNC</code> - Deferred initialization (completes on first async operation)</p>
+<p><strong>Default behavior:</strong>
+- MongoDB defaults to <code>InitMode.ASYNC</code>
+- Redis defaults to <code>InitMode.SYNC</code></p>
+<h2 id="error-handling">Error Handling</h2>
+<p>The module provides comprehensive error handling:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentNotFoundError</span><span class="p">,</span> <span class="n">DuplicateInsertError</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">get_async</span><span class="p">(</span><span class="s2">&quot;non_existent_id&quot;</span><span class="p">)</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">except</span> <span class="n">DocumentNotFoundError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;User not found: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>    <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">duplicate_user</span><span class="p">)</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="k">except</span> <span class="n">DuplicateInsertError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;User already exists: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+<h2 id="testing">Testing</h2>
+<p>The database module includes comprehensive test coverage with both unit and integration tests.</p>
+<h3 id="test-structure">Test Structure</h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>tests/
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>├── unit/mindtrace/database/          # Unit tests (no DB required)
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>│   ├── test_mongo_unit.py
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>│   ├── test_redis_unit.py
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>│   ├── test_registry_odm_backend.py
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>│   └── test_unified_unit.py
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>└── integration/mindtrace/database/   # Integration tests (DB required)
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    ├── test_mongo.py
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    ├── test_redis_odm.py
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>    ├── test_registry_odm.py
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>    └── test_unified.py
+</span></code></pre></div>
+<h3 id="running-tests">Running Tests</h3>
+<h4 id="quick-start-all-tests">Quick Start - All Tests</h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>ds<span class="w"> </span>test:<span class="w"> </span>database
+</span></code></pre></div>
+<h4 id="unit-tests-only">Unit Tests Only</h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>ds<span class="w"> </span>test:<span class="w"> </span>database<span class="w"> </span>--unit
+</span></code></pre></div>
+<h4 id="integration-tests-containers-managed-by-test-script">Integration Tests (Containers managed by test script)</h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>ds<span class="w"> </span>test:<span class="w"> </span>database<span class="w"> </span>--integration
+</span></code></pre></div>
+<h4 id="targeted-testing">Targeted Testing</h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Test only unified backend</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>ds<span class="w"> </span>test:<span class="w"> </span>tests/integration/mindtrace/database/test_unified.py
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Test only MongoDB</span>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>ds<span class="w"> </span>test:<span class="w"> </span>tests/integration/mindtrace/database/test_mongo.py
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># Test only Redis</span>
+</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>ds<span class="w"> </span>test:<span class="w"> </span>tests/integration/mindtrace/database/test_redis_odm.py
+</span></code></pre></div>
+<h3 id="test-coverage">Test Coverage</h3>
+<p>The test suite covers:</p>
+<ul>
+<li><strong>CRUD Operations</strong> - Create, Read, Update, Delete</li>
+<li><strong>Query Operations</strong> - Find, filter, search</li>
+<li><strong>Error Handling</strong> - All exception scenarios</li>
+<li><strong>Database Switching</strong> - Dynamic database changes</li>
+<li><strong>Async/Sync Compatibility</strong> - Both programming styles</li>
+<li><strong>Model Conversion</strong> - Unified to database-specific models</li>
+<li><strong>Edge Cases</strong> - Duplicate keys, missing documents, invalid queries</li>
+</ul>
+<h2 id="examples">Examples</h2>
+<h3 id="complete-example-user-management-system">Complete Example: User Management System</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="n">UnifiedMindtraceODM</span><span class="p">,</span>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">UnifiedMindtraceDocument</span><span class="p">,</span>
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    <span class="n">BackendType</span><span class="p">,</span>
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">DocumentNotFoundError</span>
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="p">)</span>
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">Field</span>
+</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>
+</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">UnifiedMindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-19-12"><a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;Full name&quot;</span><span class="p">)</span>
+</span><span id="__span-19-13"><a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;Email address&quot;</span><span class="p">)</span>  
+</span><span id="__span-19-14"><a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>    <span class="n">age</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">le</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Age&quot;</span><span class="p">)</span>
+</span><span id="__span-19-15"><a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>    <span class="n">department</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;Department&quot;</span><span class="p">)</span>
+</span><span id="__span-19-16"><a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a>    <span class="n">skills</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+</span><span id="__span-19-17"><a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>
+</span><span id="__span-19-18"><a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="__span-19-19"><a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a>        <span class="n">collection_name</span> <span class="o">=</span> <span class="s2">&quot;employees&quot;</span>
+</span><span id="__span-19-20"><a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a>        <span class="n">global_key_prefix</span> <span class="o">=</span> <span class="s2">&quot;company&quot;</span>
+</span><span id="__span-19-21"><a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a>        <span class="n">indexed_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">,</span> <span class="s2">&quot;department&quot;</span><span class="p">,</span> <span class="s2">&quot;skills&quot;</span><span class="p">]</span>
+</span><span id="__span-19-22"><a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a>        <span class="n">unique_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span>
+</span><span id="__span-19-23"><a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a>
+</span><span id="__span-19-24"><a id="__codelineno-19-24" name="__codelineno-19-24" href="#__codelineno-19-24"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+</span><span id="__span-19-25"><a id="__codelineno-19-25" name="__codelineno-19-25" href="#__codelineno-19-25"></a>    <span class="c1"># Setup with both MongoDB and Redis</span>
+</span><span id="__span-19-26"><a id="__codelineno-19-26" name="__codelineno-19-26" href="#__codelineno-19-26"></a>    <span class="n">db</span> <span class="o">=</span> <span class="n">UnifiedMindtraceODM</span><span class="p">(</span>
+</span><span id="__span-19-27"><a id="__codelineno-19-27" name="__codelineno-19-27" href="#__codelineno-19-27"></a>        <span class="n">unified_model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+</span><span id="__span-19-28"><a id="__codelineno-19-28" name="__codelineno-19-28" href="#__codelineno-19-28"></a>        <span class="n">mongo_db_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017&quot;</span><span class="p">,</span>
+</span><span id="__span-19-29"><a id="__codelineno-19-29" name="__codelineno-19-29" href="#__codelineno-19-29"></a>        <span class="n">mongo_db_name</span><span class="o">=</span><span class="s2">&quot;company&quot;</span><span class="p">,</span>
+</span><span id="__span-19-30"><a id="__codelineno-19-30" name="__codelineno-19-30" href="#__codelineno-19-30"></a>        <span class="n">redis_url</span><span class="o">=</span><span class="s2">&quot;redis://localhost:6379&quot;</span><span class="p">,</span>
+</span><span id="__span-19-31"><a id="__codelineno-19-31" name="__codelineno-19-31" href="#__codelineno-19-31"></a>        <span class="n">preferred_backend</span><span class="o">=</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span>
+</span><span id="__span-19-32"><a id="__codelineno-19-32" name="__codelineno-19-32" href="#__codelineno-19-32"></a>    <span class="p">)</span>
+</span><span id="__span-19-33"><a id="__codelineno-19-33" name="__codelineno-19-33" href="#__codelineno-19-33"></a>
+</span><span id="__span-19-34"><a id="__codelineno-19-34" name="__codelineno-19-34" href="#__codelineno-19-34"></a>    <span class="c1"># Create some users</span>
+</span><span id="__span-19-35"><a id="__codelineno-19-35" name="__codelineno-19-35" href="#__codelineno-19-35"></a>    <span class="n">users</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-19-36"><a id="__codelineno-19-36" name="__codelineno-19-36" href="#__codelineno-19-36"></a>        <span class="n">User</span><span class="p">(</span>
+</span><span id="__span-19-37"><a id="__codelineno-19-37" name="__codelineno-19-37" href="#__codelineno-19-37"></a>            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice Johnson&quot;</span><span class="p">,</span>
+</span><span id="__span-19-38"><a id="__codelineno-19-38" name="__codelineno-19-38" href="#__codelineno-19-38"></a>            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@company.com&quot;</span><span class="p">,</span>
+</span><span id="__span-19-39"><a id="__codelineno-19-39" name="__codelineno-19-39" href="#__codelineno-19-39"></a>            <span class="n">age</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+</span><span id="__span-19-40"><a id="__codelineno-19-40" name="__codelineno-19-40" href="#__codelineno-19-40"></a>            <span class="n">department</span><span class="o">=</span><span class="s2">&quot;Engineering&quot;</span><span class="p">,</span>
+</span><span id="__span-19-41"><a id="__codelineno-19-41" name="__codelineno-19-41" href="#__codelineno-19-41"></a>            <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Python&quot;</span><span class="p">,</span> <span class="s2">&quot;MongoDB&quot;</span><span class="p">,</span> <span class="s2">&quot;Docker&quot;</span><span class="p">]</span>
+</span><span id="__span-19-42"><a id="__codelineno-19-42" name="__codelineno-19-42" href="#__codelineno-19-42"></a>        <span class="p">),</span>
+</span><span id="__span-19-43"><a id="__codelineno-19-43" name="__codelineno-19-43" href="#__codelineno-19-43"></a>        <span class="n">User</span><span class="p">(</span>
+</span><span id="__span-19-44"><a id="__codelineno-19-44" name="__codelineno-19-44" href="#__codelineno-19-44"></a>            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob Smith&quot;</span><span class="p">,</span> 
+</span><span id="__span-19-45"><a id="__codelineno-19-45" name="__codelineno-19-45" href="#__codelineno-19-45"></a>            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;bob@company.com&quot;</span><span class="p">,</span>
+</span><span id="__span-19-46"><a id="__codelineno-19-46" name="__codelineno-19-46" href="#__codelineno-19-46"></a>            <span class="n">age</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span>
+</span><span id="__span-19-47"><a id="__codelineno-19-47" name="__codelineno-19-47" href="#__codelineno-19-47"></a>            <span class="n">department</span><span class="o">=</span><span class="s2">&quot;Engineering&quot;</span><span class="p">,</span>
+</span><span id="__span-19-48"><a id="__codelineno-19-48" name="__codelineno-19-48" href="#__codelineno-19-48"></a>            <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;JavaScript&quot;</span><span class="p">,</span> <span class="s2">&quot;Redis&quot;</span><span class="p">,</span> <span class="s2">&quot;React&quot;</span><span class="p">]</span>
+</span><span id="__span-19-49"><a id="__codelineno-19-49" name="__codelineno-19-49" href="#__codelineno-19-49"></a>        <span class="p">),</span>
+</span><span id="__span-19-50"><a id="__codelineno-19-50" name="__codelineno-19-50" href="#__codelineno-19-50"></a>        <span class="n">User</span><span class="p">(</span>
+</span><span id="__span-19-51"><a id="__codelineno-19-51" name="__codelineno-19-51" href="#__codelineno-19-51"></a>            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Carol Davis&quot;</span><span class="p">,</span>
+</span><span id="__span-19-52"><a id="__codelineno-19-52" name="__codelineno-19-52" href="#__codelineno-19-52"></a>            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;carol@company.com&quot;</span><span class="p">,</span> 
+</span><span id="__span-19-53"><a id="__codelineno-19-53" name="__codelineno-19-53" href="#__codelineno-19-53"></a>            <span class="n">age</span><span class="o">=</span><span class="mi">35</span><span class="p">,</span>
+</span><span id="__span-19-54"><a id="__codelineno-19-54" name="__codelineno-19-54" href="#__codelineno-19-54"></a>            <span class="n">department</span><span class="o">=</span><span class="s2">&quot;Marketing&quot;</span><span class="p">,</span>
+</span><span id="__span-19-55"><a id="__codelineno-19-55" name="__codelineno-19-55" href="#__codelineno-19-55"></a>            <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Analytics&quot;</span><span class="p">,</span> <span class="s2">&quot;SQL&quot;</span><span class="p">]</span>
+</span><span id="__span-19-56"><a id="__codelineno-19-56" name="__codelineno-19-56" href="#__codelineno-19-56"></a>        <span class="p">)</span>
+</span><span id="__span-19-57"><a id="__codelineno-19-57" name="__codelineno-19-57" href="#__codelineno-19-57"></a>    <span class="p">]</span>
+</span><span id="__span-19-58"><a id="__codelineno-19-58" name="__codelineno-19-58" href="#__codelineno-19-58"></a>
+</span><span id="__span-19-59"><a id="__codelineno-19-59" name="__codelineno-19-59" href="#__codelineno-19-59"></a>    <span class="c1"># Insert users</span>
+</span><span id="__span-19-60"><a id="__codelineno-19-60" name="__codelineno-19-60" href="#__codelineno-19-60"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Creating users...&quot;</span><span class="p">)</span>
+</span><span id="__span-19-61"><a id="__codelineno-19-61" name="__codelineno-19-61" href="#__codelineno-19-61"></a>    <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">users</span><span class="p">:</span>
+</span><span id="__span-19-62"><a id="__codelineno-19-62" name="__codelineno-19-62" href="#__codelineno-19-62"></a>        <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-19-63"><a id="__codelineno-19-63" name="__codelineno-19-63" href="#__codelineno-19-63"></a>            <span class="n">inserted</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</span><span id="__span-19-64"><a id="__codelineno-19-64" name="__codelineno-19-64" href="#__codelineno-19-64"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Created: </span><span class="si">{</span><span class="n">inserted</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (ID: </span><span class="si">{</span><span class="n">inserted</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+</span><span id="__span-19-65"><a id="__codelineno-19-65" name="__codelineno-19-65" href="#__codelineno-19-65"></a>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="__span-19-66"><a id="__codelineno-19-66" name="__codelineno-19-66" href="#__codelineno-19-66"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to create </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-67"><a id="__codelineno-19-67" name="__codelineno-19-67" href="#__codelineno-19-67"></a>
+</span><span id="__span-19-68"><a id="__codelineno-19-68" name="__codelineno-19-68" href="#__codelineno-19-68"></a>    <span class="c1"># Find engineers</span>
+</span><span id="__span-19-69"><a id="__codelineno-19-69" name="__codelineno-19-69" href="#__codelineno-19-69"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Finding engineers...&quot;</span><span class="p">)</span>
+</span><span id="__span-19-70"><a id="__codelineno-19-70" name="__codelineno-19-70" href="#__codelineno-19-70"></a>    <span class="n">engineers</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">find_async</span><span class="p">({</span><span class="s2">&quot;department&quot;</span><span class="p">:</span> <span class="s2">&quot;Engineering&quot;</span><span class="p">})</span>
+</span><span id="__span-19-71"><a id="__codelineno-19-71" name="__codelineno-19-71" href="#__codelineno-19-71"></a>    <span class="k">for</span> <span class="n">eng</span> <span class="ow">in</span> <span class="n">engineers</span><span class="p">:</span>
+</span><span id="__span-19-72"><a id="__codelineno-19-72" name="__codelineno-19-72" href="#__codelineno-19-72"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">eng</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> - Skills: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">eng</span><span class="o">.</span><span class="n">skills</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-73"><a id="__codelineno-19-73" name="__codelineno-19-73" href="#__codelineno-19-73"></a>
+</span><span id="__span-19-74"><a id="__codelineno-19-74" name="__codelineno-19-74" href="#__codelineno-19-74"></a>    <span class="c1"># Switch to Redis for fast lookups</span>
+</span><span id="__span-19-75"><a id="__codelineno-19-75" name="__codelineno-19-75" href="#__codelineno-19-75"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Switching to Redis for fast operations...&quot;</span><span class="p">)</span>
+</span><span id="__span-19-76"><a id="__codelineno-19-76" name="__codelineno-19-76" href="#__codelineno-19-76"></a>    <span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span><span class="p">)</span>
+</span><span id="__span-19-77"><a id="__codelineno-19-77" name="__codelineno-19-77" href="#__codelineno-19-77"></a>
+</span><span id="__span-19-78"><a id="__codelineno-19-78" name="__codelineno-19-78" href="#__codelineno-19-78"></a>    <span class="c1"># Insert more users in Redis (both sync and async work)</span>
+</span><span id="__span-19-79"><a id="__codelineno-19-79" name="__codelineno-19-79" href="#__codelineno-19-79"></a>    <span class="n">redis_user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span>
+</span><span id="__span-19-80"><a id="__codelineno-19-80" name="__codelineno-19-80" href="#__codelineno-19-80"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Dave Wilson&quot;</span><span class="p">,</span>
+</span><span id="__span-19-81"><a id="__codelineno-19-81" name="__codelineno-19-81" href="#__codelineno-19-81"></a>        <span class="n">email</span><span class="o">=</span><span class="s2">&quot;dave@company.com&quot;</span><span class="p">,</span>
+</span><span id="__span-19-82"><a id="__codelineno-19-82" name="__codelineno-19-82" href="#__codelineno-19-82"></a>        <span class="n">age</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span>
+</span><span id="__span-19-83"><a id="__codelineno-19-83" name="__codelineno-19-83" href="#__codelineno-19-83"></a>        <span class="n">department</span><span class="o">=</span><span class="s2">&quot;DevOps&quot;</span><span class="p">,</span>
+</span><span id="__span-19-84"><a id="__codelineno-19-84" name="__codelineno-19-84" href="#__codelineno-19-84"></a>        <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Kubernetes&quot;</span><span class="p">,</span> <span class="s2">&quot;Redis&quot;</span><span class="p">,</span> <span class="s2">&quot;Monitoring&quot;</span><span class="p">]</span>
+</span><span id="__span-19-85"><a id="__codelineno-19-85" name="__codelineno-19-85" href="#__codelineno-19-85"></a>    <span class="p">)</span>
+</span><span id="__span-19-86"><a id="__codelineno-19-86" name="__codelineno-19-86" href="#__codelineno-19-86"></a>
+</span><span id="__span-19-87"><a id="__codelineno-19-87" name="__codelineno-19-87" href="#__codelineno-19-87"></a>    <span class="c1"># Use sync interface (native for Redis)</span>
+</span><span id="__span-19-88"><a id="__codelineno-19-88" name="__codelineno-19-88" href="#__codelineno-19-88"></a>    <span class="n">redis_inserted</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">redis_user</span><span class="p">)</span>
+</span><span id="__span-19-89"><a id="__codelineno-19-89" name="__codelineno-19-89" href="#__codelineno-19-89"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Redis user created (sync): </span><span class="si">{</span><span class="n">redis_inserted</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-90"><a id="__codelineno-19-90" name="__codelineno-19-90" href="#__codelineno-19-90"></a>
+</span><span id="__span-19-91"><a id="__codelineno-19-91" name="__codelineno-19-91" href="#__codelineno-19-91"></a>    <span class="c1"># Or use async interface (wrapper for Redis)</span>
+</span><span id="__span-19-92"><a id="__codelineno-19-92" name="__codelineno-19-92" href="#__codelineno-19-92"></a>    <span class="n">redis_user2</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span>
+</span><span id="__span-19-93"><a id="__codelineno-19-93" name="__codelineno-19-93" href="#__codelineno-19-93"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Eve Brown&quot;</span><span class="p">,</span>
+</span><span id="__span-19-94"><a id="__codelineno-19-94" name="__codelineno-19-94" href="#__codelineno-19-94"></a>        <span class="n">email</span><span class="o">=</span><span class="s2">&quot;eve@company.com&quot;</span><span class="p">,</span>
+</span><span id="__span-19-95"><a id="__codelineno-19-95" name="__codelineno-19-95" href="#__codelineno-19-95"></a>        <span class="n">age</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
+</span><span id="__span-19-96"><a id="__codelineno-19-96" name="__codelineno-19-96" href="#__codelineno-19-96"></a>        <span class="n">department</span><span class="o">=</span><span class="s2">&quot;DevOps&quot;</span><span class="p">,</span>
+</span><span id="__span-19-97"><a id="__codelineno-19-97" name="__codelineno-19-97" href="#__codelineno-19-97"></a>        <span class="n">skills</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Docker&quot;</span><span class="p">,</span> <span class="s2">&quot;CI/CD&quot;</span><span class="p">]</span>
+</span><span id="__span-19-98"><a id="__codelineno-19-98" name="__codelineno-19-98" href="#__codelineno-19-98"></a>    <span class="p">)</span>
+</span><span id="__span-19-99"><a id="__codelineno-19-99" name="__codelineno-19-99" href="#__codelineno-19-99"></a>    <span class="n">redis_inserted2</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">redis_user2</span><span class="p">)</span>
+</span><span id="__span-19-100"><a id="__codelineno-19-100" name="__codelineno-19-100" href="#__codelineno-19-100"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Redis user created (async): </span><span class="si">{</span><span class="n">redis_inserted2</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-101"><a id="__codelineno-19-101" name="__codelineno-19-101" href="#__codelineno-19-101"></a>
+</span><span id="__span-19-102"><a id="__codelineno-19-102" name="__codelineno-19-102" href="#__codelineno-19-102"></a>    <span class="c1"># Demonstrate data isolation</span>
+</span><span id="__span-19-103"><a id="__codelineno-19-103" name="__codelineno-19-103" href="#__codelineno-19-103"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">MongoDB users: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="n">db</span><span class="o">.</span><span class="n">get_mongo_backend</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-104"><a id="__codelineno-19-104" name="__codelineno-19-104" href="#__codelineno-19-104"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Redis users: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">get_redis_backend</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-105"><a id="__codelineno-19-105" name="__codelineno-19-105" href="#__codelineno-19-105"></a>
+</span><span id="__span-19-106"><a id="__codelineno-19-106" name="__codelineno-19-106" href="#__codelineno-19-106"></a>    <span class="c1"># Switch back to MongoDB</span>
+</span><span id="__span-19-107"><a id="__codelineno-19-107" name="__codelineno-19-107" href="#__codelineno-19-107"></a>    <span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span><span class="p">)</span>
+</span><span id="__span-19-108"><a id="__codelineno-19-108" name="__codelineno-19-108" href="#__codelineno-19-108"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Back to MongoDB - Users: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="n">db</span><span class="o">.</span><span class="n">all_async</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-19-109"><a id="__codelineno-19-109" name="__codelineno-19-109" href="#__codelineno-19-109"></a>
+</span><span id="__span-19-110"><a id="__codelineno-19-110" name="__codelineno-19-110" href="#__codelineno-19-110"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+</span><span id="__span-19-111"><a id="__codelineno-19-111" name="__codelineno-19-111" href="#__codelineno-19-111"></a>    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</span></code></pre></div>
+<h3 id="more-examples">More Examples</h3>
+<p>Check out the <code>samples/database/</code> directory for additional examples:</p>
+<ul>
+<li><strong><code>using_unified_backend.py</code></strong> - Comprehensive unified ODM usage</li>
+<li><strong>Advanced querying patterns</strong></li>
+<li><strong>Database switching strategies</strong></li>
+<li><strong>Error handling best practices</strong></li>
+</ul>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-model-design">1. Model Design</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Good: Clear, descriptive models</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">Product</span><span class="p">(</span><span class="n">UnifiedMindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;Product name&quot;</span><span class="p">,</span> <span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">price</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Price in USD&quot;</span><span class="p">)</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">category</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s2">&quot;Product category&quot;</span><span class="p">)</span>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>        <span class="n">collection_name</span> <span class="o">=</span> <span class="s2">&quot;products&quot;</span>
+</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>        <span class="n">indexed_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">]</span>
+</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>        <span class="n">unique_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+</span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>
+</span><span id="__span-20-12"><a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="c1"># Avoid: Unclear models without validation</span>
+</span><span id="__span-20-13"><a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="k">class</span><span class="w"> </span><span class="nc">Product</span><span class="p">(</span><span class="n">UnifiedMindtraceDocument</span><span class="p">):</span>
+</span><span id="__span-20-14"><a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>    <span class="n">n</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-20-15"><a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a>    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="__span-20-16"><a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a>    <span class="n">c</span><span class="p">:</span> <span class="nb">str</span>
+</span></code></pre></div>
+<h3 id="2-error-handling">2. Error Handling</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Always handle database exceptions</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    <span class="n">user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">get_async</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found user: </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="k">except</span> <span class="n">DocumentNotFoundError</span><span class="p">:</span>
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;User not found - creating new user&quot;</span><span class="p">)</span>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    <span class="n">user</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db</span><span class="o">.</span><span class="n">insert_async</span><span class="p">(</span><span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;New User&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;new@example.com&quot;</span><span class="p">))</span>
+</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-21-10"><a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>    <span class="c1"># Handle appropriately</span>
+</span></code></pre></div>
+<h3 id="3-database-selection">3. Database Selection</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Choose database based on use case</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="k">if</span> <span class="n">high_frequency_reads</span><span class="p">:</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">REDIS</span><span class="p">)</span>  <span class="c1"># Fast reads</span>
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="k">else</span><span class="p">:</span>
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>    <span class="n">db</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="n">BackendType</span><span class="o">.</span><span class="n">MONGO</span><span class="p">)</span>  <span class="c1"># Complex queries</span>
+</span></code></pre></div>
+<h2 id="contributing">Contributing</h2>
+<p>When adding new features:</p>
+<ol>
+<li><strong>Add tests</strong> - Both unit and integration tests</li>
+<li><strong>Update documentation</strong> - Keep README and docstrings current</li>
+<li><strong>Follow patterns</strong> - Use existing code style and patterns</li>
+<li><strong>Test thoroughly</strong> - Run the full test suite</li>
+</ol>
+<h2 id="requirements">Requirements</h2>
+<ul>
+<li><strong>MongoDB 4.4+</strong> (for MongoMindtraceODM)</li>
+<li><strong>Redis 6.0+</strong> (for RedisMindtraceODM)</li>
+<li><strong>Core dependencies</strong>: <code>pydantic</code>, <code>beanie</code>, <code>redis-om-python</code></li>
+</ul>
+<h2 id="need-help">Need Help?</h2>
+<ul>
+<li>Check the <code>samples/database/</code> directory for working examples</li>
+<li>Look at the test files for usage patterns</li>
+<li>Review the docstrings in the source code for detailed API documentation</li>
+</ul>
+<p>The Mindtrace Database Module makes it easy to work with multiple databases through a single, powerful interface.</p>
+<hr />
+<h2 id="breaking-changes">Breaking Changes</h2>
+<h3 id="class-name-changes-v060">Class Name Changes (v0.6.0)</h3>
+<p>All ODM class names have been simplified by removing the "Backend" suffix:</p>
+<table>
+<thead>
+<tr>
+<th>Old Name</th>
+<th>New Name</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MindtraceODMBackend</code></td>
+<td><code>MindtraceODM</code></td>
+</tr>
+<tr>
+<td><code>MongoMindtraceODMBackend</code></td>
+<td><code>MongoMindtraceODM</code></td>
+</tr>
+<tr>
+<td><code>RedisMindtraceODMBackend</code></td>
+<td><code>RedisMindtraceODM</code></td>
+</tr>
+<tr>
+<td><code>RegistryMindtraceODMBackend</code></td>
+<td><code>RegistryMindtraceODM</code></td>
+</tr>
+<tr>
+<td><code>UnifiedMindtraceODMBackend</code></td>
+<td><code>UnifiedMindtraceODM</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>File names also updated:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Old File</th>
+<th>New File</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mindtrace_odm_backend.py</code></td>
+<td><code>mindtrace_odm.py</code></td>
+</tr>
+<tr>
+<td><code>mongo_odm_backend.py</code></td>
+<td><code>mongo_odm.py</code></td>
+</tr>
+<tr>
+<td><code>redis_odm_backend.py</code></td>
+<td><code>redis_odm.py</code></td>
+</tr>
+<tr>
+<td><code>registry_odm_backend.py</code></td>
+<td><code>registry_odm.py</code></td>
+</tr>
+<tr>
+<td><code>unified_odm_backend.py</code></td>
+<td><code>unified_odm.py</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Migration:</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Old</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">MongoMindtraceODMBackend</span><span class="p">,</span> <span class="n">UnifiedMindtraceODMBackend</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="n">db</span> <span class="o">=</span> <span class="n">MongoMindtraceODMBackend</span><span class="p">(</span><span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span> <span class="n">db_uri</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="n">db_name</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="c1"># New</span>
+</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">MongoMindtraceODM</span><span class="p">,</span> <span class="n">UnifiedMindtraceODM</span>
+</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="n">db</span> <span class="o">=</span> <span class="n">MongoMindtraceODM</span><span class="p">(</span><span class="n">model_cls</span><span class="o">=</span><span class="n">User</span><span class="p">,</span> <span class="n">db_uri</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="n">db_name</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../jobs/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Jobs">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Jobs
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../storage/" class="md-footer__link md-footer__link--next" aria-label="Next: Storage">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Storage
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Mindtrace
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/mindtrace-ai" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.footer", "navigation.top", "navigation.expand", "navigation.tabs.sticky", "search.suggest", "search.highlight", "search.share"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
