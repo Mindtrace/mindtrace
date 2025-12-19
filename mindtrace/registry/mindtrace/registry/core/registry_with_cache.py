@@ -1,6 +1,4 @@
-"""Registry with local caching for remote backends.
-
-"""
+"""Registry with local caching for remote backends."""
 
 import hashlib
 from pathlib import Path
@@ -314,7 +312,7 @@ class RegistryWithCache:
             if isinstance(name, list):
                 # Batch save
                 if isinstance(result, BatchResult):
-                    for (n, v) in result.succeeded:
+                    for n, v in result.succeeded:
                         idx = next(i for i, nm in enumerate(name) if nm == n)
                         obj_to_cache = obj[idx] if isinstance(obj, list) else obj
                         try:
@@ -496,7 +494,7 @@ class RegistryWithCache:
     def update(self, mapping: Dict[str, Any] | "Registry", *, sync_all_versions: bool = True) -> None:
         """Update registry from dict or another registry."""
         # Use remote's update logic but our save method
-        if hasattr(mapping, 'list_objects') and sync_all_versions:
+        if hasattr(mapping, "list_objects") and sync_all_versions:
             for name in mapping.list_objects():
                 for version in mapping.list_versions(name):
                     if self.has_object(name, version):
