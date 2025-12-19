@@ -203,7 +203,7 @@ def test_invalid_object_name(backend):
 
 
 def test_register_materializer_metadata_not_exists(backend):
-    """Test register_materializer when metadata file doesn't exist (line 248)."""
+    """Test register_materializer when metadata file doesn't exist."""
     # Ensure metadata file doesn't exist
     if backend.metadata_path.exists():
         backend.metadata_path.unlink()
@@ -355,7 +355,7 @@ def test_fetch_registry_metadata_not_exists(backend):
 
 
 def test_fetch_registry_metadata_error(backend):
-    """Test fetch_registry_metadata error handling (lines 340-342)."""
+    """Test fetch_registry_metadata error handling."""
     # Create metadata file with invalid JSON
     backend.metadata_path.write_text("invalid json content")
 

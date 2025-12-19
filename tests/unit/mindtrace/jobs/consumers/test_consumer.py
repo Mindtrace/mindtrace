@@ -260,7 +260,7 @@ class TestConsumer:
             dummy.connect_to_orchestrator(orchestrator, test_queue)
 
     def test_double_connect_via_backend_args_raises(self):
-        """Ensure connect_to_orchestator_via_backend_args raises RuntimeError if called twice (lines 36-39)."""
+        """Ensure connect_to_orchestator_via_backend_args raises RuntimeError if called twice."""
         from unittest.mock import MagicMock, patch
 
         class DummyWorker(Consumer):
