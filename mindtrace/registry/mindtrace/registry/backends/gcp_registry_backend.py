@@ -1,7 +1,6 @@
 """Google Cloud Storage-based registry backend.
 
-Uses GCS for both artifact and metadata storage with atomic operations
-via generation numbers for conflict detection.
+Uses GCS for both artifact and metadata storage as well as locks.
 """
 
 import json
@@ -301,9 +300,17 @@ class GCPRegistryBackend(RegistryBackend):
         try:
             remote_key = self._object_key(obj_name, obj_version)
 
-            # Use _files manifest from metadata (built by Registry)
-            files_manifest = obj_meta.get("_files", [])
-            files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+            # Use _files manifest from metadata if available (built by Registry),
+            files_manifest = obj_meta.get("_files") if obj_meta else None
+            if files_manifest is not None:
+                files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+            else:
+                # Fallback: collect files from directory
+                files = []
+                for file_path in obj_path.rglob("*"):
+                    if file_path.is_file():
+                        relative = file_path.relative_to(obj_path).as_posix()
+                        files.append((str(file_path), f"{remote_key}/{relative}"))
 
             # Prepare metadata with path
             prepared_meta = dict(obj_meta) if obj_meta else {}
