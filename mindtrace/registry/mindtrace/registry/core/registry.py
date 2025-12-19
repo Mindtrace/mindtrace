@@ -1,11 +1,10 @@
-import hashlib
 import os
 import shutil
 import threading
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Dict, List, Type
+from typing import Any, Dict, List, Type
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
@@ -15,9 +14,6 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult
-
-if TYPE_CHECKING:
-    from mindtrace.registry.core.registry import Registry
 
 
 class Registry(Mindtrace):
@@ -192,6 +188,31 @@ class Registry(Mindtrace):
     _default_materializers = {}
     _materializer_lock = threading.Lock()
 
+    def __new__(
+        cls,
+        backend: str | Path | RegistryBackend | None = None,
+        version_objects: bool | None = None,
+        mutable: bool | None = None,
+        versions_cache_ttl: float = 60.0,
+        use_cache: bool = True,
+        **kwargs,
+    ):
+        """Create a Registry or RegistryWithCache based on backend type and use_cache."""
+        # Only intercept if called directly on Registry (not subclasses)
+        # and use_cache is True and backend is a remote backend
+        if cls is Registry and use_cache and backend is not None:
+            # Check if backend is a remote backend (not local)
+            if not isinstance(backend, (str, Path, LocalRegistryBackend)):
+                from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+                return RegistryWithCache(
+                    backend=backend,
+                    version_objects=version_objects,
+                    mutable=mutable,
+                    versions_cache_ttl=versions_cache_ttl,
+                    **kwargs,
+                )
+        return super().__new__(cls)
+
     def __init__(
         self,
         backend: str | Path | RegistryBackend | None = None,
@@ -214,7 +235,8 @@ class Registry(Mindtrace):
                 When mutable=True, reads acquire shared locks to prevent read-write races.
                 When mutable=False (default), reads are lock-free but overwrites are disallowed.
             versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
-            use_cache: Whether to create and use a cache for remote backends.
+            use_cache: Whether to use local caching for remote backends. Default True.
+                When True and backend is remote, returns RegistryWithCache instead.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -267,16 +289,6 @@ class Registry(Mindtrace):
         self._versions_cache: Dict[str, tuple[List[str], float]] = {}
         self._versions_cache_lock = threading.Lock()
         self._versions_cache_ttl = versions_cache_ttl
-
-        # Local cache for remote backends (read-only cache using LocalRegistryBackend)
-        # Cache is always mutable to allow updating cached objects
-        self._cache: "Registry" | None = None
-        if use_cache and not isinstance(self.backend, LocalRegistryBackend):
-            cache_dir = Registry._get_cache_dir_from_backend_uri(self.backend.uri, self.config)
-            cache_backend = LocalRegistryBackend(uri=cache_dir, **kwargs)
-            self._cache = Registry(
-                backend=cache_backend, version_objects=self.version_objects, use_cache=False, mutable=True, **kwargs
-            )
 
         # Register the default materializers if there are none
         self._register_default_materializers()
@@ -647,13 +659,6 @@ class Registry(Mindtrace):
                 self._invalidate_versions_cache(name)
                 return None
 
-            # Update cache on success
-            if self._cache is not None:
-                try:
-                    self._cache.save(name, obj, version=resolved_version, on_conflict="skip")
-                except Exception as e:
-                    self.logger.warning(f"Error saving {name}@{resolved_version} to cache: {e}")
-
             self._invalidate_versions_cache(name)
             return resolved_version
 
@@ -755,12 +760,6 @@ class Registry(Mindtrace):
                         else:
                             result.results.append(rv)
                             result.succeeded.append((n, rv))
-                            # Update cache
-                            if self._cache is not None:
-                                try:
-                                    self._cache.save(n, o, version=rv, on_conflict="skip")
-                                except Exception as e:
-                                    self.logger.warning(f"Error saving {n}@{rv} to cache: {e}")
                         found = True
                         break
 
@@ -775,70 +774,6 @@ class Registry(Mindtrace):
 
         self.logger.debug(f"Saved {result.success_count}/{len(names)} object(s) ({result.failure_count} failed).")
         return result
-
-    def _verify_and_refresh_if_stale(
-        self,
-        name: str,
-        version: str,
-        temp_dir: Path,
-        metadata: dict,
-        base_temp_dir: str,
-        cache_misses_set: set,
-    ) -> tuple[Path, bool]:
-        """Verify hash and refresh from remote if cache is stale.
-
-        Args:
-            name: Object name.
-            version: Object version.
-            temp_dir: Current temp directory with pulled artifacts.
-            metadata: Object metadata (from remote when verify_hash=True).
-            base_temp_dir: Base temp directory for creating fresh pulls.
-            cache_misses_set: Set of (name, version) that were cache misses.
-                              Modified in-place to include refreshed entries.
-
-        Returns:
-            Tuple of (temp_dir, was_refreshed) where temp_dir may be a new
-            directory if cache was stale, and was_refreshed indicates if
-            a refresh occurred.
-
-        Raises:
-            ValueError: If hash verification fails after refresh attempt.
-        """
-        expected = metadata.get("hash")
-        if not expected:
-            self.logger.warning(f"No hash found in metadata for {name}@{version}. Skipping hash verification.")
-            return temp_dir, False
-
-        computed = compute_dir_hash(str(temp_dir))
-        if computed == expected:
-            return temp_dir, False
-
-        # Hash mismatch - check if this was a cache hit (stale cache)
-        is_cache_hit = (name, version) not in cache_misses_set and self._cache is not None
-        if is_cache_hit:
-            self.logger.warning(f"Cache stale for {name}@{version}, fetching from remote.")
-            # Re-pull from remote backend (pass metadata to avoid re-fetch)
-            fresh_temp_dir = Path(base_temp_dir) / f"{name}_{version}_fresh".replace(":", "_")
-            fresh_temp_dir.mkdir(parents=True, exist_ok=True)
-            self.backend.pull([name], [version], [fresh_temp_dir], acquire_lock=self.mutable, metadata=[metadata])
-
-            # Re-verify hash
-            computed = compute_dir_hash(str(fresh_temp_dir))
-            if computed != expected:
-                raise ValueError(
-                    f"Artifact hash verification failed for {name}@{version}. "
-                    f"Expected hash: {expected}, computed hash: {computed}"
-                )
-
-            # Mark as needing cache update
-            cache_misses_set.add((name, version))
-            return fresh_temp_dir, True
-
-        # Not a cache hit - direct remote fetch failed verification
-        raise ValueError(
-            f"Artifact hash verification failed for {name}@{version}. "
-            f"Expected hash: {expected}, computed hash: {computed}"
-        )
 
     def _materialize(self, temp_dir: Path, metadata: dict, **kwargs) -> Any:
         """Materialize an object from a temp directory using metadata."""
@@ -898,21 +833,8 @@ class Registry(Mindtrace):
         resolved, _ = self._resolve_versions([name], [version], on_error="raise")
         n, v = resolved[0]
 
-        # Check cache first
-        use_cache = False
-        if self._cache is not None:
-            try:
-                cache_exists = self._cache.backend.has_object([n], [v])
-                use_cache = cache_exists.get((n, v), False)
-            except Exception as e:
-                self.logger.warning(f"Cache check failed: {e}")
-
         # Fetch metadata
-        if use_cache and not verify_hash:
-            result = self._cache.backend.fetch_metadata([n], [v], on_error="raise").get((n, v))
-        else:
-            result = self.backend.fetch_metadata([n], [v], on_error="raise").get((n, v))
-
+        result = self.backend.fetch_metadata([n], [v], on_error="raise").get((n, v))
         if not result or result.get("status") != "ok":
             raise RegistryObjectNotFound(f"Object {n}@{v} not found.")
         metadata = result["metadata"]
@@ -922,26 +844,20 @@ class Registry(Mindtrace):
             temp_dir = Path(base_temp_dir) / f"{n}_{v}".replace(":", "_")
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            backend = self._cache.backend if use_cache else self.backend
-            acquire_lock = self.mutable and not use_cache
-            backend.pull([n], [v], [temp_dir], acquire_lock=acquire_lock, on_error="raise", metadata=[metadata])
+            self.backend.pull([n], [v], [temp_dir], acquire_lock=self.mutable, on_error="raise", metadata=[metadata])
 
             # Hash verification
             if verify_hash:
-                cache_misses_set = set() if use_cache else {(n, v)}
-                temp_dir, _ = self._verify_and_refresh_if_stale(
-                    n, v, temp_dir, metadata, base_temp_dir, cache_misses_set
-                )
+                expected_hash = metadata.get("hash")
+                if expected_hash:
+                    computed_hash = compute_dir_hash(str(temp_dir))
+                    if computed_hash != expected_hash:
+                        raise ValueError(
+                            f"Artifact hash verification failed for {n}@{v}. "
+                            f"Expected hash: {expected_hash}, computed hash: {computed_hash}"
+                        )
 
             obj = self._materialize(temp_dir, metadata, **kwargs)
-
-            # Update cache if needed (either cache miss or stale cache that was refreshed)
-            needs_cache_update = not use_cache or (verify_hash and (n, v) in cache_misses_set)
-            if self._cache is not None and needs_cache_update:
-                try:
-                    self._cache.save(n, obj, version=v, on_conflict="overwrite")
-                except Exception as e:
-                    self.logger.warning(f"Error saving {n}@{v} to cache: {e}")
 
             # Move Path objects to output_dir if specified
             if isinstance(obj, Path) and output_dir and obj.exists():
@@ -984,7 +900,6 @@ class Registry(Mindtrace):
             fetch_results = self.backend.fetch_metadata(
                 [n for n, _ in valid_items], [v for _, v in valid_items], on_error="skip"
             )
-            # Process fetch results - extract metadata or record errors
             for (n, v), status in fetch_results.items():
                 if status.get("status") == "ok":
                     all_metadata[(n, v)] = status["metadata"]
@@ -993,7 +908,6 @@ class Registry(Mindtrace):
                         "error": status.get("error", "Unknown"),
                         "message": status.get("message", ""),
                     }
-            # Mark items not in results as not found
             for n, v in valid_items:
                 if (n, v) not in fetch_results:
                     result.errors[(n, v)] = {"error": "RegistryObjectNotFound", "message": f"Object {n}@{v} not found."}
@@ -1010,7 +924,6 @@ class Registry(Mindtrace):
                 paths.append(temp_dir)
 
             if items_to_pull:
-                # Pass pre-fetched metadata to avoid double-fetch
                 pull_metadata = [all_metadata[(n, v)] for n, v in items_to_pull]
                 pull_status = self.backend.pull(
                     [n for n, _ in items_to_pull],
@@ -1020,7 +933,6 @@ class Registry(Mindtrace):
                     on_error="skip",
                     metadata=pull_metadata,
                 )
-                # Record pull errors
                 for (n, v), status in pull_status.items():
                     if status.get("status") == "error":
                         result.errors[(n, v)] = {
@@ -1039,11 +951,16 @@ class Registry(Mindtrace):
                     metadata = all_metadata[(n, v)]
                     temp_dir = temp_dirs[(n, v)]
 
+                    # Hash verification
                     if verify_hash:
-                        cache_misses_set = set(items_to_pull)
-                        temp_dir, _ = self._verify_and_refresh_if_stale(
-                            n, v, temp_dir, metadata, base_temp_dir, cache_misses_set
-                        )
+                        expected_hash = metadata.get("hash")
+                        if expected_hash:
+                            computed_hash = compute_dir_hash(str(temp_dir))
+                            if computed_hash != expected_hash:
+                                raise ValueError(
+                                    f"Artifact hash verification failed for {n}@{v}. "
+                                    f"Expected: {expected_hash}, computed: {computed_hash}"
+                                )
 
                     obj = self._materialize(temp_dir, metadata, **kwargs)
 
@@ -1120,15 +1037,6 @@ class Registry(Mindtrace):
         if all_names:
             self.backend.delete(all_names, all_versions, acquire_lock=self.mutable)
 
-        # Delete from cache
-        if self._cache is not None:
-            for n, v in zip(all_names, all_versions):
-                try:
-                    if self._cache.has_object(name=n, version=v):
-                        self._cache.delete(name=n, version=v)
-                except Exception as e:
-                    self.logger.warning(f"Error deleting {n}@{v} from cache: {e}")
-
         # Invalidate versions cache for all affected names
         for n in set(all_names):
             self._invalidate_versions_cache(n)
@@ -1136,10 +1044,8 @@ class Registry(Mindtrace):
         self.logger.debug(f"Deleted {len(all_names)} object version(s) from registry.")
 
     def clear_cache(self) -> None:
-        """Clear the cache."""
-        if self._cache is not None:
-            self._cache.clear()
-            self.logger.debug("Cleared cache.")
+        """Clear the cache. No-op for pure Registry - use RegistryWithCache for caching."""
+        pass  # No cache in pure Registry
 
     def info(self, name: str | None = None, version: str | None = None) -> Dict[str, Any]:
         """Get detailed information about objects in the registry.
@@ -1324,32 +1230,6 @@ class Registry(Mindtrace):
         with self._versions_cache_lock:
             if object_name in self._versions_cache:
                 del self._versions_cache[object_name]
-
-    @classmethod
-    def _get_cache_dir_from_backend_uri(cls, backend_uri: str | Path, config: Dict[str, Any]) -> Path:
-        """Generate cache directory path based on backend URI hash.
-
-        Creates a deterministic cache directory path by hashing the backend URI.
-        This ensures that the same backend location always uses the same cache.
-
-        Args:
-            backend_uri: The backend URI (str or Path)
-            config: Configuration dictionary containing MINDTRACE_DIR_PATHS
-
-        Returns:
-            Path to the cache directory (e.g., ~/.cache/mindtrace/tmp/registry_cache_<hash>/)
-        """
-        # Get backend URI as string and normalize
-        backend_uri_str = str(backend_uri)
-
-        # Compute SHA256 hash of the URI
-        uri_hash = hashlib.sha256(backend_uri_str.encode()).hexdigest()[:16]  # Use first 16 chars
-
-        # Build cache directory path
-        temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
-        cache_dir = temp_dir / f"registry_cache_{uri_hash}"
-
-        return cache_dir
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
         """Map object types to their available versions.
