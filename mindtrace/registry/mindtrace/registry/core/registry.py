@@ -204,6 +204,7 @@ class Registry(Mindtrace):
             # Check if backend is a remote backend (not local)
             if not isinstance(backend, (str, Path, LocalRegistryBackend)):
                 from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+
                 return RegistryWithCache(
                     backend=backend,
                     version_objects=version_objects,
@@ -645,10 +646,14 @@ class Registry(Mindtrace):
                 "_files": self._build_file_manifest(temp_dir),
             }
 
-
             push_result = self.backend.push(
-                [name], [validated_version], [temp_dir], [push_metadata],
-                on_conflict=on_conflict, on_error="raise", acquire_lock=self.mutable,
+                [name],
+                [validated_version],
+                [temp_dir],
+                [push_metadata],
+                on_conflict=on_conflict,
+                on_error="raise",
+                acquire_lock=self.mutable,
             )
 
             # Get result - single item
@@ -731,8 +736,13 @@ class Registry(Mindtrace):
             push_status = {}
             if push_names:
                 push_status = self.backend.push(
-                    push_names, push_versions, push_paths, push_metas,
-                    on_conflict=on_conflict, on_error="skip", acquire_lock=self.mutable,
+                    push_names,
+                    push_versions,
+                    push_paths,
+                    push_metas,
+                    on_conflict=on_conflict,
+                    on_error="skip",
+                    acquire_lock=self.mutable,
                 )
 
             # Stage 4: Build result in original order
