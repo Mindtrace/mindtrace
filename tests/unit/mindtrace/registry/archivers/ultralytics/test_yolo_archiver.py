@@ -25,13 +25,13 @@ def yolo_archiver(temp_dir):
 
 
 def test_yolo_archiver_init(yolo_archiver, temp_dir):
-    """Test YoloArchiver initialization (line 15)."""
+    """Test YoloArchiver initialization."""
     assert yolo_archiver.uri == temp_dir
     assert hasattr(yolo_archiver, "logger")
 
 
 def test_yolo_archiver_save(yolo_archiver):
-    """Test save method (line 18)."""
+    """Test save method."""
     # Mock YOLO model
     mock_model = MagicMock(spec=YOLO)
     mock_model.save = MagicMock()
@@ -45,7 +45,7 @@ def test_yolo_archiver_save(yolo_archiver):
 
 
 def test_yolo_archiver_load(yolo_archiver):
-    """Test load method (line 21)."""
+    """Test load method."""
     # Create a dummy .pt file in the directory
     pt_file = Path(yolo_archiver.uri) / "model.pt"
     pt_file.write_bytes(b"dummy model data")
