@@ -394,7 +394,7 @@ class TestServiceMCP:
         assert called["func"] is dummy_func
 
     def test_get_mcp_paths_normalizes_paths(self, monkeypatch):
-        """Test get_mcp_paths normalizes paths that don't start with / (lines 538, 540)."""
+        """Test get_mcp_paths normalizes paths that don't start with /."""
         # Set config to paths without leading slashes
         monkeypatch.setenv("MINDTRACE_MCP__HTTP_APP_PATH", "mcp")
         monkeypatch.setenv("MINDTRACE_MCP__MOUNT_PATH", "mcp-server")
@@ -997,7 +997,7 @@ class TestServiceInterruption:
             Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
     def test_connect_with_interrupt_handling_process_sigint(self):
-        """Test _connect_with_interrupt_handling when process terminated by SIGINT (line 238)."""
+        """Test _connect_with_interrupt_handling when process terminated by SIGINT."""
         import signal
 
         mock_process = Mock()
@@ -1280,7 +1280,7 @@ class TestServiceInterruption:
     def test_launch_signal_valueerror_handling(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method handles ValueError from signal.signal (lines 377-378)."""
+        """Test launch method handles ValueError from signal.signal."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")

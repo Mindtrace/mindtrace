@@ -2153,7 +2153,7 @@ def test_save_registry_metadata_exception_handling(registry, monkeypatch):
 
 
 def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
-    """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
+    """Test _initialize_version_objects exception handler when metadata can't be read."""
     # Create a fresh registry that hasn't been initialized yet
     # We'll patch _get_registry_metadata to raise an exception during initialization
     save_calls = []
@@ -2547,7 +2547,7 @@ def test_list_versions_cache_expiration(temp_registry_dir):
     # Wait for cache to expire
     time.sleep(0.2)
 
-    # Second call should trigger cache expiration deletion (line 838)
+    # Second call should trigger cache expiration deletion
     versions2 = registry.list_versions("test:obj")
     assert versions2 == ["1.0.0", "1.0.1"]
 
@@ -2873,7 +2873,7 @@ def test_delete_with_cache(temp_registry_dir):
     assert not cache_result.get(("test:obj", "1.0.0"), False)
 
     # Verify remote delete was called with batch args (lists)
-    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
+    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_delete_cache_error_handling(temp_registry_dir):
@@ -3158,7 +3158,7 @@ def test_delete_cache_delete_error(temp_registry_dir):
         registry.delete("test:obj", "1.0.0")
 
         # Verify remote delete was called with batch args (lists)
-        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"])
+        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_registry_invalid_backend_type(temp_registry_dir):

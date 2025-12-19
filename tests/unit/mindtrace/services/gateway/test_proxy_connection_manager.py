@@ -207,7 +207,7 @@ def test_dynamic_method_creation():
 
 
 def test_extract_service_endpoints_from_class_attribute():
-    """Test that _extract_service_endpoints correctly uses original_cm.__class__._service_endpoints (line 50)."""
+    """Test that _extract_service_endpoints correctly uses original_cm.__class__._service_endpoints."""
 
     # Create a mock connection manager class with _service_endpoints set on the class
     class MockConnectionManagerClass:
@@ -236,7 +236,7 @@ def test_extract_service_endpoints_from_class_attribute():
 
 
 def test_extract_service_endpoints_from_instance_service_class():
-    """Test that _extract_service_endpoints correctly uses original_cm._service_class (lines 51-55)."""
+    """Test that _extract_service_endpoints correctly uses original_cm._service_class."""
 
     # Create a mock service class that has endpoints
     class MockService:
@@ -273,7 +273,7 @@ def test_extract_service_endpoints_from_instance_service_class():
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_input_validation_fallback(mock_client_class):
-    """Test async proxy method fallback when input validation fails (lines 107-109)."""
+    """Test async proxy method fallback when input validation fails."""
 
     # Create a schema with an input_schema that will fail validation
     class FailingInputSchema:
@@ -324,7 +324,7 @@ async def test_async_proxy_method_input_validation_fallback(mock_client_class):
 
 @patch("requests.post")
 def test_sync_proxy_method_input_validation_fallback(mock_post):
-    """Test sync proxy method fallback when input validation fails (equivalent to lines 107-109 but in sync version)."""
+    """Test sync proxy method fallback when input validation fails."""
 
     # Create a schema with an input_schema that will fail validation
     class FailingInputSchema:
@@ -375,11 +375,11 @@ def test_sync_proxy_method_input_validation_fallback(mock_post):
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_no_input_schema(mock_client_class):
-    """Test async proxy method when no input_schema is available (line 111)."""
+    """Test async proxy method when no input_schema is available."""
 
     # Create a schema with NO input_schema (None)
     class SchemaWithoutInputSchema:
-        input_schema = None  # This will trigger the else clause at line 111
+        input_schema = None  # This will trigger the else clause
         output_schema = DummyOutput
         name = "no_input_schema"
 
@@ -419,7 +419,7 @@ async def test_async_proxy_method_no_input_schema(mock_client_class):
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_missing_input_schema_attribute(mock_client_class):
-    """Test async proxy method when input_schema attribute is missing entirely (line 111)."""
+    """Test async proxy method when input_schema attribute is missing entirely."""
 
     # Create a schema that doesn't have input_schema attribute at all
     class SchemaWithMissingInputSchema:
@@ -486,7 +486,7 @@ def test_infer_endpoints_from_methods():
 
 
 def test_extract_service_endpoints_from_class_service_class():
-    """Test that _extract_service_endpoints correctly uses original_cm.__class__._service_class (lines 45-47)."""
+    """Test that _extract_service_endpoints correctly uses original_cm.__class__._service_class."""
 
     # Create a mock service class that has endpoints
     class MockService:
@@ -521,7 +521,7 @@ def test_extract_service_endpoints_from_class_service_class():
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_http_error(mock_client_class):
-    """Test async proxy method when HTTP request returns non-200 status (line 118)."""
+    """Test async proxy method when HTTP request returns non-200 status."""
     # Set up mocks for HTTP request with error status
     mock_client = AsyncMock()
     mock_response = Mock()
@@ -548,7 +548,7 @@ async def test_async_proxy_method_http_error(mock_client_class):
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_json_parsing_error(mock_client_class):
-    """Test async proxy method when JSON parsing fails (lines 123-124)."""
+    """Test async proxy method when JSON parsing fails."""
     # Set up mocks for HTTP request with unparseable JSON
     mock_client = AsyncMock()
     mock_response = Mock()
@@ -578,7 +578,7 @@ async def test_async_proxy_method_json_parsing_error(mock_client_class):
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_validation_error(mock_client_class):
-    """Test async proxy method when output validation fails (lines 130-134)."""
+    """Test async proxy method when output validation fails."""
 
     # Create a schema with an output_schema that will fail validation
     class FailingOutputSchema:
@@ -618,7 +618,7 @@ async def test_async_proxy_method_output_validation_error(mock_client_class):
 
 @patch("requests.post")
 def test_sync_proxy_method_json_parsing_error(mock_post):
-    """Test sync proxy method when JSON parsing fails (lines 168-170)."""
+    """Test sync proxy method when JSON parsing fails."""
     # Set up mocks for HTTP request with unparseable JSON
     mock_response = Mock()
     mock_response.status_code = 200
@@ -645,7 +645,7 @@ def test_sync_proxy_method_json_parsing_error(mock_post):
 
 @patch("requests.get")
 def test_getattribute_get_request_json_error(mock_get):
-    """Test __getattribute__ when GET request succeeds but JSON parsing fails (lines 209-220)."""
+    """Test __getattribute__ when GET request succeeds but JSON parsing fails."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.side_effect = Exception("JSON parse error")
@@ -668,7 +668,7 @@ def test_getattribute_get_request_json_error(mock_get):
 @patch("requests.get")
 @patch("requests.post")
 def test_getattribute_get_fails_post_succeeds_json_error(mock_post, mock_get):
-    """Test __getattribute__ when GET fails, POST succeeds but JSON parsing fails (lines 209-220)."""
+    """Test __getattribute__ when GET fails, POST succeeds but JSON parsing fails."""
     # GET request fails
     mock_get_response = Mock()
     mock_get_response.status_code = 404
@@ -711,12 +711,12 @@ def test_getattr_fallback():
 @patch("httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_schema_no_validation(mock_client_class):
-    """Test async proxy method when output_schema is None (line 134)."""
+    """Test async proxy method when output_schema is None."""
 
     # Create a schema with NO output_schema (None)
     class SchemaWithoutOutputSchema:
         input_schema = None
-        output_schema = None  # This will trigger the else clause at line 134
+        output_schema = None  # This will trigger the else clause
         name = "no_output_schema"
 
     # Set up mocks for HTTP request
@@ -746,7 +746,7 @@ async def test_async_proxy_method_output_schema_no_validation(mock_client_class)
 
 @patch("requests.post")
 def test_sync_proxy_method_output_schema_no_validation(mock_post):
-    """Test sync proxy method when output_schema is None (line 171)."""
+    """Test sync proxy method when output_schema is None."""
 
     # Create a schema with NO output_schema (None)
     class SchemaWithoutOutputSchema:
@@ -779,7 +779,7 @@ def test_sync_proxy_method_output_schema_no_validation(mock_post):
 
 @patch("requests.post")
 def test_sync_proxy_method_output_validation_error(mock_post):
-    """Test sync proxy method when output validation fails (lines 168-172)."""
+    """Test sync proxy method when output validation fails."""
 
     # Create a schema with an output_schema that will fail validation
     class FailingOutputSchema:
@@ -818,7 +818,7 @@ def test_sync_proxy_method_output_validation_error(mock_post):
 @patch("requests.get")
 @patch("requests.post")
 def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
-    """Test __getattribute__ when both GET and POST requests fail (line 220)."""
+    """Test __getattribute__ when both GET and POST requests fail."""
     # Mock both GET and POST to return non-200 status codes
     mock_get_response = Mock()
     mock_get_response.status_code = 404
@@ -844,8 +844,8 @@ def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
     mock_post.assert_called_once_with("http://gateway/app/some_property", timeout=60)
 
 
-def test_getattribute_line_195_proxy_method_access():
-    """Test that line 195 is executed when accessing proxy methods from instance dict."""
+def test_getattribute_proxy_method_access():
+    """Test accessing proxy methods from instance dict."""
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test_method": DummySchema}
 
@@ -856,7 +856,7 @@ def test_getattribute_line_195_proxy_method_access():
     assert "test_method" in instance_dict
     assert "atest_method" in instance_dict
 
-    # Access the proxy method - this should hit line 195
+    # Access the proxy method
     sync_method = proxy_cm.test_method
     async_method = proxy_cm.atest_method
 

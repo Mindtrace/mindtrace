@@ -1019,3 +1019,95 @@ def test_query_worker_status_real_time_updates():
         if cluster_cm is not None:
             cluster_cm.clear_databases()
             cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_node_shutdown_worker():
+    """Integration test for Node.shutdown_worker."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8155, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8156, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+
+    try:
+        cluster_cm.register_worker_type(
+            worker_name="echoworker",
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
+            worker_params={},
+            job_type="auto_connect_db_echo",
+        )
+
+        worker_url = "http://localhost:8157"
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
+        node.shutdown_worker(worker_name="echoworker")
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
+
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_node_shutdown_worker_by_id():
+    """Integration test for Node.shutdown_worker_by_id."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8158, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8159, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+
+    try:
+        cluster_cm.register_worker_type(
+            worker_name="echoworker",
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
+            worker_params={},
+            job_type="auto_connect_db_echo",
+        )
+
+        worker_url = "http://localhost:8160"
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
+        worker_cm = EchoWorker.connect(worker_url)
+        worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+        node.shutdown_worker_by_id(worker_id=worker_id)
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
+
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_node_shutdown_worker_by_port():
+    """Integration test for Node.shutdown_worker_by_port."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8161, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8162, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+
+    try:
+        cluster_cm.register_worker_type(
+            worker_name="echoworker",
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
+            worker_params={},
+            job_type="auto_connect_db_echo",
+        )
+
+        worker_url = "http://localhost:8163"
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
+        )
+        node.shutdown_worker_by_port(worker_port=8163)
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
+        )
+
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()

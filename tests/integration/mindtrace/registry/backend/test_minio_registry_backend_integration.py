@@ -110,7 +110,7 @@ def test_list_versions(minio_backend, sample_metadata, minio_client, minio_test_
 
 
 def test_list_versions_uses_metadata_prefix(minio_backend, sample_metadata, minio_client, minio_test_bucket):
-    """Test that list_versions correctly uses _object_metadata_prefix (line 483)."""
+    """Test that list_versions correctly uses _object_metadata_prefix."""
     # Save metadata for an object with colons in the name
     minio_backend.save_metadata("test:object:with:colons", "1.0.0", sample_metadata)
     minio_backend.save_metadata("test:object:with:colons", "2.0.0", sample_metadata)

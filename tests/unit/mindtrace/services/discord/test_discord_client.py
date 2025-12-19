@@ -433,85 +433,6 @@ class TestDiscordClient:
         mock_interaction.response.defer.assert_called_once()
         mock_interaction.followup.send.assert_called_once()
 
-
-class TestDiscordEventTypes:
-    """Test DiscordEventType enum."""
-
-    def test_event_types(self):
-        """Test that all expected event types exist."""
-        expected_types = [
-            "message",
-            "reaction",
-            "member_join",
-            "member_leave",
-            "voice_state_update",
-            "guild_join",
-            "guild_leave",
-        ]
-
-        for event_type in expected_types:
-            # Convert to the actual enum format (MEMBER_JOIN, not MEMBERJOIN)
-            enum_name = event_type.upper()
-            assert hasattr(DiscordEventType, enum_name)
-
-    def test_event_type_values(self):
-        """Test event type values."""
-        assert DiscordEventType.MESSAGE.value == "message"
-        assert DiscordEventType.REACTION.value == "reaction"
-        assert DiscordEventType.MEMBER_JOIN.value == "member_join"
-
-
-class TestDiscordCommandSchemas:
-    """Test Discord command input/output schemas."""
-
-    def test_discord_command_input(self):
-        """Test DiscordCommandInput schema."""
-        input_data = DiscordCommandInput(
-            content="!test", author_id=123, channel_id=456, guild_id=789, message_id=101112
-        )
-
-        assert input_data.content == "!test"
-        assert input_data.author_id == 123
-        assert input_data.channel_id == 456
-        assert input_data.guild_id == 789
-        assert input_data.message_id == 101112
-
-    def test_discord_command_output(self):
-        """Test DiscordCommandOutput schema."""
-        output_data = DiscordCommandOutput(response="Test response", embed={"title": "Test"}, delete_after=5.0)
-
-        assert output_data.response == "Test response"
-        assert output_data.embed == {"title": "Test"}
-        assert output_data.delete_after == 5.0
-
-    def test_discord_command_output_minimal(self):
-        """Test DiscordCommandOutput with minimal data."""
-        output_data = DiscordCommandOutput(response="Test")
-
-        assert output_data.response == "Test"
-        assert output_data.embed is None
-        assert output_data.delete_after is None
-
-    def test_discord_event_handler_abstract(self):
-        """Test DiscordEventHandler abstract class."""
-        from mindtrace.services.discord.types import DiscordEventHandler, DiscordEventType
-
-        # Test that DiscordEventHandler is abstract
-        with pytest.raises(TypeError):
-            DiscordEventHandler()
-
-        # Test concrete implementation
-        class TestEventHandler(DiscordEventHandler):
-            async def handle(self, event_type: DiscordEventType, **kwargs):
-                pass
-
-        handler = TestEventHandler()
-        assert isinstance(handler, DiscordEventHandler)
-
-
-class TestDiscordClientCoverage:
-    """Additional tests to cover missing lines in DiscordClient."""
-
     def test_discord_client_no_token_error(self):
         """Test that DiscordClient raises error when no token is provided."""
         with patch("mindtrace.services.discord.discord_client.Mindtrace.__init__") as mock_init:
@@ -689,3 +610,78 @@ class TestDiscordClientCoverage:
 
             # Verify command handler was called
             mock_ctx.send.assert_called_once_with("Test response")
+
+
+class TestDiscordEventTypes:
+    """Test DiscordEventType enum."""
+
+    def test_event_types(self):
+        """Test that all expected event types exist."""
+        expected_types = [
+            "message",
+            "reaction",
+            "member_join",
+            "member_leave",
+            "voice_state_update",
+            "guild_join",
+            "guild_leave",
+        ]
+
+        for event_type in expected_types:
+            # Convert to the actual enum format (MEMBER_JOIN, not MEMBERJOIN)
+            enum_name = event_type.upper()
+            assert hasattr(DiscordEventType, enum_name)
+
+    def test_event_type_values(self):
+        """Test event type values."""
+        assert DiscordEventType.MESSAGE.value == "message"
+        assert DiscordEventType.REACTION.value == "reaction"
+        assert DiscordEventType.MEMBER_JOIN.value == "member_join"
+
+
+class TestDiscordCommandSchemas:
+    """Test Discord command input/output schemas."""
+
+    def test_discord_command_input(self):
+        """Test DiscordCommandInput schema."""
+        input_data = DiscordCommandInput(
+            content="!test", author_id=123, channel_id=456, guild_id=789, message_id=101112
+        )
+
+        assert input_data.content == "!test"
+        assert input_data.author_id == 123
+        assert input_data.channel_id == 456
+        assert input_data.guild_id == 789
+        assert input_data.message_id == 101112
+
+    def test_discord_command_output(self):
+        """Test DiscordCommandOutput schema."""
+        output_data = DiscordCommandOutput(response="Test response", embed={"title": "Test"}, delete_after=5.0)
+
+        assert output_data.response == "Test response"
+        assert output_data.embed == {"title": "Test"}
+        assert output_data.delete_after == 5.0
+
+    def test_discord_command_output_minimal(self):
+        """Test DiscordCommandOutput with minimal data."""
+        output_data = DiscordCommandOutput(response="Test")
+
+        assert output_data.response == "Test"
+        assert output_data.embed is None
+        assert output_data.delete_after is None
+
+    def test_discord_event_handler_abstract(self):
+        """Test DiscordEventHandler abstract class."""
+        from mindtrace.services.discord.types import DiscordEventHandler, DiscordEventType
+
+        # Test that DiscordEventHandler is abstract
+        with pytest.raises(TypeError):
+            DiscordEventHandler()
+
+        # Test concrete implementation
+        class TestEventHandler(DiscordEventHandler):
+            async def handle(self, event_type: DiscordEventType, **kwargs):
+                pass
+
+        handler = TestEventHandler()
+        assert isinstance(handler, DiscordEventHandler)
