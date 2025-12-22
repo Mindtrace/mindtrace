@@ -120,6 +120,10 @@ class BaslerCameraBackend(CameraBackend):
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
+        multicast_enabled: Optional[bool] = None,
+        target_ips: Optional[List[str]] = None,
+        multicast_group: Optional[str] = None,
+        multicast_port: Optional[int] = None,
         **backend_kwargs,
     ):
         """Initialize Basler camera with configurable parameters.
@@ -129,6 +133,10 @@ class BaslerCameraBackend(CameraBackend):
             camera_config: Path to Pylon Feature Stream (.pfs) file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
+            multicast_enabled: Enable multicast streaming mode (uses config default if None)
+            target_ips: List of target IP addresses for multicast discovery (optional)
+            multicast_group: Multicast group IP address (uses config default if None)
+            multicast_port: Multicast port number (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
                 - pixel_format: Default pixel format (uses config default if None)
                 - buffer_count: Number of frame buffers (uses config default if None)
@@ -164,6 +172,16 @@ class BaslerCameraBackend(CameraBackend):
         if timeout_ms is None:
             timeout_ms = getattr(self.camera_config, "timeout_ms", 5000)
 
+        # Multicast configuration with fallbacks
+        if multicast_enabled is None:
+            multicast_enabled = getattr(self.camera_config.cameras, "basler_multicast_enabled", False)
+        if multicast_group is None:
+            multicast_group = getattr(self.camera_config.cameras, "basler_multicast_group", "239.192.1.1")
+        if multicast_port is None:
+            multicast_port = getattr(self.camera_config.cameras, "basler_multicast_port", 3956)
+        if target_ips is None:
+            target_ips = getattr(self.camera_config.cameras, "basler_target_ips", [])
+
         # Validate parameters
         if buffer_count < 1:
             raise CameraConfigurationError("Buffer count must be at least 1")
@@ -175,6 +193,12 @@ class BaslerCameraBackend(CameraBackend):
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
+
+        # Store multicast configuration
+        self.multicast_enabled = multicast_enabled
+        self.target_ips = target_ips or []
+        self.multicast_group = multicast_group
+        self.multicast_port = multicast_port
 
         # Internal state
         self.converter = None
@@ -229,11 +253,14 @@ class BaslerCameraBackend(CameraBackend):
             raise HardwareOperationError(f"Pypylon operation failed for camera '{self.camera_name}': {e}") from e
 
     @staticmethod
-    def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
+    def get_available_cameras(
+        include_details: bool = False, target_ips: Optional[List[str]] = None
+    ) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """Get available Basler cameras.
 
         Args:
             include_details: If True, return detailed information
+            target_ips: Optional list of IP addresses to specifically discover
 
         Returns:
             List of camera names (user-defined names preferred, serial numbers as fallback) or dict with details
@@ -251,7 +278,11 @@ class BaslerCameraBackend(CameraBackend):
             available_cameras = []
             camera_details = {}
 
-            devices = pylon.TlFactory.GetInstance().EnumerateDevices()
+            # Use IP-based discovery if target IPs are provided
+            if target_ips:
+                devices = BaslerCameraBackend._discover_by_ip(target_ips)
+            else:
+                devices = pylon.TlFactory.GetInstance().EnumerateDevices()
 
             for device in devices:
                 serial_number = device.GetSerialNumber()
@@ -276,11 +307,79 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover Basler cameras: {str(e)}")
 
+    @staticmethod
+    def _discover_by_ip(target_ips: List[str]):
+        """Discover cameras by specific IP addresses.
+
+        Args:
+            target_ips: List of IP addresses to target for discovery
+
+        Returns:
+            List of discovered device info objects
+        """
+        if not PYPYLON_AVAILABLE:
+            raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available")
+        else:
+            assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
+
+        discovered_devices = []
+
+        for ip in target_ips:
+            try:
+                # Create device info for specific IP
+                device_info = pylon.DeviceInfo()
+                device_info.SetDeviceClass(pylon.DeviceClass_BaslerGigE)
+                device_info.SetIpAddress(ip)
+
+                # Try to create device with this IP
+                factory = pylon.TlFactory.GetInstance()
+
+                # Force discovery of this specific IP
+                factory.EnumerateDevices([device_info])
+
+                # Get the enumerated device if it exists
+                devices = factory.EnumerateDevices()
+                for device in devices:
+                    if hasattr(device, "GetIpAddress") and device.GetIpAddress() == ip:
+                        discovered_devices.append(device)
+                        break
+
+            except Exception as e:
+                # Log but continue with other IPs
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to discover camera at IP {ip}: {e}")
+                continue
+
+        return discovered_devices
+
+    def _is_ip_address(self, name: str) -> bool:
+        """Check if camera_name is a valid IP address.
+
+        Args:
+            name: String to check
+
+        Returns:
+            True if name is a valid IP address format, False otherwise
+        """
+        import re
+
+        ip_pattern = r"^(\d{1,3}\.){3}\d{1,3}$"
+        if not re.match(ip_pattern, name):
+            return False
+        # Also check that each octet is valid (0-255)
+        octets = name.split(".")
+        for octet in octets:
+            if int(octet) > 255:
+                return False
+        return True
+
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
 
         This searches for the camera by name, serial number, or IP and establishes
-        a connection if found.
+        a connection if found. Uses multicast-aware discovery if enabled.
 
         Returns:
             Tuple of (success status, camera object, None)
@@ -305,57 +404,180 @@ class BaslerCameraBackend(CameraBackend):
                     max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
                 )
 
-            all_devices = await self._sdk(pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s)
-            if len(all_devices) == 0:
-                raise CameraNotFoundError("No Basler cameras found")
-
-            camera_found = False
-            for device in all_devices:
-                if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
-                    camera_found = True
-                    try:
-
-                        def _create_and_open():
-                            cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
-                            cam.Open()
-                            return cam
-
-                        camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
-
-                        if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
-                            self.camera_name = device.GetUserDefinedName()
-                            self.logger.debug(
-                                f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
-                            )
-
-                        # Configure the camera after opening
-                        self.camera = camera
-                        await self._configure_camera()
-
-                        # Load config if provided
-                        if self.camera_config_path and os.path.exists(self.camera_config_path):
-                            await self.import_config(self.camera_config_path)
-
-                        self.initialized = True
-                        return True, camera, None
-
-                    except Exception as e:
-                        self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
-                        raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
-
-            if not camera_found:
-                available_cameras = [
-                    f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in all_devices
-                ]
-                raise CameraNotFoundError(
-                    f"Camera '{self.camera_name}' not found. Available cameras: {available_cameras}"
-                )
+            # Choose initialization method based on camera name format and configuration
+            if self._is_ip_address(self.camera_name):
+                # If camera_name is an IP address, use direct IP connection
+                return await self._initialize_by_direct_ip()
+            elif self.multicast_enabled and self.target_ips:
+                # If multicast is enabled with target IPs, use IP-based discovery
+                return await self._initialize_by_ip()
+            else:
+                # Standard discovery by name/serial
+                return await self._initialize_by_discovery()
 
         except (CameraNotFoundError, CameraConnectionError):
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error initializing Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing camera '{self.camera_name}': {str(e)}")
+
+    async def _initialize_by_direct_ip(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera by direct IP connection.
+
+        This method creates a direct connection to a camera using its IP address,
+        which is useful for multicast scenarios.
+
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        self.logger.info(f"Initializing camera by direct IP connection: {self.camera_name}")
+
+        try:
+
+            def _create_and_open_by_ip():
+                # Create device info with IP address
+                device_info = pylon.CDeviceInfo()
+                device_info.SetDeviceClass("BaslerGigE")
+                device_info.SetIpAddress(self.camera_name)
+
+                # Create device from info
+                factory = pylon.TlFactory.GetInstance()
+                device = factory.CreateDevice(device_info)
+
+                # Create and open camera
+                cam = pylon.InstantCamera(device)
+                cam.Open()
+
+                return cam
+
+            camera = await self._sdk(_create_and_open_by_ip, timeout=self._op_timeout_s)
+
+            # Log camera details
+            try:
+                device_info = camera.GetDeviceInfo()
+                model = device_info.GetModelName()
+                serial = device_info.GetSerialNumber()
+                self.logger.info(
+                    f"Connected to camera via IP - Model: {model}, Serial: {serial}, IP: {self.camera_name}"
+                )
+            except Exception as e:
+                self.logger.debug(f"Could not get camera details: {e}")
+
+            # Configure the camera
+            self.camera = camera
+            await self._configure_camera()
+
+            # Load config if provided
+            if self.camera_config_path and os.path.exists(self.camera_config_path):
+                await self.import_config(self.camera_config_path)
+
+            self.initialized = True
+            return True, camera, None
+
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera by IP '{self.camera_name}': {str(e)}")
+            raise CameraConnectionError(f"Failed to connect to camera at IP '{self.camera_name}': {str(e)}")
+
+    async def _initialize_by_discovery(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera using standard discovery.
+
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        all_devices = await self._sdk(pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s)
+        if len(all_devices) == 0:
+            raise CameraNotFoundError("No Basler cameras found")
+
+        camera_found = False
+        for device in all_devices:
+            if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
+                camera_found = True
+                try:
+
+                    def _create_and_open():
+                        cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+                        cam.Open()
+                        return cam
+
+                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+
+                    if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
+                        self.camera_name = device.GetUserDefinedName()
+                        self.logger.debug(
+                            f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
+                        )
+
+                    # Configure the camera after opening
+                    self.camera = camera
+                    await self._configure_camera()
+
+                    # Load config if provided
+                    if self.camera_config_path and os.path.exists(self.camera_config_path):
+                        await self.import_config(self.camera_config_path)
+
+                    self.initialized = True
+                    return True, camera, None
+
+                except Exception as e:
+                    self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
+                    raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
+
+        if not camera_found:
+            available_cameras = [
+                f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in all_devices
+            ]
+            raise CameraNotFoundError(f"Camera '{self.camera_name}' not found. Available cameras: {available_cameras}")
+
+    async def _initialize_by_ip(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera using IP-based discovery for multicast.
+
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        devices = await self._sdk(lambda: self._discover_by_ip(self.target_ips), timeout=self._op_timeout_s)
+        if len(devices) == 0:
+            raise CameraNotFoundError(f"No Basler cameras found at target IPs: {self.target_ips}")
+
+        # Try to find camera by name/serial in discovered devices
+        camera_found = False
+        for device in devices:
+            if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
+                camera_found = True
+                try:
+
+                    def _create_and_open():
+                        cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+                        cam.Open()
+                        return cam
+
+                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+
+                    if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
+                        self.camera_name = device.GetUserDefinedName()
+                        self.logger.debug(
+                            f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
+                        )
+
+                    # Configure the camera after opening
+                    self.camera = camera
+                    await self._configure_camera()
+
+                    # Load config if provided
+                    if self.camera_config_path and os.path.exists(self.camera_config_path):
+                        await self.import_config(self.camera_config_path)
+
+                    self.initialized = True
+                    return True, camera, None
+
+                except Exception as e:
+                    self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
+                    raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
+
+        if not camera_found:
+            available_cameras = [f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in devices]
+            raise CameraNotFoundError(
+                f"Camera '{self.camera_name}' not found in target IPs. Available cameras: {available_cameras}"
+            )
 
     async def _ensure_open(self):
         """Ensure camera is open.
@@ -439,11 +661,177 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
 
+            # Set AcquisitionMode to Continuous for multi-capture support
+            # This ensures consistent behavior across all backends
+            def _set_acquisition_mode():
+                try:
+                    if self.camera.GetNodeMap().GetNode("AcquisitionMode"):
+                        self.camera.AcquisitionMode.Value = "Continuous"
+                        self.logger.debug(f"Set AcquisitionMode to Continuous for camera '{self.camera_name}'")
+                except Exception as acq_error:
+                    self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
+
+            await self._sdk(_set_acquisition_mode, timeout=self._op_timeout_s)
+
+            # Configure multicast streaming BEFORE starting grabbing if enabled
+            # This is critical for proper multicast setup
+            if self.multicast_enabled:
+                try:
+                    await self.configure_streaming()
+                except Exception as stream_error:
+                    # Log but don't fail - camera may work in unicast mode
+                    self.logger.warning(
+                        f"Multicast configuration failed for camera '{self.camera_name}': {stream_error}. "
+                        f"Camera will operate in unicast mode."
+                    )
+
             self.logger.debug(f"Basler camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
         except Exception as e:
             self.logger.error(f"Failed to configure Basler camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
+
+    async def configure_streaming(self):
+        """Configure multicast streaming settings for the camera.
+
+        This method sets up multicast parameters when multicast mode is enabled.
+        It configures the camera using the StreamGrabber interface for multicast streaming.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If multicast configuration fails
+            HardwareOperationError: If streaming configuration fails
+        """
+        if self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
+
+        if not self.multicast_enabled:
+            self.logger.debug(
+                f"Multicast not enabled for camera '{self.camera_name}', skipping streaming configuration"
+            )
+            return
+
+        try:
+            await self._ensure_open()
+
+            self.logger.info(f"Configuring multicast streaming for camera '{self.camera_name}'")
+            self.logger.debug(f"Multicast group: {self.multicast_group}, port: {self.multicast_port}")
+
+            # Configure multicast without suspending grabbing since it may not have started yet
+            # Try StreamGrabber interface first (more common on newer cameras)
+            stream_grabber_available = False
+
+            try:
+                # Check if StreamGrabber interface is available
+                if hasattr(self.camera, "StreamGrabber"):
+                    self.logger.debug("Using StreamGrabber interface for multicast configuration")
+
+                    # Set transmission type to multicast
+                    if hasattr(self.camera.StreamGrabber, "TransmissionType"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.TransmissionType.SetValue, "Multicast", timeout=self._op_timeout_s
+                        )
+                        self.logger.debug("Set transmission type to Multicast")
+                        stream_grabber_available = True
+
+                    # Set multicast destination address
+                    if hasattr(self.camera.StreamGrabber, "DestinationAddr"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.DestinationAddr.SetValue,
+                            self.multicast_group,
+                            timeout=self._op_timeout_s,
+                        )
+                        self.logger.debug(f"Set multicast destination address to {self.multicast_group}")
+
+                    # Set multicast destination port
+                    if hasattr(self.camera.StreamGrabber, "DestinationPort"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.DestinationPort.SetValue,
+                            self.multicast_port,
+                            timeout=self._op_timeout_s,
+                        )
+                        self.logger.debug(f"Set multicast destination port to {self.multicast_port}")
+
+                    # Verify configuration
+                    if stream_grabber_available:
+                        verify_type = await self._sdk(
+                            self.camera.StreamGrabber.TransmissionType.GetValue, timeout=self._op_timeout_s
+                        )
+                        verify_addr = await self._sdk(
+                            self.camera.StreamGrabber.DestinationAddr.GetValue, timeout=self._op_timeout_s
+                        )
+                        verify_port = await self._sdk(
+                            self.camera.StreamGrabber.DestinationPort.GetValue, timeout=self._op_timeout_s
+                        )
+
+                        self.logger.info(
+                            f"StreamGrabber multicast configured - Type: {verify_type}, "
+                            f"Address: {verify_addr}, Port: {verify_port}"
+                        )
+
+            except Exception as sg_error:
+                self.logger.debug(f"StreamGrabber configuration failed: {sg_error}")
+                stream_grabber_available = False
+
+            # If StreamGrabber is not available, try GevSC interface (older cameras)
+            if not stream_grabber_available:
+                self.logger.debug("StreamGrabber not available, trying GevSC interface")
+
+                gevsc_available = False
+
+                # Configure multicast destination using GevSC
+                if hasattr(self.camera, "GevSCDA"):
+                    # Set multicast destination address
+                    await self._sdk(
+                        self.camera.GevSCDA.SetValue, self._ip_to_int(self.multicast_group), timeout=self._op_timeout_s
+                    )
+                    self.logger.debug(f"Set GevSCDA multicast address to {self.multicast_group}")
+                    gevsc_available = True
+
+                if hasattr(self.camera, "GevSCPHostPort"):
+                    # Set multicast destination port
+                    await self._sdk(
+                        self.camera.GevSCPHostPort.SetValue, self.multicast_port, timeout=self._op_timeout_s
+                    )
+                    self.logger.debug(f"Set GevSCPHostPort to {self.multicast_port}")
+
+                # Enable multicast mode if available
+                if hasattr(self.camera, "GevSCCFGMulticastEnable"):
+                    await self._sdk(self.camera.GevSCCFGMulticastEnable.SetValue, True, timeout=self._op_timeout_s)
+                    self.logger.debug("Enabled GevSCCFGMulticastEnable")
+
+                # Configure transmission type to multicast
+                if hasattr(self.camera, "GevSCCFGTransmissionType"):
+                    await self._sdk(
+                        self.camera.GevSCCFGTransmissionType.SetValue, "Multicast", timeout=self._op_timeout_s
+                    )
+                    self.logger.debug("Set GevSCCFGTransmissionType to Multicast")
+
+                if not gevsc_available:
+                    self.logger.warning(
+                        f"Neither StreamGrabber nor GevSC interfaces available for camera '{self.camera_name}'. "
+                        f"Multicast may not be supported on this camera model."
+                    )
+
+            self.logger.info(f"Multicast streaming configuration completed for camera '{self.camera_name}'")
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure multicast streaming for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to configure multicast streaming: {str(e)}")
+
+    def _ip_to_int(self, ip_address: str) -> int:
+        """Convert IP address string to integer representation.
+
+        Args:
+            ip_address: IP address in dotted decimal notation (e.g., "192.168.1.1")
+
+        Returns:
+            Integer representation of the IP address
+        """
+        import socket
+        import struct
+
+        return struct.unpack("!I", socket.inet_aton(ip_address))[0]
 
     async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
@@ -470,8 +858,17 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_value = await self._sdk(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
-            max_value = await self._sdk(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                min_value = await self._sdk(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._sdk(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for get_exposure_range on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(
+                    f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
+                )
+                min_value = await self._sdk(self.camera.ExposureTimeAbs.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._sdk(self.camera.ExposureTimeAbs.GetMax, timeout=self._op_timeout_s)
 
             return [min_value, max_value]
         except Exception as e:
@@ -495,7 +892,16 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for get_exposure on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(
+                    f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
+                )
+                exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+
             return exposure
         except Exception as e:
             self.logger.warning(f"Exposure not available for camera '{self.camera_name}': {str(e)}")
@@ -526,9 +932,18 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._ensure_open()
 
-            await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for set_exposure on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(
+                    f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
+                )
+                await self._sdk(self.camera.ExposureTimeAbs.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
 
-            actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
             if not (abs(actual_exposure - exposure) < 0.01 * max(1.0, float(exposure))):
                 raise HardwareOperationError(
                     f"Exposure verification failed for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure}"
@@ -674,10 +1089,10 @@ class BaslerCameraBackend(CameraBackend):
                             raise CameraTimeoutError(
                                 f"Capture timeout after {self.retrieve_retry_count} attempts "
                                 f"for camera '{self.camera_name}': {str(e)}"
-                            )
+                            ) from e
                         continue
                     else:
-                        raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}")
+                        raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}") from e
 
             raise CameraCaptureError(
                 f"Failed to capture image after {self.retrieve_retry_count} attempts for camera '{self.camera_name}'"
@@ -687,7 +1102,7 @@ class BaslerCameraBackend(CameraBackend):
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error during capture for camera '{self.camera_name}': {str(e)}")
-            raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}")
+            raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}") from e
 
     async def _enhance_image(self, image: np.ndarray) -> np.ndarray:
         """Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) enhancement.
@@ -767,12 +1182,26 @@ class BaslerCameraBackend(CameraBackend):
                 if "exposure_time" in config_data:
                     total_settings += 1
                     try:
+                        # Try ExposureTime first, fallback to ExposureTimeAbs
                         if hasattr(self.camera, "ExposureTime") and self.camera.ExposureTime.GetAccessMode() in [
                             genicam.RW,
                             genicam.WO,
                         ]:
                             await self._sdk(
                                 self.camera.ExposureTime.SetValue,
+                                float(config_data["exposure_time"]),
+                                timeout=self._op_timeout_s,
+                            )
+                            success_count += 1
+                        elif hasattr(
+                            self.camera, "ExposureTimeAbs"
+                        ) and self.camera.ExposureTimeAbs.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            self.logger.debug(f"Using ExposureTimeAbs for config import on camera '{self.camera_name}'")
+                            await self._sdk(
+                                self.camera.ExposureTimeAbs.SetValue,
                                 float(config_data["exposure_time"]),
                                 timeout=self._op_timeout_s,
                             )
@@ -987,7 +1416,14 @@ class BaslerCameraBackend(CameraBackend):
             # Get current camera settings with fallbacks
             exposure_time = defaults["exposure_time"]
             try:
-                exposure_time = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                # Try ExposureTime first, fallback to ExposureTimeAbs
+                try:
+                    exposure_time = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                except Exception:
+                    self.logger.debug(
+                        f"ExposureTime not available for camera '{self.camera_name}', trying ExposureTimeAbs"
+                    )
+                    exposure_time = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
             except Exception as e:
                 self.logger.warning(f"Could not get exposure time for camera '{self.camera_name}': {e}")
 
@@ -1223,7 +1659,23 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._ensure_open()
 
-            await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
+                actual_gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for set_gain on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                # GainRaw expects integer value
+                gain_int = int(round(gain))
+                await self._sdk(self.camera.GainRaw.SetValue, gain_int, timeout=self._op_timeout_s)
+                actual_gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+
+            if not (abs(actual_gain - gain) < 0.01 * max(1.0, float(gain))):
+                raise HardwareOperationError(
+                    f"Gain verification failed for camera '{self.camera_name}': requested={gain}, actual={actual_gain}"
+                )
+
             self.logger.debug(f"Gain set to {gain} for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
@@ -1247,7 +1699,14 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for get_gain on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+
             return gain
 
         except Exception as e:
@@ -1271,8 +1730,16 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
-            max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for get_gain_range on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                min_gain = await self._sdk(self.camera.GainRaw.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._sdk(self.camera.GainRaw.GetMax, timeout=self._op_timeout_s)
+
             return [min_gain, max_gain]
 
         except Exception as e:
@@ -1416,11 +1883,34 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting inter-packet delay for camera '{self.camera_name}': {str(e)}")
             raise RuntimeError(f"Failed to get inter-packet delay: {str(e)}")
 
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        if timeout_ms < 0:
+            raise ValueError(f"Timeout must be non-negative, got {timeout_ms}")
+
+        self.timeout_ms = timeout_ms
+        self.logger.debug(f"Set capture timeout to {timeout_ms}ms for camera '{self.camera_name}'")
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        return self.timeout_ms
+
     async def get_wb_range(self) -> List[str]:
         """Get available white balance modes.
 
         Returns:
-            List of available white balance modes
+            List of available white balance modes (lowercase for API compatibility)
         """
         return ["off", "once", "continuous"]
 
@@ -1662,6 +2152,94 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Error setting white balance for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set white balance: {str(e)}")
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for Basler cameras.
+
+        Returns:
+            List of available trigger modes based on GenICam TriggerMode and TriggerSource
+        """
+        # TriggerMode "Off" = continuous acquisition
+        # TriggerMode "On" + TriggerSource = triggered acquisition
+        return [
+            "continuous",  # TriggerMode=Off (freerunning)
+            "trigger",  # TriggerMode=On, TriggerSource=Software
+        ]
+
+    async def get_bandwidth_limit_range(self) -> List[float]:
+        """Get bandwidth limit range for GigE cameras.
+
+        Returns:
+            List containing [min_bandwidth, max_bandwidth] in Mbps
+        """
+        if not self.initialized or self.camera is None:
+            return [1.0, 1000.0]  # Default range
+
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            if hasattr(self.camera, "DeviceLinkThroughputLimit"):
+                min_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMax, timeout=self._op_timeout_s)
+                return [float(min_val) / 1000000, float(max_val) / 1000000]  # Convert to Mbps
+            else:
+                return [1.0, 1000.0]  # Default range for non-GigE cameras
+
+        except Exception as e:
+            self.logger.warning(f"Failed to get bandwidth limit range for camera '{self.camera_name}': {e}")
+            return [1.0, 1000.0]  # Default range
+
+    async def get_packet_size_range(self) -> List[int]:
+        """Get packet size range for GigE cameras.
+
+        Returns:
+            List containing [min_packet_size, max_packet_size] in bytes
+        """
+        if not self.initialized or self.camera is None:
+            return [1476, 9000]  # Default range
+
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            if hasattr(self.camera, "GevSCPSPacketSize"):
+                min_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMax, timeout=self._op_timeout_s)
+                return [int(min_val), int(max_val)]
+            else:
+                return [1476, 9000]  # Default range for non-GigE cameras
+
+        except Exception as e:
+            self.logger.warning(f"Failed to get packet size range for camera '{self.camera_name}': {e}")
+            return [1476, 9000]  # Default range
+
+    async def get_inter_packet_delay_range(self) -> List[int]:
+        """Get inter-packet delay range for GigE cameras.
+
+        Returns:
+            List containing [min_delay, max_delay] in ticks
+        """
+        if not self.initialized or self.camera is None:
+            return [0, 65535]  # Default range
+
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            if hasattr(self.camera, "GevSCPD"):
+                min_val = await self._sdk(self.camera.GevSCPD.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.GevSCPD.GetMax, timeout=self._op_timeout_s)
+                return [int(min_val), int(max_val)]
+            else:
+                return [0, 65535]  # Default range for non-GigE cameras
+
+        except Exception as e:
+            self.logger.warning(f"Failed to get inter-packet delay range for camera '{self.camera_name}': {e}")
+            return [0, 65535]  # Default range
 
     async def close(self):
         """Close the camera and release resources.

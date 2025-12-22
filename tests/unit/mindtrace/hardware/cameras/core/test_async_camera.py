@@ -394,8 +394,8 @@ class TestAsyncCameraConcurrentOperations:
 
             # All should complete without deadlock
             assert len(results) == 3
-            # Mock backend should return None for successful operations or Exception for failures
-            assert all(r is None or isinstance(r, Exception) for r in results)
+            # Methods return True (set_exposure, set_gain) or None (set_roi) for successful operations, or Exception for failures
+            assert all(r is True or r is None or isinstance(r, Exception) for r in results)
 
         finally:
             await manager.close(None)
@@ -423,7 +423,7 @@ class TestAsyncCameraConcurrentOperations:
             image, config_result = await asyncio.gather(capture_task, config_task)
 
             assert isinstance(image, np.ndarray)
-            assert config_result is None
+            assert config_result is True  # set_exposure now returns True for success
 
         finally:
             await manager.close(None)

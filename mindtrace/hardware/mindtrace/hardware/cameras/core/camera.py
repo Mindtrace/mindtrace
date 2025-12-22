@@ -348,13 +348,17 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.get_image_enhancement())
 
-    def save_config(self, path: str):
+    def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
             path: Destination file path (backend-specific JSON).
+
+        Returns:
+            bool: True if export succeeds, raises exception on failure.
         """
-        self._submit(self._backend.save_config(path))
+        self._submit(self._backend.export_config(path))
+        return True
 
     def load_config(self, path: str):
         """Import camera configuration from a file via backend.

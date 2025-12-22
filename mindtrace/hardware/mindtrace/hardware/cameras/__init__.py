@@ -31,6 +31,13 @@ def __getattr__(name):
             return OPENCV_AVAILABLE
         except ImportError:
             return False
+    elif name == "GENICAM_AVAILABLE":
+        try:
+            from mindtrace.hardware.cameras.backends.genicam import GENICAM_AVAILABLE
+
+            return GENICAM_AVAILABLE
+        except ImportError:
+            return False
     elif name == "SETUP_AVAILABLE":
         try:
             from mindtrace.hardware.cameras.setup import (
@@ -74,6 +81,7 @@ __all__ = [
     # Availability flags
     "BASLER_AVAILABLE",
     "OPENCV_AVAILABLE",
+    "GENICAM_AVAILABLE",
     "SETUP_AVAILABLE",
     # Setup utilities (available if setup module can be imported)
     "install_pylon_sdk",

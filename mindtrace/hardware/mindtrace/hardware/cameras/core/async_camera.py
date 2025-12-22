@@ -107,15 +107,36 @@ class AsyncCamera(Mindtrace):
                 )
 
                 backend = OpenCVCameraBackend(device_name)
-            elif backend_name.lower() in {"basler", "mockbasler", "mock_basler"}:
+            elif backend_name.lower() == "basler":
+                try:
+                    from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCameraBackend
+
+                    if BASLER_AVAILABLE:
+                        backend = BaslerCameraBackend(device_name)
+                    else:
+                        raise ImportError("Real Basler backend not available, pypylon not installed")
+                except ImportError:
+                    # Fall back to mock if real backend unavailable
+                    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
+                        MockBaslerCameraBackend,
+                    )
+
+                    backend = MockBaslerCameraBackend(device_name)
+            elif backend_name.lower() in {"mockbasler", "mock_basler"}:
                 from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
                     MockBaslerCameraBackend,
                 )
 
                 backend = MockBaslerCameraBackend(device_name)
+            elif backend_name.lower() == "genicam":
+                from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import (
+                    GenICamCameraBackend,
+                )
+
+                backend = GenICamCameraBackend(device_name)
             else:
                 raise CameraInitializationError(
-                    f"Unsupported backend '{backend_name}'. Try 'OpenCV:opencv_camera_0' or a mock Basler."
+                    f"Unsupported backend '{backend_name}'. Try 'OpenCV:opencv_camera_0', 'GenICam:camera_id', or a mock Basler."
                 )
 
             ok, _, _ = await backend.initialize()
@@ -385,7 +406,7 @@ class AsyncCamera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement.
+                pixel_format, white_balance, image_enhancement, capture_timeout.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
@@ -393,7 +414,10 @@ class AsyncCamera(Mindtrace):
         """
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
-            if "exposure" in settings:
+            # Handle both "exposure" and "exposure_time" for backwards compatibility and user convenience
+            if "exposure_time" in settings:
+                await self._backend.set_exposure(settings["exposure_time"])
+            elif "exposure" in settings:
                 await self._backend.set_exposure(settings["exposure"])
             if "gain" in settings:
                 await self._backend.set_gain(settings["gain"])
@@ -408,7 +432,13 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+            # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
+            if "capture_timeout" in settings:
+                await self._backend.set_capture_timeout(settings["capture_timeout"])
+            elif "timeout_ms" in settings:
+                await self._backend.set_capture_timeout(settings["timeout_ms"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
+            return True
 
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
@@ -418,6 +448,7 @@ class AsyncCamera(Mindtrace):
         """
         async with self._lock:
             await self._backend.set_exposure(exposure)
+            return True
 
     async def get_exposure(self) -> float:
         """Get the current exposure value.
@@ -443,6 +474,7 @@ class AsyncCamera(Mindtrace):
             gain: Gain value to apply.
         """
         await self._backend.set_gain(gain)
+        return True
 
     async def get_gain(self) -> float:
         """Get the current camera gain.
@@ -460,6 +492,26 @@ class AsyncCamera(Mindtrace):
         """
         range_list = await self._backend.get_gain_range()
         return range_list[0], range_list[1]
+
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        await self._backend.set_capture_timeout(timeout_ms)
+        return True
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        return await self._backend.get_capture_timeout()
 
     async def set_roi(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI).
@@ -566,27 +618,246 @@ class AsyncCamera(Mindtrace):
         """
         return await self._backend.get_image_quality_enhancement()
 
-    async def save_config(self, path: str):
+    async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
             path: Destination file path (backend-specific JSON).
+
+        Returns:
+            bool: True if export succeeds, raises exception on failure.
         """
         async with self._lock:
             await self._backend.export_config(path)
+            return True
 
-    async def load_config(self, path: str):
+    async def load_config(self, path: str) -> bool:
         """Import camera configuration from a file via backend.
 
         Args:
             path: Configuration file path (backend-specific JSON).
+
+        Returns:
+            bool: True if import succeeds, raises exception on failure.
         """
         async with self._lock:
             await self._backend.import_config(path)
+            return True
 
     async def check_connection(self):
         """Check whether the backend connection is healthy."""
         return await self._backend.check_connection()
+
+    # GigE Network Performance Methods
+
+    async def get_packet_size(self) -> int:
+        """Get GigE packet size in bytes.
+
+        Returns:
+            Packet size in bytes (typically 1500 standard or 9000 jumbo frames).
+
+        Raises:
+            NotImplementedError: If camera doesn't support packet size control.
+        """
+        return await self._backend.get_packet_size()
+
+    async def set_packet_size(self, size: int):
+        """Set GigE packet size for network optimization.
+
+        Args:
+            size: Packet size in bytes (1476-16000).
+        """
+        async with self._lock:
+            await self._backend.set_packet_size(size)
+
+    async def get_inter_packet_delay(self) -> int:
+        """Get inter-packet delay in ticks.
+
+        Returns:
+            Delay in ticks (0-65535, higher = slower transmission).
+
+        Raises:
+            NotImplementedError: If camera doesn't support inter-packet delay control.
+        """
+        return await self._backend.get_inter_packet_delay()
+
+    async def set_inter_packet_delay(self, delay_ticks: int):
+        """Set inter-packet delay for network traffic control.
+
+        Args:
+            delay_ticks: Delay in ticks (0-65535).
+        """
+        async with self._lock:
+            await self._backend.set_inter_packet_delay(delay_ticks)
+
+    async def get_bandwidth_limit(self) -> float:
+        """Get bandwidth limit in Mbps.
+
+        Returns:
+            Bandwidth limit in Mbps, or unlimited if not set.
+
+        Raises:
+            NotImplementedError: If camera doesn't support bandwidth limiting.
+        """
+        return await self._backend.get_bandwidth_limit()
+
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
+        """Set bandwidth limit for GigE camera.
+
+        Args:
+            limit_mbps: Bandwidth limit in Mbps (None for unlimited).
+        """
+        async with self._lock:
+            await self._backend.set_bandwidth_limit(limit_mbps)
+
+    # Camera Capability and Range Query Methods
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for the camera.
+
+        Returns:
+            List of supported trigger mode names. Returns default modes if backend doesn't support query.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            return await self._backend.get_trigger_modes()
+        except (NotImplementedError, AttributeError):
+            # Return sensible defaults for cameras without trigger mode query capability
+            return ["continuous", "triggered"]
+
+    async def get_bandwidth_limit_range(self) -> Optional[Tuple[float, float]]:
+        """Get bandwidth limit range for GigE cameras.
+
+        Returns:
+            Tuple of (min_mbps, max_mbps) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_bandwidth_limit_range()
+            return (float(range_list[0]), float(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_packet_size_range(self) -> Optional[Tuple[int, int]]:
+        """Get packet size range for GigE cameras.
+
+        Returns:
+            Tuple of (min_bytes, max_bytes) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_packet_size_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_inter_packet_delay_range(self) -> Optional[Tuple[int, int]]:
+        """Get inter-packet delay range for GigE cameras.
+
+        Returns:
+            Tuple of (min_ticks, max_ticks) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_inter_packet_delay_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_width_range(self) -> Optional[Tuple[int, int]]:
+        """Get sensor width range for ROI configuration.
+
+        Returns:
+            Tuple of (min_width, max_width) if supported, None otherwise.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_width_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_height_range(self) -> Optional[Tuple[int, int]]:
+        """Get sensor height range for ROI configuration.
+
+        Returns:
+            Tuple of (min_height, max_height) if supported, None otherwise.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_height_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def is_exposure_control_supported(self) -> bool:
+        """Check if camera supports exposure control.
+
+        Returns:
+            True if exposure control is supported, False otherwise.
+        """
+        try:
+            return await self._backend.is_exposure_control_supported()
+        except (NotImplementedError, AttributeError):
+            # Assume exposure control is supported unless explicitly not supported
+            return True
+
+    async def supports_feature(self, feature: str) -> bool:
+        """Check if camera supports a specific feature.
+
+        Args:
+            feature: Feature name to check. Supported values:
+                - 'bandwidth_limit': GigE bandwidth limiting
+                - 'packet_size': GigE packet size control
+                - 'inter_packet_delay': GigE inter-packet delay
+                - 'exposure_control': Exposure time control
+                - 'trigger_modes': Trigger mode support
+                - 'width_range': Width range query
+                - 'height_range': Height range query
+
+        Returns:
+            True if feature is supported and functional, False otherwise.
+        """
+        feature_checks = {
+            "bandwidth_limit": self.get_bandwidth_limit_range,
+            "packet_size": self.get_packet_size_range,
+            "inter_packet_delay": self.get_inter_packet_delay_range,
+            "width_range": self.get_width_range,
+            "height_range": self.get_height_range,
+            "exposure_control": self.is_exposure_control_supported,
+            "trigger_modes": self.get_trigger_modes,
+        }
+
+        check_method = feature_checks.get(feature)
+        if not check_method:
+            return False
+
+        try:
+            result = await check_method()
+            # For range methods, None means not supported
+            # For boolean methods, False means not supported
+            # For list methods, empty list means not supported
+            if result is None:
+                return False
+            if isinstance(result, bool):
+                return result
+            if isinstance(result, (list, tuple)) and len(result) == 0:
+                return False
+            return True
+        except Exception:
+            return False
 
     async def get_sensor_info(self) -> Dict[str, Any]:
         """Get basic sensor information for diagnostics.
@@ -604,7 +875,7 @@ class AsyncCamera(Mindtrace):
     async def capture_hdr(
         self,
         save_path_pattern: Optional[str] = None,
-        exposure_levels: int = 3,
+        exposure_levels: Union[int, List[float]] = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
@@ -614,8 +885,8 @@ class AsyncCamera(Mindtrace):
 
         Args:
             save_path_pattern: Optional path pattern containing "{exposure}" placeholder.
-            exposure_levels: Number of exposure steps to capture.
-            exposure_multiplier: Multiplier between consecutive exposure steps.
+            exposure_levels: Number of exposure steps (int) or explicit exposure values (List[float]).
+            exposure_multiplier: Multiplier between consecutive exposure steps (used when exposure_levels is int).
             return_images: If True, returns list of captured images; otherwise returns success bool.
             upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
             output_format: Output format for returned images ("numpy" or "pil").
@@ -639,18 +910,25 @@ class AsyncCamera(Mindtrace):
 
         async with self._lock:
             try:
-                original_exposure = await self._backend.get_exposure()
-                exposure_range = await self._backend.get_exposure_range()
-                min_exposure, max_exposure = exposure_range[0], exposure_range[1]
-                base_exposure = original_exposure
-                exposures = []
-                for i in range(exposure_levels):
-                    center_index = (exposure_levels - 1) / 2
-                    multiplier = exposure_multiplier ** (i - center_index)
-                    exposure = base_exposure * multiplier
-                    exposure = max(min_exposure, min(max_exposure, exposure))
-                    exposures.append(exposure)
-                exposures = sorted(list(set(exposures)))
+                # Calculate or use provided exposure values
+                if isinstance(exposure_levels, list):
+                    # Use explicit exposure values
+                    exposures = sorted(exposure_levels)
+                    self.logger.info(f"Using explicit exposure values: {exposures}")
+                else:
+                    # Calculate exposure bracket based on count and multiplier
+                    original_exposure = await self._backend.get_exposure()
+                    exposure_range = await self._backend.get_exposure_range()
+                    min_exposure, max_exposure = exposure_range[0], exposure_range[1]
+                    base_exposure = original_exposure
+                    exposures = []
+                    for i in range(exposure_levels):
+                        center_index = (exposure_levels - 1) / 2
+                        multiplier = exposure_multiplier ** (i - center_index)
+                        exposure = base_exposure * multiplier
+                        exposure = max(min_exposure, min(max_exposure, exposure))
+                        exposures.append(exposure)
+                    exposures = sorted(list(set(exposures)))
                 self.logger.info(
                     f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}, output_format={output_format!r}"
                 )
@@ -724,6 +1002,47 @@ class AsyncCamera(Mindtrace):
             except Exception as e:
                 self.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
+
+    # Backend-specific method delegation for GenICam compatibility
+    async def get_ROI(self) -> Dict[str, int]:
+        """Get Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_ROI()
+
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
+        """Set Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_ROI(x, y, width, height)
+
+    async def reset_ROI(self):
+        """Reset Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.reset_ROI()
+
+    async def get_wb(self) -> str:
+        """Get white balance mode (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_wb()
+
+    async def set_auto_wb_once(self, value: str):
+        """Execute automatic white balance once (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_auto_wb_once(value)
+
+    async def get_wb_range(self) -> List[str]:
+        """Get available white balance modes (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_wb_range()
+
+    async def export_config(self, config_path: str):
+        """Export camera configuration (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.export_config(config_path)
+
+    async def import_config(self, config_path: str):
+        """Import camera configuration (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.import_config(config_path)
 
     async def close(self):
         """Close the camera and release resources."""
