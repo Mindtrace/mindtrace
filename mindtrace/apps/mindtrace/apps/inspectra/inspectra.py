@@ -363,11 +363,11 @@ class InspectraService(Service):
         lines = await self.line_repo.list()
         items = [
             LineResponse(
-                id=l.id,
-                name=l.name,
-                plant_id=getattr(l, "plant_id", None),
+                id=line.id,
+                name=line.name,
+                plant_id=getattr(line, "plant_id", None),
             )
-            for l in lines
+            for line in lines
         ]
         return LineListResponse(items=items, total=len(items))
 
