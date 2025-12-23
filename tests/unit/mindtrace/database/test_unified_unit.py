@@ -2552,3 +2552,68 @@ async def test_unified_initialize_async_redis_async_mode_skip(unified_backend_bo
     # Redis initialize_async should NOT be called (skipped due to ASYNC mode)
     mock_redis_backend.initialize_async.assert_not_called()
     mock_redis_backend.initialize.assert_not_called()
+
+
+def test_unified_backend_update_sync_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test unified backend update method with MongoDB."""
+    user = create_mock_mongo_user()
+    user.id = "507f1f77bcf86cd799439011"
+    mock_mongo_backend.update_sync.return_value = user
+
+    result = unified_backend_mongo_only.update(user)
+
+    assert result == user
+    mock_mongo_backend.update_sync.assert_called_once_with(user)
+
+
+def test_unified_backend_update_sync_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update method with Redis."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update.return_value = user
+
+    result = unified_backend_redis_only.update(user)
+
+    assert result == user
+    mock_redis_backend.update.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test unified backend update_async method with MongoDB."""
+    user = create_mock_mongo_user()
+    user.id = "507f1f77bcf86cd799439011"
+    mock_mongo_backend.update = AsyncMock(return_value=user)
+
+    result = await unified_backend_mongo_only.update_async(user)
+
+    assert result == user
+    mock_mongo_backend.update.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update_async method with Redis."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update_async = AsyncMock(return_value=user)
+
+    result = await unified_backend_redis_only.update_async(user)
+
+    assert result == user
+    mock_redis_backend.update_async.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update_async method with Redis fallback when update_async not available."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update.return_value = user
+    # Remove update_async method to test fallback
+    del mock_redis_backend.update_async
+
+    result = await unified_backend_redis_only.update_async(user)
+
+    assert result == user
+    mock_redis_backend.update.assert_called_once_with(user)
