@@ -1,0 +1,68 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/inspectra/Dockerfile
+    container_name: inspectra_api
+    working_dir: /app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: always
+    networks:
+      - inspectra_net
+
+  mongo:
+    image: mongo:7
+    container_name: inspectra_mongo
+    ports:
+      - "127.0.0.1:27017:27017"
+    env_file:
+      - .env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    restart: always
+    networks:
+      - inspectra_net
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: >
+        echo "db.runCommand({ ping: 1 })" | mongosh --host localhost -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: inspectra_mongo_express
+    restart: always
+    env_file:
+      - .env
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD}
+      ME_CONFIG_MONGODB_SERVER: ${ME_CONFIG_MONGODB_SERVER}
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - inspectra_net
+
+volumes:
+  mongo_data:
+
+networks:
+  inspectra_net:
+    driver: bridge
