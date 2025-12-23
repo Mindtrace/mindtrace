@@ -23,4 +23,4 @@ COPY --from=builder /install /usr/local
 
 EXPOSE 8000
 
-CMD ["python", "-m", "mindtrace.apps.inspectra.run"]
+CMD ["python", "-m", "mindtrace.apps.inspectra"]
