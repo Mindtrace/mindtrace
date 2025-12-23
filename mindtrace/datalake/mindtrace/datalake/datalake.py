@@ -8,7 +8,7 @@ from uuid import uuid4
 from beanie import PydanticObjectId
 
 from mindtrace.core import Mindtrace
-from mindtrace.database import MongoMindtraceODMBackend
+from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.types import Datum
 from mindtrace.registry import Registry
@@ -41,9 +41,10 @@ class Datalake(Mindtrace):
         Raises:
             Exception: If database initialization fails
         """
+        super().__init__()
         self.mongo_db_name: str = mongo_db_name
         self.mongo_db_uri: str = mongo_db_uri
-        self.datum_database: MongoMindtraceODMBackend[Datum] = MongoMindtraceODMBackend(
+        self.datum_database: MongoMindtraceODM[Datum] = MongoMindtraceODM(
             model_cls=Datum,
             db_name=self.mongo_db_name,
             db_uri=self.mongo_db_uri,
@@ -219,7 +220,7 @@ class Datalake(Mindtrace):
         transpose: Literal[True] = True,
     ) -> dict[str, list]: ...
 
-    async def query_data(
+    async def query_data_legacy(
         self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None = None, transpose: bool = False
     ) -> list[dict[str, Any]] | dict[str, list]:
         """
@@ -232,7 +233,7 @@ class Datalake(Mindtrace):
                 So the base query might find images from a certain project, and then
                 a second query might find classification labels for those images.
                 If no classification label is found for an image, the image id is not included in the result.
-                The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
+                The "derived_from" key indicates the column name (from a previous query) from which this datum should be derived.
 
                 The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
                 - "latest": The data/datum with the latest added_at timestamp
@@ -249,7 +250,7 @@ class Datalake(Mindtrace):
 
             If a single query is provided, it is used to find the base data and no derived data is obtained.
 
-            datums_wanted: The number of datums to return for each query. If None, all datums are returned.
+            datums_wanted: The number of datums to return from the base query. If None, all datums are returned.
 
             transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
 
@@ -327,3 +328,323 @@ class Datalake(Mindtrace):
             return result_dict
         else:
             return result_list
+
+    async def query_data(
+        self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None = None, transpose: bool = False
+    ) -> list[dict[str, Any]] | dict[str, list]:
+        """
+        Query the data in the datalake using a list of queries.
+
+        This method should provide significant performance improvements for common query patterns
+        compared to query_data_legacy by using MongoDB's native aggregation capabilities instead of multiple round trips.
+
+        Args:
+            query: A list of queries or a single query.
+                If a list of queries is provided, the first query is the base query,
+                and then the remaining queries are used to obtain derived data.
+                So the base query might find images from a certain project, and then
+                a second query might find classification labels for those images.
+                If no classification label is found for an image, the image id is not included in the result.
+                The "derived_from" key indicates the column name (from a previous query) from which this datum should be derived.
+
+                The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
+                - "latest": The data/datum with the latest added_at timestamp
+                - "earliest": The data/datum with the earliest added_at timestamp
+                - "random": Randomly selected data/datum
+                - "quickest": The first data/datum we find (so "quickest" to run)
+                For these three strategies, if no data is found, the entire row (including the base datum) is not included in the result.
+                - "missing": if any data is found, the entire row (including the base datum) is not included in the result.
+                  This allows us to search for "images we haven't classified yet", for instance.
+                  This is not available for the base query.
+                If no strategy is provided, "latest" is used.
+
+                Otherwise, the queries have the same syntax as MongoDB filters: https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/query/specify-query/
+
+            If a single query is provided, it is used to find the base data and no derived data is obtained.
+
+            datums_wanted: The number of datums to return from the base query. If None, all datums are returned.
+
+            transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
+
+        Returns:
+            If transpose is False:
+                A list of dictionaries, where each dictionary contains the data of the base datum and the data of
+                any derived data, with the number of entries of each dictionary equalling the length of query (minus any entries with the "missing" strategy)
+            If transpose is True:
+                A dictionary of lists, where the keys are the columns and the values are the lists of values.
+        """
+        if isinstance(query, dict):
+            query = [query]
+
+        if len(query) == 0:
+            return [] if not transpose else {}
+
+        base_query = copy.deepcopy(query[0])
+        base_strategy = base_query.pop("strategy", "latest")
+        base_column = base_query.pop("column", None)
+
+        if base_column is None:
+            raise ValueError("column must be provided")
+        if base_strategy == "missing":
+            raise ValueError("Invalid strategy: missing")
+
+        # Build aggregation pipeline
+        pipeline = []
+
+        # Stage 1: Match base query
+        pipeline.append({"$match": base_query})
+
+        # Stage 2: Sort by strategy if needed
+        if base_strategy in ["latest", "earliest"]:
+            sort_direction = -1 if base_strategy == "latest" else 1
+            pipeline.append({"$sort": {"added_at": sort_direction}})
+        elif base_strategy in ["random", "quickest"]:
+            pass
+        else:
+            raise ValueError(f"Invalid strategy: {base_strategy}")
+
+        join_fields: dict[str, str] = {base_column: base_column}
+        output_fields: dict[str, int] = {base_column: 1}
+
+        # Expose the base column for downstream lookups and final projection
+        pipeline.append({"$addFields": {base_column: "$_id"}})
+
+        # Handle derived queries if present
+        for derived_query in query[1:]:
+            derived_query = copy.deepcopy(derived_query)
+            derived_strategy = derived_query.pop("strategy", "latest")
+            derived_column = derived_query.pop("column", None)
+
+            if derived_column is None:
+                raise ValueError("column must be provided")
+
+            # Check if derived_from references the base column
+            derived_from_ref = derived_query.pop("derived_from", None)
+            if derived_from_ref is None:
+                raise ValueError("derived_from must be provided")
+            local_field_path = join_fields.get(derived_from_ref)
+            if local_field_path is None:
+                raise ValueError(f"Unknown derived_from reference: {derived_from_ref}")
+
+            # Stage 3: Lookup derived data
+            pipeline.append(
+                {
+                    "$lookup": {
+                        "from": "Datum",  # Same collection
+                        "localField": local_field_path,
+                        "foreignField": "derived_from",
+                        "as": derived_column,
+                    }
+                }
+            )
+
+            filter_conditions: list[dict[str, Any]] = []
+            for field, value in derived_query.items():
+                field_parts = field.split(".")
+                field_access: Any = "$$dc"
+                for part in field_parts:
+                    field_access = {"$getField": {"field": part, "input": field_access}}
+
+                if isinstance(value, dict):
+                    for op, op_value in value.items():
+                        filter_conditions.append({op: [field_access, op_value]})
+                else:
+                    filter_conditions.append({"$and": [{"$ne": [field_access, None]}, {"$eq": [field_access, value]}]})
+
+            if len(filter_conditions) == 0:
+                cond_expression: Any = True
+            elif len(filter_conditions) == 1:
+                cond_expression = filter_conditions[0]
+            else:
+                cond_expression = {"$and": filter_conditions}
+
+            pipeline.append(
+                {
+                    "$addFields": {
+                        derived_column: {
+                            "$filter": {"input": f"${derived_column}", "as": "dc", "cond": cond_expression}
+                        }
+                    }
+                }
+            )
+            join_field_name = f"{derived_column}__join"
+            pipeline.append(
+                {
+                    "$addFields": {
+                        join_field_name: {"$map": {"input": f"${derived_column}", "as": "dc", "in": "$$dc._id"}}
+                    }
+                }
+            )
+            join_fields[derived_column] = join_field_name
+
+        for derived_query in query[1:][::-1]:
+            derived_query = copy.deepcopy(derived_query)
+            derived_strategy = derived_query.pop("strategy", "latest")
+            derived_column = derived_query.pop("column", None)
+            if derived_column is None:
+                raise ValueError("column must be provided")
+            derived_from_ref = derived_query.pop("derived_from", None)
+            if derived_from_ref is None:
+                raise ValueError("derived_from must be provided")
+
+            # Stage 5: Apply derived strategy
+            if derived_strategy == "latest":
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            derived_column: {
+                                "$slice": [
+                                    {"$sortArray": {"input": f"${derived_column}", "sortBy": {"added_at": -1}}},
+                                    1,
+                                ]
+                            }
+                        }
+                    }
+                )
+            elif derived_strategy == "earliest":
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            derived_column: {
+                                "$slice": [
+                                    {"$sortArray": {"input": f"${derived_column}", "sortBy": {"added_at": 1}}},
+                                    1,
+                                ]
+                            }
+                        }
+                    }
+                )
+            elif derived_strategy == "quickest":
+                pipeline.append({"$addFields": {derived_column: {"$slice": [f"${derived_column}", 1]}}})
+            elif derived_strategy == "random":
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            derived_column: {
+                                "$let": {
+                                    "vars": {"items": f"${derived_column}", "count": {"$size": f"${derived_column}"}},
+                                    "in": {
+                                        "$let": {
+                                            "vars": {
+                                                "randIndex": {
+                                                    "$cond": [
+                                                        {"$gt": ["$$count", 0]},
+                                                        {"$floor": {"$multiply": [{"$rand": {}}, "$$count"]}},
+                                                        None,
+                                                    ]
+                                                }
+                                            },
+                                            "in": {
+                                                "$cond": [
+                                                    {"$or": [{"$eq": ["$$count", 0]}, {"$eq": ["$$randIndex", None]}]},
+                                                    [],
+                                                    [{"$arrayElemAt": ["$$items", {"$toInt": "$$randIndex"}]}],
+                                                ]
+                                            },
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+                )
+            elif derived_strategy == "missing":
+                # Filter out documents that have derived data
+                pipeline.append({"$match": {derived_column: {"$size": 0}}})
+            else:
+                raise ValueError(f"Invalid strategy: {derived_strategy}")
+
+            if derived_strategy != "missing":
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            derived_column: {
+                                "$let": {
+                                    "vars": {"firstDoc": {"$arrayElemAt": [f"${derived_column}", 0]}},
+                                    "in": {
+                                        "$cond": [
+                                            {"$eq": ["$$firstDoc", None]},
+                                            None,
+                                            {"$getField": {"field": "_id", "input": "$$firstDoc"}},
+                                        ]
+                                    },
+                                }
+                            }
+                        }
+                    }
+                )
+                pipeline.append({"$match": {derived_column: {"$ne": None}}})
+                output_fields[derived_column] = 1
+
+        pipeline.append({"$project": {field: 1 for field in output_fields}})
+
+        # Stage 8: Limit if datums_wanted specified
+        if datums_wanted is not None:
+            if base_strategy == "random":
+                pipeline.append({"$sample": {"size": datums_wanted}})
+            else:
+                pipeline.append({"$limit": datums_wanted})
+
+        # self.logger.debug(f"pipeline: {pipeline}")
+        # Execute aggregation pipeline
+        results = await self.datum_database.aggregate(pipeline)
+
+        # Convert results to expected format
+        if transpose:
+            result_dict = defaultdict(list)
+            for result in results:
+                for key, value in result.items():
+                    result_dict[key].append(value)
+            return dict(result_dict)
+        else:
+            # Convert aggregation results to list of dictionaries
+            return [dict(result) for result in results]
+
+    def _build_match_conditions(self, query: dict) -> dict | None:
+        """
+        Convert a query dictionary to MongoDB aggregation match conditions.
+
+        This converts field paths like "data.type" to proper aggregation expressions
+        that work within $filter. Uses $$this to reference the current item in $filter.
+
+        For nested fields, we need to traverse the object structure using $getField.
+        """
+        conditions = []
+
+        for field, value in query.items():
+            # Split field path and build proper field access
+            field_parts = field.split(".")
+
+            # Build nested field access iteratively
+            # For "data.type", we want: $getField($getField("$$this", "data"), "type")
+            field_access = "$$this"
+            for part in field_parts:
+                field_access = {"$getField": {"field": part, "input": field_access}}
+            self.logger.info(f"field_access: {field_access}")
+
+            # $getField returns null if field doesn't exist
+            # For nested paths, need proper null handling
+            # Try using $ifNull to provide a default and then compare
+            if isinstance(value, dict):
+                # Handle operators like {"$gte": 10}
+                for op, op_value in value.items():
+                    conditions.append({op: [field_access, op_value]})
+            else:
+                # For equality, use $ifNull to avoid matching on null values
+                # If field_access is null (path doesn't exist), $ifNull returns False
+                # Otherwise it returns field_access for comparison
+                conditions.append(
+                    {
+                        "$and": [
+                            {"$ne": [field_access, None]},  # Path exists
+                            {"$eq": [field_access, value]},  # Value matches
+                        ]
+                    }
+                )
+
+        if len(conditions) == 0:
+            return None
+        elif len(conditions) == 1:
+            return conditions[0]
+        else:
+            return {"$and": conditions}

@@ -258,3 +258,27 @@ class TestConsumer:
         dummy.connect_to_orchestrator(orchestrator, test_queue)
         with pytest.raises(RuntimeError):
             dummy.connect_to_orchestrator(orchestrator, test_queue)
+
+    def test_double_connect_via_backend_args_raises(self):
+        """Ensure connect_to_orchestator_via_backend_args raises RuntimeError if called twice."""
+        from unittest.mock import MagicMock, patch
+
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        dummy = DummyWorker()
+        backend_args = {
+            "cls": "mindtrace.jobs.local.consumer_backend.LocalConsumerBackend",
+            "kwargs": {},
+        }
+        # Mock instantiate_target to set consumer_backend on first call
+        mock_backend = MagicMock()
+        with patch("mindtrace.jobs.consumers.consumer.instantiate_target", return_value=mock_backend):
+            # First connect should succeed
+            dummy.connect_to_orchestator_via_backend_args(backend_args, "test_queue")
+            assert dummy.consumer_backend == mock_backend
+
+            # Second connect should raise RuntimeError
+            with pytest.raises(RuntimeError, match="Consumer already connected"):
+                dummy.connect_to_orchestator_via_backend_args(backend_args, "test_queue")

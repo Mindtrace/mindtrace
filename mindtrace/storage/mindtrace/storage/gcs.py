@@ -43,7 +43,7 @@ class GCSStorageHandler(StorageHandler):
         if credentials_path:
             if not os.path.exists(credentials_path):
                 raise FileNotFoundError(credentials_path)
-            creds = service_account.Credentials.from_service_account_file(credentials_path)
+            creds = self._load_credentials(credentials_path)
 
         # Client ------------------------------------------------------------
         self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
@@ -54,6 +54,39 @@ class GCSStorageHandler(StorageHandler):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _load_credentials(self, credentials_path: str):
+        """Load credentials from a file, handling both service account and user credentials.
+
+        Args:
+            credentials_path: Path to the credentials file.
+
+        Returns:
+            Credentials object that can be used with Google Cloud clients.
+        """
+        import json
+
+        try:
+            with open(credentials_path, "r") as f:
+                cred_data = json.load(f)
+
+            # Check if it's a service account key file
+            if cred_data.get("type") == "service_account":
+                return service_account.Credentials.from_service_account_file(credentials_path)
+
+            # Check if it's user credentials (application default credentials)
+            elif "client_id" in cred_data and "refresh_token" in cred_data:
+                from google.oauth2.credentials import Credentials
+
+                return Credentials.from_authorized_user_file(credentials_path)
+
+            # If it's neither, try to use it as a service account file anyway
+            # (for backward compatibility)
+            else:
+                return service_account.Credentials.from_service_account_file(credentials_path)
+
+        except Exception as e:
+            raise ValueError(f"Could not load credentials from {credentials_path}: {e}")
+
     def _ensure_bucket(self, create: bool, location: str, storage_class: str) -> None:
         """Ensure the GCS bucket exists, creating it if necessary."""
         bucket = self.client.bucket(self.bucket_name)
@@ -101,11 +134,12 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             The gs:// URI of the uploaded file.
         """
-        blob = self._bucket().blob(self._sanitize_blob_path(remote_path))
+        sanitized_path = self._sanitize_blob_path(remote_path)
+        blob = self._bucket().blob(sanitized_path)
         if metadata:
             blob.metadata = metadata
         blob.upload_from_filename(local_path)
-        return f"gs://{self.bucket_name}/{remote_path}"
+        return f"gs://{self.bucket_name}/{sanitized_path}"
 
     def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:
         """Download a file from GCS to a local path.

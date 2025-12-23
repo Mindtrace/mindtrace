@@ -82,6 +82,32 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        This method saves metadata that applies to the entire registry (e.g., version_objects setting,
+        materializers registry). This is distinct from object-level metadata which is stored per object version.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save. Should include keys like
+                "version_objects" and "materializers".
+        """
+        pass
+
+    @abstractmethod
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        This method retrieves metadata that applies to the entire registry (e.g., version_objects setting,
+        materializers registry). This is distinct from object-level metadata which is stored per object version.
+
+        Returns:
+            Dictionary containing registry metadata. Should include keys like "version_objects" and
+            "materializers". Returns empty dict if no metadata exists.
+        """
+        pass
+
+    @abstractmethod
     def list_objects(self) -> List[str]:
         """List all objects in the backend.
 
@@ -107,7 +133,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """Check if a specific object version exists in the backend.
 
         Args:
-            model_name: Name of the model.
+            name: Name of the object.
             version: Version string.
 
         Returns:
@@ -124,6 +150,18 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             materializer_class: Materializer class to register.
         """
         pass
+
+    def register_materializers_batch(self, materializers: Dict[str, str]):
+        """Register multiple materializers in a single operation for better performance.
+
+        Default implementation loops through and calls register_materializer for each. Subclasses can override this
+        method to provide optimized batch operations.
+
+        Args:
+            materializers: Dictionary mapping object classes to materializer classes.
+        """
+        for object_class, materializer_class in materializers.items():
+            self.register_materializer(object_class, materializer_class)
 
     @abstractmethod
     def registered_materializer(self, object_class: str) -> str | None:
@@ -158,7 +196,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Raises:
             ValueError: If the object name contains invalid characters
         """
-        if "_" in name:
+        if not name or not name.strip():
+            raise ValueError("Object names cannot be empty.")
+        elif "_" in name:
             raise ValueError("Object names cannot contain underscores. Use colons (':') for namespacing.")
         elif "@" in name:
             raise ValueError("Object names cannot contain '@'.")
