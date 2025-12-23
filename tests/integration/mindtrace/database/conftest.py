@@ -3,10 +3,11 @@ import logging
 import time
 
 import pytest
+import pytest_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from redis import Redis
 
-from mindtrace.database import MindtraceDocument, MongoMindtraceODMBackend
+from mindtrace.database import MindtraceDocument, MongoMindtraceODM
 
 from .test_redis_odm import UserDoc as RedisUserDoc
 
@@ -60,16 +61,33 @@ async def test_db(mongo_client):
         await mongo_client.drop_database(MONGO_DB)
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def mongo_backend(request, test_db):
     """Create a MongoDB backend instance."""
     model_cls = getattr(request, "param", MindtraceDocument)
-    backend = MongoMindtraceODMBackend(model_cls, MONGO_URL, MONGO_DB)
+    backend = MongoMindtraceODM(model_cls, MONGO_URL, MONGO_DB)
     _test_clients.append(backend.client)
     await backend.initialize()
+
+    # Clean up any existing data before the test starts
+    try:
+        collection_name = getattr(model_cls.Settings, "name", model_cls.__name__.lower())
+        collection = backend.client[MONGO_DB][collection_name]
+        await collection.delete_many({})
+    except Exception:
+        pass
+
     try:
         yield backend
     finally:
+        # Clean up data after the test
+        try:
+            collection_name = getattr(model_cls.Settings, "name", model_cls.__name__.lower())
+            collection = backend.client[MONGO_DB][collection_name]
+            await collection.delete_many({})
+        except Exception:
+            pass
+
         # Properly cleanup the backend and its connections
         if hasattr(backend, "client") and backend.client:
             backend.client.close()

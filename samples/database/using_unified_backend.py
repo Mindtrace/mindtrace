@@ -1,5 +1,5 @@
 """
-Sample usage of the UnifiedMindtraceODMBackend.
+Sample usage of the UnifiedMindtraceODM.
 
 This example demonstrates how to use the unified backend to work with both
 MongoDB and Redis databases using a common interface.
@@ -18,7 +18,7 @@ from mindtrace.database import (
     MindtraceDocument,
     MindtraceRedisDocument,
     UnifiedMindtraceDocument,
-    UnifiedMindtraceODMBackend,
+    UnifiedMindtraceODM,
 )
 
 # Configuration
@@ -77,7 +77,7 @@ async def demonstrate_mongo_backend():
     print("\n=== MongoDB Backend Demonstration ===")
 
     # Create unified backend with only MongoDB
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -144,7 +144,7 @@ def demonstrate_redis_backend():
     print("\n=== Redis Backend Demonstration ===")
 
     # Create unified backend with only Redis
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         redis_model_cls=RedisUserDoc, redis_url=REDIS_URL, preferred_backend=BackendType.REDIS
     )
 
@@ -211,7 +211,7 @@ async def demonstrate_dual_backend():
     print("\n=== Dual Backend Demonstration ===")
 
     # Create unified backend with both MongoDB and Redis
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -285,7 +285,7 @@ async def demonstrate_async_compatibility():
     print("\n=== Async Compatibility Demonstration ===")
 
     # Create Redis backend (normally sync)
-    redis_backend = UnifiedMindtraceODMBackend(
+    redis_backend = UnifiedMindtraceODM(
         redis_model_cls=RedisUserDoc, redis_url=REDIS_URL, preferred_backend=BackendType.REDIS
     )
 
@@ -325,7 +325,7 @@ async def demonstrate_unified_document_model():
     print("\n=== Unified Document Model Demonstration ===")
 
     # Create unified backend with unified model
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
         mongo_db_name=MONGO_DB_NAME,
@@ -416,7 +416,7 @@ async def demonstrate_unified_document_model():
 
 async def main():
     """Run all demonstrations."""
-    print("UnifiedMindtraceODMBackend Demonstrations")
+    print("UnifiedMindtraceODM Demonstrations")
     print("=" * 50)
 
     try:

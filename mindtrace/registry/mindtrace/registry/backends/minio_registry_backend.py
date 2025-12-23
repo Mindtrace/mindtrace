@@ -242,7 +242,7 @@ class MinioRegistryBackend(RegistryBackend):
             metadata: Dictionary containing object metadata
         """
         self.validate_object_name(name)
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
 
         # Convert metadata to bytes and wrap in BytesIO
@@ -261,7 +261,7 @@ class MinioRegistryBackend(RegistryBackend):
         Returns:
             Dictionary containing object metadata
         """
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
 
         response = self.client.get_object(self.bucket, meta_path)
@@ -281,7 +281,7 @@ class MinioRegistryBackend(RegistryBackend):
             name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
             self.client.remove_object(self.bucket, meta_path)
@@ -370,6 +370,41 @@ class MinioRegistryBackend(RegistryBackend):
             self.logger.error(f"Error loading materializers: {e}")
             raise
 
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            data = json.dumps(metadata).encode()
+            data_io = io.BytesIO(data)
+            self.client.put_object(
+                self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
+            )
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            response = self.client.get_object(self.bucket, str(self._metadata_path))
+            return json.loads(response.data.decode())
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                # No metadata file exists
+                return {}
+            # Re-raise any other S3 errors
+            raise
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
+
     def list_objects(self) -> List[str]:
         """List all objects in the registry.
 
@@ -407,6 +442,9 @@ class MinioRegistryBackend(RegistryBackend):
     def has_object(self, name: str, version: str) -> bool:
         """Check if a specific object version exists in the backend.
 
+        This method uses direct existence checks instead of listing all objects
+        for better performance, especially with large registries.
+
         Args:
             name: Name of the object.
             version: Version string.
@@ -414,10 +452,35 @@ class MinioRegistryBackend(RegistryBackend):
         Returns:
             True if the object version exists, False otherwise.
         """
-        if name not in self.list_objects():
-            return False
-        else:
-            return version in self.list_versions(name)
+        # Check if metadata file exists directly (much faster than listing all objects)
+        meta_path = self._object_metadata_path(name, version)
+        try:
+            # Try to stat the object to check existence
+            self.client.stat_object(self.bucket, meta_path)
+            # If stat_object succeeds, verify by trying to fetch metadata
+            # This handles cases where stat_object doesn't raise but object doesn't exist (e.g., in mocks)
+            try:
+                self.fetch_metadata(name, version)
+                return True
+            except (S3Error, Exception):
+                # If fetch_metadata fails, object doesn't exist
+                return False
+        except S3Error as e:
+            if e.code == "NoSuchKey" or e.code == "404":
+                return False
+            # For other S3Error codes, fall back to checking if metadata can be fetched
+            try:
+                self.fetch_metadata(name, version)
+                return True
+            except Exception:
+                return False
+        except Exception:
+            # For non-S3Error exceptions, fall back to checking if metadata can be fetched
+            try:
+                self.fetch_metadata(name, version)
+                return True
+            except Exception:
+                return False
 
     def _object_key(self, name: str, version: str) -> str:
         """Convert object name and version to a storage key.
@@ -430,6 +493,29 @@ class MinioRegistryBackend(RegistryBackend):
             Storage key for the object version.
         """
         return f"objects/{name}/{version}"
+
+    def _object_metadata_path(self, name: str, version: str) -> str:
+        """Generate the metadata file path for an object version.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Metadata file path (e.g., "_meta_object_name@1.0.0.json").
+        """
+        return f"_meta_{name.replace(':', '_')}@{version}.json"
+
+    def _object_metadata_prefix(self, name: str) -> str:
+        """Generate the metadata file prefix for listing versions of an object.
+
+        Args:
+            name: Name of the object.
+
+        Returns:
+            Metadata file prefix (e.g., "_meta_object_name@").
+        """
+        return f"_meta_{name.replace(':', '_')}@"
 
     def _lock_key(self, key: str) -> str:
         """Convert a key to a lock file key.
@@ -581,8 +667,8 @@ class MinioRegistryBackend(RegistryBackend):
             target_key = self._object_key(target_name, target_version)
 
             # Get the source and target metadata keys
-            source_meta_key = f"_meta_{source_name.replace(':', '_')}@{source_version}.json"
-            target_meta_key = f"_meta_{target_name.replace(':', '_')}@{target_version}.json"
+            source_meta_key = self._object_metadata_path(source_name, source_version)
+            target_meta_key = self._object_metadata_path(target_name, target_version)
 
             self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
 

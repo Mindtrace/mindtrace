@@ -60,6 +60,12 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
+                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
+                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
+                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
+                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
+                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
+                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
                 "MINDTRACE_TEST_PARAM": "",
             },
         ):
@@ -98,6 +104,12 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
+                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
+                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
+                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
+                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
+                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
+                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
                 "MINDTRACE_TEST_PARAM": "test_value",
             },
         ):
@@ -150,6 +162,12 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
+                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
+                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
+                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
+                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
+                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
+                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
             },
         ):
             settings = CoreSettings()
@@ -201,6 +219,7 @@ RABBITMQ_PORT = 5672
 RABBITMQ_HOST = localhost
 RABBITMQ_USERNAME = user
 RABBITMQ_PASSWORD = password
+WORKER_PORTS_RANGE = 8090-8100
 
 [MINDTRACE_MCP]
 MOUNT_PATH = /mnt
@@ -208,6 +227,14 @@ HTTP_APP_PATH = /app
 
 [MINDTRACE_WORKER]
 DEFAULT_REDIS_URL = redis://localhost:6379
+
+[MINDTRACE_GCP]
+GCP_REGISTRY_URI = https://storage.googleapis.com
+GCP_PROJECT_ID = test-project
+GCP_BUCKET_NAME = test-bucket
+GCP_CREDENTIALS_PATH = /path/to/credentials.json
+GCP_LOCATION = us-central1
+GCP_STORAGE_CLASS = STANDARD
 
 [MINDTRACE_TEST_PARAM]
 value = ini_value

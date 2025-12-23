@@ -1,5 +1,6 @@
-from pathlib import PosixPath
+from pathlib import Path, PosixPath, WindowsPath
 
+from mindtrace.registry.archivers.path_archiver import PathArchiver
 from mindtrace.registry.core.registry import Registry
 
 
@@ -22,8 +23,11 @@ def register_default_materializers():
     Registry.register_default_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
     Registry.register_default_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
     Registry.register_default_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
-    Registry.register_default_materializer(PosixPath, "zenml.materializers.PathMaterializer")
     Registry.register_default_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
+    # Path types - use PathArchiver to preserve original filenames
+    Registry.register_default_materializer(Path, PathArchiver)
+    Registry.register_default_materializer(PosixPath, PathArchiver)
+    Registry.register_default_materializer(WindowsPath, PathArchiver)
 
     # Core mindtrace materializers
     Registry.register_default_materializer(

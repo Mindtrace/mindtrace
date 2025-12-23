@@ -39,6 +39,7 @@ class TestQuickestStrategyMultiQuery:
         mock_db = AsyncMock()
         mock_db.initialize = AsyncMock()
         mock_db.find = AsyncMock()
+        mock_db.aggregate = AsyncMock()
         return mock_db
 
     @pytest.fixture
@@ -61,7 +62,7 @@ class TestQuickestStrategyMultiQuery:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
@@ -110,12 +111,14 @@ class TestQuickestStrategyMultiQuery:
             derived_from=level1_datum2.id,
             datum_id=PydanticObjectId(),
         )
+        assert all(x is not None for x in [level1_datum1, level1_datum2, level2_datum1, level2_datum2])
 
-        # Mock database calls - return in order: level1_datum1, level1_datum2, level2_datum1, level2_datum2
-        mock_database.find.side_effect = [
-            [base_datum],  # Query 1: find base data
-            [level1_datum1, level1_datum2],  # Query 2: find level 1 derived data
-            [level2_datum1, level2_datum2],  # Query 3: find level 2 derived data
+        mock_database.aggregate.return_value = [
+            {
+                "image_id": base_datum.id,
+                "label_id": level1_datum1.id,
+                "bbox_id": level2_datum1.id,
+            }
         ]
 
         # Test complex multi-query with quickest strategy
@@ -162,11 +165,9 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base1, base2],  # First query: find base data
-            [derived1],  # Second query for base1: find derived data
-            [derived2],  # Second query for base2: find derived data
+        mock_database.aggregate.return_value = [
+            {"image_id": base1.id, "label_id": derived1.id},
+            {"image_id": base2.id, "label_id": derived2.id},
         ]
 
         # Test multi-query with quickest strategy
@@ -196,11 +197,10 @@ class TestQuickestStrategyMultiQuery:
             data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
+        assert base_datum is not None
+
         # Mock database calls - no derived data found
-        mock_database.find.side_effect = [
-            [base_datum],  # First query: find base data
-            [],  # Second query: no derived data found
-        ]
+        mock_database.aggregate.return_value = []
 
         # Test multi-query with quickest strategy
         query = [
@@ -248,11 +248,12 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base_datum],  # First query: find base data
-            [old_derived, new_derived],  # Second query: find derived data (multiple)
-            [level2_datum],  # Third query: find level 2 derived data
+        mock_database.aggregate.return_value = [
+            {
+                "image_id": base_datum.id,
+                "label_id": old_derived.id,
+                "bbox_id": level2_datum.id,
+            }
         ]
 
         # Test multi-query with mixed strategies
@@ -287,11 +288,7 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base_datum],  # First query: find base data
-            [derived_datum],  # Second query: find derived data
-        ]
+        mock_database.aggregate.return_value = [{"image_id": base_datum.id, "label_id": derived_datum.id}]
 
         # Test with quickest strategy and transpose=True
         query = [
@@ -348,13 +345,11 @@ class TestQuickestStrategyMultiQuery:
             derived_from=base3.id,
             datum_id=PydanticObjectId(),
         )
+        assert all(x is not None for x in [derived1, derived2, derived3])
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base1, base2, base3],  # First query: find base data
-            [derived1],  # Second query for base1: find derived data
-            [derived2],  # Second query for base2: find derived data
-            [derived3],  # Second query for base3: find derived data
+        mock_database.aggregate.return_value = [
+            {"image_id": base1.id, "label_id": derived1.id},
+            {"image_id": base2.id, "label_id": derived2.id},
         ]
 
         # Test multi-query with quickest strategy and datums_wanted=2
@@ -399,12 +394,9 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base1, base2],  # First query: find base data
-            [derived1],  # Second query for base1: find derived data
-            [],  # Second query for base2: no derived data found
-        ]
+        assert all(x is not None for x in [base1, base2, derived1])
+
+        mock_database.aggregate.return_value = [{"image_id": base1.id, "label_id": derived1.id}]
 
         # Test multi-query with quickest strategy
         query = [
@@ -424,7 +416,7 @@ class TestQuickestStrategyMultiQuery:
     async def test_quickest_strategy_multi_query_with_empty_base_data(self, datalake, mock_database):
         """Test quickest strategy with empty base data in multi-query."""
         # Mock database calls - no base data found
-        mock_database.find.return_value = []
+        mock_database.aggregate.return_value = []
 
         # Test multi-query with quickest strategy
         query = [
@@ -452,11 +444,7 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        # Mock database calls
-        mock_database.find.side_effect = [
-            [base_datum],  # First query: find base data
-            [derived_datum],  # Second query: find derived data
-        ]
+        mock_database.aggregate.return_value = [{"image_id": base_datum.id, "label_id": derived_datum.id}]
 
         # Test multi-query with quickest strategy
         query = [

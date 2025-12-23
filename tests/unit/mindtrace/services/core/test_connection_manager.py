@@ -193,7 +193,7 @@ class TestConnectionManagerShutdown:
 
     @patch("mindtrace.services.core.connection_manager.requests.post")
     def test_check_server_down_server_still_responding(self, mock_post):
-        """Test the internal check_server_down function when server is still responding (line 65)."""
+        """Test the internal check_server_down function when server is still responding."""
         # Mock successful shutdown response first
         with patch("mindtrace.services.core.connection_manager.requests.request") as mock_request:
             mock_response = Mock()
@@ -210,19 +210,19 @@ class TestConnectionManagerShutdown:
                 mock_timeout_instance = Mock()
                 mock_timeout.return_value = mock_timeout_instance
 
-                # Track whether we've verified the ConnectionError from line 65
+                # Track whether we've verified the ConnectionError
                 connection_error_verified = False
 
                 # Simulate timeout.run calling the check function multiple times
                 def simulate_check_call(check_func):
                     nonlocal connection_error_verified
-                    # This should raise ConnectionError("Server still responding") from line 65
+                    # This should raise ConnectionError("Server still responding")
                     try:
                         _ = check_func()
                         # If check_func returns without exception, that's unexpected in this test
                         pytest.fail("Expected ConnectionError('Server still responding') to be raised")
                     except ConnectionError as e:
-                        # Verify the specific error message from line 65
+                        # Verify the specific error message
                         assert str(e) == "Server still responding"
                         connection_error_verified = True
                         # Re-raise to simulate the timeout handler catching it for retry
@@ -236,7 +236,7 @@ class TestConnectionManagerShutdown:
 
                 # Verify the status check was made and the ConnectionError was verified
                 mock_post.assert_called_with("http://localhost:8000/status", timeout=2)
-                assert connection_error_verified, "ConnectionError from line 65 was not properly verified"
+                assert connection_error_verified, "ConnectionError was not properly verified"
 
 
 class TestConnectionManagerAsyncShutdown:
