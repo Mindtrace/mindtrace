@@ -633,7 +633,8 @@ def test_unified_backend_switch_backend_with_unknown_type():
         backend.switch_backend("unknown_backend")
 
 
-def test_unified_backend_initialize_async_no_mongo_backend():
+@pytest.mark.asyncio
+async def test_unified_backend_initialize_async_no_mongo_backend(mock_redis_backend):
     """Test initialize_async when no MongoDB backend is configured (should work with Redis)."""
 
     backend = UnifiedMindtraceODM(
@@ -641,13 +642,13 @@ def test_unified_backend_initialize_async_no_mongo_backend():
     )
 
     # Now initialize_async works with Redis too via async wrapper
-    import asyncio
-
     # Should not raise an error - it will initialize Redis via async wrapper
-    asyncio.run(backend.initialize_async())
+    await backend.initialize_async()
+    # Verify that Redis's initialize_async was called
+    mock_redis_backend.initialize_async.assert_called_once()
 
 
-def test_unified_backend_initialize_sync():
+def test_unified_backend_initialize_sync(mock_redis_backend):
     """Test initialize_sync method."""
 
     backend = UnifiedMindtraceODM(
@@ -656,6 +657,8 @@ def test_unified_backend_initialize_sync():
 
     # Should not raise
     backend.initialize_sync()
+    # Verify that Redis's initialize was called
+    mock_redis_backend.initialize.assert_called_once()
 
 
 def test_unified_backend_get_current_backend_type_unknown():
@@ -1877,16 +1880,15 @@ def test_mongo_sync_all_method(unified_backend_mongo_only, mock_mongo_backend):
     assert results[0].name == "John"
     mock_mongo_backend.all_sync.assert_called_once()
 
+    def test_mongo_sync_find_method(unified_backend_mongo_only, mock_mongo_backend):
+        """Test MongoDB find_sync wrapper method."""
+        mongo_user = create_mock_mongo_user()
+        mock_mongo_backend.find_sync.return_value = [mongo_user]
 
-def test_mongo_sync_find_method(unified_backend_mongo_only, mock_mongo_backend):
-    """Test MongoDB find_sync wrapper method."""
-    mongo_user = create_mock_mongo_user()
-    mock_mongo_backend.find_sync.return_value = [mongo_user]
-
-    results = unified_backend_mongo_only.find({"name": "John"})
-    assert len(results) == 1
-    assert results[0].name == "John"
-    mock_mongo_backend.find_sync.assert_called_once()
+        results = unified_backend_mongo_only.find({"name": "John"})
+        assert len(results) == 1
+        assert results[0].name == "John"
+        mock_mongo_backend.find_sync.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1894,7 +1896,7 @@ async def test_mongo_sync_methods_from_async_context_raises_error():
     """Test that MongoDB sync methods raise error when called from async context."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    backend = MongoMindtraceODM(MongoUserDoc, "mongodb://localhost:27017", "test_db")
+    backend = MongoMindtraceODM(model_cls=MongoUserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
 
     # All sync methods should raise RuntimeError when called from async context
     with pytest.raises(RuntimeError, match="called from async context"):
