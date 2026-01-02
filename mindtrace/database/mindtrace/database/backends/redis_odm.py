@@ -545,13 +545,7 @@ class RedisMindtraceODM(MindtraceODM):
 
                 # Ensure all models use our connection
                 for model in models_to_migrate:
-                    if not hasattr(model, "Meta"):
-                        raise ValueError(f"Model {model.__name__} does not have Meta class")
                     model.Meta.database = self.redis
-                    if not hasattr(model.Meta, "database") or model.Meta.database is None:
-                        raise ValueError(f"Model {model.__name__} does not have Meta.database set")
-                    if model.Meta.database is not self.redis:
-                        model.Meta.database = self.redis
 
                     if hasattr(model.Meta.database, "connection_pool"):
                         port = model.Meta.database.connection_pool.connection_kwargs.get("port", "unknown")

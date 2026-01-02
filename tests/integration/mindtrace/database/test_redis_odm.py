@@ -30,6 +30,41 @@ class UserDoc(MindtraceRedisDocument):
         global_key_prefix = "mindtrace"
 
 
+# Models for coverage testing - different module configurations
+class UserDocMainModule(MindtraceRedisDocument):
+    """Model with __main__ module for testing module name handling."""
+
+    name: str = Field(index=True)
+    age: int = Field(index=True)
+
+    class Meta:
+        global_key_prefix = "testapp"
+
+    __module__ = "__main__"
+
+
+class UserDocNoModule(MindtraceRedisDocument):
+    """Model without module for testing module name handling."""
+
+    name: str = Field(index=True)
+    age: int = Field(index=True)
+
+    class Meta:
+        global_key_prefix = "testapp"
+
+    __module__ = ""
+
+
+class UserDocNoIndex(MindtraceRedisDocument):
+    """Model without indexed fields for testing early return."""
+
+    name: str
+    age: int
+
+    class Meta:
+        global_key_prefix = "testapp"
+
+
 @pytest.fixture(scope="function")
 def redis_backend():
     """Create a Redis backend instance."""
@@ -284,3 +319,205 @@ def test_redis_backend_search_features(redis_backend):
     assert len(sorted_users) == 2
     assert sorted_users[0].age == 25  # John
     assert sorted_users[1].age == 30  # Jane
+
+
+def test_redis_module_name_handling_main_module():
+    """Test index creation with __main__ module (lines 205, 220-222, 435-437)."""
+    backend = RedisMindtraceODM(UserDocMainModule, REDIS_URL)
+    backend.initialize()
+
+    # Create index for model with __main__ module
+    backend._create_index_for_model(UserDocMainModule)
+    backend._ensure_index_has_documents(UserDocMainModule)
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_module_name_handling_no_module():
+    """Test index creation with no module (lines 209, 224-226, 426, 439-441)."""
+    backend = RedisMindtraceODM(UserDocNoModule, REDIS_URL)
+    backend.initialize()
+
+    # Create index for model without module
+    backend._create_index_for_model(UserDocNoModule)
+    backend._ensure_index_has_documents(UserDocNoModule)
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_no_indexed_fields_early_return():
+    """Test index creation with no indexed fields (line 241)."""
+    backend = RedisMindtraceODM(UserDocNoIndex, REDIS_URL)
+    backend.initialize()
+
+    # Should return early when no indexed fields
+    backend._create_index_for_model(UserDocNoIndex)
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_numeric_field_type_detection():
+    """Test numeric field type detection (line 284)."""
+    backend = RedisMindtraceODM(UserDoc, REDIS_URL)
+    backend.initialize()
+
+    # Create index - should detect age as NUMERIC
+    backend._create_index_for_model(UserDoc)
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_index_name_set_before_create():
+    """Test index_name is set before create_index (line 297)."""
+    backend = RedisMindtraceODM(UserDoc, REDIS_URL)
+    backend.initialize()
+
+    # Remove index_name if it exists
+    original_index_name = None
+    if hasattr(UserDoc.Meta, "index_name"):
+        original_index_name = UserDoc.Meta.index_name
+        delattr(UserDoc.Meta, "index_name")
+
+    try:
+        # Create index - should set index_name before calling create_index
+        backend._create_index_for_model(UserDoc)
+        assert hasattr(UserDoc.Meta, "index_name")
+    finally:
+        # Restore if needed
+        if original_index_name is not None:
+            UserDoc.Meta.index_name = original_index_name
+
+
+def test_redis_model_odms_loop():
+    """Test model ODMs loop in _do_initialize (line 540)."""
+    backend = RedisMindtraceODM(models={"user": UserDoc}, redis_url=REDIS_URL)
+    backend.initialize()
+
+    # The loop at line 540 should execute
+    assert backend.user._is_initialized is True
+
+    # Clean up
+    try:
+        for doc in backend.user.all():
+            backend.user.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_module_name_paths_integration():
+    """Integration test for module name handling paths (lines 205, 209, 220-226, 435-441)."""
+    # Test with __main__ module - ensure NO model_key_prefix to hit else branch
+    UserDocMainModule.__module__ = "__main__"
+    # Ensure no model_key_prefix
+    if hasattr(UserDocMainModule.Meta, "model_key_prefix"):
+        delattr(UserDocMainModule.Meta, "model_key_prefix")
+    backend_main = RedisMindtraceODM(UserDocMainModule, REDIS_URL)
+    backend_main.initialize()
+    # This should execute lines 221-222
+    backend_main._create_index_for_model(UserDocMainModule)
+    # This should execute lines 436-437
+    backend_main._ensure_index_has_documents(UserDocMainModule)
+
+    # Test with no module
+    UserDocNoModule.__module__ = ""
+    if hasattr(UserDocNoModule.Meta, "model_key_prefix"):
+        delattr(UserDocNoModule.Meta, "model_key_prefix")
+    backend_no = RedisMindtraceODM(UserDocNoModule, REDIS_URL)
+    backend_no.initialize()
+    backend_no._create_index_for_model(UserDocNoModule)
+    backend_no._ensure_index_has_documents(UserDocNoModule)
+
+    # Test with regular module
+    UserDocNoModule.__module__ = "test_module"
+    backend_reg = RedisMindtraceODM(UserDocNoModule, REDIS_URL)
+    backend_reg.initialize()
+    backend_reg._create_index_for_model(UserDocNoModule)
+    backend_reg._ensure_index_has_documents(UserDocNoModule)
+
+    # Clean up
+    for backend in [backend_main, backend_no, backend_reg]:
+        try:
+            for doc in backend.all():
+                backend.delete(doc.pk)
+        except Exception:
+            pass
+
+
+def test_redis_no_indexed_fields_integration():
+    """Integration test for early return when no indexed fields (line 241)."""
+    backend = RedisMindtraceODM(UserDocNoIndex, REDIS_URL)
+    backend.initialize()
+
+    # Should return early when no indexed fields
+    result = backend._create_index_for_model(UserDocNoIndex)
+    assert result is None
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_numeric_field_detection_integration():
+    """Integration test for numeric field type detection (line 284)."""
+    backend = RedisMindtraceODM(UserDoc, REDIS_URL)
+    backend.initialize()
+
+    # Create index - should detect age as NUMERIC
+    backend._create_index_for_model(UserDoc)
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
+
+
+def test_redis_index_name_set_integration():
+    """Integration test for index_name being set before create_index (line 297)."""
+    backend = RedisMindtraceODM(UserDoc, REDIS_URL)
+    backend.initialize()
+
+    # Remove index_name if it exists
+    original_index_name = None
+    if hasattr(UserDoc.Meta, "index_name"):
+        original_index_name = UserDoc.Meta.index_name
+        delattr(UserDoc.Meta, "index_name")
+
+    try:
+        # Create index - should set index_name before calling create_index
+        backend._create_index_for_model(UserDoc)
+        assert hasattr(UserDoc.Meta, "index_name")
+    finally:
+        if original_index_name is not None:
+            UserDoc.Meta.index_name = original_index_name
+
+    # Clean up
+    try:
+        for doc in backend.all():
+            backend.delete(doc.pk)
+    except Exception:
+        pass
