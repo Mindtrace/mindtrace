@@ -82,21 +82,55 @@ class UnifiedMindtraceDocument(BaseModel):
         cls_annotations = getattr(cls, "__annotations__", {})
         meta = getattr(cls, "Meta", cls.Meta)
 
-        # Get the original field values from the class
+        # Get the original field values from the class using model_fields
+
         cls_fields = {}
-        for field_name in cls_annotations:
-            if hasattr(cls, field_name):
-                cls_fields[field_name] = getattr(cls, field_name)
 
-        # Use a simpler approach without exec to avoid annotation issues
+        for field_name, field_info in cls.model_fields.items():
+            cls_fields[field_name] = field_info
 
-        # Build field dictionary properly
-        # fields = {}
         annotations = {}
+        field_defaults = {}
 
         for field_name, field_type in cls_annotations.items():
             if field_name == "id":
                 continue  # Skip id field for MongoDB
+
+            # Check if field has a default value from Pydantic Field
+            field_default = ...
+            if field_name in cls_fields:
+                field_info = cls_fields[field_name]
+                # check default and default_factory
+                if hasattr(field_info, "default"):
+                    default_val = field_info.default
+                    if default_val is not ...:
+                        # Check if it's not a PydanticUndefined type
+                        default_type_str = str(type(default_val))
+                        if "PydanticUndefined" not in default_type_str:
+                            field_default = default_val
+
+                # Check default_factory if default is not set
+                if field_default is ... and hasattr(field_info, "default_factory"):
+                    default_factory_val = field_info.default_factory
+                    if default_factory_val is not None:
+                        # Check if it's not a PydanticUndefined type
+                        factory_type_str = str(type(default_factory_val))
+                        if "PydanticUndefined" not in factory_type_str:
+                            field_default = default_factory_val
+
+                # If still no default, check if it's Optional - Optional fields default to None
+                if field_default is ...:
+                    from typing import Union, get_args, get_origin
+
+                    origin = get_origin(field_type)
+                    # Check if it's a Union type (including Optional which is Union[T, None])
+                    if origin is not None:
+                        origin_str = str(origin)
+                        if "Union" in origin_str or origin is Union:
+                            args = get_args(field_type)
+                            if type(None) in args:
+                                # It's Optional, default to None
+                                field_default = None
 
             # Handle Link types - convert Link[UnifiedModel] to Link[MongoModel]
             from typing import Union, get_args, get_origin
@@ -158,7 +192,15 @@ class UnifiedMindtraceDocument(BaseModel):
                         # Convert Link[UnifiedModel] to Link[MongoModel]
                         processed_type = Link[target_mongo_model]
 
-            # Handle field annotations properly
+            # If field has a default, we need to ensure it's Optional and set the default
+            if field_default is not ...:
+                # Ensure the type is Optional if it has a default
+                origin = get_origin(processed_type)
+                if origin is not Union and type(None) not in get_args(processed_type):
+                    # Make it Optional if it's not already
+                    processed_type = Union[processed_type, type(None)]
+                field_defaults[field_name] = field_default
+
             if hasattr(meta, "unique_fields") and field_name in meta.unique_fields:
                 annotations[field_name] = Annotated[processed_type, Indexed(unique=True)]
             elif hasattr(meta, "indexed_fields") and field_name in meta.indexed_fields:
@@ -171,6 +213,10 @@ class UnifiedMindtraceDocument(BaseModel):
             "__annotations__": annotations,
             "__module__": cls.__module__,
         }
+
+        # Add default values to class attributes
+        for field_name, default_value in field_defaults.items():
+            class_dict[field_name] = default_value
 
         # For Beanie, we need to set the Settings class after creation
         # to avoid Pydantic v2 annotation issues
@@ -843,7 +889,7 @@ class UnifiedMindtraceODM(MindtraceODM):
             backend_type = self.get_current_backend_type()
             if backend_type == BackendType.MONGO:
                 # Convert to MongoDB format - use model_dump to get clean data
-                data = obj.model_dump(exclude_none=True)
+                data = obj.model_dump(exclude_none=False)
                 # Remove 'id' field for MongoDB as it uses '_id'
                 if "id" in data:
                     del data["id"]
