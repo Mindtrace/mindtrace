@@ -151,65 +151,46 @@ class RegistryMindtraceODM(MindtraceODM):
             object.__setattr__(obj, "id", unique_id)
         return obj
 
-    def update(self, id_or_obj, obj: BaseModel | None = None) -> BaseModel | bool:
+    def update(self, obj: BaseModel) -> BaseModel:
         """Update an existing document in the database.
 
-        Supports two calling conventions for backward compatibility:
-        1. update(id: str, obj: BaseModel) -> bool  (legacy)
-        2. update(obj: BaseModel) -> BaseModel      (new, matches abstract interface)
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
 
         Args:
-            id_or_obj: Either a document ID (str) for legacy calls, or a BaseModel object (new style).
-            obj: Optional BaseModel object (only used in legacy calls).
+            obj (BaseModel): The document object with modified fields to save.
 
         Returns:
-            BaseModel: The updated document (new style), or bool (legacy style: True if updated, False if not found).
+            BaseModel: The updated document.
 
         Raises:
             DocumentNotFoundError: If the document doesn't exist in the database
-                or if the object doesn't have an 'id' attribute (new style only).
+                or if the object doesn't have an 'id' attribute.
             ValueError: If in multi-model mode (use db.model_name.update() instead).
 
         Example:
             .. code-block:: python
 
-                # Legacy style
-                backend.update("some_id", updated_user)
-
-                # New style (matches abstract interface)
+                # Get the document
                 doc = backend.get("some_id")
+                # Modify it
                 doc.name = "Updated Name"
+                # Save the changes
                 updated_doc = backend.update(doc)
         """
         if self._models is not None:
             raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
 
-        # Legacy style: update(id: str, obj: BaseModel) -> bool
-        if isinstance(id_or_obj, str) and obj is not None:
-            doc_id = id_or_obj
-            if doc_id not in self.registry:
-                return False
-            # Set id attribute on the document so it's available for future operations
-            if not hasattr(obj, "id"):
-                object.__setattr__(obj, "id", doc_id)
-            self.registry[doc_id] = obj
-            return True
+        # Check if object has an id attribute
+        if not hasattr(obj, "id") or not obj.id:
+            raise DocumentNotFoundError("Document must have an 'id' attribute to be updated")
 
-        # New style: update(obj: BaseModel) -> BaseModel
-        if isinstance(id_or_obj, BaseModel):
-            obj = id_or_obj
-            # Check if object has an id attribute
-            if not hasattr(obj, "id") or not obj.id:
-                raise DocumentNotFoundError("Document must have an 'id' attribute to be updated")
+        doc_id = str(obj.id)
+        if doc_id not in self.registry:
+            raise DocumentNotFoundError(f"Object with id {doc_id} not found")
 
-            doc_id = str(obj.id)
-            if doc_id not in self.registry:
-                raise DocumentNotFoundError(f"Object with id {doc_id} not found")
-
-            self.registry[doc_id] = obj
-            return obj
-
-        raise TypeError("update() requires either (id: str, obj: BaseModel) or (obj: BaseModel)")
+        self.registry[doc_id] = obj
+        return obj
 
     def get(self, id: str, fetch_links: bool = False) -> BaseModel:
         """Retrieve a document by its unique identifier.
