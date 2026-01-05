@@ -963,8 +963,7 @@ def test_redis_create_index_database_check():
 
 
 def test_redis_create_index_database_none_line_295():
-    """Test _create_index_for_model sets database when it's None (line 295).
-    """
+    """Test _create_index_for_model sets database when it's None (line 295)."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis

@@ -185,8 +185,10 @@ class TestRegistryMindtraceODMBasicOperations:
 
         # Update
         updated_user = User(name="John Doe Updated", email="john.updated@example.com")
-        result = registry_backend.update(user_id, updated_user)
-        assert result is True
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", user_id)
+        result = registry_backend.update(updated_user)
+        assert result == updated_user
 
         # Verify update
         retrieved = registry_backend.get(user_id)
@@ -196,9 +198,13 @@ class TestRegistryMindtraceODMBasicOperations:
 
     def test_update_nonexistent_document(self, registry_backend):
         """Test updating a document that doesn't exist."""
+        from mindtrace.database import DocumentNotFoundError
+
         user = User(name="Nonexistent", email="nonexistent@example.com")
-        result = registry_backend.update("nonexistent-id", user)
-        assert result is False
+        # Set id attribute on the user object
+        object.__setattr__(user, "id", "nonexistent-id")
+        with pytest.raises(DocumentNotFoundError, match="Object with id nonexistent-id not found"):
+            registry_backend.update(user)
 
     def test_delete_document(self, registry_backend):
         """Test deleting a document."""
@@ -375,9 +381,10 @@ class TestRegistryMindtraceODMComplexDocuments:
             tags=["user", "premium"],
             is_active=False,
         )
-
-        result = registry_backend.update(user_id, updated_user)
-        assert result is True
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", user_id)
+        result = registry_backend.update(updated_user)
+        assert result == updated_user
 
         retrieved = registry_backend.get(user_id)
         assert retrieved.age == 29
@@ -436,8 +443,10 @@ class TestRegistryMindtraceODMWorkflow:
 
         # Update
         updated_user = User(name="Updated User", email="updated@example.com")
-        result = registry_backend.update(user_id, updated_user)
-        assert result is True
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", user_id)
+        result = registry_backend.update(updated_user)
+        assert result == updated_user
 
         retrieved = registry_backend.get(user_id)
         assert retrieved.name == "Updated User"
