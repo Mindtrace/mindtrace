@@ -168,30 +168,38 @@ class TestRegistryMindtraceODM:
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "test-id-123"
 
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
+
         # Mock the registry to contain the original user
         registry_odm.registry.__contains__.return_value = True
 
-        result = registry_odm.update(test_id, updated_user)
+        result = registry_odm.update(updated_user)
 
         # Verify the registry was checked and updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
         registry_odm.registry.__setitem__.assert_called_once_with(test_id, updated_user)
-        assert result is True
+        assert result == updated_user
 
     def test_update_nonexistent_document(self, registry_odm):
         """Test updating a document that doesn't exist."""
+        from mindtrace.database import DocumentNotFoundError
+
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "nonexistent-id"
+
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
 
         # Mock the registry to not contain the document
         registry_odm.registry.__contains__.return_value = False
 
-        result = registry_odm.update(test_id, updated_user)
+        with pytest.raises(DocumentNotFoundError, match=f"Object with id {test_id} not found"):
+            registry_odm.update(updated_user)
 
         # Verify the registry was checked but not updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
         registry_odm.registry.__setitem__.assert_not_called()
-        assert result is False
 
     def test_update_with_object_new_style(self, registry_odm):
         """Test updating a document using new style update(obj)."""
@@ -242,9 +250,10 @@ class TestRegistryMindtraceODM:
 
     def test_update_with_invalid_args(self, registry_odm):
         """Test updating with invalid arguments."""
+        from mindtrace.database import DocumentNotFoundError
 
-        with pytest.raises(TypeError, match="update\\(\\) requires either"):
-            registry_odm.update(123)  # Invalid type
+        with pytest.raises(DocumentNotFoundError, match="Document must have an 'id' attribute to be updated"):
+            registry_odm.update(123)  # Invalid type - not a BaseModel
 
     def test_delete_existing_document(self, registry_odm):
         """Test deleting an existing document."""
@@ -315,9 +324,11 @@ class TestRegistryMindtraceODM:
 
         # Update
         updated_user = create_test_user("Updated User", 29, "updated@example.com")
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", user_id)
         registry_odm.registry.__contains__.return_value = True
-        update_success = registry_odm.update(user_id, updated_user)
-        assert update_success is True
+        updated_result = registry_odm.update(updated_user)
+        assert updated_result == updated_user
 
         # Delete
         registry_odm.delete(user_id)
