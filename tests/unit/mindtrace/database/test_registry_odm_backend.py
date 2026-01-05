@@ -111,20 +111,23 @@ class TestRegistryMindtraceODM:
         """Test inserting a basic document."""
         user = create_test_user()
 
-        result_id = registry_odm.insert(user)
+        result_doc = registry_odm.insert(user)
 
         # Verify the document was stored in registry
         registry_odm.registry.__setitem__.assert_called_once()
         call_args = registry_odm.registry.__setitem__.call_args
         assert call_args[0][1] == user  # The document should be stored
-        assert isinstance(result_id, str)  # Should return a string ID
+        assert result_doc == user  # Should return the document
+        assert hasattr(result_doc, "id")  # Document should have id attribute
+        assert isinstance(result_doc.id, str)  # ID should be a string
 
     def test_insert_complex_document(self, registry_odm):
         """Test inserting a complex document with nested data."""
         user = create_complex_user()
 
-        result_id = registry_odm.insert(user)
-        assert isinstance(result_id, str)
+        result_doc = registry_odm.insert(user)
+        assert result_doc == user  # Should return the document
+        assert hasattr(result_doc, "id")  # Document should have id attribute
 
         # Verify the complex document was stored
         registry_odm.registry.__setitem__.assert_called_once()
@@ -165,30 +168,92 @@ class TestRegistryMindtraceODM:
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "test-id-123"
 
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
+
         # Mock the registry to contain the original user
         registry_odm.registry.__contains__.return_value = True
 
-        result = registry_odm.update(test_id, updated_user)
+        result = registry_odm.update(updated_user)
 
         # Verify the registry was checked and updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
         registry_odm.registry.__setitem__.assert_called_once_with(test_id, updated_user)
-        assert result is True
+        assert result == updated_user
 
     def test_update_nonexistent_document(self, registry_odm):
         """Test updating a document that doesn't exist."""
+        from mindtrace.database import DocumentNotFoundError
+
         updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
         test_id = "nonexistent-id"
+
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
 
         # Mock the registry to not contain the document
         registry_odm.registry.__contains__.return_value = False
 
-        result = registry_odm.update(test_id, updated_user)
+        with pytest.raises(DocumentNotFoundError, match=f"Object with id {test_id} not found"):
+            registry_odm.update(updated_user)
 
         # Verify the registry was checked but not updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
         registry_odm.registry.__setitem__.assert_not_called()
-        assert result is False
+
+    def test_update_with_object_new_style(self, registry_odm):
+        """Test updating a document using new style update(obj)."""
+
+        updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
+        test_id = "test-id-123"
+
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
+
+        # Mock the registry to contain the document
+        registry_odm.registry.__contains__.return_value = True
+
+        result = registry_odm.update(updated_user)
+
+        # Verify the registry was checked and updated
+        registry_odm.registry.__contains__.assert_called_once_with(test_id)
+        registry_odm.registry.__setitem__.assert_called_once_with(test_id, updated_user)
+        assert result == updated_user
+
+    def test_update_with_object_new_style_no_id(self, registry_odm):
+        """Test updating a document using new style without id attribute."""
+        from mindtrace.database import DocumentNotFoundError
+
+        updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
+        # Ensure id is not set
+        if hasattr(updated_user, "id"):
+            delattr(updated_user, "id")
+
+        with pytest.raises(DocumentNotFoundError, match="Document must have an 'id' attribute to be updated"):
+            registry_odm.update(updated_user)
+
+    def test_update_with_object_new_style_not_found(self, registry_odm):
+        """Test updating a document using new style when document not found."""
+        from mindtrace.database import DocumentNotFoundError
+
+        updated_user = create_test_user("John Updated", 31, "john.updated@example.com")
+        test_id = "nonexistent-id"
+
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", test_id)
+
+        # Mock the registry to not contain the document
+        registry_odm.registry.__contains__.return_value = False
+
+        with pytest.raises(DocumentNotFoundError, match=f"Object with id {test_id} not found"):
+            registry_odm.update(updated_user)
+
+    def test_update_with_invalid_args(self, registry_odm):
+        """Test updating with invalid arguments."""
+        from mindtrace.database import DocumentNotFoundError
+
+        with pytest.raises(DocumentNotFoundError, match="Document must have an 'id' attribute to be updated"):
+            registry_odm.update(123)  # Invalid type - not a BaseModel
 
     def test_delete_existing_document(self, registry_odm):
         """Test deleting an existing document."""
@@ -213,25 +278,32 @@ class TestRegistryMindtraceODM:
         """Test retrieving all documents."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("Jane", 25, "jane@example.com")
-        expected_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return our test documents
-        registry_odm.registry.values.return_value = expected_documents
+        # Mock the registry to return our test documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.all()
 
-        # Verify the registry was queried for all values
-        registry_odm.registry.values.assert_called_once()
-        assert result == expected_documents
+        # Verify the registry was queried for all items
+        registry_odm.registry.items.assert_called_once()
+        assert len(result) == 2
+        assert user1 in result
+        assert user2 in result
+        # Verify all documents have id attribute set
+        for doc in result:
+            assert hasattr(doc, "id")
+            assert doc.id in [test_id1, test_id2]
 
     def test_all_documents_empty(self, registry_odm):
         """Test retrieving all documents when registry is empty."""
         # Mock the registry to return empty list
-        registry_odm.registry.values.return_value = []
+        registry_odm.registry.items.return_value = []
 
         result = registry_odm.all()
 
-        registry_odm.registry.values.assert_called_once()
+        registry_odm.registry.items.assert_called_once()
         assert result == []
 
     def test_crud_workflow(self, registry_odm):
@@ -239,19 +311,24 @@ class TestRegistryMindtraceODM:
         user = create_test_user("Test User", 28, "test@example.com")
 
         # Insert
-        user_id = registry_odm.insert(user)
-        assert isinstance(user_id, str)
+        inserted_user = registry_odm.insert(user)
+        assert inserted_user == user
+        assert hasattr(inserted_user, "id")
+        user_id = inserted_user.id
 
         # Get
         registry_odm.registry.__getitem__.return_value = user
         retrieved_user = registry_odm.get(user_id)
         assert retrieved_user == user
+        assert hasattr(retrieved_user, "id")
 
         # Update
         updated_user = create_test_user("Updated User", 29, "updated@example.com")
+        # Set id attribute on the user object
+        object.__setattr__(updated_user, "id", user_id)
         registry_odm.registry.__contains__.return_value = True
-        update_success = registry_odm.update(user_id, updated_user)
-        assert update_success is True
+        updated_result = registry_odm.update(updated_user)
+        assert updated_result == updated_user
 
         # Delete
         registry_odm.delete(user_id)
@@ -263,9 +340,15 @@ class TestRegistryMindtraceODM:
         user1 = create_test_user("Alice", 25, "alice@example.com")
         user2 = create_complex_user("Bob", 30, "bob@example.com")
 
-        id1 = registry_odm.insert(user1)
-        id2 = registry_odm.insert(user2)
+        inserted1 = registry_odm.insert(user1)
+        inserted2 = registry_odm.insert(user2)
 
+        assert inserted1 == user1
+        assert inserted2 == user2
+        assert hasattr(inserted1, "id")
+        assert hasattr(inserted2, "id")
+        id1 = inserted1.id
+        id2 = inserted2.id
         assert id1 != id2  # IDs should be unique
 
         # Mock registry to return our documents
@@ -283,8 +366,9 @@ class TestRegistryMindtraceODM:
         user = create_test_user("Persistent User", 35, "persistent@example.com")
 
         # Insert document
-        user_id = registry_odm.insert(user)
-        assert isinstance(user_id, str)
+        inserted_user = registry_odm.insert(user)
+        assert inserted_user == user
+        assert hasattr(inserted_user, "id")
 
         # Verify document is stored
         registry_odm.registry.__setitem__.assert_called_once()
@@ -330,25 +414,33 @@ class TestRegistryMindtraceODM:
         """Test find() with no criteria returns all documents."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("Jane", 25, "jane@example.com")
-        expected_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return our test documents
-        registry_odm.registry.values.return_value = expected_documents
+        # Mock the registry to return our test documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find()
 
-        # Verify the registry was queried for all values
-        registry_odm.registry.values.assert_called_once()
-        assert result == expected_documents
+        # Verify the registry was queried for all items
+        registry_odm.registry.items.assert_called_once()
+        assert len(result) == 2
+        assert user1 in result
+        assert user2 in result
+        # Verify all documents have id attribute set
+        for doc in result:
+            assert hasattr(doc, "id")
+            assert doc.id in [test_id1, test_id2]
 
     def test_find_with_kwargs_single_match(self, registry_odm):
         """Test find() with kwargs matching a single document."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("Jane", 25, "jane@example.com")
-        all_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find(name="John")
 
@@ -356,16 +448,20 @@ class TestRegistryMindtraceODM:
         assert len(result) == 1
         assert result[0] == user1
         assert result[0].name == "John"
+        assert hasattr(result[0], "id")
+        assert result[0].id == test_id1
 
     def test_find_with_kwargs_multiple_fields(self, registry_odm):
         """Test find() with multiple kwargs fields."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("John", 25, "jane@example.com")
         user3 = create_test_user("Jane", 30, "jane2@example.com")
-        all_documents = [user1, user2, user3]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
+        test_id3 = "test-id-3"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2), (test_id3, user3)]
 
         result = registry_odm.find(name="John", age=30)
 
@@ -374,15 +470,18 @@ class TestRegistryMindtraceODM:
         assert result[0] == user1
         assert result[0].name == "John"
         assert result[0].age == 30
+        assert hasattr(result[0], "id")
+        assert result[0].id == test_id1
 
     def test_find_with_kwargs_no_match(self, registry_odm):
         """Test find() with kwargs that match no documents."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("Jane", 25, "jane@example.com")
-        all_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find(name="Bob")
 
@@ -393,24 +492,27 @@ class TestRegistryMindtraceODM:
         """Test find() where some fields match but not all."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("John", 25, "jane@example.com")
-        all_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find(name="John", age=30)
 
         # Should return only user1 (matches both criteria)
         assert len(result) == 1
         assert result[0] == user1
+        assert hasattr(result[0], "id")
+        assert result[0].id == test_id1
 
     def test_find_with_kwargs_missing_field(self, registry_odm):
         """Test find() with kwargs for a field that doesn't exist on documents."""
         user1 = create_test_user("John", 30, "john@example.com")
-        all_documents = [user1]
+        test_id1 = "test-id-1"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1)]
 
         result = registry_odm.find(nonexistent_field="value")
 
@@ -421,10 +523,11 @@ class TestRegistryMindtraceODM:
         """Test find() with kwargs on complex documents."""
         user1 = create_complex_user("Jane", 25, "jane@example.com")
         user2 = create_complex_user("Bob", 30, "bob@example.com")
-        all_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find(name="Jane", is_active=True)
 
@@ -433,14 +536,16 @@ class TestRegistryMindtraceODM:
         assert result[0] == user1
         assert result[0].name == "Jane"
         assert result[0].is_active is True
+        assert hasattr(result[0], "id")
+        assert result[0].id == test_id1
 
     def test_find_with_args_only(self, registry_odm):
         """Test find() with args only (not supported, should warn and return empty)."""
         user1 = create_test_user("John", 30, "john@example.com")
-        all_documents = [user1]
+        test_id1 = "test-id-1"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1)]
 
         # Mock logger to capture warning
         with patch.object(registry_odm.logger, "warning") as mock_warning:
@@ -457,10 +562,10 @@ class TestRegistryMindtraceODM:
     def test_find_with_args_only_no_kwargs_explicit(self, registry_odm):
         """Test find() with args only, explicitly testing the final return path."""
         user1 = create_test_user("John", 30, "john@example.com")
-        all_documents = [user1]
+        test_id1 = "test-id-1"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1)]
 
         # Mock logger to capture warning
         with patch.object(registry_odm.logger, "warning") as mock_warning:
@@ -479,10 +584,11 @@ class TestRegistryMindtraceODM:
         """Test find() with both args and kwargs (should use kwargs)."""
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("Jane", 25, "jane@example.com")
-        all_documents = [user1, user2]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2)]
 
         result = registry_odm.find("some_query", name="John")
 
@@ -490,11 +596,13 @@ class TestRegistryMindtraceODM:
         assert len(result) == 1
         assert result[0] == user1
         assert result[0].name == "John"
+        assert hasattr(result[0], "id")
+        assert result[0].id == test_id1
 
     def test_find_with_empty_registry(self, registry_odm):
         """Test find() when registry is empty."""
         # Mock the registry to return empty list
-        registry_odm.registry.values.return_value = []
+        registry_odm.registry.items.return_value = []
 
         result = registry_odm.find(name="John")
 
@@ -506,10 +614,12 @@ class TestRegistryMindtraceODM:
         user1 = create_test_user("John", 30, "john@example.com")
         user2 = create_test_user("John", 25, "john2@example.com")
         user3 = create_test_user("Jane", 30, "jane@example.com")
-        all_documents = [user1, user2, user3]
+        test_id1 = "test-id-1"
+        test_id2 = "test-id-2"
+        test_id3 = "test-id-3"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1), (test_id2, user2), (test_id3, user3)]
 
         result = registry_odm.find(name="John")
 
@@ -519,14 +629,18 @@ class TestRegistryMindtraceODM:
         assert user1 in result
         assert user2 in result
         assert user3 not in result
+        # Verify all returned documents have id attribute set
+        for doc in result:
+            assert hasattr(doc, "id")
+            assert doc.id in [test_id1, test_id2]
 
     def test_find_with_kwargs_case_sensitive(self, registry_odm):
         """Test find() with kwargs is case sensitive."""
         user1 = create_test_user("John", 30, "john@example.com")
-        all_documents = [user1]
+        test_id1 = "test-id-1"
 
-        # Mock the registry to return all documents
-        registry_odm.registry.values.return_value = all_documents
+        # Mock the registry to return all documents with IDs
+        registry_odm.registry.items.return_value = [(test_id1, user1)]
 
         result = registry_odm.find(name="john")  # lowercase
 

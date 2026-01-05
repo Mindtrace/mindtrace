@@ -744,3 +744,226 @@ def test_mongo_initialize_sync_already_initialized(mock_init_beanie):
     backend.initialize_sync()
     # Should not call init_beanie again
     mock_init_beanie.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_with_document_instance():
+    """Test MongoDB update method with document instance."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+    mock_doc.save = AsyncMock(return_value=mock_doc)
+
+    result = await backend.update(mock_doc)
+
+    assert result == mock_doc
+    mock_doc.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_auto_initializes():
+    """Test MongoDB update method auto-initializes when not initialized (covers line 301)."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = False
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+    mock_doc.save = AsyncMock(return_value=mock_doc)
+
+    with patch.object(backend, "initialize", new_callable=AsyncMock) as mock_init:
+        result = await backend.update(mock_doc)
+
+        mock_init.assert_called_once()
+        assert result == mock_doc
+        mock_doc.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_with_document_instance_no_id():
+    """Test MongoDB update method with document instance without id."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a mock document instance without id
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = None
+
+    with pytest.raises(DocumentNotFoundError, match="Document must have an id to be updated"):
+        await backend.update(mock_doc)
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_with_basemodel():
+    """Test MongoDB update method with BaseModel."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a BaseModel instance
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+    object.__setattr__(user_data, "id", "507f1f77bcf86cd799439011")
+
+    # Mock the get method
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.save = AsyncMock(return_value=mock_doc)
+    mock_doc.model_dump = MagicMock(return_value={"name": "John Updated", "age": 31, "email": "john@example.com"})
+
+    with patch.object(backend.model_cls, "get", new_callable=AsyncMock, return_value=mock_doc):
+        result = await backend.update(user_data)
+
+        assert result == mock_doc
+        backend.model_cls.get.assert_called_once_with("507f1f77bcf86cd799439011")
+        mock_doc.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_with_basemodel_no_id():
+    """Test MongoDB update method with BaseModel without id."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a BaseModel instance without id
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+
+    with pytest.raises(DocumentNotFoundError, match="Document must have an id to be updated"):
+        await backend.update(user_data)
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_with_basemodel_not_found():
+    """Test MongoDB update method with BaseModel when document not found."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a BaseModel instance
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+    object.__setattr__(user_data, "id", "507f1f77bcf86cd799439011")
+
+    # Mock the get method to return None
+    with patch.object(backend.model_cls, "get", new_callable=AsyncMock, return_value=None):
+        with pytest.raises(DocumentNotFoundError, match="Object with id 507f1f77bcf86cd799439011 not found"):
+            await backend.update(user_data)
+
+
+def test_mongo_backend_update_sync():
+    """Test MongoDB update_sync method."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+    mock_doc.save = AsyncMock(return_value=mock_doc)
+
+    async def mock_update(obj):
+        return mock_doc
+
+    with patch.object(backend, "update", side_effect=mock_update):
+        with patch("asyncio.run", return_value=mock_doc) as mock_run:
+            result = backend.update_sync(mock_doc)
+
+            mock_run.assert_called_once()
+            assert result == mock_doc
+
+
+def test_mongo_backend_update_sync_from_async_context():
+    """Test MongoDB update_sync method from async context raises error."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+
+    # Mock asyncio.get_running_loop to raise RuntimeError with "no running event loop"
+    with patch("asyncio.get_running_loop", side_effect=RuntimeError("no running event loop")):
+        with patch("asyncio.run") as mock_run:
+            with patch.object(backend, "update", new_callable=AsyncMock, return_value=mock_doc):
+                # Should not raise, but use asyncio.run
+                backend.update_sync(mock_doc)
+                mock_run.assert_called_once()
+
+
+def test_mongo_backend_update_sync_from_async_context_raises_error():
+    """Test MongoDB update_sync method from async context raises RuntimeError."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+
+    # Mock asyncio.get_running_loop to return a loop (simulating async context)
+    mock_loop = MagicMock()
+    with patch("asyncio.get_running_loop", return_value=mock_loop):
+        with pytest.raises(RuntimeError, match="update_sync\\(\\) called from async context"):
+            backend.update_sync(mock_doc)
