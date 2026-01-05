@@ -269,6 +269,60 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise DocumentNotFoundError(f"Object with id {id} not found")
         return doc
 
+    async def update(self, obj: BaseModel) -> T:
+        """
+        Update an existing document in the MongoDB collection.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = await backend.get("507f1f77bcf86cd799439011")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = await backend.update(user)
+        """
+        # Auto-initialize if needed
+        if not self._is_initialized:
+            await self.initialize()
+
+        # Check if obj is already a document instance
+        if isinstance(obj, self.model_cls):
+            # If it's already a document instance, just save it
+            if not obj.id:
+                raise DocumentNotFoundError("Document must have an id to be updated")
+            await obj.save()
+            return obj
+        else:
+            # If it's a BaseModel, we need to get the existing document first
+            if not hasattr(obj, "id") or not obj.id:
+                raise DocumentNotFoundError("Document must have an id to be updated")
+
+            doc = await self.model_cls.get(obj.id)
+            if not doc:
+                raise DocumentNotFoundError(f"Object with id {obj.id} not found")
+
+            # Update the document fields
+            for key, value in obj.model_dump(exclude={"id"}).items():
+                setattr(doc, key, value)
+
+            await doc.save()
+            return doc
+
     async def delete(self, id: str):
         """
         Delete a document by its unique identifier.
@@ -520,6 +574,43 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             if "no running event loop" in str(e).lower():
                 # No running loop, safe to use asyncio.run()
                 return asyncio.run(self.delete(id))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def update_sync(self, obj: BaseModel) -> T:
+        """
+        Update an existing document synchronously (wrapper around async update).
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = backend.get_sync("507f1f77bcf86cd799439011")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = backend.update_sync(user)
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError("update_sync() called from async context. Use await update() instead.")
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.update(obj))
             else:
                 # Re-raise if it's a different RuntimeError (like our custom one)
                 raise

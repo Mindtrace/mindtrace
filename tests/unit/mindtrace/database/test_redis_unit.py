@@ -1462,3 +1462,291 @@ def test_redis_init_mode_async_auto_init(mock_get_redis, mock_migrator_cls):
     # Should NOT be initialized immediately (ASYNC mode defers)
     assert backend._is_initialized is False
     mock_migrator.run.assert_not_called()
+
+
+def test_redis_backend_update_with_document_instance():
+    """Test Redis update method with document instance."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.pk = "01H0000000000000000000"
+    mock_doc.save = MagicMock()
+    mock_doc.id = None  # Initially no id attribute
+
+    result = backend.update(mock_doc)
+
+    assert result == mock_doc
+    mock_doc.save.assert_called_once()
+    # Check that id was set
+    assert hasattr(mock_doc, "id")
+
+
+def test_redis_backend_update_with_document_instance_no_pk():
+    """Test Redis update method with document instance without pk."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a mock document instance without pk
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.pk = None
+
+    with pytest.raises(DocumentNotFoundError, match="Document must have a pk to be updated"):
+        backend.update(mock_doc)
+
+
+def test_redis_backend_update_with_basemodel():
+    """Test Redis update method with BaseModel."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a BaseModel instance
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+    object.__setattr__(user_data, "id", "01H0000000000000000000")
+
+    # Mock the get method
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.pk = "01H0000000000000000000"
+    mock_doc.save = MagicMock()
+    mock_doc.model_dump = MagicMock(return_value={"name": "John Updated", "age": 31, "email": "john@example.com"})
+
+    with patch.object(UserDoc, "get", return_value=mock_doc):
+        result = backend.update(user_data)
+
+        assert result == mock_doc
+        UserDoc.get.assert_called_once_with("01H0000000000000000000")
+        mock_doc.save.assert_called_once()
+
+
+def test_redis_backend_update_with_basemodel_no_id():
+    """Test Redis update method with BaseModel without id or pk."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a BaseModel instance without id or pk
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+
+    with pytest.raises(DocumentNotFoundError, match="Document must have an id or pk to be updated"):
+        backend.update(user_data)
+
+
+def test_redis_backend_update_with_basemodel_not_found():
+    """Test Redis update method with BaseModel when document not found."""
+    from redis_om import NotFoundError
+
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a BaseModel instance
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+    object.__setattr__(user_data, "id", "01H0000000000000000000")
+
+    # Mock the get method to raise NotFoundError
+    with patch.object(UserDoc, "get", side_effect=NotFoundError("Not found")):
+        with pytest.raises(DocumentNotFoundError, match="Object with id 01H0000000000000000000 not found"):
+            backend.update(user_data)
+
+
+def test_redis_backend_update_with_basemodel_get_returns_none():
+    """Test Redis update method with BaseModel when get returns None."""
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a BaseModel instance
+    user_data = UserCreate(name="John Updated", age=31, email="john@example.com")
+    object.__setattr__(user_data, "id", "01H0000000000000000000")
+
+    # Mock the get method to return None
+    with patch.object(UserDoc, "get", return_value=None):
+        with pytest.raises(DocumentNotFoundError, match="Object with id 01H0000000000000000000 not found"):
+            backend.update(user_data)
+
+
+@pytest.mark.asyncio
+async def test_redis_backend_update_async():
+    """Test Redis update_async method."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create a mock document instance
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.pk = "01H0000000000000000000"
+    mock_doc.save = MagicMock()
+    mock_doc.id = None
+
+    with patch.object(backend, "update", return_value=mock_doc):
+        with patch("asyncio.to_thread") as mock_to_thread:
+            mock_to_thread.return_value = mock_doc
+            result = await backend.update_async(mock_doc)
+
+            mock_to_thread.assert_called_once_with(backend.update, mock_doc)
+            assert result == mock_doc
+
+
+def test_redis_backend_all_id_property_works():
+    """Test Redis all method - id property returns pk automatically."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create mock documents with pk - need to mock the property behavior
+    mock_doc1 = MagicMock(spec=UserDoc)
+    mock_doc1.pk = "01H0000000000000000001"
+    # Mock the id property to return pk
+    type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
+
+    mock_doc2 = MagicMock(spec=UserDoc)
+    mock_doc2.pk = "01H0000000000000000002"
+    type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
+
+    mock_doc3 = MagicMock(spec=UserDoc)
+    mock_doc3.pk = None
+    type(mock_doc3).id = property(lambda self: getattr(self, "pk", None))
+
+    with patch.object(UserDoc, "find") as mock_find:
+        mock_find.return_value.all.return_value = [mock_doc1, mock_doc2, mock_doc3]
+
+        result = backend.all()
+
+        assert len(result) == 3
+        # Check that id property returns pk
+        assert mock_doc1.id == "01H0000000000000000001"
+        assert mock_doc2.id == "01H0000000000000000002"
+        # doc3 should return None since pk is None
+        assert mock_doc3.id is None
+
+
+def test_redis_backend_find_id_property_works():
+    """Test Redis find method - id property returns pk automatically."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+
+    # Create mock documents with pk - need to mock the property behavior
+    mock_doc1 = MagicMock(spec=UserDoc)
+    mock_doc1.pk = "01H0000000000000000001"
+    type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
+
+    mock_doc2 = MagicMock(spec=UserDoc)
+    mock_doc2.pk = "01H0000000000000000002"
+    type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
+
+    with patch.object(UserDoc, "find") as mock_find:
+        mock_find.return_value.all.return_value = [mock_doc1, mock_doc2]
+
+        result = backend.find()
+
+        assert len(result) == 2
+        # Check that id property returns pk
+        assert mock_doc1.id == "01H0000000000000000001"
+        assert mock_doc2.id == "01H0000000000000000002"
+
+
+def test_redis_backend_find_fallback_id_property_works():
+    """Test Redis find method fallback path - id property returns pk automatically."""
+    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
+    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
+    backend.model_cls = UserDoc
+    backend._is_initialized = True
+    backend.logger = MagicMock()
+
+    # Create mock documents with pk for fallback - need to mock the property behavior
+    mock_doc1 = MagicMock(spec=UserDoc)
+    mock_doc1.pk = "01H0000000000000000001"
+    type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
+
+    mock_doc2 = MagicMock(spec=UserDoc)
+    mock_doc2.pk = "01H0000000000000000002"
+    type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
+
+    with patch.object(UserDoc, "find") as mock_find:
+        # First call (with args) raises exception, triggering fallback
+        # Second call (no args) succeeds and returns docs
+        mock_query_result = MagicMock()
+        mock_query_result.all.side_effect = Exception("Query failed")
+
+        mock_fallback_result = MagicMock()
+        mock_fallback_result.all.return_value = [mock_doc1, mock_doc2]
+
+        mock_find.side_effect = [mock_query_result, mock_fallback_result]
+
+        result = backend.find("some", "args")
+
+        assert len(result) == 2
+        # Check that id property returns pk in fallback path
+        assert mock_doc1.id == "01H0000000000000000001"
+        assert mock_doc2.id == "01H0000000000000000002"
+
+
+def test_mindtrace_redis_document_id_property():
+    """Test that MindtraceRedisDocument id property returns pk (covers line 55)."""
+    from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
+
+    # Create a simple test document
+    class TestDoc(MindtraceRedisDocument):
+        name: str
+
+    # Create instance (we can't actually save without Redis, but we can test the property)
+    doc = TestDoc(name="Test")
+    # Set pk manually for testing
+    object.__setattr__(doc, "pk", "test-pk-123")
+
+    # Verify id property returns pk
+    assert doc.id == "test-pk-123"
+
+    # Test with None pk
+    object.__setattr__(doc, "pk", None)
+    assert doc.id is None
+
+
+def test_mindtrace_redis_document_id_setter():
+    """Test that MindtraceRedisDocument id setter sets pk (covers line 65)."""
+    from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
+
+    # Create a simple test document
+    class TestDoc(MindtraceRedisDocument):
+        name: str
+
+    # Create instance
+    doc = TestDoc(name="Test")
+
+    # Test setting id sets pk
+    doc.id = "test-id-456"
+    assert doc.pk == "test-id-456"
+    assert doc.id == "test-id-456"
+
+    # Test setting id to None
+    doc.id = None
+    assert doc.pk is None
+    assert doc.id is None
