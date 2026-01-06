@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import BaseModel, Field
 
-from mindtrace.database import RegistryMindtraceODM
+from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
 
 
@@ -160,7 +160,7 @@ class TestRegistryMindtraceODM:
         # Mock the registry to raise KeyError for nonexistent document
         registry_odm.registry.__getitem__.side_effect = KeyError(test_id)
 
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_odm.get(test_id)
 
     def test_update_existing_document(self, registry_odm):
@@ -271,7 +271,7 @@ class TestRegistryMindtraceODM:
         # Mock the registry to raise KeyError for nonexistent document
         registry_odm.registry.__delitem__.side_effect = KeyError(test_id)
 
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_odm.delete(test_id)
 
     def test_all_documents(self, registry_odm):
@@ -379,14 +379,14 @@ class TestRegistryMindtraceODM:
 
     def test_error_handling(self, registry_odm):
         """Test error handling in various scenarios."""
-        # Test get with KeyError
+        # Test get with KeyError (converted to DocumentNotFoundError)
         registry_odm.registry.__getitem__.side_effect = KeyError("test")
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_odm.get("nonexistent")
 
-        # Test delete with KeyError
+        # Test delete with KeyError (converted to DocumentNotFoundError)
         registry_odm.registry.__delitem__.side_effect = KeyError("test")
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_odm.delete("nonexistent")
 
     def test_backend_integration(self, mock_registry_backend):
@@ -554,7 +554,7 @@ class TestRegistryMindtraceODM:
             # Should log a warning
             mock_warning.assert_called_once()
             assert "does not support complex query syntax" in mock_warning.call_args[0][0]
-            # Should return empty list (covers the final return statement on line 220)
+            # Should return empty list (covers the final return statement)
             assert result == []
             assert isinstance(result, list)
             assert len(result) == 0
@@ -574,7 +574,7 @@ class TestRegistryMindtraceODM:
 
             # Should log a warning
             mock_warning.assert_called_once()
-            # Should return empty list - this ensures line 220 is covered
+            # Should return empty list - this ensures the final return is covered
             assert result == []
             # Verify it's the exact empty list return
             assert result is not None

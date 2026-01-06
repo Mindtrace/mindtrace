@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel, Field
 from zenml.enums import ArtifactType
 
-from mindtrace.database import RegistryMindtraceODM
+from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Archiver, LocalRegistryBackend, Registry
 
 
@@ -218,17 +218,17 @@ class TestRegistryMindtraceODMBasicOperations:
         registry_backend.delete(user_id)
 
         # Verify deletion
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_backend.get(user_id)
 
     def test_delete_nonexistent_document(self, registry_backend):
         """Test deleting a document that doesn't exist."""
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_backend.delete("nonexistent-id")
 
     def test_get_nonexistent_document(self, registry_backend):
         """Test retrieving a document that doesn't exist."""
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_backend.get("nonexistent-id")
 
 
@@ -455,7 +455,7 @@ class TestRegistryMindtraceODMWorkflow:
         # Delete
         registry_backend.delete(user_id)
 
-        with pytest.raises(KeyError):
+        with pytest.raises(DocumentNotFoundError):
             registry_backend.get(user_id)
 
     def test_multiple_document_types(self, registry_backend):
