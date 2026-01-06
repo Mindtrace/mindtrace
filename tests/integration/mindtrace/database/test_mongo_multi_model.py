@@ -8,6 +8,10 @@ from mindtrace.database import Link, MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 
+# MongoDB connection settings
+MONGO_URL = "mongodb://localhost:27018"
+MONGO_DB = "test_db"
+
 class AddressDoc(MindtraceDocument):
     street: str
     city: str
@@ -31,14 +35,13 @@ class UserDoc(MindtraceDocument):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
-async def test_mongo_multi_model_crud_operations(mongo_backend, test_db):
+async def test_mongo_multi_model_crud_operations(test_db):
     """Test CRUD operations with multi-model mode."""
     # Create multi-model ODM
     db = MongoMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
-        db_uri="mongodb://localhost:27018",
-        db_name="test_db",
+        db_uri=MONGO_URL,
+        db_name=MONGO_DB,
         allow_index_dropping=True,
     )
     await db.initialize()
@@ -100,13 +103,12 @@ async def test_mongo_multi_model_crud_operations(mongo_backend, test_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
-async def test_mongo_fetch_links_get(mongo_backend, test_db):
+async def test_mongo_fetch_links_get(test_db):
     """Test fetch_links parameter in get() method."""
     db = MongoMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
-        db_uri="mongodb://localhost:27018",
-        db_name="test_db",
+        db_uri=MONGO_URL,
+        db_name=MONGO_DB,
         allow_index_dropping=True,
     )
     await db.initialize()
@@ -141,13 +143,12 @@ async def test_mongo_fetch_links_get(mongo_backend, test_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
-async def test_mongo_fetch_links_find(mongo_backend, test_db):
+async def test_mongo_fetch_links_find(test_db):
     """Test fetch_links parameter in find() method."""
     db = MongoMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
-        db_uri="mongodb://localhost:27018",
-        db_name="test_db",
+        db_uri=MONGO_URL,
+        db_name=MONGO_DB,
         allow_index_dropping=True,
     )
     await db.initialize()
@@ -185,13 +186,12 @@ async def test_mongo_fetch_links_find(mongo_backend, test_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
-async def test_mongo_fetch_links_optional_address(mongo_backend, test_db):
+async def test_mongo_fetch_links_optional_address(test_db):
     """Test fetch_links with optional Link field (None)."""
     db = MongoMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
-        db_uri="mongodb://localhost:27018",
-        db_name="test_db",
+        db_uri=MONGO_URL,
+        db_name=MONGO_DB,
         allow_index_dropping=True,
     )
     await db.initialize()
@@ -215,13 +215,12 @@ async def test_mongo_fetch_links_optional_address(mongo_backend, test_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
-async def test_mongo_multi_model_shared_connection(mongo_backend, test_db):
+async def test_mongo_multi_model_shared_connection(test_db):
     """Test that multi-model ODMs share the same database connection."""
     db = MongoMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
-        db_uri="mongodb://localhost:27018",
-        db_name="test_db",
+        db_uri=MONGO_URL,
+        db_name=MONGO_DB,
         allow_index_dropping=True,
     )
     await db.initialize()
