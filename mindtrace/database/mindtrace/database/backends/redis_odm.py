@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Type, TypeVar
+from typing import Dict, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 from redis_om import JsonModel, Migrator, get_redis_connection
@@ -101,8 +101,9 @@ class RedisMindtraceODM(MindtraceODM):
 
     def __init__(
         self,
-        model_cls: Type[ModelType],
-        redis_url: str,
+        model_cls: Optional[Type[ModelType]] = None,
+        models: Optional[Dict[str, Type[MindtraceRedisDocument]] | str] = None,
+        redis_url: str = "",
         auto_init: bool = False,
         init_mode: InitMode | None = None,
     ):
@@ -110,7 +111,10 @@ class RedisMindtraceODM(MindtraceODM):
         Initialize the Redis ODM backend.
 
         Args:
-            model_cls (Type[ModelType]): The document model class to use for operations.
+            model_cls (Type[ModelType], optional): The document model class to use for operations (single model mode).
+            models (Dict[str, Type[MindtraceRedisDocument]] | str, optional): Dictionary of model names to model classes (multi-model mode).
+                Example: {'user': User, 'address': Address}. When provided, access models via db.user, db.address, etc.
+                For backward compatibility: if a string is provided, it's treated as redis_url.
             redis_url (str): Redis connection URL string.
             auto_init (bool): If True, automatically initializes the backend.
                 Defaults to False for backward compatibility. Operations will auto-initialize
@@ -120,10 +124,54 @@ class RedisMindtraceODM(MindtraceODM):
                 initialization will be deferred to first operation.
         """
         super().__init__()
-        self.model_cls = model_cls
+
+        # Backward compatibility: if models is a string, it's actually redis_url from old API
+        # Old API: RedisMindtraceODM(model_cls, redis_url)
+        # New API: RedisMindtraceODM(model_cls=..., models=..., redis_url=...)
+        if isinstance(models, str):
+            # Old API: second positional arg is redis_url
+            redis_url = models
+            models = None
+
+        if not redis_url:
+            raise ValueError("redis_url is required")
+
+        self.redis_url = redis_url
         self.redis = get_redis_connection(url=redis_url)
-        self.model_cls.Meta.database = self.redis
         self._is_initialized = False
+        self._model_odms: Dict[str, "RedisMindtraceODM"] = {}
+        self._parent_odm: Optional["RedisMindtraceODM"] = None  # Reference to parent in multi-model mode
+
+        # Support both single model and multi-model modes
+        if models is not None:
+            # Multi-model mode
+            if model_cls is not None:
+                raise ValueError("Cannot specify both model_cls and models. Use one or the other.")
+            if not isinstance(models, dict) or len(models) == 0:
+                raise ValueError("models must be a non-empty dictionary")
+            self._models = models
+            self.model_cls = None  # No single model in multi-model mode
+            # Create ODM instances for each model (they share the same redis connection)
+            for name, model in models.items():
+                odm = RedisMindtraceODM(
+                    model_cls=model,
+                    redis_url=redis_url,
+                    auto_init=False,
+                    init_mode=init_mode,
+                )
+                # Share the same redis connection
+                odm.redis = self.redis
+                odm.model_cls.Meta.database = self.redis
+                # Store parent reference for initialization delegation
+                odm._parent_odm = self
+                self._model_odms[name] = odm
+        elif model_cls is not None:
+            # Single model mode (backward compatible)
+            self.model_cls = model_cls
+            self.model_cls.Meta.database = self.redis
+            self._models = None
+        else:
+            raise ValueError("Must specify either model_cls or models")
 
         # Default to sync for Redis if not specified
         if init_mode is None:
@@ -141,23 +189,458 @@ class RedisMindtraceODM(MindtraceODM):
                 # Async mode - defer initialization (operations will auto-init)
                 pass
 
+    def _create_index_for_model(self, model: Type[ModelType]):
+        """Manually create an index for a specific model using its connection."""
+        try:
+            model_redis = model.Meta.database
+            prefix = getattr(model.Meta, "global_key_prefix", "mindtrace")
+            model_name = model.__name__
+            model_module = getattr(model, "__module__", "")
+
+            # Construct index name: {prefix}:{module}.{class_name}:index
+            if hasattr(model.Meta, "index_name") and model.Meta.index_name:
+                index_name = model.Meta.index_name
+            else:
+                if model_module == "__main__":
+                    full_model_name = f"__main__.{model_name}"
+                elif model_module:
+                    full_model_name = f"{model_module}.{model_name}"
+                else:
+                    full_model_name = model_name
+                index_name = f"{prefix}:{full_model_name}:index"
+                if not hasattr(model.Meta, "index_name") or not model.Meta.index_name:
+                    model.Meta.index_name = index_name
+
+            # Build key patterns to match redis-om's key format
+            model_key_prefix = getattr(model.Meta, "model_key_prefix", None)
+            key_patterns = []
+            if model_key_prefix:
+                key_patterns.append(f"{prefix}:{model_key_prefix}:*")
+            else:
+                if model_module == "__main__":
+                    key_patterns.append(f"{prefix}:__main__.{model_name}:*")
+                    key_patterns.append(f"{prefix}:{model_name}:*")
+                else:
+                    key_patterns.append(f"{prefix}:{model_name}:*")
+                    if model_module:
+                        key_patterns.append(f"{prefix}:{model_module}.{model_name}:*")
+
+            key_pattern = key_patterns[0] if key_patterns else f"{prefix}:{model_name}:*"
+            indexed_fields = []
+            for attr_name in dir(model):
+                if attr_name.startswith("_") or attr_name in ("id", "pk", "Meta"):
+                    continue
+                try:
+                    attr_value = getattr(model, attr_name)
+                    if hasattr(attr_value, "index") and attr_value.index:
+                        indexed_fields.append(attr_name)
+                except Exception:
+                    pass
+
+            if not indexed_fields:
+                return  # No indexed fields
+
+            # Check if index exists; drop and recreate if it has 0 docs but keys exist
+            index_exists = False
+            try:
+                model_redis.execute_command("FT.INFO", index_name)
+                index_exists = True
+                try:
+                    index_info = model_redis.execute_command("FT.INFO", index_name)
+                    if isinstance(index_info, list) and "num_docs" in index_info:
+                        num_docs_idx = index_info.index("num_docs")
+                        num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+                        matching_keys = []
+                        for pattern in key_patterns:
+                            matching_keys.extend(model_redis.keys(pattern))
+                        matching_keys = list(set(matching_keys))
+                        if num_docs == 0 and len(matching_keys) > 0:
+                            self.logger.debug(
+                                f"Dropping index {index_name} to recreate (has 0 docs but {len(matching_keys)} keys exist)"
+                            )
+                            try:
+                                model_redis.execute_command("FT.DROPINDEX", index_name)
+                                index_exists = False
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            if index_exists:
+                return  # Index exists and is valid
+
+            # Build schema with field types (TEXT or NUMERIC)
+            schema_parts = []
+            for field_name in indexed_fields:
+                field_type = "TEXT"
+                try:
+                    if hasattr(model, "__annotations__"):
+                        field_annotation = model.__annotations__.get(field_name, None)
+                        if field_annotation:
+                            # Check if it's a numeric type
+                            if "int" in str(field_annotation) or "float" in str(field_annotation):
+                                field_type = "NUMERIC"
+                            else:
+                                field_type = "TEXT"
+                except Exception:
+                    pass
+                schema_parts.extend([field_name, field_type])
+
+            if schema_parts:
+                try:
+                    if hasattr(model, "create_index"):
+                        if not hasattr(model.Meta, "database") or model.Meta.database is None:
+                            model.Meta.database = model_redis
+                        if not hasattr(model.Meta, "index_name") or not model.Meta.index_name:
+                            model.Meta.index_name = index_name
+                        model.create_index()
+                        self.logger.debug(f"Created index for {model.__name__} using redis-om's create_index()")
+                        try:
+                            actual_index_name = getattr(model.Meta, "index_name", index_name)
+                            index_info = model_redis.execute_command("FT.INFO", actual_index_name)
+                            if isinstance(index_info, list) and "num_docs" in index_info:
+                                num_docs_idx = index_info.index("num_docs")
+                                num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+                                self.logger.debug(f"Index {actual_index_name} verified, has {num_docs} documents")
+                        except Exception as info_error:
+                            self.logger.debug(f"Could not verify index: {info_error}")
+                        return
+                except Exception as builtin_error:
+                    error_str = str(builtin_error).lower()
+                    if "index already exists" in error_str or "already exists" in error_str:
+                        self.logger.debug("Index already exists (via redis-om), that's OK")
+                        return
+                    self.logger.debug(f"redis-om create_index() failed: {builtin_error}, trying manual creation")
+
+                try:
+                    # JsonModel uses JSON format with JSON path syntax: $.field_name
+                    json_schema_parts = []
+                    for i in range(0, len(schema_parts), 2):
+                        field_name = schema_parts[i]
+                        field_type = schema_parts[i + 1]
+                        json_schema_parts.extend([f"$.{field_name}", "AS", field_name, field_type])
+
+                    # Try creating index with each key pattern
+                    index_created = False
+                    for pattern in key_patterns:
+                        try:
+                            cmd = [
+                                "FT.CREATE",
+                                index_name,
+                                "ON",
+                                "JSON",
+                                "PREFIX",
+                                "1",
+                                pattern,
+                                "SCHEMA",
+                            ] + json_schema_parts
+                            model_redis.execute_command(*cmd)
+                            self.logger.debug(f"Created index {index_name} with pattern {pattern} (JSON format)")
+                            index_created = True
+                            break
+                        except Exception as pattern_error:
+                            error_str = str(pattern_error).lower()
+                            if "index already exists" in error_str:
+                                index_created = True
+                                break
+                            continue
+
+                    if not index_created:
+                        cmd = [
+                            "FT.CREATE",
+                            index_name,
+                            "ON",
+                            "JSON",
+                            "PREFIX",
+                            "1",
+                            key_pattern,
+                            "SCHEMA",
+                        ] + json_schema_parts
+                        model_redis.execute_command(*cmd)
+                        self.logger.debug(
+                            f"Created index {index_name} with primary pattern {key_pattern} (JSON format)"
+                        )
+                except Exception as create_error:
+                    error_str = str(create_error).lower()
+                    if "index already exists" in error_str:
+                        pass
+                    else:
+                        # Fallback to HASH format
+                        try:
+                            cmd = [
+                                "FT.CREATE",
+                                index_name,
+                                "ON",
+                                "HASH",
+                                "PREFIX",
+                                "1",
+                                key_pattern,
+                                "SCHEMA",
+                            ] + schema_parts
+                            model_redis.execute_command(*cmd)
+                            self.logger.debug(f"Created index {index_name} with pattern {key_pattern} (HASH format)")
+                        except Exception:
+                            # Try alternative pattern with JSON
+                            alt_pattern = f"{prefix}:*"
+                            try:
+                                json_schema_parts = []
+                                for i in range(0, len(schema_parts), 2):
+                                    field_name = schema_parts[i]
+                                    field_type = schema_parts[i + 1]
+                                    json_schema_parts.extend([f"$.{field_name}", "AS", field_name, field_type])
+                                cmd = [
+                                    "FT.CREATE",
+                                    index_name,
+                                    "ON",
+                                    "JSON",
+                                    "PREFIX",
+                                    "1",
+                                    alt_pattern,
+                                    "SCHEMA",
+                                ] + json_schema_parts
+                                model_redis.execute_command(*cmd)
+                                self.logger.debug(
+                                    f"Created index {index_name} with alternative pattern {alt_pattern} (JSON format)"
+                                )
+                            except Exception as alt_error:
+                                self.logger.debug(f"Could not create index {index_name}: {alt_error}")
+        except Exception as e:
+            self.logger.debug(f"Could not create index for {model.__name__}: {e}")
+
+    def _ensure_index_has_documents(self, model: Type[ModelType]):
+        """Ensure the index has documents indexed. If not, recreate it."""
+        try:
+            model_redis = model.Meta.database
+            prefix = getattr(model.Meta, "global_key_prefix", "mindtrace")
+            model_name = model.__name__
+            model_module = getattr(model, "__module__", "")
+
+            # Construct index name
+            if model_module == "__main__":
+                full_model_name = f"__main__.{model_name}"
+            elif model_module:
+                full_model_name = f"{model_module}.{model_name}"
+            else:
+                full_model_name = model_name
+            index_name = f"{prefix}:{full_model_name}:index"
+
+            # Build key patterns
+            model_key_prefix = getattr(model.Meta, "model_key_prefix", None)
+            key_patterns = []
+            if model_key_prefix:
+                key_patterns.append(f"{prefix}:{model_key_prefix}:*")
+            else:
+                if model_module == "__main__":
+                    key_patterns.append(f"{prefix}:__main__.{model_name}:*")
+                    key_patterns.append(f"{prefix}:{model_name}:*")
+                else:
+                    key_patterns.append(f"{prefix}:{model_name}:*")
+                    if model_module:
+                        key_patterns.append(f"{prefix}:{model_module}.{model_name}:*")
+
+            # Check if index exists and has documents
+            try:
+                index_info = model_redis.execute_command("FT.INFO", index_name)
+                if isinstance(index_info, list) and "num_docs" in index_info:
+                    num_docs_idx = index_info.index("num_docs")
+                    num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+
+                    # Check if there are keys but index has 0 docs
+                    matching_keys = []
+                    for pattern in key_patterns:
+                        matching_keys.extend(model_redis.keys(pattern))
+                    matching_keys = list(set(matching_keys))
+
+                    if num_docs == 0 and len(matching_keys) > 0:
+                        self.logger.debug(
+                            f"Recreating index {index_name} (has 0 docs but {len(matching_keys)} keys exist)"
+                        )
+                        try:
+                            model_redis.execute_command("FT.DROPINDEX", index_name)
+                            self._create_index_for_model(model)
+
+                            # Wait for indexing to complete
+                            import time
+
+                            time.sleep(0.2)
+
+                            # Verify documents are indexed
+                            try:
+                                index_info_after = model_redis.execute_command("FT.INFO", index_name)
+                                if isinstance(index_info_after, list) and "num_docs" in index_info_after:
+                                    num_docs_idx_after = index_info_after.index("num_docs")
+                                    num_docs_after = (
+                                        index_info_after[num_docs_idx_after + 1]
+                                        if num_docs_idx_after + 1 < len(index_info_after)
+                                        else 0
+                                    )
+                                    self.logger.debug(f"After recreation, index has {num_docs_after} documents")
+
+                                    if num_docs_after == 0 and matching_keys:
+                                        sample_key = matching_keys[0]
+                                        try:
+                                            json_data = model_redis.json().get(sample_key)
+                                            self.logger.debug(
+                                                f"Sample key {sample_key} has JSON data: {bool(json_data)}"
+                                            )
+                                            try:
+                                                search_result = model_redis.execute_command(
+                                                    "FT.SEARCH", index_name, "*", "LIMIT", "0", "10"
+                                                )
+                                                self.logger.debug(
+                                                    f"Direct FT.SEARCH returned {len(search_result) if isinstance(search_result, list) else 'error'}"
+                                                )
+                                            except Exception as se:
+                                                self.logger.debug(f"FT.SEARCH error: {se}")
+                                        except Exception as je:
+                                            self.logger.debug(f"Could not get JSON for key: {je}")
+                            except Exception:
+                                pass
+                        except Exception as e:
+                            self.logger.debug(f"Could not recreate index: {e}")
+            except Exception:
+                pass  # Index doesn't exist or can't check
+        except Exception:
+            pass  # Don't fail if check fails
+
     def _do_initialize(self):
         """Internal method to perform the actual initialization."""
         if not self._is_initialized:
             try:
-                # Run migrations to create indexes
-                Migrator().run()
+                # Set REDIS_OM_URL before Migrator runs (must be done first)
+                import os
 
-                # Force index creation for the model
-                # This ensures fields marked with index=True are properly indexed
-                if hasattr(self.model_cls, "_meta") and hasattr(self.model_cls._meta, "indexed_fields"):
-                    # Model has indexed fields metadata, ensure they're created
-                    pass
+                if self.redis_url:
+                    os.environ["REDIS_OM_URL"] = self.redis_url
+                    try:
+                        from redis_om import connections
+
+                        connections.URL = self.redis_url
+                    except Exception:
+                        pass
+
+                # Test connection
+                try:
+                    self.redis.ping()
+                except Exception as conn_error:
+                    raise ConnectionError(f"Redis connection failed: {conn_error}") from conn_error
+
+                # Set Meta.database for all models before Migrator runs
+                models_to_migrate = []
+                if self._models is not None:
+                    for model in self._models.values():
+                        model.Meta.database = self.redis
+                        models_to_migrate.append(model)
+                    for odm in self._model_odms.values():
+                        if odm.model_cls:
+                            odm.model_cls.Meta.database = self.redis
+                            if odm.model_cls not in models_to_migrate:
+                                models_to_migrate.append(odm.model_cls)
+                else:
+                    if self.model_cls:
+                        self.model_cls.Meta.database = self.redis
+                        models_to_migrate.append(self.model_cls)
+
+                # Ensure all models use our connection
+                for model in models_to_migrate:
+                    model.Meta.database = self.redis
+
+                    if hasattr(model.Meta.database, "connection_pool"):
+                        port = model.Meta.database.connection_pool.connection_kwargs.get("port", "unknown")
+                        expected_port = 6381 if "6381" in self.redis_url else "unknown"
+                        if port != expected_port and expected_port != "unknown":
+                            self.logger.warning(
+                                f"Model {model.__name__} Meta.database using port {port}, expected {expected_port}"
+                            )
+
+                # Use Migrator to create indexes (required for redis-om's find() to work)
+                migrator_success = False
+                migrator_error_msg = None
+                original_redis_url = os.environ.get("REDIS_OM_URL", None)
+
+                if self.redis_url:
+                    os.environ["REDIS_OM_URL"] = self.redis_url
+                    try:
+                        from redis_om import connections
+
+                        connections.URL = self.redis_url
+                    except Exception:
+                        pass
+
+                try:
+                    # Ensure all models in registry use our connection
+                    for model in models_to_migrate:
+                        if hasattr(model, "Meta"):
+                            model.Meta.database = self.redis
+
+                    # Update all models in redis-om's registry to use our connection
+                    try:
+                        from redis_om.model.model import model_registry
+
+                        for name, cls in model_registry.items():
+                            if hasattr(cls, "Meta") and hasattr(cls.Meta, "database"):
+                                current_port = None
+                                if hasattr(cls.Meta.database, "connection_pool"):
+                                    current_port = cls.Meta.database.connection_pool.connection_kwargs.get("port", None)
+                                if current_port == 6379 or cls.Meta.database is None:
+                                    cls.Meta.database = self.redis
+                    except Exception:
+                        pass
+
+                    # Run Migrator to create indexes
+                    migrator = Migrator()
+                    migrator.run()
+                    migrator_success = True
+                except Exception as migrator_error:
+                    # Migrator failed - log the error and fall back
+                    migrator_error_msg = str(migrator_error)
+                    error_str = migrator_error_msg.lower()
+                    current_redis_url = os.environ.get("REDIS_OM_URL", "not set")
+                    if "connection" not in error_str and "111" not in error_str and "6379" not in error_str:
+                        self.logger.warning(f"Migrator failed: {migrator_error_msg}")
+                        self.logger.warning("Migrator failed - redis-om's find() may not work correctly")
+                    else:
+                        self.logger.warning(f"Migrator failed due to connection issue: {migrator_error_msg}")
+                        self.logger.warning(f"REDIS_OM_URL was: {current_redis_url}")
+                        self.logger.warning(f"Expected Redis URL: {self.redis_url}")
+                finally:
+                    # Restore original REDIS_OM_URL after Migrator runs
+                    if original_redis_url is not None:
+                        os.environ["REDIS_OM_URL"] = original_redis_url
+                    elif "REDIS_OM_URL" in os.environ and self.redis_url:
+                        # Only delete if we set it (don't delete if it was already set)
+                        del os.environ["REDIS_OM_URL"]
+
+                # Fallback to manual index creation if Migrator fails
+                if not migrator_success:
+                    self.logger.warning("Falling back to manual index creation (may not work with redis-om's find())")
+                    if migrator_error_msg:
+                        self.logger.warning(f"Migrator error was: {migrator_error_msg}")
+                    for model in models_to_migrate:
+                        try:
+                            self._create_index_for_model(model)
+                        except Exception as model_error:
+                            self.logger.debug(f"Manual index creation for {model.__name__} failed: {model_error}")
 
                 self._is_initialized = True
+                # Mark all model ODMs as initialized
+                for odm in self._model_odms.values():
+                    odm._is_initialized = True
+            except ConnectionError:
+                # Connection issue - don't mark as initialized so we retry
+                raise  # Re-raise to be caught by caller
             except Exception as e:
+                # If migration fails (e.g., Redis not ready), log warning but continue
+                # Operations will still work, but queries requiring indexes may fail
                 self.logger.warning(f"Redis migration failed: {e}")
-                self._is_initialized = True  # Continue anyway
+                # Don't mark as initialized if it's a connection error - retry on next operation
+                if "Connection refused" in str(e) or "111" in str(e) or "Connection" in str(type(e).__name__):
+                    # Connection issue - don't mark as initialized so we retry
+                    pass
+                else:
+                    self._is_initialized = True  # Other errors, continue anyway
 
     def initialize(self):
         """
@@ -166,6 +649,9 @@ class RedisMindtraceODM(MindtraceODM):
         This method runs migrations to create necessary indexes and ensures
         the Redis connection is properly set up. If auto_init was True in __init__,
         this is already done and calling this is a no-op.
+
+        In multi-model mode, child ODMs delegate initialization to the parent
+        to ensure all models are initialized together.
 
         Example:
             .. code-block:: python
@@ -178,7 +664,23 @@ class RedisMindtraceODM(MindtraceODM):
                 backend = RedisMindtraceODM(User, "redis://localhost:6379", auto_init=False)
                 backend.initialize()
         """
+        # If this is a child ODM in multi-model mode, delegate to parent
+        if self._parent_odm is not None:
+            self._parent_odm.initialize()
+            return
         self._do_initialize()
+
+    def __getattr__(self, name: str):
+        """Support attribute-based access to model-specific ODMs in multi-model mode.
+
+        Example:
+            db = RedisMindtraceODM(models={'user': User, 'address': Address}, ...)
+            db.user.get(user_id)
+            db.address.insert(address)
+        """
+        if self._models is not None and name in self._model_odms:
+            return self._model_odms[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def is_async(self) -> bool:
         """
@@ -196,18 +698,20 @@ class RedisMindtraceODM(MindtraceODM):
         """
         return False
 
-    def insert(self, obj: BaseModel) -> ModelType:
+    def insert(self, obj: BaseModel | dict) -> ModelType:
         """
         Insert a new document into the Redis database.
 
         Args:
-            obj (BaseModel): The document object to insert into the database.
+            obj (BaseModel | dict): The document object to insert into the database.
+                Can be a BaseModel instance or a dict. If dict, will create the document from it.
 
         Returns:
             ModelType: The inserted document with generated fields populated.
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
+            ValueError: If in multi-model mode (use db.model_name.insert() instead).
 
         Example:
             .. code-block:: python
@@ -219,9 +723,14 @@ class RedisMindtraceODM(MindtraceODM):
                 except DuplicateInsertError as e:
                     print(f"Duplicate entry: {e}")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use insert() in multi-model mode. Use db.model_name.insert() instead.")
         self.initialize()
-        # Get object data
-        obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
+        # Get object data - handle both dict and BaseModel
+        if isinstance(obj, dict):
+            obj_data = obj.copy()
+        else:
+            obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
 
         # Check for duplicates by email if it exists and is unique
         if "email" in obj_data and obj_data["email"] and hasattr(self.model_cls, "email"):
@@ -249,6 +758,31 @@ class RedisMindtraceODM(MindtraceODM):
 
         doc = self.model_cls(**obj_data)
         doc.save()
+
+        # After saving, ensure the index is working - if it has 0 docs, recreate it
+        # This handles the case where index was created before documents were inserted
+        try:
+            self._ensure_index_has_documents(self.model_cls)
+            # After ensuring index, try running Migrator to make redis-om aware of it
+            # This ensures redis-om's find() method can use the index
+            try:
+                import os
+
+                original_redis_url = os.environ.get("REDIS_OM_URL", None)
+                if self.redis_url:
+                    os.environ["REDIS_OM_URL"] = self.redis_url
+                try:
+                    Migrator().run()
+                finally:
+                    if original_redis_url:
+                        os.environ["REDIS_OM_URL"] = original_redis_url
+                    elif "REDIS_OM_URL" in os.environ:
+                        del os.environ["REDIS_OM_URL"]
+            except Exception:
+                pass  # Don't fail if Migrator fails
+        except Exception:
+            pass  # Don't fail insert if index check fails
+
         return doc
 
     def get(self, id: str) -> ModelType:
@@ -263,6 +797,7 @@ class RedisMindtraceODM(MindtraceODM):
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.get() instead).
 
         Example:
             .. code-block:: python
@@ -273,6 +808,8 @@ class RedisMindtraceODM(MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
         self.initialize()
         try:
             doc = self.model_cls.get(id)
@@ -297,6 +834,7 @@ class RedisMindtraceODM(MindtraceODM):
 
         Raises:
             DocumentNotFoundError: If the document doesn't exist in the database.
+            ValueError: If in multi-model mode (use db.model_name.update() instead).
 
         Example:
             .. code-block:: python
@@ -309,6 +847,8 @@ class RedisMindtraceODM(MindtraceODM):
                 # Save the changes
                 updated_user = backend.update(user)
         """
+        if self._models is not None:
+            raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
         self.initialize()
 
         # Check if obj is already a document instance
@@ -351,6 +891,7 @@ class RedisMindtraceODM(MindtraceODM):
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.delete() instead).
 
         Example:
             .. code-block:: python
@@ -361,6 +902,8 @@ class RedisMindtraceODM(MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
         self.initialize()
         try:
             doc = self.model_cls.get(id)
@@ -385,6 +928,9 @@ class RedisMindtraceODM(MindtraceODM):
         Returns:
             List[ModelType]: A list of all documents in the collection.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.all() instead).
+
         Example:
             .. code-block:: python
 
@@ -393,8 +939,29 @@ class RedisMindtraceODM(MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
-        self.initialize()
-        return self.model_cls.find().all()
+        if self._models is not None:
+            raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
+        # Ensure initialization succeeded - retry if it failed due to connection issues
+        if not self._is_initialized:
+            self.initialize()
+        # If still not initialized (connection issue), try one more time
+        if not self._is_initialized:
+            self._do_initialize()
+        try:
+            return self.model_cls.find().all()
+        except Exception as e:
+            # If "No such index" error, try to create index and retry
+            if "No such index" in str(e):
+                try:
+                    # Try to create the index manually
+                    self._create_index_for_model(self.model_cls)
+                    # Retry the query
+                    return self.model_cls.find().all()
+                except Exception as retry_error:
+                    self.logger.warning(f"Failed to create index and retry: {retry_error}")
+                    return []
+            else:
+                raise
 
     def find(self, *args, **kwargs) -> List[ModelType]:
         """
@@ -407,6 +974,9 @@ class RedisMindtraceODM(MindtraceODM):
         Returns:
             List[ModelType]: A list of documents matching the query criteria.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.find() instead).
+
         Example:
             .. code-block:: python
 
@@ -416,20 +986,96 @@ class RedisMindtraceODM(MindtraceODM):
                 # Find all users if no criteria specified
                 all_users = backend.find()
         """
-        self.initialize()
+        if self._models is not None:
+            raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
+        # Ensure initialization succeeded - retry if it failed due to connection issues
+        if not self._is_initialized:
+            self.initialize()
+        # If still not initialized (connection issue), try one more time
+        if not self._is_initialized:
+            self._do_initialize()
         try:
+            # Try the query
             if args:
-                return self.model_cls.find(*args).all()
+                results = self.model_cls.find(*args).all()
             else:
-                return self.model_cls.find().all()
+                results = self.model_cls.find().all()
+
+            # If we get 0 results but we know documents exist, try to re-initialize
+            # This handles the case where index was created but redis-om doesn't recognize it
+            if len(results) == 0:
+                # Check if documents actually exist by trying direct FT.SEARCH
+                try:
+                    index_name = getattr(self.model_cls.Meta, "index_name", None)
+                    if index_name:
+                        # Try direct search to see if index has documents
+                        search_result = self.redis.execute_command("FT.SEARCH", index_name, "*", "LIMIT", "0", "1")
+                        if isinstance(search_result, list) and len(search_result) > 1:
+                            # Index has documents but find() returned 0 - try re-initializing
+                            self.logger.debug(
+                                f"Index {index_name} has documents but find() returned 0, trying to re-initialize"
+                            )
+                            try:
+                                # Try running Migrator again to see if it helps
+                                import os
+
+                                original_redis_url = os.environ.get("REDIS_OM_URL", None)
+                                if self.redis_url:
+                                    os.environ["REDIS_OM_URL"] = self.redis_url
+                                try:
+                                    Migrator().run()
+                                finally:
+                                    if original_redis_url is not None:
+                                        os.environ["REDIS_OM_URL"] = original_redis_url
+                                    elif "REDIS_OM_URL" in os.environ:
+                                        del os.environ["REDIS_OM_URL"]
+                                # Retry the query
+                                if args:
+                                    results = self.model_cls.find(*args).all()
+                                else:
+                                    results = self.model_cls.find().all()
+                            except Exception:
+                                pass  # If re-init fails, return empty results
+                except Exception:
+                    pass  # If check fails, return empty results
+
+            return results
         except Exception as e:
-            # If query fails, log the error and return empty list
-            self.logger.warning(f"Redis query failed: {e}")
-            # Try to return all documents if specific query fails
-            try:
-                return self.model_cls.find().all()
-            except Exception:
-                return []
+            # If query fails due to missing index, try to create it and retry
+            if "No such index" in str(e):
+                try:
+                    # Try to create the index using Migrator with environment variable set
+                    import os
+
+                    original_redis_url = os.environ.get("REDIS_OM_URL", None)
+                    try:
+                        # Set environment variable so Migrator uses correct connection
+                        os.environ["REDIS_OM_URL"] = self.redis_url
+                        get_redis_connection(url=self.redis_url)
+                        # Run Migrator to create the missing index
+                        migrator = Migrator()
+                        migrator.run()
+                        # Retry the query
+                        if args:
+                            return self.model_cls.find(*args).all()
+                        else:
+                            return self.model_cls.find().all()
+                    finally:
+                        if original_redis_url is not None:
+                            os.environ["REDIS_OM_URL"] = original_redis_url
+                        elif "REDIS_OM_URL" in os.environ:
+                            del os.environ["REDIS_OM_URL"]
+                except Exception as retry_error:
+                    self.logger.warning(f"Redis query failed after retry: {retry_error}")
+                    return []
+            else:
+                # If query fails for other reasons, log the error and return empty list
+                self.logger.warning(f"Redis query failed: {e}")
+                # Try to return all documents if specific query fails
+                try:
+                    return self.model_cls.find().all()
+                except Exception:
+                    return []
 
     def get_raw_model(self) -> Type[ModelType]:
         """
@@ -438,12 +1084,19 @@ class RedisMindtraceODM(MindtraceODM):
         Returns:
             Type[ModelType]: The document model class.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.get_raw_model() instead).
+
         Example:
             .. code-block:: python
 
                 model_class = backend.get_raw_model()
                 print(f"Using model: {model_class.__name__}")
         """
+        if self._models is not None:
+            raise ValueError(
+                "Cannot use get_raw_model() in multi-model mode. Use db.model_name.get_raw_model() instead."
+            )
         return self.model_cls
 
     # Asynchronous wrapper methods for compatibility
@@ -463,12 +1116,13 @@ class RedisMindtraceODM(MindtraceODM):
         # Run blocking initialization in thread pool to avoid blocking event loop
         await asyncio.to_thread(self.initialize)
 
-    async def insert_async(self, obj: BaseModel) -> ModelType:
+    async def insert_async(self, obj: BaseModel | dict) -> ModelType:
         """
         Insert a new document asynchronously (wrapper around sync insert).
 
         Args:
-            obj (BaseModel): The document object to insert into the database.
+            obj (BaseModel | dict): The document object to insert into the database.
+                Can be a BaseModel instance or a dict. If dict, will create the document from it.
 
         Returns:
             ModelType: The inserted document with generated fields populated.

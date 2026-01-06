@@ -500,7 +500,7 @@ async def test_mongo_backend_initialize_error_handling(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_backend_initialize_second_call(mock_init_beanie):
-    """Test MongoDB backend initialization when already initialized (covers line 112)."""
+    """Test MongoDB backend initialization when already initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
@@ -518,7 +518,7 @@ async def test_mongo_backend_initialize_second_call(mock_init_beanie):
 
 @pytest.mark.asyncio
 async def test_mongo_backend_get_with_document_found():
-    """Test MongoDB backend get method when document is found (covers line 188)."""
+    """Test MongoDB backend get method when document is found."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client:
@@ -599,7 +599,7 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_init_mode_sync_in_sync_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.SYNC in sync context (covers lines 130-140)."""
+    """Test MongoDB __init__ with InitMode.SYNC in sync context."""
     import asyncio
 
     from mindtrace.database.backends.mindtrace_odm import InitMode
@@ -662,7 +662,7 @@ def test_mongo_init_mode_sync_uses_asyncio_run(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_init_mode_async_in_async_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.ASYNC in async context (covers lines 125-129)."""
+    """Test MongoDB __init__ with InitMode.ASYNC in async context."""
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
@@ -682,7 +682,7 @@ async def test_mongo_init_mode_async_in_async_context(mock_init_beanie):
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_init_mode_async_in_sync_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.ASYNC in sync context (covers lines 141-143)."""
+    """Test MongoDB __init__ with InitMode.ASYNC in sync context."""
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
@@ -703,7 +703,7 @@ def test_mongo_init_mode_async_in_sync_context(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_initialize_with_allow_index_dropping(mock_init_beanie):
-    """Test MongoDB initialize() with allow_index_dropping parameter (covers line 200)."""
+    """Test MongoDB initialize() with allow_index_dropping parameter."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -726,7 +726,7 @@ async def test_mongo_initialize_with_allow_index_dropping(mock_init_beanie):
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_initialize_sync_already_initialized(mock_init_beanie):
-    """Test MongoDB initialize_sync() when already initialized (covers line 417)."""
+    """Test MongoDB initialize_sync() when already initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -772,7 +772,7 @@ async def test_mongo_backend_update_with_document_instance():
 
 @pytest.mark.asyncio
 async def test_mongo_backend_update_auto_initializes():
-    """Test MongoDB update method auto-initializes when not initialized (covers line 301)."""
+    """Test MongoDB update method auto-initializes when not initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -816,6 +816,103 @@ async def test_mongo_backend_update_with_document_instance_no_id():
 
     with pytest.raises(DocumentNotFoundError, match="Document must have an id to be updated"):
         await backend.update(mock_doc)
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_insert_with_datawrapper():
+    """Test MongoDB insert with DataWrapper object."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database.backends.unified_odm import DataWrapper
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a DataWrapper object
+    data_wrapper = DataWrapper({"name": "DataWrapper User", "age": 30, "email": "datawrapper@test.com"})
+
+    # Mock the document creation and insert
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = "507f1f77bcf86cd799439011"
+    mock_doc.name = "DataWrapper User"
+    mock_doc.age = 30
+    mock_doc.email = "datawrapper@test.com"
+    mock_doc.insert = AsyncMock(return_value=mock_doc)
+
+    # Mock model_cls as a callable that returns our mock document
+    # This bypasses the actual Beanie Document instantiation
+    mock_model_cls = MagicMock(return_value=mock_doc)
+
+    with patch.object(backend, "model_cls", new=mock_model_cls):
+        result = await backend.insert(data_wrapper)
+
+        # Verify the result
+        assert result == mock_doc
+        mock_doc.insert.assert_called_once()
+
+        # Verify model_cls was called with the correct data (id/_id should be removed)
+        call_kwargs = mock_model_cls.call_args[1] if mock_model_cls.call_args else {}
+        assert "id" not in call_kwargs
+        assert "_id" not in call_kwargs
+        assert call_kwargs.get("name") == "DataWrapper User"
+        assert call_kwargs.get("age") == 30
+        assert call_kwargs.get("email") == "datawrapper@test.com"
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_insert_with_dict_containing_id():
+    """Test MongoDB insert with dict containing id/_id fields."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        auto_init=False,
+    )
+    backend._is_initialized = True
+
+    # Create a dict with id and _id (should be removed)
+    user_data = {
+        "name": "Dict User",
+        "age": 25,
+        "email": "dict@test.com",
+        "id": "should_be_removed",
+        "_id": "should_be_removed_too",
+    }
+
+    # Mock the insert operation
+    mock_doc = MagicMock(spec=UserDoc)
+    mock_doc.id = None  # Should be set to None
+    mock_doc.insert = AsyncMock(return_value=mock_doc)
+
+    # Track what kwargs were passed to model_cls instantiation
+    call_kwargs = {}
+
+    def mock_model_init(*args, **kwargs):
+        call_kwargs.update(kwargs)
+        return mock_doc
+
+    # Mock model_cls as a callable that returns our mock document
+    mock_model_cls = MagicMock(side_effect=mock_model_init)
+
+    with patch.object(backend, "model_cls", new=mock_model_cls):
+        result = await backend.insert(user_data)
+
+        # Verify the result
+        assert result == mock_doc
+        mock_doc.insert.assert_called_once()
+
+        # Verify that id and _id were removed from the data passed to model_cls
+        assert "id" not in call_kwargs
+        assert "_id" not in call_kwargs
+        assert call_kwargs.get("name") == "Dict User"
+        assert call_kwargs.get("age") == 25
+        assert call_kwargs.get("email") == "dict@test.com"
 
 
 @pytest.mark.asyncio
