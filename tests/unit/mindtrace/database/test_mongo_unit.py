@@ -500,7 +500,7 @@ async def test_mongo_backend_initialize_error_handling(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_backend_initialize_second_call(mock_init_beanie):
-    """Test MongoDB backend initialization when already initialized (covers line 112)."""
+    """Test MongoDB backend initialization when already initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
@@ -518,7 +518,7 @@ async def test_mongo_backend_initialize_second_call(mock_init_beanie):
 
 @pytest.mark.asyncio
 async def test_mongo_backend_get_with_document_found():
-    """Test MongoDB backend get method when document is found (covers line 188)."""
+    """Test MongoDB backend get method when document is found."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client:
@@ -599,7 +599,7 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_init_mode_sync_in_sync_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.SYNC in sync context (covers lines 130-140)."""
+    """Test MongoDB __init__ with InitMode.SYNC in sync context."""
     import asyncio
 
     from mindtrace.database.backends.mindtrace_odm import InitMode
@@ -662,7 +662,7 @@ def test_mongo_init_mode_sync_uses_asyncio_run(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_init_mode_async_in_async_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.ASYNC in async context (covers lines 125-129)."""
+    """Test MongoDB __init__ with InitMode.ASYNC in async context."""
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
@@ -682,7 +682,7 @@ async def test_mongo_init_mode_async_in_async_context(mock_init_beanie):
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_init_mode_async_in_sync_context(mock_init_beanie):
-    """Test MongoDB __init__ with InitMode.ASYNC in sync context (covers lines 141-143)."""
+    """Test MongoDB __init__ with InitMode.ASYNC in sync context."""
     from mindtrace.database.backends.mindtrace_odm import InitMode
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
@@ -703,7 +703,7 @@ def test_mongo_init_mode_async_in_sync_context(mock_init_beanie):
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 @pytest.mark.asyncio
 async def test_mongo_initialize_with_allow_index_dropping(mock_init_beanie):
-    """Test MongoDB initialize() with allow_index_dropping parameter (covers line 200)."""
+    """Test MongoDB initialize() with allow_index_dropping parameter."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -726,7 +726,7 @@ async def test_mongo_initialize_with_allow_index_dropping(mock_init_beanie):
 
 @patch("mindtrace.database.backends.mongo_odm.init_beanie")
 def test_mongo_initialize_sync_already_initialized(mock_init_beanie):
-    """Test MongoDB initialize_sync() when already initialized (covers line 417)."""
+    """Test MongoDB initialize_sync() when already initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -772,7 +772,7 @@ async def test_mongo_backend_update_with_document_instance():
 
 @pytest.mark.asyncio
 async def test_mongo_backend_update_auto_initializes():
-    """Test MongoDB update method auto-initializes when not initialized (covers line 301)."""
+    """Test MongoDB update method auto-initializes when not initialized."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(

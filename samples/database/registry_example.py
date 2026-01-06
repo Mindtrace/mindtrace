@@ -17,10 +17,10 @@ from pydantic import BaseModel
 from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Archiver, Registry
 
-
 # ============================================================================
 # Model Definitions
 # ============================================================================
+
 
 class User(BaseModel):
     """User model for Registry ODM."""
@@ -42,6 +42,7 @@ class Address(BaseModel):
 # ============================================================================
 # Archiver Implementations
 # ============================================================================
+
 
 class UserArchiver(Archiver):
     """Archiver for User model - saves to JSON files."""
@@ -86,6 +87,7 @@ class AddressArchiver(Archiver):
 # ============================================================================
 # Example Functions
 # ============================================================================
+
 
 def demonstrate_single_model():
     """Demonstrate Registry ODM with single model."""
@@ -253,4 +255,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

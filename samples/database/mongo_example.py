@@ -16,10 +16,10 @@ from pydantic import Field
 
 from mindtrace.database import Link, MindtraceDocument, MongoMindtraceODM
 
-
 # ============================================================================
 # Model Definitions
 # ============================================================================
+
 
 class Address(MindtraceDocument):
     """Address model for MongoDB."""
@@ -51,6 +51,7 @@ class User(MindtraceDocument):
 # ============================================================================
 # Example Functions
 # ============================================================================
+
 
 async def demonstrate_async_operations():
     """Demonstrate asynchronous operations (native for MongoDB)."""
@@ -103,8 +104,7 @@ async def demonstrate_async_operations():
     print(f"✓ Retrieved user: {retrieved_user.name}, email: {retrieved_user.email}")
     if retrieved_user.address:
         print(
-            f"  Address: {retrieved_user.address.street}, "
-            f"{retrieved_user.address.city}, {retrieved_user.address.state}"
+            f"  Address: {retrieved_user.address.street}, {retrieved_user.address.city}, {retrieved_user.address.state}"
         )
 
     all_users = await db.user.all()
@@ -166,9 +166,7 @@ def demonstrate_sync_operations():
     # CREATE - Insert operations (sync - wrapper)
     print("\n--- CREATE Operations (Sync) ---")
 
-    address = db.address.insert_sync(
-        {"street": "456 Oak Ave", "city": "New York", "state": "NY", "zip_code": "10001"}
-    )
+    address = db.address.insert_sync({"street": "456 Oak Ave", "city": "New York", "state": "NY", "zip_code": "10001"})
     print(f"✓ Created address: {address.street}, {address.city}")
 
     # For linking, we need to get the MongoDB document
@@ -244,4 +242,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -21,10 +21,10 @@ from mindtrace.database import (
     UnifiedMindtraceODM,
 )
 
-
 # ============================================================================
 # Model Definitions
 # ============================================================================
+
 
 class Address(UnifiedMindtraceDocument):
     """Address model - works with both MongoDB and Redis."""
@@ -61,6 +61,7 @@ class User(UnifiedMindtraceDocument):
 # Example Functions
 # ============================================================================
 
+
 async def demonstrate_mongo_backend():
     """Demonstrate unified ODM with MongoDB backend."""
     print("\n" + "=" * 70)
@@ -76,7 +77,7 @@ async def demonstrate_mongo_backend():
         allow_index_dropping=True,
     )
 
-    print(f"✓ Initialized Unified ODM with MongoDB backend")
+    print("✓ Initialized Unified ODM with MongoDB backend")
     print(f"✓ Current backend: {db.get_current_backend_type()}")
     print(f"✓ Has MongoDB: {db.has_mongo_backend()}")
     print(f"✓ Has Redis: {db.has_redis_backend()}")
@@ -152,15 +153,13 @@ async def demonstrate_redis_backend():
         preferred_backend=BackendType.REDIS,
     )
 
-    print(f"✓ Initialized Unified ODM with Redis backend")
+    print("✓ Initialized Unified ODM with Redis backend")
     print(f"✓ Current backend: {db.get_current_backend_type()}")
 
     # CREATE - Insert operations (sync - native for Redis)
     print("\n--- CREATE Operations (Sync) ---")
 
-    address = db.address.insert(
-        {"street": "456 Oak Ave", "city": "New York", "state": "NY", "zip_code": "10001"}
-    )
+    address = db.address.insert({"street": "456 Oak Ave", "city": "New York", "state": "NY", "zip_code": "10001"})
     print(f"✓ Created address: {address.street}, {address.city} (ID: {address.id})")
 
     user = db.user.insert(
@@ -212,6 +211,7 @@ async def demonstrate_redis_backend():
 
     print("\n✓ Redis backend demonstration completed!")
 
+
 async def main():
     """Run all unified ODM demonstrations."""
     print("\n" + "=" * 70)
@@ -244,4 +244,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

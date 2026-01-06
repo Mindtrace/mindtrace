@@ -1809,7 +1809,7 @@ def test_redis_init_mode_idempotent():
 
 @pytest.mark.asyncio
 async def test_mongo_initialize_with_allow_index_dropping():
-    """Test MongoDB initialize() with allow_index_dropping parameter (covers line 200)."""
+    """Test MongoDB initialize() with allow_index_dropping parameter."""
     backend = MongoMindtraceODM(
         model_cls=MongoUserDoc,
         db_uri=MONGO_URI,
@@ -1823,7 +1823,7 @@ async def test_mongo_initialize_with_allow_index_dropping():
     assert backend._allow_index_dropping is True
 
     # Initialize again with allow_index_dropping=False (should NOT update - already initialized)
-    # This tests the idempotent behavior and early return (line 196-197)
+    # This tests the idempotent behavior and early return
     await backend.initialize(allow_index_dropping=False)
     assert backend._is_initialized
     # Should still be True because initialize() returns early when already initialized
@@ -1840,7 +1840,7 @@ async def test_mongo_initialize_with_allow_index_dropping():
 
 @pytest.mark.asyncio
 async def test_unified_initialize_async_with_allow_index_dropping():
-    """Test unified backend initialize_async() with allow_index_dropping (covers line 564)."""
+    """Test unified backend initialize_async() with allow_index_dropping."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -1865,7 +1865,7 @@ async def test_unified_initialize_async_with_allow_index_dropping():
 
 
 def test_unified_initialize_sync_with_allow_index_dropping():
-    """Test unified backend initialize_sync() with allow_index_dropping (covers line 616)."""
+    """Test unified backend initialize_sync() with allow_index_dropping."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -1888,7 +1888,7 @@ def test_unified_initialize_sync_with_allow_index_dropping():
 
 
 def test_unified_initialize_sync_with_allow_index_dropping_none():
-    """Test unified backend initialize_sync() with allow_index_dropping=None (covers line 616 default path)."""
+    """Test unified backend initialize_sync() with allow_index_dropping=None (default path)."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -1912,7 +1912,7 @@ def test_unified_initialize_sync_with_allow_index_dropping_none():
 
 
 def test_unified_initialize_with_allow_index_dropping():
-    """Test unified backend initialize() with allow_index_dropping (covers line 639)."""
+    """Test unified backend initialize() with allow_index_dropping."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -1934,12 +1934,12 @@ def test_unified_initialize_with_allow_index_dropping():
         pass
 
 
-# Note: The fallback path (lines 619-622) is tested in unit tests with proper mocking
+# Note: The fallback path is tested in unit tests with proper mocking
 # This integration test focuses on the normal path with real database connections
 
 
 def test_redis_init_mode_sync_path():
-    """Test Redis init_mode SYNC path in __init__ (covers lines 113-115)."""
+    """Test Redis init_mode SYNC path in __init__."""
     backend = RedisMindtraceODM(
         model_cls=RedisUserDoc,
         redis_url=REDIS_URL,
@@ -1959,7 +1959,7 @@ def test_redis_init_mode_sync_path():
 
 
 def test_redis_init_mode_async_path():
-    """Test Redis init_mode ASYNC path in __init__ (covers lines 116-119)."""
+    """Test Redis init_mode ASYNC path in __init__."""
     backend = RedisMindtraceODM(
         model_cls=RedisUserDoc,
         redis_url=REDIS_URL,
@@ -1986,7 +1986,7 @@ def test_redis_init_mode_async_path():
 
 @pytest.mark.asyncio
 async def test_unified_redis_async_mode_skip_initialization():
-    """Test unified backend skips Redis initialization when in ASYNC mode (covers lines 575, 582)."""
+    """Test unified backend skips Redis initialization when in ASYNC mode."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -2017,7 +2017,7 @@ async def test_unified_redis_async_mode_skip_initialization():
 
 @pytest.mark.asyncio
 async def test_unified_redis_sync_mode_initialization():
-    """Test unified backend initializes Redis when in SYNC mode (covers line 582)."""
+    """Test unified backend initializes Redis when in SYNC mode."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri=MONGO_URI,
@@ -2109,7 +2109,7 @@ def test_mongo_init_mode_sync_in_sync_context():
     )
 
     # In sync context, SYNC mode should initialize immediately
-    # Note: This covers lines 127-135 in mongo_odm.py (sync initialization path)
+    # Note: This covers the sync initialization path in mongo_odm.py
     assert backend._is_initialized
     assert not hasattr(backend, "_needs_init") or not backend._needs_init
 

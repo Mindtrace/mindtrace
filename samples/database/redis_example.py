@@ -16,10 +16,10 @@ from redis_om import Field
 
 from mindtrace.database import MindtraceRedisDocument, RedisMindtraceODM
 
-
 # ============================================================================
 # Model Definitions
 # ============================================================================
+
 
 class Address(MindtraceRedisDocument):
     """Address model for Redis."""
@@ -49,6 +49,7 @@ class User(MindtraceRedisDocument):
 # ============================================================================
 # Example Functions
 # ============================================================================
+
 
 def demonstrate_sync_operations():
     """Demonstrate synchronous operations (native for Redis)."""
@@ -229,4 +230,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
