@@ -85,10 +85,10 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
     assert meta_path.exists()
 
-    # Fetch metadata - returns Dict[Tuple[str, str], {"status": "ok", "metadata": {...}}]
+    # Fetch metadata - returns OpResults with OpResult for each (name, version)
     result = backend.fetch_metadata("test:object", "1.0.0")
-    assert result[("test:object", "1.0.0")]["status"] == "ok"
-    fetched_metadata = result[("test:object", "1.0.0")]["metadata"]
+    assert result[("test:object", "1.0.0")].ok
+    fetched_metadata = result[("test:object", "1.0.0")].metadata
 
     # Verify metadata content
     assert fetched_metadata["description"] == sample_metadata["description"]
@@ -368,18 +368,18 @@ def test_push_on_conflict_skip(backend, sample_object_dir):
     """Test push with on_conflict='skip' when version already exists."""
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")]["status"] == "ok"
+    assert result[("test:object", "1.0.0")].ok
 
     # Try to push again with on_conflict="skip"
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True}, on_conflict="skip")
-    assert result[("test:object", "1.0.0")]["status"] == "skipped"
+    assert result[("test:object", "1.0.0")].is_skipped
 
 
 def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
     """Test push with on_conflict='overwrite' when version already exists."""
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")]["status"] == "ok"
+    assert result[("test:object", "1.0.0")].ok
 
     # Create a new source directory with different content
     new_obj_dir = temp_dir / "new_sample"
@@ -388,7 +388,7 @@ def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
 
     # Push again with on_conflict="overwrite"
     result = backend.push("test:object", "1.0.0", str(new_obj_dir), {"updated": True}, on_conflict="overwrite")
-    assert result[("test:object", "1.0.0")]["status"] == "overwritten"
+    assert result[("test:object", "1.0.0")].is_overwritten
 
     # Verify new content exists
     object_path = backend.uri / "test:object" / "1.0.0"
@@ -402,7 +402,7 @@ def test_push_on_conflict_error(backend, sample_object_dir):
 
     # Push the object initially with metadata (metadata file is the existence check)
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
-    assert result[("test:object", "1.0.0")]["status"] == "ok"
+    assert result[("test:object", "1.0.0")].ok
 
     # Try to push again with on_conflict="error" (default)
     with pytest.raises(RegistryVersionConflict, match="already exists"):
@@ -414,12 +414,12 @@ def test_push_auto_increment_version(backend, sample_object_dir):
     # Push first version with metadata (metadata is required for version tracking)
     result = backend.push("test:object", None, sample_object_dir, {"version": 1})
     assert ("test:object", "1") in result
-    assert result[("test:object", "1")]["status"] == "ok"
+    assert result[("test:object", "1")].ok
 
     # Push second version with metadata
     result = backend.push("test:object", None, sample_object_dir, {"version": 2})
     assert ("test:object", "2") in result
-    assert result[("test:object", "2")]["status"] == "ok"
+    assert result[("test:object", "2")].ok
 
     # Verify both versions exist
     versions = backend.list_versions("test:object")
@@ -740,7 +740,7 @@ def test_concurrent_push_same_object_different_versions(backend, sample_object_d
 
     # Push to a different object should succeed (different lock key)
     result = backend.push("other:object", "1.0.0", sample_object_dir, {"test": True})
-    assert result[("other:object", "1.0.0")]["status"] == "ok"
+    assert result[("other:object", "1.0.0")].ok
 
     # Clean up
     exclusive_path.unlink()
@@ -775,7 +775,7 @@ def test_delete_releases_lock_on_success(backend, sample_object_dir):
 
     # Should be able to push again (lock was released)
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
-    assert result[("test:object", "1.0.0")]["status"] == "ok"
+    assert result[("test:object", "1.0.0")].ok
 
 
 def test_pull_object_not_found(backend):

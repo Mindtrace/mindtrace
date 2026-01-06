@@ -14,6 +14,7 @@ from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
+from mindtrace.registry.core.types import OpResult, OpResults
 
 
 class SampleModel(BaseModel):
@@ -437,9 +438,9 @@ def test_load_without_class_metadata(registry, test_config):
     registry.save("test:config", test_config, version="1.0.0")
 
     # Manually modify the metadata file directly to remove the class information
-    # fetch_metadata returns Dict[Tuple[str, str], dict]
+    # fetch_metadata returns OpResults with OpResult for each (name, version)
     metadata_result = registry.backend.fetch_metadata("test:config", "1.0.0")
-    metadata = metadata_result[("test:config", "1.0.0")]
+    metadata = metadata_result[("test:config", "1.0.0")].metadata
     metadata.pop("class", None)
 
     # Write directly to the metadata file (bypassing save_metadata which would raise conflict)
@@ -1210,16 +1211,16 @@ def test_getitem_not_found(registry):
 def test_delitem_not_found(registry):
     """Test that __delitem__ raises KeyError when an object is not found."""
     # Test with nonexistent object name
-    with pytest.raises(KeyError, match="Object nonexistent does not exist"):
+    with pytest.raises(KeyError, match="Object not found: nonexistent"):
         del registry["nonexistent"]
 
     # Test with nonexistent version
     registry["test:str"] = "hello"
-    with pytest.raises(KeyError, match="Object test:str version nonexistent does not exist"):
+    with pytest.raises(KeyError, match="Object not found: test:str@nonexistent"):
         del registry["test:str@nonexistent"]
 
     # Test with invalid version format
-    with pytest.raises(KeyError, match="Object test:str version invalid@format does not exist"):
+    with pytest.raises(KeyError, match="Object not found: test:str@invalid@format"):
         del registry["test:str@invalid@format"]
 
     # Test ValueError to KeyError conversion
@@ -2454,12 +2455,14 @@ def test_hash_preserved_across_versions(registry, test_config):
 
 
 def test_get_cache_dir_from_backend_uri(registry):
-    """Test _get_cache_dir_from_backend_uri generates deterministic cache directory."""
+    """Test RegistryWithCache._get_cache_dir generates deterministic cache directory."""
+    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+
     # Get cache directory using class method
-    cache_dir1 = Registry._get_cache_dir_from_backend_uri(registry.backend.uri, registry.config)
+    cache_dir1 = RegistryWithCache._get_cache_dir(registry.backend.uri, registry.config)
 
     # Get cache directory again
-    cache_dir2 = Registry._get_cache_dir_from_backend_uri(registry.backend.uri, registry.config)
+    cache_dir2 = RegistryWithCache._get_cache_dir(registry.backend.uri, registry.config)
 
     # Should be the same
     assert cache_dir1 == cache_dir2
@@ -2477,13 +2480,15 @@ def test_get_cache_dir_from_backend_uri(registry):
 
 def test_get_cache_dir_from_backend_uri_different_backends(temp_registry_dir):
     """Test that different backend URIs produce different cache directories."""
+    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+
     # Create two registries with different backend URIs
     registry1 = Registry(backend=temp_registry_dir + "_1")
     registry2 = Registry(backend=temp_registry_dir + "_2")
 
     # Get cache directories using class method
-    cache_dir1 = Registry._get_cache_dir_from_backend_uri(registry1.backend.uri, registry1.config)
-    cache_dir2 = Registry._get_cache_dir_from_backend_uri(registry2.backend.uri, registry2.config)
+    cache_dir1 = RegistryWithCache._get_cache_dir(registry1.backend.uri, registry1.config)
+    cache_dir2 = RegistryWithCache._get_cache_dir(registry2.backend.uri, registry2.config)
 
     # Different backends should produce different cache directories
     assert cache_dir1 != cache_dir2
@@ -2560,13 +2565,15 @@ def test_list_versions_cache_expiration(temp_registry_dir):
 
 
 def test_cache_initialization_local_backend(temp_registry_dir):
-    """Test that local backend has no cache."""
+    """Test that base Registry doesn't have cache (caching is via RegistryWithCache)."""
     registry = Registry(backend=temp_registry_dir)
-    assert registry._cache is None
+    # Base Registry doesn't have _cache attribute - caching is handled by RegistryWithCache
+    assert not hasattr(registry, "_cache")
 
 
 def test_cache_initialization_remote_backend(temp_registry_dir):
-    """Test that remote backend has cache initialized."""
+    """Test that Registry with remote backend returns RegistryWithCache with cache initialized."""
+    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
 
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
@@ -2574,10 +2581,20 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
 
+    # Registry(backend=remote_backend) returns RegistryWithCache when use_cache=True (default)
     registry = Registry(backend=mock_backend)
+    assert isinstance(registry, RegistryWithCache)
     assert registry._cache is not None
     assert isinstance(registry._cache.backend, LocalRegistryBackend)
     assert registry._cache.version_objects == registry.version_objects
+
+
+def _make_op_results(*results: OpResult) -> OpResults:
+    """Helper to create OpResults from OpResult objects."""
+    op_results = OpResults()
+    for r in results:
+        op_results.add(r)
+    return op_results
 
 
 def test_save_with_cache(temp_registry_dir):
@@ -2588,8 +2605,8 @@ def test_save_with_cache(temp_registry_dir):
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    # push returns Dict[Tuple[str, str], status_dict]
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
+    # push returns OpResults
+    mock_backend.push = Mock(return_value=_make_op_results(OpResult.success("test:obj", "1.0.0")))
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
     # has_object returns Dict[Tuple[str, str], bool]
@@ -2681,31 +2698,32 @@ def test_load_cache_miss(temp_registry_dir):
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-        # Mock remote metadata - fetch_metadata returns Dict[Tuple[str, str], status_dict]
+        # Mock remote metadata - fetch_metadata returns OpResults
         expected_hash = compute_dir_hash(temp_path)
         mock_backend.fetch_metadata = Mock(
-            return_value={
-                ("test:obj", "1.0.0"): {
-                    "status": "ok",
-                    "metadata": {
+            return_value=_make_op_results(
+                OpResult.success(
+                    "test:obj",
+                    "1.0.0",
+                    metadata={
                         "class": "builtins.str",
                         "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
-                }
-            }
+                )
+            )
         )
 
-        # Mock pull to copy our temp directory and return status dict
+        # Mock pull to copy our temp directory and return OpResults
         def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
             # Handle batch API - normalize inputs
             names = [name] if isinstance(name, str) else name
             versions = [version] if isinstance(version, str) else version
             paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
-            results = {}
+            results = OpResults()
             for n, v, p in zip(names, versions, paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
-                results[(n, v)] = {"status": "ok"}
+                results.add(OpResult.success(n, v))
             return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
@@ -2750,24 +2768,25 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
 
         # Mock remote metadata with hash matching fresh data (not cache)
         mock_backend.fetch_metadata = Mock(
-            return_value={
-                ("test:obj", "1.0.0"): {
-                    "status": "ok",
-                    "metadata": {
+            return_value=_make_op_results(
+                OpResult.success(
+                    "test:obj",
+                    "1.0.0",
+                    metadata={
                         "class": "builtins.str",
                         "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
-                }
-            }
+                )
+            )
         )
 
-        # Mock pull to copy fresh data and return status dict
+        # Mock pull to copy fresh data and return OpResults
         def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
-            results = {}
+            results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
-                results[(n, v)] = {"status": "ok"}
+                results.add(OpResult.success(n, v))
             return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
@@ -2806,30 +2825,31 @@ def test_load_cache_error_fallback(temp_registry_dir):
             temp_path = Path(temp_dir)
             (temp_path / "data.json").write_text('"value"')  # BuiltInMaterializer expects JSON format
 
-            # Mock remote metadata - fetch_metadata returns Dict[Tuple, status_dict]
+            # Mock remote metadata - fetch_metadata returns OpResults
             expected_hash = compute_dir_hash(temp_path)
             mock_backend.fetch_metadata = Mock(
-                return_value={
-                    ("test:obj", "1.0.0"): {
-                        "status": "ok",
-                        "metadata": {
+                return_value=_make_op_results(
+                    OpResult.success(
+                        "test:obj",
+                        "1.0.0",
+                        metadata={
                             "class": "builtins.str",
                             "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                             "hash": expected_hash,
                         },
-                    }
-                }
+                    )
+                )
             )
 
-            # Mock pull to copy our temp directory and return status dict
+            # Mock pull to copy our temp directory and return OpResults
             def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
                 names = [name] if isinstance(name, str) else name
                 versions = [version] if isinstance(version, str) else version
                 paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
-                results = {}
+                results = OpResults()
                 for n, v, p in zip(names, versions, paths):
                     shutil.copytree(temp_path, p, dirs_exist_ok=True)
-                    results[(n, v)] = {"status": "ok"}
+                    results.add(OpResult.success(n, v))
                 return results
 
             mock_backend.pull = Mock(side_effect=mock_pull)
@@ -2915,8 +2935,8 @@ def test_save_cache_error_handling(temp_registry_dir):
     mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): False})
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": []})
-    # push returns Dict[Tuple[str, str], str]
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
+    # push returns OpResults
+    mock_backend.push = Mock(return_value=_make_op_results(OpResult.success("test:obj", "1.0.0")))
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -3037,8 +3057,8 @@ def test_save_cache_directory_not_exists(temp_registry_dir):
     mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): False})
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": []})
-    # push returns Dict[Tuple[str, str], str]
-    mock_backend.push = Mock(return_value={("test:obj", "1.0.0"): {"status": "ok"}})
+    # push returns OpResults
+    mock_backend.push = Mock(return_value=_make_op_results(OpResult.success("test:obj", "1.0.0")))
     mock_backend.delete = Mock()
     mock_backend.delete_metadata = Mock()
 
@@ -3099,16 +3119,17 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
 
     # Mock remote metadata with hash that doesn't match either cache or what remote will provide
     mock_backend.fetch_metadata = Mock(
-        return_value={
-            ("test:obj", "1.0.0"): {
-                "status": "ok",
-                "metadata": {
+        return_value=_make_op_results(
+            OpResult.success(
+                "test:obj",
+                "1.0.0",
+                metadata={
                     "class": "builtins.str",
                     "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                     "hash": "expected_hash_that_nothing_matches",
                 },
-            }
-        }
+            )
+        )
     )
 
     # Mock pull to return data that also doesn't match expected hash
@@ -3117,10 +3138,10 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
         (temp_path / "data.json").write_text('"corrupted_value"')
 
         def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
-            results = {}
+            results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
-                results[(n, v)] = {"status": "ok"}
+                results.add(OpResult.success(n, v))
             return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
@@ -3221,26 +3242,27 @@ def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
         expected_hash = compute_dir_hash(temp_path)
 
         def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
-            results = {}
+            results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
-                results[(n, v)] = {"status": "ok"}
+                results.add(OpResult.success(n, v))
             return results
 
         mock_backend.pull = Mock(side_effect=mock_pull)
 
-        # Mock remote metadata with correct hash - fetch_metadata returns Dict[Tuple, status_dict]
+        # Mock remote metadata with correct hash - fetch_metadata returns OpResults
         mock_backend.fetch_metadata = Mock(
-            return_value={
-                ("test:obj", "1.0.0"): {
-                    "status": "ok",
-                    "metadata": {
+            return_value=_make_op_results(
+                OpResult.success(
+                    "test:obj",
+                    "1.0.0",
+                    metadata={
                         "class": "builtins.str",
                         "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
-                }
-            }
+                )
+            )
         )
 
         # Load with verify_hash=True - should fetch from remote
@@ -3307,12 +3329,13 @@ def test_clear_cache(temp_registry_dir):
 
 
 def test_clear_cache_no_cache(temp_registry_dir):
-    """Test that clear_cache() does nothing when there's no cache."""
-    # Create registry with local backend (no cache)
+    """Test that clear_cache() does nothing when there's no cache attribute."""
+    # Create registry with local backend (base Registry doesn't have cache)
     registry = Registry(backend=temp_registry_dir, version_objects=True)
-    assert registry._cache is None
+    # Base Registry doesn't have _cache attribute - caching is handled by RegistryWithCache
+    assert not hasattr(registry, "_cache")
 
-    # clear_cache should not raise an error
+    # clear_cache should not raise an error (it's a no-op on base Registry)
     registry.clear_cache()
 
 
