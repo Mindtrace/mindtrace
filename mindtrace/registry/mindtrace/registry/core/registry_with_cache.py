@@ -255,11 +255,20 @@ class RegistryWithCache:
             if not resolved_version:
                 return True
 
-            remote_meta = self._remote.backend.fetch_metadata([name], [resolved_version], on_error="skip")
-            cache_meta = self._cache.backend.fetch_metadata([name], [resolved_version], on_error="skip")
+            # Use single strings - backend normalizes to lists internally
+            remote_result = self._remote.backend.fetch_metadata(name, resolved_version, on_error="skip").first()
+            cache_result = self._cache.backend.fetch_metadata(name, resolved_version, on_error="skip").first()
 
-            remote_hash = remote_meta.get((name, resolved_version), {}).get("metadata", {}).get("hash")
-            cache_hash = cache_meta.get((name, resolved_version), {}).get("metadata", {}).get("hash")
+            remote_hash = (
+                remote_result.metadata.get("hash")
+                if remote_result and remote_result.ok and remote_result.metadata
+                else None
+            )
+            cache_hash = (
+                cache_result.metadata.get("hash")
+                if cache_result and cache_result.ok and cache_result.metadata
+                else None
+            )
 
             return remote_hash and cache_hash and remote_hash != cache_hash
         except Exception:
@@ -273,13 +282,25 @@ class RegistryWithCache:
         names = [n for n, _ in items]
         versions = [v for _, v in items]
 
-        remote_meta = self._remote.backend.fetch_metadata(names, versions, on_error="skip")
-        cache_meta = self._cache.backend.fetch_metadata(names, versions, on_error="skip")
+        remote_results = self._remote.backend.fetch_metadata(names, versions, on_error="skip")
+        cache_results = self._cache.backend.fetch_metadata(names, versions, on_error="skip")
 
         stale = []
         for n, v in items:
-            remote_hash = remote_meta.get((n, v), {}).get("metadata", {}).get("hash")
-            cache_hash = cache_meta.get((n, v), {}).get("metadata", {}).get("hash")
+            remote_result = remote_results.get((n, v))
+            cache_result = cache_results.get((n, v))
+
+            remote_hash = (
+                remote_result.metadata.get("hash")
+                if remote_result and remote_result.ok and remote_result.metadata
+                else None
+            )
+            cache_hash = (
+                cache_result.metadata.get("hash")
+                if cache_result and cache_result.ok and cache_result.metadata
+                else None
+            )
+
             if remote_hash and cache_hash and remote_hash != cache_hash:
                 stale.append((n, v))
         return stale

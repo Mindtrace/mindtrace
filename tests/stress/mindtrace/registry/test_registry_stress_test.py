@@ -20,14 +20,15 @@ import pytest
 from tqdm import tqdm
 
 from mindtrace.registry import Registry
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 # Suppress verbose logging during stress tests
 logging.getLogger("mindtrace.registry").setLevel(logging.WARNING)
 logging.getLogger("zenml").setLevel(logging.WARNING)
 logging.getLogger("mindtrace.core").setLevel(logging.WARNING)
 
-# For even cleaner output during stress tests, uncomment the following line:
-# logging.getLogger().setLevel(logging.CRITICAL)
+#For even cleaner output during stress tests, uncomment the following line:
+logging.getLogger().setLevel(logging.CRITICAL)
 
 
 class TestRegistryThroughput:
@@ -42,7 +43,7 @@ class TestRegistryThroughput:
     @pytest.fixture
     def registry(self, temp_registry_dir):
         """Create a Registry instance with a temporary directory."""
-        return Registry(registry_dir=temp_registry_dir)
+        return Registry(backend=temp_registry_dir, version_objects=True)
 
     @pytest.fixture
     def test_objects(self):
@@ -354,7 +355,7 @@ class TestRegistryThroughput:
                         try:
                             registry.load(obj_name)
                             worker_results["loads"] += 1
-                        except ValueError:
+                        except RegistryObjectNotFound:
                             # Object doesn't exist, save it first (fallback)
                             registry.save(obj_name, test_objects["small_string"])
                             registry.load(obj_name)
@@ -367,7 +368,7 @@ class TestRegistryThroughput:
                         try:
                             registry.delete(obj_name)
                             worker_results["deletes"] += 1
-                        except KeyError:
+                        except RegistryObjectNotFound:
                             # Object doesn't exist, create and delete it (fallback)
                             registry.save(obj_name, test_objects["small_string"])
                             registry.delete(obj_name)
@@ -675,7 +676,7 @@ class TestRegistryThroughput:
                         try:
                             registry.load(obj_name)
                             worker_results["loads"] += 1
-                        except ValueError:
+                        except RegistryObjectNotFound:
                             # Object doesn't exist, save it first (fallback)
                             registry.save(obj_name, f"initial:value:{worker_id}:{i}")
                             registry.load(obj_name)

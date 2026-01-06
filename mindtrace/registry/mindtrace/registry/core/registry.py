@@ -657,15 +657,15 @@ class Registry(Mindtrace):
             )
 
             # Get result - single item
-            (_, resolved_version), status = next(iter(push_result.items()))
+            result = next(iter(push_result))
 
             # Return None if skipped (on_conflict="skip" and version existed)
-            if status.get("status") == "skipped":
+            if result.is_skipped:
                 self._invalidate_versions_cache(name)
                 return None
 
             self._invalidate_versions_cache(name)
-            return resolved_version
+            return result.version
 
     def _save_batch(
         self,
@@ -693,10 +693,8 @@ class Registry(Mindtrace):
         result = BatchResult()
 
         with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
-            # Stage 1
-            #  Prepare all items for batch push
+            # Stage 1: Prepare all items for batch push
             push_names, push_versions, push_paths, push_metas = [], [], [], []
-            index_map = {}  # Map push index to original index
 
             for idx, (n, o, v, ip, m) in enumerate(
                 zip(names, objs_list, versions_list, init_params_list, metadata_list)
@@ -723,7 +721,6 @@ class Registry(Mindtrace):
                         "_files": self._build_file_manifest(temp_dir),
                     }
 
-                    index_map[len(push_names)] = idx
                     push_names.append(n)
                     push_versions.append(validated_version)
                     push_paths.append(temp_dir)
@@ -732,10 +729,10 @@ class Registry(Mindtrace):
                 except Exception as e:
                     result.errors[(n, v or "unknown")] = {"error": type(e).__name__, "message": str(e)}
 
-            # Stage 3: Batch push
-            push_status = {}
+            # Stage 2: Batch push
+            push_results = None
             if push_names:
-                push_status = self.backend.push(
+                push_results = self.backend.push(
                     push_names,
                     push_versions,
                     push_paths,
@@ -745,7 +742,7 @@ class Registry(Mindtrace):
                     acquire_lock=self.mutable,
                 )
 
-            # Stage 4: Build result in original order
+            # Stage 3: Build result in original order
             for n, o, v in zip(names, objs_list, versions_list):
                 if (n, v or "unknown") in result.errors:
                     result.results.append(None)
@@ -754,31 +751,35 @@ class Registry(Mindtrace):
 
                 # Find status for this item
                 found = False
-                for (rn, rv), status in push_status.items():
-                    if rn == n:
-                        if status.get("status") == "error":
-                            result.results.append(None)
-                            result.failed.append((n, rv))
-                            result.errors[(n, rv)] = {
-                                "error": status.get("error", "Unknown"),
-                                "message": status.get("message", ""),
-                            }
-                        elif status.get("status") == "skipped":
-                            result.results.append(None)
-                            result.failed.append((n, rv))
-                            result.errors[(n, rv)] = {"error": "Skipped", "message": "Version conflict"}
-                        else:
-                            result.results.append(rv)
-                            result.succeeded.append((n, rv))
-                        found = True
-                        break
+                if push_results:
+                    for op_result in push_results:
+                        if op_result.name == n:
+                            if op_result.is_error:
+                                result.results.append(None)
+                                result.failed.append((n, op_result.version))
+                                result.errors[(n, op_result.version)] = {
+                                    "error": op_result.error or "Unknown",
+                                    "message": op_result.message or "",
+                                }
+                            elif op_result.is_skipped:
+                                result.results.append(None)
+                                result.failed.append((n, op_result.version))
+                                result.errors[(n, op_result.version)] = {
+                                    "error": "Skipped",
+                                    "message": "Version conflict",
+                                }
+                            else:
+                                result.results.append(op_result.version)
+                                result.succeeded.append((n, op_result.version))
+                            found = True
+                            break
 
                 if not found:
                     result.results.append(None)
                     result.failed.append((n, v or "unknown"))
                     result.errors[(n, v or "unknown")] = {"error": "Unknown", "message": "No push result"}
 
-        # Stage 5: Invalidate version caches
+        # Stage 4: Invalidate version caches
         for n in names:
             self._invalidate_versions_cache(n)
 
@@ -844,10 +845,11 @@ class Registry(Mindtrace):
         n, v = resolved[0]
 
         # Fetch metadata
-        result = self.backend.fetch_metadata([n], [v], on_error="raise").get((n, v))
-        if not result or result.get("status") != "ok":
+        fetch_results = self.backend.fetch_metadata([n], [v], on_error="raise")
+        result = fetch_results.get((n, v))
+        if not result or not result.ok:
             raise RegistryObjectNotFound(f"Object {n}@{v} not found.")
-        metadata = result["metadata"]
+        metadata = result.metadata
 
         # Pull and materialize
         with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
@@ -866,6 +868,8 @@ class Registry(Mindtrace):
                             f"Artifact hash verification failed for {n}@{v}. "
                             f"Expected hash: {expected_hash}, computed hash: {computed_hash}"
                         )
+                else:
+                    self.logger.warning(f"No hash found in metadata for {n}@{v}. Skipping hash verification.")
 
             obj = self._materialize(temp_dir, metadata, **kwargs)
 
@@ -910,13 +914,14 @@ class Registry(Mindtrace):
             fetch_results = self.backend.fetch_metadata(
                 [n for n, _ in valid_items], [v for _, v in valid_items], on_error="skip"
             )
-            for (n, v), status in fetch_results.items():
-                if status.get("status") == "ok":
-                    all_metadata[(n, v)] = status["metadata"]
+            for op_result in fetch_results:
+                n, v = op_result.name, op_result.version
+                if op_result.ok:
+                    all_metadata[(n, v)] = op_result.metadata
                 else:
                     result.errors[(n, v)] = {
-                        "error": status.get("error", "Unknown"),
-                        "message": status.get("message", ""),
+                        "error": op_result.error or "Unknown",
+                        "message": op_result.message or "",
                     }
             for n, v in valid_items:
                 if (n, v) not in fetch_results:
@@ -935,7 +940,7 @@ class Registry(Mindtrace):
 
             if items_to_pull:
                 pull_metadata = [all_metadata[(n, v)] for n, v in items_to_pull]
-                pull_status = self.backend.pull(
+                pull_results = self.backend.pull(
                     [n for n, _ in items_to_pull],
                     [v for _, v in items_to_pull],
                     paths,
@@ -943,11 +948,12 @@ class Registry(Mindtrace):
                     on_error="skip",
                     metadata=pull_metadata,
                 )
-                for (n, v), status in pull_status.items():
-                    if status.get("status") == "error":
+                for op_result in pull_results:
+                    if op_result.is_error:
+                        n, v = op_result.name, op_result.version
                         result.errors[(n, v)] = {
-                            "error": status.get("error", "Unknown"),
-                            "message": status.get("message", ""),
+                            "error": op_result.error or "Unknown",
+                            "message": op_result.message or "",
                         }
 
             # Materialize in order
@@ -971,6 +977,8 @@ class Registry(Mindtrace):
                                     f"Artifact hash verification failed for {n}@{v}. "
                                     f"Expected: {expected_hash}, computed: {computed_hash}"
                                 )
+                        else:
+                            self.logger.warning(f"No hash found in metadata for {n}@{v}. Skipping hash verification.")
 
                     obj = self._materialize(temp_dir, metadata, **kwargs)
 
@@ -1031,7 +1039,7 @@ class Registry(Mindtrace):
             if v is None:
                 # Delete all versions for this name
                 if n not in self.list_objects():
-                    raise KeyError(f"Object {n} does not exist")
+                    raise RegistryObjectNotFound(f"Object {n} does not exist")
                 obj_versions = self.list_versions(n)
                 for ver in obj_versions:
                     all_names.append(n)
@@ -1039,7 +1047,7 @@ class Registry(Mindtrace):
             else:
                 # Delete specific version
                 if not self.has_object(n, v):
-                    raise KeyError(f"Object {n} version {v} does not exist")
+                    raise RegistryObjectNotFound(f"Object {n}@{v} does not exist")
                 all_names.append(n)
                 all_versions.append(v)
 
@@ -1102,22 +1110,23 @@ class Registry(Mindtrace):
         if name is None:
             # Group by object name
             result: Dict[str, Any] = {}
-            for (obj_name, ver), status in fetch_results.items():
-                if status.get("status") == "ok":
+            for op_result in fetch_results:
+                if op_result.ok:
+                    obj_name, ver = op_result.name, op_result.version
                     if obj_name not in result:
                         result[obj_name] = {}
-                    result[obj_name][ver] = status["metadata"]
+                    result[obj_name][ver] = op_result.metadata
             return result
         elif version is not None:
             # Single item - return metadata directly
-            status = fetch_results.get(items[0], {})
-            return status.get("metadata", {}) if status.get("status") == "ok" else {}
+            op_result = fetch_results.get(items[0])
+            return op_result.metadata if op_result and op_result.ok else {}
         else:
             # All versions for one object - group by version
             result = {}
-            for (_, ver), status in fetch_results.items():
-                if status.get("status") == "ok":
-                    result[ver] = status["metadata"]
+            for op_result in fetch_results:
+                if op_result.ok:
+                    result[op_result.version] = op_result.metadata
             return result
 
     def has_object(self, name: str, version: str = "latest") -> bool:
@@ -1616,7 +1625,7 @@ class Registry(Mindtrace):
         try:
             name, version = self._parse_key(key)
             self.delete(name=name, version=version)
-        except ValueError as e:
+        except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __contains__(self, key: str) -> bool:

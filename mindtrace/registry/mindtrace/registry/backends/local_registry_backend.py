@@ -11,7 +11,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import yaml
 
@@ -36,6 +36,7 @@ from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     RegistryVersionConflict,
 )
+from mindtrace.registry.core.types import OpResult, OpResults
 
 
 class LocalRegistryBackend(RegistryBackend):
@@ -366,7 +367,7 @@ class LocalRegistryBackend(RegistryBackend):
         on_conflict: str = "error",
         on_error: str = "raise",
         acquire_lock: bool = False,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Atomically push artifacts and metadata with rollback on failure.
 
         Args:
@@ -383,14 +384,14 @@ class LocalRegistryBackend(RegistryBackend):
                 internal locking regardless of this parameter.
 
         Returns:
-            Dict mapping (name, resolved_version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "skipped"} when on_conflict="skip" and version exists
-            - {"status": "overwritten"} when on_conflict="overwrite" and version existed
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.error_result() on failure
         """
         entries = self._normalize_inputs(name, version, local_path, metadata)
-        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        results = OpResults()
 
         for obj_name, obj_version, obj_path, obj_meta in entries:
             resolved_version = None
@@ -409,7 +410,7 @@ class LocalRegistryBackend(RegistryBackend):
                     is_overwrite = False
                     if meta_path.exists():
                         if on_conflict == "skip":
-                            results[(obj_name, resolved_version)] = {"status": "skipped"}
+                            results.add(OpResult.skipped(obj_name, resolved_version))
                             continue
                         elif on_conflict == "overwrite":
                             # Remove existing artifacts and metadata before overwriting
@@ -436,7 +437,10 @@ class LocalRegistryBackend(RegistryBackend):
                             with open(meta_path, "w") as f:
                                 yaml.safe_dump(obj_meta, f)
 
-                        results[(obj_name, resolved_version)] = {"status": "overwritten" if is_overwrite else "ok"}
+                        if is_overwrite:
+                            results.add(OpResult.overwritten(obj_name, resolved_version))
+                        else:
+                            results.add(OpResult.success(obj_name, resolved_version))
 
                     except Exception as e:
                         # Rollback: remove artifacts and metadata
@@ -449,12 +453,8 @@ class LocalRegistryBackend(RegistryBackend):
             except Exception as e:
                 if on_error == "raise":
                     raise
-                key = (obj_name, resolved_version or obj_version or "unknown")
-                results[key] = {
-                    "status": "error",
-                    "error": type(e).__name__,
-                    "message": str(e),
-                }
+                ver = resolved_version or obj_version or "unknown"
+                results.add(OpResult.error_result(obj_name, ver, e))
 
         return results
 
@@ -466,7 +466,7 @@ class LocalRegistryBackend(RegistryBackend):
         acquire_lock: bool = False,
         on_error: str = "raise",
         metadata: MetadataArg = None,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Copy a directory from the backend store to a local path.
 
         Args:
@@ -483,9 +483,9 @@ class LocalRegistryBackend(RegistryBackend):
                 but accepted for API compatibility with remote backends).
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
         """
         # Note: metadata parameter is ignored for local backend since we copy
         # the entire directory. Remote backends use it for _files manifest.
@@ -496,7 +496,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
 
-        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        results = OpResults()
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
@@ -517,16 +517,12 @@ class LocalRegistryBackend(RegistryBackend):
                     shutil.copytree(src, dest_path, dirs_exist_ok=True)
                     self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
 
-                results[(obj_name, obj_version)] = {"status": "ok"}
+                results.add(OpResult.success(obj_name, obj_version))
 
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results[(obj_name, obj_version)] = {
-                    "status": "error",
-                    "error": type(e).__name__,
-                    "message": str(e),
-                }
+                results.add(OpResult.error_result(obj_name, obj_version, e))
 
         return results
 
@@ -536,7 +532,7 @@ class LocalRegistryBackend(RegistryBackend):
         version: ConcreteVersionArg,
         on_error: str = "raise",
         acquire_lock: bool = False,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Delete a directory from the backend store.
 
         Also removes empty parent directories.
@@ -551,9 +547,9 @@ class LocalRegistryBackend(RegistryBackend):
                 internal locking regardless of this parameter.
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -561,7 +557,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
             try:
@@ -585,15 +581,11 @@ class LocalRegistryBackend(RegistryBackend):
                         except Exception:
                             pass
 
-                results[(obj_name, obj_version)] = {"status": "ok"}
+                results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results[(obj_name, obj_version)] = {
-                    "status": "error",
-                    "error": type(e).__name__,
-                    "message": str(e),
-                }
+                results.add(OpResult.error_result(obj_name, obj_version, e))
 
         return results
 
@@ -646,7 +638,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "skip",
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Load metadata for a object version.
 
         Args:
@@ -657,9 +649,9 @@ class LocalRegistryBackend(RegistryBackend):
                 "raise": Raise the exception immediately.
 
         Returns:
-            Dict mapping (name, version) tuples to status dicts:
-            - {"status": "ok", "metadata": {...}} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success(metadata=...) on success
+            - OpResult.error_result() on failure
             Missing entries (FileNotFoundError) are omitted from the result.
         """
         names = self._normalize_to_list(name)
@@ -668,7 +660,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
             meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -692,7 +684,7 @@ class LocalRegistryBackend(RegistryBackend):
                 meta["path"] = str(object_path)
 
                 self.logger.debug(f"Loaded metadata: {meta}")
-                results[(obj_name, obj_version)] = {"status": "ok", "metadata": meta}
+                results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
             except FileNotFoundError:
                 continue  # Always skip missing entries
@@ -701,11 +693,7 @@ class LocalRegistryBackend(RegistryBackend):
                     raise
                 # on_error == "skip": log and continue
                 self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
-                results[(obj_name, obj_version)] = {
-                    "status": "error",
-                    "error": type(e).__name__,
-                    "message": str(e),
-                }
+                results.add(OpResult.error_result(obj_name, obj_version, e))
 
         return results
 
@@ -714,7 +702,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "raise",
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Delete metadata for a object version.
 
         Args:
@@ -725,9 +713,9 @@ class LocalRegistryBackend(RegistryBackend):
                 "skip": Continue on errors, report status in return dict.
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -735,7 +723,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
             try:
@@ -743,15 +731,11 @@ class LocalRegistryBackend(RegistryBackend):
                 self.logger.debug(f"Deleting metadata file: {meta_path}")
                 if meta_path.exists():
                     meta_path.unlink()
-                results[(obj_name, obj_version)] = {"status": "ok"}
+                results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results[(obj_name, obj_version)] = {
-                    "status": "error",
-                    "error": type(e).__name__,
-                    "message": str(e),
-                }
+                results.add(OpResult.error_result(obj_name, obj_version, e))
 
         return results
 
