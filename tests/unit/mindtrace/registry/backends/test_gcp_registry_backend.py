@@ -1,18 +1,11 @@
-import json
-import os
-import tempfile
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
-from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core import exceptions as gexc
 
 from mindtrace.registry import GCPRegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError, RegistryVersionConflict
-
+from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -100,9 +93,7 @@ class MockGCSHandler:
     def list_objects(self, prefix: str = "") -> List[str]:
         return [name for name in self._objects.keys() if name.startswith(prefix)]
 
-    def upload_string(
-        self, data: str, remote_path: str, if_generation_match: int | None = None
-    ) -> MockStringResult:
+    def upload_string(self, data: str, remote_path: str, if_generation_match: int | None = None) -> MockStringResult:
         """Upload a string to storage."""
         if if_generation_match == 0 and remote_path in self._objects:
             return MockStringResult(
@@ -157,11 +148,7 @@ class MockGCSHandler:
                 try:
                     with open(local_path, "rb") as f:
                         self._objects[remote_path] = f.read()
-                    results.append(
-                        MockFileResult(
-                            local_path=local_path, remote_path=remote_path, status="ok", ok=True
-                        )
-                    )
+                    results.append(MockFileResult(local_path=local_path, remote_path=remote_path, status="ok", ok=True))
                 except Exception as e:
                     results.append(
                         MockFileResult(
@@ -188,9 +175,7 @@ class MockGCSHandler:
             results.append(result)
         return MockBatchResult(results=results)
 
-    def delete_batch(
-        self, paths: List[str], max_workers: int = 4
-    ) -> MockBatchResult:
+    def delete_batch(self, paths: List[str], max_workers: int = 4) -> MockBatchResult:
         """Delete multiple files."""
         results = []
         for path in paths:
@@ -207,9 +192,7 @@ class MockGCSHandler:
 @pytest.fixture
 def mock_gcs_handler(monkeypatch):
     """Create a mock GCS storage handler."""
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler
-    )
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
     return MockGCSHandler()
 
 
@@ -302,9 +285,7 @@ def test_push_conflict_skip(backend, sample_object_dir, sample_metadata):
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     # Second push with skip should return skipped result
-    results = backend.push(
-        "test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip"
-    )
+    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
     result = results.first()
     assert result.is_skipped
 
