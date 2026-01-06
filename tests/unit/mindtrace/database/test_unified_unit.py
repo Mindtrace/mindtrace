@@ -2164,7 +2164,7 @@ async def test_unified_backend_async_methods_with_unified_model(unified_backend_
 
 
 def test_unified_backend_auto_generate_mongo_model_skips_id_field():
-    """Test that MongoDB model generation skips id field (covers line 90)."""
+    """Test that MongoDB model generation skips id field."""
     from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
@@ -2176,12 +2176,12 @@ def test_unified_backend_auto_generate_mongo_model_skips_id_field():
 
     mongo_model = TestDoc._auto_generate_mongo_model()
     # Verify id field is not in the generated model's annotations
-    # The id field should be skipped during generation (line 90)
+    # The id field should be skipped during generation
     assert mongo_model is not None
 
 
 def test_unified_backend_auto_generate_redis_model_skips_id_field():
-    """Test that Redis model generation skips id field (covers line 147)."""
+    """Test that Redis model generation skips id field."""
     from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
@@ -2193,12 +2193,12 @@ def test_unified_backend_auto_generate_redis_model_skips_id_field():
 
     redis_model = TestDoc._auto_generate_redis_model()
     # Verify id field is not in the generated model's annotations
-    # The id field should be skipped during generation (line 147)
+    # The id field should be skipped during generation
     assert redis_model is not None
 
 
 def test_unified_backend_auto_generate_mongo_model_has_field_attr():
-    """Test MongoDB model generation when field has attr (covers line 80)."""
+    """Test MongoDB model generation when field has attr."""
     from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     class TestDoc(UnifiedMindtraceDocument):
@@ -2207,7 +2207,7 @@ def test_unified_backend_auto_generate_mongo_model_has_field_attr():
         class Meta:
             collection_name = "test"
 
-    # Set a field attribute to trigger line 80
+    # Set a field attribute to trigger
     TestDoc.name = "test_value"
 
     mongo_model = TestDoc._auto_generate_mongo_model()
@@ -2216,7 +2216,7 @@ def test_unified_backend_auto_generate_mongo_model_has_field_attr():
 
 @pytest.mark.asyncio
 async def test_unified_backend_insert_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
-    """Test unified backend insert_async with Redis fallback (covers line 785)."""
+    """Test unified backend insert_async with Redis fallback."""
     user = UserCreate(name="John", age=30, email="john@example.com")
     redis_user = create_mock_redis_user()
 
@@ -2244,7 +2244,7 @@ async def test_unified_backend_insert_async_redis_fallback(unified_backend_redis
 
 @pytest.mark.asyncio
 async def test_unified_backend_get_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
-    """Test unified backend get_async with Redis fallback (covers line 819)."""
+    """Test unified backend get_async with Redis fallback."""
     redis_user = create_mock_redis_user()
 
     # Mock hasattr to return False for get_async to trigger fallback
@@ -2266,7 +2266,7 @@ async def test_unified_backend_get_async_redis_fallback(unified_backend_redis_on
 
 @pytest.mark.asyncio
 async def test_unified_backend_delete_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
-    """Test unified backend delete_async with Redis fallback (covers line 850)."""
+    """Test unified backend delete_async with Redis fallback."""
     # Mock hasattr to return False for delete_async to trigger fallback
     mock_redis_backend.delete = MagicMock(return_value=True)
 
@@ -2285,7 +2285,7 @@ async def test_unified_backend_delete_async_redis_fallback(unified_backend_redis
 
 @pytest.mark.asyncio
 async def test_unified_backend_all_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
-    """Test unified backend all_async with Redis fallback (covers line 877)."""
+    """Test unified backend all_async with Redis fallback."""
     redis_user = create_mock_redis_user()
 
     # Mock hasattr to return False for all_async to trigger fallback
@@ -2307,7 +2307,7 @@ async def test_unified_backend_all_async_redis_fallback(unified_backend_redis_on
 
 @pytest.mark.asyncio
 async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
-    """Test unified backend find_async with Redis fallback (covers line 909)."""
+    """Test unified backend find_async with Redis fallback."""
     redis_user = create_mock_redis_user()
 
     # Mock hasattr to return False for find_async to trigger fallback
@@ -2329,7 +2329,7 @@ async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_o
 
 @pytest.mark.asyncio
 async def test_unified_backend_initialize_async_redis_fallback():
-    """Test unified backend initialize_async with Redis fallback (covers line 530)."""
+    """Test unified backend initialize_async with Redis fallback."""
     from pydantic import Field
 
     from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
@@ -2357,12 +2357,12 @@ async def test_unified_backend_initialize_async_redis_fallback():
     assert not hasattr(simple_backend, "initialize_async")
 
     await backend.initialize_async()
-    # The fallback should call initialize() directly (line 530)
+    # The fallback should call initialize() directly
     simple_backend.initialize.assert_called_once()
 
 
 def test_unified_backend_initialize_sync_mongo_fallback():
-    """Test unified backend initialize_sync with MongoDB fallback (covers line 555)."""
+    """Test unified backend initialize_sync with MongoDB fallback."""
 
     from pydantic import Field
 
@@ -2395,12 +2395,12 @@ def test_unified_backend_initialize_sync_mongo_fallback():
 
     with patch("asyncio.run") as mock_asyncio_run:
         backend.initialize_sync()
-        # The fallback should call asyncio.run(initialize()) (line 555)
+        # The fallback should call asyncio.run(initialize())
         mock_asyncio_run.assert_called_once()
 
 
 def test_unified_backend_handle_async_call_fallback():
-    """Test unified backend _handle_async_call fallback (covers lines 613-614)."""
+    """Test unified backend _handle_async_call fallback."""
     import asyncio
 
     from pydantic import Field
@@ -2441,7 +2441,7 @@ def test_unified_backend_handle_async_call_fallback():
         # Use wraps to execute the real asyncio.run while still verifying it was called
         with patch("asyncio.run", wraps=asyncio.run) as mock_asyncio_run:
             result = backend._handle_async_call("test_method", "arg1")
-            # The fallback should call asyncio.run(test_method()) (lines 613-614)
+            # The fallback should call asyncio.run(test_method())
             mock_asyncio_run.assert_called_once()
             assert result == "result"
 
@@ -2453,7 +2453,7 @@ def test_unified_backend_handle_async_call_fallback():
 
 @pytest.mark.asyncio
 async def test_unified_initialize_async_with_allow_index_dropping(unified_backend_both, mock_mongo_backend):
-    """Test unified backend initialize_async() with allow_index_dropping parameter (covers line 564)."""
+    """Test unified backend initialize_async() with allow_index_dropping parameter."""
     backend = unified_backend_both
 
     # Initialize with allow_index_dropping=True
@@ -2464,7 +2464,7 @@ async def test_unified_initialize_async_with_allow_index_dropping(unified_backen
 
 
 def test_unified_initialize_sync_fallback_path_with_allow_index_dropping(mock_mongo_backend):
-    """Test unified backend initialize_sync() fallback path with allow_index_dropping (covers lines 619-622)."""
+    """Test unified backend initialize_sync() fallback path with allow_index_dropping."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
@@ -2488,7 +2488,7 @@ def test_unified_initialize_sync_fallback_path_with_allow_index_dropping(mock_mo
             mock_initialize = AsyncMock()
             backend.mongo_backend.initialize = mock_initialize
 
-            # Test with allow_index_dropping=True (covers line 619-620)
+            # Test with allow_index_dropping=True
             backend.initialize_sync(allow_index_dropping=True)
             mock_asyncio_run.assert_called_once()
             # Verify the call was made with allow_index_dropping=True
@@ -2499,14 +2499,14 @@ def test_unified_initialize_sync_fallback_path_with_allow_index_dropping(mock_mo
             mock_asyncio_run.reset_mock()
             mock_initialize.reset_mock()
 
-            # Test with allow_index_dropping=None (covers line 621-622)
+            # Test with allow_index_dropping=None
             backend.initialize_sync(allow_index_dropping=None)
             mock_asyncio_run.assert_called_once()
             assert mock_initialize.called
 
 
 def test_unified_initialize_sync_with_allow_index_dropping(mock_mongo_backend):
-    """Test unified backend initialize_sync() with allow_index_dropping parameter (covers line 616)."""
+    """Test unified backend initialize_sync() with allow_index_dropping parameter."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
@@ -2525,7 +2525,7 @@ def test_unified_initialize_sync_with_allow_index_dropping(mock_mongo_backend):
 
 
 def test_unified_initialize_with_allow_index_dropping(mock_mongo_backend):
-    """Test unified backend initialize() with allow_index_dropping parameter (covers line 639)."""
+    """Test unified backend initialize() with allow_index_dropping parameter."""
     backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
@@ -2539,7 +2539,7 @@ def test_unified_initialize_with_allow_index_dropping(mock_mongo_backend):
 
 
 async def test_unified_initialize_async_redis_async_mode_skip(unified_backend_both, mock_redis_backend):
-    """Test unified backend initialize_async() skips Redis when in ASYNC mode (covers line 588)."""
+    """Test unified backend initialize_async() skips Redis when in ASYNC mode."""
     from mindtrace.database.backends.mindtrace_odm import InitMode
 
     backend = unified_backend_both

@@ -418,7 +418,7 @@ async def test_unified_convert_unified_to_backend_data_dict():
 
 @pytest.mark.asyncio
 async def test_unified_link_field_direct_link_conversion():
-    """Test Link field conversion when it's a direct Link type (not Optional) - covers lines 149-159."""
+    """Test Link field conversion when it's a direct Link type (not Optional)."""
     from typing import get_args, get_origin
 
     from beanie import Link as BeanieLink
@@ -514,19 +514,19 @@ async def test_unified_convert_objectids_to_strings_with_list_of_objectids():
 
 
 def test_unified_auto_generate_mongo_model_union_type_direct():
-    """Test _auto_generate_mongo_model with direct Union type to hit lines 136-139.
+    """Test _auto_generate_mongo_model with direct Union type.
 
-    Lines 136-139 execute when:
+    This executes when:
     - field_default is ... (no default set)
     - origin is not None
-    - origin is Union (direct check at line 135, not just string check)
+    - origin is Union (direct check, not just string check)
     - type(None) in args (making it Optional)
     """
 
     class TestUnified(UnifiedMindtraceDocument):
         name: str
         # Use Union[str, None] directly (not Optional) to test origin is Union check
-        description: Union[str, None]  # No default, should trigger Optional detection at lines 136-139
+        description: Union[str, None]  # No default, should trigger Optional detection at
 
         class Meta:
             collection_name = "test"

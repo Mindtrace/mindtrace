@@ -554,7 +554,7 @@ class TestRegistryMindtraceODM:
             # Should log a warning
             mock_warning.assert_called_once()
             assert "does not support complex query syntax" in mock_warning.call_args[0][0]
-            # Should return empty list (covers the final return statement on line 220)
+            # Should return empty list (covers the final return statement)
             assert result == []
             assert isinstance(result, list)
             assert len(result) == 0
@@ -574,7 +574,7 @@ class TestRegistryMindtraceODM:
 
             # Should log a warning
             mock_warning.assert_called_once()
-            # Should return empty list - this ensures line 220 is covered
+            # Should return empty list - this ensures the final return is covered
             assert result == []
             # Verify it's the exact empty list return
             assert result is not None

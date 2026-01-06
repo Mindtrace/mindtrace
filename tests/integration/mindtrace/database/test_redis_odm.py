@@ -322,7 +322,7 @@ def test_redis_backend_search_features(redis_backend):
 
 
 def test_redis_module_name_handling_main_module():
-    """Test index creation with __main__ module (lines 205, 220-222, 435-437)."""
+    """Test index creation with __main__ module."""
     backend = RedisMindtraceODM(UserDocMainModule, REDIS_URL)
     backend.initialize()
 
@@ -339,7 +339,7 @@ def test_redis_module_name_handling_main_module():
 
 
 def test_redis_module_name_handling_no_module():
-    """Test index creation with no module (lines 209, 224-226, 426, 439-441)."""
+    """Test index creation with no module."""
     backend = RedisMindtraceODM(UserDocNoModule, REDIS_URL)
     backend.initialize()
 
@@ -356,7 +356,7 @@ def test_redis_module_name_handling_no_module():
 
 
 def test_redis_no_indexed_fields_early_return():
-    """Test index creation with no indexed fields (line 241)."""
+    """Test index creation with no indexed fields."""
     backend = RedisMindtraceODM(UserDocNoIndex, REDIS_URL)
     backend.initialize()
 
@@ -372,7 +372,7 @@ def test_redis_no_indexed_fields_early_return():
 
 
 def test_redis_numeric_field_type_detection():
-    """Test numeric field type detection (line 284)."""
+    """Test numeric field type detection."""
     backend = RedisMindtraceODM(UserDoc, REDIS_URL)
     backend.initialize()
 
@@ -388,7 +388,7 @@ def test_redis_numeric_field_type_detection():
 
 
 def test_redis_index_name_set_before_create():
-    """Test index_name is set before create_index (line 297)."""
+    """Test index_name is set before create_index."""
     backend = RedisMindtraceODM(UserDoc, REDIS_URL)
     backend.initialize()
 
@@ -409,11 +409,9 @@ def test_redis_index_name_set_before_create():
 
 
 def test_redis_model_odms_loop():
-    """Test model ODMs loop in _do_initialize (line 540)."""
+    """Test model ODMs loop in _do_initialize."""
     backend = RedisMindtraceODM(models={"user": UserDoc}, redis_url=REDIS_URL)
     backend.initialize()
-
-    # The loop at line 540 should execute
     assert backend.user._is_initialized is True
 
     # Clean up
@@ -425,7 +423,7 @@ def test_redis_model_odms_loop():
 
 
 def test_redis_module_name_paths_integration():
-    """Integration test for module name handling paths (lines 205, 209, 220-226, 435-441)."""
+    """Integration test for module name handling paths."""
     # Test with __main__ module - ensure NO model_key_prefix to hit else branch
     UserDocMainModule.__module__ = "__main__"
     # Ensure no model_key_prefix
@@ -433,9 +431,7 @@ def test_redis_module_name_paths_integration():
         delattr(UserDocMainModule.Meta, "model_key_prefix")
     backend_main = RedisMindtraceODM(UserDocMainModule, REDIS_URL)
     backend_main.initialize()
-    # This should execute lines 221-222
     backend_main._create_index_for_model(UserDocMainModule)
-    # This should execute lines 436-437
     backend_main._ensure_index_has_documents(UserDocMainModule)
 
     # Test with no module
@@ -464,7 +460,7 @@ def test_redis_module_name_paths_integration():
 
 
 def test_redis_no_indexed_fields_integration():
-    """Integration test for early return when no indexed fields (line 241)."""
+    """Integration test for early return when no indexed fields."""
     backend = RedisMindtraceODM(UserDocNoIndex, REDIS_URL)
     backend.initialize()
 
@@ -481,7 +477,7 @@ def test_redis_no_indexed_fields_integration():
 
 
 def test_redis_numeric_field_detection_integration():
-    """Integration test for numeric field type detection (line 284)."""
+    """Integration test for numeric field type detection."""
     backend = RedisMindtraceODM(UserDoc, REDIS_URL)
     backend.initialize()
 
@@ -497,7 +493,7 @@ def test_redis_numeric_field_detection_integration():
 
 
 def test_redis_index_name_set_integration():
-    """Integration test for index_name being set before create_index (line 297)."""
+    """Integration test for index_name being set before create_index."""
     backend = RedisMindtraceODM(UserDoc, REDIS_URL)
     backend.initialize()
 
