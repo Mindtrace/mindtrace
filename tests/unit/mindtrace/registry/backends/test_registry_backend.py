@@ -99,5 +99,5 @@ def test_validate_object_name_invalid(concrete_backend):
     invalid_names = ["object_name", "namespace:object_name", "object_with_multiple_underscores"]
 
     for name in invalid_names:
-        with pytest.raises(ValueError, match="Object names cannot contain underscores"):
+        with pytest.raises(ValueError, match="cannot contain underscores"):
             concrete_backend.validate_object_name(name)

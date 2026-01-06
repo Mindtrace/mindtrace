@@ -1,8 +1,9 @@
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
+from mindtrace.registry.core.types import OpResults
 
 # Type aliases for cleaner signatures
 NameArg = Union[str, List[str]]
@@ -110,7 +111,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         on_conflict: str = "error",
         on_error: str = "raise",
         acquire_lock: bool = False,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Atomically push artifacts and metadata.
 
         This is the primary write operation. Artifacts and metadata are committed
@@ -138,11 +139,11 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 If False, rely on atomic operations for immutability. Default is False.
 
         Returns:
-            Dict mapping (name, resolved_version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "skipped"} when on_conflict="skip" and version exists
-            - {"status": "overwritten"} when on_conflict="overwrite" and version existed
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.error_result() on failure
 
         Raises:
             RegistryVersionConflict: If version already exists and on_conflict="error" (when on_error="raise").
@@ -160,7 +161,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         acquire_lock: bool = False,
         on_error: str = "raise",
         metadata: MetadataArg = None,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Download artifacts to local path(s).
 
         Uses the "_files" manifest from metadata to know exactly which
@@ -180,9 +181,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 If provided, avoids re-fetching metadata. Single dict or list of dicts.
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
 
         Raises:
             RegistryObjectNotFound: If object doesn't exist (when on_error="raise").
@@ -197,7 +198,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         version: ConcreteVersionArg,
         on_error: str = "raise",
         acquire_lock: bool = False,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Delete artifact(s) and metadata.
 
         Args:
@@ -210,9 +211,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 Default is False.
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
         """
         pass
 
@@ -246,7 +247,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "skip",
-    ) -> Dict[Tuple[str, str], Union[dict, Dict[str, Any]]]:
+    ) -> OpResults:
         """Fetch metadata for object version(s).
 
         This is the canonical existence check - if metadata doesn't exist,
@@ -260,9 +261,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 "raise": Raise the exception immediately.
 
         Returns:
-            Dict mapping (name, version) tuples to status dicts:
-            - {"status": "ok", "metadata": {...}} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure (when on_error="skip")
+            OpResults with OpResult for each (name, version):
+            - OpResult.success(metadata=...) on success
+            - OpResult.error_result() on failure (when on_error="skip")
             Missing entries (FileNotFoundError) are omitted from the result.
         """
         pass
@@ -273,7 +274,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: ConcreteVersionArg,
         on_error: str = "raise",
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> OpResults:
         """Delete metadata for object version(s).
 
         Args:
@@ -284,9 +285,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 "skip": Continue on errors, report status in return dict.
 
         Returns:
-            Dict mapping (name, version) to status dict:
-            - {"status": "ok"} on success
-            - {"status": "error", "error": "<ErrorType>", "message": "..."} on failure
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
         """
         pass
 
