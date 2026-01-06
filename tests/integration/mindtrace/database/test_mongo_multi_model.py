@@ -7,10 +7,10 @@ import pytest
 from mindtrace.database import Link, MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 
-
 # MongoDB connection settings
 MONGO_URL = "mongodb://localhost:27018"
 MONGO_DB = "test_db"
+
 
 class AddressDoc(MindtraceDocument):
     street: str
