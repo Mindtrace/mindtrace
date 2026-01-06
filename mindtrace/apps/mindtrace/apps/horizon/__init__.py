@@ -3,7 +3,7 @@
 This module provides HorizonService, a demonstration service showcasing
 the mindtrace ecosystem including:
 
-- Configuration via mindtrace.core.Config
+- Configuration via HorizonConfig (extends mindtrace.core.Config)
 - Image processing endpoints
 - Async MongoDB integration
 - Authentication middleware
@@ -22,14 +22,25 @@ Example:
     result = manager.echo({"message": "Hello!"})
     ```
 
+    With config overrides:
+    ```python
+    from mindtrace.apps.horizon import HorizonConfig
+
+    # With overrides
+    HorizonService.launch(config_overrides=HorizonConfig(DEBUG=True), block=True)
+    ```
+
     Via command line:
     ```bash
     uv run python -m mindtrace.apps.horizon
+
+    # With environment overrides
+    HORIZON__URL=http://0.0.0.0:9000 uv run python -m mindtrace.apps.horizon
     ```
 """
 
 from .auth_middleware import AuthMiddleware
-from .config import HorizonSettings, get_horizon_config
+from .config import HorizonConfig, HorizonSettings
 from .db import HorizonDB
 from .horizon import HorizonService
 from .jobs import ImageProcessingJobStore
@@ -38,12 +49,11 @@ from . import image_ops
 
 __all__ = [
     "AuthMiddleware",
+    "HorizonConfig",
     "HorizonDB",
     "HorizonService",
     "HorizonSettings",
     "ImageProcessingJob",
     "ImageProcessingJobStore",
-    "get_horizon_config",
     "image_ops",
 ]
-
