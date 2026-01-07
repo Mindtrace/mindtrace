@@ -143,7 +143,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             - OpResult.success() on success
             - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
 
         Raises:
             RegistryVersionConflict: If version already exists and on_conflict="error" (when on_error="raise").
@@ -183,7 +183,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
 
         Raises:
             RegistryObjectNotFound: If object doesn't exist (when on_error="raise").
@@ -213,7 +213,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         pass
 
@@ -263,7 +263,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.error_result() on failure (when on_error="skip")
+            - OpResult.failed() on failure (when on_error="skip")
             Missing entries (FileNotFoundError) are omitted from the result.
         """
         pass
@@ -287,7 +287,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         pass
 
