@@ -36,7 +36,7 @@ from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     RegistryVersionConflict,
 )
-from mindtrace.registry.core.types import OpResult, OpResults
+from mindtrace.registry.core.types import VERSION_PENDING, OpResult, OpResults
 
 
 class LocalRegistryBackend(RegistryBackend):
@@ -388,7 +388,7 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         entries = self._normalize_inputs(name, version, local_path, metadata)
         results = OpResults()
@@ -453,8 +453,8 @@ class LocalRegistryBackend(RegistryBackend):
             except Exception as e:
                 if on_error == "raise":
                     raise
-                ver = resolved_version or obj_version or "unknown"
-                results.add(OpResult.error_result(obj_name, ver, e))
+                ver = resolved_version or obj_version or VERSION_PENDING
+                results.add(OpResult.failed(obj_name, ver, e))
 
         return results
 
@@ -485,7 +485,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         # Note: metadata parameter is ignored for local backend since we copy
         # the entire directory. Remote backends use it for _files manifest.
@@ -522,7 +522,7 @@ class LocalRegistryBackend(RegistryBackend):
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
 
@@ -549,7 +549,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -563,11 +563,18 @@ class LocalRegistryBackend(RegistryBackend):
             try:
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
+                    meta_path = self._object_metadata_path(obj_name, obj_version)
+
+                    # Check if anything exists to delete
+                    if not target.exists() and not meta_path.exists():
+                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} does not exist")
+
+                    # Delete directory
                     self.logger.debug(f"Deleting directory: {target}")
-                    shutil.rmtree(target, ignore_errors=True)
+                    if target.exists():
+                        shutil.rmtree(target)
 
                     # Delete metadata
-                    meta_path = self._object_metadata_path(obj_name, obj_version)
                     self.logger.debug(f"Deleting metadata file: {meta_path}")
                     if meta_path.exists():
                         meta_path.unlink()
@@ -585,7 +592,7 @@ class LocalRegistryBackend(RegistryBackend):
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
 
@@ -651,7 +658,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
             Missing entries (FileNotFoundError) are omitted from the result.
         """
         names = self._normalize_to_list(name)
@@ -693,7 +700,7 @@ class LocalRegistryBackend(RegistryBackend):
                     raise
                 # on_error == "skip": log and continue
                 self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
 
@@ -715,7 +722,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -735,7 +742,7 @@ class LocalRegistryBackend(RegistryBackend):
             except Exception as e:
                 if on_error == "raise":
                     raise
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
 
