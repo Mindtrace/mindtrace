@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horizon • Image Processing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a25;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.3);
+      --accent-hover: #818cf8;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8888a0;
+      --text-muted: #55556a;
+      --border: #2a2a3a;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2rem 0;
+    }
+
+    h1 {
+      font-size: 3rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      font-weight: 300;
+    }
+
+    .config-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      padding: 1rem;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .config-bar label {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .config-bar input {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      width: 300px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .config-bar input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected {
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
+    }
+
+    .status-dot.error {
+      background: var(--error);
+      box-shadow: 0 0 10px var(--error);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1000px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .panel-title::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .panel-body {
+      padding: 1.5rem;
+    }
+
+    /* Image Selection */
+    .image-source-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+
+    .sample-thumb {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+      position: relative;
+      background: var(--bg-tertiary);
+    }
+
+    .sample-thumb:hover {
+      border-color: var(--accent);
+      transform: scale(1.02);
+    }
+
+    .sample-thumb.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .sample-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.05);
+    }
+
+    .drop-zone-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .drop-zone-text {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .drop-zone-text strong {
+      color: var(--accent);
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    /* Preview */
+    .preview-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: var(--bg-tertiary);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-placeholder {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* Operations */
+    .operations-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .op-card {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .op-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .op-card.selected {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.1);
+    }
+
+    .op-card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .op-icon {
+      font-size: 1.25rem;
+    }
+
+    .op-name {
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    .op-desc {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
+    /* Parameters */
+    .params-section {
+      background: var(--bg-tertiary);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+
+    .params-section.visible {
+      display: block;
+    }
+
+    .param-group {
+      margin-bottom: 1rem;
+    }
+
+    .param-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .param-label {
+      display: block;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .param-input {
+      width: 100%;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.9rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .param-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .param-row {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .param-row .param-group {
+      flex: 1;
+    }
+
+    .range-value {
+      display: inline-block;
+      background: var(--bg-secondary);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      margin-left: 0.5rem;
+      color: var(--accent);
+    }
+
+    /* Process Button */
+    .process-btn {
+      width: 100%;
+      padding: 1rem 2rem;
+      background: var(--accent);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .process-btn:hover:not(:disabled) {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 30px var(--accent-glow);
+    }
+
+    .process-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .process-btn.loading {
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Result */
+    .result-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .result-btn {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .result-btn:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    /* Stats */
+    .stats-bar {
+      display: flex;
+      gap: 1.5rem;
+      padding: 1rem;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      padding: 1rem 1.5rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.error {
+      border-color: var(--error);
+    }
+
+    .toast.success {
+      border-color: var(--success);
+    }
+
+    /* Comparison slider */
+    .comparison-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: var(--bg-tertiary);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: ew-resize;
+    }
+
+    .comparison-container img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .comparison-after {
+      clip-path: inset(0 0 0 50%);
+    }
+
+    .comparison-slider {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 3px;
+      background: var(--accent);
+      transform: translateX(-50%);
+      z-index: 10;
+    }
+
+    .comparison-slider::before {
+      content: '◀ ▶';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--accent);
+      color: white;
+      padding: 0.5rem;
+      border-radius: 50%;
+      font-size: 0.6rem;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 2px;
+    }
+
+    .comparison-labels {
+      position: absolute;
+      bottom: 1rem;
+      left: 1rem;
+      right: 1rem;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .comparison-label {
+      background: rgba(0,0,0,0.7);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Horizon</h1>
+      <p class="subtitle">Image Processing Service Demo</p>
+    </header>
+
+    <div class="config-bar">
+      <label>API Endpoint</label>
+      <input type="text" id="api-url" value="http://localhost:8080" placeholder="http://localhost:8080">
+      <div class="status-dot" id="status-dot" title="Connection status"></div>
+    </div>
+
+    <div class="main-grid">
+      <!-- Left Panel: Input -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Input Image</span>
+        </div>
+        <div class="panel-body">
+          <div class="image-source-tabs">
+            <button class="tab-btn active" data-tab="samples">Samples</button>
+            <button class="tab-btn" data-tab="upload">Upload</button>
+          </div>
+
+          <div id="tab-samples" class="tab-content active">
+            <div class="sample-grid" id="sample-grid">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <div id="tab-upload" class="tab-content">
+            <div class="drop-zone" id="drop-zone">
+              <div class="drop-zone-icon">📁</div>
+              <p class="drop-zone-text">
+                Drop an image here or <strong>click to browse</strong>
+              </p>
+            </div>
+            <input type="file" id="file-input" accept="image/*">
+          </div>
+
+          <div style="margin-top: 1.5rem;">
+            <div class="preview-container" id="input-preview">
+              <span class="preview-placeholder">Select an image above</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Operations & Output -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Operations</span>
+        </div>
+        <div class="panel-body">
+          <div class="operations-grid">
+            <div class="op-card" data-op="invert">
+              <div class="op-card-header">
+                <span class="op-icon">🔄</span>
+                <span class="op-name">Invert</span>
+              </div>
+              <p class="op-desc">Flip all color values</p>
+            </div>
+            <div class="op-card" data-op="grayscale">
+              <div class="op-card-header">
+                <span class="op-icon">🌫️</span>
+                <span class="op-name">Grayscale</span>
+              </div>
+              <p class="op-desc">Convert to black & white</p>
+            </div>
+            <div class="op-card" data-op="blur">
+              <div class="op-card-header">
+                <span class="op-icon">💨</span>
+                <span class="op-name">Blur</span>
+              </div>
+              <p class="op-desc">Gaussian blur effect</p>
+            </div>
+            <div class="op-card" data-op="watermark">
+              <div class="op-card-header">
+                <span class="op-icon">✍️</span>
+                <span class="op-name">Watermark</span>
+              </div>
+              <p class="op-desc">Add text overlay</p>
+            </div>
+          </div>
+
+          <!-- Blur params -->
+          <div class="params-section" id="params-blur">
+            <div class="param-group">
+              <label class="param-label">
+                Blur Radius <span class="range-value" id="blur-radius-value">2.0</span>
+              </label>
+              <input type="range" class="param-input" id="blur-radius" min="0.1" max="20" step="0.1" value="2">
+            </div>
+          </div>
+
+          <!-- Watermark params -->
+          <div class="params-section" id="params-watermark">
+            <div class="param-group">
+              <label class="param-label">Watermark Text</label>
+              <input type="text" class="param-input" id="watermark-text" value="© Horizon" placeholder="Enter text...">
+            </div>
+            <div class="param-row" style="margin-top: 1rem;">
+              <div class="param-group">
+                <label class="param-label">Position</label>
+                <select class="param-input" id="watermark-position">
+                  <option value="bottom-right">Bottom Right</option>
+                  <option value="bottom-left">Bottom Left</option>
+                  <option value="top-right">Top Right</option>
+                  <option value="top-left">Top Left</option>
+                  <option value="center">Center</option>
+                </select>
+              </div>
+              <div class="param-group">
+                <label class="param-label">
+                  Opacity <span class="range-value" id="opacity-value">0.5</span>
+                </label>
+                <input type="range" class="param-input" id="watermark-opacity" min="0" max="1" step="0.05" value="0.5">
+              </div>
+            </div>
+          </div>
+
+          <button class="process-btn" id="process-btn" disabled>
+            <span>Process Image</span>
+          </button>
+
+          <!-- Result preview with comparison -->
+          <div id="result-section" style="margin-top: 1.5rem; display: none;">
+            <div class="comparison-container" id="comparison">
+              <img id="compare-before" src="" alt="Before">
+              <img id="compare-after" class="comparison-after" src="" alt="After">
+              <div class="comparison-slider" id="comparison-slider"></div>
+              <div class="comparison-labels">
+                <span class="comparison-label">Before</span>
+                <span class="comparison-label">After</span>
+              </div>
+            </div>
+            <div class="result-actions">
+              <button class="result-btn" id="download-btn">⬇️ Download</button>
+              <button class="result-btn" id="use-as-input-btn">↩️ Use as Input</button>
+            </div>
+            <div class="stats-bar" id="stats-bar">
+              <div class="stat">
+                <span class="stat-label">Operation</span>
+                <span class="stat-value" id="stat-op">—</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Time</span>
+                <span class="stat-value" id="stat-time">—</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Size</span>
+                <span class="stat-value" id="stat-size">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Sample images - using picsum for demo, replace with your own hosted images
+    const SAMPLE_IMAGES = [
+      { name: 'City', url: 'https://picsum.photos/seed/city/400/300' },
+      { name: 'Nature', url: 'https://picsum.photos/seed/nature/400/300' },
+      { name: 'Abstract', url: 'https://picsum.photos/seed/abstract/400/300' },
+      { name: 'Tech', url: 'https://picsum.photos/seed/tech/400/300' },
+      { name: 'Portrait', url: 'https://picsum.photos/seed/face/400/300' },
+      { name: 'Art', url: 'https://picsum.photos/seed/art/400/300' },
+    ];
+
+    // State
+    let currentImageBase64 = null;
+    let currentImageUrl = null;
+    let selectedOp = null;
+    let resultImageBase64 = null;
+    let processStartTime = null;
+
+    // Elements
+    const apiUrlInput = document.getElementById('api-url');
+    const statusDot = document.getElementById('status-dot');
+    const sampleGrid = document.getElementById('sample-grid');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const inputPreview = document.getElementById('input-preview');
+    const processBtn = document.getElementById('process-btn');
+    const resultSection = document.getElementById('result-section');
+    const toast = document.getElementById('toast');
+
+    // Init sample images
+    function initSamples() {
+      sampleGrid.innerHTML = SAMPLE_IMAGES.map((img, i) => `
+        <div class="sample-thumb" data-url="${img.url}" title="${img.name}">
+          <img src="${img.url}" alt="${img.name}" crossorigin="anonymous">
+        </div>
+      `).join('');
+
+      sampleGrid.querySelectorAll('.sample-thumb').forEach(thumb => {
+        thumb.addEventListener('click', () => selectSample(thumb));
+      });
+    }
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+      });
+    });
+
+    // Select sample image
+    async function selectSample(thumb) {
+      sampleGrid.querySelectorAll('.sample-thumb').forEach(t => t.classList.remove('selected'));
+      thumb.classList.add('selected');
+      
+      const url = thumb.dataset.url;
+      currentImageUrl = url;
+      
+      // Convert to base64
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onload = () => {
+          currentImageBase64 = reader.result.split(',')[1];
+          updateInputPreview(reader.result);
+          updateProcessBtn();
+        };
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        showToast('Failed to load image', 'error');
+      }
+    }
+
+    // File upload handling
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', e => {
+      handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file || !file.type.startsWith('image/')) {
+        showToast('Please select an image file', 'error');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        currentImageBase64 = reader.result.split(',')[1];
+        currentImageUrl = reader.result;
+        updateInputPreview(reader.result);
+        updateProcessBtn();
+        
+        // Clear sample selection
+        sampleGrid.querySelectorAll('.sample-thumb').forEach(t => t.classList.remove('selected'));
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function updateInputPreview(src) {
+      inputPreview.innerHTML = `<img src="${src}" alt="Preview">`;
+    }
+
+    // Operation selection
+    document.querySelectorAll('.op-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.op-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedOp = card.dataset.op;
+        
+        // Show/hide params
+        document.querySelectorAll('.params-section').forEach(p => p.classList.remove('visible'));
+        const params = document.getElementById(`params-${selectedOp}`);
+        if (params) params.classList.add('visible');
+        
+        updateProcessBtn();
+      });
+    });
+
+    // Parameter updates
+    document.getElementById('blur-radius').addEventListener('input', e => {
+      document.getElementById('blur-radius-value').textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    document.getElementById('watermark-opacity').addEventListener('input', e => {
+      document.getElementById('opacity-value').textContent = parseFloat(e.target.value).toFixed(2);
+    });
+
+    // Process button state
+    function updateProcessBtn() {
+      processBtn.disabled = !(currentImageBase64 && selectedOp);
+    }
+
+    // Process image
+    processBtn.addEventListener('click', async () => {
+      if (!currentImageBase64 || !selectedOp) return;
+
+      processBtn.classList.add('loading');
+      processBtn.innerHTML = '<div class="spinner"></div><span>Processing...</span>';
+      
+      processStartTime = performance.now();
+
+      try {
+        const payload = { image: currentImageBase64 };
+
+        // Add operation-specific params
+        if (selectedOp === 'blur') {
+          payload.radius = parseFloat(document.getElementById('blur-radius').value);
+        } else if (selectedOp === 'watermark') {
+          payload.text = document.getElementById('watermark-text').value || '© Horizon';
+          payload.position = document.getElementById('watermark-position').value;
+          payload.opacity = parseFloat(document.getElementById('watermark-opacity').value);
+        }
+
+        const response = await fetch(`${apiUrlInput.value}/${selectedOp}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const elapsed = performance.now() - processStartTime;
+        
+        resultImageBase64 = data.image;
+        showResult(elapsed, data);
+        statusDot.classList.remove('error');
+        statusDot.classList.add('connected');
+
+      } catch (e) {
+        showToast(`Error: ${e.message}`, 'error');
+        statusDot.classList.remove('connected');
+        statusDot.classList.add('error');
+      } finally {
+        processBtn.classList.remove('loading');
+        processBtn.innerHTML = '<span>Process Image</span>';
+      }
+    });
+
+    // Show result with comparison slider
+    function showResult(elapsedMs, data) {
+      const beforeSrc = `data:image/png;base64,${currentImageBase64}`;
+      const afterSrc = `data:image/png;base64,${resultImageBase64}`;
+      
+      document.getElementById('compare-before').src = beforeSrc;
+      document.getElementById('compare-after').src = afterSrc;
+      
+      resultSection.style.display = 'block';
+      
+      // Stats
+      document.getElementById('stat-op').textContent = selectedOp;
+      document.getElementById('stat-time').textContent = `${elapsedMs.toFixed(0)}ms`;
+      document.getElementById('stat-size').textContent = `${(resultImageBase64.length / 1024).toFixed(1)} KB`;
+
+      // Reset slider
+      updateComparisonSlider(50);
+    }
+
+    // Comparison slider interaction
+    const comparison = document.getElementById('comparison');
+    const slider = document.getElementById('comparison-slider');
+    const afterImg = document.getElementById('compare-after');
+    let isDragging = false;
+
+    function updateComparisonSlider(percent) {
+      slider.style.left = `${percent}%`;
+      afterImg.style.clipPath = `inset(0 0 0 ${percent}%)`;
+    }
+
+    comparison.addEventListener('mousedown', () => isDragging = true);
+    document.addEventListener('mouseup', () => isDragging = false);
+    
+    comparison.addEventListener('mousemove', e => {
+      if (!isDragging && e.buttons !== 1) return;
+      const rect = comparison.getBoundingClientRect();
+      const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+      updateComparisonSlider(percent);
+    });
+
+    comparison.addEventListener('touchmove', e => {
+      const rect = comparison.getBoundingClientRect();
+      const touch = e.touches[0];
+      const percent = Math.max(0, Math.min(100, ((touch.clientX - rect.left) / rect.width) * 100));
+      updateComparisonSlider(percent);
+    });
+
+    // Download result
+    document.getElementById('download-btn').addEventListener('click', () => {
+      if (!resultImageBase64) return;
+      const link = document.createElement('a');
+      link.href = `data:image/png;base64,${resultImageBase64}`;
+      link.download = `horizon-${selectedOp}-${Date.now()}.png`;
+      link.click();
+    });
+
+    // Use result as new input
+    document.getElementById('use-as-input-btn').addEventListener('click', () => {
+      if (!resultImageBase64) return;
+      currentImageBase64 = resultImageBase64;
+      currentImageUrl = `data:image/png;base64,${resultImageBase64}`;
+      updateInputPreview(currentImageUrl);
+      sampleGrid.querySelectorAll('.sample-thumb').forEach(t => t.classList.remove('selected'));
+      showToast('Result set as input', 'success');
+    });
+
+    // Toast notifications
+    function showToast(message, type = 'info') {
+      toast.textContent = message;
+      toast.className = `toast show ${type}`;
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Check API connectivity
+    async function checkConnection() {
+      try {
+        const resp = await fetch(`${apiUrlInput.value}/echo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'ping' })
+        });
+        if (resp.ok) {
+          statusDot.classList.add('connected');
+          statusDot.classList.remove('error');
+        } else {
+          throw new Error();
+        }
+      } catch {
+        statusDot.classList.remove('connected');
+        statusDot.classList.add('error');
+      }
+    }
+
+    apiUrlInput.addEventListener('change', checkConnection);
+
+    // Init
+    initSamples();
+    checkConnection();
+  </script>
+</body>
+</html>
+
