@@ -8,6 +8,12 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Tuple
 if TYPE_CHECKING:
     pass
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+VERSION_PENDING = "pending"  # Placeholder for version not yet assigned
+ERROR_UNKNOWN = "UnknownError"  # Fallback error type when error info unavailable
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backend Operation Results
@@ -16,15 +22,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class OpResult:
-    """Result of a single backend operation.
+    """Result of a single backend operation (push, pull, delete, fetch_metadata, delete_metadata).
 
-    Replaces verbose status dicts like {"status": "ok", "metadata": {...}}.
-
-    Factory methods provide clean construction:
-        OpResult.ok(name, version)
-        OpResult.ok(name, version, metadata=meta)
-        OpResult.error(name, version, exception)
+    Factory methods:
+        OpResult.success(name, version, metadata=None)
+        OpResult.failed(name, version, exception)
         OpResult.skipped(name, version)
+        OpResult.overwritten(name, version)
     """
 
     name: str
@@ -74,25 +78,25 @@ class OpResult:
         )
 
     @classmethod
-    def error_result(
+    def failed(
         cls,
         name: str,
         version: str,
         exception: Exception | None = None,
         *,
-        error: str | None = None,
+        error_type: str | None = None,
         message: str | None = None,
     ) -> "OpResult":
-        """Create an error result from an exception or explicit error/message."""
+        """Create a failed result from an exception or explicit error_type/message."""
         if exception is not None:
-            error = type(exception).__name__
+            error_type = type(exception).__name__
             message = str(exception)
         return cls(
             name=name,
             version=version,
             ok=False,
             status="error",
-            error=error,
+            error=error_type,
             message=message,
         )
 
@@ -233,15 +237,17 @@ class BatchResult:
     """Result of a batch operation.
 
     Attributes:
-        results: List of results in order. None for failed items.
+        results: List of results in order. None for failed/skipped items.
         errors: Dict mapping (name, version) to error info for failed items.
-        succeeded: List of (name, version) tuples that succeeded.
-        failed: List of (name, version) tuples that failed.
+        succeeded: List of (name, version) tuples that succeeded (ok or overwritten).
+        skipped: List of (name, version) tuples that were skipped (on_conflict="skip").
+        failed: List of (name, version) tuples that failed (actual errors).
     """
 
     results: List[Any] = field(default_factory=list)
     errors: Dict[Tuple[str, str], Dict[str, str]] = field(default_factory=dict)
     succeeded: List[Tuple[str, str]] = field(default_factory=list)
+    skipped: List[Tuple[str, str]] = field(default_factory=list)
     failed: List[Tuple[str, str]] = field(default_factory=list)
 
     def __len__(self) -> int:
@@ -255,13 +261,18 @@ class BatchResult:
 
     @property
     def all_succeeded(self) -> bool:
-        """Returns True if all items succeeded."""
+        """Returns True if all items succeeded (no failures, skipped is ok)."""
         return len(self.failed) == 0
 
     @property
     def success_count(self) -> int:
         """Number of successful items."""
         return len(self.succeeded)
+
+    @property
+    def skipped_count(self) -> int:
+        """Number of skipped items."""
+        return len(self.skipped)
 
     @property
     def failure_count(self) -> int:
