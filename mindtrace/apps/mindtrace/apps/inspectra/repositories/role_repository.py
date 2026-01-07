@@ -1,9 +1,9 @@
 from typing import List, Optional
 from bson import ObjectId
 
-from mindtrace.apps.inspectra.app.api.core.db import get_db
-from mindtrace.apps.inspectra.app.models.role import Role
-from mindtrace.apps.inspectra.app.schemas.role import RoleCreate
+from ..core.db import get_db
+from ..models.role import Role
+from ..schemas.role import RoleCreate
 
 class RoleRepository:
     def __init__(self) -> None:

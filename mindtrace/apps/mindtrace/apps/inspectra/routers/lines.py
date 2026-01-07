@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends
 
-from mindtrace.apps.inspectra.app.api.core.security import (
+from ..core.security import (
     require_user,
     TokenData,
 )
-from mindtrace.apps.inspectra.app.schemas.line import LineCreate, LineResponse
-from mindtrace.apps.inspectra.app.services.line_service import LineService
+from ..schemas.line import LineCreate, LineResponse
+from ..services.line_service import LineService
 
 router = APIRouter(prefix="/lines", tags=["Lines"])
 

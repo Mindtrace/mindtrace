@@ -1,11 +1,12 @@
 from fastapi import APIRouter
 
-from mindtrace.apps.inspectra.app.schemas.auth import (
+from ..schemas.auth import (
     LoginPayload,
     RegisterPayload,
     TokenResponse,
 )
-from mindtrace.apps.inspectra.app.services.auth_service import AuthService
+
+from ..services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

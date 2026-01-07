@@ -1,5 +1,6 @@
 from mindtrace.apps.inspectra.inspectra import InspectraService, ConfigSchema
-from mindtrace.apps.inspectra.app.api.core.settings import settings
+from mindtrace.apps.inspectra.core.settings import settings
+
 
 def main() -> None:
     config = ConfigSchema(
@@ -8,13 +9,18 @@ def main() -> None:
         version=settings.service_version,
         author=settings.service_author,
         author_email=settings.service_author_email,
-        url=settings.service_url,
+        url=settings.service_url,  # public URL
     )
 
+    bind_url = f"http://0.0.0.0:{settings.api_port}"
+
+    print(f"Starting Inspectra service at {settings.service_url} (bind: {bind_url})...")
+    print("Press Ctrl+C to stop.")
+
     InspectraService.launch(
-        "0.0.0.0:8000",
+        url=bind_url,
         block=True,
-        config=config,
+        config=config.model_dump(),
     )
 
 

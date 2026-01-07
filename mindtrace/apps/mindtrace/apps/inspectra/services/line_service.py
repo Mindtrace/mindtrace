@@ -1,7 +1,7 @@
 from typing import List
 
-from mindtrace.apps.inspectra.app.repositories.line_repository import LineRepository
-from mindtrace.apps.inspectra.app.schemas.line import LineCreate, LineResponse
+from ..repositories.line_repository import LineRepository
+from ..schemas.line import LineCreate, LineResponse
 
 class LineService:
     def __init__(self, repo: LineRepository | None = None) -> None:

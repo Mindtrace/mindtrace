@@ -1,9 +1,9 @@
 from typing import List
 from bson import ObjectId
 
-from mindtrace.apps.inspectra.app.api.core.db import get_db
-from mindtrace.apps.inspectra.app.models.line import Line
-from mindtrace.apps.inspectra.app.schemas.line import LineCreate
+from ..core.db import get_db
+from ..models.line import Line
+from ..schemas.line import LineCreate
 
 class LineRepository:
     def __init__(self):

@@ -1,9 +1,9 @@
 from typing import List
 from bson import ObjectId
 
-from mindtrace.apps.inspectra.app.api.core.db import get_db
-from mindtrace.apps.inspectra.app.models.plant import Plant
-from mindtrace.apps.inspectra.app.schemas.plant import PlantCreate
+from ..core.db import get_db
+from ..models.plant import Plant
+from ..schemas.plant import PlantCreate
 
 class PlantRepository:
     def __init__(self):
