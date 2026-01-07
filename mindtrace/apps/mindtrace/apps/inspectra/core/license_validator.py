@@ -25,11 +25,12 @@ class LicenseValidator:
     def get_license_secret() -> str:
         """Get the license signing secret from config."""
         config = get_inspectra_config()
-        secret = getattr(config.INSPECTRA, "LICENSE_SECRET", None)
+        # Get actual secret value - Config masks secrets, use get_secret() to retrieve
+        secret = config.get_secret("INSPECTRA", "LICENSE_SECRET")
+        if secret is None:
+            secret = getattr(config.INSPECTRA, "LICENSE_SECRET", None)
         if secret is None:
             raise ValueError("LICENSE_SECRET is not configured")
-        if hasattr(secret, "get_secret_value"):
-            return secret.get_secret_value()
         return str(secret)
 
     @staticmethod

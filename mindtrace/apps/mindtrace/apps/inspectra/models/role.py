@@ -1,15 +1,13 @@
-from dataclasses import dataclass
+"""Role request/response models for RBAC.
+
+Note: The Role entity is now defined as RoleDocument in models/documents.py
+using MindtraceDocument (Beanie ODM).
+"""
+
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-
-@dataclass
-class Role:
-    id: str
-    name: str
-    description: Optional[str] = None
-    permissions: Optional[List[str]] = None
 
 class RoleBase(BaseModel):
     """Base attributes shared by all role models."""
@@ -30,7 +28,7 @@ class RoleCreateRequest(RoleBase):
 class RoleUpdateRequest(BaseModel):
     """Request model for updating an existing role."""
 
-    id: str = Field(..., description="Role ID to update")
+    id: Optional[str] = Field(None, description="Role ID (set from path param)")
     name: Optional[str] = Field(None, description="Updated role name")
     description: Optional[str] = Field(None, description="Updated role description")
     permissions: Optional[List[str]] = Field(

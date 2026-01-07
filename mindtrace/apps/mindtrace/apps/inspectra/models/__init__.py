@@ -1,6 +1,16 @@
+"""Inspectra models - request/response schemas and document models."""
+
 from .auth import LoginPayload, RegisterPayload, TokenResponse
+from .documents import (
+    LicenseDocument,
+    LineDocument,
+    PasswordPolicyDocument,
+    PlantDocument,
+    PolicyRuleDocument,
+    RoleDocument,
+    UserDocument,
+)
 from .line import (
-    Line,
     LineCreateRequest,
     LineIdRequest,
     LineListResponse,
@@ -8,7 +18,6 @@ from .line import (
     LineUpdateRequest,
 )
 from .plant import (
-    Plant,
     PlantBase,
     PlantCreateRequest,
     PlantListResponse,
@@ -16,7 +25,6 @@ from .plant import (
     PlantUpdateRequest,
 )
 from .role import (
-    Role,
     RoleBase,
     RoleCreateRequest,
     RoleListResponse,
@@ -25,7 +33,6 @@ from .role import (
 )
 from .user import (
     ChangeOwnPasswordRequest,
-    User,
     UserCreateRequest,
     UserIdRequest,
     UserListRequest,
@@ -40,29 +47,33 @@ __all__ = [
     "LoginPayload",
     "RegisterPayload",
     "TokenResponse",
-    # Role dataclass + models
-    "Role",
+    # Document models (MindtraceDocument subclasses)
+    "UserDocument",
+    "RoleDocument",
+    "PlantDocument",
+    "LineDocument",
+    "PasswordPolicyDocument",
+    "PolicyRuleDocument",
+    "LicenseDocument",
+    # Role schemas
     "RoleBase",
     "RoleCreateRequest",
     "RoleUpdateRequest",
     "RoleResponse",
     "RoleListResponse",
-    # Line dataclass + models
-    "Line",
+    # Line schemas
     "LineCreateRequest",
     "LineIdRequest",
     "LineListResponse",
     "LineResponse",
     "LineUpdateRequest",
-    # Plant dataclass + models
-    "Plant",
+    # Plant schemas
     "PlantBase",
     "PlantCreateRequest",
     "PlantUpdateRequest",
     "PlantResponse",
     "PlantListResponse",
-    # User dataclass + models
-    "User",
+    # User schemas
     "UserCreateRequest",
     "UserIdRequest",
     "UserListRequest",

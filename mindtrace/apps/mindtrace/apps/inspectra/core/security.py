@@ -112,11 +112,10 @@ def create_access_token(subject: str) -> str:
         "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
     }
 
-    secret = getattr(inspectra, "JWT_SECRET", None)
+    # Get actual secret value - Config masks secrets, use get_secret() to retrieve
+    secret = config.get_secret("INSPECTRA", "JWT_SECRET") or getattr(inspectra, "JWT_SECRET", None)
     if secret is None:
         raise ValueError("JWT_SECRET is not configured")
-    if hasattr(secret, "get_secret_value"):
-        secret = secret.get_secret_value()
     algorithm = getattr(inspectra, "JWT_ALGORITHM", "HS256")
 
     token = jwt.encode(
@@ -129,11 +128,14 @@ def create_access_token(subject: str) -> str:
 
 def decode_token(token: str) -> TokenData:
     """Decode and validate a JWT, returning a typed payload."""
-    inspectra = get_inspectra_config().INSPECTRA
+    config = get_inspectra_config()
+    inspectra = config.INSPECTRA
+    # Get actual secret value - Config masks secrets, use get_secret() to retrieve
+    secret = config.get_secret("INSPECTRA", "JWT_SECRET") or inspectra.JWT_SECRET
     try:
         payload = jwt.decode(
             token,
-            inspectra.JWT_SECRET.get_secret_value(),
+            secret,
             algorithms=[inspectra.JWT_ALGORITHM],
         )
         return TokenData(**payload)
@@ -201,11 +203,11 @@ async def get_current_user(
     role = await role_repo.get_by_id(user.role_id)
 
     return AuthenticatedUser(
-        user_id=user.id,
+        user_id=str(user.id),
         username=user.username,
-        role_id=user.role_id,
+        role_id=str(user.role_id),
         role_name=role.name if role else "unknown",
-        plant_id=user.plant_id,
+        plant_id=str(user.plant_id) if user.plant_id else None,
         permissions=role.permissions if role and role.permissions else [],
         is_active=user.is_active,
     )

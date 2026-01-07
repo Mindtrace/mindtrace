@@ -7,19 +7,20 @@ from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 
 from mindtrace.apps.inspectra.core import reset_inspectra_config
-from mindtrace.apps.inspectra.db import close_client
+from mindtrace.apps.inspectra.db import reset_db
 from mindtrace.apps.inspectra.inspectra import InspectraService
 
 # ---------------------------------------------------------------------------
 # Test database configuration
 # ---------------------------------------------------------------------------
 
-TEST_MONGO_URI = "mongodb://localhost:27018"
 """MongoDB URI used exclusively for Inspectra integration tests."""
+TEST_MONGO_URI = "mongodb://localhost:27018"
 
-TEST_DB_NAME = "inspectra_test"
 """Database name used for Inspectra integration tests."""
+TEST_DB_NAME = "inspectra_test"
 
+"""Collections that are wiped before and after each test to ensure isolation."""
 TEST_COLLECTIONS: List[str] = [
     "users",
     "roles",
@@ -29,7 +30,6 @@ TEST_COLLECTIONS: List[str] = [
     "policy_rules",
     "licenses",
 ]
-"""Collections that are wiped before and after each test to ensure isolation."""
 
 
 # ---------------------------------------------------------------------------
@@ -136,15 +136,15 @@ def _clear_inspectra_collections(_set_inspectra_test_env):
     Ensure Inspectra tests run with a clean database state.
 
     This fixture:
-    - Closes any existing Motor client (prevents event loop issues)
+    - Resets any existing ODM instance (prevents event loop issues)
     - Wipes test collections before each test
     - Wipes test collections again after each test
 
     Scope: function
     Autouse: ensures isolation even if a test crashes.
     """
-    close_client()
+    reset_db()
     _wipe_test_collections()
     yield
-    close_client()
+    reset_db()
     _wipe_test_collections()

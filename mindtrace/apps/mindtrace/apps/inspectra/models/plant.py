@@ -1,16 +1,13 @@
-from dataclasses import dataclass
+"""Plant request/response models.
+
+Note: The Plant entity is now defined as PlantDocument in models/documents.py
+using MindtraceDocument (Beanie ODM).
+"""
+
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-
-@dataclass
-class Plant:
-    id: str
-    name: str
-    code: str
-    location: Optional[str] = None
-    is_active: bool = True
 
 class PlantBase(BaseModel):
     """Base attributes shared by all plant models."""
@@ -29,7 +26,7 @@ class PlantCreateRequest(PlantBase):
 class PlantUpdateRequest(BaseModel):
     """Request model for updating an existing plant."""
 
-    id: str = Field(..., description="Plant ID to update")
+    id: Optional[str] = Field(None, description="Plant ID (set from path param)")
     name: Optional[str] = Field(None, description="Updated plant name")
     location: Optional[str] = Field(None, description="Updated plant location")
     is_active: Optional[bool] = Field(None, description="Updated active flag")

@@ -1,21 +1,12 @@
-"""User model and request/response models for user management."""
+"""User request/response models for user management.
 
-from dataclasses import dataclass
+Note: The User entity is now defined as UserDocument in models/documents.py
+using MindtraceDocument (Beanie ODM).
+"""
+
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
-
-
-@dataclass
-class User:
-    """User dataclass for internal use."""
-
-    id: str
-    username: str
-    password_hash: str
-    role_id: str
-    plant_id: Optional[str] = None
-    is_active: bool = True
 
 
 # Request/Response models for User Management
@@ -34,7 +25,7 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     """Admin request to update a user."""
 
-    id: str = Field(..., description="User ID")
+    id: Optional[str] = Field(None, description="User ID (set from path param)")
     role_id: Optional[str] = Field(None, description="Updated role ID")
     plant_id: Optional[str] = Field(None, description="Updated plant/org ID")
     is_active: Optional[bool] = Field(None, description="Updated active status")
@@ -43,7 +34,7 @@ class UserUpdateRequest(BaseModel):
 class UserPasswordResetRequest(BaseModel):
     """Admin request to reset a user's password."""
 
-    id: str = Field(..., description="User ID")
+    id: Optional[str] = Field(None, description="User ID (set from path param)")
     new_password: str = Field(..., min_length=1, description="New password")
 
 

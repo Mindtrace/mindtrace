@@ -1,5 +1,7 @@
 """TaskSchemas for password policy operations in Inspectra."""
 
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 from mindtrace.apps.inspectra.models.password_policy import (
@@ -30,7 +32,7 @@ class RuleIdRequest(BaseModel):
 class AddRuleRequest(PolicyRuleCreateRequest):
     """Request to add a rule to a policy (policy_id comes from path)."""
 
-    policy_id: str = Field(..., description="Policy ID to add rule to")
+    policy_id: Optional[str] = Field(None, description="Policy ID (set from path param)")
 
 
 class ValidatePasswordRequest(BaseModel):

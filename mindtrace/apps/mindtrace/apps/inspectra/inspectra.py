@@ -18,7 +18,7 @@ from mindtrace.apps.inspectra.core.license_middleware import LicenseMiddleware
 from mindtrace.apps.inspectra.core.login_tracker import get_login_tracker
 from mindtrace.apps.inspectra.core.machine_id import get_machine_id
 from mindtrace.apps.inspectra.core.password_validator import PasswordValidator
-from mindtrace.apps.inspectra.db import close_client
+from mindtrace.apps.inspectra.db import close_db, initialize_db
 from mindtrace.apps.inspectra.models import (
     # Lines
     LineCreateRequest,
@@ -202,6 +202,10 @@ class InspectraService(Service):
         self._register_password_policy_endpoints()
         self._register_user_management_endpoints()
         self._register_license_endpoints()
+
+        # Setup database lifespan if DB is enabled
+        if self.db_enabled:
+            self._setup_db_lifespan()
 
     # -------------------------------------------------------------------------
     # Lazy repo accessors (created during request handling, inside live loop)
@@ -559,7 +563,7 @@ class InspectraService(Service):
                     permissions=None,
                 )
             )
-        return role.id
+        return str(role.id)
 
     async def register(self, payload: RegisterPayload) -> TokenResponse:
         """Register a new user and return an access token."""
@@ -640,7 +644,7 @@ class InspectraService(Service):
 
         items = [
             PlantResponse(
-                id=p.id,
+                id=str(p.id),
                 name=p.name,
                 code=p.code,
                 location=getattr(p, "location", None),
@@ -655,54 +659,55 @@ class InspectraService(Service):
         """Create a new plant."""
         plant = await self.plant_repo.create(req)
         return PlantResponse(
-            id=plant.id,
+            id=str(plant.id),
             name=plant.name,
             code=plant.code,
             location=getattr(plant, "location", None),
             is_active=getattr(plant, "is_active", True),
         )
 
-    async def get_plant(self, req: PlantIdRequest) -> PlantResponse:
+    async def get_plant(self, id: str) -> PlantResponse:
         """Get a plant by ID."""
-        plant = await self.plant_repo.get_by_id(req.id)
+        plant = await self.plant_repo.get_by_id(id)
         if not plant:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Plant with id '{req.id}' not found",
+                detail=f"Plant with id '{id}' not found",
             )
 
         return PlantResponse(
-            id=plant.id,
+            id=str(plant.id),
             name=plant.name,
             code=plant.code,
             location=getattr(plant, "location", None),
             is_active=getattr(plant, "is_active", True),
         )
 
-    async def update_plant(self, req: PlantUpdateRequest) -> PlantResponse:
+    async def update_plant(self, id: str, req: PlantUpdateRequest) -> PlantResponse:
         """Update a plant."""
+        req.id = id  # Set id from path parameter
         plant = await self.plant_repo.update(req)
         if not plant:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Plant with id '{req.id}' not found",
+                detail=f"Plant with id '{id}' not found",
             )
 
         return PlantResponse(
-            id=plant.id,
+            id=str(plant.id),
             name=plant.name,
             code=plant.code,
             location=getattr(plant, "location", None),
             is_active=getattr(plant, "is_active", True),
         )
 
-    async def delete_plant(self, req: PlantIdRequest) -> None:
+    async def delete_plant(self, id: str) -> None:
         """Delete a plant."""
-        deleted = await self.plant_repo.delete(req.id)
+        deleted = await self.plant_repo.delete(id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Plant with id '{req.id}' not found",
+                detail=f"Plant with id '{id}' not found",
             )
 
     # -------------------------------------------------------------------------
@@ -713,7 +718,7 @@ class InspectraService(Service):
         lines = await self.line_repo.list()
         items = [
             LineResponse(
-                id=line.id,
+                id=str(line.id),
                 name=line.name,
                 plant_id=getattr(line, "plant_id", None),
             )
@@ -725,46 +730,47 @@ class InspectraService(Service):
         """Create a new production line."""
         line = await self.line_repo.create(payload)
         return LineResponse(
-            id=line.id,
+            id=str(line.id),
             name=line.name,
             plant_id=getattr(line, "plant_id", None),
         )
 
-    async def get_line(self, req: LineIdRequest) -> LineResponse:
+    async def get_line(self, id: str) -> LineResponse:
         """Get a line by ID."""
-        line = await self.line_repo.get_by_id(req.id)
+        line = await self.line_repo.get_by_id(id)
         if not line:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Line with id '{req.id}' not found",
+                detail=f"Line with id '{id}' not found",
             )
         return LineResponse(
-            id=line.id,
+            id=str(line.id),
             name=line.name,
             plant_id=getattr(line, "plant_id", None),
         )
 
-    async def update_line(self, req: LineUpdateRequest) -> LineResponse:
+    async def update_line(self, id: str, req: LineUpdateRequest) -> LineResponse:
         """Update a line."""
+        req.id = id  # Set id from path parameter
         line = await self.line_repo.update(req)
         if not line:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Line with id '{req.id}' not found",
+                detail=f"Line with id '{id}' not found",
             )
         return LineResponse(
-            id=line.id,
+            id=str(line.id),
             name=line.name,
             plant_id=getattr(line, "plant_id", None),
         )
 
-    async def delete_line(self, req: LineIdRequest) -> None:
+    async def delete_line(self, id: str) -> None:
         """Delete a line."""
-        deleted = await self.line_repo.delete(req.id)
+        deleted = await self.line_repo.delete(id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Line with id '{req.id}' not found",
+                detail=f"Line with id '{id}' not found",
             )
 
     # -------------------------------------------------------------------------
@@ -777,7 +783,7 @@ class InspectraService(Service):
 
         items = [
             RoleResponse(
-                id=r.id,
+                id=str(r.id),
                 name=r.name,
                 description=getattr(r, "description", None),
                 permissions=getattr(r, "permissions", None),
@@ -797,37 +803,38 @@ class InspectraService(Service):
             )
         role = await self.role_repo.create(payload)
         return RoleResponse(
-            id=role.id,
+            id=str(role.id),
             name=role.name,
             description=getattr(role, "description", None),
             permissions=getattr(role, "permissions", None),
         )
 
-    async def get_role(self, req: RoleIdRequest) -> RoleResponse:
+    async def get_role(self, id: str) -> RoleResponse:
         """Get a role by ID."""
-        role = await self.role_repo.get_by_id(req.id)
+        role = await self.role_repo.get_by_id(id)
         if not role:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Role with id '{req.id}' not found",
+                detail=f"Role with id '{id}' not found",
             )
         return RoleResponse(
-            id=role.id,
+            id=str(role.id),
             name=role.name,
             description=getattr(role, "description", None),
             permissions=getattr(role, "permissions", None),
         )
 
-    async def update_role(self, payload: RoleUpdateRequest) -> RoleResponse:
+    async def update_role(self, id: str, payload: RoleUpdateRequest) -> RoleResponse:
         """Update an existing role."""
+        payload.id = id  # Set id from path parameter
         role = await self.role_repo.update(payload)
         if not role:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Role with id '{payload.id}' not found",
+                detail=f"Role with id '{id}' not found",
             )
         return RoleResponse(
-            id=role.id,
+            id=str(role.id),
             name=role.name,
             description=getattr(role, "description", None),
             permissions=getattr(role, "permissions", None),
@@ -842,13 +849,13 @@ class InspectraService(Service):
         policies = await self.password_policy_repo.list()
         return PasswordPolicyListResponse(items=policies, total=len(policies))
 
-    async def get_password_policy(self, req: PolicyIdRequest) -> PasswordPolicyResponse:
+    async def get_password_policy(self, id: str) -> PasswordPolicyResponse:
         """Get a password policy by ID."""
-        policy = await self.password_policy_repo.get_by_id(req.id)
+        policy = await self.password_policy_repo.get_by_id(id)
         if not policy:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Password policy with id '{req.id}' not found",
+                detail=f"Password policy with id '{id}' not found",
             )
         return policy
 
@@ -859,27 +866,30 @@ class InspectraService(Service):
         return await self.password_policy_repo.create(req)
 
     async def update_password_policy(
-        self, req: PasswordPolicyUpdateRequest
+        self, id: str, req: PasswordPolicyUpdateRequest
     ) -> PasswordPolicyResponse:
         """Update a password policy."""
+        req.id = id  # Set id from path parameter
         policy = await self.password_policy_repo.update(req)
         if not policy:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Password policy with id '{req.id}' not found",
+                detail=f"Password policy with id '{id}' not found",
             )
         return policy
 
-    async def delete_password_policy(self, req: PolicyIdRequest) -> None:
+    async def delete_password_policy(self, id: str) -> None:
         """Delete a password policy."""
-        deleted = await self.password_policy_repo.delete(req.id)
+        deleted = await self.password_policy_repo.delete(id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Password policy with id '{req.id}' not found",
+                detail=f"Password policy with id '{id}' not found",
             )
 
-    async def add_policy_rule(self, req: AddRuleRequest) -> PolicyRuleResponse:
+    async def add_policy_rule(
+        self, policy_id: str, req: AddRuleRequest
+    ) -> PolicyRuleResponse:
         """Add a rule to a password policy."""
         from mindtrace.apps.inspectra.models.password_policy import PolicyRuleCreateRequest
 
@@ -890,27 +900,28 @@ class InspectraService(Service):
             is_active=req.is_active,
             order=req.order,
         )
-        return await self.password_policy_repo.add_rule(req.policy_id, rule)
+        return await self.password_policy_repo.add_rule(policy_id, rule)
 
     async def update_policy_rule(
-        self, req: PolicyRuleUpdateRequest
+        self, id: str, req: PolicyRuleUpdateRequest
     ) -> PolicyRuleResponse:
         """Update a password policy rule."""
+        req.id = id  # Set id from path parameter
         rule = await self.password_policy_repo.update_rule(req)
         if not rule:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Policy rule with id '{req.id}' not found",
+                detail=f"Policy rule with id '{id}' not found",
             )
         return rule
 
-    async def delete_policy_rule(self, req: RuleIdRequest) -> None:
+    async def delete_policy_rule(self, id: str) -> None:
         """Delete a password policy rule."""
-        deleted = await self.password_policy_repo.delete_rule(req.id)
+        deleted = await self.password_policy_repo.delete_rule(id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Policy rule with id '{req.id}' not found",
+                detail=f"Policy rule with id '{id}' not found",
             )
 
     async def validate_password(
@@ -924,19 +935,27 @@ class InspectraService(Service):
     # User Management handlers
     # -------------------------------------------------------------------------
 
-    async def list_users(self, req: UserListRequest) -> UserListResponse:
+    async def list_users(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        is_active: Optional[bool] = None,
+        role_id: Optional[str] = None,
+        plant_id: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> UserListResponse:
         """List users with pagination and filtering."""
         users, total = await self.user_repo.list_paginated(
-            page=req.page,
-            page_size=req.page_size,
-            is_active=req.is_active,
-            role_id=req.role_id,
-            plant_id=req.plant_id,
-            search=req.search,
+            page=page,
+            page_size=page_size,
+            is_active=is_active,
+            role_id=role_id,
+            plant_id=plant_id,
+            search=search,
         )
         items = [
             UserResponse(
-                id=u.id,
+                id=str(u.id),
                 username=u.username,
                 role_id=u.role_id,
                 plant_id=u.plant_id,
@@ -945,7 +964,7 @@ class InspectraService(Service):
             for u in users
         ]
         return UserListResponse(
-            items=items, total=total, page=req.page, page_size=req.page_size
+            items=items, total=total, page=page, page_size=page_size
         )
 
     async def create_user(self, req: UserCreateRequest) -> UserResponse:
@@ -978,66 +997,66 @@ class InspectraService(Service):
         )
 
         if not req.is_active:
-            user = await self.user_repo.update(user.id, is_active=False)
+            user = await self.user_repo.update(str(user.id), is_active=False)
 
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
         )
 
-    async def get_user(self, req: UserIdRequest) -> UserResponse:
+    async def get_user(self, id: str) -> UserResponse:
         """Get a user by ID."""
-        user = await self.user_repo.get_by_id(req.id)
+        user = await self.user_repo.get_by_id(id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
         )
 
-    async def update_user(self, req: UserUpdateRequest) -> UserResponse:
+    async def update_user(self, id: str, req: UserUpdateRequest) -> UserResponse:
         """Update a user (admin)."""
         user = await self.user_repo.update(
-            req.id, role_id=req.role_id, plant_id=req.plant_id, is_active=req.is_active
+            id, role_id=req.role_id, plant_id=req.plant_id, is_active=req.is_active
         )
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
         )
 
-    async def delete_user(self, req: UserIdRequest) -> None:
+    async def delete_user(self, id: str) -> None:
         """Delete a user."""
-        deleted = await self.user_repo.delete(req.id)
+        deleted = await self.user_repo.delete(id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
 
-    async def reset_user_password(self, req: UserPasswordResetRequest) -> None:
+    async def reset_user_password(self, id: str, req: UserPasswordResetRequest) -> None:
         """Reset a user's password (admin)."""
-        user = await self.user_repo.get_by_id(req.id)
+        user = await self.user_repo.get_by_id(id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
 
         # Validate password against default policy
@@ -1051,34 +1070,34 @@ class InspectraService(Service):
                 )
 
         password_hash = hash_password(req.new_password)
-        await self.user_repo.update_password(req.id, password_hash)
+        await self.user_repo.update_password(id, password_hash)
 
-    async def activate_user(self, req: UserIdRequest) -> UserResponse:
+    async def activate_user(self, id: str) -> UserResponse:
         """Activate a user."""
-        user = await self.user_repo.activate(req.id)
+        user = await self.user_repo.activate(id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
         )
 
-    async def deactivate_user(self, req: UserIdRequest) -> UserResponse:
+    async def deactivate_user(self, id: str) -> UserResponse:
         """Deactivate a user."""
-        user = await self.user_repo.deactivate(req.id)
+        user = await self.user_repo.deactivate(id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with id '{req.id}' not found",
+                detail=f"User with id '{id}' not found",
             )
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
@@ -1096,7 +1115,7 @@ class InspectraService(Service):
                 detail="User not found",
             )
         return UserResponse(
-            id=user.id,
+            id=str(user.id),
             username=user.username,
             role_id=user.role_id,
             plant_id=user.plant_id,
@@ -1214,14 +1233,40 @@ class InspectraService(Service):
         )
 
     # -------------------------------------------------------------------------
-    # Lifecycle hooks
+    # Database Lifespan Setup
     # -------------------------------------------------------------------------
+
+    def _setup_db_lifespan(self):
+        """Setup database initialization in the FastAPI lifespan."""
+        from contextlib import asynccontextmanager
+
+        original_lifespan = self.app.router.lifespan_context
+
+        @asynccontextmanager
+        async def db_lifespan(app):
+            """Lifespan that wraps original with database initialization."""
+            async with original_lifespan(app):
+                await initialize_db()
+                self.logger.info("Database initialized successfully")
+                try:
+                    yield
+                finally:
+                    await close_db()
+
+        self.app.router.lifespan_context = db_lifespan
+
+    # -------------------------------------------------------------------------
+    # Lifecycle hooks (for future base class support)
+    # -------------------------------------------------------------------------
+
+    async def startup_setup(self):
+        """Initialize resources on startup (called if base class supports it)."""
+        if hasattr(super(), 'startup_setup'):
+            await super().startup_setup()
 
     async def shutdown_cleanup(self):
         """Cleanup resources on shutdown."""
         await super().shutdown_cleanup()
-        if self.db_enabled:
-            close_client()
 
     @classmethod
     def default_url(cls):

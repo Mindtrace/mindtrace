@@ -1,79 +1,37 @@
-"""Repository for user CRUD operations."""
+"""Repository for user CRUD operations using mindtrace.database ODM."""
 
-import inspect
 import re
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from bson import ObjectId
-from bson.errors import InvalidId
+from mindtrace.database import DocumentNotFoundError
 
 from mindtrace.apps.inspectra.db import get_db
-from mindtrace.apps.inspectra.models.user import User
-
-if TYPE_CHECKING:
-    from motor.motor_asyncio import AsyncIOMotorCollection
+from mindtrace.apps.inspectra.models.documents import UserDocument
 
 
 class UserRepository:
-    """Repository for managing users in MongoDB."""
+    """Repository for managing users via MongoMindtraceODM."""
 
-    def __init__(self) -> None:
-        self._collection_name: str = "users"
-
-    def _collection(self) -> "AsyncIOMotorCollection":
-        db = get_db()
-        return db[self._collection_name]
-
-    @staticmethod
-    def _to_model(doc: dict) -> User:
-        role_id = doc.get("role_id")
-        plant_id = doc.get("plant_id")
-        return User(
-            id=str(doc["_id"]),
-            username=doc["username"],
-            password_hash=doc["password_hash"],
-            role_id=str(role_id) if role_id else "",
-            plant_id=str(plant_id) if plant_id else None,
-            is_active=doc.get("is_active", True),
-        )
-
-    async def _maybe_await(self, value: Any) -> Any:
-        return await value if inspect.isawaitable(value) else value
-
-    async def get_by_username(self, username: str) -> Optional[User]:
+    async def get_by_username(self, username: str) -> Optional[UserDocument]:
         """Get user by username."""
-        doc = await self._maybe_await(
-            self._collection().find_one({"username": username})
-        )
-        if not doc:
-            return None
-        return self._to_model(doc)
+        db = get_db()
+        users = await UserDocument.find({"username": username}).to_list()
+        return users[0] if users else None
 
-    async def get_by_id(self, user_id: str) -> Optional[User]:
+    async def get_by_id(self, user_id: str) -> Optional[UserDocument]:
         """Get user by ID."""
+        db = get_db()
         try:
-            oid = ObjectId(user_id)
-        except InvalidId:
+            return await db.user.get(user_id)
+        except DocumentNotFoundError:
+            return None
+        except Exception:
             return None
 
-        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._to_model(doc)
-
-    async def list(self) -> List[User]:
+    async def list(self) -> List[UserDocument]:
         """List all users."""
-        cursor = self._collection().find({})
-        users: List[User] = []
-
-        if hasattr(cursor, "__aiter__"):
-            async for doc in cursor:
-                users.append(self._to_model(doc))
-        else:
-            for doc in cursor:
-                users.append(self._to_model(doc))
-
-        return users
+        db = get_db()
+        return await db.user.all()
 
     async def list_paginated(
         self,
@@ -83,47 +41,34 @@ class UserRepository:
         role_id: Optional[str] = None,
         plant_id: Optional[str] = None,
         search: Optional[str] = None,
-    ) -> Tuple[List[User], int]:
+    ) -> Tuple[List[UserDocument], int]:
         """
         List users with pagination and filtering.
 
         Returns:
             Tuple of (users list, total count)
         """
-        query: dict[str, Any] = {}
+        # Build query filter as dict
+        query_filter: dict = {}
 
         if is_active is not None:
-            query["is_active"] = is_active
+            query_filter["is_active"] = is_active
 
         if role_id is not None:
-            try:
-                query["role_id"] = ObjectId(role_id)
-            except InvalidId:
-                pass
+            query_filter["role_id"] = role_id
 
         if plant_id is not None:
-            try:
-                query["plant_id"] = ObjectId(plant_id)
-            except InvalidId:
-                pass
+            query_filter["plant_id"] = plant_id
 
         if search:
-            query["username"] = {"$regex": re.escape(search), "$options": "i"}
+            query_filter["username"] = {"$regex": re.escape(search), "$options": "i"}
 
-        # Get total count
-        total = await self._maybe_await(self._collection().count_documents(query))
+        # Build and execute query
+        query = UserDocument.find(query_filter)
 
-        # Get paginated results
+        total = await query.count()
         skip = (page - 1) * page_size
-        cursor = self._collection().find(query).skip(skip).limit(page_size)
-
-        users: List[User] = []
-        if hasattr(cursor, "__aiter__"):
-            async for doc in cursor:
-                users.append(self._to_model(doc))
-        else:
-            for doc in cursor:
-                users.append(self._to_model(doc))
+        users = await query.skip(skip).limit(page_size).to_list()
 
         return users, total
 
@@ -133,31 +78,17 @@ class UserRepository:
         password_hash: str,
         role_id: str,
         plant_id: Optional[str] = None,
-    ) -> User:
+    ) -> UserDocument:
         """Create a new user."""
-        try:
-            role_oid = ObjectId(role_id)
-        except InvalidId:
-            role_oid = None
-
-        plant_oid = None
-        if plant_id:
-            try:
-                plant_oid = ObjectId(plant_id)
-            except InvalidId:
-                pass
-
-        data = {
-            "username": username,
-            "password_hash": password_hash,
-            "is_active": True,
-            "role_id": role_oid,
-            "plant_id": plant_oid,
-        }
-
-        result = await self._maybe_await(self._collection().insert_one(data))
-        data["_id"] = result.inserted_id
-        return self._to_model(data)
+        db = get_db()
+        user = UserDocument(
+            username=username,
+            password_hash=password_hash,
+            role_id=role_id,
+            plant_id=plant_id,
+            is_active=True,
+        )
+        return await db.user.insert(user)
 
     async def update(
         self,
@@ -165,65 +96,53 @@ class UserRepository:
         role_id: Optional[str] = None,
         plant_id: Optional[str] = None,
         is_active: Optional[bool] = None,
-    ) -> Optional[User]:
+    ) -> Optional[UserDocument]:
         """Update user fields (role, plant, and/or active status)."""
+        db = get_db()
         try:
-            oid = ObjectId(user_id)
-        except InvalidId:
+            user = await db.user.get(user_id)
+        except DocumentNotFoundError:
+            return None
+        except Exception:
             return None
 
-        update_data: dict[str, Any] = {}
         if role_id is not None:
-            try:
-                update_data["role_id"] = ObjectId(role_id)
-            except InvalidId:
-                pass
+            user.role_id = role_id
         if plant_id is not None:
-            try:
-                update_data["plant_id"] = ObjectId(plant_id)
-            except InvalidId:
-                pass
+            user.plant_id = plant_id
         if is_active is not None:
-            update_data["is_active"] = is_active
+            user.is_active = is_active
 
-        if update_data:
-            await self._maybe_await(
-                self._collection().update_one({"_id": oid}, {"$set": update_data})
-            )
-
-        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._to_model(doc)
+        return await db.user.update(user)
 
     async def update_password(self, user_id: str, password_hash: str) -> bool:
         """Update user's password hash."""
+        db = get_db()
         try:
-            oid = ObjectId(user_id)
-        except InvalidId:
+            user = await db.user.get(user_id)
+            user.password_hash = password_hash
+            await db.user.update(user)
+            return True
+        except DocumentNotFoundError:
             return False
-
-        result = await self._maybe_await(
-            self._collection().update_one(
-                {"_id": oid}, {"$set": {"password_hash": password_hash}}
-            )
-        )
-        return result.modified_count > 0
+        except Exception:
+            return False
 
     async def delete(self, user_id: str) -> bool:
         """Delete a user."""
+        db = get_db()
         try:
-            oid = ObjectId(user_id)
-        except InvalidId:
+            await db.user.delete(user_id)
+            return True
+        except DocumentNotFoundError:
+            return False
+        except Exception:
             return False
 
-        result = await self._maybe_await(self._collection().delete_one({"_id": oid}))
-        return result.deleted_count > 0
-
-    async def activate(self, user_id: str) -> Optional[User]:
+    async def activate(self, user_id: str) -> Optional[UserDocument]:
         """Activate a user."""
         return await self.update(user_id, is_active=True)
 
-    async def deactivate(self, user_id: str) -> Optional[User]:
+    async def deactivate(self, user_id: str) -> Optional[UserDocument]:
         """Deactivate a user (soft delete)."""
         return await self.update(user_id, is_active=False)

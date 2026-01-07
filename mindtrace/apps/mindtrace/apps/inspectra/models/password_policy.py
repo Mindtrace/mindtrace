@@ -65,7 +65,7 @@ class PolicyRuleCreateRequest(BaseModel):
 class PolicyRuleUpdateRequest(BaseModel):
     """Request to update an existing policy rule."""
 
-    id: str = Field(..., description="Rule ID")
+    id: Optional[str] = Field(None, description="Rule ID (set from path param)")
     rule_type: Optional[str] = Field(None, description="Updated rule type")
     value: Optional[Any] = Field(None, description="Updated rule value")
     message: Optional[str] = Field(None, description="Updated error message")
@@ -98,7 +98,7 @@ class PasswordPolicyCreateRequest(BaseModel):
 class PasswordPolicyUpdateRequest(BaseModel):
     """Request to update an existing password policy."""
 
-    id: str = Field(..., description="Policy ID")
+    id: Optional[str] = Field(None, description="Policy ID (set from path param)")
     name: Optional[str] = Field(None, description="Updated policy name")
     description: Optional[str] = Field(None, description="Updated description")
     is_active: Optional[bool] = Field(None, description="Updated active status")

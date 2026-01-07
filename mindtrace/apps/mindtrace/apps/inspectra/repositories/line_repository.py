@@ -1,103 +1,65 @@
-"""Repository for line CRUD operations."""
+"""Repository for line CRUD operations using mindtrace.database ODM."""
 
-import inspect
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from bson import ObjectId
+from mindtrace.database import DocumentNotFoundError
 
 from mindtrace.apps.inspectra.db import get_db
-from mindtrace.apps.inspectra.models.line import (
-    Line,
-    LineCreateRequest,
-    LineResponse,
-    LineUpdateRequest,
-)
+from mindtrace.apps.inspectra.models.documents import LineDocument
+from mindtrace.apps.inspectra.models.line import LineCreateRequest, LineUpdateRequest
 
 
 class LineRepository:
-    """Repository for managing production lines in MongoDB."""
+    """Repository for managing production lines via MongoMindtraceODM."""
 
-    def __init__(self):
-        self._collection_name = "lines"
-
-    def _collection(self):
-        db = get_db()
-        return db[self._collection_name]
-
-    @staticmethod
-    def _to_model(doc: dict) -> LineResponse:
-        return LineResponse(
-            id=str(doc["_id"]),
-            name=doc["name"],
-            plant_id=doc.get("plant_id"),
-        )
-
-    async def _maybe_await(self, value: Any) -> Any:
-        return await value if inspect.isawaitable(value) else value
-
-    async def list(self) -> List[LineResponse]:
+    async def list(self) -> List[LineDocument]:
         """List all lines."""
-        cursor = self._collection().find({})
-        items: List[LineResponse] = []
+        db = get_db()
+        return await db.line.all()
 
-        if hasattr(cursor, "__aiter__"):
-            async for doc in cursor:
-                items.append(self._to_model(doc))
-        else:
-            for doc in cursor:
-                items.append(self._to_model(doc))
-
-        return items
-
-    async def create(self, payload: LineCreateRequest) -> LineResponse:
-        """Create a new line."""
-        data = {"name": payload.name, "plant_id": payload.plant_id}
-
-        result = await self._maybe_await(self._collection().insert_one(data))
-        data["_id"] = result.inserted_id
-        return self._to_model(data)
-
-    async def get_by_id(self, line_id: str) -> Optional[LineResponse]:
+    async def get_by_id(self, line_id: str) -> Optional[LineDocument]:
         """Get a line by ID."""
+        db = get_db()
         try:
-            oid = ObjectId(line_id)
+            return await db.line.get(line_id)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
 
-        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._to_model(doc)
+    async def create(self, payload: LineCreateRequest) -> LineDocument:
+        """Create a new line."""
+        db = get_db()
+        line = LineDocument(
+            name=payload.name,
+            plant_id=payload.plant_id,
+        )
+        return await db.line.insert(line)
 
-    async def update(self, payload: LineUpdateRequest) -> Optional[LineResponse]:
+    async def update(self, payload: LineUpdateRequest) -> Optional[LineDocument]:
         """Update a line."""
+        db = get_db()
         try:
-            oid = ObjectId(payload.id)
+            line = await db.line.get(payload.id)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
 
-        update_data: dict[str, Any] = {}
         if payload.name is not None:
-            update_data["name"] = payload.name
+            line.name = payload.name
         if payload.plant_id is not None:
-            update_data["plant_id"] = payload.plant_id
+            line.plant_id = payload.plant_id
 
-        if update_data:
-            await self._maybe_await(
-                self._collection().update_one({"_id": oid}, {"$set": update_data})
-            )
-
-        doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._to_model(doc)
+        return await db.line.update(line)
 
     async def delete(self, line_id: str) -> bool:
         """Delete a line by ID."""
+        db = get_db()
         try:
-            oid = ObjectId(line_id)
+            await db.line.delete(line_id)
+            return True
+        except DocumentNotFoundError:
+            return False
         except Exception:
             return False
-
-        result = await self._maybe_await(self._collection().delete_one({"_id": oid}))
-        return result.deleted_count > 0

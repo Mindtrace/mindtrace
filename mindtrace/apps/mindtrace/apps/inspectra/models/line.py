@@ -1,14 +1,13 @@
-from dataclasses import dataclass
+"""Line request/response models.
+
+Note: The Line entity is now defined as LineDocument in models/documents.py
+using MindtraceDocument (Beanie ODM).
+"""
+
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-
-@dataclass
-class Line:
-    id: str
-    name: str
-    plant_id: Optional[str] = None
 
 class LineCreateRequest(BaseModel):
     """Payload for creating a new line."""
@@ -41,7 +40,7 @@ class LineListResponse(BaseModel):
 class LineUpdateRequest(BaseModel):
     """Request model for updating an existing line."""
 
-    id: str = Field(..., description="Line ID to update")
+    id: Optional[str] = Field(None, description="Line ID (set from path param)")
     name: Optional[str] = Field(None, description="Updated line name")
     plant_id: Optional[str] = Field(None, description="Updated plant ID")
 

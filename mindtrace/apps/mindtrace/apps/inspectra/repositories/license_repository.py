@@ -1,12 +1,12 @@
-"""Repository for license CRUD operations."""
+"""Repository for license CRUD operations using mindtrace.database ODM."""
 
-import inspect
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
-from bson import ObjectId
+from mindtrace.database import DocumentNotFoundError
 
 from mindtrace.apps.inspectra.db import get_db
+from mindtrace.apps.inspectra.models.documents import LicenseDocument
 from mindtrace.apps.inspectra.models.license import (
     LicenseResponse,
     LicenseStatus,
@@ -16,58 +16,45 @@ from mindtrace.apps.inspectra.core.machine_id import get_machine_id
 
 
 class LicenseRepository:
-    """Repository for managing licenses in MongoDB."""
+    """Repository for managing licenses via MongoMindtraceODM."""
 
-    def __init__(self):
-        self._collection_name = "licenses"
-
-    def _collection(self):
-        db = get_db()
-        return db[self._collection_name]
-
-    async def _maybe_await(self, value: Any) -> Any:
-        return await value if inspect.isawaitable(value) else value
-
-    def _to_model(self, doc: dict) -> LicenseResponse:
-        """Convert MongoDB document to LicenseResponse."""
-        expires_at = doc["expires_at"]
+    def _to_response(self, doc: LicenseDocument) -> LicenseResponse:
+        """Convert LicenseDocument to LicenseResponse with computed status."""
         now = datetime.utcnow()
-        days_remaining = max(0, (expires_at - now).days)
+        days_remaining = max(0, (doc.expires_at - now).days)
 
-        # Determine status
-        if not doc.get("is_active", True):
+        # Determine status dynamically
+        if not doc.is_active:
             status = LicenseStatus.NOT_ACTIVATED
-        elif now > expires_at:
+        elif now > doc.expires_at:
             status = LicenseStatus.EXPIRED
-        elif doc.get("machine_id") != get_machine_id():
+        elif doc.machine_id != get_machine_id():
             status = LicenseStatus.HARDWARE_MISMATCH
         else:
             status = LicenseStatus.VALID
 
         return LicenseResponse(
-            id=str(doc["_id"]),
-            license_key=doc["license_key"],
-            license_type=doc["license_type"],
-            machine_id=doc["machine_id"],
-            issued_at=doc["issued_at"],
-            expires_at=expires_at,
-            features=doc.get("features", []),
-            max_users=doc.get("max_users", 0),
-            max_plants=doc.get("max_plants", 0),
-            max_lines=doc.get("max_lines", 0),
-            is_active=doc.get("is_active", True),
+            id=str(doc.id),
+            license_key=doc.license_key,
+            license_type=doc.license_type,
+            machine_id=doc.machine_id,
+            issued_at=doc.issued_at,
+            expires_at=doc.expires_at,
+            features=doc.features,
+            max_users=doc.max_users,
+            max_plants=doc.max_plants,
+            max_lines=doc.max_lines,
+            is_active=doc.is_active,
             status=status,
             days_remaining=days_remaining,
         )
 
     async def get_active_license(self) -> Optional[LicenseResponse]:
         """Get the current active license."""
-        doc = await self._maybe_await(
-            self._collection().find_one({"is_active": True})
-        )
-        if not doc:
+        licenses = await LicenseDocument.find({"is_active": True}).to_list()
+        if not licenses:
             return None
-        return self._to_model(doc)
+        return self._to_response(licenses[0])
 
     async def activate_license(self, license_content: str) -> Optional[LicenseResponse]:
         """
@@ -75,6 +62,8 @@ class LicenseRepository:
 
         Validates and stores the license.
         """
+        db = get_db()
+
         # Validate the license
         validation = LicenseValidator.validate(license_content)
         if not validation.is_valid:
@@ -89,37 +78,39 @@ class LicenseRepository:
         machine_id = get_machine_id()
 
         # Deactivate any existing licenses
-        await self._maybe_await(
-            self._collection().update_many({}, {"$set": {"is_active": False}})
-        )
+        all_licenses = await db.license.all()
+        for lic in all_licenses:
+            if lic.is_active:
+                lic.is_active = False
+                await db.license.update(lic)
 
         # Store new license
-        data = {
-            "license_key": payload.license_key,
-            "license_type": payload.license_type,
-            "machine_id": machine_id,
-            "issued_at": datetime.fromisoformat(payload.issued_at),
-            "expires_at": datetime.fromisoformat(payload.expires_at),
-            "features": payload.features,
-            "max_users": payload.max_users,
-            "max_plants": payload.max_plants,
-            "max_lines": payload.max_lines,
-            "signature": signed_license.signature,
-            "is_active": True,
-        }
+        license_doc = LicenseDocument(
+            license_key=payload.license_key,
+            license_type=payload.license_type,
+            machine_id=machine_id,
+            issued_at=datetime.fromisoformat(payload.issued_at),
+            expires_at=datetime.fromisoformat(payload.expires_at),
+            features=payload.features,
+            max_users=payload.max_users,
+            max_plants=payload.max_plants,
+            max_lines=payload.max_lines,
+            signature=signed_license.signature,
+            is_active=True,
+        )
 
-        result = await self._maybe_await(self._collection().insert_one(data))
-        data["_id"] = result.inserted_id
-        return self._to_model(data)
+        license_doc = await db.license.insert(license_doc)
+        return self._to_response(license_doc)
 
     async def deactivate_license(self, license_id: str) -> bool:
         """Deactivate a license."""
+        db = get_db()
         try:
-            oid = ObjectId(license_id)
+            license_doc = await db.license.get(license_id)
+            license_doc.is_active = False
+            await db.license.update(license_doc)
+            return True
+        except DocumentNotFoundError:
+            return False
         except Exception:
             return False
-
-        result = await self._maybe_await(
-            self._collection().update_one({"_id": oid}, {"$set": {"is_active": False}})
-        )
-        return result.modified_count > 0

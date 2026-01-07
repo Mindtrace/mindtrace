@@ -1,11 +1,14 @@
-"""Repository for password policy CRUD operations."""
+"""Repository for password policy CRUD operations using mindtrace.database ODM."""
 
-import inspect
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from bson import ObjectId
+from mindtrace.database import DocumentNotFoundError
 
 from mindtrace.apps.inspectra.db import get_db
+from mindtrace.apps.inspectra.models.documents import (
+    PasswordPolicyDocument,
+    PolicyRuleDocument,
+)
 from mindtrace.apps.inspectra.models.password_policy import (
     PasswordPolicyCreateRequest,
     PasswordPolicyResponse,
@@ -17,126 +20,97 @@ from mindtrace.apps.inspectra.models.password_policy import (
 
 
 class PasswordPolicyRepository:
-    """Repository for managing password policies and rules in MongoDB."""
-
-    def __init__(self) -> None:
-        self._policies_collection_name = "password_policies"
-        self._rules_collection_name = "policy_rules"
-
-    def _policies_collection(self):
-        db = get_db()
-        return db[self._policies_collection_name]
-
-    def _rules_collection(self):
-        db = get_db()
-        return db[self._rules_collection_name]
-
-    async def _maybe_await(self, value: Any) -> Any:
-        return await value if inspect.isawaitable(value) else value
+    """Repository for managing password policies and rules via MongoMindtraceODM."""
 
     @staticmethod
-    def _rule_to_model(doc: dict) -> PolicyRuleResponse:
+    def _rule_to_response(doc: PolicyRuleDocument) -> PolicyRuleResponse:
+        """Convert PolicyRuleDocument to response model."""
         return PolicyRuleResponse(
-            id=str(doc["_id"]),
-            rule_type=doc["rule_type"],
-            value=doc["value"],
-            message=doc["message"],
-            is_active=doc.get("is_active", True),
-            order=doc.get("order", 0),
+            id=str(doc.id),
+            rule_type=doc.rule_type,
+            value=doc.value,
+            message=doc.message,
+            is_active=doc.is_active,
+            order=doc.order,
         )
 
-    def _policy_to_model(
-        self, doc: dict, rules: List[PolicyRuleResponse]
+    @staticmethod
+    def _policy_to_response(
+        doc: PasswordPolicyDocument, rules: List[PolicyRuleResponse]
     ) -> PasswordPolicyResponse:
+        """Convert PasswordPolicyDocument to response model."""
         return PasswordPolicyResponse(
-            id=str(doc["_id"]),
-            name=doc["name"],
-            description=doc.get("description"),
+            id=str(doc.id),
+            name=doc.name,
+            description=doc.description,
             rules=rules,
-            is_active=doc.get("is_active", True),
-            is_default=doc.get("is_default", False),
+            is_active=doc.is_active,
+            is_default=doc.is_default,
         )
 
     async def _get_rules_for_policy(self, policy_id: str) -> List[PolicyRuleResponse]:
         """Get all active rules for a policy, sorted by order."""
-        cursor = (
-            self._rules_collection()
-            .find({"policy_id": policy_id, "is_active": True})
-            .sort("order", 1)
-        )
-        rules: List[PolicyRuleResponse] = []
-
-        if hasattr(cursor, "__aiter__"):
-            async for doc in cursor:
-                rules.append(self._rule_to_model(doc))
-        else:
-            for doc in cursor:
-                rules.append(self._rule_to_model(doc))
-
-        return rules
+        rules = await PolicyRuleDocument.find(
+            {"policy_id": policy_id, "is_active": True}
+        ).sort("+order").to_list()
+        return [self._rule_to_response(r) for r in rules]
 
     async def get_default_policy(self) -> Optional[PasswordPolicyResponse]:
         """Get the default active password policy."""
-        doc = await self._maybe_await(
-            self._policies_collection().find_one({"is_default": True, "is_active": True})
-        )
-        if not doc:
+        policies = await PasswordPolicyDocument.find(
+            {"is_default": True, "is_active": True}
+        ).to_list()
+        if not policies:
             return None
-        rules = await self._get_rules_for_policy(str(doc["_id"]))
-        return self._policy_to_model(doc, rules)
+        policy = policies[0]
+        rules = await self._get_rules_for_policy(str(policy.id))
+        return self._policy_to_response(policy, rules)
 
     async def list(self) -> List[PasswordPolicyResponse]:
-        """List all password policies."""
-        cursor = self._policies_collection().find({})
-        policies: List[PasswordPolicyResponse] = []
-
-        if hasattr(cursor, "__aiter__"):
-            async for doc in cursor:
-                rules = await self._get_rules_for_policy(str(doc["_id"]))
-                policies.append(self._policy_to_model(doc, rules))
-        else:
-            for doc in cursor:
-                rules = await self._get_rules_for_policy(str(doc["_id"]))
-                policies.append(self._policy_to_model(doc, rules))
-
-        return policies
+        """List all password policies with their rules."""
+        db = get_db()
+        policies = await db.password_policy.all()
+        result = []
+        for policy in policies:
+            rules = await self._get_rules_for_policy(str(policy.id))
+            result.append(self._policy_to_response(policy, rules))
+        return result
 
     async def get_by_id(self, policy_id: str) -> Optional[PasswordPolicyResponse]:
-        """Get policy by ID."""
+        """Get policy by ID with rules."""
+        db = get_db()
         try:
-            oid = ObjectId(policy_id)
+            policy = await db.password_policy.get(policy_id)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
 
-        doc = await self._maybe_await(
-            self._policies_collection().find_one({"_id": oid})
-        )
-        if not doc:
-            return None
-
         rules = await self._get_rules_for_policy(policy_id)
-        return self._policy_to_model(doc, rules)
+        return self._policy_to_response(policy, rules)
 
     async def create(
         self, payload: PasswordPolicyCreateRequest
     ) -> PasswordPolicyResponse:
         """Create a new password policy with rules."""
+        db = get_db()
+
         # If setting as default, unset other defaults
         if payload.is_default:
-            await self._maybe_await(
-                self._policies_collection().update_many(
-                    {}, {"$set": {"is_default": False}}
-                )
-            )
+            all_policies = await db.password_policy.all()
+            for p in all_policies:
+                if p.is_default:
+                    p.is_default = False
+                    await db.password_policy.update(p)
 
-        data = {
-            "name": payload.name,
-            "description": payload.description,
-            "is_active": True,
-            "is_default": payload.is_default,
-        }
-        result = await self._maybe_await(self._policies_collection().insert_one(data))
-        policy_id = str(result.inserted_id)
+        policy = PasswordPolicyDocument(
+            name=payload.name,
+            description=payload.description,
+            is_active=True,
+            is_default=payload.is_default,
+        )
+        policy = await db.password_policy.insert(policy)
+        policy_id = str(policy.id)
 
         # Create rules
         rules: List[PolicyRuleResponse] = []
@@ -144,129 +118,117 @@ class PasswordPolicyRepository:
             rule_resp = await self.add_rule(policy_id, rule)
             rules.append(rule_resp)
 
-        data["_id"] = result.inserted_id
-        return self._policy_to_model(data, rules)
+        return self._policy_to_response(policy, rules)
 
     async def update(
         self, payload: PasswordPolicyUpdateRequest
     ) -> Optional[PasswordPolicyResponse]:
         """Update a password policy."""
+        db = get_db()
         try:
-            oid = ObjectId(payload.id)
+            policy = await db.password_policy.get(payload.id)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
 
         # If setting as default, unset other defaults
         if payload.is_default:
-            await self._maybe_await(
-                self._policies_collection().update_many(
-                    {}, {"$set": {"is_default": False}}
-                )
-            )
+            all_policies = await db.password_policy.all()
+            for p in all_policies:
+                if p.is_default and str(p.id) != payload.id:
+                    p.is_default = False
+                    await db.password_policy.update(p)
 
-        update_data: dict[str, Any] = {}
         if payload.name is not None:
-            update_data["name"] = payload.name
+            policy.name = payload.name
         if payload.description is not None:
-            update_data["description"] = payload.description
+            policy.description = payload.description
         if payload.is_active is not None:
-            update_data["is_active"] = payload.is_active
+            policy.is_active = payload.is_active
         if payload.is_default is not None:
-            update_data["is_default"] = payload.is_default
+            policy.is_default = payload.is_default
 
-        if update_data:
-            await self._maybe_await(
-                self._policies_collection().update_one(
-                    {"_id": oid}, {"$set": update_data}
-                )
-            )
-
+        await db.password_policy.update(policy)
         return await self.get_by_id(payload.id)
 
     async def delete(self, policy_id: str) -> bool:
         """Delete a policy and all its rules."""
-        try:
-            oid = ObjectId(policy_id)
-        except Exception:
-            return False
+        db = get_db()
 
         # Delete all rules for this policy
-        await self._maybe_await(
-            self._rules_collection().delete_many({"policy_id": policy_id})
-        )
+        rules = await PolicyRuleDocument.find({"policy_id": policy_id}).to_list()
+        for rule in rules:
+            await db.policy_rule.delete(str(rule.id))
 
-        result = await self._maybe_await(
-            self._policies_collection().delete_one({"_id": oid})
-        )
-        return result.deleted_count > 0
+        try:
+            await db.password_policy.delete(policy_id)
+            return True
+        except DocumentNotFoundError:
+            return False
+        except Exception:
+            return False
 
     async def add_rule(
         self, policy_id: str, rule: PolicyRuleCreateRequest
     ) -> PolicyRuleResponse:
         """Add a rule to a policy."""
-        data = {
-            "policy_id": policy_id,
-            "rule_type": rule.rule_type,
-            "value": rule.value,
-            "message": rule.message,
-            "is_active": rule.is_active,
-            "order": rule.order,
-        }
-        result = await self._maybe_await(self._rules_collection().insert_one(data))
-        data["_id"] = result.inserted_id
-        return self._rule_to_model(data)
+        db = get_db()
+        rule_doc = PolicyRuleDocument(
+            policy_id=policy_id,
+            rule_type=rule.rule_type,
+            value=rule.value,
+            message=rule.message,
+            is_active=rule.is_active,
+            order=rule.order,
+        )
+        rule_doc = await db.policy_rule.insert(rule_doc)
+        return self._rule_to_response(rule_doc)
 
     async def get_rule_by_id(self, rule_id: str) -> Optional[PolicyRuleResponse]:
         """Get a rule by ID."""
+        db = get_db()
         try:
-            oid = ObjectId(rule_id)
+            rule = await db.policy_rule.get(rule_id)
+            return self._rule_to_response(rule)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
-
-        doc = await self._maybe_await(self._rules_collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._rule_to_model(doc)
 
     async def update_rule(
         self, payload: PolicyRuleUpdateRequest
     ) -> Optional[PolicyRuleResponse]:
         """Update an existing rule."""
+        db = get_db()
         try:
-            oid = ObjectId(payload.id)
+            rule = await db.policy_rule.get(payload.id)
+        except DocumentNotFoundError:
+            return None
         except Exception:
             return None
 
-        update_data: dict[str, Any] = {}
         if payload.rule_type is not None:
-            update_data["rule_type"] = payload.rule_type
+            rule.rule_type = payload.rule_type
         if payload.value is not None:
-            update_data["value"] = payload.value
+            rule.value = payload.value
         if payload.message is not None:
-            update_data["message"] = payload.message
+            rule.message = payload.message
         if payload.is_active is not None:
-            update_data["is_active"] = payload.is_active
+            rule.is_active = payload.is_active
         if payload.order is not None:
-            update_data["order"] = payload.order
+            rule.order = payload.order
 
-        if update_data:
-            await self._maybe_await(
-                self._rules_collection().update_one({"_id": oid}, {"$set": update_data})
-            )
-
-        doc = await self._maybe_await(self._rules_collection().find_one({"_id": oid}))
-        if not doc:
-            return None
-        return self._rule_to_model(doc)
+        await db.policy_rule.update(rule)
+        return self._rule_to_response(rule)
 
     async def delete_rule(self, rule_id: str) -> bool:
         """Delete a rule."""
+        db = get_db()
         try:
-            oid = ObjectId(rule_id)
+            await db.policy_rule.delete(rule_id)
+            return True
+        except DocumentNotFoundError:
+            return False
         except Exception:
             return False
-
-        result = await self._maybe_await(
-            self._rules_collection().delete_one({"_id": oid})
-        )
-        return result.deleted_count > 0
