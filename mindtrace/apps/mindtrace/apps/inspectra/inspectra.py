@@ -2,14 +2,22 @@
 
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 
 from mindtrace.apps.inspectra.core import (
+    AuthenticatedUser,
     create_access_token,
+    get_current_user,
     get_inspectra_config,
     hash_password,
+    require_admin,
     verify_password,
 )
+from mindtrace.apps.inspectra.core.auth_middleware import AuthMiddleware
+from mindtrace.apps.inspectra.core.license_middleware import LicenseMiddleware
+from mindtrace.apps.inspectra.core.login_tracker import get_login_tracker
+from mindtrace.apps.inspectra.core.machine_id import get_machine_id
+from mindtrace.apps.inspectra.core.password_validator import PasswordValidator
 from mindtrace.apps.inspectra.db import close_client
 from mindtrace.apps.inspectra.models import (
     # Lines
@@ -31,7 +39,38 @@ from mindtrace.apps.inspectra.models import (
     RoleUpdateRequest,
     TokenResponse,
 )
+from mindtrace.apps.inspectra.models.license import (
+    LicenseActivateRequest,
+    LicenseResponse,
+    LicenseValidationResponse,
+    MachineIdResponse,
+)
+from mindtrace.apps.inspectra.models.line import LineIdRequest, LineUpdateRequest
+from mindtrace.apps.inspectra.models.password_policy import (
+    PasswordPolicyCreateRequest,
+    PasswordPolicyListResponse,
+    PasswordPolicyResponse,
+    PasswordPolicyUpdateRequest,
+    PasswordValidationResult,
+    PolicyRuleCreateRequest,
+    PolicyRuleResponse,
+    PolicyRuleUpdateRequest,
+)
+from mindtrace.apps.inspectra.models.user import (
+    ChangeOwnPasswordRequest,
+    UserCreateRequest,
+    UserIdRequest,
+    UserListRequest,
+    UserListResponse,
+    UserPasswordResetRequest,
+    UserResponse,
+    UserUpdateRequest,
+)
+from mindtrace.apps.inspectra.repositories.license_repository import LicenseRepository
 from mindtrace.apps.inspectra.repositories.line_repository import LineRepository
+from mindtrace.apps.inspectra.repositories.password_policy_repository import (
+    PasswordPolicyRepository,
+)
 from mindtrace.apps.inspectra.repositories.plant_repository import PlantRepository
 from mindtrace.apps.inspectra.repositories.role_repository import RoleRepository
 from mindtrace.apps.inspectra.repositories.user_repository import UserRepository
@@ -39,12 +78,38 @@ from mindtrace.apps.inspectra.schemas.auth import (
     LoginSchema,
     RegisterSchema,
 )
+from mindtrace.apps.inspectra.schemas.license import (
+    ActivateLicenseSchema,
+    GetLicenseStatusSchema,
+    GetMachineIdSchema,
+    ValidateLicenseSchema,
+)
 from mindtrace.apps.inspectra.schemas.line import (
     CreateLineSchema,
+    DeleteLineSchema,
+    GetLineSchema,
+    LineIdRequest as LineIdRequestSchema,
     ListLinesSchema,
+    UpdateLineSchema,
+)
+from mindtrace.apps.inspectra.schemas.password_policy import (
+    AddPolicyRuleSchema,
+    AddRuleRequest,
+    CreatePasswordPolicySchema,
+    DeletePasswordPolicySchema,
+    DeletePolicyRuleSchema,
+    GetPasswordPolicySchema,
+    ListPasswordPoliciesSchema,
+    PolicyIdRequest,
+    RuleIdRequest,
+    UpdatePasswordPolicySchema,
+    UpdatePolicyRuleSchema,
+    ValidatePasswordRequest,
+    ValidatePasswordSchema,
 )
 from mindtrace.apps.inspectra.schemas.plant import (
     CreatePlantSchema,
+    DeletePlantSchema,
     GetPlantSchema,
     ListPlantsSchema,
     PlantIdRequest,
@@ -56,6 +121,18 @@ from mindtrace.apps.inspectra.schemas.role import (
     ListRolesSchema,
     RoleIdRequest,
     UpdateRoleSchema,
+)
+from mindtrace.apps.inspectra.schemas.user import (
+    ActivateUserSchema,
+    ChangeOwnPasswordSchema,
+    CreateUserSchema,
+    DeactivateUserSchema,
+    DeleteUserSchema,
+    GetOwnProfileSchema,
+    GetUserSchema,
+    ListUsersSchema,
+    ResetUserPasswordSchema,
+    UpdateUserSchema,
 )
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
@@ -90,13 +167,15 @@ class InspectraService(Service):
         # Track whether DB is enabled (repos use get_db() internally)
         self.db_enabled = enable_db
 
-        # Repositories
+        # Repositories (lazy-loaded)
         self._user_repo: Optional[UserRepository] = None
         self._role_repo: Optional[RoleRepository] = None
         self._line_repo: Optional[LineRepository] = None
         self._plant_repo: Optional[PlantRepository] = None
+        self._password_policy_repo: Optional[PasswordPolicyRepository] = None
+        self._license_repo: Optional[LicenseRepository] = None
 
-        # Middleware
+        # Request Logging Middleware
         self.app.add_middleware(
             RequestLoggingMiddleware,
             service_name=self.name,
@@ -105,11 +184,24 @@ class InspectraService(Service):
             logger=self.logger,
         )
 
+        # Auth Middleware (optional)
+        auth_enabled = getattr(cfg, "AUTH_ENABLED", False)
+        if auth_enabled and str(auth_enabled).lower() not in ("false", "0", "no"):
+            self.app.add_middleware(AuthMiddleware)
+
+        # License Middleware (optional)
+        license_enabled = getattr(cfg, "LICENSE_VALIDATION_ENABLED", False)
+        if license_enabled and str(license_enabled).lower() not in ("false", "0", "no"):
+            self.app.add_middleware(LicenseMiddleware)
+
         # Register endpoints
         self._register_auth_endpoints()
         self._register_plant_endpoints()
         self._register_line_endpoints()
         self._register_role_endpoints()
+        self._register_password_policy_endpoints()
+        self._register_user_management_endpoints()
+        self._register_license_endpoints()
 
     # -------------------------------------------------------------------------
     # Lazy repo accessors (created during request handling, inside live loop)
@@ -139,6 +231,18 @@ class InspectraService(Service):
             self._plant_repo = PlantRepository()
         return self._plant_repo
 
+    @property
+    def password_policy_repo(self) -> PasswordPolicyRepository:
+        if self._password_policy_repo is None:
+            self._password_policy_repo = PasswordPolicyRepository()
+        return self._password_policy_repo
+
+    @property
+    def license_repo(self) -> LicenseRepository:
+        if self._license_repo is None:
+            self._license_repo = LicenseRepository()
+        return self._license_repo
+
     # -------------------------------------------------------------------------
     # Endpoint registration
     # -------------------------------------------------------------------------
@@ -150,14 +254,14 @@ class InspectraService(Service):
             self.register,
             schema=RegisterSchema,
             methods=["POST"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/auth/login",
             self.login,
             schema=LoginSchema,
             methods=["POST"],
-            as_tool=True,
+            as_tool=False,
         )
 
     def _register_plant_endpoints(self) -> None:
@@ -167,28 +271,35 @@ class InspectraService(Service):
             self.list_plants,
             schema=ListPlantsSchema,
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/plants",
             self.create_plant,
             schema=CreatePlantSchema,
             methods=["POST"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/plants/{id}",
             self.get_plant,
             schema=GetPlantSchema,
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/plants/{id}",
             self.update_plant,
             schema=UpdatePlantSchema,
             methods=["PUT", "PATCH"],
-            as_tool=True,
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/plants/{id}",
+            self.delete_plant,
+            schema=DeletePlantSchema,
+            methods=["DELETE"],
+            as_tool=False,
         )
 
     def _register_line_endpoints(self) -> None:
@@ -198,14 +309,35 @@ class InspectraService(Service):
             self.list_lines,
             schema=ListLinesSchema,
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/lines",
             self.create_line,
             schema=CreateLineSchema,
             methods=["POST"],
-            as_tool=True,
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/lines/{id}",
+            self.get_line,
+            schema=GetLineSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/lines/{id}",
+            self.update_line,
+            schema=UpdateLineSchema,
+            methods=["PUT", "PATCH"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/lines/{id}",
+            self.delete_line,
+            schema=DeleteLineSchema,
+            methods=["DELETE"],
+            as_tool=False,
         )
 
     def _register_role_endpoints(self) -> None:
@@ -215,28 +347,201 @@ class InspectraService(Service):
             self.list_roles,
             schema=ListRolesSchema,
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/roles",
             self.create_role,
             schema=CreateRoleSchema,
             methods=["POST"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/roles/{id}",
             self.get_role,
             schema=GetRoleSchema,
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,
         )
         self.add_endpoint(
             "/roles/{id}",
             self.update_role,
             schema=UpdateRoleSchema,
             methods=["PUT", "PATCH"],
-            as_tool=True,
+            as_tool=False,
+        )
+
+    def _register_password_policy_endpoints(self) -> None:
+        """Register password policy endpoints (admin only)."""
+        self.add_endpoint(
+            "/admin/password-policies",
+            self.list_password_policies,
+            schema=ListPasswordPoliciesSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies",
+            self.create_password_policy,
+            schema=CreatePasswordPolicySchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/{id}",
+            self.get_password_policy,
+            schema=GetPasswordPolicySchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/{id}",
+            self.update_password_policy,
+            schema=UpdatePasswordPolicySchema,
+            methods=["PUT"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/{id}",
+            self.delete_password_policy,
+            schema=DeletePasswordPolicySchema,
+            methods=["DELETE"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/{policy_id}/rules",
+            self.add_policy_rule,
+            schema=AddPolicyRuleSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/rules/{id}",
+            self.update_policy_rule,
+            schema=UpdatePolicyRuleSchema,
+            methods=["PUT"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/password-policies/rules/{id}",
+            self.delete_policy_rule,
+            schema=DeletePolicyRuleSchema,
+            methods=["DELETE"],
+            as_tool=False,
+        )
+        # Public validation endpoint
+        self.add_endpoint(
+            "/password/validate",
+            self.validate_password,
+            schema=ValidatePasswordSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+
+    def _register_user_management_endpoints(self) -> None:
+        """Register user management endpoints."""
+        # Admin endpoints
+        self.add_endpoint(
+            "/admin/users",
+            self.list_users,
+            schema=ListUsersSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users",
+            self.create_user,
+            schema=CreateUserSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}",
+            self.get_user,
+            schema=GetUserSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}",
+            self.update_user,
+            schema=UpdateUserSchema,
+            methods=["PUT"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}",
+            self.delete_user,
+            schema=DeleteUserSchema,
+            methods=["DELETE"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}/reset-password",
+            self.reset_user_password,
+            schema=ResetUserPasswordSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}/activate",
+            self.activate_user,
+            schema=ActivateUserSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/admin/users/{id}/deactivate",
+            self.deactivate_user,
+            schema=DeactivateUserSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        # Self-service endpoints
+        self.add_endpoint(
+            "/me",
+            self.get_own_profile,
+            schema=GetOwnProfileSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/me/password",
+            self.change_own_password,
+            schema=ChangeOwnPasswordSchema,
+            methods=["PUT"],
+            as_tool=False,
+        )
+
+    def _register_license_endpoints(self) -> None:
+        """Register license endpoints."""
+        self.add_endpoint(
+            "/license/machine-id",
+            self.get_machine_id_endpoint,
+            schema=GetMachineIdSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/license/activate",
+            self.activate_license,
+            schema=ActivateLicenseSchema,
+            methods=["POST"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/license/status",
+            self.get_license_status,
+            schema=GetLicenseStatusSchema,
+            methods=["GET"],
+            as_tool=False,
+        )
+        self.add_endpoint(
+            "/license/validate",
+            self.validate_license,
+            schema=ValidateLicenseSchema,
+            methods=["GET"],
+            as_tool=False,
         )
 
     # -------------------------------------------------------------------------
@@ -265,6 +570,16 @@ class InspectraService(Service):
                 detail="Username already exists",
             )
 
+        # Validate password against default policy
+        default_policy = await self.password_policy_repo.get_default_policy()
+        if default_policy:
+            validation = PasswordValidator.validate(payload.password, default_policy)
+            if not validation.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "Password does not meet requirements", "errors": validation.errors},
+                )
+
         password_hash = hash_password(payload.password)
         default_role_id = await self._get_default_role_id()
 
@@ -279,12 +594,38 @@ class InspectraService(Service):
 
     async def login(self, payload: LoginPayload) -> TokenResponse:
         """Login an existing user and return an access token."""
+        tracker = get_login_tracker()
+
+        # Check if account is locked
+        if tracker.is_locked(payload.username):
+            remaining = tracker.get_lockout_remaining(payload.username)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Account temporarily locked. Try again in {remaining} seconds.",
+            )
+
         user = await self.user_repo.get_by_username(payload.username)
         if not user or not verify_password(payload.password, user.password_hash):
+            # Record failed attempt
+            is_locked = tracker.record_failure(payload.username)
+            if is_locked:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed attempts. Account temporarily locked.",
+                )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
             )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is deactivated",
+            )
+
+        # Clear failed attempts on successful login
+        tracker.record_success(payload.username)
 
         token = create_access_token(subject=user.username)
         return TokenResponse(access_token=token)
@@ -355,6 +696,15 @@ class InspectraService(Service):
             is_active=getattr(plant, "is_active", True),
         )
 
+    async def delete_plant(self, req: PlantIdRequest) -> None:
+        """Delete a plant."""
+        deleted = await self.plant_repo.delete(req.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Plant with id '{req.id}' not found",
+            )
+
     # -------------------------------------------------------------------------
     # Line handlers
     # -------------------------------------------------------------------------
@@ -379,6 +729,43 @@ class InspectraService(Service):
             name=line.name,
             plant_id=getattr(line, "plant_id", None),
         )
+
+    async def get_line(self, req: LineIdRequest) -> LineResponse:
+        """Get a line by ID."""
+        line = await self.line_repo.get_by_id(req.id)
+        if not line:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Line with id '{req.id}' not found",
+            )
+        return LineResponse(
+            id=line.id,
+            name=line.name,
+            plant_id=getattr(line, "plant_id", None),
+        )
+
+    async def update_line(self, req: LineUpdateRequest) -> LineResponse:
+        """Update a line."""
+        line = await self.line_repo.update(req)
+        if not line:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Line with id '{req.id}' not found",
+            )
+        return LineResponse(
+            id=line.id,
+            name=line.name,
+            plant_id=getattr(line, "plant_id", None),
+        )
+
+    async def delete_line(self, req: LineIdRequest) -> None:
+        """Delete a line."""
+        deleted = await self.line_repo.delete(req.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Line with id '{req.id}' not found",
+            )
 
     # -------------------------------------------------------------------------
     # Role handlers
@@ -444,6 +831,386 @@ class InspectraService(Service):
             name=role.name,
             description=getattr(role, "description", None),
             permissions=getattr(role, "permissions", None),
+        )
+
+    # -------------------------------------------------------------------------
+    # Password Policy handlers
+    # -------------------------------------------------------------------------
+
+    async def list_password_policies(self) -> PasswordPolicyListResponse:
+        """List all password policies."""
+        policies = await self.password_policy_repo.list()
+        return PasswordPolicyListResponse(items=policies, total=len(policies))
+
+    async def get_password_policy(self, req: PolicyIdRequest) -> PasswordPolicyResponse:
+        """Get a password policy by ID."""
+        policy = await self.password_policy_repo.get_by_id(req.id)
+        if not policy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Password policy with id '{req.id}' not found",
+            )
+        return policy
+
+    async def create_password_policy(
+        self, req: PasswordPolicyCreateRequest
+    ) -> PasswordPolicyResponse:
+        """Create a new password policy."""
+        return await self.password_policy_repo.create(req)
+
+    async def update_password_policy(
+        self, req: PasswordPolicyUpdateRequest
+    ) -> PasswordPolicyResponse:
+        """Update a password policy."""
+        policy = await self.password_policy_repo.update(req)
+        if not policy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Password policy with id '{req.id}' not found",
+            )
+        return policy
+
+    async def delete_password_policy(self, req: PolicyIdRequest) -> None:
+        """Delete a password policy."""
+        deleted = await self.password_policy_repo.delete(req.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Password policy with id '{req.id}' not found",
+            )
+
+    async def add_policy_rule(self, req: AddRuleRequest) -> PolicyRuleResponse:
+        """Add a rule to a password policy."""
+        from mindtrace.apps.inspectra.models.password_policy import PolicyRuleCreateRequest
+
+        rule = PolicyRuleCreateRequest(
+            rule_type=req.rule_type,
+            value=req.value,
+            message=req.message,
+            is_active=req.is_active,
+            order=req.order,
+        )
+        return await self.password_policy_repo.add_rule(req.policy_id, rule)
+
+    async def update_policy_rule(
+        self, req: PolicyRuleUpdateRequest
+    ) -> PolicyRuleResponse:
+        """Update a password policy rule."""
+        rule = await self.password_policy_repo.update_rule(req)
+        if not rule:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Policy rule with id '{req.id}' not found",
+            )
+        return rule
+
+    async def delete_policy_rule(self, req: RuleIdRequest) -> None:
+        """Delete a password policy rule."""
+        deleted = await self.password_policy_repo.delete_rule(req.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Policy rule with id '{req.id}' not found",
+            )
+
+    async def validate_password(
+        self, req: ValidatePasswordRequest
+    ) -> PasswordValidationResult:
+        """Validate a password against the default policy."""
+        default_policy = await self.password_policy_repo.get_default_policy()
+        return PasswordValidator.validate(req.password, default_policy)
+
+    # -------------------------------------------------------------------------
+    # User Management handlers
+    # -------------------------------------------------------------------------
+
+    async def list_users(self, req: UserListRequest) -> UserListResponse:
+        """List users with pagination and filtering."""
+        users, total = await self.user_repo.list_paginated(
+            page=req.page,
+            page_size=req.page_size,
+            is_active=req.is_active,
+            role_id=req.role_id,
+            plant_id=req.plant_id,
+            search=req.search,
+        )
+        items = [
+            UserResponse(
+                id=u.id,
+                username=u.username,
+                role_id=u.role_id,
+                plant_id=u.plant_id,
+                is_active=u.is_active,
+            )
+            for u in users
+        ]
+        return UserListResponse(
+            items=items, total=total, page=req.page, page_size=req.page_size
+        )
+
+    async def create_user(self, req: UserCreateRequest) -> UserResponse:
+        """Create a new user (admin)."""
+        existing = await self.user_repo.get_by_username(req.username)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists",
+            )
+
+        # Validate password against default policy
+        default_policy = await self.password_policy_repo.get_default_policy()
+        if default_policy:
+            validation = PasswordValidator.validate(req.password, default_policy)
+            if not validation.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "Password does not meet requirements", "errors": validation.errors},
+                )
+
+        role_id = req.role_id or await self._get_default_role_id()
+        password_hash = hash_password(req.password)
+
+        user = await self.user_repo.create_user(
+            username=req.username,
+            password_hash=password_hash,
+            role_id=role_id,
+            plant_id=req.plant_id,
+        )
+
+        if not req.is_active:
+            user = await self.user_repo.update(user.id, is_active=False)
+
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def get_user(self, req: UserIdRequest) -> UserResponse:
+        """Get a user by ID."""
+        user = await self.user_repo.get_by_id(req.id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def update_user(self, req: UserUpdateRequest) -> UserResponse:
+        """Update a user (admin)."""
+        user = await self.user_repo.update(
+            req.id, role_id=req.role_id, plant_id=req.plant_id, is_active=req.is_active
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def delete_user(self, req: UserIdRequest) -> None:
+        """Delete a user."""
+        deleted = await self.user_repo.delete(req.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+
+    async def reset_user_password(self, req: UserPasswordResetRequest) -> None:
+        """Reset a user's password (admin)."""
+        user = await self.user_repo.get_by_id(req.id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+
+        # Validate password against default policy
+        default_policy = await self.password_policy_repo.get_default_policy()
+        if default_policy:
+            validation = PasswordValidator.validate(req.new_password, default_policy)
+            if not validation.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "Password does not meet requirements", "errors": validation.errors},
+                )
+
+        password_hash = hash_password(req.new_password)
+        await self.user_repo.update_password(req.id, password_hash)
+
+    async def activate_user(self, req: UserIdRequest) -> UserResponse:
+        """Activate a user."""
+        user = await self.user_repo.activate(req.id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def deactivate_user(self, req: UserIdRequest) -> UserResponse:
+        """Deactivate a user."""
+        user = await self.user_repo.deactivate(req.id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id '{req.id}' not found",
+            )
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def get_own_profile(
+        self, current_user: AuthenticatedUser = Depends(get_current_user)
+    ) -> UserResponse:
+        """Get the current user's profile."""
+        user = await self.user_repo.get_by_id(current_user.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            role_id=user.role_id,
+            plant_id=user.plant_id,
+            is_active=user.is_active,
+        )
+
+    async def change_own_password(
+        self,
+        req: ChangeOwnPasswordRequest,
+        current_user: AuthenticatedUser = Depends(get_current_user),
+    ) -> None:
+        """Change the current user's password."""
+        user = await self.user_repo.get_by_id(current_user.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        # Verify current password
+        if not verify_password(req.current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect",
+            )
+
+        # Validate new password against default policy
+        default_policy = await self.password_policy_repo.get_default_policy()
+        if default_policy:
+            validation = PasswordValidator.validate(req.new_password, default_policy)
+            if not validation.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "Password does not meet requirements", "errors": validation.errors},
+                )
+
+        password_hash = hash_password(req.new_password)
+        await self.user_repo.update_password(current_user.user_id, password_hash)
+
+    # -------------------------------------------------------------------------
+    # License handlers
+    # -------------------------------------------------------------------------
+
+    async def get_machine_id_endpoint(self) -> MachineIdResponse:
+        """Get this machine's unique hardware ID."""
+        return MachineIdResponse(machine_id=get_machine_id())
+
+    async def activate_license(
+        self, req: LicenseActivateRequest
+    ) -> LicenseResponse:
+        """Activate a license from a base64-encoded license file."""
+        from mindtrace.apps.inspectra.core.license_validator import LicenseValidator
+        from mindtrace.apps.inspectra.models.license import LicenseStatus
+
+        # Validate first to get specific error message
+        validation = LicenseValidator.validate(req.license_file)
+        if not validation.is_valid:
+            if validation.status == LicenseStatus.EXPIRED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="License has expired",
+                )
+            elif validation.status == LicenseStatus.HARDWARE_MISMATCH:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="License is not valid for this machine",
+                )
+            elif validation.status == LicenseStatus.INVALID_SIGNATURE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid license file or signature",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=validation.message,
+                )
+
+        license_info = await self.license_repo.activate_license(req.license_file)
+        if not license_info:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to activate license",
+            )
+        return license_info
+
+    async def get_license_status(self) -> LicenseResponse:
+        """Get the current license status."""
+        license_info = await self.license_repo.get_active_license()
+        if not license_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active license found",
+            )
+        return license_info
+
+    async def validate_license(self) -> LicenseValidationResponse:
+        """Validate the current license."""
+        license_info = await self.license_repo.get_active_license()
+        if not license_info:
+            return LicenseValidationResponse(
+                is_valid=False,
+                status="not_activated",
+                message="No active license found",
+            )
+
+        from mindtrace.apps.inspectra.models.license import LicenseStatus
+
+        return LicenseValidationResponse(
+            is_valid=license_info.status == LicenseStatus.VALID,
+            status=license_info.status,
+            message=f"License is {license_info.status.value}",
+            days_remaining=license_info.days_remaining,
+            features=license_info.features,
         )
 
     # -------------------------------------------------------------------------

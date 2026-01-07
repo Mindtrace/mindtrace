@@ -1,17 +1,23 @@
 import inspect
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from bson import ObjectId
+from bson.errors import InvalidId
 
 from mindtrace.apps.inspectra.db import get_db
 from mindtrace.apps.inspectra.models.role import RoleCreateRequest, RoleResponse, RoleUpdateRequest
 
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorCollection
+
 
 class RoleRepository:
-    def __init__(self) -> None:
-        self._collection_name = "roles"
+    """Repository for managing roles in MongoDB."""
 
-    def _collection(self):
+    def __init__(self) -> None:
+        self._collection_name: str = "roles"
+
+    def _collection(self) -> "AsyncIOMotorCollection":
         db = get_db()
         return db[self._collection_name]
 
@@ -43,7 +49,7 @@ class RoleRepository:
     async def get_by_id(self, role_id: str) -> Optional[RoleResponse]:
         try:
             oid = ObjectId(role_id)
-        except Exception:
+        except InvalidId:
             return None
 
         doc = await self._maybe_await(self._collection().find_one({"_id": oid}))
@@ -71,7 +77,7 @@ class RoleRepository:
     async def update(self, payload: RoleUpdateRequest) -> Optional[RoleResponse]:
         try:
             oid = ObjectId(payload.id)
-        except Exception:
+        except InvalidId:
             return None
 
         update_data: dict[str, Any] = {}

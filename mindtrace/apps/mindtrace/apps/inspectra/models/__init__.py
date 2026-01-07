@@ -2,8 +2,10 @@ from .auth import LoginPayload, RegisterPayload, TokenResponse
 from .line import (
     Line,
     LineCreateRequest,
+    LineIdRequest,
     LineListResponse,
     LineResponse,
+    LineUpdateRequest,
 )
 from .plant import (
     Plant,
@@ -21,14 +23,23 @@ from .role import (
     RoleResponse,
     RoleUpdateRequest,
 )
-from .user import User
+from .user import (
+    ChangeOwnPasswordRequest,
+    User,
+    UserCreateRequest,
+    UserIdRequest,
+    UserListRequest,
+    UserListResponse,
+    UserPasswordResetRequest,
+    UserResponse,
+    UserUpdateRequest,
+)
 
 __all__ = [
     # Auth
     "LoginPayload",
     "RegisterPayload",
     "TokenResponse",
-
     # Role dataclass + models
     "Role",
     "RoleBase",
@@ -36,13 +47,13 @@ __all__ = [
     "RoleUpdateRequest",
     "RoleResponse",
     "RoleListResponse",
-
     # Line dataclass + models
     "Line",
     "LineCreateRequest",
+    "LineIdRequest",
     "LineListResponse",
     "LineResponse",
-
+    "LineUpdateRequest",
     # Plant dataclass + models
     "Plant",
     "PlantBase",
@@ -50,7 +61,14 @@ __all__ = [
     "PlantUpdateRequest",
     "PlantResponse",
     "PlantListResponse",
-
-    # User dataclass
+    # User dataclass + models
     "User",
+    "UserCreateRequest",
+    "UserIdRequest",
+    "UserListRequest",
+    "UserListResponse",
+    "UserPasswordResetRequest",
+    "UserResponse",
+    "UserUpdateRequest",
+    "ChangeOwnPasswordRequest",
 ]

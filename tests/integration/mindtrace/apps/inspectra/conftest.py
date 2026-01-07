@@ -20,7 +20,15 @@ TEST_MONGO_URI = "mongodb://localhost:27018"
 TEST_DB_NAME = "inspectra_test"
 """Database name used for Inspectra integration tests."""
 
-TEST_COLLECTIONS: List[str] = ["users", "roles", "plants", "lines"]
+TEST_COLLECTIONS: List[str] = [
+    "users",
+    "roles",
+    "plants",
+    "lines",
+    "password_policies",
+    "policy_rules",
+    "licenses",
+]
 """Collections that are wiped before and after each test to ensure isolation."""
 
 
@@ -35,6 +43,7 @@ def _set_inspectra_test_env() -> Generator[None, None, None]:
 
     This fixture:
     - Sets INSPECTRA Mongo environment variables
+    - Disables license validation for tests
     - Resets cached Inspectra config so env vars are reloaded
     - Runs once per test session
     - Is autouse to guarantee it executes before any Inspectra code runs
@@ -43,6 +52,7 @@ def _set_inspectra_test_env() -> Generator[None, None, None]:
     """
     os.environ["INSPECTRA__MONGO_URI"] = TEST_MONGO_URI
     os.environ["INSPECTRA__MONGO_DB"] = TEST_DB_NAME
+    os.environ["INSPECTRA__LICENSE_VALIDATION_ENABLED"] = "false"
     reset_inspectra_config()
 
     yield

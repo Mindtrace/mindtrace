@@ -28,6 +28,7 @@ class _FakeUser:
     username: str
     password_hash: str
     role_id: str
+    plant_id: Optional[str] = None
     is_active: bool = True
 
 
@@ -47,13 +48,20 @@ class FakeUserRepository:
         """Return a user by username if it exists."""
         return self._users.get(username)
 
-    async def create_user(self, username: str, password_hash: str, role_id: str) -> _FakeUser:
+    async def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        role_id: str,
+        plant_id: Optional[str] = None,
+    ) -> _FakeUser:
         """Create and store a new fake user."""
         user = _FakeUser(
             id=str(len(self._users) + 1),
             username=username,
             password_hash=password_hash,
             role_id=role_id,
+            plant_id=plant_id,
             is_active=True,
         )
         self._users[username] = user
@@ -93,6 +101,18 @@ class FakeRoleRepository:
         return role
 
 
+class FakePasswordPolicyRepository:
+    """
+    In-memory fake password policy repository for unit testing.
+
+    Returns None for default policy (no password validation).
+    """
+
+    async def get_default_policy(self):
+        """Return None to skip password policy validation."""
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -123,6 +143,7 @@ class TestAuthBehaviour:
 
         svc._user_repo = FakeUserRepository()
         svc._role_repo = FakeRoleRepository()
+        svc._password_policy_repo = FakePasswordPolicyRepository()
 
         return svc
 

@@ -87,3 +87,13 @@ class PlantRepository:
         if not doc:
             return None
         return self._to_model(doc)
+
+    async def delete(self, plant_id: str) -> bool:
+        """Delete a plant by ID."""
+        try:
+            oid = ObjectId(plant_id)
+        except Exception:
+            return False
+
+        result = await self._maybe_await(self._collection().delete_one({"_id": oid}))
+        return result.deleted_count > 0

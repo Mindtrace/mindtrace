@@ -36,4 +36,17 @@ class LineListResponse(BaseModel):
 
     items: List[LineResponse]
     total: int = Field(..., description="Total number of lines")
-    
+
+
+class LineUpdateRequest(BaseModel):
+    """Request model for updating an existing line."""
+
+    id: str = Field(..., description="Line ID to update")
+    name: Optional[str] = Field(None, description="Updated line name")
+    plant_id: Optional[str] = Field(None, description="Updated plant ID")
+
+
+class LineIdRequest(BaseModel):
+    """Request with line ID."""
+
+    id: str = Field(..., description="Line ID")

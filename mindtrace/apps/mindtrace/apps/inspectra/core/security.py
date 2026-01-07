@@ -1,9 +1,12 @@
+"""Security utilities for authentication and authorization."""
+
+import asyncio
 import base64
 import hashlib
 import hmac
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -21,9 +24,22 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 class TokenData(BaseModel):
     """Decoded JWT payload."""
+
     sub: str
     iat: int
     exp: int
+
+
+class AuthenticatedUser(BaseModel):
+    """Extended authenticated user with role details."""
+
+    user_id: str
+    username: str
+    role_id: str
+    role_name: str
+    plant_id: Optional[str] = None
+    permissions: List[str] = []
+    is_active: bool = True
 
 
 def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
@@ -63,6 +79,23 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
     return hmac.compare_digest(stored_dk, new_dk)
 
 
+async def hash_password_async(password: str) -> str:
+    """
+    Async version of hash_password.
+
+    Runs the CPU-intensive hashing in a thread pool to avoid blocking.
+    """
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain_password: str, stored_hash: str) -> bool:
+    """
+    Async version of verify_password.
+
+    Runs the CPU-intensive verification in a thread pool to avoid blocking.
+    """
+    return await asyncio.to_thread(verify_password, plain_password, stored_hash)
+
 
 def create_access_token(subject: str) -> str:
     """Create a signed JWT for the given subject (user id/username)."""
@@ -79,7 +112,11 @@ def create_access_token(subject: str) -> str:
         "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
     }
 
-    secret = getattr(inspectra, "JWT_SECRET", "dev-secret")
+    secret = getattr(inspectra, "JWT_SECRET", None)
+    if secret is None:
+        raise ValueError("JWT_SECRET is not configured")
+    if hasattr(secret, "get_secret_value"):
+        secret = secret.get_secret_value()
     algorithm = getattr(inspectra, "JWT_ALGORITHM", "HS256")
 
     token = jwt.encode(
@@ -123,3 +160,107 @@ async def require_user(
         )
     token = credentials.credentials
     return decode_token(token)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> AuthenticatedUser:
+    """
+    FastAPI dependency that decodes JWT and fetches full user info.
+
+    Returns AuthenticatedUser with role details.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    token_data = decode_token(credentials.credentials)
+
+    # Import here to avoid circular imports
+    from mindtrace.apps.inspectra.repositories.user_repository import UserRepository
+    from mindtrace.apps.inspectra.repositories.role_repository import RoleRepository
+
+    user_repo = UserRepository()
+    user = await user_repo.get_by_username(token_data.sub)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is deactivated",
+        )
+
+    role_repo = RoleRepository()
+    role = await role_repo.get_by_id(user.role_id)
+
+    return AuthenticatedUser(
+        user_id=user.id,
+        username=user.username,
+        role_id=user.role_id,
+        role_name=role.name if role else "unknown",
+        plant_id=user.plant_id,
+        permissions=role.permissions if role and role.permissions else [],
+        is_active=user.is_active,
+    )
+
+
+def require_role(*allowed_roles: str) -> Callable:
+    """
+    Dependency factory for role-based access control.
+
+    Usage:
+        @app.get("/admin")
+        async def admin_endpoint(user: AuthenticatedUser = Depends(require_role("admin"))):
+            ...
+    """
+
+    async def role_checker(
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> AuthenticatedUser:
+        if user.role_name not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required role: {list(allowed_roles)}",
+            )
+        return user
+
+    return role_checker
+
+
+def require_permission(*permissions: str) -> Callable:
+    """
+    Dependency factory for permission-based access control.
+
+    Usage:
+        @app.get("/users")
+        async def list_users(user: AuthenticatedUser = Depends(require_permission("users:read"))):
+            ...
+    """
+
+    async def permission_checker(
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> AuthenticatedUser:
+        user_perms = set(user.permissions)
+        required_perms = set(permissions)
+
+        if not required_perms.issubset(user_perms):
+            missing = required_perms - user_perms
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permissions: {list(missing)}",
+            )
+        return user
+
+    return permission_checker
+
+
+# Convenience dependencies
+require_admin = require_role("admin")
+require_user_or_admin = require_role("user", "admin")

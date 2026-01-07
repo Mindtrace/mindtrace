@@ -39,10 +39,17 @@ ListPlantsSchema = TaskSchema(
     output_schema=PlantListResponse,
 )
 
+DeletePlantSchema = TaskSchema(
+    name="inspectra_delete_plant",
+    input_schema=PlantIdRequest,
+    output_schema=None,
+)
+
 __all__ = [
     "CreatePlantSchema",
     "UpdatePlantSchema",
     "GetPlantSchema",
     "ListPlantsSchema",
+    "DeletePlantSchema",
     "PlantIdRequest",
 ]
