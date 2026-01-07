@@ -8,31 +8,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from PIL import Image
 
-from mindtrace.apps.horizon.config import reset_horizon_config
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset Horizon config before each test to ensure clean state."""
-    reset_horizon_config()
-    yield
-    reset_horizon_config()
+from mindtrace.apps.horizon.config import HorizonConfig
 
 
 @pytest.fixture
-def mock_config():
-    """Provide a mock configuration dictionary."""
-    return {
-        "HORIZON": {
-            "URL": "http://localhost:8080",
-            "MONGO_URI": "mongodb://localhost:27017",
-            "MONGO_DB": "horizon_test",
-            "AUTH_ENABLED": False,
-            "AUTH_SECRET_KEY": "test-secret-key",
-            "LOG_LEVEL": "DEBUG",
-            "DEBUG": True,
-        }
-    }
+def horizon_test_config():
+    """Provide test configuration for Horizon service."""
+    return HorizonConfig(
+        URL="http://localhost:8080",
+        MONGO_URI="mongodb://localhost:27017",
+        MONGO_DB="horizon_test",
+        AUTH_ENABLED=False,
+        LOG_LEVEL="DEBUG",
+        DEBUG=True,
+    )
 
 
 @pytest.fixture
@@ -114,4 +103,3 @@ def env_override():
     override = EnvOverride()
     yield override
     override.restore()
-

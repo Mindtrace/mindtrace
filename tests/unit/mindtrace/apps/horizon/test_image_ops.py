@@ -1,6 +1,6 @@
 """Unit tests for image_ops module."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
@@ -80,4 +80,3 @@ class TestLoadFont:
 
                 assert font is mock_default
                 mock_ld.assert_called_once()
-

@@ -232,4 +232,3 @@ class TestAuthMiddlewareGenerateToken:
         middleware = AuthMiddleware(app, secret_key="secret-b", enabled=True)
 
         assert middleware._validate_token(token) is False
-

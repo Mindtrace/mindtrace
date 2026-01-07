@@ -186,4 +186,3 @@ class AuthMiddleware(BaseHTTPMiddleware):
             hashlib.sha256,
         ).hexdigest()
         return f"{timestamp_str}.{signature}"
-

@@ -82,6 +82,7 @@ class ImageProcessingJobStore:
         error: Optional[str] = None,
     ) -> None:
         """Fire-and-forget job recording. Non-blocking."""
+
         async def _record():
             try:
                 await self.record_async(
@@ -126,4 +127,3 @@ class ImageProcessingJobStore:
     async def clear(self) -> int:
         """Delete all jobs. Returns count deleted."""
         return await self._db.delete_many(self._collection)
-

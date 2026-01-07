@@ -173,6 +173,7 @@ class TestImageProcessingJobStoreFireAndForget:
 
         # Give the task a chance to run
         import asyncio
+
         await asyncio.sleep(0.01)
 
         mock_db.insert_one.assert_called_once()
@@ -208,7 +209,6 @@ class TestImageProcessingJobStoreFireAndForget:
 
     def test_record_handles_runtime_error(self):
         """Test record() handles RuntimeError gracefully."""
-        import asyncio
 
         mock_db = MagicMock()
         mock_db.insert_one = AsyncMock(return_value="id")
@@ -218,4 +218,3 @@ class TestImageProcessingJobStoreFireAndForget:
         with patch("mindtrace.apps.horizon.jobs.asyncio.get_event_loop", side_effect=RuntimeError("No loop")):
             # Should not raise
             store.record("test")
-

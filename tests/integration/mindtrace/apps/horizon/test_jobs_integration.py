@@ -2,11 +2,8 @@
 
 import pytest
 
-from mindtrace.apps.horizon.db import HorizonDB
 from mindtrace.apps.horizon.jobs import ImageProcessingJobStore
 from mindtrace.apps.horizon.types import ImageProcessingJob
-
-from .conftest import MONGO_DB, MONGO_URL
 
 
 @pytest.mark.asyncio
@@ -109,4 +106,3 @@ class TestImageProcessingJobStoreCustomCollection:
 
         # Cleanup
         await horizon_db.delete_many("custom_op_jobs")
-

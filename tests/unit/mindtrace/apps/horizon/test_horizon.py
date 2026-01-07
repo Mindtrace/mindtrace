@@ -2,11 +2,12 @@
 
 import base64
 from io import BytesIO
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from PIL import Image
 
+from mindtrace.apps.horizon.config import HorizonConfig
 from mindtrace.apps.horizon.horizon import HorizonService
 from mindtrace.apps.horizon.types import (
     BlurInput,
@@ -25,25 +26,23 @@ def create_test_image(mode="RGB", color=(255, 0, 0), size=(100, 100)):
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
+@pytest.fixture
+def service():
+    """Create a HorizonService instance for testing."""
+    return HorizonService(
+        config_overrides=HorizonConfig(
+            URL="http://localhost:8080",
+            MONGO_URI="mongodb://localhost:27017",
+            MONGO_DB="test",
+            AUTH_ENABLED=False,
+        ),
+        enable_db=False,
+        live_service=False,
+    )
+
+
 class TestHorizonServiceEcho:
     """Tests for HorizonService echo endpoint."""
-
-    @pytest.fixture
-    def service(self):
-        """Create a HorizonService instance for testing."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://localhost:8080",
-                MONGO_URI="mongodb://localhost:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
-
-            # Create service without actual network binding
-            service = HorizonService(enable_db=False, live_service=False)
-            yield service
 
     def test_echo_returns_message(self, service):
         """Test echo endpoint returns the input message."""
@@ -69,22 +68,6 @@ class TestHorizonServiceEcho:
 
 class TestHorizonServiceInvert:
     """Tests for HorizonService invert endpoint."""
-
-    @pytest.fixture
-    def service(self):
-        """Create a HorizonService instance for testing."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://localhost:8080",
-                MONGO_URI="mongodb://localhost:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
-
-            service = HorizonService(enable_db=False, live_service=False)
-            yield service
 
     def test_invert_rgb_image(self, service):
         """Test invert on RGB image."""
@@ -152,22 +135,6 @@ class TestHorizonServiceInvert:
 class TestHorizonServiceGrayscale:
     """Tests for HorizonService grayscale endpoint."""
 
-    @pytest.fixture
-    def service(self):
-        """Create a HorizonService instance for testing."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://localhost:8080",
-                MONGO_URI="mongodb://localhost:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
-
-            service = HorizonService(enable_db=False, live_service=False)
-            yield service
-
     def test_grayscale_converts_color(self, service):
         """Test grayscale converts color image."""
         input_b64 = create_test_image("RGB", (255, 0, 0))
@@ -196,22 +163,6 @@ class TestHorizonServiceGrayscale:
 
 class TestHorizonServiceBlur:
     """Tests for HorizonService blur endpoint."""
-
-    @pytest.fixture
-    def service(self):
-        """Create a HorizonService instance for testing."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://localhost:8080",
-                MONGO_URI="mongodb://localhost:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
-
-            service = HorizonService(enable_db=False, live_service=False)
-            yield service
 
     def test_blur_applies_filter(self, service):
         """Test blur applies Gaussian blur."""
@@ -246,22 +197,6 @@ class TestHorizonServiceBlur:
 
 class TestHorizonServiceWatermark:
     """Tests for HorizonService watermark endpoint."""
-
-    @pytest.fixture
-    def service(self):
-        """Create a HorizonService instance for testing."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://localhost:8080",
-                MONGO_URI="mongodb://localhost:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
-
-            service = HorizonService(enable_db=False, live_service=False)
-            yield service
 
     def test_watermark_adds_text(self, service):
         """Test watermark adds text to image."""
@@ -310,142 +245,112 @@ class TestHorizonServiceWatermark:
 class TestHorizonServiceInit:
     """Tests for HorizonService initialization."""
 
-    def test_init_loads_config(self):
-        """Test __init__ loads configuration."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+    def test_init_uses_horizon_config(self):
+        """Test __init__ uses HorizonConfig for settings."""
+        service = HorizonService(
+            config_overrides=HorizonConfig(MONGO_DB="custom_db"),
+            enable_db=False,
+            live_service=False,
+        )
 
-            service = HorizonService(enable_db=False, live_service=False)
-
-            mock_config.assert_called()
-            assert service._horizon_config is not None
+        # Config should be accessible via self.config.HORIZON
+        assert service.config.HORIZON.MONGO_DB == "custom_db"
 
     def test_init_creates_db_when_enabled(self):
         """Test __init__ creates HorizonDB when enable_db=True."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test_db",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(MONGO_URI="mongodb://test:27017", MONGO_DB="test_db"),
+            enable_db=True,
+            live_service=False,
+        )
 
-            service = HorizonService(enable_db=True, live_service=False)
-
-            assert service.db is not None
-            assert service.db._db_name == "test_db"
+        assert service.db is not None
+        assert service.db._db_name == "test_db"
 
     def test_init_no_db_when_disabled(self):
         """Test __init__ doesn't create HorizonDB when enable_db=False."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(),
+            enable_db=False,
+            live_service=False,
+        )
 
-            service = HorizonService(enable_db=False, live_service=False)
-
-            assert service.db is None
+        assert service.db is None
 
     def test_init_registers_endpoints(self):
         """Test __init__ registers all expected endpoints."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(),
+            enable_db=False,
+            live_service=False,
+        )
 
-            service = HorizonService(enable_db=False, live_service=False)
-
-            # Check that endpoints are registered
-            assert "echo" in service._endpoints
-            assert "invert" in service._endpoints
-            assert "grayscale" in service._endpoints
-            assert "blur" in service._endpoints
-            assert "watermark" in service._endpoints
+        # Check that endpoints are registered
+        assert "echo" in service._endpoints
+        assert "invert" in service._endpoints
+        assert "grayscale" in service._endpoints
+        assert "blur" in service._endpoints
+        assert "watermark" in service._endpoints
 
     def test_default_url_returns_parsed_url(self):
         """Test default_url() returns parsed URL from config."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(URL="http://example.com:9000")
+        url = HorizonService.default_url()
 
-            url = HorizonService.default_url()
-
-            assert url.host == "example.com"
-            assert url.port == 9000
+        # Should return the default URL from HorizonSettings
+        assert url.host == "localhost"
+        assert url.port == 8080
 
     @pytest.mark.asyncio
     async def test_shutdown_cleanup_disconnects_db(self):
         """Test shutdown_cleanup() disconnects database."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(MONGO_URI="mongodb://test:27017", MONGO_DB="test"),
+            enable_db=True,
+            live_service=False,
+        )
+        service.db.disconnect = AsyncMock()
 
-            service = HorizonService(enable_db=True, live_service=False)
-            service.db.disconnect = AsyncMock()
+        await service.shutdown_cleanup()
 
-            await service.shutdown_cleanup()
-
-            service.db.disconnect.assert_called_once()
+        service.db.disconnect.assert_called_once()
 
     def test_record_does_nothing_when_jobs_disabled(self):
         """Test _record() does nothing when db/jobs is disabled."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(),
+            enable_db=False,
+            live_service=False,
+        )
+        assert service._jobs is None
 
-            service = HorizonService(enable_db=False, live_service=False)
-            assert service._jobs is None
-
-            # Should not raise, just do nothing
-            service._record("test", 100, 100, 1.0)
+        # Should not raise, just do nothing
+        service._record("test", 100, 100, 1.0)
 
     def test_record_calls_jobs_when_enabled(self):
         """Test _record() calls jobs.record when db is enabled."""
-        with patch("mindtrace.apps.horizon.horizon.get_horizon_config") as mock_config:
-            mock_config.return_value = MagicMock()
-            mock_config.return_value.HORIZON = MagicMock(
-                URL="http://test:9000",
-                MONGO_URI="mongodb://test:27017",
-                MONGO_DB="test",
-                AUTH_ENABLED=False,
-            )
-            mock_config.return_value.get_secret = MagicMock(return_value="test-secret")
+        service = HorizonService(
+            config_overrides=HorizonConfig(MONGO_URI="mongodb://test:27017", MONGO_DB="test"),
+            enable_db=True,
+            live_service=False,
+        )
+        service._jobs.record = MagicMock()
 
-            service = HorizonService(enable_db=True, live_service=False)
-            service._jobs.record = MagicMock()
+        service._record("blur", 100, 200, 0.0)
 
-            service._record("blur", 100, 200, 0.0)
+        service._jobs.record.assert_called_once()
 
-            service._jobs.record.assert_called_once()
+    def test_config_instances_are_independent(self):
+        """Test that each service instance has independent config."""
+        service1 = HorizonService(
+            config_overrides=HorizonConfig(MONGO_DB="db1"),
+            enable_db=False,
+            live_service=False,
+        )
+        service2 = HorizonService(
+            config_overrides=HorizonConfig(MONGO_DB="db2"),
+            enable_db=False,
+            live_service=False,
+        )
 
+        assert service1.config.HORIZON.MONGO_DB == "db1"
+        assert service2.config.HORIZON.MONGO_DB == "db2"

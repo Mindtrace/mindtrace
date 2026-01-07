@@ -1,16 +1,18 @@
 """Horizon Service - Reference implementation for mindtrace apps."""
 
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi.middleware.cors import CORSMiddleware
+from urllib3.util.url import parse_url
 
+from mindtrace.core.config import SettingsLike
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
 
 from . import image_ops
 from .auth_middleware import AuthMiddleware
-from .config import get_horizon_config
+from .config import HorizonConfig
 from .db import HorizonDB
 from .jobs import ImageProcessingJobStore
 from .types import (
@@ -38,8 +40,16 @@ class HorizonService(Service):
     Provides endpoints for image manipulation (invert, grayscale, blur, watermark)
     with optional MongoDB logging and Bearer token authentication.
 
+    Configuration is accessed via self.config.HORIZON (mindtrace Config pattern).
+
     Example:
-        >>> HorizonService.launch(url="http://localhost:8080", block=True)
+        ```python
+        # Default settings (reads HORIZON__* env vars)
+        HorizonService.launch(block=True)
+
+        # With config overrides
+        HorizonService.launch(config_overrides=HorizonConfig(DEBUG=True), block=True)
+        ```
     """
 
     def __init__(
@@ -48,24 +58,36 @@ class HorizonService(Service):
         url: str | None = None,
         enable_db: bool = True,
         enable_auth: bool | None = None,
+        config_overrides: SettingsLike | None = None,
         **kwargs,
     ):
         """Initialize HorizonService.
 
         Args:
-            url: Service URL. Defaults to HORIZON__URL from config.
+            url: Service URL override. Defaults to config.HORIZON.URL.
             enable_db: Enable MongoDB for job logging.
-            enable_auth: Enable Bearer token auth. Defaults to HORIZON__AUTH_ENABLED.
+            enable_auth: Enable Bearer token auth. Defaults to config.HORIZON.AUTH_ENABLED.
+            config_overrides: Config overrides. Defaults to HorizonConfig().
             **kwargs: Passed to Service base class.
         """
-        self._horizon_config = get_horizon_config()
-        horizon = self._horizon_config.HORIZON
-
-        if url is None:
-            url = horizon.URL
+        if config_overrides is None:
+            config_overrides = HorizonConfig()
 
         kwargs.setdefault("use_structlog", True)
-        super().__init__(url=url, **kwargs)
+
+        super().__init__(
+            url=url,
+            summary="Horizon Image Processing Service",
+            description="Reference implementation with image processing, MongoDB, and auth.",
+            config_overrides=config_overrides,
+            **kwargs,
+        )
+
+        cfg = self.config.HORIZON
+
+        # Use URL from config if not explicitly provided
+        if url is None:
+            self._url = self.build_url(url=cfg.URL)
 
         # CORS - allow frontend access
         self.app.add_middleware(
@@ -80,13 +102,13 @@ class HorizonService(Service):
         self.db: Optional[HorizonDB] = None
         self._jobs: Optional[ImageProcessingJobStore] = None
         if enable_db:
-            self.db = HorizonDB(uri=horizon.MONGO_URI, db_name=horizon.MONGO_DB)
+            self.db = HorizonDB(uri=cfg.MONGO_URI, db_name=cfg.MONGO_DB)
             self._jobs = ImageProcessingJobStore(self.db, fallback_logger=self.logger)
 
         # Auth middleware
         if enable_auth is None:
-            enable_auth = str(horizon.AUTH_ENABLED).lower() in ("true", "yes", "on", "1")
-        auth_secret = self._horizon_config.get_secret("HORIZON", "AUTH_SECRET_KEY") or "dev-secret-key"
+            enable_auth = str(cfg.AUTH_ENABLED).lower() in ("true", "yes", "on", "1")
+        auth_secret = self.config.get_secret("HORIZON", "AUTH_SECRET_KEY") or "dev-secret-key"
         self.app.add_middleware(AuthMiddleware, secret_key=auth_secret, enabled=enable_auth)
 
         # Request logging
@@ -106,10 +128,9 @@ class HorizonService(Service):
         self.add_endpoint("/watermark", self.watermark, schema=WatermarkSchema, as_tool=True)
 
     @classmethod
-    def default_url(cls):
-        """Return default URL from HORIZON__URL config."""
-        from urllib3.util.url import parse_url
-        return parse_url(get_horizon_config().HORIZON.URL)
+    def default_url(cls) -> Any:
+        """Return default URL from config (respects HORIZON__URL env var)."""
+        return parse_url(HorizonConfig().HORIZON.URL)
 
     async def shutdown_cleanup(self):
         """Close database connection on shutdown."""

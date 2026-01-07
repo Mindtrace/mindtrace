@@ -1,12 +1,7 @@
 """Unit tests for Horizon configuration."""
 
-import pytest
-
-from mindtrace.apps.horizon.config import (
-    HorizonSettings,
-    get_horizon_config,
-    reset_horizon_config,
-)
+from mindtrace.apps.horizon.config import HorizonConfig, HorizonSettings
+from mindtrace.core import Config
 
 
 class TestHorizonSettings:
@@ -39,19 +34,17 @@ class TestHorizonSettings:
         assert settings.AUTH_ENABLED is True
 
 
-class TestGetHorizonConfig:
-    """Tests for get_horizon_config function."""
+class TestHorizonConfig:
+    """Tests for HorizonConfig class."""
 
-    def test_returns_config_instance(self):
-        """Test that get_horizon_config returns a Config instance."""
-        from mindtrace.core import Config
-
-        config = get_horizon_config()
+    def test_is_config_subclass(self):
+        """Test that HorizonConfig is a Config subclass."""
+        config = HorizonConfig()
         assert isinstance(config, Config)
 
     def test_has_horizon_section(self):
         """Test that config has HORIZON section with expected keys."""
-        config = get_horizon_config()
+        config = HorizonConfig()
 
         assert "HORIZON" in config
         horizon = config["HORIZON"]
@@ -61,49 +54,64 @@ class TestGetHorizonConfig:
         assert "MONGO_DB" in horizon
         assert "AUTH_ENABLED" in horizon
 
-    def test_config_is_cached(self):
-        """Test that get_horizon_config returns the same instance."""
-        config1 = get_horizon_config()
-        config2 = get_horizon_config()
-
-        assert config1 is config2
-
-    def test_reset_clears_cache(self):
-        """Test that reset_horizon_config clears the cache."""
-        config1 = get_horizon_config()
-        reset_horizon_config()
-        config2 = get_horizon_config()
-
-        assert config1 is not config2
-
     def test_attribute_access(self):
         """Test that config supports attribute access."""
-        config = get_horizon_config()
+        config = HorizonConfig()
 
         assert config.HORIZON.URL == "http://localhost:8080"
         assert config.HORIZON.MONGO_DB == "horizon"
 
+    def test_dict_access(self):
+        """Test that config supports dict access."""
+        config = HorizonConfig()
+
+        assert config["HORIZON"]["URL"] == "http://localhost:8080"
+        assert config["HORIZON"]["MONGO_DB"] == "horizon"
+
+    def test_with_overrides(self):
+        """Test config with overrides."""
+        config = HorizonConfig(DEBUG=True, MONGO_DB="custom")
+
+        assert config.HORIZON.DEBUG == "True"  # Note: becomes string after Config processing
+        assert config.HORIZON.MONGO_DB == "custom"
+        # Default values still present
+        assert config.HORIZON.URL == "http://localhost:8080"
+
     def test_env_override(self, env_override):
         """Test that environment variables override config values."""
         env_override.set(HORIZON__URL="http://0.0.0.0:9999", HORIZON__MONGO_DB="env_db")
-        reset_horizon_config()
 
-        config = get_horizon_config()
+        config = HorizonConfig()
 
         assert config.HORIZON.URL == "http://0.0.0.0:9999"
         assert config.HORIZON.MONGO_DB == "env_db"
 
     def test_secret_key_is_masked(self):
         """Test that AUTH_SECRET_KEY is masked in normal access."""
-        config = get_horizon_config()
+        config = HorizonConfig()
 
         # Secret fields should be masked
         assert config.HORIZON.AUTH_SECRET_KEY == "********"
 
     def test_secret_key_retrievable(self):
         """Test that AUTH_SECRET_KEY can be retrieved via get_secret."""
-        config = get_horizon_config()
+        config = HorizonConfig()
 
         secret = config.get_secret("HORIZON", "AUTH_SECRET_KEY")
         assert secret == "dev-secret-key"
 
+    def test_clone_with_overrides(self):
+        """Test cloning config with overrides doesn't affect original."""
+        original = HorizonConfig()
+        cloned = original.clone_with_overrides({"HORIZON": {"URL": "http://cloned:8080"}})
+
+        assert original.HORIZON.URL == "http://localhost:8080"
+        assert cloned.HORIZON.URL == "http://cloned:8080"
+
+    def test_multiple_configs_are_independent(self):
+        """Test that multiple HorizonConfig instances are independent."""
+        config1 = HorizonConfig(MONGO_DB="db1")
+        config2 = HorizonConfig(MONGO_DB="db2")
+
+        assert config1.HORIZON.MONGO_DB == "db1"
+        assert config2.HORIZON.MONGO_DB == "db2"

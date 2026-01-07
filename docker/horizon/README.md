@@ -31,6 +31,8 @@ docker compose logs -f horizon
 
 ## Configuration
 
+Horizon uses the `config_overrides` pattern - no global config state. Environment variables are automatically applied.
+
 ### Environment Variables
 
 All Horizon configuration can be set via environment variables with the `HORIZON__` prefix:
@@ -41,7 +43,7 @@ All Horizon configuration can be set via environment variables with the `HORIZON
 | `HORIZON__MONGO_URI` | MongoDB connection string | `mongodb://mongo:27017` |
 | `HORIZON__MONGO_DB` | MongoDB database name | `horizon` |
 | `HORIZON__AUTH_ENABLED` | Enable authentication | `false` |
-| `HORIZON__AUTH_SECRET_KEY` | Secret for token validation | (empty) |
+| `HORIZON__AUTH_SECRET_KEY` | Secret for token validation | `dev-secret-key` |
 | `HORIZON__LOG_LEVEL` | Logging level | `INFO` |
 | `HORIZON__DEBUG` | Debug mode | `false` |
 
@@ -49,9 +51,9 @@ All Horizon configuration can be set via environment variables with the `HORIZON
 
 To enable authentication:
 
-1. Set `HORIZON_AUTH_ENABLED=true` in `.env`
+1. Set `HORIZON__AUTH_ENABLED=true` in `.env`
 2. Generate a secret key: `python -c "import secrets; print(secrets.token_hex(32))"`
-3. Set `HORIZON_AUTH_SECRET_KEY=<your-key>` in `.env`
+3. Set `HORIZON__AUTH_SECRET_KEY=<your-key>` in `.env`
 4. Restart the service
 
 Clients must then include a Bearer token in the Authorization header.
@@ -134,7 +136,7 @@ docker compose logs --tail=100 horizon
 
 ## Production Considerations
 
-1. **Authentication**: Enable `HORIZON_AUTH_ENABLED` and set a strong secret key
+1. **Authentication**: Enable `HORIZON__AUTH_ENABLED` and set a strong secret key
 2. **MongoDB Auth**: Uncomment and set `MONGO_ROOT_USER` and `MONGO_ROOT_PASSWORD`
 3. **Volumes**: The MongoDB data is persisted in a named volume `horizon-mongo-data`
 4. **Networking**: Consider using a reverse proxy (nginx, traefik) for SSL termination

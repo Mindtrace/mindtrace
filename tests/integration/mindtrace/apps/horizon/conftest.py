@@ -6,6 +6,7 @@ These tests require MongoDB to be running (handled by docker-compose in tests/).
 import asyncio
 import base64
 import logging
+import os
 from io import BytesIO
 
 import pytest
@@ -14,7 +15,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image
 
 from mindtrace.apps.horizon import HorizonDB, HorizonService
-from mindtrace.apps.horizon.config import reset_horizon_config
 
 # MongoDB connection settings (matches tests/docker-compose.yml)
 MONGO_URL = "mongodb://localhost:27018"
@@ -34,14 +34,6 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset Horizon config before each test."""
-    reset_horizon_config()
-    yield
-    reset_horizon_config()
 
 
 @pytest.fixture(scope="function")
@@ -81,27 +73,39 @@ async def horizon_service_manager():
     """Launch HorizonService and provide a connection manager for testing.
 
     Session-scoped for performance - service is launched once and reused.
+
+    Note: For launch() we use environment variables because the subprocess
+    needs to recreate settings. HorizonSettings (pydantic-settings) will
+    automatically pick up HORIZON__* env vars.
     """
-    import os
+    # Set env vars for the subprocess to pick up
+    env_vars = {
+        "HORIZON__URL": HORIZON_URL,
+        "HORIZON__MONGO_URI": MONGO_URL,
+        "HORIZON__MONGO_DB": MONGO_DB,
+        "HORIZON__AUTH_ENABLED": "false",
+    }
 
-    # Set environment variables for test configuration
-    os.environ["HORIZON__URL"] = HORIZON_URL
-    os.environ["HORIZON__MONGO_URI"] = MONGO_URL
-    os.environ["HORIZON__MONGO_DB"] = MONGO_DB
-    os.environ["HORIZON__AUTH_ENABLED"] = "false"
-
-    reset_horizon_config()
+    # Store original values
+    original_env = {}
+    for key, value in env_vars.items():
+        original_env[key] = os.environ.get(key)
+        os.environ[key] = value
 
     try:
+        # Launch without settings - subprocess will read from env
         manager = HorizonService.launch(url=HORIZON_URL, timeout=60)
         yield manager
     except Exception as e:
         logger.error(f"Horizon service launch failed: {e}")
         raise
     finally:
-        # Clean up environment
-        for key in ["HORIZON__URL", "HORIZON__MONGO_URI", "HORIZON__MONGO_DB", "HORIZON__AUTH_ENABLED"]:
-            os.environ.pop(key, None)
+        # Restore original env vars
+        for key, original_value in original_env.items():
+            if original_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original_value
 
 
 @pytest.fixture

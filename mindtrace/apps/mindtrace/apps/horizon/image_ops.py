@@ -72,4 +72,3 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         except (OSError, IOError):
             continue
     return ImageFont.load_default()
-
