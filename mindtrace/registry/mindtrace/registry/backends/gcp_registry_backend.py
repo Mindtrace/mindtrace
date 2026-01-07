@@ -335,7 +335,7 @@ class GCPRegistryBackend(RegistryBackend):
                     if on_conflict == "skip":
                         return OpResult.skipped(obj_name, obj_version)
                     else:
-                        return OpResult.error_result(
+                        return OpResult.failed(
                             obj_name,
                             obj_version,
                             RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
@@ -346,7 +346,7 @@ class GCPRegistryBackend(RegistryBackend):
                     uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
                     if uploaded:
                         self.gcs.delete_batch(uploaded)
-                    return OpResult.error_result(
+                    return OpResult.failed(
                         obj_name,
                         obj_version,
                         RuntimeError(f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}"),
@@ -364,7 +364,7 @@ class GCPRegistryBackend(RegistryBackend):
                 if on_conflict == "skip":
                     return OpResult.skipped(obj_name, obj_version)
                 else:
-                    return OpResult.error_result(
+                    return OpResult.failed(
                         obj_name,
                         obj_version,
                         RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
@@ -374,7 +374,7 @@ class GCPRegistryBackend(RegistryBackend):
                 uploaded = [remote for _, remote in files]
                 if uploaded:
                     self.gcs.delete_batch(uploaded)
-                return OpResult.error_result(
+                return OpResult.failed(
                     obj_name,
                     obj_version,
                     RuntimeError(meta_result.error_message or "Metadata write failed"),
@@ -385,7 +385,7 @@ class GCPRegistryBackend(RegistryBackend):
                 return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
-            return OpResult.error_result(obj_name, obj_version, e)
+            return OpResult.failed(obj_name, obj_version, e)
 
     def push(
         self,
@@ -427,7 +427,7 @@ class GCPRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -469,7 +469,7 @@ class GCPRegistryBackend(RegistryBackend):
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
-                        OpResult.error_result(
+                        OpResult.failed(
                             obj_name,
                             obj_version,
                             LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
@@ -557,7 +557,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -624,7 +624,7 @@ class GCPRegistryBackend(RegistryBackend):
                 objects_with_errors.add((obj_name, obj_version))
                 if on_error == "raise":
                     raise
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         # Batch download all files
         if all_files_to_download:
@@ -641,7 +641,7 @@ class GCPRegistryBackend(RegistryBackend):
                                 f"Failed to download {file_result.remote_path}: {file_result.error_message}"
                             )
                         results.add(
-                            OpResult.error_result(
+                            OpResult.failed(
                                 obj_key[0],
                                 obj_key[1],
                                 error=file_result.error_type or "DownloadError",
@@ -694,7 +694,7 @@ class GCPRegistryBackend(RegistryBackend):
             return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
-            return OpResult.error_result(obj_name, obj_version, e)
+            return OpResult.failed(obj_name, obj_version, e)
 
     def delete(
         self,
@@ -721,7 +721,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -750,7 +750,7 @@ class GCPRegistryBackend(RegistryBackend):
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
-                        OpResult.error_result(
+                        OpResult.failed(
                             obj_name,
                             obj_version,
                             LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
@@ -866,7 +866,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
             Missing entries (not found) are omitted from the result.
         """
         names = self._normalize_to_list(name)
@@ -907,7 +907,7 @@ class GCPRegistryBackend(RegistryBackend):
                     if on_error == "raise":
                         raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
-                    results.add(OpResult.error_result(obj_name, obj_version, e))
+                    results.add(OpResult.failed(obj_name, obj_version, e))
 
             # Process failures (not_found entries are omitted, errors are reported)
             for file_result in batch_result.failed_results:
@@ -919,7 +919,7 @@ class GCPRegistryBackend(RegistryBackend):
                 if on_error == "raise":
                     raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
                 results.add(
-                    OpResult.error_result(
+                    OpResult.failed(
                         obj_name,
                         obj_version,
                         error=file_result.error_type or "DownloadError",
@@ -950,7 +950,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -982,7 +982,7 @@ class GCPRegistryBackend(RegistryBackend):
                 if on_error == "raise":
                     raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
-                    OpResult.error_result(
+                    OpResult.failed(
                         obj_name,
                         obj_version,
                         error=file_result.error_type or "DeleteError",
