@@ -7,7 +7,7 @@ import pytest_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from redis import Redis
 
-from mindtrace.database import MindtraceDocument, MongoMindtraceODMBackend
+from mindtrace.database import MindtraceDocument, MongoMindtraceODM
 
 from .test_redis_odm import UserDoc as RedisUserDoc
 
@@ -65,7 +65,7 @@ async def test_db(mongo_client):
 async def mongo_backend(request, test_db):
     """Create a MongoDB backend instance."""
     model_cls = getattr(request, "param", MindtraceDocument)
-    backend = MongoMindtraceODMBackend(model_cls, MONGO_URL, MONGO_DB)
+    backend = MongoMindtraceODM(model_cls, MONGO_URL, MONGO_DB)
     _test_clients.append(backend.client)
     await backend.initialize()
 
