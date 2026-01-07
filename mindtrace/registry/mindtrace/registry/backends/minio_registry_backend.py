@@ -1,24 +1,50 @@
-import io
+"""Minio/S3-based registry backend.
+
+Uses Minio/S3 for both artifact and metadata storage as well as locks.
+"""
+
 import json
 import os
+import shutil
+import tempfile
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, TypeVar
+from typing import Dict, List, Tuple, Union
 
-from minio import Minio
-from minio.api import CopySource
-from minio.error import S3Error
-
-from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError
-
-T = TypeVar("T")
+from mindtrace.registry.backends.registry_backend import (
+    ConcreteVersionArg,
+    MetadataArg,
+    NameArg,
+    PathArg,
+    RegistryBackend,
+    VersionArg,
+)
+from mindtrace.registry.core.exceptions import (
+    LockAcquisitionError,
+    RegistryObjectNotFound,
+    RegistryVersionConflict,
+)
+from mindtrace.registry.core.types import OpResult, OpResults
+from mindtrace.storage import MinioStorageHandler, StringResult
 
 
 class MinioRegistryBackend(RegistryBackend):
-    """Handles syncing object version directories and registry metadata with a remote MinIO server.
+    """A Minio/S3-based registry backend.
 
-    Expects the same logical registry layout in a given MinIO bucket.
+    This backend stores objects and metadata in a Minio/S3 bucket, providing
+    distributed storage capabilities with atomic operations.
+
+    Locking strategy:
+    - Writers (push/delete): Use exclusive locks when acquire_lock=True (mutable registries)
+    - Readers (pull): No locking. Metadata is written LAST, so if readable, files exist.
+
+    Atomicity for immutable registries (acquire_lock=False):
+    - Check if exists before upload (fail if exists)
+    - Metadata written LAST (the "commit point")
+
+    Uses `_files` manifest from metadata to avoid expensive object listing on pull.
 
     Local Docker Example:
         To run a local MinIO registry, first start a MinIO server using docker:
@@ -33,21 +59,10 @@ class MinioRegistryBackend(RegistryBackend):
                 -v ~/.cache/mindtrace/minio_data:/data \\
                 minio/minio server /data --console-address ":9001"
 
-        =============================  ===============================================
-        Option                         Description
-        =============================  ===============================================
-        -p 9000:9000                   API access (S3-compatible)
-        -p 9001:9001                   Web UI (access at http://localhost:9001)
-        -v ~/minio_data:/data          Persistent volume for object storage
-        MINIO_ROOT_USER/PASSWORD       Admin credentials (change in production)
-        minio server /data             Starts the object server
-        =============================  ===============================================
-
     Usage Example::
 
         from mindtrace.registry import Registry, MinioRegistryBackend
 
-        # Connect to a remote MinIO registry (expected to be non-local in practice)
         minio_backend = MinioRegistryBackend(
             uri="~/.cache/mindtrace/minio_registry",
             endpoint="localhost:9000",
@@ -57,27 +72,6 @@ class MinioRegistryBackend(RegistryBackend):
             secure=False
         )
         registry = Registry(backend=minio_backend)
-
-        # Save some objects to the registry
-        registry.save("test:int", 42)
-        registry.save("test:float", 3.14)
-        registry.save("test:str", "Hello, World!")
-        registry.save("test:list", [1, 2, 3])
-        registry.save("test:dict", {"a": 1, "b": 2})
-
-        # Print the contents of the registry
-        print(registry)
-
-        Registry at /Users/jeremywurbs/.cache/mindtrace/minio_registry   
-        ┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
-        ┃ Object     ┃ Version ┃ Class          ┃ Value         ┃ Metadata ┃
-        ┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
-        │ test:dict  │ v1      │ builtins.dict  │ <dict>        │ (none)   │
-        │ test:float │ v1      │ builtins.float │ 3.14          │ (none)   │
-        │ test:int   │ v1      │ builtins.int   │ 42            │ (none)   │
-        │ test:list  │ v1      │ builtins.list  │ <list>        │ (none)   │
-        │ test:str   │ v1      │ builtins.str   │ Hello, World! │ (none)   │
-        └────────────┴─────────┴────────────────┴───────────────┴──────────┘    
     """
 
     def __init__(
@@ -89,54 +83,53 @@ class MinioRegistryBackend(RegistryBackend):
         secret_key: str,
         bucket: str = "minio-registry",
         secure: bool = True,
+        prefix: str = "",
+        max_workers: int = 4,
         **kwargs,
     ):
         """Initialize the MinioRegistryBackend.
 
         Args:
-            uri: The base directory path where all object files and metadata will be stored.
+            uri: The base directory path where local cache will be stored.
             endpoint: MinIO server endpoint.
             access_key: MinIO access key.
             secret_key: MinIO secret key.
             bucket: MinIO bucket name.
             secure: Whether to use HTTPS.
+            prefix: Optional prefix (subfolder) within the bucket for all registry objects.
+            max_workers: Maximum number of parallel workers for batch operations.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
+        self._prefix = prefix.strip("/") if prefix else ""
         self._uri = Path(uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
-        self._metadata_path = "registry_metadata.json"
-        self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
+        self._metadata_path = self._prefixed("registry_metadata.json")
+        self._max_workers = max_workers
+        self._bucket = bucket
+        self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}, prefix: {self._prefix}")
 
-        self.client = Minio(
+        self.storage = MinioStorageHandler(
+            bucket_name=bucket,
             endpoint=endpoint,
             access_key=access_key,
             secret_key=secret_key,
             secure=secure,
+            ensure_bucket=True,
+            create_if_missing=True,
         )
 
-        # Create bucket if it doesn't exist
-        if not self.client.bucket_exists(bucket):
-            self.client.make_bucket(bucket)
-        self.bucket = bucket
+        self._ensure_metadata_file()
 
-        # Check if metadata file exists
-        try:
-            self.client.stat_object(self.bucket, str(self._metadata_path))
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                # Create empty metadata file if it doesn't exist
-                data = json.dumps({"materializers": {}}).encode()
-                data_io = io.BytesIO(data)
-                self.client.put_object(
-                    self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
-                )
-            else:
-                # Re-raise other S3 errors
-                raise
+    def _prefixed(self, path: str) -> str:
+        """Add prefix to a path if prefix is set."""
+        if self._prefix:
+            return f"{self._prefix}/{path}"
+        return path
 
     @property
     def uri(self) -> Path:
+        """The resolved base URI for the backend."""
         return self._uri
 
     @property
@@ -144,603 +137,936 @@ class MinioRegistryBackend(RegistryBackend):
         """The resolved metadata file path for the backend."""
         return Path(self._metadata_path)
 
-    def push(self, name: str, version: str, local_path: str | Path):
-        """Upload a local directory to MinIO.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Path Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _ensure_metadata_file(self):
+        """Ensure the metadata file exists in the bucket."""
+        if not self.storage.exists(self._metadata_path):
+            data = json.dumps({"materializers": {}})
+            self.storage.upload_string(data, self._metadata_path)
+
+    def _object_key(self, name: str, version: str) -> str:
+        """Convert object name and version to a storage key."""
+        return self._prefixed(f"objects/{name}/{version}")
+
+    def _object_metadata_path(self, name: str, version: str) -> str:
+        """Generate the metadata file path for an object version."""
+        return self._prefixed(f"_meta_{name.replace(':', '_')}@{version}.json")
+
+    def _object_metadata_prefix(self, name: str) -> str:
+        """Generate the metadata file prefix for listing versions."""
+        return self._prefixed(f"_meta_{name.replace(':', '_')}@")
+
+    def _lock_path(self, key: str) -> str:
+        """Get the path for a write lock file."""
+        return self._prefixed(f"_lock_{key.replace('/', '_').replace('@', '_')}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal Locking (exclusive only, for mutable registry writes)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _acquire_lock(self, key: str, lock_id: str, timeout: int = 30) -> bool:
+        """Acquire exclusive lock using atomic S3 operations.
 
         Args:
-            local_path: Path to local directory to upload
-            name: Name of the object
-            version: Version string
-        """
-        self.validate_object_name(name)
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Uploading directory from {local_path} to {remote_key}.")
-
-        local_path = Path(local_path)
-        uploaded_files = []
-        for file in local_path.rglob("*"):
-            if file.is_file():
-                obj_key = os.path.join(remote_key, file.relative_to(local_path)).replace("\\", "/")
-                self.logger.debug(f"Uploading file {file} to {obj_key}")
-                self.client.fput_object(self.bucket, obj_key, str(file))
-                uploaded_files.append(obj_key)
-
-        self.logger.debug(f"Upload complete. Files uploaded: {uploaded_files}")
-
-        # Verify upload
-        try:
-            objects = list(self.client.list_objects(self.bucket, prefix=remote_key))
-            self.logger.debug(f"Verification - Objects in {remote_key}: {[obj.object_name for obj in objects]}")
-        except Exception as e:
-            self.logger.error(f"Error verifying upload: {e}")
-
-    def pull(self, name: str, version: str, local_path: str | Path):
-        """Download a directory from MinIO.
-
-        Args:
-            name: Name of the object
-            version: Version string
-            local_path: Path to local directory to download
-        """
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Downloading directory from {remote_key} to {local_path}.")
-
-        # List objects before download
-        try:
-            objects = list(self.client.list_objects(self.bucket, prefix=remote_key))
-            self.logger.debug(f"Objects found in {remote_key}: {[obj.object_name for obj in objects]}")
-        except Exception as e:
-            self.logger.error(f"Error listing objects before download: {e}")
-
-        local_path = Path(local_path)
-        downloaded_files = []
-        for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
-            # Skip directory markers
-            if not obj.object_name or obj.object_name.endswith("/"):
-                continue
-
-            # Get the relative path by removing the remote_key prefix
-            relative_path = obj.object_name[len(remote_key) :].lstrip("/")
-            if not relative_path:  # Skip if it's the root directory
-                continue
-
-            dest_path = local_path / relative_path
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            self.logger.debug(f"Downloading {obj.object_name} to {dest_path}")
-            self.client.fget_object(self.bucket, obj.object_name, str(dest_path))
-            downloaded_files.append(str(dest_path))
-
-        self.logger.debug(f"Download complete. Files downloaded: {downloaded_files}")
-
-        # Verify download
-        try:
-            local_files = list(local_path.rglob("*"))
-            self.logger.debug(f"Verification - Local files after download: {[str(f) for f in local_files]}")
-        except Exception as e:
-            self.logger.error(f"Error verifying download: {e}")
-
-    def delete(self, name: str, version: str):
-        """Delete a version directory from MinIO.
-
-        Args:
-            name: Name of the object
-            version: Version string
-        """
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Deleting directory: {remote_key}")
-
-        for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
-            if obj.object_name:
-                self.client.remove_object(self.bucket, obj.object_name)
-
-    def save_metadata(self, name: str, version: str, metadata: dict):
-        """Save object metadata to MinIO.
-
-        Args:
-            name: Name of the object
-            version: Version string
-            metadata: Dictionary containing object metadata
-        """
-        self.validate_object_name(name)
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
-
-        # Convert metadata to bytes and wrap in BytesIO
-        data = json.dumps(metadata).encode()
-        data_io = io.BytesIO(data)
-
-        self.client.put_object(self.bucket, meta_path, data_io, len(data), content_type="application/json")
-
-    def fetch_metadata(self, name: str, version: str) -> dict:
-        """Fetch object metadata from MinIO.
-
-        Args:
-            name: Name of the object
-            version: Version string
+            key: The key to acquire the lock for.
+            lock_id: Unique identifier for this lock holder.
+            timeout: Lock expiration in seconds.
 
         Returns:
-            Dictionary containing object metadata
+            True if lock acquired, False otherwise.
         """
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Loading metadata from: {meta_path}")
+        lock_path = self._lock_path(key)
+        expires_at = time.time() + timeout
+        lock_data = json.dumps({"lock_id": lock_id, "expires_at": expires_at})
 
-        response = self.client.get_object(self.bucket, meta_path)
-        metadata = json.loads(response.data.decode())
-
-        # Add the path to the object directory to the metadata:
-        object_key = self._object_key(name, version)
-        metadata.update({"path": str(self._uri / object_key)})
-
-        self.logger.debug(f"Loaded metadata: {metadata}")
-        return metadata
-
-    def delete_metadata(self, name: str, version: str):
-        """Delete object metadata from MinIO.
-
-        Args:
-            name: Name of the object.
-            version: Version of the object.
-        """
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
-            self.client.remove_object(self.bucket, meta_path)
-        except S3Error as e:
-            if e.code != "NoSuchKey":
-                raise
+            # Try atomic create (if_generation_match=0 = only if doesn't exist)
+            result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
+            if result.ok:
+                return True
 
-    def register_materializer(self, object_class: str, materializer_class: str):
-        """Register a materializer for an object class.
+            # Lock exists - check if expired
+            download_result = self.storage.download_string(lock_path)
+            if download_result.status == "not_found":
+                # Lock deleted between our attempts, retry create
+                retry_result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
+                return retry_result.ok
 
-        Args:
-            object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
-        """
-        try:
-            try:
-                response = self.client.get_object(self.bucket, str(self._metadata_path))
-                metadata = json.loads(response.data.decode())
-            except S3Error as e:
-                if e.code == "NoSuchKey":
-                    # If metadata doesn't exist, create new metadata
-                    metadata = {"materializers": {}}
-                else:
-                    # Re-raise any other S3 errors
-                    raise
+            if not download_result.ok:
+                return False
 
-            # Update metadata with new materializer
-            metadata["materializers"][object_class] = materializer_class
+            existing = json.loads(download_result.content.decode("utf-8"))
+            if time.time() < existing.get("expires_at", 0):
+                return False  # Lock still valid
 
-            # Convert metadata to bytes and wrap in BytesIO
-            data = json.dumps(metadata).encode()
-            data_io = io.BytesIO(data)
+            # Lock expired - delete it and try to create a new one
+            self.storage.delete(lock_path)
+            takeover_result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
+            return takeover_result.ok
 
-            # Save updated metadata
-            self.client.put_object(
-                self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
-            )
         except Exception as e:
-            self.logger.error(f"Error registering materializer for {object_class}: {e}")
-            raise e
-        else:
-            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+            self.logger.error(f"Error acquiring lock for {key}: {e}")
+            return False
 
-    def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class.
-
-        Args:
-            object_class: Object class to get the registered materializer for.
-
-        Returns:
-            Materializer class string, or None if no materializer is registered for the object class.
-        """
+    def _release_lock(self, key: str, lock_id: str) -> None:
+        """Release write lock if we own it."""
+        lock_path = self._lock_path(key)
         try:
-            response = self.client.get_object(self.bucket, str(self._metadata_path))
-            metadata = json.loads(response.data.decode())
-            return metadata.get("materializers", {}).get(object_class)
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                # No metadata file exists, so no materializers are registered
-                return None
-            # Re-raise any other S3 errors
-            raise
-        except Exception as e:
-            # Re-raise any other errors
-            self.logger.error(f"Error getting registered materializer for {object_class}: {e}")
-            raise
+            # Verify ownership before deleting
+            result = self.storage.download_string(lock_path)
+            if result.ok:
+                data = json.loads(result.content.decode("utf-8"))
+                if data.get("lock_id") == lock_id:
+                    self.storage.delete(lock_path)
+        except Exception:
+            pass  # Best effort
 
-    def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
-
-        Returns:
-            Dictionary mapping object classes to their registered materializer classes.
-        """
-        try:
-            response = self.client.get_object(self.bucket, str(self._metadata_path))
-            metadata = json.loads(response.data.decode())
-            return metadata.get("materializers", {})
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                # No metadata file exists, so no materializers are registered
-                return {}
-            # Re-raise any other S3 errors
-            raise
-        except Exception as e:
-            # Re-raise any other errors
-            self.logger.error(f"Error loading materializers: {e}")
-            raise
-
-    def save_registry_metadata(self, metadata: dict):
-        """Save registry-level metadata to the backend.
-
-        Args:
-            metadata: Dictionary containing registry metadata to save.
-        """
-        try:
-            data = json.dumps(metadata).encode()
-            data_io = io.BytesIO(data)
-            self.client.put_object(
-                self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
-            )
-        except Exception as e:
-            self.logger.error(f"Error saving registry metadata: {e}")
-            raise e
-
-    def fetch_registry_metadata(self) -> dict:
-        """Fetch registry-level metadata from the backend.
-
-        Returns:
-            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
-        """
-        try:
-            response = self.client.get_object(self.bucket, str(self._metadata_path))
-            return json.loads(response.data.decode())
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                # No metadata file exists
-                return {}
-            # Re-raise any other S3 errors
-            raise
-        except Exception as e:
-            self.logger.debug(f"Could not load registry metadata: {e}")
+    def _acquire_locks_batch(self, keys: List[str], timeout: int = 30) -> Dict[str, str | None]:
+        """Acquire write locks for multiple keys in parallel."""
+        if not keys:
             return {}
 
-    def list_objects(self) -> List[str]:
-        """List all objects in the registry.
+        def try_acquire(key: str) -> Tuple[str, str | None]:
+            lock_id = str(uuid.uuid4())
+            if self._acquire_lock(key, lock_id, timeout):
+                return (key, lock_id)
+            return (key, None)
+
+        results: Dict[str, str | None] = {}
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for key, lock_id in executor.map(try_acquire, keys):
+                results[key] = lock_id
+        return results
+
+    def _release_locks_batch(self, locks: Dict[str, str]) -> None:
+        """Release multiple locks in parallel."""
+        if not locks:
+            return
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            list(executor.map(lambda kv: self._release_lock(kv[0], kv[1]), locks.items()))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Push Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _write_metadata(self, name: str, version: str, metadata: dict, on_conflict: str = "error") -> StringResult:
+        """Write a single metadata file atomically.
+
+        Args:
+            name: Object name.
+            version: Object version.
+            metadata: Metadata dict to write.
+            on_conflict: "error", "skip", or "overwrite".
 
         Returns:
-            List of object names
+            StringResult with status: "ok", "already_exists", "overwritten", or "error".
         """
+        meta_path = self._object_metadata_path(name, version)
+        data = json.dumps(metadata)
+
+        if on_conflict == "overwrite":
+            # Check if exists first to determine status
+            existed = self.storage.exists(meta_path)
+            result = self.storage.upload_string(data, meta_path)
+            if result.ok:
+                return StringResult(
+                    remote_path=meta_path,
+                    status="overwritten" if existed else "ok",
+                )
+            return result
+        else:
+            # "error" or "skip" - atomic insert with if_generation_match=0
+            result = self.storage.upload_string(data, meta_path, if_generation_match=0)
+            if result.status == "already_exists":
+                return StringResult(
+                    remote_path=meta_path,
+                    status="already_exists",
+                    error_type="PreconditionFailed",
+                    error_message=f"Object {name}@{version} already exists",
+                )
+            return result
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Artifact + Metadata Operations (atomic)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _push_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        obj_path: Path,
+        obj_meta: dict,
+        on_conflict: str,
+        fail_if_exists: bool,
+        max_workers: int = 4,
+    ) -> OpResult:
+        """Push a single object's files and metadata.
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            obj_path: Local path to upload from.
+            obj_meta: Metadata dict.
+            on_conflict: "error", "skip", or "overwrite".
+            fail_if_exists: If True, fail if files already exist.
+            max_workers: Maximum parallel workers for file uploads.
+
+        Returns:
+            OpResult indicating success, skip, overwrite, or error.
+        """
+        try:
+            remote_key = self._object_key(obj_name, obj_version)
+
+            # Use _files manifest from metadata if available (built by Registry)
+            files_manifest = obj_meta.get("_files") if obj_meta else None
+            if files_manifest is not None:
+                files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+            else:
+                # Fallback: collect files from directory
+                files = []
+                for file_path in obj_path.rglob("*"):
+                    if file_path.is_file():
+                        relative = file_path.relative_to(obj_path).as_posix()
+                        files.append((str(file_path), f"{remote_key}/{relative}"))
+
+            # Prepare metadata with path
+            prepared_meta = dict(obj_meta) if obj_meta else {}
+            prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
+
+            if files:
+                batch_result = self.storage.upload_batch(
+                    files, on_error="skip", fail_if_exists=fail_if_exists, max_workers=max_workers
+                )
+
+                # Check for conflicts (already_exists) or errors
+                conflict_files = [r for r in batch_result.results if r.status == "already_exists"]
+                error_files = [r for r in batch_result.results if r.status == "error"]
+
+                if conflict_files:
+                    # Rollback any successful uploads
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    if uploaded:
+                        self.storage.delete_batch(uploaded)
+
+                    if on_conflict == "skip":
+                        return OpResult.skipped(obj_name, obj_version)
+                    else:
+                        return OpResult.error_result(
+                            obj_name,
+                            obj_version,
+                            RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
+                        )
+
+                if error_files:
+                    # Rollback any successful uploads
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    if uploaded:
+                        self.storage.delete_batch(uploaded)
+                    return OpResult.error_result(
+                        obj_name,
+                        obj_version,
+                        RuntimeError(f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}"),
+                    )
+
+            # Write metadata LAST (the "commit point")
+            meta_result = self._write_metadata(obj_name, obj_version, prepared_meta, on_conflict)
+
+            if meta_result.status == "already_exists":
+                # Rollback uploaded files
+                uploaded = [remote for _, remote in files]
+                if uploaded:
+                    self.storage.delete_batch(uploaded)
+
+                if on_conflict == "skip":
+                    return OpResult.skipped(obj_name, obj_version)
+                else:
+                    return OpResult.error_result(
+                        obj_name,
+                        obj_version,
+                        RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
+                    )
+            elif meta_result.status == "error":
+                # Rollback uploaded files
+                uploaded = [remote for _, remote in files]
+                if uploaded:
+                    self.storage.delete_batch(uploaded)
+                return OpResult.error_result(
+                    obj_name,
+                    obj_version,
+                    RuntimeError(meta_result.error_message or "Metadata write failed"),
+                )
+            elif meta_result.status == "overwritten":
+                return OpResult.overwritten(obj_name, obj_version)
+            else:
+                return OpResult.success(obj_name, obj_version)
+
+        except Exception as e:
+            return OpResult.error_result(obj_name, obj_version, e)
+
+    def push(
+        self,
+        name: NameArg,
+        version: VersionArg,
+        local_path: PathArg,
+        metadata: MetadataArg = None,
+        on_conflict: str = "error",
+        on_error: str = "raise",
+        acquire_lock: bool = False,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Push artifacts and metadata to the registry.
+
+        Objects are processed in parallel for maximum efficiency. Each object's
+        push is atomic with proper rollback on failure.
+
+        Atomicity strategy depends on acquire_lock:
+        - acquire_lock=False (immutable): Check if exists before upload.
+          If any file exists, the push fails. Metadata written LAST.
+        - acquire_lock=True (mutable): Acquire locks first, then overwrite files freely.
+
+        Args:
+            name: Object name(s). Single string or list.
+            version: Version string(s). Registry must resolve versions before calling.
+            local_path: Local source directory/directories to upload from.
+            metadata: Metadata dict(s) to store.
+            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
+                "skip" silently skips, "overwrite" replaces existing. Default is "error".
+            on_error: Error handling strategy.
+                "raise" (default): First error stops and raises exception.
+                "skip": Continue on errors, report status in return dict.
+            acquire_lock: If True, acquire locks before push (for mutable registries).
+                If False, rely on fail_if_exists check for atomicity (immutable registries).
+            max_workers: Maximum parallel workers. Defaults to instance setting.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.error_result() on failure
+        """
+        # Normalize inputs
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+        paths = self._normalize_paths(local_path, len(names))
+        metadatas = self._normalize_metadata(metadata, len(names))
+
+        if not (len(names) == len(versions) == len(paths) == len(metadatas)):
+            raise ValueError("Input list lengths must match")
+
+        # Validate on_conflict + acquire_lock combination
+        if on_conflict == "overwrite" and not acquire_lock:
+            raise ValueError(
+                "on_conflict='overwrite' requires acquire_lock=True. "
+                "Overwriting without a lock is unsafe for concurrent access."
+            )
+
+        # Validate all names upfront
+        for obj_name in names:
+            self.validate_object_name(obj_name)
+
+        results = OpResults()
+        acquired_locks: Dict[str, str] = {}
+        failed_locks: set = set()
+
+        # Acquire locks if mutable registry
+        if acquire_lock:
+            lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+
+            for obj_name, obj_version in zip(names, versions):
+                lock_key = f"{obj_name}@{obj_version}"
+                lock_id = lock_results.get(lock_key)
+                if lock_id:
+                    acquired_locks[lock_key] = lock_id
+                else:
+                    if on_error == "raise":
+                        self._release_locks_batch(acquired_locks)
+                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
+                    failed_locks.add((obj_name, obj_version))
+                    results.add(
+                        OpResult.error_result(
+                            obj_name,
+                            obj_version,
+                            LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
+                        )
+                    )
+
+        try:
+            workers = max_workers or self._max_workers
+            file_workers = min(2, workers)
+            fail_if_exists = not acquire_lock
+
+            # Prepare tasks for objects that haven't failed lock acquisition
+            push_tasks = [
+                (n, v, p, m) for n, v, p, m in zip(names, versions, paths, metadatas) if (n, v) not in failed_locks
+            ]
+
+            def push_one(args: Tuple[str, str, Path, dict]) -> OpResult:
+                obj_name, obj_version, obj_path, obj_meta = args
+                return self._push_single_object(
+                    obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
+                )
+
+            # Process objects in parallel
+            first_error: Exception | None = None
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(push_one, push_tasks):
+                    results.add(result)
+
+                    if result.is_error and on_error == "raise" and first_error is None:
+                        if result.error == "RegistryVersionConflict":
+                            first_error = RegistryVersionConflict(result.message or "Version conflict")
+                        else:
+                            first_error = RuntimeError(result.message or "Unknown error")
+
+            if first_error:
+                raise first_error
+
+        finally:
+            if acquired_locks:
+                self._release_locks_batch(acquired_locks)
+
+        return results
+
+    def pull(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        local_path: PathArg,
+        acquire_lock: bool = False,
+        on_error: str = "raise",
+        metadata: MetadataArg = None,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Download artifacts to local path(s).
+
+        Uses the `_files` manifest from metadata when available to avoid
+        expensive object listing operations. All files across all objects
+        are downloaded in a single batch for maximum efficiency.
+
+        Note: The acquire_lock parameter is accepted for API compatibility but
+        ignored. Read locks are not implemented because:
+        1. Listing shared locks is slow
+        2. Metadata is written LAST, so if readable, files should exist
+        3. Worst case during concurrent write: download fails, caller retries
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+            local_path: Destination directory path(s) to copy to.
+            acquire_lock: Ignored. Kept for API compatibility.
+            on_error: Error handling strategy.
+            metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
+            max_workers: Maximum parallel workers. Defaults to instance setting.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.error_result() on failure
+        """
+        workers = max_workers or self._max_workers
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+        paths = self._normalize_paths(local_path, len(names))
+
+        if len(names) != len(versions) or len(names) != len(paths):
+            raise ValueError("Input list lengths must match")
+
+        # Use pre-fetched metadata if provided, otherwise fetch it
+        if metadata is not None:
+            if isinstance(metadata, dict):
+                raise ValueError(
+                    "metadata must be a list of dicts (one per object), not a single dict. "
+                    "Use metadata=[meta_dict] for single objects."
+                )
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+            metadata_results = OpResults()
+            for n, v, m in zip(names, versions, metadatas):
+                metadata_results.add(OpResult.success(n, v, metadata=m))
+        else:
+            metadata_results = self.fetch_metadata(names, versions, on_error="skip")
+
+        results = OpResults()
+        all_files_to_download: List[Tuple[str, str]] = []
+        file_to_object: Dict[str, Tuple[str, str]] = {}
+        objects_with_errors: set = set()
+
+        for obj_name, obj_version, dest_path in zip(names, versions, paths):
+            try:
+                remote_key = self._object_key(obj_name, obj_version)
+                meta_result = metadata_results.get((obj_name, obj_version))
+                if not meta_result or not meta_result.ok:
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+
+                obj_metadata = meta_result.metadata or {}
+                files_manifest = obj_metadata.get("_files")
+
+                if files_manifest:
+                    for relative_path in files_manifest:
+                        remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
+                        dest_file = dest_path / relative_path
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        all_files_to_download.append((remote_path, str(dest_file)))
+                        file_to_object[str(dest_file)] = (obj_name, obj_version)
+                else:
+                    # Fallback to listing (expensive)
+                    objects_list = self.storage.list_objects(prefix=remote_key)
+                    if not objects_list:
+                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+                    for obj in objects_list:
+                        if not obj.endswith("/"):
+                            relative_path = obj[len(remote_key) :].lstrip("/")
+                            if relative_path:
+                                dest_file = dest_path / relative_path
+                                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                all_files_to_download.append((obj, str(dest_file)))
+                                file_to_object[str(dest_file)] = (obj_name, obj_version)
+
+            except Exception as e:
+                objects_with_errors.add((obj_name, obj_version))
+                if on_error == "raise":
+                    raise
+                results.add(OpResult.error_result(obj_name, obj_version, e))
+
+        # Batch download all files
+        if all_files_to_download:
+            download_result = self.storage.download_batch(all_files_to_download, max_workers=workers, on_error="skip")
+
+            for file_result in download_result.failed_results:
+                dest_path_str = file_result.local_path
+                if dest_path_str in file_to_object:
+                    obj_key = file_to_object[dest_path_str]
+                    if obj_key not in objects_with_errors:
+                        objects_with_errors.add(obj_key)
+                        if on_error == "raise":
+                            raise RuntimeError(
+                                f"Failed to download {file_result.remote_path}: {file_result.error_message}"
+                            )
+                        results.add(
+                            OpResult.error_result(
+                                obj_key[0],
+                                obj_key[1],
+                                error=file_result.error_type or "DownloadError",
+                                message=file_result.error_message or "Unknown error",
+                            )
+                        )
+
+        # Mark successful objects
+        for obj_name, obj_version in zip(names, versions):
+            if (obj_name, obj_version) not in objects_with_errors and (obj_name, obj_version) not in results:
+                results.add(OpResult.success(obj_name, obj_version))
+
+        return results
+
+    def _delete_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        max_workers: int = 4,
+        metadata: dict | None = None,
+    ) -> OpResult:
+        """Delete a single object's files and metadata."""
+        try:
+            remote_key = self._object_key(obj_name, obj_version)
+
+            # Use _files manifest if available, otherwise fallback to listing
+            if metadata and "_files" in metadata:
+                paths_to_delete = [f"{remote_key}/{f}".replace("\\", "/") for f in metadata["_files"]]
+            else:
+                paths_to_delete = self.storage.list_objects(prefix=remote_key)
+
+            # Add metadata path
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            paths_to_delete.append(meta_path)
+
+            # Batch delete all files
+            self.storage.delete_batch(paths_to_delete, max_workers=max_workers)
+
+            return OpResult.success(obj_name, obj_version)
+
+        except Exception as e:
+            return OpResult.error_result(obj_name, obj_version, e)
+
+    def delete(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        on_error: str = "raise",
+        acquire_lock: bool = False,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Delete artifact(s) and metadata.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+            on_error: Error handling strategy.
+            acquire_lock: If True, acquire locks before delete.
+            max_workers: Maximum parallel workers.
+
+        Returns:
+            OpResults with OpResult for each (name, version).
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        workers = max_workers or self._max_workers
+        results = OpResults()
+        acquired_locks: Dict[str, str] = {}
+        failed_locks: set = set()
+
+        # Acquire locks if mutable registry
+        if acquire_lock:
+            lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+
+            for obj_name, obj_version in zip(names, versions):
+                lock_key = f"{obj_name}@{obj_version}"
+                lock_id = lock_results.get(lock_key)
+                if lock_id:
+                    acquired_locks[lock_key] = lock_id
+                else:
+                    if on_error == "raise":
+                        self._release_locks_batch(acquired_locks)
+                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
+                    failed_locks.add((obj_name, obj_version))
+                    results.add(
+                        OpResult.error_result(
+                            obj_name,
+                            obj_version,
+                            LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
+                        )
+                    )
+
+        try:
+            file_workers = min(2, workers)
+            delete_tasks = [(n, v) for n, v in zip(names, versions) if (n, v) not in failed_locks]
+
+            # Fetch metadata for _files manifests
+            metadata_results = self.fetch_metadata(
+                [n for n, v in delete_tasks],
+                [v for n, v in delete_tasks],
+                on_error="skip",
+            )
+
+            def delete_one(args: Tuple[str, str]) -> OpResult:
+                obj_name, obj_version = args
+                meta_result = metadata_results.get((obj_name, obj_version))
+                obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
+                return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
+
+            first_error: Exception | None = None
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(delete_one, delete_tasks):
+                    results.add(result)
+
+                    if result.is_error and on_error == "raise" and first_error is None:
+                        first_error = RuntimeError(result.message or "Unknown error")
+
+            if first_error:
+                raise first_error
+
+        finally:
+            if acquired_locks:
+                self._release_locks_batch(acquired_locks)
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metadata-Only Operations
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def save_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        metadata: Union[dict, List[dict]],
+    ) -> None:
+        """Save metadata only (insert-only)."""
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if isinstance(metadata, dict):
+            if len(names) != 1:
+                raise ValueError(
+                    "metadata must be a list of dicts when saving multiple objects. "
+                    "Use metadata=[meta_dict, ...] with one dict per object."
+                )
+            metadatas = [metadata]
+        else:
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+
+        for obj_name in names:
+            self.validate_object_name(obj_name)
+
+        def write_one(args: Tuple[str, str, dict]) -> StringResult:
+            obj_name, obj_version, obj_meta = args
+            return self._write_metadata(obj_name, obj_version, obj_meta, on_conflict="error")
+
+        if len(names) == 1:
+            result = write_one((names[0], versions[0], metadatas[0]))
+            if result.status == "already_exists":
+                raise RegistryVersionConflict(result.error_message)
+            elif result.status == "error":
+                raise RuntimeError(result.error_message)
+        else:
+            errors = []
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                for result in executor.map(write_one, zip(names, versions, metadatas)):
+                    if result.status == "already_exists":
+                        errors.append(RegistryVersionConflict(result.error_message))
+                    elif result.status == "error":
+                        errors.append(RuntimeError(result.error_message))
+            if errors:
+                raise errors[0]
+
+    def fetch_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        on_error: str = "skip",
+    ) -> OpResults:
+        """Fetch metadata for object version(s) using batch download.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+            on_error: Behavior when fetching fails. "skip" or "raise".
+
+        Returns:
+            OpResults with OpResult for each (name, version).
+            Missing entries (not found) are omitted from the result.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        results = OpResults()
+        temp_dir = tempfile.mkdtemp()
+        files_to_download: List[Tuple[str, str]] = []
+        temp_to_key: Dict[str, Tuple[str, str]] = {}
+
+        try:
+            for obj_name, obj_version in zip(names, versions):
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                temp_path = os.path.join(temp_dir, f"{obj_name.replace(':', '_')}@{obj_version}.json")
+                files_to_download.append((meta_path, temp_path))
+                temp_to_key[temp_path] = (obj_name, obj_version)
+
+            batch_result = self.storage.download_batch(files_to_download, on_error="skip")
+
+            for file_result in batch_result.ok_results:
+                obj_name, obj_version = temp_to_key[file_result.local_path]
+                try:
+                    with open(file_result.local_path, "r") as f:
+                        meta = json.load(f)
+
+                    object_key = self._object_key(obj_name, obj_version)
+                    meta["path"] = f"s3://{self._bucket}/{object_key}"
+                    results.add(OpResult.success(obj_name, obj_version, metadata=meta))
+
+                except json.JSONDecodeError as e:
+                    if on_error == "raise":
+                        raise
+                    self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
+                    results.add(OpResult.error_result(obj_name, obj_version, e))
+
+            for file_result in batch_result.failed_results:
+                if file_result.local_path not in temp_to_key:
+                    continue
+                obj_name, obj_version = temp_to_key[file_result.local_path]
+                if file_result.status == "not_found":
+                    continue  # Skip missing entries
+                if on_error == "raise":
+                    raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
+                results.add(
+                    OpResult.error_result(
+                        obj_name,
+                        obj_version,
+                        error=file_result.error_type or "DownloadError",
+                        message=file_result.error_message or "Unknown error",
+                    )
+                )
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        return results
+
+    def delete_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        on_error: str = "raise",
+    ) -> OpResults:
+        """Delete metadata for object version(s)."""
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        path_to_key: Dict[str, Tuple[str, str]] = {}
+        paths_to_delete: List[str] = []
+        for obj_name, obj_version in zip(names, versions):
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            paths_to_delete.append(meta_path)
+            path_to_key[meta_path] = (obj_name, obj_version)
+
+        batch_result = self.storage.delete_batch(paths_to_delete)
+
+        results = OpResults()
+        for file_result in batch_result.results:
+            key = path_to_key.get(file_result.remote_path)
+            if not key:
+                continue
+            obj_name, obj_version = key
+            if file_result.status == "ok":
+                results.add(OpResult.success(obj_name, obj_version))
+            else:
+                if on_error == "raise":
+                    raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
+                results.add(
+                    OpResult.error_result(
+                        obj_name,
+                        obj_version,
+                        error=file_result.error_type or "DeleteError",
+                        message=file_result.error_message or "Unknown error",
+                    )
+                )
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Registry-Level Metadata
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def save_registry_metadata(self, metadata: dict) -> None:
+        """Save registry-level metadata."""
+        data = json.dumps(metadata)
+        self.storage.upload_string(data, self._metadata_path)
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata."""
+        result = self.storage.download_string(self._metadata_path)
+        if result.ok:
+            return json.loads(result.content.decode("utf-8"))
+        self.logger.debug(f"Could not load registry metadata: {result.error_message}")
+        return {}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Discovery
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def list_objects(self) -> List[str]:
+        """List all objects in the registry."""
         objects = set()
-        prefix = "_meta_"
-        for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name and obj.object_name.endswith(".json"):
-                # Extract object name from metadata filename
-                name_part = Path(obj.object_name).stem.split("@")[0].replace("_meta_", "")
+        meta_prefix = self._prefixed("_meta_")
+        for obj_path in self.storage.list_objects(prefix=meta_prefix):
+            if obj_path.endswith(".json"):
+                filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
+                name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
                 objects.add(name)
         return sorted(list(objects))
 
-    def list_versions(self, name: str) -> List[str]:
-        """List available versions for a given object.
+    def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
+        """List available versions for object(s)."""
+        names = self._normalize_to_list(name)
+        results: Dict[str, List[str]] = {}
 
-        Args:
-            name: Name of the object
+        for obj_name in names:
+            prefix = self._object_metadata_prefix(obj_name)
+            versions = []
 
-        Returns:
-            Sorted list of version strings available for the object
-        """
-        prefix = f"_meta_{name.replace(':', '_')}@"
-        versions = []
+            for obj in self.storage.list_objects(prefix=prefix):
+                if obj.endswith(".json"):
+                    version = obj[len(prefix) : -5]
+                    versions.append(version)
 
-        for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name and obj.object_name.endswith(".json"):
-                version = obj.object_name[len(prefix) : -5]
-                versions.append(version)
-        return sorted(versions)
+            def version_key(v):
+                try:
+                    return [int(x) for x in v.split(".")]
+                except ValueError:
+                    return [0]
 
-    def has_object(self, name: str, version: str) -> bool:
-        """Check if a specific object version exists in the backend.
+            results[obj_name] = sorted(versions, key=version_key)
 
-        This method uses direct existence checks instead of listing all objects
-        for better performance, especially with large registries.
+        return results
 
-        Args:
-            name: Name of the object.
-            version: Version string.
+    def has_object(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> Dict[Tuple[str, str], bool]:
+        """Check if object version(s) exist using batch metadata fetch."""
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-        Returns:
-            True if the object version exists, False otherwise.
-        """
-        # Check if metadata file exists directly (much faster than listing all objects)
-        meta_path = self._object_metadata_path(name, version)
-        try:
-            # Try to stat the object to check existence
-            self.client.stat_object(self.bucket, meta_path)
-            # If stat_object succeeds, verify by trying to fetch metadata
-            # This handles cases where stat_object doesn't raise but object doesn't exist (e.g., in mocks)
-            try:
-                self.fetch_metadata(name, version)
-                return True
-            except (S3Error, Exception):
-                # If fetch_metadata fails, object doesn't exist
-                return False
-        except S3Error as e:
-            if e.code == "NoSuchKey" or e.code == "404":
-                return False
-            # For other S3Error codes, fall back to checking if metadata can be fetched
-            try:
-                self.fetch_metadata(name, version)
-                return True
-            except Exception:
-                return False
-        except Exception:
-            # For non-S3Error exceptions, fall back to checking if metadata can be fetched
-            try:
-                self.fetch_metadata(name, version)
-                return True
-            except Exception:
-                return False
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
 
-    def _object_key(self, name: str, version: str) -> str:
-        """Convert object name and version to a storage key.
+        metadata_results = self.fetch_metadata(names, versions, on_error="skip")
 
-        Args:
-            name: Name of the object.
-            version: Version string.
+        results: Dict[Tuple[str, str], bool] = {}
+        for obj_name, obj_version in zip(names, versions):
+            meta_result = metadata_results.get((obj_name, obj_version))
+            results[(obj_name, obj_version)] = meta_result is not None and meta_result.ok
 
-        Returns:
-            Storage key for the object version.
-        """
-        return f"objects/{name}/{version}"
+        return results
 
-    def _object_metadata_path(self, name: str, version: str) -> str:
-        """Generate the metadata file path for an object version.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Materializer Registry
+    # ─────────────────────────────────────────────────────────────────────────
 
-        Args:
-            name: Name of the object.
-            version: Version string.
+    def register_materializer(
+        self,
+        object_class: NameArg,
+        materializer_class: NameArg,
+    ) -> None:
+        """Register materializer(s) for object class(es)."""
+        obj_classes = self._normalize_to_list(object_class)
+        mat_classes = self._normalize_to_list(materializer_class)
 
-        Returns:
-            Metadata file path (e.g., "_meta_object_name@1.0.0.json").
-        """
-        return f"_meta_{name.replace(':', '_')}@{version}.json"
+        if len(obj_classes) != len(mat_classes):
+            raise ValueError("object_class and materializer_class list lengths must match")
 
-    def _object_metadata_prefix(self, name: str) -> str:
-        """Generate the metadata file prefix for listing versions of an object.
+        metadata = self.fetch_registry_metadata()
+        if "materializers" not in metadata:
+            metadata["materializers"] = {}
 
-        Args:
-            name: Name of the object.
+        for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+            metadata["materializers"][obj_cls] = mat_cls
 
-        Returns:
-            Metadata file prefix (e.g., "_meta_object_name@").
-        """
-        return f"_meta_{name.replace(':', '_')}@"
+        self.save_registry_metadata(metadata)
 
-    def _lock_key(self, key: str) -> str:
-        """Convert a key to a lock file key.
+    def registered_materializers(
+        self,
+        object_class: Union[str, None, List[str]] = None,
+    ) -> Dict[str, str]:
+        """Get registered materializers."""
+        metadata = self.fetch_registry_metadata()
+        all_materializers = metadata.get("materializers", {})
 
-        Args:
-            key: The key to convert.
+        if object_class is None:
+            return all_materializers
 
-        Returns:
-            Lock file key.
-        """
-        return f"_lock_{key}"
+        if isinstance(object_class, str):
+            obj_classes = [object_class]
+        else:
+            obj_classes = object_class
 
-    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Acquire a lock using Minio's object locking features.
-
-        Args:
-            key: The key to acquire the lock for.
-            lock_id: The ID of the lock to acquire.
-            timeout: The timeout in seconds for the lock.
-            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
-
-        Returns:
-            True if the lock was acquired, False otherwise.
-        """
-        lock_key = self._lock_key(key)
-
-        try:
-            # Check if lock exists and is not expired
-            try:
-                response = self.client.get_object(self.bucket, lock_key)
-                metadata = json.loads(response.data.decode())
-                if time.time() < metadata.get("expires_at", 0):
-                    # If there's an active exclusive lock, we can't acquire a shared lock
-                    if shared and not metadata.get("shared", False):
-                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                    # If there are active shared locks, we can't acquire an exclusive lock
-                    if not shared and metadata.get("shared", False):
-                        raise LockAcquisitionError(f"Lock {key} is currently held as shared")
-            except S3Error as e:
-                if e.code == "NoSuchKey":
-                    # Lock doesn't exist, we can proceed
-                    pass
-                else:
-                    # Unexpected S3 error
-                    raise
-            except LockAcquisitionError:
-                # Re-raise LockAcquisitionError
-                raise
-            except Exception:
-                # Lock doesn't exist or is invalid, we can proceed
-                pass
-
-            # Create lock metadata
-            metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
-
-            # Convert metadata to bytes and wrap in BytesIO
-            data = json.dumps(metadata).encode()
-            data_io = io.BytesIO(data)
-
-            # Upload lock file with metadata
-            self.client.put_object(self.bucket, lock_key, data_io, len(data), content_type="application/json")
-
-            return True
-
-        except LockAcquisitionError:
-            # Re-raise LockAcquisitionError
-            raise
-        except Exception as e:
-            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
-            return False
-
-    def release_lock(self, key: str, lock_id: str) -> bool:
-        """Release a lock by verifying ownership and removing the lock object.
-
-        Args:
-            key: The key to unlock
-            lock_id: The lock ID that was used to acquire the lock
-
-        Returns:
-            True if lock was released, False otherwise
-        """
-        lock_key = self._lock_key(key)
-
-        try:
-            # Verify lock ownership
-            try:
-                response = self.client.get_object(self.bucket, lock_key)
-                lock_data = json.loads(response.data.decode())
-                if lock_data.get("lock_id") != lock_id:
-                    return False  # Not our lock
-            except S3Error as e:
-                if e.code == "NoSuchKey":
-                    return True  # Lock doesn't exist
-                raise  # Unexpected error
-
-            # Remove the lock
-            self.client.remove_object(self.bucket, lock_key)
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error releasing lock for {key}: {e}")
-            return False
-
-    def check_lock(self, key: str) -> tuple[bool, str | None]:
-        """Check if a key is currently locked.
-
-        Args:
-            key: The key to check
-
-        Returns:
-            Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID.
-            If not locked, lock_id will be None.
-        """
-        lock_key = self._lock_key(key)
-
-        try:
-            response = self.client.get_object(self.bucket, lock_key)
-            lock_data = json.loads(response.data.decode())
-
-            # Check if lock is expired
-            if time.time() > lock_data.get("expires_at", 0):
-                return False, None
-
-            return True, lock_data.get("lock_id")
-
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                return False, None
-            raise  # Unexpected error
-
-    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
-        """Overwrite an object.
-
-        This method supports saving objects to a temporary source location first, and then moving it to a target
-        object in a single atomic operation.
-
-        After the overwrite method completes, the source object should be deleted, and the target object should be
-        updated to be the new source version.
-
-        Args:
-            source_name: Name of the source object.
-            source_version: Version of the source object.
-            target_name: Name of the target object.
-            target_version: Version of the target object.
-        """
-        try:
-            # Get the source and target object keys
-            source_key = self._object_key(source_name, source_version)
-            target_key = self._object_key(target_name, target_version)
-
-            # Get the source and target metadata keys
-            source_meta_key = self._object_metadata_path(source_name, source_version)
-            target_meta_key = self._object_metadata_path(target_name, target_version)
-
-            self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
-
-            # List source objects before any operations
-            try:
-                source_objects = list(self.client.list_objects(self.bucket, prefix=source_key, recursive=True))
-            except Exception as e:
-                self.logger.error(f"Error listing source objects: {e}")
-                raise
-
-            # If target exists, delete it first
-            try:
-                target_objects = list(self.client.list_objects(self.bucket, prefix=target_key, recursive=True))
-                if target_objects:
-                    for obj in target_objects:
-                        if obj.object_name:
-                            self.client.remove_object(self.bucket, obj.object_name)
-                self.client.remove_object(self.bucket, target_meta_key)
-            except S3Error as e:
-                if e.code != "NoSuchKey":
-                    self.logger.error(f"Error deleting target objects: {e}")
-                    raise
-                self.logger.debug("No existing target objects to delete")
-
-            # Copy all objects from source to target
-            if not source_objects:
-                raise ValueError(f"No source objects found for {source_name}@{source_version}")
-
-            for obj in source_objects:
-                # Skip directory markers (objects ending with /)
-                if not obj.object_name or obj.object_name.endswith("/"):
-                    continue
-
-                # Create target object name by replacing source prefix with target prefix
-                target_obj_name = obj.object_name.replace(source_key, target_key)
-                self.logger.debug(f"Copying {obj.object_name} to {target_obj_name}")
-
-                # Copy the object
-                self.client.copy_object(self.bucket, target_obj_name, CopySource(self.bucket, obj.object_name))
-
-            # Copy metadata file if it exists
-            try:
-                self.logger.debug(f"Copying metadata from {source_meta_key} to {target_meta_key}")
-                source_meta = self.client.get_object(self.bucket, source_meta_key)
-                metadata = json.loads(source_meta.data.decode())
-
-                # Update the path in metadata
-                metadata["path"] = f"s3://{self.bucket}/{target_key}"
-
-                # Save updated metadata
-                data = json.dumps(metadata).encode()
-                data_io = io.BytesIO(data)
-                self.client.put_object(
-                    self.bucket, target_meta_key, data_io, len(data), content_type="application/json"
-                )
-            except S3Error as e:
-                if e.code == "NoSuchKey":
-                    raise ValueError(f"No source metadata found for {source_name}@{source_version}")
-                raise
-
-            # Delete source objects
-            for obj in source_objects:
-                # Skip directory markers
-                if not obj.object_name or obj.object_name.endswith("/"):
-                    continue
-                self.client.remove_object(self.bucket, obj.object_name)
-
-            # Delete source metadata
-            self.client.remove_object(self.bucket, source_meta_key)
-
-            self.logger.debug(f"Successfully completed overwrite operation for {target_name}@{target_version}")
-
-        except Exception as e:
-            self.logger.error(f"Error during overwrite operation: {e}")
-            raise e
+        return {k: v for k, v in all_materializers.items() if k in obj_classes}
