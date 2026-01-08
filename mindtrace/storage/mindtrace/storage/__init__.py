@@ -1,4 +1,4 @@
-from mindtrace.storage.base import BatchResult, FileResult, StorageHandler, StringResult
+from mindtrace.storage.base import BatchResult, FileResult, Status, StorageHandler, StringResult
 from mindtrace.storage.gcs import GCSStorageHandler
 from mindtrace.storage.minio import MinioStorageHandler
 
@@ -9,4 +9,5 @@ __all__ = [
     "MinioStorageHandler",
     "StorageHandler",
     "StringResult",
+    "Status",
 ]

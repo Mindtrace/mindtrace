@@ -119,8 +119,16 @@ class RegistryWithCache(Registry):
             if not resolved_version:
                 return True
 
-            remote_meta = self._remote.backend.fetch_metadata(name, resolved_version, on_error="skip").first()
-            cache_meta = self._cache.backend.fetch_metadata(name, resolved_version, on_error="skip").first()
+            # Single item fetch - wrap in try/except since backend raises on not found
+            try:
+                remote_meta = self._remote.backend.fetch_metadata(name, resolved_version).first()
+            except Exception:
+                remote_meta = None
+
+            try:
+                cache_meta = self._cache.backend.fetch_metadata(name, resolved_version).first()
+            except Exception:
+                cache_meta = None
 
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
@@ -137,8 +145,9 @@ class RegistryWithCache(Registry):
         names = [resolved[i][0] for i in indices]
         versions = [resolved[i][1] for i in indices]
 
-        remote_results = self._remote.backend.fetch_metadata(names, versions, on_error="skip")
-        cache_results = self._cache.backend.fetch_metadata(names, versions, on_error="skip")
+        # Batch fetch - backend returns results without raising
+        remote_results = self._remote.backend.fetch_metadata(names, versions)
+        cache_results = self._cache.backend.fetch_metadata(names, versions)
 
         stale = set()
         for i, (n, v) in zip(indices, zip(names, versions)):

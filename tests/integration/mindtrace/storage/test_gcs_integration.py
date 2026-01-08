@@ -33,7 +33,7 @@ def gcs_client():
 @pytest.fixture
 def test_bucket(gcs_client) -> Generator[str, None, None]:
     """Create a temporary bucket for testing."""
-    bucket_name = f"mindtrace-test-{uuid.uuid4()}"
+    bucket_name = "mindtrace-storage-test"
 
     try:
         # Create bucket
@@ -78,6 +78,7 @@ def gcs_handler(temp_dir, test_bucket):
             bucket_name=test_bucket,
             project_id=project_id,
             credentials_path=credentials_path,
+            prefix=f"test-{uuid.uuid4()}",
             ensure_bucket=True,
             create_if_missing=True,
             location=location,

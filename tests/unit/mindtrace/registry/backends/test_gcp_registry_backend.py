@@ -279,15 +279,45 @@ def test_push_conflict_error(backend, sample_object_dir, sample_metadata):
         backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
 
-def test_push_conflict_skip(backend, sample_object_dir, sample_metadata):
-    """Test push with on_conflict='skip'."""
+def test_push_conflict_skip_single(backend, sample_object_dir, sample_metadata):
+    """Test push with on_conflict='skip' for single item raises RegistryVersionConflict."""
+    from mindtrace.registry.core.exceptions import RegistryVersionConflict
+
     # First push succeeds
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Second push with skip should return skipped result
-    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
-    result = results.first()
-    assert result.is_skipped
+    # Second push (single item) with skip should raise RegistryVersionConflict
+    with pytest.raises(RegistryVersionConflict):
+        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
+
+
+def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Test push with on_conflict='skip' for batch items returns skipped result."""
+    # First push succeeds
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Create a second sample object dir with all required files
+    sample_object_dir2 = tmp_path / "sample_object2"
+    sample_object_dir2.mkdir()
+    (sample_object_dir2 / "file1.txt").write_text("content1")
+    (sample_object_dir2 / "file2.txt").write_text("content2")
+    sample_metadata2 = {**sample_metadata, "name": "test:object2"}
+
+    # Batch push with skip - existing item should return error result (not raise)
+    results = backend.push(
+        ["test:object", "test:object2"],
+        ["1.0.0", "1.0.0"],
+        [str(sample_object_dir), str(sample_object_dir2)],
+        [sample_metadata, sample_metadata2],
+        on_conflict="skip",
+    )
+    # First item (existing) should be failed (conflict)
+    result1 = results.get(("test:object", "1.0.0"))
+    assert result1.is_error  # Returns error (not raises) in batch mode
+
+    # Second item (new) should succeed
+    result2 = results.get(("test:object2", "1.0.0"))
+    assert result2.ok
 
 
 def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
@@ -362,10 +392,25 @@ def test_fetch_metadata(backend, sample_metadata):
     assert fetched_metadata["path"] == "gs://test-bucket/objects/test:object/1.0.0"
 
 
-def test_fetch_metadata_not_found(backend):
-    """Test fetching non-existent metadata."""
-    results = backend.fetch_metadata("nonexistent:object", "1.0.0")
-    # Not found entries are omitted from results
+def test_fetch_metadata_not_found_single(backend):
+    """Test fetching non-existent metadata for single item raises."""
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
+    with pytest.raises(RegistryObjectNotFound):
+        backend.fetch_metadata("nonexistent:object", "1.0.0")
+
+
+def test_fetch_metadata_not_found_batch(backend, sample_metadata):
+    """Test fetching non-existent metadata for batch - not found entries are omitted."""
+    # First create one object that exists
+    backend.save_metadata("test:exists", "1.0.0", sample_metadata)
+
+    # Batch fetch with one existing and one non-existent
+    results = backend.fetch_metadata(["test:exists", "nonexistent:object"], ["1.0.0", "1.0.0"])
+    # Existing entry should be in results
+    assert ("test:exists", "1.0.0") in results
+    assert results[("test:exists", "1.0.0")].ok
+    # Not found entries are omitted from batch results
     assert ("nonexistent:object", "1.0.0") not in results
 
 

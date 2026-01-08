@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Tuple
 
 if TYPE_CHECKING:
@@ -14,6 +15,23 @@ if TYPE_CHECKING:
 
 VERSION_PENDING = "pending"  # Placeholder for version not yet assigned
 ERROR_UNKNOWN = "UnknownError"  # Fallback error type when error info unavailable
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enums
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class OnConflict(str, Enum):
+    """Behavior when a version conflict occurs during push/save operations.
+
+    - SKIP: Don't modify existing version. Single ops raise, batch ops return skipped result.
+    - OVERWRITE: Replace existing version with new data.
+    """
+
+    SKIP = "skip"
+    OVERWRITE = "overwrite"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backend Operation Results

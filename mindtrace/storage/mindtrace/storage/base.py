@@ -4,10 +4,25 @@ import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mindtrace.core import MindtraceABC
+
+
+class Status(str, Enum):
+    """Status values for storage and registry operations.
+
+    Inherits from str to allow direct string comparison and serialization.
+    """
+
+    OK = "ok"
+    SKIPPED = "skipped"
+    ALREADY_EXISTS = "already_exists"
+    OVERWRITTEN = "overwritten"
+    NOT_FOUND = "not_found"
+    ERROR = "error"
 
 
 @dataclass
@@ -17,21 +32,21 @@ class FileResult:
     Attributes:
         local_path: Local file path (source for uploads, destination for downloads).
         remote_path: Remote storage path.
-        status: Operation status - "ok", "skipped", "already_exists", "not_found", "error".
-        error_type: Type of error if status is "error" (e.g., "PermissionDenied").
-        error_message: Detailed error message if status is not "ok".
+        status: Operation status.
+        error_type: Type of error if status is ERROR (e.g., "PermissionDenied").
+        error_message: Detailed error message if status is not OK.
     """
 
     local_path: str
     remote_path: str
-    status: str  # "ok", "skipped", "already_exists", "not_found", "error"
+    status: Status
     error_type: str | None = None
     error_message: str | None = None
 
     @property
     def ok(self) -> bool:
         """Check if operation succeeded."""
-        return self.status == "ok"
+        return self.status == Status.OK
 
 
 @dataclass
@@ -40,14 +55,14 @@ class StringResult:
 
     Attributes:
         remote_path: Remote storage path.
-        status: Operation status - "ok", "already_exists", "not_found", "error".
+        status: Operation status.
         content: Downloaded content (for download operations).
-        error_type: Type of error if status is "error".
-        error_message: Detailed error message if status is not "ok".
+        error_type: Type of error if status is ERROR.
+        error_message: Detailed error message if status is not OK.
     """
 
     remote_path: str
-    status: str  # "ok", "already_exists", "not_found", "error"
+    status: Status
     content: bytes | None = None
     error_type: str | None = None
     error_message: str | None = None
@@ -55,7 +70,7 @@ class StringResult:
     @property
     def ok(self) -> bool:
         """Check if operation succeeded."""
-        return self.status == "ok"
+        return self.status == Status.OK
 
 
 @dataclass
@@ -77,22 +92,22 @@ class BatchResult:
     @property
     def ok_results(self) -> List[FileResult]:
         """Get all successful operations."""
-        return [r for r in self.results if r.status == "ok"]
+        return [r for r in self.results if r.status == Status.OK]
 
     @property
     def skipped_results(self) -> List[FileResult]:
         """Get operations that were skipped."""
-        return [r for r in self.results if r.status in ("skipped", "already_exists")]
+        return [r for r in self.results if r.status in (Status.SKIPPED, Status.ALREADY_EXISTS)]
 
     @property
     def failed_results(self) -> List[FileResult]:
         """Get all failed operations."""
-        return [r for r in self.results if r.status in ("not_found", "error")]
+        return [r for r in self.results if r.status in (Status.NOT_FOUND, Status.ERROR)]
 
     @property
     def all_ok(self) -> bool:
         """Check if all operations succeeded."""
-        return all(r.status == "ok" for r in self.results)
+        return all(r.status == Status.OK for r in self.results)
 
 
 class StorageHandler(MindtraceABC, ABC):
@@ -296,12 +311,12 @@ class StorageHandler(MindtraceABC, ABC):
         def delete_one(remote_path: str) -> FileResult:
             try:
                 self.delete(remote_path)
-                return FileResult(local_path="", remote_path=remote_path, status="ok")
+                return FileResult(local_path="", remote_path=remote_path, status=Status.OK)
             except Exception as e:
                 return FileResult(
                     local_path="",
                     remote_path=remote_path,
-                    status="error",
+                    status=Status.ERROR,
                     error_type=type(e).__name__,
                     error_message=str(e),
                 )
