@@ -8,7 +8,7 @@ from google.api_core import exceptions as gexc
 from google.cloud import storage
 from google.oauth2 import service_account
 
-from .base import FileResult, StorageHandler, StringResult
+from .base import FileResult, Status, StorageHandler, StringResult
 
 
 class GCSStorageHandler(StorageHandler):
@@ -147,13 +147,13 @@ class GCSStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
-                status="ok",
+                status=Status.OK,
             )
         except gexc.PreconditionFailed:
             return FileResult(
                 local_path=local_path,
                 remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
-                status="already_exists",
+                status=Status.ALREADY_EXISTS,
                 error_type="PreconditionFailed",
                 error_message=f"Blob already exists: gs://{self.bucket_name}/{sanitized_path}",
             )
@@ -161,7 +161,7 @@ class GCSStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -181,7 +181,7 @@ class GCSStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=remote_path,
-                status="skipped",
+                status=Status.SKIPPED,
             )
 
         blob = self._bucket().blob(sanitized_path)
@@ -191,13 +191,13 @@ class GCSStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=remote_path,
-                status="ok",
+                status=Status.OK,
             )
         except gexc.NotFound:
             return FileResult(
                 local_path=local_path,
                 remote_path=remote_path,
-                status="not_found",
+                status=Status.NOT_FOUND,
                 error_type="NotFound",
                 error_message=f"Blob not found: gs://{self.bucket_name}/{sanitized_path}",
             )
@@ -205,7 +205,7 @@ class GCSStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=remote_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -259,18 +259,18 @@ class GCSStorageHandler(StorageHandler):
 
         try:
             blob.upload_from_string(data, content_type=content_type, if_generation_match=generation_match)
-            return StringResult(remote_path=full_path, status="ok")
+            return StringResult(remote_path=full_path, status=Status.OK)
         except gexc.PreconditionFailed:
             return StringResult(
                 remote_path=full_path,
-                status="already_exists",
+                status=Status.ALREADY_EXISTS,
                 error_type="PreconditionFailed",
                 error_message=f"Generation mismatch or blob already exists: {full_path}",
             )
         except Exception as e:
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -294,20 +294,20 @@ class GCSStorageHandler(StorageHandler):
             content = blob.download_as_bytes()
             return StringResult(
                 remote_path=full_path,
-                status="ok",
+                status=Status.OK,
                 content=content,
             )
         except gexc.NotFound:
             return StringResult(
                 remote_path=full_path,
-                status="not_found",
+                status=Status.NOT_FOUND,
                 error_type="NotFound",
                 error_message=f"Blob not found: {full_path}",
             )
         except Exception as e:
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
