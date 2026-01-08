@@ -1113,6 +1113,7 @@ class TestHardwareConfigManagerEnvironmentVariables:
             # Attribute doesn't exist in dataclass anyway
             assert not hasattr(config.plc_backends, "default_scan_rate")
 
+
 class TestHardwareConfigManagerFileOperations:
     """Test suite for file loading and saving operations."""
 

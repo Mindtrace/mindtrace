@@ -90,11 +90,11 @@ class ProcessManager:
         os.environ["CAMERA_API_PORT"] = str(port)
         os.environ["CAMERA_API_URL"] = f"http://{host}:{port}"
 
-        # Start process
+        # Start process (use DEVNULL to avoid pipe buffer overflow)
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,  # Create new process group
         )
 
@@ -141,11 +141,11 @@ class ProcessManager:
         os.environ["PLC_API_PORT"] = str(port)
         os.environ["PLC_API_URL"] = f"http://{host}:{port}"
 
-        # Start process
+        # Start process (use DEVNULL to avoid pipe buffer overflow)
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,  # Create new process group
         )
 
@@ -200,11 +200,11 @@ class ProcessManager:
         os.environ["STEREO_CAMERA_API_PORT"] = str(port)
         os.environ["STEREO_CAMERA_API_URL"] = f"http://{host}:{port}"
 
-        # Start process
+        # Start process (use DEVNULL to avoid pipe buffer overflow)
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,  # Create new process group
         )
 
