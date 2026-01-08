@@ -26,6 +26,7 @@ dependencies = [
   "mindtrace-ui>=0.7.1",
   "mindtrace-datalake>=0.7.1",
   "mindtrace-storage>=0.7.1",
+  "pypylon>=4.2.0",
 ]
 
 [project.optional-dependencies]
@@ -131,9 +132,9 @@ test = """
 publish_to_pypi = """
     # Push all packages to PyPI
     # First build all packages: uv build --all-packages
-    # ds publish_to_pypi                    # Push to Test PyPI (default)
-    # ds publish_to_pypi testpypi          # Push to Test PyPI (explicit)
-    # ds publish_to_pypi pypi              # Push to production PyPI
+    # ds publish_to_pypi                          # Push to Test PyPI (default)
+    # ds publish_to_pypi: testpypi 0.2.0          # Push to Test PyPI (explicit)
+    # ds publish_to_pypi: pypi 0.2.0              # Push to production PyPI
 
     bash scripts/push_to_pypi.sh ${@:-}
 """
