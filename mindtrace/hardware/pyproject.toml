@@ -21,7 +21,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pycomm3>=1.2.14",
     "python-snap7[cli]>=2.0.2",
-    "click>=8.1.0",
+    "typer>=0.9.0",
     "psutil>=5.9.0",
     "rich>=13.0.0",
     "pyyaml>=6.0.3",
@@ -32,17 +32,13 @@ dependencies = [
 # Main CLI
 mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
 
-# Camera commands (regular 2D cameras)
+# Camera setup CLIs (Typer apps with subcommands)
 mindtrace-camera-setup = "mindtrace.hardware.cameras.setup.setup_cameras:main"
-mindtrace-camera-basler-install = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
-mindtrace-camera-basler-uninstall = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
-mindtrace-camera-genicam-install = "mindtrace.hardware.cameras.setup.setup_genicam:main"
-mindtrace-camera-genicam-uninstall = "mindtrace.hardware.cameras.setup.setup_genicam:uninstall_main"
-mindtrace-camera-genicam-verify = "mindtrace.hardware.cameras.setup.setup_genicam:verify_main"
+mindtrace-camera-basler = "mindtrace.hardware.cameras.setup.setup_basler:main"
+mindtrace-camera-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:main"
 
-# Stereo camera commands (3D/depth cameras)
-mindtrace-stereo-basler-install = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:install_stereo_ace"
-mindtrace-stereo-basler-uninstall = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:uninstall_stereo_ace"
+# Stereo camera setup CLI (Typer app with subcommands)
+mindtrace-stereo-basler = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:main"
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]

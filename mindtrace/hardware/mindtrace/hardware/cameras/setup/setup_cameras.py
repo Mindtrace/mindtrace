@@ -47,20 +47,29 @@ Network Configuration:
     industrial camera networking standards.
 """
 
-import argparse
 import logging
 import platform
 import subprocess
 import sys
 from typing import Optional
 
+import typer
+
 from mindtrace.core import Mindtrace
-from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
+from mindtrace.hardware.cameras.setup.setup_basler import PylonSDKInstaller
 from mindtrace.hardware.cameras.setup.setup_genicam import install_genicam_cti, uninstall_genicam_cti
 from mindtrace.hardware.core.config import get_hardware_config
 
 # Infrastructure setup constants
 FIREWALL_OPERATION_TIMEOUT = 30.0  # Timeout for firewall setup operations in seconds
+
+# Typer app instance
+app = typer.Typer(
+    name="camera-setup",
+    help="Install and configure camera SDKs and network settings",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
 
 
 class CameraSystemSetup(Mindtrace):
@@ -96,15 +105,19 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting installation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 3
+        total_sdks = 2
 
         # Install Basler Pylon SDK
         self.logger.info("Installing Basler Pylon SDK")
-        if install_pylon_sdk(release_version):
-            self.logger.info("Basler Pylon SDK installation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Basler Pylon SDK installation failed")
+        try:
+            pylon_installer = PylonSDKInstaller()
+            if pylon_installer.install():
+                self.logger.info("Basler Pylon SDK installation completed successfully")
+                success_count += 1
+            else:
+                self.logger.error("Basler Pylon SDK installation failed")
+        except Exception as e:
+            self.logger.error(f"Basler Pylon SDK installation failed: {e}")
 
         # Install Matrix Vision GenICam CTI
         self.logger.info("Installing Matrix Vision GenICam CTI")
@@ -134,15 +147,19 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting uninstallation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 3
+        total_sdks = 2
 
         # Uninstall Basler Pylon SDK
         self.logger.info("Uninstalling Basler Pylon SDK")
-        if uninstall_pylon_sdk():
-            self.logger.info("Basler Pylon SDK uninstallation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Basler Pylon SDK uninstallation failed")
+        try:
+            pylon_installer = PylonSDKInstaller()
+            if pylon_installer.uninstall():
+                self.logger.info("Basler Pylon SDK uninstallation completed successfully")
+                success_count += 1
+            else:
+                self.logger.error("Basler Pylon SDK uninstallation failed")
+        except Exception as e:
+            self.logger.error(f"Basler Pylon SDK uninstallation failed: {e}")
 
         # Uninstall Matrix Vision GenICam CTI
         self.logger.info("Uninstalling Matrix Vision GenICam CTI")
@@ -286,7 +303,7 @@ class CameraSystemSetup(Mindtrace):
             return False
 
 
-def configure_firewall(ip_range: Optional[str] = None) -> bool:
+def configure_firewall_helper(ip_range: Optional[str] = None) -> bool:
     """Configure firewall rules to allow camera communication.
 
     This function provides a simple interface to configure firewall rules for camera network communication. It works on
@@ -302,98 +319,118 @@ def configure_firewall(ip_range: Optional[str] = None) -> bool:
     return setup.configure_firewall(ip_range)
 
 
-def main() -> None:
-    """Main entry point for the camera setup script."""
-    # Create setup instance to access config and logger
+@app.command()
+def install(
+    version: str = typer.Option(
+        "v1.0-stable",
+        "--version",
+        help="SDK release version to install",
+    ),
+    ip_range: Optional[str] = typer.Option(
+        None,
+        "--ip-range",
+        help="IP range to allow in firewall (uses config default if not specified)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Install all camera SDKs and configure firewall.
+
+    Installs Basler Pylon SDK and Matrix Vision GenICam CTI files,
+    then configures firewall rules for GigE Vision camera communication.
+    """
     setup = CameraSystemSetup()
 
-    parser = argparse.ArgumentParser(
-        description="Install and configure camera SDKs and network settings",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
-Examples:
-    %(prog)s                           # Install all camera SDKs
-    %(prog)s --uninstall               # Uninstall all camera SDKs
-    %(prog)s --configure-firewall      # Configure firewall only
-    %(prog)s --ip-range 10.0.0.0/24   # Use custom IP range
-    %(prog)s --verbose                 # Enable verbose logging
-
-Network Configuration:
-    The script configures firewall rules for GigE Vision camera communication.
-    Default IP range is {setup.hardware_config.get_config().network.camera_ip_range} (configured via config/env).
-    Default firewall rule name: "{setup.hardware_config.get_config().network.firewall_rule_name}"
-    Default timeout: {FIREWALL_OPERATION_TIMEOUT}s
-    
-    Windows: Uses netsh advfirewall commands
-    Linux:   Uses UFW (Uncomplicated Firewall)
-    
-Configuration:
-    Settings can be customized via:
-    - Environment variables (MINDTRACE_CAMERA_IP_RANGE, MINDTRACE_FIREWALL_RULE_NAME, etc.)
-    - Configuration file (hardware_config.json)
-    - Command line arguments (highest priority)
-        """,
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Uninstall all camera SDKs instead of installing")
-    parser.add_argument(
-        "--configure-firewall", action="store_true", help="Configure firewall rules for camera network communication"
-    )
-    parser.add_argument(
-        "--ip-range",
-        default=None,  # Will use config default if not specified
-        help=f"IP range to allow in firewall (default: {setup.hardware_config.get_config().network.camera_ip_range})",
-    )
-    parser.add_argument(
-        "--version", default="v1.0-stable", help="SDK release version to install (default: v1.0-stable)"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-
-    args = parser.parse_args()
-
-    # Configure logging level
-    if args.verbose:
+    if verbose:
         setup.logger.setLevel(logging.DEBUG)
         setup.logger.debug("Verbose logging enabled")
-        setup.logger.debug(
-            f"Using configuration: IP range={setup.hardware_config.get_config().network.camera_ip_range}, "
-            f"Rule name='{setup.hardware_config.get_config().network.firewall_rule_name}', "
-            f"Timeout={FIREWALL_OPERATION_TIMEOUT}s"
-        )
 
-    overall_success = True
+    setup.logger.info("Starting camera SDK installation")
+    success = setup.install_all_sdks(version)
 
-    # Configure firewall if requested
-    if args.configure_firewall:
-        setup.logger.info("Configuring firewall only (no SDK installation)")
-        success = setup.configure_firewall(args.ip_range)
-        if not success:
-            overall_success = False
-    else:
-        # Perform SDK installation or uninstallation
-        if args.uninstall:
-            setup.logger.info("Starting camera SDK uninstallation")
-            success = setup.uninstall_all_sdks()
-        else:
-            setup.logger.info("Starting camera SDK installation")
-            success = setup.install_all_sdks(args.version)
+    if success:
+        setup.logger.info("SDKs installed successfully, configuring firewall")
+        firewall_success = setup.configure_firewall(ip_range)
+        if not firewall_success:
+            setup.logger.warning("SDK installation succeeded but firewall configuration failed")
+            success = False
 
-            # Also configure firewall after successful installation
-            if success:
-                setup.logger.info("SDKs installed successfully, configuring firewall")
-                firewall_success = setup.configure_firewall(args.ip_range)
-                if not firewall_success:
-                    setup.logger.warning("SDK installation succeeded but firewall configuration failed")
-                    overall_success = False
-            else:
-                overall_success = False
-
-    # Exit with appropriate code
-    if overall_success:
+    if success:
         setup.logger.info("Camera setup completed successfully")
-        sys.exit(0)
     else:
         setup.logger.error("Camera setup completed with errors")
-        sys.exit(1)
+
+    raise typer.Exit(code=0 if success else 1)
+
+
+@app.command()
+def uninstall(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Uninstall all camera SDKs."""
+    setup = CameraSystemSetup()
+
+    if verbose:
+        setup.logger.setLevel(logging.DEBUG)
+
+    setup.logger.info("Starting camera SDK uninstallation")
+    success = setup.uninstall_all_sdks()
+
+    if success:
+        setup.logger.info("Camera SDKs uninstalled successfully")
+    else:
+        setup.logger.error("Camera SDK uninstallation completed with errors")
+
+    raise typer.Exit(code=0 if success else 1)
+
+
+@app.command("configure-firewall")
+def configure_firewall(
+    ip_range: Optional[str] = typer.Option(
+        None,
+        "--ip-range",
+        help="IP range to allow in firewall (uses config default if not specified)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Configure firewall rules for camera network communication.
+
+    Configures platform-specific firewall rules to allow GigE Vision
+    camera communication on the specified IP range.
+
+    Windows: Uses netsh advfirewall commands
+    Linux:   Uses UFW (Uncomplicated Firewall)
+    """
+    setup = CameraSystemSetup()
+
+    if verbose:
+        setup.logger.setLevel(logging.DEBUG)
+
+    setup.logger.info("Configuring firewall only (no SDK installation)")
+    success = setup.configure_firewall(ip_range)
+
+    if success:
+        setup.logger.info("Firewall configured successfully")
+    else:
+        setup.logger.error("Firewall configuration failed")
+
+    raise typer.Exit(code=0 if success else 1)
+
+
+def main() -> None:
+    """Main entry point for the camera setup script."""
+    app()
 
 
 if __name__ == "__main__":
