@@ -45,6 +45,7 @@ dev = [
     "fakeredis>=2.24.1",
     "pre-commit>=4.2.0",
     "twine>=6.1.0",
+    "tomlkit>=0.13.3",
 ]
 docs = [
     "mkdocs-material>=9.6.21",
