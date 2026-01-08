@@ -1,6 +1,6 @@
-"""Minio/S3-based registry backend.
+"""S3-compatible registry backend.
 
-Uses Minio/S3 for both artifact and metadata storage as well as locks.
+Uses S3-compatible storage (AWS S3, Minio, etc.) for both artifact and metadata storage as well as locks.
 """
 
 import json
@@ -26,27 +26,27 @@ from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     RegistryVersionConflict,
 )
-from mindtrace.registry.core.types import OpResult, OpResults
-from mindtrace.storage import MinioStorageHandler, StringResult
+from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
+from mindtrace.storage import S3StorageHandler, Status, StringResult
 
 
-class MinioRegistryBackend(RegistryBackend):
-    """A Minio/S3-based registry backend.
+class S3RegistryBackend(RegistryBackend):
+    """An S3-compatible registry backend.
 
-    This backend stores objects and metadata in a Minio/S3 bucket, providing
-    distributed storage capabilities with atomic operations.
+    Works with AWS S3, Minio, DigitalOcean Spaces, and other S3-compatible services.
+    Stores objects and metadata in an S3 bucket with atomic operations.
 
     Locking strategy:
     - Writers (push/delete): Use exclusive locks when acquire_lock=True (mutable registries)
     - Readers (pull): No locking. Metadata is written LAST, so if readable, files exist.
 
     Atomicity for immutable registries (acquire_lock=False):
-    - Check if exists before upload (fail if exists)
+    - Uses IfNoneMatch='*' for atomic create-only (fail if exists)
     - Metadata written LAST (the "commit point")
 
     Uses `_files` manifest from metadata to avoid expensive object listing on pull.
 
-    Local Docker Example:
+    Local Docker Example (Minio):
         To run a local MinIO registry, first start a MinIO server using docker:
 
         .. code-block:: bash
@@ -61,17 +61,16 @@ class MinioRegistryBackend(RegistryBackend):
 
     Usage Example::
 
-        from mindtrace.registry import Registry, MinioRegistryBackend
+        from mindtrace.registry import Registry, S3RegistryBackend
 
-        minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry",
+        s3_backend = S3RegistryBackend(
             endpoint="localhost:9000",
             access_key="minioadmin",
             secret_key="minioadmin",
-            bucket="minio-registry",
+            bucket="my-registry",
             secure=False
         )
-        registry = Registry(backend=minio_backend)
+        registry = Registry(backend=s3_backend)
     """
 
     def __init__(
@@ -81,20 +80,20 @@ class MinioRegistryBackend(RegistryBackend):
         endpoint: str,
         access_key: str,
         secret_key: str,
-        bucket: str = "minio-registry",
+        bucket: str = "s3-registry",
         secure: bool = True,
         prefix: str = "",
         max_workers: int = 4,
         **kwargs,
     ):
-        """Initialize the MinioRegistryBackend.
+        """Initialize the S3RegistryBackend.
 
         Args:
             uri: The base directory path where local cache will be stored.
-            endpoint: MinIO server endpoint.
-            access_key: MinIO access key.
-            secret_key: MinIO secret key.
-            bucket: MinIO bucket name.
+            endpoint: S3-compatible server endpoint (e.g., "localhost:9000", "s3.amazonaws.com").
+            access_key: Access key for authentication.
+            secret_key: Secret key for authentication.
+            bucket: S3 bucket name.
             secure: Whether to use HTTPS.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations.
@@ -104,14 +103,13 @@ class MinioRegistryBackend(RegistryBackend):
         self._prefix = prefix.strip("/") if prefix else ""
         # URI includes bucket and prefix for unique cache directory per backend
         self._uri = Path(uri or f"s3://{bucket}/{self._prefix}".rstrip("/"))
-        # Local temp directory for materializing objects
 
         self._metadata_path = self._prefixed("registry_metadata.json")
         self._max_workers = max_workers
         self._bucket = bucket
-        self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}, prefix: {self._prefix}")
+        self.logger.debug(f"Initializing S3Backend with uri: {self._uri}, prefix: {self._prefix}")
 
-        self.storage = MinioStorageHandler(
+        self.storage = S3StorageHandler(
             bucket_name=bucket,
             endpoint=endpoint,
             access_key=access_key,
@@ -192,7 +190,7 @@ class MinioRegistryBackend(RegistryBackend):
 
             # Lock exists - check if expired
             download_result = self.storage.download_string(lock_path)
-            if download_result.status == "not_found":
+            if download_result.status == Status.NOT_FOUND:
                 # Lock deleted between our attempts, retry create
                 retry_result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
                 return retry_result.ok
@@ -251,11 +249,13 @@ class MinioRegistryBackend(RegistryBackend):
             list(executor.map(lambda kv: self._release_lock(kv[0], kv[1]), locks.items()))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Push Helpers
+    # Metadata Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _write_metadata(self, name: str, version: str, metadata: dict, on_conflict: str = "error") -> StringResult:
-        """Write a single metadata file atomically.
+    def _save_metadata_single(
+        self, name: str, version: str, metadata: dict, on_conflict: str = OnConflict.SKIP
+    ) -> StringResult:
+        """Save a single metadata file atomically.
 
         Args:
             name: Object name.
@@ -264,7 +264,7 @@ class MinioRegistryBackend(RegistryBackend):
             on_conflict: "error", "skip", or "overwrite".
 
         Returns:
-            StringResult with status: "ok", "already_exists", "overwritten", or "error".
+            StringResult with status: ok, already_exists, overwritten, or error.
         """
         meta_path = self._object_metadata_path(name, version)
         data = json.dumps(metadata)
@@ -276,16 +276,16 @@ class MinioRegistryBackend(RegistryBackend):
             if result.ok:
                 return StringResult(
                     remote_path=meta_path,
-                    status="overwritten" if existed else "ok",
+                    status=Status.OVERWRITTEN if existed else Status.OK,
                 )
             return result
         else:
             # "error" or "skip" - atomic insert with if_generation_match=0
             result = self.storage.upload_string(data, meta_path, if_generation_match=0)
-            if result.status == "already_exists":
+            if result.status == Status.ALREADY_EXISTS:
                 return StringResult(
                     remote_path=meta_path,
-                    status="already_exists",
+                    status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object {name}@{version} already exists",
                 )
@@ -344,12 +344,12 @@ class MinioRegistryBackend(RegistryBackend):
                 )
 
                 # Check for conflicts (already_exists) or errors
-                conflict_files = [r for r in batch_result.results if r.status == "already_exists"]
-                error_files = [r for r in batch_result.results if r.status == "error"]
+                conflict_files = [r for r in batch_result.results if r.status == Status.ALREADY_EXISTS]
+                error_files = [r for r in batch_result.results if r.status == Status.ERROR]
 
                 if conflict_files:
                     # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
                     if uploaded:
                         self.storage.delete_batch(uploaded)
 
@@ -364,7 +364,7 @@ class MinioRegistryBackend(RegistryBackend):
 
                 if error_files:
                     # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
                     if uploaded:
                         self.storage.delete_batch(uploaded)
                     return OpResult.failed(
@@ -374,9 +374,9 @@ class MinioRegistryBackend(RegistryBackend):
                     )
 
             # Write metadata LAST (the "commit point")
-            meta_result = self._write_metadata(obj_name, obj_version, prepared_meta, on_conflict)
+            meta_result = self._save_metadata_single(obj_name, obj_version, prepared_meta, on_conflict)
 
-            if meta_result.status == "already_exists":
+            if meta_result.status == Status.ALREADY_EXISTS:
                 # Rollback uploaded files
                 uploaded = [remote for _, remote in files]
                 if uploaded:
@@ -390,7 +390,7 @@ class MinioRegistryBackend(RegistryBackend):
                         obj_version,
                         RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
                     )
-            elif meta_result.status == "error":
+            elif meta_result.status == Status.ERROR:
                 # Rollback uploaded files
                 uploaded = [remote for _, remote in files]
                 if uploaded:
@@ -400,7 +400,7 @@ class MinioRegistryBackend(RegistryBackend):
                     obj_version,
                     RuntimeError(meta_result.error_message or "Metadata write failed"),
                 )
-            elif meta_result.status == "overwritten":
+            elif meta_result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             else:
                 return OpResult.success(obj_name, obj_version)
@@ -414,8 +414,7 @@ class MinioRegistryBackend(RegistryBackend):
         version: VersionArg,
         local_path: PathArg,
         metadata: MetadataArg = None,
-        on_conflict: str = "error",
-        on_error: str = "raise",
+        on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
         max_workers: int | None = None,
     ) -> OpResults:
@@ -423,6 +422,9 @@ class MinioRegistryBackend(RegistryBackend):
 
         Objects are processed in parallel for maximum efficiency. Each object's
         push is atomic with proper rollback on failure.
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Atomicity strategy depends on acquire_lock:
         - acquire_lock=False (immutable): Check if exists before upload.
@@ -434,11 +436,9 @@ class MinioRegistryBackend(RegistryBackend):
             version: Version string(s). Registry must resolve versions before calling.
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
-            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
-                "skip" silently skips, "overwrite" replaces existing. Default is "error".
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped.
+                "overwrite": Replace existing version (requires acquire_lock=True).
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on fail_if_exists check for atomicity (immutable registries).
             max_workers: Maximum parallel workers. Defaults to instance setting.
@@ -446,9 +446,13 @@ class MinioRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            LockAcquisitionError: Single item and lock cannot be acquired.
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -460,7 +464,7 @@ class MinioRegistryBackend(RegistryBackend):
             raise ValueError("Input list lengths must match")
 
         # Validate on_conflict + acquire_lock combination
-        if on_conflict == "overwrite" and not acquire_lock:
+        if on_conflict == OnConflict.OVERWRITE and not acquire_lock:
             raise ValueError(
                 "on_conflict='overwrite' requires acquire_lock=True. "
                 "Overwriting without a lock is unsafe for concurrent access."
@@ -470,6 +474,7 @@ class MinioRegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
+        is_single = len(names) == 1
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
         failed_locks: set = set()
@@ -485,7 +490,7 @@ class MinioRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if on_error == "raise":
+                    if is_single:
                         self._release_locks_batch(acquired_locks)
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
@@ -513,20 +518,19 @@ class MinioRegistryBackend(RegistryBackend):
                     obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
                 )
 
-            # Process objects in parallel
-            first_error: Exception | None = None
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(push_one, push_tasks):
-                    results.add(result)
-
-                    if result.is_error and on_error == "raise" and first_error is None:
-                        if result.error == "RegistryVersionConflict":
-                            first_error = RegistryVersionConflict(result.message or "Version conflict")
-                        else:
-                            first_error = RuntimeError(result.message or "Unknown error")
-
-            if first_error:
-                raise first_error
+            if is_single and push_tasks:
+                # Single item - raise on error or conflict
+                result = push_one(push_tasks[0])
+                results.add(result)
+                if result.is_skipped or (result.is_error and result.error == "RegistryVersionConflict"):
+                    raise RegistryVersionConflict(result.message or f"Object {names[0]}@{versions[0]} already exists")
+                elif result.is_error:
+                    raise RuntimeError(result.message or "Unknown error")
+            else:
+                # Batch - return results without raising
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    for result in executor.map(push_one, push_tasks):
+                        results.add(result)
 
         finally:
             if acquired_locks:
@@ -540,7 +544,6 @@ class MinioRegistryBackend(RegistryBackend):
         version: ConcreteVersionArg,
         local_path: PathArg,
         acquire_lock: bool = False,
-        on_error: str = "raise",
         metadata: MetadataArg = None,
         max_workers: int | None = None,
     ) -> OpResults:
@@ -549,6 +552,9 @@ class MinioRegistryBackend(RegistryBackend):
         Uses the `_files` manifest from metadata when available to avoid
         expensive object listing operations. All files across all objects
         are downloaded in a single batch for maximum efficiency.
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Note: The acquire_lock parameter is accepted for API compatibility but
         ignored. Read locks are not implemented because:
@@ -561,14 +567,16 @@ class MinioRegistryBackend(RegistryBackend):
             version: Version string(s).
             local_path: Destination directory path(s) to copy to.
             acquire_lock: Ignored. Kept for API compatibility.
-            on_error: Error handling strategy.
             metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
             max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -577,6 +585,8 @@ class MinioRegistryBackend(RegistryBackend):
 
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
+
+        is_single = len(names) == 1
 
         # Use pre-fetched metadata if provided, otherwise fetch it
         if metadata is not None:
@@ -592,7 +602,9 @@ class MinioRegistryBackend(RegistryBackend):
             for n, v, m in zip(names, versions, metadatas):
                 metadata_results.add(OpResult.success(n, v, metadata=m))
         else:
-            metadata_results = self.fetch_metadata(names, versions, on_error="skip")
+            # For batch, fetch_metadata won't raise (batch behavior)
+            # For single, we handle the raise below
+            metadata_results = self.fetch_metadata(names, versions)
 
         results = OpResults()
         all_files_to_download: List[Tuple[str, str]] = []
@@ -632,7 +644,7 @@ class MinioRegistryBackend(RegistryBackend):
 
             except Exception as e:
                 objects_with_errors.add((obj_name, obj_version))
-                if on_error == "raise":
+                if is_single:
                     raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
@@ -646,7 +658,7 @@ class MinioRegistryBackend(RegistryBackend):
                     obj_key = file_to_object[dest_path_str]
                     if obj_key not in objects_with_errors:
                         objects_with_errors.add(obj_key)
-                        if on_error == "raise":
+                        if is_single:
                             raise RuntimeError(
                                 f"Failed to download {file_result.remote_path}: {file_result.error_message}"
                             )
@@ -699,21 +711,26 @@ class MinioRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
         acquire_lock: bool = False,
         max_workers: int | None = None,
     ) -> OpResults:
         """Delete artifact(s) and metadata.
 
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
         Args:
             name: Name of the object(s).
             version: Version string(s).
-            on_error: Error handling strategy.
             acquire_lock: If True, acquire locks before delete.
             max_workers: Maximum parallel workers.
 
         Returns:
             OpResults with OpResult for each (name, version).
+
+        Raises:
+            LockAcquisitionError: Single item and lock cannot be acquired.
+            RuntimeError: Single item and deletion fails.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -721,6 +738,7 @@ class MinioRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        is_single = len(names) == 1
         workers = max_workers or self._max_workers
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
@@ -737,7 +755,7 @@ class MinioRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if on_error == "raise":
+                    if is_single:
                         self._release_locks_batch(acquired_locks)
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
@@ -753,12 +771,14 @@ class MinioRegistryBackend(RegistryBackend):
             file_workers = min(2, workers)
             delete_tasks = [(n, v) for n, v in zip(names, versions) if (n, v) not in failed_locks]
 
-            # Fetch metadata for _files manifests
-            metadata_results = self.fetch_metadata(
-                [n for n, v in delete_tasks],
-                [v for n, v in delete_tasks],
-                on_error="skip",
-            )
+            # Fetch metadata for _files manifests (batch behavior - won't raise)
+            if delete_tasks:
+                metadata_results = self.fetch_metadata(
+                    [n for n, v in delete_tasks],
+                    [v for n, v in delete_tasks],
+                )
+            else:
+                metadata_results = OpResults()
 
             def delete_one(args: Tuple[str, str]) -> OpResult:
                 obj_name, obj_version = args
@@ -766,16 +786,17 @@ class MinioRegistryBackend(RegistryBackend):
                 obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
                 return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
 
-            first_error: Exception | None = None
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(delete_one, delete_tasks):
-                    results.add(result)
-
-                    if result.is_error and on_error == "raise" and first_error is None:
-                        first_error = RuntimeError(result.message or "Unknown error")
-
-            if first_error:
-                raise first_error
+            if is_single and delete_tasks:
+                # Single item - raise on error
+                result = delete_one(delete_tasks[0])
+                results.add(result)
+                if result.is_error:
+                    raise RuntimeError(result.message or "Unknown error")
+            else:
+                # Batch - return results without raising
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    for result in executor.map(delete_one, delete_tasks):
+                        results.add(result)
 
         finally:
             if acquired_locks:
@@ -792,8 +813,32 @@ class MinioRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
         metadata: Union[dict, List[dict]],
-    ) -> None:
-        """Save metadata only (insert-only)."""
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResults:
+        """Save metadata for object version(s).
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Object name(s).
+            version: Object version(s).
+            metadata: Metadata dict(s) to save.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped.
+                "overwrite": Replace existing version.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            RuntimeError: Single item with unexpected error.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -812,43 +857,60 @@ class MinioRegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
-        def write_one(args: Tuple[str, str, dict]) -> StringResult:
-            obj_name, obj_version, obj_meta = args
-            return self._write_metadata(obj_name, obj_version, obj_meta, on_conflict="error")
+        results = OpResults()
 
-        if len(names) == 1:
-            result = write_one((names[0], versions[0], metadatas[0]))
-            if result.status == "already_exists":
-                raise RegistryVersionConflict(result.error_message)
-            elif result.status == "error":
-                raise RuntimeError(result.error_message)
+        def save_one(args: Tuple[str, str, dict]) -> OpResult:
+            obj_name, obj_version, obj_meta = args
+            result = self._save_metadata_single(obj_name, obj_version, obj_meta, on_conflict=on_conflict)
+
+            if result.status == Status.OK:
+                return OpResult.success(obj_name, obj_version)
+            elif result.status == Status.OVERWRITTEN:
+                return OpResult.overwritten(obj_name, obj_version)
+            elif result.status == Status.ALREADY_EXISTS:
+                # on_conflict="skip" means don't overwrite - for batch, return skipped; for single, will raise
+                return OpResult.skipped(obj_name, obj_version)
+            else:
+                return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
+
+        is_single = len(names) == 1
+
+        if is_single:
+            op_result = save_one((names[0], versions[0], metadatas[0]))
+            results.add(op_result)
+            # Single ops raise on error or conflict (skipped = conflict)
+            if op_result.status == "skipped":
+                raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
+            elif op_result.is_error:
+                raise RuntimeError(op_result.message or "Unknown error")
         else:
-            errors = []
+            # Batch ops return results without raising
             with ThreadPoolExecutor(max_workers=4) as executor:
-                for result in executor.map(write_one, zip(names, versions, metadatas)):
-                    if result.status == "already_exists":
-                        errors.append(RegistryVersionConflict(result.error_message))
-                    elif result.status == "error":
-                        errors.append(RuntimeError(result.error_message))
-            if errors:
-                raise errors[0]
+                for op_result in executor.map(save_one, zip(names, versions, metadatas)):
+                    results.add(op_result)
+
+        return results
 
     def fetch_metadata(
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "skip",
     ) -> OpResults:
         """Fetch metadata for object version(s) using batch download.
+
+        Single item operations raise exceptions if not found.
+        Batch operations return OpResults without raising, letting caller inspect results.
+        Missing entries (not found) are omitted from the batch result.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
-            on_error: Behavior when fetching fails. "skip" or "raise".
 
         Returns:
             OpResults with OpResult for each (name, version).
-            Missing entries (not found) are omitted from the result.
+
+        Raises:
+            RegistryObjectNotFound: Single item and metadata doesn't exist.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -856,6 +918,7 @@ class MinioRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        is_single = len(names) == 1
         results = OpResults()
         temp_dir = tempfile.mkdtemp()
         files_to_download: List[Tuple[str, str]] = []
@@ -881,7 +944,7 @@ class MinioRegistryBackend(RegistryBackend):
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:
-                    if on_error == "raise":
+                    if is_single:
                         raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
@@ -890,9 +953,11 @@ class MinioRegistryBackend(RegistryBackend):
                 if file_result.local_path not in temp_to_key:
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
-                if file_result.status == "not_found":
-                    continue  # Skip missing entries
-                if on_error == "raise":
+                if file_result.status == Status.NOT_FOUND:
+                    if is_single:
+                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
+                    continue  # Skip missing entries for batch
+                if is_single:
                     raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
                 results.add(
                     OpResult.failed(
@@ -912,15 +977,22 @@ class MinioRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
     ) -> OpResults:
-        """Delete metadata for object version(s)."""
+        """Delete metadata for object version(s).
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Raises:
+            RuntimeError: Single item and deletion fails.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        is_single = len(names) == 1
         path_to_key: Dict[str, Tuple[str, str]] = {}
         paths_to_delete: List[str] = []
         for obj_name, obj_version in zip(names, versions):
@@ -936,10 +1008,10 @@ class MinioRegistryBackend(RegistryBackend):
             if not key:
                 continue
             obj_name, obj_version = key
-            if file_result.status == "ok":
+            if file_result.status == Status.OK:
                 results.add(OpResult.success(obj_name, obj_version))
             else:
-                if on_error == "raise":
+                if is_single:
                     raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
                     OpResult.failed(
@@ -1021,7 +1093,12 @@ class MinioRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        metadata_results = self.fetch_metadata(names, versions, on_error="skip")
+        # Use fetch_metadata - wrap in try/except since single item raises on not found
+        try:
+            metadata_results = self.fetch_metadata(names, versions)
+        except RegistryObjectNotFound:
+            # Single item not found - return False for that item
+            metadata_results = OpResults()
 
         results: Dict[Tuple[str, str], bool] = {}
         for obj_name, obj_version in zip(names, versions):
@@ -1072,3 +1149,7 @@ class MinioRegistryBackend(RegistryBackend):
             obj_classes = object_class
 
         return {k: v for k, v in all_materializers.items() if k in obj_classes}
+
+
+# Backwards compatibility alias
+MinioRegistryBackend = S3RegistryBackend
