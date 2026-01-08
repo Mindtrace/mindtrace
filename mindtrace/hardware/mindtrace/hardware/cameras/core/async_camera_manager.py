@@ -639,7 +639,7 @@ class AsyncCameraManager(Mindtrace):
         self,
         camera_names: List[str],
         save_path_pattern: Optional[str] = None,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management.
 
@@ -697,7 +697,7 @@ class AsyncCameraManager(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}

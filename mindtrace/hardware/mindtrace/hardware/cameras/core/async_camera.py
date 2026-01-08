@@ -183,7 +183,7 @@ class AsyncCamera(Mindtrace):
                 return await parent_aexit(exc_type, exc, tb)  # type: ignore[misc]
             return False
 
-    async def capture(self, save_path: Optional[str] = None, output_format: str = "numpy") -> Any:
+    async def capture(self, save_path: Optional[str] = None, output_format: str = "pil") -> Any:
         """Capture an image from the camera with retry logic.
 
         Args:
@@ -764,7 +764,7 @@ class AsyncCamera(Mindtrace):
         exposure_levels: Union[int, List[float]] = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 

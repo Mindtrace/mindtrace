@@ -20,8 +20,8 @@ def test_open_single_and_batch_and_close():
         name = cameras[0]
 
         cam = mgr.open(name)
-        # basic capture path
-        img = cam.capture()
+        # basic capture path (request numpy for shape attribute check)
+        img = cam.capture(output_format="numpy")
         assert hasattr(img, "shape")
 
         # Idempotent at the async layer; sync wrapper may differ but backend must be the same

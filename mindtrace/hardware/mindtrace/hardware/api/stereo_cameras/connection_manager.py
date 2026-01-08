@@ -150,7 +150,7 @@ class StereoCameraConnectionManager(ConnectionManager):
         enable_disparity: bool = True,
         calibrate_disparity: bool = True,
         timeout_ms: int = 20000,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture stereo data (intensity + disparity)."""
         request = StereoCaptureRequest(
@@ -167,7 +167,7 @@ class StereoCameraConnectionManager(ConnectionManager):
         return response["data"]
 
     async def capture_stereo_batch(
-        self, captures: List[Dict[str, Any]], output_format: str = "numpy"
+        self, captures: List[Dict[str, Any]], output_format: str = "pil"
     ) -> Dict[str, Any]:
         """Capture stereo data from multiple cameras."""
         request = StereoCaptureBatchRequest(captures=captures, output_format=output_format)

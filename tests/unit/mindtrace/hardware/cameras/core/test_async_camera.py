@@ -27,8 +27,8 @@ async def test_async_camera_configure_and_capture():
         exp = await cam.get_exposure()
         assert isinstance(exp, float)
 
-        # Capture single image
-        img = await cam.capture()
+        # Capture single image (explicitly request numpy for this test)
+        img = await cam.capture(output_format="numpy")
         assert isinstance(img, np.ndarray)
         assert img.ndim == 3
 
@@ -344,10 +344,10 @@ class TestAsyncCameraConcurrentOperations:
 
             cameras[1].backend.capture = failing_capture
 
-            # Try concurrent captures
+            # Try concurrent captures (request numpy format for easier type checking)
             tasks = []
             for cam in cameras:
-                tasks.append(asyncio.create_task(cam.capture()))
+                tasks.append(asyncio.create_task(cam.capture(output_format="numpy")))
 
             # Wait for all tasks - some should succeed, some fail
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -415,8 +415,8 @@ class TestAsyncCameraConcurrentOperations:
         try:
             cam = await manager.open(mock_cameras[0])
 
-            # Launch capture and config operations concurrently
-            capture_task = asyncio.create_task(cam.capture())
+            # Launch capture and config operations concurrently (request numpy for easier type checking)
+            capture_task = asyncio.create_task(cam.capture(output_format="numpy"))
             config_task = asyncio.create_task(cam.set_exposure(2000))
 
             # Both should complete

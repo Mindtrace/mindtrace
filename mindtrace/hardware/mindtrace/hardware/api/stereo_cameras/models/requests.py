@@ -79,14 +79,14 @@ class StereoCaptureRequest(BaseModel):
     enable_disparity: bool = Field(True, description="Capture disparity map")
     calibrate_disparity: bool = Field(True, description="Apply calibration to disparity")
     timeout_ms: int = Field(20000, description="Capture timeout in milliseconds")
-    output_format: str = Field("numpy", description="Output format (numpy or pil)")
+    output_format: str = Field("pil", description="Output format (numpy or pil)")
 
 
 class StereoCaptureBatchRequest(BaseModel):
     """Request model for batch stereo capture."""
 
     captures: List[Dict[str, Any]] = Field(..., description="List of capture configurations")
-    output_format: str = Field("numpy", description="Output format (numpy or pil)")
+    output_format: str = Field("pil", description="Output format (numpy or pil)")
 
 
 # Point Cloud Operations
