@@ -33,8 +33,8 @@ def test_sync_camera_capture_and_config():
         assert roi["width"] > 0, "ROI width should be positive"
         assert roi["height"] > 0, "ROI height should be positive"
 
-        # Capture - Verify actual image properties
-        img = cam.capture()
+        # Capture - Verify actual image properties (request numpy format for validation)
+        img = cam.capture(output_format="numpy")
         assert_image_valid(img, expected_dtype=np.uint8)
         assert len(img.shape) in [2, 3], "Image should be 2D (grayscale) or 3D (color)"
         if len(img.shape) == 3:
@@ -165,8 +165,8 @@ def test_sync_camera_capture_and_config():
         assert min_gain < max_gain, f"Min gain {min_gain} should be less than max {max_gain}"
         assert min_gain >= 0, "Minimum gain should be non-negative"
 
-        # HDR path (sync facade) - Test HDR capture functionality
-        hdr_result = cam.capture_hdr(exposure_levels=3, return_images=True)
+        # HDR path (sync facade) - Test HDR capture functionality (request numpy for validation)
+        hdr_result = cam.capture_hdr(exposure_levels=3, return_images=True, output_format="numpy")
 
         # Handle different return formats (tuple vs dict)
         if isinstance(hdr_result, tuple):
@@ -331,8 +331,8 @@ def test_camera_roi_operations():
                 f"ROI height: expected {new_height}, got {updated_roi['height']}"
             )
 
-            # Test capture with modified ROI
-            img = cam.capture()
+            # Test capture with modified ROI (request numpy for validation)
+            img = cam.capture(output_format="numpy")
             assert_image_valid(img)
             # Note: actual image dimensions depend on implementation
 
@@ -380,8 +380,8 @@ def test_camera_image_enhancement():
         enhancement_status = cam.get_image_enhancement()
         assert enhancement_status is True, "Enhancement should be enabled"
 
-        # Capture with enhancement
-        img_enhanced = cam.capture()
+        # Capture with enhancement (request numpy for validation)
+        img_enhanced = cam.capture(output_format="numpy")
         assert_image_valid(img_enhanced)
 
         # Test disabling enhancement
@@ -389,8 +389,8 @@ def test_camera_image_enhancement():
         enhancement_status = cam.get_image_enhancement()
         assert enhancement_status is False, "Enhancement should be disabled"
 
-        # Capture without enhancement
-        img_normal = cam.capture()
+        # Capture without enhancement (request numpy for validation)
+        img_normal = cam.capture(output_format="numpy")
         assert_image_valid(img_normal)
 
     finally:
@@ -409,7 +409,7 @@ def test_camera_multiple_captures():
         images = []
 
         for i in range(num_captures):
-            img = cam.capture()
+            img = cam.capture(output_format="numpy")
             assert_image_valid(img)
             images.append(img)
 

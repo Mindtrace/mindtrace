@@ -280,7 +280,7 @@ class CameraManagerConnectionManager(ConnectionManager):
 
     # Image Capture Operations
     async def capture_image(
-        self, camera: str, save_path: Optional[str] = None, output_format: str = "numpy"
+        self, camera: str, save_path: Optional[str] = None, output_format: str = "pil"
     ) -> Dict[str, Any]:
         """Capture a single image.
 
@@ -296,7 +296,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         response = await self.post("/cameras/capture", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
-    async def capture_images_batch(self, cameras: List[str], output_format: str = "numpy") -> Dict[str, Any]:
+    async def capture_images_batch(self, cameras: List[str], output_format: str = "pil") -> Dict[str, Any]:
         """Capture images from multiple cameras.
 
         Args:
@@ -317,7 +317,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture HDR image sequence.
 
@@ -350,7 +350,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture HDR images from multiple cameras.
 

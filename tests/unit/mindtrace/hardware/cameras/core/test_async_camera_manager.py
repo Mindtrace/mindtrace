@@ -55,8 +55,8 @@ async def test_batch_capture_with_mock_backend(monkeypatch):
     try:
         await manager.open(mock_cameras)
 
-        # Ensure captures complete and produce ndarray images
-        results = await manager.batch_capture(mock_cameras)
+        # Ensure captures complete and produce ndarray images (request numpy format)
+        results = await manager.batch_capture(mock_cameras, output_format="numpy")
         assert set(results.keys()) == set(mock_cameras)
         for img in results.values():
             assert isinstance(img, np.ndarray)

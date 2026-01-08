@@ -140,7 +140,7 @@ class Camera(Mindtrace):
         return self._backend.is_connected
 
     # Sync methods delegating to async
-    def capture(self, save_path: Optional[str] = None, output_format: str = "numpy") -> Any:
+    def capture(self, save_path: Optional[str] = None, output_format: str = "pil") -> Any:
         """Capture an image from the camera.
 
         Args:
@@ -387,7 +387,7 @@ class Camera(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 
