@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
-from mindtrace.registry.core.types import OpResults
+from mindtrace.registry.core.types import OnConflict, OpResults
 
 # Type aliases for cleaner signatures
 NameArg = Union[str, List[str]]
@@ -108,8 +108,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         version: VersionArg,
         local_path: PathArg,
         metadata: MetadataArg = None,
-        on_conflict: str = "error",
-        on_error: str = "raise",
+        on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
     ) -> OpResults:
         """Atomically push artifacts and metadata.
@@ -118,6 +117,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         together - either both succeed or both fail (with rollback).
 
         If version is None, auto-increments to next version atomically.
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Object name(s). Single string or list.
@@ -130,24 +132,22 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 - "metadata": user metadata
                 - "_files": list of relative file paths
                 - "hash": content hash for verification
-            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
-                "skip" silently skips, "overwrite" replaces existing. Default is "error".
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on atomic operations for immutability. Default is False.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
 
         Raises:
-            RegistryVersionConflict: If version already exists and on_conflict="error" (when on_error="raise").
-            LockAcquisitionError: If lock cannot be acquired (when on_error="raise").
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            LockAcquisitionError: Single item and lock cannot be acquired.
             ValueError: If inputs are invalid.
         """
         pass
@@ -159,13 +159,15 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         version: ConcreteVersionArg,
         local_path: PathArg,
         acquire_lock: bool = False,
-        on_error: str = "raise",
         metadata: MetadataArg = None,
     ) -> OpResults:
         """Download artifacts to local path(s).
 
         Uses the "_files" manifest from metadata to know exactly which
         files to download, avoiding expensive blob storage listing.
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Object name(s).
@@ -174,20 +176,17 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             acquire_lock: If True, acquire a shared (read) lock before pulling.
                 This is needed for mutable registries to prevent read-write races.
                 Default is False (no locking, for immutable registries).
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
             metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
                 If provided, avoids re-fetching metadata. Single dict or list of dicts.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
 
         Raises:
-            RegistryObjectNotFound: If object doesn't exist (when on_error="raise").
-            LockAcquisitionError: If lock cannot be acquired (when on_error="raise").
+            RegistryObjectNotFound: Single item and object doesn't exist.
+            LockAcquisitionError: Single item and lock cannot be acquired.
         """
         pass
 
@@ -196,24 +195,26 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
         acquire_lock: bool = False,
     ) -> OpResults:
         """Delete artifact(s) and metadata.
 
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
         Args:
             name: Object name(s).
             version: Version string(s).
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
             acquire_lock: If True, acquire locks before delete (for mutable registries).
                 Default is False.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
         """
         pass
 
@@ -227,17 +228,26 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         name: NameArg,
         version: ConcreteVersionArg,
         metadata: Union[dict, List[dict]],
-    ) -> None:
-        """Save metadata only (insert-only, raises on conflict).
+        on_conflict: str = OnConflict.SKIP,
+    ) -> "OpResults":
+        """Save metadata for object version(s).
 
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Object name(s).
             version: Version string(s).
             metadata: Metadata dict(s).
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+
+        Returns:
+            OpResults with status for each (name, version).
 
         Raises:
-            RegistryVersionConflict: If (name, version) already exists.
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
         """
         pass
 
@@ -246,25 +256,27 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "skip",
     ) -> OpResults:
         """Fetch metadata for object version(s).
 
         This is the canonical existence check - if metadata doesn't exist,
         the object doesn't exist.
 
+        Single item operations raise exceptions if not found.
+        Batch operations return OpResults without raising, letting caller inspect results.
+        Missing entries (not found) are omitted from the batch result.
+
         Args:
             name: Object name(s).
             version: Version string(s).
-            on_error: Behavior when fetching individual metadata fails.
-                "skip" (default): Skip failed entries, return partial results.
-                "raise": Raise the exception immediately.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure (when on_error="skip")
-            Missing entries (FileNotFoundError) are omitted from the result.
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and metadata doesn't exist.
         """
         pass
 
@@ -273,21 +285,23 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
     ) -> OpResults:
         """Delete metadata for object version(s).
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Object name(s).
             version: Version string(s).
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RuntimeError: Single item and deletion fails.
         """
         pass
 
