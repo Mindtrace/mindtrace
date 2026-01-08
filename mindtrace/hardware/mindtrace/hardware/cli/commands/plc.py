@@ -15,12 +15,8 @@ app = typer.Typer(help="Manage PLC services")
 
 @app.command()
 def start(
-    api_host: Annotated[
-        str, typer.Option("--api-host", help="API service host", envvar="PLC_API_HOST")
-    ] = "localhost",
-    api_port: Annotated[
-        int, typer.Option("--api-port", help="API service port", envvar="PLC_API_PORT")
-    ] = 8003,
+    api_host: Annotated[str, typer.Option("--api-host", help="API service host", envvar="PLC_API_HOST")] = "localhost",
+    api_port: Annotated[int, typer.Option("--api-port", help="API service port", envvar="PLC_API_PORT")] = 8003,
 ):
     """Start PLC API service."""
     logger = RichLogger()

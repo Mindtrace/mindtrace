@@ -50,7 +50,6 @@ Network Configuration:
 import logging
 import platform
 import subprocess
-import sys
 from typing import Optional
 
 import typer
@@ -333,7 +332,8 @@ def install(
     ),
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
@@ -370,7 +370,8 @@ def install(
 def uninstall(
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
@@ -400,7 +401,8 @@ def configure_firewall(
     ),
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:

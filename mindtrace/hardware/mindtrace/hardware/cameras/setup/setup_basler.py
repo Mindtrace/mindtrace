@@ -28,7 +28,6 @@ import logging
 import os
 import platform
 import subprocess
-import sys
 import webbrowser
 from pathlib import Path
 from typing import List, Optional
@@ -208,7 +207,7 @@ where you'll need to accept their End User License Agreement (EULA)."""
         while True:
             path_str = typer.prompt("         Enter path to downloaded file (or 'q' to quit)")
 
-            if path_str.lower() == 'q':
+            if path_str.lower() == "q":
                 rprint("[yellow]Installation cancelled.[/]")
                 return None
 
@@ -244,13 +243,15 @@ where you'll need to accept their End User License Agreement (EULA)."""
         min_size = platform_info["min_size_mb"]
 
         if size_mb < min_size:
-            rprint(f"[yellow]         Warning: File size ({size_mb:.1f} MB) is smaller than expected (>{min_size} MB)[/]")
+            rprint(
+                f"[yellow]         Warning: File size ({size_mb:.1f} MB) is smaller than expected (>{min_size} MB)[/]"
+            )
             return False
 
         # Check file name pattern
         name = path.name.lower()
         if "pylon" not in name:
-            rprint(f"[yellow]         Warning: File name doesn't contain 'pylon'[/]")
+            rprint("[yellow]         Warning: File name doesn't contain 'pylon'[/]")
             return False
 
         rprint(f"         File size: {size_mb:.1f} MB")
@@ -301,6 +302,7 @@ where you'll need to accept their End User License Agreement (EULA)."""
 
             if package_path.suffix == ".gz" or ".tar" in package_path.name:
                 import tarfile
+
                 with tarfile.open(package_path, "r:gz") as tar:
                     tar.extractall(path=self.pylon_dir)
             else:
@@ -377,10 +379,11 @@ where you'll need to accept their End User License Agreement (EULA)."""
             elif package_path.suffix == ".zip":
                 # Extract and find .exe
                 import zipfile
+
                 extract_dir = self.pylon_dir / "temp_extract"
                 extract_dir.mkdir(parents=True, exist_ok=True)
 
-                with zipfile.ZipFile(package_path, 'r') as zip_ref:
+                with zipfile.ZipFile(package_path, "r") as zip_ref:
                     zip_ref.extractall(extract_dir)
 
                 # Find .exe installer
@@ -501,14 +504,16 @@ where you'll need to accept their End User License Agreement (EULA)."""
 def install(
     package: Optional[Path] = typer.Option(
         None,
-        "--package", "-p",
+        "--package",
+        "-p",
         help="Path to pre-downloaded Pylon SDK package file",
         exists=True,
         dir_okay=False,
     ),
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
@@ -532,7 +537,8 @@ def install(
 def uninstall(
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
