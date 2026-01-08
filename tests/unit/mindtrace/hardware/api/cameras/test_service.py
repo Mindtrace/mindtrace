@@ -403,7 +403,6 @@ class TestCameraManagerServiceBusinessLogic:
         # Test business logic: parameters passed correctly
         mock_camera.capture.assert_called_once_with(
             save_path="/tmp/test.jpg",
-            upload_to_gcs=False,  # Default value
             output_format="numpy",  # Default value
         )
 

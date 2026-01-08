@@ -1,12 +1,20 @@
 """Tests for Basler SDK setup functionality."""
 
+from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
+from typer.testing import CliRunner
 
 from mindtrace.hardware.cameras.setup.setup_basler import (
     PylonSDKInstaller,
-    install_pylon_sdk,
-    uninstall_pylon_sdk,
+    app,
+    install,
+    uninstall,
 )
+
+
+runner = CliRunner()
 
 
 class TestPylonSDKInstaller:
@@ -25,19 +33,21 @@ class TestPylonSDKInstaller:
         assert hasattr(installer, "logger")
         assert installer.logger is not None
 
-    def test_installer_has_sdk_urls(self):
-        """Test that installer has SDK URLs defined."""
+    def test_installer_has_platform_info(self):
+        """Test that installer has platform information defined."""
         PylonSDKInstaller()
 
-        # Should have class-level URL constants
-        assert hasattr(PylonSDKInstaller, "LINUX_SDK_URL")
-        assert hasattr(PylonSDKInstaller, "WINDOWS_SDK_URL")
+        # Should have class-level platform constants
+        assert hasattr(PylonSDKInstaller, "BASLER_DOWNLOAD_PAGE")
+        assert hasattr(PylonSDKInstaller, "PLATFORM_INFO")
 
-        # URLs should be non-empty strings
-        assert isinstance(PylonSDKInstaller.LINUX_SDK_URL, str)
-        assert isinstance(PylonSDKInstaller.WINDOWS_SDK_URL, str)
-        assert len(PylonSDKInstaller.LINUX_SDK_URL) > 0
-        assert len(PylonSDKInstaller.WINDOWS_SDK_URL) > 0
+        # Download page should be a non-empty string
+        assert isinstance(PylonSDKInstaller.BASLER_DOWNLOAD_PAGE, str)
+        assert len(PylonSDKInstaller.BASLER_DOWNLOAD_PAGE) > 0
+
+        # Platform info should contain Linux and Windows
+        assert "Linux" in PylonSDKInstaller.PLATFORM_INFO
+        assert "Windows" in PylonSDKInstaller.PLATFORM_INFO
 
     def test_installer_methods_exist(self):
         """Test that installer has expected methods."""
@@ -49,122 +59,31 @@ class TestPylonSDKInstaller:
         assert callable(installer.install)
         assert callable(installer.uninstall)
 
-    def test_platform_specific_urls(self):
-        """Test platform-specific URL handling."""
-        # URLs should be appropriate for their platforms
-        assert "linux" in PylonSDKInstaller.LINUX_SDK_URL.lower()
-        assert (
-            "windows" in PylonSDKInstaller.WINDOWS_SDK_URL.lower()
-            or "basler" in PylonSDKInstaller.WINDOWS_SDK_URL.lower()
-        )
+    def test_platform_info_structure(self):
+        """Test platform info has expected structure."""
+        for platform_name, info in PylonSDKInstaller.PLATFORM_INFO.items():
+            assert "search_term" in info
+            assert "file_pattern" in info
+            assert "file_description" in info
+            assert "min_size_mb" in info
 
-    @patch("subprocess.run")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_tarball")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_zip")
-    def test_install_method_callable(self, mock_download_zip, mock_download_tarball, mock_subprocess):
-        """Test that install method is callable."""
+    def test_linux_dependencies_defined(self):
+        """Test that Linux dependencies are defined."""
+        assert hasattr(PylonSDKInstaller, "LINUX_DEPENDENCIES")
+        assert isinstance(PylonSDKInstaller.LINUX_DEPENDENCIES, list)
+        assert len(PylonSDKInstaller.LINUX_DEPENDENCIES) > 0
+
+    def test_installer_accepts_package_path(self):
+        """Test that installer accepts package_path parameter."""
+        # Should be able to create installer with package path
+        with patch.object(Path, "exists", return_value=True):
+            installer = PylonSDKInstaller(package_path="/tmp/fake_package.tar.gz")
+            assert installer.package_path == Path("/tmp/fake_package.tar.gz")
+
+    def test_installer_without_package_path(self):
+        """Test installer without package path defaults to None."""
         installer = PylonSDKInstaller()
-
-        # Mock successful subprocess calls
-        mock_subprocess.return_value.returncode = 0
-
-        # Mock download functions to return a fake directory
-        from pathlib import Path
-
-        mock_download_tarball.return_value = Path("/tmp/fake_extracted")
-        mock_download_zip.return_value = Path("/tmp/fake_extracted")
-
-        # Should be able to call install without errors
-        try:
-            result = installer.install()
-            # May return bool or None depending on implementation
-            assert isinstance(result, (bool, type(None)))
-        except Exception as e:
-            # If it fails, should be due to missing dependencies, not method errors
-            assert "dpkg" in str(e) or "permission" in str(e).lower() or "not found" in str(e).lower()
-
-    @patch("subprocess.run")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_tarball")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_zip")
-    def test_uninstall_method_callable(self, mock_download_zip, mock_download_tarball, mock_subprocess):
-        """Test that uninstall method is callable."""
-        installer = PylonSDKInstaller()
-
-        # Mock successful subprocess calls
-        mock_subprocess.return_value.returncode = 0
-
-        # Mock download functions to return a fake directory
-        from pathlib import Path
-
-        mock_download_tarball.return_value = Path("/tmp/fake_extracted")
-        mock_download_zip.return_value = Path("/tmp/fake_extracted")
-
-        # Should be able to call uninstall without errors
-        try:
-            result = installer.uninstall()
-            # May return bool or None depending on implementation
-            assert isinstance(result, (bool, type(None)))
-        except Exception as e:
-            # If it fails, should be due to missing dependencies, not method errors
-            assert "dpkg" in str(e) or "permission" in str(e).lower() or "not found" in str(e).lower()
-
-
-class TestSetupFunctions:
-    """Test module-level setup functions."""
-
-    def test_install_pylon_sdk_function_exists(self):
-        """Test that install_pylon_sdk function exists and is callable."""
-        assert callable(install_pylon_sdk)
-
-    def test_uninstall_pylon_sdk_function_exists(self):
-        """Test that uninstall_pylon_sdk function exists and is callable."""
-        assert callable(uninstall_pylon_sdk)
-
-    @patch("sys.exit")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
-    def test_install_function_creates_installer(self, mock_installer_class, mock_exit):
-        """Test that install function creates and uses installer."""
-        mock_installer = Mock()
-        mock_installer.install.return_value = True
-        mock_installer_class.return_value = mock_installer
-
-        install_pylon_sdk([])
-
-        # Should have created installer and called install
-        mock_installer_class.assert_called_once()
-        mock_installer.install.assert_called_once()
-        mock_exit.assert_called_once_with(0)
-
-    @patch("sys.exit")
-    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
-    def test_uninstall_function_creates_installer(self, mock_installer_class, mock_exit):
-        """Test that uninstall function creates and uses installer."""
-        mock_installer = Mock()
-        mock_installer.uninstall.return_value = True
-        mock_installer_class.return_value = mock_installer
-
-        uninstall_pylon_sdk([])
-
-        # Should have created installer and called uninstall
-        mock_installer_class.assert_called_once()
-        mock_installer.uninstall.assert_called_once()
-        mock_exit.assert_called_once_with(0)
-
-    @patch("sys.exit")
-    def test_install_function_default_parameters(self, mock_exit):
-        """Test install function with default parameters."""
-        # Should accept version parameter
-        # Mock the installer to avoid actual installation
-        with patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller") as mock_class:
-            mock_installer = Mock()
-            mock_installer.install.return_value = True
-            mock_class.return_value = mock_installer
-
-            install_pylon_sdk(["--version", "v1.0-test"])
-
-            # Should have called installer with custom version
-            mock_class.assert_called_once_with("v1.0-test")
-            mock_exit.assert_called_once_with(0)
+        assert installer.package_path is None
 
     @patch("platform.system")
     def test_platform_detection_linux(self, mock_platform):
@@ -175,6 +94,7 @@ class TestSetupFunctions:
 
         # Should handle Linux platform
         assert installer is not None
+        assert installer.platform == "Linux"
 
     @patch("platform.system")
     def test_platform_detection_windows(self, mock_platform):
@@ -185,6 +105,7 @@ class TestSetupFunctions:
 
         # Should handle Windows platform
         assert installer is not None
+        assert installer.platform == "Windows"
 
     def test_installer_logging(self):
         """Test that installer has proper logging setup."""
@@ -195,3 +116,93 @@ class TestSetupFunctions:
         import logging
 
         assert isinstance(installer.logger, logging.Logger)
+
+
+class TestTyperCommands:
+    """Test Typer CLI commands."""
+
+    def test_install_command_exists(self):
+        """Test that install command is registered."""
+        # The app should have install command
+        result = runner.invoke(app, ["install", "--help"])
+        assert result.exit_code == 0
+        assert "Install" in result.stdout or "install" in result.stdout
+
+    def test_uninstall_command_exists(self):
+        """Test that uninstall command is registered."""
+        # The app should have uninstall command
+        result = runner.invoke(app, ["uninstall", "--help"])
+        assert result.exit_code == 0
+        assert "Uninstall" in result.stdout or "uninstall" in result.stdout
+
+    def test_install_has_package_option(self):
+        """Test that install command has package option."""
+        result = runner.invoke(app, ["install", "--help"])
+        assert result.exit_code == 0
+        assert "--package" in result.stdout or "-p" in result.stdout
+
+    def test_install_has_verbose_option(self):
+        """Test that install command has verbose option."""
+        result = runner.invoke(app, ["install", "--help"])
+        assert result.exit_code == 0
+        assert "--verbose" in result.stdout or "-v" in result.stdout
+
+    def test_uninstall_has_verbose_option(self):
+        """Test that uninstall command has verbose option."""
+        result = runner.invoke(app, ["uninstall", "--help"])
+        assert result.exit_code == 0
+        assert "--verbose" in result.stdout or "-v" in result.stdout
+
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
+    def test_install_command_creates_installer(self, mock_installer_class):
+        """Test that install command creates and uses installer."""
+        mock_installer = Mock()
+        mock_installer.install.return_value = True
+        mock_installer.logger = Mock()
+        mock_installer_class.return_value = mock_installer
+
+        result = runner.invoke(app, ["install"])
+
+        # Should have created installer and called install
+        mock_installer_class.assert_called_once_with(package_path=None)
+        mock_installer.install.assert_called_once()
+        assert result.exit_code == 0
+
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
+    def test_uninstall_command_creates_installer(self, mock_installer_class):
+        """Test that uninstall command creates and uses installer."""
+        mock_installer = Mock()
+        mock_installer.uninstall.return_value = True
+        mock_installer.logger = Mock()
+        mock_installer_class.return_value = mock_installer
+
+        result = runner.invoke(app, ["uninstall"])
+
+        # Should have created installer and called uninstall
+        mock_installer_class.assert_called_once()
+        mock_installer.uninstall.assert_called_once()
+        assert result.exit_code == 0
+
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
+    def test_install_returns_error_on_failure(self, mock_installer_class):
+        """Test that install command returns error code on failure."""
+        mock_installer = Mock()
+        mock_installer.install.return_value = False
+        mock_installer.logger = Mock()
+        mock_installer_class.return_value = mock_installer
+
+        result = runner.invoke(app, ["install"])
+
+        assert result.exit_code == 1
+
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
+    def test_uninstall_returns_error_on_failure(self, mock_installer_class):
+        """Test that uninstall command returns error code on failure."""
+        mock_installer = Mock()
+        mock_installer.uninstall.return_value = False
+        mock_installer.logger = Mock()
+        mock_installer_class.return_value = mock_installer
+
+        result = runner.invoke(app, ["uninstall"])
+
+        assert result.exit_code == 1

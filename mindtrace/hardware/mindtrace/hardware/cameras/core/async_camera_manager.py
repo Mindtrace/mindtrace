@@ -13,14 +13,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
 
-try:
-    from mindtrace.storage.gcs import GCSStorageHandler
-
-    STORAGE_AVAILABLE = True
-except ImportError:
-    GCSStorageHandler = None
-    STORAGE_AVAILABLE = False
-
 
 class AsyncCameraManager(Mindtrace):
     """Mindtrace Async Camera Manager class.
@@ -647,7 +639,6 @@ class AsyncCameraManager(Mindtrace):
         self,
         camera_names: List[str],
         save_path_pattern: Optional[str] = None,
-        upload_to_gcs: bool = False,
         output_format: str = "numpy",
     ) -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management.
@@ -655,7 +646,6 @@ class AsyncCameraManager(Mindtrace):
         Args:
             camera_names: List of camera names to capture from
             save_path_pattern: Optional path pattern for saving images. Use {camera} placeholder for camera name
-            upload_to_gcs: Whether to upload to GCS
             output_format: Output format for images
 
         Returns:
@@ -677,9 +667,7 @@ class AsyncCameraManager(Mindtrace):
                         safe_camera_name = camera_name.replace(":", "_").replace("/", "_")
                         save_path = save_path_pattern.replace("{camera}", safe_camera_name)
 
-                    image = await camera.capture(
-                        save_path=save_path, upload_to_gcs=upload_to_gcs, output_format=output_format
-                    )
+                    image = await camera.capture(save_path=save_path, output_format=output_format)
 
                     # When save_path_pattern is provided, return the file path instead of image data
                     if save_path_pattern and save_path:
@@ -709,7 +697,6 @@ class AsyncCameraManager(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
         output_format: str = "numpy",
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
@@ -732,11 +719,8 @@ class AsyncCameraManager(Mindtrace):
                         exposure_levels=exposure_levels,
                         exposure_multiplier=exposure_multiplier,
                         return_images=return_images,
-                        upload_to_gcs=upload_to_gcs,
                         output_format=output_format,
                     )
-
-                    # HDR upload will be handled by individual camera capture_hdr method
 
                     return camera_name, result
             except Exception as e:
@@ -745,7 +729,6 @@ class AsyncCameraManager(Mindtrace):
                     "success": False,
                     "images": None,
                     "image_paths": None,
-                    "gcs_urls": None,
                     "exposure_levels": [],
                     "successful_captures": 0,
                 }

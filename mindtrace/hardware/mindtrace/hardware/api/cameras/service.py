@@ -888,7 +888,6 @@ class CameraManagerService(Service):
                 await asyncio.wait_for(
                     camera_proxy.capture(
                         save_path=request.save_path,
-                        upload_to_gcs=request.upload_to_gcs,
                         output_format=request.output_format,
                     ),
                     timeout=capture_timeout,
@@ -937,7 +936,6 @@ class CameraManagerService(Service):
             results = await manager.batch_capture(
                 request.cameras,
                 save_path_pattern=request.save_path_pattern,
-                upload_to_gcs=request.upload_to_gcs,
                 output_format=request.output_format,
             )
 
@@ -986,7 +984,6 @@ class CameraManagerService(Service):
                 exposure_levels=request.exposure_levels,
                 exposure_multiplier=request.exposure_multiplier,
                 return_images=request.return_images,
-                upload_to_gcs=request.upload_to_gcs,
                 output_format=request.output_format,
             )
 
@@ -1006,7 +1003,6 @@ class CameraManagerService(Service):
                 success=hdr_result.get("success", False),
                 images=images,
                 image_paths=hdr_result.get("image_paths"),
-                gcs_urls=hdr_result.get("gcs_urls"),
                 exposure_levels=hdr_result.get("exposure_levels", []),
                 capture_time=datetime.now(timezone.utc),
                 successful_captures=hdr_result.get("successful_captures", 0),
@@ -1022,7 +1018,6 @@ class CameraManagerService(Service):
                 success=False,
                 images=None,
                 image_paths=None,
-                gcs_urls=None,
                 exposure_levels=[],
                 capture_time=datetime.now(timezone.utc),
                 successful_captures=0,
@@ -1035,7 +1030,6 @@ class CameraManagerService(Service):
                 success=False,
                 images=None,
                 image_paths=None,
-                gcs_urls=None,
                 exposure_levels=[],
                 capture_time=datetime.now(timezone.utc),
                 successful_captures=0,
@@ -1052,7 +1046,6 @@ class CameraManagerService(Service):
                 exposure_levels=request.exposure_levels,
                 exposure_multiplier=request.exposure_multiplier,
                 return_images=request.return_images,
-                upload_to_gcs=request.upload_to_gcs,
                 output_format=request.output_format,
             )
 
@@ -1076,7 +1069,6 @@ class CameraManagerService(Service):
                         success=hdr_data.get("success", True),
                         images=images,
                         image_paths=hdr_data.get("image_paths"),
-                        gcs_urls=hdr_data.get("gcs_urls"),
                         exposure_levels=hdr_data.get("exposure_levels", []),
                         capture_time=datetime.now(timezone.utc),
                         successful_captures=hdr_data.get("successful_captures", 0),
@@ -1087,7 +1079,6 @@ class CameraManagerService(Service):
                         success=False,
                         images=None,
                         image_paths=None,
-                        gcs_urls=None,
                         exposure_levels=[],
                         capture_time=datetime.now(timezone.utc),
                         successful_captures=0,
