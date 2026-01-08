@@ -6,7 +6,7 @@ from mindtrace.registry.archivers.default_archivers import (
 from mindtrace.registry.archivers.path_archiver import PathArchiver
 from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
-from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.exceptions import LockTimeoutError
@@ -27,7 +27,7 @@ __all__ = [
     "LocalRegistryBackend",
     "LockTimeoutError",
     "GCPRegistryBackend",
-    "MinioRegistryBackend",
+    "S3RegistryBackend",
     "Registry",
     "RegistryBackend",
     "RegistryWithCache",

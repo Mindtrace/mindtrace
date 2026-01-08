@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-import io
 import os
-from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from .base import FileResult, StorageHandler, StringResult
+from .base import FileResult, Status, StorageHandler, StringResult
 
 
-class MinioStorageHandler(StorageHandler):
-    """A thin wrapper around boto3 S3 APIs for S3-compatible storage (Minio, AWS S3, etc.).
+class S3StorageHandler(StorageHandler):
+    """A thin wrapper around boto3 S3 APIs for S3-compatible storage.
 
-    Uses boto3 instead of the minio SDK to get conditional write support via IfNoneMatch.
+    Works with AWS S3, Minio, DigitalOcean Spaces, and other S3-compatible services.
+    Uses boto3 with IfNoneMatch='*' for atomic conditional writes.
     """
 
     def __init__(
@@ -30,11 +29,11 @@ class MinioStorageHandler(StorageHandler):
         create_if_missing: bool = True,
         region: Optional[str] = None,
     ) -> None:
-        """Initialize a MinioStorageHandler.
+        """Initialize an S3StorageHandler.
 
         Args:
             bucket_name: Name of the S3 bucket.
-            endpoint: Minio/S3 server endpoint (e.g., "localhost:9000").
+            endpoint: S3-compatible server endpoint (e.g., "localhost:9000", "s3.amazonaws.com").
             access_key: Access key for authentication.
             secret_key: Secret key for authentication.
             secure: Whether to use HTTPS (default True).
@@ -56,7 +55,7 @@ class MinioStorageHandler(StorageHandler):
         self.bucket_name = bucket_name
         self.endpoint = endpoint
         self.secure = secure
-        self._region = region or "us-east-1" # minio doesnt care
+        self._region = region or "us-east-1"
 
         if ensure_bucket:
             self._ensure_bucket(create_if_missing)
@@ -88,17 +87,17 @@ class MinioStorageHandler(StorageHandler):
         metadata: Optional[Dict[str, str]] = None,
         fail_if_exists: bool = False,
     ) -> FileResult:
-        """Upload a file to Minio/S3.
+        """Upload a file to S3.
 
         Args:
             local_path: Path to the local file to upload.
             remote_path: Path in the bucket to upload to.
             metadata: Optional metadata to associate with the object.
-            fail_if_exists: If True, return "already_exists" status if object exists.
+            fail_if_exists: If True, return ALREADY_EXISTS status if object exists.
                 Uses S3 IfNoneMatch='*' for atomic create-only semantics.
 
         Returns:
-            FileResult with status "ok", "already_exists", or "error".
+            FileResult with status OK, ALREADY_EXISTS, or ERROR.
         """
         full_path = self._full_path(remote_path)
 
@@ -120,7 +119,7 @@ class MinioStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="ok",
+                status=Status.OK,
             )
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
@@ -128,14 +127,14 @@ class MinioStorageHandler(StorageHandler):
                 return FileResult(
                     local_path=local_path,
                     remote_path=full_path,
-                    status="already_exists",
+                    status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object already exists: {full_path}",
                 )
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -143,13 +142,13 @@ class MinioStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
 
     def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> FileResult:
-        """Download a file from Minio/S3 to a local path.
+        """Download a file from S3 to a local path.
 
         Args:
             remote_path: Path in the bucket to download from.
@@ -157,7 +156,7 @@ class MinioStorageHandler(StorageHandler):
             skip_if_exists: If True, skip download if local_path exists.
 
         Returns:
-            FileResult with status "ok", "skipped", "not_found", or "error".
+            FileResult with status OK, SKIPPED, NOT_FOUND, or ERROR.
         """
         full_path = self._full_path(remote_path)
 
@@ -165,7 +164,7 @@ class MinioStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="skipped",
+                status=Status.SKIPPED,
             )
 
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
@@ -175,7 +174,7 @@ class MinioStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="ok",
+                status=Status.OK,
             )
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
@@ -183,14 +182,14 @@ class MinioStorageHandler(StorageHandler):
                 return FileResult(
                     local_path=local_path,
                     remote_path=full_path,
-                    status="not_found",
+                    status=Status.NOT_FOUND,
                     error_type="NotFound",
                     error_message=f"Object not found: {full_path}",
                 )
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -198,13 +197,13 @@ class MinioStorageHandler(StorageHandler):
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
 
     def delete(self, remote_path: str) -> None:
-        """Delete a file from Minio/S3.
+        """Delete a file from S3.
 
         Args:
             remote_path: Path in the bucket to delete.
@@ -223,7 +222,7 @@ class MinioStorageHandler(StorageHandler):
         fail_if_exists: bool = False,
         if_generation_match: int | None = None,
     ) -> StringResult:
-        """Upload string/bytes content directly to Minio/S3 without temp files.
+        """Upload string/bytes content directly to S3 without temp files.
 
         Args:
             content: String or bytes content to upload.
@@ -234,7 +233,7 @@ class MinioStorageHandler(StorageHandler):
                 This matches GCS semantics where generation=0 means "only if not exists".
 
         Returns:
-            StringResult with status "ok", "already_exists", or "error".
+            StringResult with status OK, ALREADY_EXISTS, or ERROR.
         """
         full_path = self._full_path(remote_path)
 
@@ -255,26 +254,26 @@ class MinioStorageHandler(StorageHandler):
                 put_kwargs["IfNoneMatch"] = "*"
 
             self.client.put_object(**put_kwargs)
-            return StringResult(remote_path=full_path, status="ok")
+            return StringResult(remote_path=full_path, status=Status.OK)
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 return StringResult(
                     remote_path=full_path,
-                    status="already_exists",
+                    status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object already exists: {full_path}",
                 )
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
         except Exception as e:
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -286,9 +285,7 @@ class MinioStorageHandler(StorageHandler):
             remote_path: Path in the bucket to download from.
 
         Returns:
-            StringResult with:
-            - status: "ok", "not_found", or "error"
-            - content: Downloaded bytes if status is "ok"
+            StringResult with status OK, NOT_FOUND, or ERROR, and content if OK.
         """
         full_path = self._full_path(remote_path)
 
@@ -297,7 +294,7 @@ class MinioStorageHandler(StorageHandler):
             content = response["Body"].read()
             return StringResult(
                 remote_path=full_path,
-                status="ok",
+                status=Status.OK,
                 content=content,
             )
         except ClientError as e:
@@ -305,20 +302,20 @@ class MinioStorageHandler(StorageHandler):
             if error_code in ("404", "NoSuchKey"):
                 return StringResult(
                     remote_path=full_path,
-                    status="not_found",
+                    status=Status.NOT_FOUND,
                     error_type="NotFound",
                     error_message=f"Object not found: {full_path}",
                 )
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
         except Exception as e:
             return StringResult(
                 remote_path=full_path,
-                status="error",
+                status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
@@ -426,3 +423,7 @@ class MinioStorageHandler(StorageHandler):
             "etag": response.get("ETag", "").strip('"'),
             "metadata": response.get("Metadata", {}),
         }
+
+
+# Backwards compatibility alias
+MinioStorageHandler = S3StorageHandler

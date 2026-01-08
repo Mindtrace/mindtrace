@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import pytest
 
-from mindtrace.registry import MinioRegistryBackend
+from mindtrace.registry import S3RegistryBackend
 from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -195,16 +195,16 @@ class MockMinioHandler:
 
 @pytest.fixture
 def mock_minio_handler(monkeypatch):
-    """Create a mock Minio storage handler."""
-    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.MinioStorageHandler", MockMinioHandler)
+    """Create a mock S3 storage handler."""
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockMinioHandler)
     return MockMinioHandler()
 
 
 @pytest.fixture
 def backend(mock_minio_handler, tmp_path):
-    """Create a backend with mocked Minio storage."""
-    return MinioRegistryBackend(
-        uri=str(tmp_path / "minio_cache"),
+    """Create a backend with mocked S3 storage."""
+    return S3RegistryBackend(
+        uri=str(tmp_path / "s3_cache"),
         endpoint="localhost:9000",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -281,15 +281,43 @@ def test_push_conflict_error(backend, sample_object_dir, sample_metadata):
         backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
 
-def test_push_conflict_skip(backend, sample_object_dir, sample_metadata):
-    """Test push with on_conflict=skip."""
+def test_push_conflict_skip_single(backend, sample_object_dir, sample_metadata):
+    """Test push with on_conflict='skip' for single item raises RegistryVersionConflict."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Second push with skip
-    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
+    # Second push (single item) with skip should raise RegistryVersionConflict
+    with pytest.raises(RegistryVersionConflict):
+        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
 
-    assert results.first().is_skipped
+
+def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Test push with on_conflict='skip' for batch items returns skipped result."""
+    # First push
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Create a second sample object dir with its own files
+    sample_object_dir2 = tmp_path / "sample_object2"
+    sample_object_dir2.mkdir()
+    (sample_object_dir2 / "file1.txt").write_text("content1")
+    (sample_object_dir2 / "file2.txt").write_text("content2")
+    sample_metadata2 = {"class": "dict", "hash": "def456", "_files": ["file1.txt", "file2.txt"]}
+
+    # Batch push with skip - existing item should return skipped result (not raise)
+    results = backend.push(
+        ["test:object", "test:object2"],
+        ["1.0.0", "1.0.0"],
+        [str(sample_object_dir), str(sample_object_dir2)],
+        [sample_metadata, sample_metadata2],
+        on_conflict="skip",
+    )
+    # First item (existing) should be skipped
+    result1 = results.get(("test:object", "1.0.0"))
+    assert result1.is_skipped
+
+    # Second item (new) should succeed
+    result2 = results.get(("test:object2", "1.0.0"))
+    assert result2.ok
 
 
 def test_push_batch(backend, sample_object_dir, sample_metadata):
@@ -411,12 +439,28 @@ def test_fetch_metadata(backend, sample_object_dir, sample_metadata):
     assert result.metadata.get("class") == "dict"
 
 
-def test_fetch_metadata_not_found(backend):
-    """Test fetch_metadata for non-existent object."""
-    results = backend.fetch_metadata("nonexistent:object", "1.0.0")
+def test_fetch_metadata_not_found_single(backend):
+    """Test fetch_metadata for non-existent object (single) raises."""
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
-    # Missing entries are omitted, not errors
-    assert len(list(results)) == 0
+    with pytest.raises(RegistryObjectNotFound):
+        backend.fetch_metadata("nonexistent:object", "1.0.0")
+
+
+def test_fetch_metadata_not_found_batch(backend, sample_object_dir, sample_metadata):
+    """Test fetch_metadata for non-existent object (batch) returns empty for missing."""
+    # Push one object
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Batch fetch - one exists, one doesn't
+    results = backend.fetch_metadata(
+        ["test:object", "nonexistent:object"],
+        ["1.0.0", "1.0.0"],
+    )
+
+    # Existing one should be in results, missing one should be omitted
+    assert results.get(("test:object", "1.0.0")).ok
+    assert results.get(("nonexistent:object", "1.0.0")) is None
 
 
 def test_fetch_metadata_batch(backend, sample_object_dir, sample_metadata):
@@ -640,34 +684,32 @@ def test_delete_with_lock(backend, sample_object_dir, sample_metadata):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_push_on_error_skip(backend, sample_object_dir, sample_metadata):
-    """Test push with on_error=skip continues on errors."""
+def test_push_batch_partial_conflict(backend, sample_object_dir, sample_metadata):
+    """Test batch push with partial conflict continues and returns results."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Second push with on_error=skip
+    # Second push (batch) - one existing, one new
     results = backend.push(
         ["test:object", "new:object"],
         ["1.0.0", "1.0.0"],
         [sample_object_dir, sample_object_dir],
         [sample_metadata, sample_metadata],
-        on_error="skip",
     )
 
-    # Should have one error and one success
+    # Should have one error/skipped and one success
     assert len(list(results)) == 2
     assert any(r.is_error or r.is_skipped for r in results)
 
 
-def test_pull_on_error_skip(backend, sample_object_dir, sample_metadata, tmp_path):
-    """Test pull with on_error=skip continues on errors."""
+def test_pull_batch_partial_not_found(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Test batch pull with partial not found continues and returns results."""
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     results = backend.pull(
         ["test:object", "nonexistent:object"],
         ["1.0.0", "1.0.0"],
         [tmp_path / "pulled1", tmp_path / "pulled2"],
-        on_error="skip",
     )
 
     assert len(list(results)) == 2
