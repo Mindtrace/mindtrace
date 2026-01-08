@@ -66,30 +66,10 @@ def start(
             webbrowser.open(docs_url)
             logger.info(f"Opening browser: {docs_url}")
 
-        logger.info("\nPress Ctrl+C to stop the service.")
-
-        # Keep running until interrupted
-        try:
-            while True:
-                # Check if process is still running
-                if not pm.is_service_running("camera_api"):
-                    logger.error("Camera API has stopped unexpectedly")
-                    break
-
-                time.sleep(1)
-
-        except KeyboardInterrupt:
-            logger.info("\n\nShutting down service...")
+        logger.info("\nService running in background. Use 'mindtrace-hw camera stop' to stop.")
 
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
-        return
-
-    finally:
-        # Clean shutdown
-        if pm.is_service_running("camera_api"):
-            pm.stop_service("camera_api")
-            logger.success("Camera API stopped")
 
 
 @app.command()
