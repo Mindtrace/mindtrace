@@ -1,26 +1,27 @@
 """PLC service commands."""
 
-import os
 import time
 
-import click
+import typer
+from typing_extensions import Annotated
 
 from mindtrace.hardware.cli.core.logger import RichLogger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
 from mindtrace.hardware.cli.utils.display import console, format_status
 from mindtrace.hardware.cli.utils.network import check_port_available, wait_for_service
 
-
-@click.group()
-def plc():
-    """Manage PLC services."""
-    pass
+app = typer.Typer(help="Manage PLC services")
 
 
-@plc.command()
-@click.option("--api-host", default=lambda: os.getenv("PLC_API_HOST", "localhost"), help="API service host")
-@click.option("--api-port", default=lambda: int(os.getenv("PLC_API_PORT", "8003")), type=int, help="API service port")
-def start(api_host: str, api_port: int):
+@app.command()
+def start(
+    api_host: Annotated[
+        str, typer.Option("--api-host", help="API service host", envvar="PLC_API_HOST")
+    ] = "localhost",
+    api_port: Annotated[
+        int, typer.Option("--api-port", help="API service port", envvar="PLC_API_PORT")
+    ] = 8003,
+):
     """Start PLC API service."""
     logger = RichLogger()
     pm = ProcessManager()
@@ -28,7 +29,7 @@ def start(api_host: str, api_port: int):
     # Check if service is already running
     if pm.is_service_running("plc_api"):
         logger.warning("PLC API is already running")
-        if not click.confirm("Stop existing service and restart?"):
+        if not typer.confirm("Stop existing service and restart?"):
             return
         pm.stop_service("plc_api")
         time.sleep(1)
@@ -78,7 +79,7 @@ def start(api_host: str, api_port: int):
             logger.success("PLC API stopped")
 
 
-@plc.command()
+@app.command()
 def stop():
     """Stop PLC API service."""
     logger = RichLogger()
@@ -94,7 +95,7 @@ def stop():
         logger.info("PLC API was not running")
 
 
-@plc.command()
+@app.command()
 def status():
     """Show PLC service status."""
     pm = ProcessManager()
@@ -104,23 +105,23 @@ def status():
     plc_status = {k: v for k, v in all_status.items() if k in ["plc_api"]}
 
     if not plc_status:
-        click.echo("No PLC services configured.")
-        click.echo("\nUse 'mindtrace-hw plc start' to launch the service.")
+        typer.echo("No PLC services configured.")
+        typer.echo("\nUse 'mindtrace-hw plc start' to launch the service.")
         return
 
-    click.echo("\nPLC Service Status:")
-    click.echo(format_status(plc_status))
+    typer.echo("\nPLC Service Status:")
+    format_status(plc_status)
 
     # Show additional info if service is running
     if plc_status.get("plc_api", {}).get("running"):
         info = plc_status["plc_api"]
         url = f"http://{info['host']}:{info['port']}"
-        click.echo("\nAccess URL:")
-        click.echo(f"  PLC API: {url}")
-        click.echo(f"  API Docs: {url}/docs")
+        typer.echo("\nAccess URL:")
+        typer.echo(f"  PLC API: {url}")
+        typer.echo(f"  API Docs: {url}/docs")
 
 
-@plc.command()
+@app.command()
 def logs():
     """View PLC service logs."""
     logger = RichLogger()

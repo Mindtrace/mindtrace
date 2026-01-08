@@ -113,7 +113,7 @@ mindtrace-hw camera logs
 ```
 cli/
 ├── __init__.py
-├── __main__.py           # CLI entry point with click integration
+├── __main__.py           # CLI entry point with Typer integration
 ├── commands/
 │   ├── __init__.py
 │   ├── camera.py         # Camera service management commands
@@ -139,9 +139,9 @@ cli/
 
 ### Dependencies
 
-- **click** - Modern CLI framework with decorators and type validation
+- **typer** - Modern CLI framework with type hints and automatic Rich integration (official Mindtrace CLI standard)
 - **psutil** - Cross-platform process and system monitoring
-- **tabulate** - Beautiful table formatting for status display
+- **rich** - Beautiful terminal output and progress display
 
 ## Service Management
 
@@ -424,13 +424,16 @@ mindtrace-hw camera logs
 ### Adding New Hardware Services
 ```python
 # In commands/new_service.py
-@click.group()
-def new_service():
-    """Manage new hardware service."""
-    pass
+import typer
+from typing_extensions import Annotated
 
-@new_service.command()
-def start():
+app = typer.Typer(help="Manage new hardware service")
+
+@app.command()
+def start(
+    api_host: Annotated[str, typer.Option("--api-host", help="API host")] = "localhost",
+    api_port: Annotated[int, typer.Option("--api-port", help="API port")] = 8005,
+):
     """Start new service."""
     pm = ProcessManager()
     # Implement service startup logic
