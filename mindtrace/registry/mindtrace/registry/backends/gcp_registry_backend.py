@@ -26,8 +26,8 @@ from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     RegistryVersionConflict,
 )
-from mindtrace.registry.core.types import OpResult, OpResults
-from mindtrace.storage import GCSStorageHandler, StringResult
+from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
+from mindtrace.storage import GCSStorageHandler, Status, StringResult
 
 
 class GCPRegistryBackend(RegistryBackend):
@@ -171,7 +171,7 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Lock exists - check if expired
             download_result = self.gcs.download_string(lock_path)
-            if download_result.status == "not_found":
+            if download_result.status == Status.NOT_FOUND:
                 # Lock deleted between our attempts, retry create
                 retry_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
                 return retry_result.ok
@@ -230,41 +230,43 @@ class GCPRegistryBackend(RegistryBackend):
             list(executor.map(lambda kv: self._release_lock(kv[0], kv[1]), locks.items()))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Push Helpers
+    # Metadata Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _write_metadata(self, name: str, version: str, metadata: dict, on_conflict: str = "error") -> StringResult:
-        """Write a single metadata file atomically.
+    def _save_metadata_single(
+        self, name: str, version: str, metadata: dict, on_conflict: str = OnConflict.SKIP
+    ) -> StringResult:
+        """Save a single metadata file atomically.
 
         Args:
             name: Object name.
             version: Object version.
             metadata: Metadata dict to write.
-            on_conflict: "error", "skip", or "overwrite".
+            on_conflict: "skip" or "overwrite".
 
         Returns:
-            StringResult with status: "ok", "already_exists", "overwritten", or "error".
+            StringResult with status: ok, already_exists, overwritten, or error.
         """
         meta_path = self._object_metadata_path(name, version)
         data = json.dumps(metadata)
 
-        if on_conflict == "overwrite":
+        if on_conflict == OnConflict.OVERWRITE:
             # Check if exists first to determine status
             existed = self.gcs.exists(meta_path)
             result = self.gcs.upload_string(data, meta_path)
             if result.ok:
                 return StringResult(
                     remote_path=meta_path,
-                    status="overwritten" if existed else "ok",
+                    status=Status.OVERWRITTEN if existed else Status.OK,
                 )
             return result
         else:
-            # "error" or "skip" - atomic insert with generation_match=0
+            # "skip" - atomic insert with generation_match=0
             result = self.gcs.upload_string(data, meta_path, if_generation_match=0)
-            if result.status == "already_exists":
+            if result.status == Status.ALREADY_EXISTS:
                 return StringResult(
                     remote_path=meta_path,
-                    status="already_exists",
+                    status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object {name}@{version} already exists",
                 )
@@ -323,27 +325,25 @@ class GCPRegistryBackend(RegistryBackend):
                 )
 
                 # Check for conflicts (already_exists) or errors
-                conflict_files = [r for r in batch_result.results if r.status == "already_exists"]
-                error_files = [r for r in batch_result.results if r.status == "error"]
+                conflict_files = [r for r in batch_result.results if r.status == Status.ALREADY_EXISTS]
+                error_files = [r for r in batch_result.results if r.status == Status.ERROR]
 
                 if conflict_files:
                     # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
                     if uploaded:
                         self.gcs.delete_batch(uploaded)
 
-                    if on_conflict == "skip":
-                        return OpResult.skipped(obj_name, obj_version)
-                    else:
-                        return OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                        )
+                    # Return failed result - caller decides whether to raise
+                    return OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
+                    )
 
                 if error_files:
                     # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
+                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
                     if uploaded:
                         self.gcs.delete_batch(uploaded)
                     return OpResult.failed(
@@ -353,23 +353,21 @@ class GCPRegistryBackend(RegistryBackend):
                     )
 
             # Write metadata LAST (the "commit point")
-            meta_result = self._write_metadata(obj_name, obj_version, prepared_meta, on_conflict)
+            meta_result = self._save_metadata_single(obj_name, obj_version, prepared_meta, on_conflict)
 
-            if meta_result.status == "already_exists":
+            if meta_result.status == Status.ALREADY_EXISTS:
                 # Rollback uploaded files
                 uploaded = [remote for _, remote in files]
                 if uploaded:
                     self.gcs.delete_batch(uploaded)
 
-                if on_conflict == "skip":
-                    return OpResult.skipped(obj_name, obj_version)
-                else:
-                    return OpResult.failed(
-                        obj_name,
-                        obj_version,
-                        RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                    )
-            elif meta_result.status == "error":
+                # Return failed result - caller decides whether to raise
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
+                )
+            elif meta_result.status == Status.ERROR:
                 # Rollback uploaded files
                 uploaded = [remote for _, remote in files]
                 if uploaded:
@@ -379,7 +377,7 @@ class GCPRegistryBackend(RegistryBackend):
                     obj_version,
                     RuntimeError(meta_result.error_message or "Metadata write failed"),
                 )
-            elif meta_result.status == "overwritten":
+            elif meta_result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             else:
                 return OpResult.success(obj_name, obj_version)
@@ -393,8 +391,7 @@ class GCPRegistryBackend(RegistryBackend):
         version: VersionArg,
         local_path: PathArg,
         metadata: MetadataArg = None,
-        on_conflict: str = "error",
-        on_error: str = "raise",
+        on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
         max_workers: int | None = None,
     ) -> OpResults:
@@ -408,16 +405,17 @@ class GCPRegistryBackend(RegistryBackend):
           If any file exists, the push fails. Metadata written LAST with generation_match=0.
         - acquire_lock=True (mutable): Acquire locks first, then overwrite files freely.
 
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
         Args:
             name: Object name(s). Single string or list.
             version: Version string(s). Registry must resolve versions before calling.
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
-            on_conflict: Behavior when version exists. "error" raises RegistryVersionConflict,
-                "skip" silently skips, "overwrite" replaces existing. Default is "error".
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on generation_match=0 for atomicity (immutable registries).
             max_workers: Maximum parallel workers. Defaults to instance setting.
@@ -425,9 +423,13 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            LockAcquisitionError: Single item and lock cannot be acquired.
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -439,7 +441,7 @@ class GCPRegistryBackend(RegistryBackend):
             raise ValueError("Input list lengths must match")
 
         # Validate on_conflict + acquire_lock combination
-        if on_conflict == "overwrite" and not acquire_lock:
+        if on_conflict == OnConflict.OVERWRITE and not acquire_lock:
             raise ValueError(
                 "on_conflict='overwrite' requires acquire_lock=True. "
                 "Overwriting without a lock is unsafe for concurrent access."
@@ -449,6 +451,7 @@ class GCPRegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
+        is_single = len(names) == 1
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
         failed_locks: set = set()  # Track which objects failed lock acquisition
@@ -464,7 +467,8 @@ class GCPRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if on_error == "raise":
+                    # Single ops raise, batch ops record failure
+                    if is_single:
                         self._release_locks_batch(acquired_locks)
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
@@ -497,22 +501,19 @@ class GCPRegistryBackend(RegistryBackend):
                     obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
                 )
 
-            # Process objects in parallel (file uploads within each use limited parallelism)
-            first_error: Exception | None = None
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(push_one, push_tasks):
-                    results.add(result)
-
-                    # Track first error for on_error="raise"
-                    if result.is_error and on_error == "raise" and first_error is None:
-                        if result.error == "RegistryVersionConflict":
-                            first_error = RegistryVersionConflict(result.message or "Version conflict")
-                        else:
-                            first_error = RuntimeError(result.message or "Unknown error")
-
-            # Raise first error if on_error="raise"
-            if first_error:
-                raise first_error
+            # Single operations: process and raise on error or conflict
+            if is_single and push_tasks:
+                result = push_one(push_tasks[0])
+                results.add(result)
+                if result.is_skipped or (result.is_error and result.error == "RegistryVersionConflict"):
+                    raise RegistryVersionConflict(result.message or f"Object {names[0]}@{versions[0]} already exists")
+                elif result.is_error:
+                    raise RuntimeError(result.message or "Unknown error")
+            else:
+                # Batch operations: process in parallel, return results without raising
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    for result in executor.map(push_one, push_tasks):
+                        results.add(result)
 
         finally:
             if acquired_locks:
@@ -526,7 +527,6 @@ class GCPRegistryBackend(RegistryBackend):
         version: ConcreteVersionArg,
         local_path: PathArg,
         acquire_lock: bool = False,
-        on_error: str = "raise",
         metadata: MetadataArg = None,
         max_workers: int | None = None,
     ) -> OpResults:
@@ -542,14 +542,14 @@ class GCPRegistryBackend(RegistryBackend):
         2. Metadata is written LAST, so if readable, files should exist
         3. Worst case during concurrent write: download fails, caller retries
 
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
         Args:
             name: Name of the object(s).
             version: Version string(s).
             local_path: Destination directory path(s) to copy to.
             acquire_lock: Ignored. Kept for API compatibility with local backend.
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
             metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
                 If provided, avoids re-fetching metadata. Single dict or list of dicts.
             max_workers: Maximum parallel workers. Defaults to instance setting.
@@ -557,7 +557,10 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -566,6 +569,8 @@ class GCPRegistryBackend(RegistryBackend):
 
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
+
+        is_single = len(names) == 1
 
         # Use pre-fetched metadata if provided, otherwise fetch it
         if metadata is not None:
@@ -582,7 +587,7 @@ class GCPRegistryBackend(RegistryBackend):
             for n, v, m in zip(names, versions, metadatas):
                 metadata_results.add(OpResult.success(n, v, metadata=m))
         else:
-            metadata_results = self.fetch_metadata(names, versions, on_error="skip")
+            metadata_results = self.fetch_metadata(names, versions)
 
         results = OpResults()
         all_files_to_download: List[Tuple[str, str]] = []
@@ -622,7 +627,7 @@ class GCPRegistryBackend(RegistryBackend):
 
             except Exception as e:
                 objects_with_errors.add((obj_name, obj_version))
-                if on_error == "raise":
+                if is_single:
                     raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
@@ -636,7 +641,7 @@ class GCPRegistryBackend(RegistryBackend):
                     obj_key = file_to_object[dest_path_str]
                     if obj_key not in objects_with_errors:
                         objects_with_errors.add(obj_key)
-                        if on_error == "raise":
+                        if is_single:
                             raise RuntimeError(
                                 f"Failed to download {file_result.remote_path}: {file_result.error_message}"
                             )
@@ -644,7 +649,7 @@ class GCPRegistryBackend(RegistryBackend):
                             OpResult.failed(
                                 obj_key[0],
                                 obj_key[1],
-                                error=file_result.error_type or "DownloadError",
+                                error_type=file_result.error_type or "DownloadError",
                                 message=file_result.error_message or "Unknown error",
                             )
                         )
@@ -700,7 +705,6 @@ class GCPRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
         acquire_lock: bool = False,
         max_workers: int | None = None,
     ) -> OpResults:
@@ -708,12 +712,12 @@ class GCPRegistryBackend(RegistryBackend):
 
         Objects are processed in parallel for maximum efficiency.
 
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
         Args:
             name: Name of the object(s).
             version: Version string(s).
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
             acquire_lock: If True, acquire locks before delete (for mutable registries).
                 Default is False (no locking, for immutable registries).
             max_workers: Maximum parallel workers. Defaults to instance setting.
@@ -721,7 +725,10 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -729,6 +736,7 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        is_single = len(names) == 1
         workers = max_workers or self._max_workers
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
@@ -745,7 +753,8 @@ class GCPRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if on_error == "raise":
+                    # Single ops raise, batch ops record failure
+                    if is_single:
                         self._release_locks_batch(acquired_locks)
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
@@ -768,7 +777,6 @@ class GCPRegistryBackend(RegistryBackend):
             metadata_results = self.fetch_metadata(
                 [n for n, v in delete_tasks],
                 [v for n, v in delete_tasks],
-                on_error="skip",
             )
 
             def delete_one(args: Tuple[str, str]) -> OpResult:
@@ -778,19 +786,17 @@ class GCPRegistryBackend(RegistryBackend):
                 obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
                 return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
 
-            # Process objects in parallel (file deletes within each use limited parallelism)
-            first_error: Exception | None = None
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(delete_one, delete_tasks):
-                    results.add(result)
-
-                    # Track first error for on_error="raise"
-                    if result.is_error and on_error == "raise" and first_error is None:
-                        first_error = RuntimeError(result.message or "Unknown error")
-
-            # Raise first error if on_error="raise"
-            if first_error:
-                raise first_error
+            # Single operations: process and raise on error
+            if is_single and delete_tasks:
+                result = delete_one(delete_tasks[0])
+                results.add(result)
+                if result.is_error:
+                    raise RuntimeError(result.message or "Unknown error")
+            else:
+                # Batch operations: process in parallel, return results without raising
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    for result in executor.map(delete_one, delete_tasks):
+                        results.add(result)
 
         finally:
             if acquired_locks:
@@ -807,8 +813,32 @@ class GCPRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
         metadata: Union[dict, List[dict]],
-    ) -> None:
-        """Save metadata only (insert-only with generation check)."""
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResults:
+        """Save metadata for object version(s).
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Object name(s).
+            version: Object version(s).
+            metadata: Metadata dict(s) to save.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            RuntimeError: Single item with unexpected error.
+        """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -827,47 +857,67 @@ class GCPRegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
-        def write_one(args: Tuple[str, str, dict]) -> StringResult:
-            obj_name, obj_version, obj_meta = args
-            return self._write_metadata(obj_name, obj_version, obj_meta, on_conflict="error")
+        results = OpResults()
 
-        if len(names) == 1:
-            result = write_one((names[0], versions[0], metadatas[0]))
-            if result.status == "already_exists":
-                raise RegistryVersionConflict(result.error_message)
-            elif result.status == "error":
-                raise RuntimeError(result.error_message)
+        def save_one(args: Tuple[str, str, dict]) -> OpResult:
+            obj_name, obj_version, obj_meta = args
+            result = self._save_metadata_single(obj_name, obj_version, obj_meta, on_conflict=on_conflict)
+
+            if result.status == Status.OK:
+                return OpResult.success(obj_name, obj_version)
+            elif result.status == Status.OVERWRITTEN:
+                return OpResult.overwritten(obj_name, obj_version)
+            elif result.status == Status.ALREADY_EXISTS:
+                # Return failed result - caller (is_single logic) decides whether to raise
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RegistryVersionConflict(result.error_message or f"Object {obj_name}@{obj_version} already exists"),
+                )
+            else:
+                return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
+
+        is_single = len(names) == 1
+
+        if is_single:
+            op_result = save_one((names[0], versions[0], metadatas[0]))
+            results.add(op_result)
+            # Single ops raise on error
+            if op_result.is_error:
+                if op_result.error == "RegistryVersionConflict":
+                    raise RegistryVersionConflict(op_result.message or "Version conflict")
+                else:
+                    raise RuntimeError(op_result.message or "Unknown error")
         else:
-            errors = []
+            # Batch ops return results without raising
             with ThreadPoolExecutor(max_workers=4) as executor:
-                for result in executor.map(write_one, zip(names, versions, metadatas)):
-                    if result.status == "already_exists":
-                        errors.append(RegistryVersionConflict(result.error_message))
-                    elif result.status == "error":
-                        errors.append(RuntimeError(result.error_message))
-            if errors:
-                raise errors[0]
+                for op_result in executor.map(save_one, zip(names, versions, metadatas)):
+                    results.add(op_result)
+
+        return results
 
     def fetch_metadata(
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "skip",
     ) -> OpResults:
         """Fetch metadata for object version(s) using batch download.
+
+        Single item operations raise exceptions if not found.
+        Batch operations return OpResults without raising, letting caller inspect results.
+        Missing entries (not found) are omitted from the batch result.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
-            on_error: Behavior when fetching individual metadata fails.
-                "skip" (default): Skip failed entries, return partial results.
-                "raise": Raise the exception immediately.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure
-            Missing entries (not found) are omitted from the result.
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and metadata doesn't exist.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -875,6 +925,7 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
+        is_single = len(names) == 1
         results = OpResults()
 
         # Prepare batch download - create temp files and mapping
@@ -892,6 +943,9 @@ class GCPRegistryBackend(RegistryBackend):
             # Batch download all metadata files
             batch_result = self.gcs.download_batch(files_to_download, on_error="skip")
 
+            # Track not found for single ops
+            not_found_keys: set = set()
+
             # Process successful downloads
             for file_result in batch_result.ok_results:
                 obj_name, obj_version = temp_to_key[file_result.local_path]
@@ -904,28 +958,34 @@ class GCPRegistryBackend(RegistryBackend):
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:
-                    if on_error == "raise":
+                    if is_single:
                         raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
 
-            # Process failures (not_found entries are omitted, errors are reported)
+            # Process failures (not_found entries are omitted for batch, errors are reported)
             for file_result in batch_result.failed_results:
                 if file_result.local_path not in temp_to_key:
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
-                if file_result.status == "not_found":
+                if file_result.status == Status.NOT_FOUND:
+                    not_found_keys.add((obj_name, obj_version))
                     continue  # Skip missing entries (omit from results)
-                if on_error == "raise":
+                if is_single:
                     raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
                 results.add(
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error=file_result.error_type or "DownloadError",
+                        error_type=file_result.error_type or "DownloadError",
                         message=file_result.error_message or "Unknown error",
                     )
                 )
+
+            # Single ops raise if not found
+            if is_single and not_found_keys:
+                obj_name, obj_version = list(not_found_keys)[0]
+                raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
 
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -936,27 +996,31 @@ class GCPRegistryBackend(RegistryBackend):
         self,
         name: NameArg,
         version: ConcreteVersionArg,
-        on_error: str = "raise",
     ) -> OpResults:
         """Delete metadata for object version(s) using batch delete.
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
-            on_error: Error handling strategy.
-                "raise" (default): First error stops and raises exception.
-                "skip": Continue on errors, report status in return dict.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RuntimeError: Single item and deletion fails.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
+
+        is_single = len(names) == 1
 
         # Build mapping from path to (name, version)
         path_to_key: Dict[str, Tuple[str, str]] = {}
@@ -976,16 +1040,16 @@ class GCPRegistryBackend(RegistryBackend):
             if not key:
                 continue
             obj_name, obj_version = key
-            if file_result.status == "ok":
+            if file_result.status == Status.OK:
                 results.add(OpResult.success(obj_name, obj_version))
             else:
-                if on_error == "raise":
+                if is_single:
                     raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error=file_result.error_type or "DeleteError",
+                        error_type=file_result.error_type or "DeleteError",
                         message=file_result.error_message or "Unknown error",
                     )
                 )
@@ -1066,8 +1130,12 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        # Use batch fetch_metadata - objects that exist will have .ok=True
-        metadata_results = self.fetch_metadata(names, versions, on_error="skip")
+        # Use fetch_metadata - wrap in try/except since single item raises on not found
+        try:
+            metadata_results = self.fetch_metadata(names, versions)
+        except RegistryObjectNotFound:
+            # Single item not found - return False for that item
+            metadata_results = OpResults()
 
         results: Dict[Tuple[str, str], bool] = {}
         for obj_name, obj_version in zip(names, versions):

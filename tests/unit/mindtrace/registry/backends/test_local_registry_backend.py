@@ -95,8 +95,10 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     assert "path" in fetched_metadata  # Should be added by fetch_metadata
 
 
-def test_fetch_metadata_empty_file(backend):
-    """Test that fetch_metadata skips empty metadata files (on_error='skip' default)."""
+def test_fetch_metadata_empty_file_single(backend):
+    """Test that single item fetch_metadata raises for empty metadata files."""
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
     meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
     meta_path.touch()  # Create empty file
@@ -105,14 +107,31 @@ def test_fetch_metadata_empty_file(backend):
     obj_dir = backend.uri / "test:object" / "1.0.0"
     obj_dir.mkdir(parents=True)
 
-    # fetch_metadata with default on_error="skip" returns empty dict for missing/corrupted entries
-    result = backend.fetch_metadata("test:object", "1.0.0")
-    assert ("test:object", "1.0.0") not in result  # Entry should be skipped
+    # Single item fetch_metadata raises RegistryObjectNotFound for empty/corrupted files
+    with pytest.raises(RegistryObjectNotFound):
+        backend.fetch_metadata("test:object", "1.0.0")
 
-    # Empty files are handled gracefully (skipped with warning), not raised as errors
-    # This is by design - empty yaml files return None and are treated as corrupted
-    result = backend.fetch_metadata("test:object", "1.0.0", on_error="raise")
-    assert ("test:object", "1.0.0") not in result  # Still skipped even with on_error="raise"
+
+def test_fetch_metadata_empty_file_batch(backend, sample_metadata):
+    """Test that batch fetch_metadata skips empty metadata files."""
+    # Create an empty metadata file (yaml.safe_load will return None for empty files)
+    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path.touch()  # Create empty file
+
+    # Also create the object directory so the path update doesn't fail
+    obj_dir = backend.uri / "test:object" / "1.0.0"
+    obj_dir.mkdir(parents=True)
+
+    # Create a valid object for batch
+    backend.save_metadata("test:valid", "1.0.0", sample_metadata)
+
+    # Batch fetch_metadata skips empty/corrupted entries
+    result = backend.fetch_metadata(["test:object", "test:valid"], ["1.0.0", "1.0.0"])
+    # Empty file entry should be skipped
+    assert ("test:object", "1.0.0") not in result
+    # Valid entry should be present
+    assert ("test:valid", "1.0.0") in result
+    assert result[("test:valid", "1.0.0")].ok
 
 
 def test_delete_metadata(backend, sample_metadata):
@@ -364,15 +383,43 @@ def test_fetch_registry_metadata_error(backend):
     assert fetched_metadata == {}
 
 
-def test_push_on_conflict_skip(backend, sample_object_dir):
-    """Test push with on_conflict='skip' when version already exists."""
+def test_push_on_conflict_skip_single(backend, sample_object_dir):
+    """Test push with on_conflict='skip' for single item raises RegistryVersionConflict."""
+    from mindtrace.registry.core.exceptions import RegistryVersionConflict
+
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
     assert result[("test:object", "1.0.0")].ok
 
-    # Try to push again with on_conflict="skip"
-    result = backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True}, on_conflict="skip")
-    assert result[("test:object", "1.0.0")].is_skipped
+    # Try to push again with on_conflict="skip" - single item raises
+    with pytest.raises(RegistryVersionConflict):
+        backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True}, on_conflict="skip")
+
+
+def test_push_on_conflict_skip_batch(backend, sample_object_dir, temp_dir):
+    """Test push with on_conflict='skip' for batch items returns error result."""
+    # Push the object initially
+    result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
+    assert result[("test:object", "1.0.0")].ok
+
+    # Create a second sample object dir
+    sample_object_dir2 = temp_dir / "sample_object2"
+    sample_object_dir2.mkdir()
+    (sample_object_dir2 / "file1.txt").write_text("content1")
+
+    # Batch push with skip - existing item should return error result (not raise)
+    result = backend.push(
+        ["test:object", "test:object2"],
+        ["1.0.0", "1.0.0"],
+        [str(sample_object_dir), str(sample_object_dir2)],
+        [{"updated": True}, {"name": "test:object2"}],
+        on_conflict="skip",
+    )
+    # First item (existing) should have error
+    assert result[("test:object", "1.0.0")].is_error
+
+    # Second item (new) should succeed
+    assert result[("test:object2", "1.0.0")].ok
 
 
 def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
@@ -396,15 +443,15 @@ def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
     assert (object_path / "new_file.txt").read_text() == "new content"
 
 
-def test_push_on_conflict_error(backend, sample_object_dir):
-    """Test push with on_conflict='error' (default) raises when version exists."""
+def test_push_default_raises_when_version_exists(backend, sample_object_dir):
+    """Test push default (on_conflict='skip') raises when version exists for single item."""
     from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
     # Push the object initially with metadata (metadata file is the existence check)
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
     assert result[("test:object", "1.0.0")].ok
 
-    # Try to push again with on_conflict="error" (default)
+    # Try to push again - single item with default on_conflict="skip" raises
     with pytest.raises(RegistryVersionConflict, match="already exists"):
         backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True})
 
