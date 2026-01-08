@@ -110,7 +110,6 @@ class CaptureImageRequest(BaseModel):
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
-    upload_to_gcs: bool = Field(False, description="Upload captured image to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned image ('numpy' or 'pil')")
 
     @field_validator("output_format")
@@ -137,7 +136,6 @@ class CaptureBatchRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern for saving images. Use {camera} placeholder for camera name"
     )
-    upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
 
     @field_validator("output_format")
@@ -171,7 +169,6 @@ class CaptureHDRRequest(BaseModel):
         2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)"
     )
     return_images: bool = Field(True, description="Whether to return captured images in response")
-    upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
 
     @field_validator("exposure_levels")
@@ -222,7 +219,6 @@ class CaptureHDRBatchRequest(BaseModel):
         2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)"
     )
     return_images: bool = Field(True, description="Whether to return captured images in response")
-    upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
 
     @field_validator("exposure_levels")

@@ -306,6 +306,7 @@ def mock_harvester_module(mock_harvester):
     with (
         patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.Harvester") as MockHarvesterClass,
         patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True),
+        patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.HARVESTERS_AVAILABLE", True),
     ):
         MockHarvesterClass.side_effect = create_mock_harvester
         yield mock_harvester
