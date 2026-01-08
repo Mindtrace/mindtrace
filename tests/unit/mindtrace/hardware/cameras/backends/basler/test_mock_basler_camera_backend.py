@@ -779,7 +779,7 @@ class TestMockBaslerWhiteBalance:
         # Test setting different white balance modes
         wb_modes = await camera.get_wb_range()
         assert isinstance(wb_modes, list)
-        assert "auto" in wb_modes
+        assert "off" in wb_modes
 
         for mode in wb_modes:
             await camera.set_auto_wb_once(mode)
@@ -922,7 +922,8 @@ class TestMockBaslerPerformanceAndTiming:
     @pytest.mark.asyncio
     async def test_capture_timing_simulation(self):
         """Test that capture timing is simulated based on exposure."""
-        camera = MockBaslerCameraBackend("test_cam")
+        # Explicitly disable fast_mode for this timing test
+        camera = MockBaslerCameraBackend("test_cam", fast_mode=False)
         await camera.initialize()
 
         # Set very short exposure
@@ -1366,7 +1367,7 @@ class TestMockBaslerExceptionHandling:
         await camera.initialize()
 
         # Simulate cancellation during capture
-        with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
+        with patch.object(camera, "_sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await camera.capture()
 
@@ -1490,8 +1491,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set ROI"):
                 await camera.set_ROI(0, 0, 640, 480)
 
@@ -1503,8 +1504,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             result = await camera.reset_ROI()
             assert result is False
 
@@ -1516,8 +1517,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set gain"):
                 await camera.set_gain(5.0)
 
@@ -1542,8 +1543,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set pixel format"):
                 await camera.set_pixel_format("BGR8")
 

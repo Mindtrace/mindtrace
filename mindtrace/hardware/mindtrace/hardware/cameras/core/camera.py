@@ -140,14 +140,11 @@ class Camera(Mindtrace):
         return self._backend.is_connected
 
     # Sync methods delegating to async
-    def capture(
-        self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy"
-    ) -> Any:
+    def capture(self, save_path: Optional[str] = None, output_format: str = "pil") -> Any:
         """Capture an image from the camera.
 
         Args:
             save_path: Optional path to save the captured image.
-            upload_to_gcs: Upload captured image to Google Cloud Storage.
             output_format: Output format for the returned image ("numpy" or "pil").
 
         Returns:
@@ -160,7 +157,7 @@ class Camera(Mindtrace):
             ValueError: If output_format is not supported.
             ImportError: If PIL is required but not available.
         """
-        return self._submit(self._backend.capture(save_path, upload_to_gcs=upload_to_gcs, output_format=output_format))
+        return self._submit(self._backend.capture(save_path, output_format=output_format))
 
     def configure(self, **settings):
         """Configure multiple camera settings atomically.
@@ -348,13 +345,17 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.get_image_enhancement())
 
-    def save_config(self, path: str):
+    def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
             path: Destination file path (backend-specific JSON).
+
+        Returns:
+            bool: True if export succeeds, raises exception on failure.
         """
-        self._submit(self._backend.save_config(path))
+        self._submit(self._backend.export_config(path))
+        return True
 
     def load_config(self, path: str):
         """Import camera configuration from a file via backend.
@@ -386,8 +387,7 @@ class Camera(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 
@@ -396,7 +396,6 @@ class Camera(Mindtrace):
             exposure_levels: Number of exposure steps to capture.
             exposure_multiplier: Multiplier between consecutive exposure steps.
             return_images: If True, returns list of captured images; otherwise returns success bool.
-            upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
             output_format: Output format for returned images ("numpy" or "pil").
 
         Returns:
@@ -406,7 +405,6 @@ class Camera(Mindtrace):
             - image_paths: List[str] - Saved file paths if save_path_pattern provided
             - exposure_levels: List[float] - Actual exposure values used
             - successful_captures: int - Number of successful captures
-            - gcs_urls: List[str] - GCS URLs if uploaded
 
         Raises:
             CameraCaptureError: If no images could be captured successfully.
@@ -419,7 +417,6 @@ class Camera(Mindtrace):
                 exposure_levels=exposure_levels,
                 exposure_multiplier=exposure_multiplier,
                 return_images=return_images,
-                upload_to_gcs=upload_to_gcs,
                 output_format=output_format,
             )
         )
