@@ -680,7 +680,11 @@ class Registry(Mindtrace):
         """Save multiple objects to the registry. Returns BatchResult."""
         # Normalize inputs to lists
         objs_list = objs if isinstance(objs, list) else [objs] * len(names)
-        versions_list = ["1"] * len(names) if not self.version_objects else (versions if isinstance(versions, list) else [None] * len(names))
+        versions_list = (
+            ["1"] * len(names)
+            if not self.version_objects
+            else (versions if isinstance(versions, list) else [None] * len(names))
+        )
         init_params_list = init_params if isinstance(init_params, list) else [None] * len(names)
         metadata_list = metadata if isinstance(metadata, list) else [None] * len(names)
 
@@ -703,7 +707,9 @@ class Registry(Mindtrace):
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
                     materializer_class = self._find_materializer(obj, materializer)
-                    mat_instance = instantiate_target(materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store)
+                    mat_instance = instantiate_target(
+                        materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store
+                    )
                     mat_instance.save(obj)
 
                     push_metadata = {
@@ -746,7 +752,10 @@ class Registry(Mindtrace):
                         result.results.append(None)
                         result.failed.append(key)
                     elif op.is_error:
-                        result.errors[(name, op.version)] = {"error": op.error or ERROR_UNKNOWN, "message": op.message or ""}
+                        result.errors[(name, op.version)] = {
+                            "error": op.error or ERROR_UNKNOWN,
+                            "message": op.message or "",
+                        }
                         result.results.append(None)
                         result.failed.append((name, op.version))
                     elif op.is_skipped:
@@ -759,7 +768,9 @@ class Registry(Mindtrace):
         for name in set(names):
             self._invalidate_versions_cache(name)
 
-        self.logger.debug(f"Saved {result.success_count}/{len(names)} object(s) ({result.skipped_count} skipped, {result.failure_count} failed).")
+        self.logger.debug(
+            f"Saved {result.success_count}/{len(names)} object(s) ({result.skipped_count} skipped, {result.failure_count} failed)."
+        )
         return result
 
     def _materialize(self, temp_dir: Path, metadata: dict, **kwargs) -> Any:
@@ -1057,7 +1068,10 @@ class Registry(Mindtrace):
                 # Delete all versions
                 all_versions = ["1"] if not self.version_objects else self.list_versions(n)
                 if not all_versions:
-                    result.errors[original_key] = {"error": "RegistryObjectNotFound", "message": f"Object {n} does not exist"}
+                    result.errors[original_key] = {
+                        "error": "RegistryObjectNotFound",
+                        "message": f"Object {n} does not exist",
+                    }
                 else:
                     for ver in all_versions:
                         items_to_delete.append((n, ver))
@@ -1066,7 +1080,10 @@ class Registry(Mindtrace):
                 # Resolve version ("latest" -> actual, or use concrete version)
                 resolved_v = "1" if not self.version_objects else (self._latest(n) if v == "latest" else v)
                 if v == "latest" and resolved_v is None:
-                    result.errors[original_key] = {"error": "RegistryObjectNotFound", "message": f"Object {n} has no versions"}
+                    result.errors[original_key] = {
+                        "error": "RegistryObjectNotFound",
+                        "message": f"Object {n} has no versions",
+                    }
                 else:
                     items_to_delete.append((n, resolved_v))
                     resolved_to_original[(n, resolved_v)] = original_key
@@ -1080,8 +1097,13 @@ class Registry(Mindtrace):
                 acquire_lock=self.mutable,
             ):
                 if op_result.is_error:
-                    original_key = resolved_to_original.get((op_result.name, op_result.version), (op_result.name, op_result.version))
-                    result.errors[original_key] = {"error": op_result.error or ERROR_UNKNOWN, "message": op_result.message or ""}
+                    original_key = resolved_to_original.get(
+                        (op_result.name, op_result.version), (op_result.name, op_result.version)
+                    )
+                    result.errors[original_key] = {
+                        "error": op_result.error or ERROR_UNKNOWN,
+                        "message": op_result.message or "",
+                    }
 
         # Build result lists
         for n, v in zip(names, versions_list):
