@@ -358,7 +358,6 @@ class TestHardwareConfigManagerInitialization:
         assert hasattr(config, "actuators")
         assert hasattr(config, "plcs")
         assert hasattr(config, "plc_backends")
-        assert hasattr(config, "gcs")
 
 
 class TestHardwareConfigManagerEnvironmentVariables:
@@ -721,51 +720,6 @@ class TestHardwareConfigManagerEnvironmentVariables:
             config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
             config = config_mgr.get_config()
             assert config.network.firewall_rule_name == "Custom Rule"
-
-    def test_load_network_timeout_seconds(self):
-        """Test loading network timeout seconds from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS": "60.0"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.network.timeout_seconds == 60.0
-
-    def test_load_network_timeout_seconds_invalid(self):
-        """Test loading network timeout seconds with invalid value."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS": "invalid"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            # Should keep default value
-            assert isinstance(config.network.timeout_seconds, float)
-
-    def test_load_network_firewall_timeout(self):
-        """Test loading network firewall timeout from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT": "45.0"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.network.firewall_timeout == 45.0
-
-    def test_load_network_firewall_timeout_invalid(self):
-        """Test loading network firewall timeout with invalid value."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT": "invalid"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            # Should keep default value
-            assert isinstance(config.network.firewall_timeout, float)
-
-    def test_load_network_retry_count(self):
-        """Test loading network retry count from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_RETRY_COUNT": "5"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.network.retry_count == 5
-
-    def test_load_network_retry_count_invalid(self):
-        """Test loading network retry count with invalid value."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_RETRY_COUNT": "invalid"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            # Should keep default value
-            assert isinstance(config.network.retry_count, int)
 
     def test_load_network_interface(self):
         """Test loading network interface from env."""
@@ -1159,49 +1113,6 @@ class TestHardwareConfigManagerEnvironmentVariables:
             # Attribute doesn't exist in dataclass anyway
             assert not hasattr(config.plc_backends, "default_scan_rate")
 
-    def test_load_gcs_enabled_true(self):
-        """Test loading GCS enabled from env (true)."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_ENABLED": "true"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.enabled is True
-
-    def test_load_gcs_enabled_false(self):
-        """Test loading GCS enabled from env (false)."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_ENABLED": "false"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.enabled is False
-
-    def test_load_gcs_bucket_name(self):
-        """Test loading GCS bucket name from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_BUCKET_NAME": "my-bucket"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.bucket_name == "my-bucket"
-
-    def test_load_gcs_credentials_path(self):
-        """Test loading GCS credentials path from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_CREDENTIALS_PATH": "/path/to/creds.json"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.credentials_path == "/path/to/creds.json"
-
-    def test_load_gcs_auto_upload_true(self):
-        """Test loading GCS auto upload from env (true)."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_AUTO_UPLOAD": "true"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.auto_upload is True
-
-    def test_load_gcs_auto_upload_false(self):
-        """Test loading GCS auto upload from env (false)."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_GCS_AUTO_UPLOAD": "false"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.gcs.auto_upload is False
-
-
 class TestHardwareConfigManagerFileOperations:
     """Test suite for file loading and saving operations."""
 
@@ -1235,10 +1146,6 @@ class TestHardwareConfigManagerFileOperations:
             "plc_backends": {
                 "allen_bradley_enabled": False,
             },
-            "gcs": {
-                "enabled": True,
-                "bucket_name": "test-bucket",
-            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -1260,8 +1167,6 @@ class TestHardwareConfigManagerFileOperations:
             assert config.actuators.default_speed == 2.5
             assert config.plcs.connection_timeout == 20.0
             assert config.plc_backends.allen_bradley_enabled is False
-            assert config.gcs.enabled is True
-            assert config.gcs.bucket_name == "test-bucket"
 
         finally:
             os.unlink(config_file)
@@ -1475,7 +1380,7 @@ class TestHardwareConfigManagerDictionaryAccess:
 
         assert isinstance(network, dict)
         assert "camera_ip_range" in network
-        assert "timeout_seconds" in network
+        assert "firewall_rule_name" in network
 
     def test_getitem_sensors(self):
         """Test dictionary-style access to sensors section."""
@@ -1512,15 +1417,6 @@ class TestHardwareConfigManagerDictionaryAccess:
         assert isinstance(plc_backends, dict)
         assert "allen_bradley_enabled" in plc_backends
         assert "siemens_enabled" in plc_backends
-
-    def test_getitem_gcs(self):
-        """Test dictionary-style access to gcs section."""
-        config_mgr = HardwareConfigManager()
-        gcs = config_mgr["gcs"]
-
-        assert isinstance(gcs, dict)
-        assert "enabled" in gcs
-        assert "bucket_name" in gcs
 
     def test_getitem_unknown_key(self):
         """Test dictionary-style access with unknown key."""
