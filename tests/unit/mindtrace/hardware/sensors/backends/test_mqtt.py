@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mindtrace.hardware.sensors.backends.mqtt import MQTTSensorBackend
+# Skip all tests if aiomqtt is not available
+try:
+    import aiomqtt  # noqa: F401
+
+    from mindtrace.hardware.sensors.backends.mqtt import MQTTSensorBackend
+except ImportError:
+    pytest.skip("aiomqtt is required for MQTT tests", allow_module_level=True)
 
 
 class TestMQTTSensorBackend:

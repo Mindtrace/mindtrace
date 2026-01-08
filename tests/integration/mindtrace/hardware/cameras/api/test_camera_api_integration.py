@@ -18,13 +18,13 @@ import pytest
 from mindtrace.hardware.api.cameras.models import (
     BackendFilterRequest,
     BackendsResponse,
-    BandwidthLimitRequest,
     BatchCaptureResponse,
     BoolResponse,
     CameraCloseRequest,
     CameraConfigureRequest,
     # Requests
     CameraOpenRequest,
+    CameraPerformanceSettingsRequest,
     CaptureBatchRequest,
     CaptureHDRRequest,
     CaptureImageRequest,
@@ -237,8 +237,8 @@ class TestServiceCaptureOperations:
 
         request = CaptureImageRequest(camera="MockBasler:TestCam1")
 
-        with pytest.raises(CameraNotFoundError):
-            await camera_service.capture_image(request)
+        result = await camera_service.capture_image(request)
+        assert result.success is False
 
     @pytest.mark.asyncio
     async def test_capture_failure(self, camera_service, mock_camera_manager):
@@ -251,8 +251,9 @@ class TestServiceCaptureOperations:
 
         request = CaptureImageRequest(camera="MockBasler:TestCam1")
 
-        with pytest.raises(CameraCaptureError):
-            await camera_service.capture_image(request)
+        result = await camera_service.capture_image(request)
+        assert result.success is False
+        assert "Capture failed" in result.message
 
     @pytest.mark.asyncio
     async def test_batch_capture(self, camera_service, mock_camera_manager):
@@ -397,8 +398,9 @@ class TestServiceConfigurationOperations:
             properties={"exposure": -1000},  # Invalid negative exposure
         )
 
-        with pytest.raises(CameraConfigurationError):
-            await camera_service.configure_camera(request)
+        result = await camera_service.configure_camera(request)
+        assert result.success is False
+        assert "Invalid exposure value" in result.message
 
 
 class TestServiceErrorPropagation:
@@ -426,8 +428,10 @@ class TestServiceErrorPropagation:
 
         request = CaptureImageRequest(camera="MockBasler:TestCam1")
 
-        with pytest.raises(CameraTimeoutError):
-            await camera_service.capture_image(request)
+        result = await camera_service.capture_image(request)
+        assert result.success is False
+        assert "timeout" in result.message.lower()
+        assert "timeout" in result.data.error.lower()
 
     @pytest.mark.asyncio
     async def test_unknown_exception_handling(self, camera_service, mock_camera_manager):
@@ -522,8 +526,8 @@ class TestServiceResourceManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_limit_setting(self, camera_service, mock_camera_manager):
         """Test setting bandwidth limits."""
-        request = BandwidthLimitRequest(max_concurrent_captures=3)
-        result = await camera_service.set_bandwidth_limit(request)
+        request = CameraPerformanceSettingsRequest(max_concurrent_captures=3)
+        result = await camera_service.set_performance_settings(request)
 
         assert isinstance(result, BoolResponse)
         assert result.success is True
@@ -644,8 +648,8 @@ class TestServiceValidation:
 
         request = CaptureImageRequest(camera="NonExistent:Camera")
 
-        with pytest.raises(CameraNotFoundError):
-            await camera_service.capture_image(request)
+        result = await camera_service.capture_image(request)
+        assert result.success is False
 
 
 class TestServicePerformance:

@@ -21,18 +21,32 @@ dependencies = [
     "numpy>=1.24.0",
     "pycomm3>=1.2.14",
     "python-snap7[cli]>=2.0.2",
+    "typer>=0.9.0",
+    "psutil>=5.9.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0.3",
     "aiomqtt>=2.4.0",
 ]
 
 [project.scripts]
-mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
-mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
-mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
+# Main CLI
+mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
+
+# Camera setup CLIs (Typer apps with subcommands)
+mindtrace-camera-setup = "mindtrace.hardware.cameras.setup.setup_cameras:main"
+mindtrace-camera-basler = "mindtrace.hardware.cameras.setup.setup_basler:main"
+mindtrace-camera-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:main"
+
+# Stereo camera setup CLI (Typer app with subcommands)
+mindtrace-stereo-basler = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:main"
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
-cameras-all = ["mindtrace-hardware[cameras-basler]"]
-hardware-all = ["mindtrace-hardware[cameras-all]"]
+cameras-genicam = ["harvesters>=1.4.0", "genicam>=1.5.0"]
+cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]"]
+stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
+stereo-all = ["mindtrace-hardware[stereo-basler]"]
+hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]"]
 setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
@@ -50,5 +64,9 @@ Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mindtrace*"]

@@ -30,7 +30,13 @@ dependencies = [
 
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]"]
+cameras-genicam = ["mindtrace-hardware[cameras-genicam]"]
 cameras-all = ["mindtrace-hardware[cameras-all]"]
+stereo-basler = [
+    "mindtrace-hardware[stereo-basler]",
+    "plyfile>=1.1.3",
+]
+stereo-all = ["mindtrace-hardware[stereo-all]"]
 hardware-all = ["mindtrace-hardware[hardware-all]"]
 
 [dependency-groups]
