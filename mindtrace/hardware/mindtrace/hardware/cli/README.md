@@ -10,7 +10,6 @@ A command-line interface for managing Mindtrace hardware services with process l
 - **`mindtrace-hw camera start`** - Start camera API service
 - **`mindtrace-hw camera stop`** - Stop camera API service gracefully
 - **`mindtrace-hw camera status`** - Show detailed camera API status with URLs
-- **`mindtrace-hw camera test`** - Run camera stress tests and validation scenarios
 - **`mindtrace-hw camera logs`** - View camera API service logs and guidance
 
 **Stereo Camera Services:**
@@ -106,22 +105,6 @@ mindtrace-hw camera start  # Will prompt to restart if running
 
 # View service log information
 mindtrace-hw camera logs
-```
-
-### Camera Testing
-```bash
-# List available test scenarios
-mindtrace-hw camera test --list
-
-# Run smoke test (basic functionality validation)
-mindtrace-hw camera test --config smoke_test
-
-# Run stress tests
-mindtrace-hw camera test --config capture_stress
-mindtrace-hw camera test --config multi_camera
-
-# Run with verbose output for debugging
-mindtrace-hw camera test --config chaos_test -v
 ```
 
 ## Architecture
@@ -297,35 +280,6 @@ mindtrace-hw camera logs
 
 # Provides guidance on log locations:
 # - Console output for API service
-```
-
-#### camera test
-```bash
-mindtrace-hw camera test [OPTIONS]
-
-Options:
-  --config, -c TEXT    Test configuration to run (e.g., smoke_test)
-  --list              List available test configurations
-  --api-host TEXT     Camera API host [default: localhost]
-  --api-port INTEGER  Camera API port [default: 8002]
-  -v, --verbose       Enable verbose output
-
-Available Test Scenarios:
-  smoke_test       - Quick validation of basic camera operations
-  capture_stress   - High-frequency capture stress testing
-  multi_camera     - Concurrent multi-camera operations
-  stream_stress    - Streaming stability and cleanup validation
-  chaos_test       - Edge case discovery through aggressive operations
-  soak_test        - Long-duration stability and resource leak detection
-
-Exit Codes:
-  0 - Test passed (success rate meets expected threshold)
-  1 - Configuration error or test not found
-  2 - Test failed (success rate below expected threshold)
-
-📚 **Detailed Documentation:**
-- [Camera Test Suite](../test_suite/cameras/README.md) - Complete guide to camera testing, YAML configuration, parameters, and creating custom tests
-- [Test Suite Framework](../test_suite/README.md) - Core framework architecture and extension guide
 ```
 
 ### Stereo Camera Commands
@@ -504,7 +458,7 @@ def format_new_service_status(status_data: dict) -> str:
 The CLI architecture supports easy addition of new hardware services:
 
 ### Implemented Services
-- **Camera Management**: `mindtrace-hw camera start/stop/status/test/logs`
+- **Camera Management**: `mindtrace-hw camera start/stop/status/logs`
 - **Stereo Camera Management**: `mindtrace-hw stereo start/stop/status/logs`
 - **PLC Management**: `mindtrace-hw plc start/stop/status`
 
