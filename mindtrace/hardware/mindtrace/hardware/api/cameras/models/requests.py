@@ -259,7 +259,7 @@ class CaptureHDRBatchRequest(BaseModel):
 class BandwidthLimitRequest(BaseModel):
     """Request model for setting bandwidth limit."""
 
-    max_concurrent_captures: int = Field(..., ge=1, le=10, description="Maximum number of concurrent captures (1-10)")
+    max_concurrent_captures: int = Field(..., ge=1, description="Maximum number of concurrent captures")
 
 
 class CameraPerformanceSettingsRequest(BaseModel):
@@ -279,7 +279,7 @@ class CameraPerformanceSettingsRequest(BaseModel):
     retrieve_retry_count: Optional[int] = Field(
         None, ge=1, le=10, description="Number of capture retry attempts (1-10)"
     )
-    max_concurrent_captures: Optional[int] = Field(None, ge=1, le=10, description="Maximum concurrent captures (1-10)")
+    max_concurrent_captures: Optional[int] = Field(None, ge=1, description="Maximum concurrent captures")
 
     # GigE-specific performance parameters (require camera field)
     packet_size: Optional[int] = Field(
@@ -374,7 +374,7 @@ class StreamStartRequest(BaseModel):
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     quality: int = Field(85, description="JPEG quality (1-100)", ge=1, le=100)
-    fps: int = Field(30, description="Frames per second", ge=1, le=120)
+    fps: int = Field(30, description="Frames per second", ge=1)
 
 
 class StreamStopRequest(BaseModel):
