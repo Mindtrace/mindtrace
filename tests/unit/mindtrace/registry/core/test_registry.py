@@ -495,7 +495,7 @@ def test_load_error_handling(registry, test_config):
 
     # Create a mock backend that raises an exception during pull
     class MockBackend(registry.backend.__class__):
-        def pull(self, name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
+        def pull(self, name, version, local_path, acquire_lock=False, metadata=None):
             raise RuntimeError("Simulated pull error")
 
     # Replace the backend with our mock
@@ -2715,7 +2715,7 @@ def test_load_cache_miss(temp_registry_dir):
         )
 
         # Mock pull to copy our temp directory and return OpResults
-        def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
+        def mock_pull(name, version, local_path, acquire_lock=False, metadata=None):
             # Handle batch API - normalize inputs
             names = [name] if isinstance(name, str) else name
             versions = [version] if isinstance(version, str) else version
@@ -2782,7 +2782,7 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
         )
 
         # Mock pull to copy fresh data and return OpResults
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, metadata=None):
             results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
@@ -2842,7 +2842,7 @@ def test_load_cache_error_fallback(temp_registry_dir):
             )
 
             # Mock pull to copy our temp directory and return OpResults
-            def mock_pull(name, version, local_path, acquire_lock=False, on_error="raise", metadata=None):
+            def mock_pull(name, version, local_path, acquire_lock=False, metadata=None):
                 names = [name] if isinstance(name, str) else name
                 versions = [version] if isinstance(version, str) else version
                 paths = [local_path] if isinstance(local_path, (str, Path)) else local_path
@@ -2893,7 +2893,7 @@ def test_delete_with_cache(temp_registry_dir):
     assert not cache_result.get(("test:obj", "1.0.0"), False)
 
     # Verify remote delete was called with batch args (lists)
-    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], on_error="raise", acquire_lock=False)
+    mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_delete_cache_error_handling(temp_registry_dir):
@@ -3137,7 +3137,7 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
         temp_path = Path(temp_dir)
         (temp_path / "data.json").write_text('"corrupted_value"')
 
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, metadata=None):
             results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
@@ -3179,7 +3179,7 @@ def test_delete_cache_delete_error(temp_registry_dir):
         registry.delete("test:obj", "1.0.0")
 
         # Verify remote delete was called with batch args (lists)
-        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], on_error="raise", acquire_lock=False)
+        mock_backend.delete.assert_called_once_with(["test:obj"], ["1.0.0"], acquire_lock=False)
 
 
 def test_registry_invalid_backend_type(temp_registry_dir):
@@ -3241,7 +3241,7 @@ def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
         (temp_path / "data.json").write_text('"test_value"')
         expected_hash = compute_dir_hash(temp_path)
 
-        def mock_pull(names, versions, local_paths, acquire_lock=False, on_error="raise", metadata=None):
+        def mock_pull(names, versions, local_paths, acquire_lock=False, metadata=None):
             results = OpResults()
             for n, v, p in zip(names, versions, local_paths):
                 shutil.copytree(temp_path, p, dirs_exist_ok=True)
@@ -3355,15 +3355,15 @@ def test_save_on_conflict_error_default(registry, test_config):
 
 
 def test_save_on_conflict_skip(registry, test_config):
-    """Test that on_conflict='skip' silently skips existing versions."""
+    """Test that on_conflict='skip' raises for single item conflicts."""
+    from mindtrace.registry.core.exceptions import RegistryVersionConflict
+
     # Save first version
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Try to save same version with on_conflict="skip"
-    result = registry.save("test:config", test_config, version="1.0.0", on_conflict="skip")
-
-    # Should return None for skipped
-    assert result is None
+    # Try to save same version with on_conflict="skip" - single items raise
+    with pytest.raises(RegistryVersionConflict):
+        registry.save("test:config", test_config, version="1.0.0", on_conflict="skip")
 
     # Original value should be unchanged
     loaded = registry.load("test:config", version="1.0.0")
@@ -3389,7 +3389,7 @@ def test_save_on_conflict_skip_new_version(registry, test_config):
 
 def test_save_on_conflict_invalid_value(registry, test_config):
     """Test that invalid on_conflict values raise ValueError."""
-    with pytest.raises(ValueError, match="on_conflict must be 'error', 'skip', or 'overwrite'"):
+    with pytest.raises(ValueError, match="on_conflict must be 'skip' or 'overwrite'"):
         registry.save("test:config", test_config, version="1.0.0", on_conflict="invalid")
 
 
