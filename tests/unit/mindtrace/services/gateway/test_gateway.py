@@ -102,7 +102,7 @@ class TestGateway:
             # Create a mock request
             mock_request = Mock(spec=Request)
 
-            # Call the forwarder function directly to test line 44
+            # Call the forwarder function directly
             result = await forwarder_func(mock_request, path="test-path")
 
             # Verify that forward_request was called with the correct arguments

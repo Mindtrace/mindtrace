@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.6.0"
+version = "0.7.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,19 +13,19 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.6.0",
-  "mindtrace-jobs>=0.6.0",
-  "mindtrace-registry>=0.6.0",
-  "mindtrace-database>=0.6.0",
-  "mindtrace-services>=0.6.0",
-  "mindtrace-hardware>=0.6.0",
-  "mindtrace-cluster>=0.6.0",
-  "mindtrace-models>=0.6.0",
-  "mindtrace-automation>=0.6.0",
-  "mindtrace-apps>=0.6.0",
-  "mindtrace-ui>=0.6.0",
-  "mindtrace-datalake>=0.6.0",
-  "mindtrace-storage>=0.6.0",
+  "mindtrace-core>=0.7.0",
+  "mindtrace-jobs>=0.7.0",
+  "mindtrace-registry>=0.7.0",
+  "mindtrace-database>=0.7.0",
+  "mindtrace-services>=0.7.0",
+  "mindtrace-hardware>=0.7.0",
+  "mindtrace-cluster>=0.7.0",
+  "mindtrace-models>=0.7.0",
+  "mindtrace-automation>=0.7.0",
+  "mindtrace-apps>=0.7.0",
+  "mindtrace-ui>=0.7.0",
+  "mindtrace-datalake>=0.7.0",
+  "mindtrace-storage>=0.7.0",
 ]
 
 [project.optional-dependencies]

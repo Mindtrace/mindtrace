@@ -3,6 +3,7 @@ import os
 import platform
 import shutil
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, List
 
@@ -171,8 +172,22 @@ class LocalRegistryBackend(RegistryBackend):
         self.validate_object_name(name)
         meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
-        with open(meta_path, "w") as f:
-            yaml.safe_dump(metadata, f)
+
+        # Use atomic write: write to temp file with unique name, then rename
+        temp_path = meta_path.parent / f".tmp_{uuid.uuid4().hex}_{meta_path.name}"
+        try:
+            with open(temp_path, "w") as f:
+                yaml.safe_dump(metadata, f)
+                f.flush()
+                os.fsync(f.fileno())
+
+            # rename is atomic on POSIX systems if source and dest are on same filesystem
+            temp_path.rename(meta_path)
+        except Exception:
+            # Clean up temp file on failure
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
 
     def fetch_metadata(self, name: str, version: str) -> dict:
         """Load metadata for a object version.
@@ -183,11 +198,21 @@ class LocalRegistryBackend(RegistryBackend):
 
         Returns:
             dict: The loaded metadata.
+
+        Raises:
+            ValueError: If the metadata file is empty or corrupted.
         """
         meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
         with open(meta_path, "r") as f:
             metadata = yaml.safe_load(f)
+
+        # Handle case where yaml.safe_load returns None (empty file or whitespace only)
+        if metadata is None:
+            raise ValueError(
+                f"Metadata file for {name}@{version} is empty or corrupted. "
+                f"This may indicate a race condition during concurrent writes."
+            )
 
         # Add the path to the object directory to the metadata:
         object_key = self._object_key(name, version)
@@ -313,6 +338,34 @@ class LocalRegistryBackend(RegistryBackend):
             raise e
         return materializers
 
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
+
     def _lock_path(self, key: str) -> Path:
         """Get the path for a lock file."""
         return self._full_path(f"_lock_{key}")
@@ -388,6 +441,9 @@ class LocalRegistryBackend(RegistryBackend):
         lock_path = self._lock_path(key)
 
         try:
+            # Ensure parent directory exists
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+
             # Try atomic file creation first - only one process can create the file
             try:
                 # Use O_EXCL flag to ensure atomic creation

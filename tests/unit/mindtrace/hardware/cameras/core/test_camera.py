@@ -539,11 +539,10 @@ def test_camera_call_in_loop_method():
 
 
 def test_camera_standalone_construction_and_cleanup():
-    """Test standalone Camera construction with private loop to cover cleanup code."""
+    """Test standalone Camera construction with private loop."""
     from mindtrace.hardware.cameras.core.camera import Camera
 
     # Test standalone camera construction (creates private loop)
-    # This should cover the private loop cleanup code in close() method
     try:
         # This will create a Camera with its own private event loop
         cam = Camera(name="MockBasler:test_camera_0")

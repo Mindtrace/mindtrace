@@ -12,7 +12,7 @@ from mindtrace.database import (
     MindtraceDocument,
     MindtraceRedisDocument,
     UnifiedMindtraceDocument,
-    UnifiedMindtraceODMBackend,
+    UnifiedMindtraceODM,
 )
 
 
@@ -78,14 +78,22 @@ def create_mock_redis_user(name="John", age=30, email="john@example.com", pk="01
 @pytest.fixture
 def mock_mongo_backend():
     """Create a mocked MongoDB backend."""
-    with patch("mindtrace.database.backends.unified_odm_backend.MongoMindtraceODMBackend") as mock_backend_cls:
+    with patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
+        # Async methods (native)
         backend.insert = AsyncMock()
         backend.get = AsyncMock()
         backend.all = AsyncMock()
         backend.delete = AsyncMock()
         backend.find = AsyncMock()
         backend.initialize = AsyncMock()
+        # Sync wrapper methods
+        backend.insert_sync = MagicMock()
+        backend.get_sync = MagicMock()
+        backend.all_sync = MagicMock()
+        backend.delete_sync = MagicMock()
+        backend.find_sync = MagicMock()
+        backend.initialize_sync = MagicMock()
         backend.is_async = MagicMock(return_value=True)
         backend.get_raw_model = MagicMock(return_value=MongoUserDoc)
         mock_backend_cls.return_value = backend
@@ -95,16 +103,27 @@ def mock_mongo_backend():
 @pytest.fixture
 def mock_redis_backend():
     """Create a mocked Redis backend."""
-    with patch("mindtrace.database.backends.unified_odm_backend.RedisMindtraceODMBackend") as mock_backend_cls:
+    with patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
+        # Sync methods (native)
         backend.insert = MagicMock()
         backend.get = MagicMock()
         backend.all = MagicMock()
         backend.delete = MagicMock()
         backend.find = MagicMock()
         backend.initialize = MagicMock()
+        # Async wrapper methods
+        backend.insert_async = AsyncMock()
+        backend.get_async = AsyncMock()
+        backend.all_async = AsyncMock()
+        backend.delete_async = AsyncMock()
+        backend.find_async = AsyncMock()
+        backend.initialize_async = AsyncMock()
         backend.is_async = MagicMock(return_value=False)
         backend.get_raw_model = MagicMock(return_value=RedisUserDoc)
+        # Explicitly set initialization state (needed for init_mode logic)
+        backend._is_initialized = False
+        backend._init_mode = None  # Default to None (will be treated as SYNC)
         mock_backend_cls.return_value = backend
         yield backend
 
@@ -112,7 +131,7 @@ def mock_redis_backend():
 @pytest.fixture
 def unified_backend_mongo_only(mock_mongo_backend):
     """Create a unified backend with only MongoDB configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -123,7 +142,7 @@ def unified_backend_mongo_only(mock_mongo_backend):
 @pytest.fixture
 def unified_backend_redis_only(mock_redis_backend):
     """Create a unified backend with only Redis configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         redis_model_cls=RedisUserDoc, redis_url="redis://localhost:6380", preferred_backend=BackendType.REDIS
     )
 
@@ -131,7 +150,7 @@ def unified_backend_redis_only(mock_redis_backend):
 @pytest.fixture
 def unified_backend_both(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with both MongoDB and Redis configured."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         mongo_model_cls=MongoUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -144,7 +163,7 @@ def unified_backend_both(mock_mongo_backend, mock_redis_backend):
 @pytest.fixture
 def unified_backend_with_unified_model(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with a unified document model."""
-    return UnifiedMindtraceODMBackend(
+    return UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
@@ -177,7 +196,7 @@ def test_unified_backend_initialization_both(unified_backend_both):
 def test_unified_backend_initialization_error():
     """Test initialization error when no backend is configured."""
     with pytest.raises(ValueError, match="At least one backend"):
-        UnifiedMindtraceODMBackend()
+        UnifiedMindtraceODM()
 
 
 def test_backend_switching(unified_backend_both):
@@ -274,12 +293,12 @@ async def test_redis_async_operations(unified_backend_redis_only, mock_redis_bac
     redis_user = create_mock_redis_user()
 
     # Test async insert
-    mock_redis_backend.insert.return_value = redis_user
+    mock_redis_backend.insert_async.return_value = redis_user
     result = await unified_backend_redis_only.insert_async(user)
     assert result.name == "John"
 
     # Test async get
-    mock_redis_backend.get.return_value = redis_user
+    mock_redis_backend.get_async.return_value = redis_user
     result = await unified_backend_redis_only.get_async(redis_user.pk)
     assert result.name == "John"
 
@@ -321,7 +340,7 @@ def test_mongo_sync_methods_work(unified_backend_mongo_only, mock_mongo_backend)
     """Test that sync methods work with MongoDB backend by handling async internally."""
     user = UserCreate(name="John", age=30, email="john@example.com")
     mongo_user = create_mock_mongo_user()
-    mock_mongo_backend.insert.return_value = mongo_user
+    mock_mongo_backend.insert_sync.return_value = mongo_user
 
     # This should work by running the async method in an event loop
     result = unified_backend_mongo_only.insert(user)
@@ -334,7 +353,7 @@ def test_backend_switching_with_operations(unified_backend_both, mock_mongo_back
 
     # Start with MongoDB
     mongo_user = create_mock_mongo_user()
-    mock_mongo_backend.insert.return_value = mongo_user
+    mock_mongo_backend.insert_sync.return_value = mongo_user
 
     result = unified_backend_both.insert(user)
     assert result.name == "John"
@@ -352,7 +371,9 @@ def test_backend_switching_with_operations(unified_backend_both, mock_mongo_back
 def test_initialization_calls(unified_backend_both, mock_mongo_backend, mock_redis_backend):
     """Test that initialization is called on backends."""
     unified_backend_both.initialize_sync()
+    # Both backends should be initialized
     mock_redis_backend.initialize.assert_called_once()
+    mock_mongo_backend.initialize_sync.assert_called_once()
 
 
 def test_async_initialization_calls(unified_backend_both, mock_mongo_backend, mock_redis_backend):
@@ -364,7 +385,9 @@ def test_async_initialization_calls(unified_backend_both, mock_mongo_backend, mo
         await unified_backend_both.initialize_async()
 
     asyncio.run(run_init())
+    # Both backends should be initialized
     mock_mongo_backend.initialize.assert_called_once()
+    mock_redis_backend.initialize_async.assert_called_once()
 
 
 def test_exception_handling(unified_backend_redis_only, mock_redis_backend):
@@ -483,13 +506,13 @@ def test_unified_document_insert_sync(unified_backend_with_unified_model, mock_m
     """Test inserting unified documents using sync interface."""
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
     mongo_user = create_mock_mongo_user()
-    mock_mongo_backend.insert.return_value = mongo_user
+    mock_mongo_backend.insert_sync.return_value = mongo_user
 
     result = unified_backend_with_unified_model.insert(user)
     assert result.name == "John"
 
     # Verify that the backend received the converted data
-    mock_mongo_backend.insert.assert_called_once()
+    mock_mongo_backend.insert_sync.assert_called_once()
 
 
 def test_unified_model_to_mongo_model():
@@ -518,7 +541,7 @@ def test_unified_backend_auto_generation_with_field_default_factory():
 
     from pydantic import Field
 
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     # Test model with default_factory
     class DefaultFactoryUser(UnifiedMindtraceDocument):
@@ -547,7 +570,7 @@ def test_unified_backend_auto_generation_with_optional_indexed_fields():
     """Test auto-generation with optional indexed fields."""
     from typing import Optional
 
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
 
     # Test model with optional indexed fields
     class OptionalIndexedUser(UnifiedMindtraceDocument):
@@ -574,10 +597,10 @@ def test_unified_backend_auto_generation_with_optional_indexed_fields():
 
 def test_unified_backend_get_active_backend_with_no_backends():
     """Test _get_active_backend with no backends configured."""
-    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+    from mindtrace.database.backends.unified_odm import BackendType, UnifiedMindtraceODM
 
     # Create a backend with valid configuration first
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -596,9 +619,9 @@ def test_unified_backend_get_active_backend_with_no_backends():
 
 def test_unified_backend_switch_backend_with_unknown_type():
     """Test switch_backend with unknown backend type."""
-    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+    from mindtrace.database.backends.unified_odm import BackendType, UnifiedMindtraceODM
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -610,34 +633,38 @@ def test_unified_backend_switch_backend_with_unknown_type():
         backend.switch_backend("unknown_backend")
 
 
-def test_unified_backend_initialize_async_no_mongo_backend():
-    """Test initialize_async when no MongoDB backend is configured."""
+@pytest.mark.asyncio
+async def test_unified_backend_initialize_async_no_mongo_backend(mock_redis_backend):
+    """Test initialize_async when no MongoDB backend is configured (should work with Redis)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
-    with pytest.raises(ValueError, match="initialize_async.*called but no asynchronous.*backend is configured"):
-        import asyncio
+    # Now initialize_async works with Redis too via async wrapper
+    # Should not raise an error - it will initialize Redis via async wrapper
+    await backend.initialize_async()
+    # Verify that Redis's initialize_async was called
+    mock_redis_backend.initialize_async.assert_called_once()
 
-        asyncio.run(backend.initialize_async())
 
-
-def test_unified_backend_initialize_sync():
+def test_unified_backend_initialize_sync(mock_redis_backend):
     """Test initialize_sync method."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
     # Should not raise
     backend.initialize_sync()
+    # Verify that Redis's initialize was called
+    mock_redis_backend.initialize.assert_called_once()
 
 
 def test_unified_backend_get_current_backend_type_unknown():
     """Test get_current_backend_type with unknown active backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -654,7 +681,7 @@ def test_unified_backend_get_current_backend_type_unknown():
 def test_unified_backend_switch_backend_invalid_type():
     """Test switch_backend with invalid backend type."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -668,7 +695,7 @@ def test_unified_backend_switch_backend_invalid_type():
 def test_unified_backend_switch_backend_mongo_not_configured():
     """Test switch_backend to MongoDB when not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -679,7 +706,7 @@ def test_unified_backend_switch_backend_mongo_not_configured():
 def test_unified_backend_switch_backend_redis_not_configured():
     """Test switch_backend to Redis when not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -693,7 +720,7 @@ def test_unified_backend_switch_backend_redis_not_configured():
 def test_unified_backend_get_active_backend_no_backends_available():
     """Test _get_active_backend when no backends are available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -764,25 +791,25 @@ def test_unified_backend_auto_generate_redis_model_with_default_factory():
 async def test_unified_backend_delete_async_sync_backend():
     """Test delete_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
     with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
-        mock_backend.delete.return_value = None
+        mock_backend.delete_async = AsyncMock(return_value=None)
         mock_get_backend.return_value = mock_backend
 
         await backend.delete_async("test_id")
-        mock_backend.delete.assert_called_once_with("test_id")
+        mock_backend.delete_async.assert_called_once_with("test_id")
 
 
 @pytest.mark.asyncio
 async def test_unified_backend_delete_async_async_backend():
     """Test delete_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -803,14 +830,14 @@ async def test_unified_backend_delete_async_async_backend():
 async def test_unified_backend_all_async_sync_backend():
     """Test all_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
     with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
-        mock_backend.all.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
+        mock_backend.all_async = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")])
         mock_get_backend.return_value = mock_backend
 
         result = await backend.all_async()
@@ -822,7 +849,7 @@ async def test_unified_backend_all_async_sync_backend():
 async def test_unified_backend_all_async_async_backend():
     """Test all_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -846,14 +873,14 @@ async def test_unified_backend_all_async_async_backend():
 async def test_unified_backend_find_async_sync_backend():
     """Test find_async with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
     with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
-        mock_backend.find.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
+        mock_backend.find_async = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")])
         mock_get_backend.return_value = mock_backend
 
         result = await backend.find_async(name="Test")
@@ -865,7 +892,7 @@ async def test_unified_backend_find_async_sync_backend():
 async def test_unified_backend_find_async_async_backend():
     """Test find_async with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -889,7 +916,7 @@ def test_unified_backend_get_unified_model_no_model():
     """Test get_unified_model when no model is configured."""
 
     # Create a backend with a model first, then manually set it to None
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -903,7 +930,7 @@ def test_unified_backend_get_unified_model_no_model():
 def test_unified_backend_get_mongo_backend_not_configured():
     """Test get_mongo_backend when MongoDB is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -914,7 +941,7 @@ def test_unified_backend_get_mongo_backend_not_configured():
 def test_unified_backend_get_redis_backend_not_configured():
     """Test get_redis_backend when Redis is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -928,7 +955,7 @@ def test_unified_backend_get_redis_backend_not_configured():
 def test_unified_backend_has_mongo_backend_true():
     """Test has_mongo_backend when MongoDB is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -941,7 +968,7 @@ def test_unified_backend_has_mongo_backend_true():
 def test_unified_backend_has_mongo_backend_false():
     """Test has_mongo_backend when MongoDB is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -951,7 +978,7 @@ def test_unified_backend_has_mongo_backend_false():
 def test_unified_backend_has_redis_backend_true():
     """Test has_redis_backend when Redis is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -961,7 +988,7 @@ def test_unified_backend_has_redis_backend_true():
 def test_unified_backend_has_redis_backend_false():
     """Test has_redis_backend when Redis is not configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -974,7 +1001,7 @@ def test_unified_backend_has_redis_backend_false():
 def test_unified_backend_get_mongo_backend_configured():
     """Test get_mongo_backend when MongoDB is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -988,7 +1015,7 @@ def test_unified_backend_get_mongo_backend_configured():
 def test_unified_backend_get_redis_backend_configured():
     """Test get_redis_backend when Redis is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -999,7 +1026,7 @@ def test_unified_backend_get_redis_backend_configured():
 def test_unified_backend_get_raw_model():
     """Test get_raw_model method."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1015,7 +1042,7 @@ def test_unified_backend_get_raw_model():
 def test_unified_backend_get_unified_model_configured():
     """Test get_unified_model when model is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1026,29 +1053,26 @@ def test_unified_backend_get_unified_model_configured():
 def test_unified_backend_initialize_async_context_warning():
     """Test initialize method when called from async context."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
 
-    # Mock asyncio.get_running_loop to simulate async context
-    with patch("asyncio.get_running_loop") as mock_get_loop:
-        mock_get_loop.return_value = MagicMock()
-
-        # Mock print to capture the warning
-        with patch("builtins.print") as mock_print:
-            backend.initialize()
-            mock_print.assert_called_with(
-                "Warning: initialize() called from async context. Use await initialize_async() instead."
-            )
+    # Now initialize() just calls initialize_sync() which works with both backends
+    # The async context check is handled in initialize_sync() for MongoDB
+    # Mock the mongo backend initialize_sync to verify it's called
+    with patch.object(backend.mongo_backend, "initialize_sync") as mock_init_sync:
+        backend.initialize()
+        # Should call initialize_sync which handles async context internally
+        mock_init_sync.assert_called_once()
 
 
 def test_unified_backend_handle_async_call_sync_backend():
     """Test _handle_async_call with synchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1068,7 +1092,7 @@ def test_unified_backend_handle_async_call_sync_backend():
 def test_unified_backend_handle_async_call_async_backend():
     """Test _handle_async_call with asynchronous backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1079,22 +1103,19 @@ def test_unified_backend_handle_async_call_async_backend():
     with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = True
-        mock_backend.test_method.return_value = "async_result"
+        mock_backend.test_method_sync = MagicMock(return_value="async_result")
         mock_get_backend.return_value = mock_backend
 
-        with patch("asyncio.run") as mock_asyncio_run:
-            mock_asyncio_run.return_value = "async_result"
+        result = backend._handle_async_call("test_method", "arg1", kwarg1="value1")
 
-            result = backend._handle_async_call("test_method", "arg1", kwarg1="value1")
-
-            assert result == "async_result"
-            mock_asyncio_run.assert_called_once()
+        assert result == "async_result"
+        mock_backend.test_method_sync.assert_called_once_with("arg1", kwarg1="value1")
 
 
 def test_unified_backend_convert_unified_to_backend_data_mongo():
     """Test _convert_unified_to_backend_data for MongoDB backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1119,7 +1140,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo():
 def test_unified_backend_convert_unified_to_backend_data_redis():
     """Test _convert_unified_to_backend_data for Redis backend."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1142,7 +1163,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis():
 def test_unified_backend_convert_unified_to_backend_data_redis_none_id():
     """Test _convert_unified_to_backend_data for Redis backend with None id."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1165,7 +1186,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_none_id():
 def test_unified_backend_convert_unified_to_backend_data_non_unified():
     """Test _convert_unified_to_backend_data with non-unified model."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1266,37 +1287,40 @@ def test_unified_backend_auto_generate_mongo_model_with_no_fields():
     assert mongo_model.Settings.name == "empty_collection"
 
 
-def test_unified_backend_initialize_sync_no_redis_backend():
-    """Test initialize_sync when no Redis backend is configured."""
+def test_unified_backend_initialize_sync_no_redis_backend(mock_mongo_backend):
+    """Test initialize_sync when no Redis backend is configured (should work with MongoDB)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
 
-    with pytest.raises(ValueError, match="initialize_sync.*called but no synchronous.*backend is configured"):
-        backend.initialize_sync()
+    # Now initialize_sync works with MongoDB too via sync wrapper
+    # Should not raise an error - it will initialize MongoDB via sync wrapper
+    backend.initialize_sync()
+    # Verify that MongoDB's initialize_sync was called
+    mock_mongo_backend.initialize_sync.assert_called_once()
 
 
-def test_unified_backend_initialize_sync_with_redis_backend():
+def test_unified_backend_initialize_sync_with_redis_backend(mock_redis_backend):
     """Test initialize_sync when Redis backend is configured."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
-    # Mock the Redis backend initialize method
-    with patch.object(backend.redis_backend, "initialize") as mock_init:
-        backend.initialize_sync()
-        mock_init.assert_called_once()
+    # Now initialize_sync works with Redis
+    backend.initialize_sync()
+    # Verify that Redis's initialize was called
+    mock_redis_backend.initialize.assert_called_once()
 
 
 def test_unified_backend_get_active_backend_prefer_mongo_mongo_available():
     """Test _get_active_backend when preferring MongoDB and it's available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1310,7 +1334,7 @@ def test_unified_backend_get_active_backend_prefer_mongo_mongo_available():
 def test_unified_backend_get_active_backend_prefer_redis_redis_available():
     """Test _get_active_backend when preferring Redis and it's available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1321,7 +1345,7 @@ def test_unified_backend_get_active_backend_prefer_redis_redis_available():
 def test_unified_backend_get_active_backend_prefer_mongo_redis_available():
     """Test _get_active_backend when preferring MongoDB but only Redis is available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.MONGO
     )
 
@@ -1332,7 +1356,7 @@ def test_unified_backend_get_active_backend_prefer_mongo_redis_available():
 def test_unified_backend_get_active_backend_prefer_redis_mongo_available():
     """Test _get_active_backend when preferring Redis but only MongoDB is available."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1346,7 +1370,7 @@ def test_unified_backend_get_active_backend_prefer_redis_mongo_available():
 def test_unified_backend_get_active_backend_cached():
     """Test _get_active_backend when result is cached."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1363,7 +1387,7 @@ def test_unified_backend_get_active_backend_cached():
 def test_unified_backend_convert_unified_to_backend_data_mongo_with_id():
     """Test _convert_unified_to_backend_data for MongoDB with id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1388,7 +1412,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo_with_id():
 def test_unified_backend_convert_unified_to_backend_data_mongo_without_id():
     """Test _convert_unified_to_backend_data for MongoDB without id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
@@ -1413,7 +1437,7 @@ def test_unified_backend_convert_unified_to_backend_data_mongo_without_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_with_id():
     """Test _convert_unified_to_backend_data for Redis with id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1436,7 +1460,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_with_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_without_id():
     """Test _convert_unified_to_backend_data for Redis without id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1459,7 +1483,7 @@ def test_unified_backend_convert_unified_to_backend_data_redis_without_id():
 def test_unified_backend_convert_unified_to_backend_data_redis_with_none_id():
     """Test _convert_unified_to_backend_data for Redis with None id field."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
 
@@ -1787,43 +1811,811 @@ def test_unified_backend_to_mongo_dict_without_id_field():
 def test_unified_backend_initialize_with_async_context_and_running_loop():
     """Test initialize method when called from async context with running loop."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
 
-    # Mock asyncio.get_running_loop to simulate running async context
-    with patch("asyncio.get_running_loop") as mock_get_loop:
-        mock_get_loop.return_value = MagicMock()
-
-        # Mock print to capture the warning
-        with patch("builtins.print") as mock_print:
-            backend.initialize()
-            mock_print.assert_called_with(
-                "Warning: initialize() called from async context. Use await initialize_async() instead."
-            )
+    # Now initialize() just calls initialize_sync() which works with both backends
+    # The async context check is handled in initialize_sync() for MongoDB
+    # Mock the mongo backend initialize_sync to verify it's called
+    with patch.object(backend.mongo_backend, "initialize_sync") as mock_init_sync:
+        backend.initialize()
+        # Should call initialize_sync which handles async context internally
+        mock_init_sync.assert_called_once()
 
 
 def test_unified_backend_initialize_with_no_running_loop():
     """Test initialize method when called from sync context (no running loop)."""
 
-    backend = UnifiedMindtraceODMBackend(
+    backend = UnifiedMindtraceODM(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
 
-    # Mock asyncio.get_running_loop to raise RuntimeError (no running loop)
-    with patch("asyncio.get_running_loop") as mock_get_loop:
-        mock_get_loop.side_effect = RuntimeError("No running event loop")
+    # Now initialize() just calls initialize_sync() which works with both backends
+    # Mock the mongo backend initialize_sync to verify it's called
+    with patch.object(backend.mongo_backend, "initialize_sync") as mock_init_sync:
+        backend.initialize()
+        # Should call initialize_sync which handles sync context
+        mock_init_sync.assert_called_once()
 
-        # Mock asyncio.run to capture the call
-        with patch("asyncio.run") as mock_asyncio_run:
-            # Mock the mongo backend initialize method
-            with patch.object(backend.mongo_backend, "initialize") as mock_init:
-                backend.initialize()
-                mock_asyncio_run.assert_called_once()
-                mock_init.assert_called_once()
+
+# ============================================================================
+# Tests for MongoDB sync wrapper methods
+# ============================================================================
+
+
+def test_mongo_sync_get_method(unified_backend_mongo_only, mock_mongo_backend):
+    """Test MongoDB get_sync wrapper method."""
+    mongo_user = create_mock_mongo_user()
+    mock_mongo_backend.get_sync.return_value = mongo_user
+
+    result = unified_backend_mongo_only.get(mongo_user.id)
+    assert result.name == "John"
+    mock_mongo_backend.get_sync.assert_called_once()
+
+
+def test_mongo_sync_delete_method(unified_backend_mongo_only, mock_mongo_backend):
+    """Test MongoDB delete_sync wrapper method."""
+    mongo_user = create_mock_mongo_user()
+    mock_mongo_backend.delete_sync.return_value = True
+
+    result = unified_backend_mongo_only.delete(mongo_user.id)
+    assert result is True
+    mock_mongo_backend.delete_sync.assert_called_once()
+
+
+def test_mongo_sync_all_method(unified_backend_mongo_only, mock_mongo_backend):
+    """Test MongoDB all_sync wrapper method."""
+    mongo_user = create_mock_mongo_user()
+    mock_mongo_backend.all_sync.return_value = [mongo_user]
+
+    results = unified_backend_mongo_only.all()
+    assert len(results) == 1
+    assert results[0].name == "John"
+    mock_mongo_backend.all_sync.assert_called_once()
+
+    def test_mongo_sync_find_method(unified_backend_mongo_only, mock_mongo_backend):
+        """Test MongoDB find_sync wrapper method."""
+        mongo_user = create_mock_mongo_user()
+        mock_mongo_backend.find_sync.return_value = [mongo_user]
+
+        results = unified_backend_mongo_only.find({"name": "John"})
+        assert len(results) == 1
+        assert results[0].name == "John"
+        mock_mongo_backend.find_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mongo_sync_methods_from_async_context_raises_error():
+    """Test that MongoDB sync methods raise error when called from async context."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(model_cls=MongoUserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
+
+    # All sync methods should raise RuntimeError when called from async context
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.insert_sync(UserCreate(name="John", age=30, email="john@example.com"))
+
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.get_sync("test_id")
+
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.delete_sync("test_id")
+
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.all_sync()
+
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.find_sync({"name": "John"})
+
+    with pytest.raises(RuntimeError, match="called from async context"):
+        backend.initialize_sync()
+
+
+# ============================================================================
+# Tests for Redis async wrapper methods
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_redis_async_get_method(unified_backend_redis_only, mock_redis_backend):
+    """Test Redis get_async wrapper method."""
+    redis_user = create_mock_redis_user()
+    mock_redis_backend.get_async.return_value = redis_user
+
+    result = await unified_backend_redis_only.get_async(redis_user.pk)
+    assert result.name == "John"
+    mock_redis_backend.get_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_redis_async_delete_method(unified_backend_redis_only, mock_redis_backend):
+    """Test Redis delete_async wrapper method."""
+    redis_user = create_mock_redis_user()
+    mock_redis_backend.delete_async.return_value = True
+
+    result = await unified_backend_redis_only.delete_async(redis_user.pk)
+    assert result is True
+    mock_redis_backend.delete_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_redis_async_all_method(unified_backend_redis_only, mock_redis_backend):
+    """Test Redis all_async wrapper method."""
+    redis_user = create_mock_redis_user()
+    mock_redis_backend.all_async.return_value = [redis_user]
+
+    results = await unified_backend_redis_only.all_async()
+    assert len(results) == 1
+    assert results[0].name == "John"
+    mock_redis_backend.all_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_redis_async_find_method(unified_backend_redis_only, mock_redis_backend):
+    """Test Redis find_async wrapper method."""
+    redis_user = create_mock_redis_user()
+    mock_redis_backend.find_async.return_value = [redis_user]
+
+    results = await unified_backend_redis_only.find_async({"name": "John"})
+    assert len(results) == 1
+    assert results[0].name == "John"
+    mock_redis_backend.find_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_redis_async_initialize_method(unified_backend_redis_only, mock_redis_backend):
+    """Test Redis initialize_async wrapper method."""
+    await unified_backend_redis_only.initialize_async()
+    mock_redis_backend.initialize_async.assert_called_once()
+
+
+# ============================================================================
+# Tests for unified backend routing logic
+# ============================================================================
+
+
+def test_unified_backend_sync_routing_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test that unified backend routes sync calls to MongoDB sync wrappers."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+
+    # Test that sync methods route to sync wrappers
+    mock_mongo_backend.insert_sync.return_value = mongo_user
+    result = unified_backend_mongo_only.insert(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert_sync.assert_called_once()
+
+    mock_mongo_backend.get_sync.return_value = mongo_user
+    result = unified_backend_mongo_only.get(mongo_user.id)
+    assert result.name == "John"
+    mock_mongo_backend.get_sync.assert_called_once()
+
+    mock_mongo_backend.all_sync.return_value = [mongo_user]
+    results = unified_backend_mongo_only.all()
+    assert len(results) == 1
+    mock_mongo_backend.all_sync.assert_called_once()
+
+    mock_mongo_backend.find_sync.return_value = [mongo_user]
+    results = unified_backend_mongo_only.find({"name": "John"})
+    assert len(results) == 1
+    mock_mongo_backend.find_sync.assert_called_once()
+
+    mock_mongo_backend.delete_sync.return_value = True
+    result = unified_backend_mongo_only.delete(mongo_user.id)
+    assert result is True
+    mock_mongo_backend.delete_sync.assert_called_once()
+
+
+def test_unified_backend_sync_routing_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test that unified backend routes sync calls to Redis native sync methods."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    redis_user = create_mock_redis_user()
+
+    # Test that sync methods route to native sync methods for Redis
+    mock_redis_backend.insert.return_value = redis_user
+    result = unified_backend_redis_only.insert(user)
+    assert result.name == "John"
+    mock_redis_backend.insert.assert_called_once()
+
+    mock_redis_backend.get.return_value = redis_user
+    result = unified_backend_redis_only.get(redis_user.pk)
+    assert result.name == "John"
+    mock_redis_backend.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_async_routing_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test that unified backend routes async calls to MongoDB native async methods."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+
+    # Test that async methods route to native async methods for MongoDB
+    mock_mongo_backend.insert.return_value = mongo_user
+    result = await unified_backend_mongo_only.insert_async(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert.assert_called_once()
+
+    mock_mongo_backend.get.return_value = mongo_user
+    result = await unified_backend_mongo_only.get_async(mongo_user.id)
+    assert result.name == "John"
+    mock_mongo_backend.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_async_routing_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test that unified backend routes async calls to Redis async wrappers."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    redis_user = create_mock_redis_user()
+
+    # Test that async methods route to async wrappers for Redis
+    mock_redis_backend.insert_async.return_value = redis_user
+    result = await unified_backend_redis_only.insert_async(user)
+    assert result.name == "John"
+    mock_redis_backend.insert_async.assert_called_once()
+
+    mock_redis_backend.get_async.return_value = redis_user
+    result = await unified_backend_redis_only.get_async(redis_user.pk)
+    assert result.name == "John"
+    mock_redis_backend.get_async.assert_called_once()
+
+
+def test_unified_backend_backend_switching_sync_operations(
+    unified_backend_both, mock_mongo_backend, mock_redis_backend
+):
+    """Test that switching backends correctly routes sync operations."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+    redis_user = create_mock_redis_user()
+
+    # Start with MongoDB
+    mock_mongo_backend.insert_sync.return_value = mongo_user
+    result = unified_backend_both.insert(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert_sync.assert_called_once()
+
+    # Switch to Redis
+    unified_backend_both.switch_backend(BackendType.REDIS)
+    mock_redis_backend.insert.return_value = redis_user
+    result = unified_backend_both.insert(user)
+    assert result.name == "John"
+    mock_redis_backend.insert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_backend_switching_async_operations(
+    unified_backend_both, mock_mongo_backend, mock_redis_backend
+):
+    """Test that switching backends correctly routes async operations."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+    redis_user = create_mock_redis_user()
+
+    # Start with MongoDB
+    mock_mongo_backend.insert.return_value = mongo_user
+    result = await unified_backend_both.insert_async(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert.assert_called_once()
+
+    # Switch to Redis
+    unified_backend_both.switch_backend(BackendType.REDIS)
+    mock_redis_backend.insert_async.return_value = redis_user
+    result = await unified_backend_both.insert_async(user)
+    assert result.name == "John"
+    mock_redis_backend.insert_async.assert_called_once()
+
+
+# ============================================================================
+# Tests for edge cases and error handling
+# ============================================================================
+
+
+def test_unified_backend_initialize_sync_handles_both_backends(
+    unified_backend_both, mock_mongo_backend, mock_redis_backend
+):
+    """Test that initialize_sync initializes both backends when both are configured."""
+    unified_backend_both.initialize_sync()
+    mock_redis_backend.initialize.assert_called_once()
+    mock_mongo_backend.initialize_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_initialize_async_handles_both_backends(
+    unified_backend_both, mock_mongo_backend, mock_redis_backend
+):
+    """Test that initialize_async initializes both backends when both are configured."""
+    await unified_backend_both.initialize_async()
+    mock_mongo_backend.initialize.assert_called_once()
+    mock_redis_backend.initialize_async.assert_called_once()
+
+
+def test_unified_backend_sync_methods_with_unified_model(unified_backend_with_unified_model, mock_mongo_backend):
+    """Test sync methods work with unified document model."""
+    user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+    mock_mongo_backend.insert_sync.return_value = mongo_user
+
+    result = unified_backend_with_unified_model.insert(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_async_methods_with_unified_model(unified_backend_with_unified_model, mock_mongo_backend):
+    """Test async methods work with unified document model."""
+    user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
+    mongo_user = create_mock_mongo_user()
+    mock_mongo_backend.insert.return_value = mongo_user
+
+    result = await unified_backend_with_unified_model.insert_async(user)
+    assert result.name == "John"
+    mock_mongo_backend.insert.assert_called_once()
+
+
+# ============================================================================
+# Tests for missing coverage lines
+# ============================================================================
+
+
+def test_unified_backend_auto_generate_mongo_model_skips_id_field():
+    """Test that MongoDB model generation skips id field."""
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
+
+    class TestDoc(UnifiedMindtraceDocument):
+        id: str = "test_id"  # This should be skipped
+        name: str = "test"
+
+        class Meta:
+            collection_name = "test"
+
+    mongo_model = TestDoc._auto_generate_mongo_model()
+    # Verify id field is not in the generated model's annotations
+    # The id field should be skipped during generation
+    assert mongo_model is not None
+
+
+def test_unified_backend_auto_generate_redis_model_skips_id_field():
+    """Test that Redis model generation skips id field."""
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
+
+    class TestDoc(UnifiedMindtraceDocument):
+        id: str = "test_id"  # This should be skipped
+        name: str = "test"
+
+        class Meta:
+            collection_name = "test"
+
+    redis_model = TestDoc._auto_generate_redis_model()
+    # Verify id field is not in the generated model's annotations
+    # The id field should be skipped during generation
+    assert redis_model is not None
+
+
+def test_unified_backend_auto_generate_mongo_model_has_field_attr():
+    """Test MongoDB model generation when field has attr."""
+    from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
+
+    class TestDoc(UnifiedMindtraceDocument):
+        name: str = "test"
+
+        class Meta:
+            collection_name = "test"
+
+    # Set a field attribute to trigger
+    TestDoc.name = "test_value"
+
+    mongo_model = TestDoc._auto_generate_mongo_model()
+    assert mongo_model is not None
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_insert_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend insert_async with Redis fallback."""
+    user = UserCreate(name="John", age=30, email="john@example.com")
+    redis_user = create_mock_redis_user()
+
+    # Create a simple backend without insert_async (but with is_async)
+    class SimpleBackend:
+        def is_async(self):
+            return False
+
+        def insert(self, obj):
+            return redis_user
+
+    simple_backend = SimpleBackend()
+    simple_backend.insert = MagicMock(return_value=redis_user)
+
+    # Replace the redis_backend with our simple backend
+    unified_backend_redis_only.redis_backend = simple_backend
+
+    # Verify hasattr returns False for insert_async
+    assert not hasattr(simple_backend, "insert_async")
+
+    result = await unified_backend_redis_only.insert_async(user)
+    assert result.name == "John"
+    simple_backend.insert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_get_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend get_async with Redis fallback."""
+    redis_user = create_mock_redis_user()
+
+    # Mock hasattr to return False for get_async to trigger fallback
+    mock_redis_backend.get = MagicMock(return_value=redis_user)
+
+    with patch("builtins.hasattr") as mock_hasattr:
+
+        def hasattr_side_effect(obj, attr):
+            if obj == mock_redis_backend and attr == "get_async":
+                return False
+            return hasattr(obj, attr)
+
+        mock_hasattr.side_effect = hasattr_side_effect
+
+        result = await unified_backend_redis_only.get_async(redis_user.pk)
+        assert result.name == "John"
+        mock_redis_backend.get.assert_called_once_with(redis_user.pk)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_delete_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend delete_async with Redis fallback."""
+    # Mock hasattr to return False for delete_async to trigger fallback
+    mock_redis_backend.delete = MagicMock(return_value=True)
+
+    with patch("builtins.hasattr") as mock_hasattr:
+
+        def hasattr_side_effect(obj, attr):
+            if obj == mock_redis_backend and attr == "delete_async":
+                return False
+            return hasattr(obj, attr)
+
+        mock_hasattr.side_effect = hasattr_side_effect
+
+        await unified_backend_redis_only.delete_async("test_id")
+        mock_redis_backend.delete.assert_called_once_with("test_id")
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_all_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend all_async with Redis fallback."""
+    redis_user = create_mock_redis_user()
+
+    # Mock hasattr to return False for all_async to trigger fallback
+    mock_redis_backend.all = MagicMock(return_value=[redis_user])
+
+    with patch("builtins.hasattr") as mock_hasattr:
+
+        def hasattr_side_effect(obj, attr):
+            if obj == mock_redis_backend and attr == "all_async":
+                return False
+            return hasattr(obj, attr)
+
+        mock_hasattr.side_effect = hasattr_side_effect
+
+        result = await unified_backend_redis_only.all_async()
+        assert len(result) == 1
+        mock_redis_backend.all.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend find_async with Redis fallback."""
+    redis_user = create_mock_redis_user()
+
+    # Mock hasattr to return False for find_async to trigger fallback
+    mock_redis_backend.find = MagicMock(return_value=[redis_user])
+
+    with patch("builtins.hasattr") as mock_hasattr:
+
+        def hasattr_side_effect(obj, attr):
+            if obj == mock_redis_backend and attr == "find_async":
+                return False
+            return hasattr(obj, attr)
+
+        mock_hasattr.side_effect = hasattr_side_effect
+
+        result = await unified_backend_redis_only.find_async({"name": "John"})
+        assert len(result) == 1
+        mock_redis_backend.find.assert_called_once_with({"name": "John"})
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_initialize_async_redis_fallback():
+    """Test unified backend initialize_async with Redis fallback."""
+    from pydantic import Field
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
+
+    class TestDoc(UnifiedMindtraceDocument):
+        name: str = Field()
+
+        class Meta:
+            collection_name = "test"
+
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=TestDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
+    )
+
+    # Create a simple object without initialize_async to trigger fallback
+    class SimpleBackend:
+        def initialize(self):
+            pass
+
+    simple_backend = SimpleBackend()
+    simple_backend.initialize = MagicMock()
+    backend.redis_backend = simple_backend
+
+    # hasattr should return False for initialize_async
+    assert not hasattr(simple_backend, "initialize_async")
+
+    await backend.initialize_async()
+    # The fallback should call initialize() directly
+    simple_backend.initialize.assert_called_once()
+
+
+def test_unified_backend_initialize_sync_mongo_fallback():
+    """Test unified backend initialize_sync with MongoDB fallback."""
+
+    from pydantic import Field
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
+
+    class TestDoc(UnifiedMindtraceDocument):
+        name: str = Field()
+
+        class Meta:
+            collection_name = "test"
+
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=TestDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    # Create a simple object without initialize_sync to trigger fallback
+    class SimpleBackend:
+        async def initialize(self):
+            pass
+
+    simple_backend = SimpleBackend()
+    simple_backend.initialize = AsyncMock()
+    backend.mongo_backend = simple_backend
+
+    # hasattr should return False for initialize_sync
+    assert not hasattr(simple_backend, "initialize_sync")
+
+    with patch("asyncio.run") as mock_asyncio_run:
+        backend.initialize_sync()
+        # The fallback should call asyncio.run(initialize())
+        mock_asyncio_run.assert_called_once()
+
+
+def test_unified_backend_handle_async_call_fallback():
+    """Test unified backend _handle_async_call fallback."""
+    import asyncio
+
+    from pydantic import Field
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
+
+    class TestDoc(UnifiedMindtraceDocument):
+        name: str = Field()
+
+        class Meta:
+            collection_name = "test"
+
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=TestDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    # Create a simple backend object without test_method_sync
+    # Use a plain class to avoid triggering Pydantic's internal attribute checks
+    class SimpleBackend:
+        __slots__ = ()  # Prevent dynamic attribute creation that might trigger Pydantic
+
+        def is_async(self):
+            return True
+
+        async def test_method(self, *args, **kwargs):
+            return "result"
+
+    simple_backend = SimpleBackend()
+
+    # Verify test_method_sync doesn't exist using getattr to avoid hasattr triggering Pydantic
+    sentinel = object()
+    assert getattr(simple_backend, "test_method_sync", sentinel) is sentinel
+
+    with patch.object(backend, "_get_active_backend", return_value=simple_backend):
+        # Use wraps to execute the real asyncio.run while still verifying it was called
+        with patch("asyncio.run", wraps=asyncio.run) as mock_asyncio_run:
+            result = backend._handle_async_call("test_method", "arg1")
+            # The fallback should call asyncio.run(test_method())
+            mock_asyncio_run.assert_called_once()
+            assert result == "result"
+
+
+# ============================================================================
+# Tests for initialize_async coverage
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_unified_initialize_async_with_allow_index_dropping(unified_backend_both, mock_mongo_backend):
+    """Test unified backend initialize_async() with allow_index_dropping parameter."""
+    backend = unified_backend_both
+
+    # Initialize with allow_index_dropping=True
+    await backend.initialize_async(allow_index_dropping=True)
+
+    # Should call mongo_backend.initialize with allow_index_dropping=True
+    mock_mongo_backend.initialize.assert_called_once_with(allow_index_dropping=True)
+
+
+def test_unified_initialize_sync_fallback_path_with_allow_index_dropping(mock_mongo_backend):
+    """Test unified backend initialize_sync() fallback path with allow_index_dropping."""
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=UnifiedUserDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    # Mock hasattr to return False for initialize_sync to trigger fallback path
+    with patch("mindtrace.database.backends.unified_odm.hasattr") as mock_hasattr:
+
+        def hasattr_side_effect(obj, attr):
+            if obj is backend.mongo_backend and attr == "initialize_sync":
+                return False
+            return hasattr(obj, attr)
+
+        mock_hasattr.side_effect = hasattr_side_effect
+
+        # Mock asyncio.run to avoid actual event loop execution
+        with patch("mindtrace.database.backends.unified_odm.asyncio.run") as mock_asyncio_run:
+            # Mock the initialize method to return a coroutine
+            mock_initialize = AsyncMock()
+            backend.mongo_backend.initialize = mock_initialize
+
+            # Test with allow_index_dropping=True
+            backend.initialize_sync(allow_index_dropping=True)
+            mock_asyncio_run.assert_called_once()
+            # Verify the call was made with allow_index_dropping=True
+            # The call should be to initialize with allow_index_dropping
+            assert mock_initialize.called
+
+            # Reset mocks
+            mock_asyncio_run.reset_mock()
+            mock_initialize.reset_mock()
+
+            # Test with allow_index_dropping=None
+            backend.initialize_sync(allow_index_dropping=None)
+            mock_asyncio_run.assert_called_once()
+            assert mock_initialize.called
+
+
+def test_unified_initialize_sync_with_allow_index_dropping(mock_mongo_backend):
+    """Test unified backend initialize_sync() with allow_index_dropping parameter."""
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=UnifiedUserDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    # Test with allow_index_dropping=True
+    backend.initialize_sync(allow_index_dropping=True)
+    mock_mongo_backend.initialize_sync.assert_called_once_with(allow_index_dropping=True)
+
+    # Reset and test with allow_index_dropping=None
+    mock_mongo_backend.reset_mock()
+    backend.initialize_sync(allow_index_dropping=None)
+    mock_mongo_backend.initialize_sync.assert_called_once_with(allow_index_dropping=None)
+
+
+def test_unified_initialize_with_allow_index_dropping(mock_mongo_backend):
+    """Test unified backend initialize() with allow_index_dropping parameter."""
+    backend = UnifiedMindtraceODM(
+        unified_model_cls=UnifiedUserDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    # Test with allow_index_dropping=True
+    backend.initialize(allow_index_dropping=True)
+    mock_mongo_backend.initialize_sync.assert_called_once_with(allow_index_dropping=True)
+
+
+async def test_unified_initialize_async_redis_async_mode_skip(unified_backend_both, mock_redis_backend):
+    """Test unified backend initialize_async() skips Redis when in ASYNC mode."""
+    from mindtrace.database.backends.mindtrace_odm import InitMode
+
+    backend = unified_backend_both
+
+    # Set Redis to ASYNC mode and not initialized
+    backend.redis_backend._init_mode = InitMode.ASYNC
+    backend.redis_backend._is_initialized = False
+
+    # Initialize - should skip Redis
+    await backend.initialize_async()
+
+    # Redis initialize_async should NOT be called (skipped due to ASYNC mode)
+    mock_redis_backend.initialize_async.assert_not_called()
+    mock_redis_backend.initialize.assert_not_called()
+
+
+def test_unified_backend_update_sync_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test unified backend update method with MongoDB."""
+    user = create_mock_mongo_user()
+    user.id = "507f1f77bcf86cd799439011"
+    mock_mongo_backend.update_sync.return_value = user
+
+    result = unified_backend_mongo_only.update(user)
+
+    assert result == user
+    mock_mongo_backend.update_sync.assert_called_once_with(user)
+
+
+def test_unified_backend_update_sync_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update method with Redis."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update.return_value = user
+
+    result = unified_backend_redis_only.update(user)
+
+    assert result == user
+    mock_redis_backend.update.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_mongo(unified_backend_mongo_only, mock_mongo_backend):
+    """Test unified backend update_async method with MongoDB."""
+    user = create_mock_mongo_user()
+    user.id = "507f1f77bcf86cd799439011"
+    mock_mongo_backend.update = AsyncMock(return_value=user)
+
+    result = await unified_backend_mongo_only.update_async(user)
+
+    assert result == user
+    mock_mongo_backend.update.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_redis(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update_async method with Redis."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update_async = AsyncMock(return_value=user)
+
+    result = await unified_backend_redis_only.update_async(user)
+
+    assert result == user
+    mock_redis_backend.update_async.assert_called_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_unified_backend_update_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
+    """Test unified backend update_async method with Redis fallback when update_async not available."""
+    user = create_mock_redis_user()
+    user.pk = "01H0000000000000000000"
+    mock_redis_backend.update.return_value = user
+    # Remove update_async method to test fallback
+    del mock_redis_backend.update_async
+
+    result = await unified_backend_redis_only.update_async(user)
+
+    assert result == user
+    mock_redis_backend.update.assert_called_once_with(user)

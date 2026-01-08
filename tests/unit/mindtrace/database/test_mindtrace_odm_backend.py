@@ -1,11 +1,11 @@
-"""Tests for the abstract base class MindtraceODMBackend."""
+"""Tests for the abstract base class MindtraceODM."""
 
 import pytest
 from pydantic import BaseModel
 
 from mindtrace.database import (
     DocumentNotFoundError,
-    MindtraceODMBackend,
+    MindtraceODM,
 )
 
 
@@ -16,7 +16,7 @@ class UserModel(BaseModel):
 
 
 # Test concrete implementation of abstract base class
-class ConcreteBackend(MindtraceODMBackend):
+class ConcreteBackend(MindtraceODM):
     def is_async(self) -> bool:
         return False
 
@@ -44,8 +44,11 @@ class ConcreteBackend(MindtraceODMBackend):
     def get_raw_model(self):
         return UserModel
 
+    def update(self, obj: BaseModel) -> BaseModel:
+        return obj
 
-class AsyncConcreteBackend(MindtraceODMBackend):
+
+class AsyncConcreteBackend(MindtraceODM):
     def is_async(self) -> bool:
         return True
 
@@ -73,9 +76,12 @@ class AsyncConcreteBackend(MindtraceODMBackend):
     def get_raw_model(self):
         return UserModel
 
+    async def update(self, obj: BaseModel) -> BaseModel:
+        return obj
+
 
 # Tests for abstract base class
-class TestMindtraceODMBackend:
+class TestMindtraceODM:
     """Test the abstract base class methods."""
 
     def test_concrete_backend_is_async(self):
@@ -150,7 +156,7 @@ class TestMindtraceODMBackend:
 
 
 # Tests for async backend
-class TestAsyncMindtraceODMBackend:
+class TestAsyncMindtraceODM:
     """Test async backend methods."""
 
     @pytest.mark.asyncio

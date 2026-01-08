@@ -169,10 +169,11 @@ def test_shutdown_bound_timeout(monkeypatch):
     mgr = CameraManager(include_mocks=True)
     try:
         # Monkeypatch async manager's close to a slow coroutine to trigger bound timeout
+        # Use shorter sleep (0.1s) to speed up test while still testing timeout behavior
         async def _slow_close(names=None):  # noqa: ARG001
             import asyncio as aio
 
-            await aio.sleep(2.0)
+            await aio.sleep(0.1)
 
         monkeypatch.setattr(mgr._manager, "close", _slow_close, raising=False)
     finally:
@@ -209,16 +210,16 @@ def test_batch_operations():
             opened = mgr.open(subset)
             camera_names = list(opened.keys())
 
-            # Test batch_configure (line 103)
+            # Test batch_configure
             configurations = {name: {"exposure": 1000} for name in camera_names}
             result = mgr.batch_configure(configurations)
             assert isinstance(result, dict)
 
-            # Test batch_capture (line 109)
+            # Test batch_capture
             capture_result = mgr.batch_capture(camera_names)
             assert isinstance(capture_result, dict)
 
-            # Test batch_capture_hdr (line 124)
+            # Test batch_capture_hdr
             hdr_result = mgr.batch_capture_hdr(camera_names, exposure_levels=2)
             assert isinstance(hdr_result, dict)
     finally:
@@ -352,7 +353,7 @@ def test_submit_coro_exception_handling(monkeypatch):
 
 
 def test_submit_coro_cancellation_path(monkeypatch):
-    """Test the cancellation path in _submit_coro exception handling (lines 220-221)."""
+    """Test the cancellation path in _submit_coro exception handling."""
     import asyncio
     from concurrent.futures import Future
 
@@ -524,7 +525,7 @@ def test_del_method_outer_exception_handling():
         builtins.hasattr = failing_hasattr
 
         # Directly call the __del__ method
-        # This should trigger the outermost exception handler (lines 184-185)
+        # This should trigger the outermost exception handler
         CameraManager.__del__(mgr)
 
     finally:
