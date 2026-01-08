@@ -1,4 +1,4 @@
-from mindtrace.storage.base import BatchResult, FileResult, StorageHandler, StringResult
+from mindtrace.storage.base import BatchResult, FileResult, Status, StorageHandler, StringResult
 from mindtrace.storage.gcs import GCSStorageHandler
 
 __all__ = [
@@ -7,4 +7,5 @@ __all__ = [
     "GCSStorageHandler",
     "StorageHandler",
     "StringResult",
+    "Status",
 ]
