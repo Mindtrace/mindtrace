@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-cluster"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cluster management for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,11 +12,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core",
-    "mindtrace-jobs",
-    "mindtrace-registry",
-    "mindtrace-database",
-    "mindtrace-services",
+    "mindtrace-core>=0.7.1",
+    "mindtrace-jobs>=0.7.1",
+    "mindtrace-registry>=0.7.1",
+    "mindtrace-database>=0.7.1",
+    "mindtrace-services>=0.7.1",
     "docker>=7.1.0",
 ]
 

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.7.0"
+version = "0.7.1"
 description = "Hardware integration for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,9 +12,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core",
-    "mindtrace-services",
-    "mindtrace-storage",
+    "mindtrace-core>=0.7.1",
+    "mindtrace-services>=0.7.1",
+    "mindtrace-storage>=0.7.1",
     "opencv-python>=4.8.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
@@ -43,10 +43,10 @@ mindtrace-stereo-basler = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
 cameras-genicam = ["harvesters>=1.4.0", "genicam>=1.5.0"]
-cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]"]
+cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]>=0.7.1"]
 stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
-stereo-all = ["mindtrace-hardware[stereo-basler]"]
-hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]"]
+stereo-all = ["mindtrace-hardware[stereo-basler]>=0.7.1"]
+hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]>=0.7.1"]
 setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
