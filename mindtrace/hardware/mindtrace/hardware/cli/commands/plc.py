@@ -53,30 +53,11 @@ def start(
                 return
 
         logger.success(f"PLC API started → http://{api_host}:{api_port}")
-        logger.info("\nPress Ctrl+C to stop the service.")
-
-        # Keep running until interrupted
-        try:
-            while True:
-                # Check if process is still running
-                if not pm.is_service_running("plc_api"):
-                    logger.error("PLC API has stopped unexpectedly")
-                    break
-
-                time.sleep(1)
-
-        except KeyboardInterrupt:
-            logger.info("\n\nShutting down service...")
+        logger.info(f"  Swagger UI: http://{api_host}:{api_port}/docs")
+        logger.info("\nService running in background. Use 'mindtrace-hw plc stop' to stop.")
 
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
-        return
-
-    finally:
-        # Clean shutdown
-        if pm.is_service_running("plc_api"):
-            pm.stop_service("plc_api")
-            logger.success("PLC API stopped")
 
 
 @app.command()
