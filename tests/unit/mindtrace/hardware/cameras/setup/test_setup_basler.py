@@ -3,16 +3,12 @@
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from mindtrace.hardware.cameras.setup.setup_basler import (
     PylonSDKInstaller,
     app,
-    install,
-    uninstall,
 )
-
 
 runner = CliRunner()
 

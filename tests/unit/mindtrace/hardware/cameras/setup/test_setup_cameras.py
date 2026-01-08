@@ -9,8 +9,6 @@ from typer.testing import CliRunner
 from mindtrace.hardware.cameras.setup.setup_cameras import (
     CameraSystemSetup,
     app,
-    configure_firewall,
-    main,
 )
 
 runner = CliRunner()
