@@ -1,5 +1,28 @@
 import logging
+import os
+import sys
+from types import ModuleType
 
+# Block beartype.claw BEFORE pytest import to prevent circular import issues
+if "beartype.claw" not in sys.modules:
+    # Mock _clawstate first (needed by other beartype.claw modules)
+    mock_clawstate = ModuleType("beartype.claw._clawstate")
+    mock_clawstate.claw_state = None
+    sys.modules["beartype.claw._clawstate"] = mock_clawstate
+
+    # Mock main beartype.claw module
+    mock_beartype_claw = ModuleType("beartype.claw")
+    mock_beartype_claw.beartype_this_package = lambda *args, **kwargs: None
+    mock_beartype_claw._clawstate = mock_clawstate  # Link the submodule
+    sys.modules["beartype.claw"] = mock_beartype_claw
+
+    # Mock other beartype.claw submodules that might be imported
+    for submodule in ["_importlib", "_importlib._clawimpload", "_clawmagic"]:
+        mock_module = ModuleType(f"beartype.claw.{submodule}")
+        sys.modules[f"beartype.claw.{submodule}"] = mock_module
+
+# Import numpy early to prevent reload issues
+import numpy as np  # noqa: F401
 import pytest
 
 empty_mark = pytest.mark.empty
@@ -200,3 +223,11 @@ class MockAssets:
 def mock_assets():
     """Fixture providing the MockAssets instance for all tests."""
     return MockAssets()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def enable_mock_basler_fast_mode():
+    """Enable fast mode for MockBasler cameras during tests to skip timing delays."""
+    os.environ["MOCK_BASLER_FAST_MODE"] = "1"
+    yield
+    os.environ.pop("MOCK_BASLER_FAST_MODE", None)
