@@ -13,6 +13,7 @@ classifiers = [
 ]
 dependencies = [
     "google-cloud-storage",
+    "boto3",
 ]
 
 [project.urls]
