@@ -1,37 +1,29 @@
 """Stereo camera service commands."""
 
-import os
 import time
 import webbrowser
 
-import click
+import typer
+from typing_extensions import Annotated
 
 from mindtrace.hardware.cli.core.logger import RichLogger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
 from mindtrace.hardware.cli.utils.display import console, format_status
 from mindtrace.hardware.cli.utils.network import check_port_available, wait_for_service
 
-
-@click.group()
-def stereo():
-    """Manage stereo camera services."""
-    pass
+app = typer.Typer(help="Manage stereo camera services")
 
 
-@stereo.command()
-@click.option(
-    "--api-host",
-    default=lambda: os.getenv("STEREO_CAMERA_API_HOST", "localhost"),
-    help="Stereo Camera API service host",
-)
-@click.option(
-    "--api-port",
-    default=lambda: int(os.getenv("STEREO_CAMERA_API_PORT", "8004")),
-    type=int,
-    help="Stereo Camera API service port",
-)
-@click.option("--open-docs", is_flag=True, help="Open API documentation in browser")
-def start(api_host: str, api_port: int, open_docs: bool):
+@app.command()
+def start(
+    api_host: Annotated[
+        str, typer.Option("--api-host", help="Stereo Camera API service host", envvar="STEREO_CAMERA_API_HOST")
+    ] = "localhost",
+    api_port: Annotated[
+        int, typer.Option("--api-port", help="Stereo Camera API service port", envvar="STEREO_CAMERA_API_PORT")
+    ] = 8004,
+    open_docs: Annotated[bool, typer.Option("--open-docs", help="Open API documentation in browser")] = False,
+):
     """Start stereo camera API service."""
     logger = RichLogger()
     pm = ProcessManager()
@@ -39,7 +31,7 @@ def start(api_host: str, api_port: int, open_docs: bool):
     # Check if service is already running
     if pm.is_service_running("stereo_camera_api"):
         logger.warning("Stereo Camera API is already running")
-        if not click.confirm("Stop existing service and restart?"):
+        if not typer.confirm("Stop existing service and restart?"):
             return
         pm.stop_service("stereo_camera_api")
         time.sleep(1)
@@ -98,7 +90,7 @@ def start(api_host: str, api_port: int, open_docs: bool):
             logger.success("Stereo Camera API stopped")
 
 
-@stereo.command()
+@app.command()
 def stop():
     """Stop stereo camera API service."""
     logger = RichLogger()
@@ -113,7 +105,7 @@ def stop():
         logger.info("Stereo Camera API was not running")
 
 
-@stereo.command()
+@app.command()
 def status():
     """Show stereo camera service status."""
     pm = ProcessManager()
@@ -123,24 +115,24 @@ def status():
     stereo_status = {k: v for k, v in all_status.items() if k == "stereo_camera_api"}
 
     if not stereo_status:
-        click.echo("Stereo Camera API is not configured.")
-        click.echo("\nUse 'mindtrace-hw stereo start' to launch the service.")
+        typer.echo("Stereo Camera API is not configured.")
+        typer.echo("\nUse 'mindtrace-hw stereo start' to launch the service.")
         return
 
-    click.echo("\nStereo Camera Service Status:")
-    click.echo(format_status(stereo_status))
+    typer.echo("\nStereo Camera Service Status:")
+    format_status(stereo_status)
 
     # Show additional info if service is running
     if stereo_status.get("stereo_camera_api", {}).get("running"):
         info = stereo_status["stereo_camera_api"]
         url = f"http://{info['host']}:{info['port']}"
-        click.echo("\nAccess URLs:")
-        click.echo(f"  API: {url}")
-        click.echo(f"  Swagger UI: {url}/docs")
-        click.echo(f"  ReDoc: {url}/redoc")
+        typer.echo("\nAccess URLs:")
+        typer.echo(f"  API: {url}")
+        typer.echo(f"  Swagger UI: {url}/docs")
+        typer.echo(f"  ReDoc: {url}/redoc")
 
 
-@stereo.command()
+@app.command()
 def logs():
     """View stereo camera service logs."""
     logger = RichLogger()

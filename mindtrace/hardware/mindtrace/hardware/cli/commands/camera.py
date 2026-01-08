@@ -1,30 +1,29 @@
 """Camera service commands."""
 
-import os
 import time
 
-import click
+import typer
+from typing_extensions import Annotated
 
 from mindtrace.hardware.cli.core.logger import RichLogger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
 from mindtrace.hardware.cli.utils.display import console, format_status
 from mindtrace.hardware.cli.utils.network import check_port_available, wait_for_service
 
-
-@click.group()
-def camera():
-    """Manage camera services."""
-    pass
+app = typer.Typer(help="Manage camera services")
 
 
-@camera.command()
-@click.option("--api-host", default=lambda: os.getenv("CAMERA_API_HOST", "localhost"), help="API service host")
-@click.option(
-    "--api-port", default=lambda: int(os.getenv("CAMERA_API_PORT", "8002")), type=int, help="API service port"
-)
-@click.option("--include-mocks", is_flag=True, help="Include mock cameras")
-@click.option("--open-docs", is_flag=True, help="Open API documentation in browser")
-def start(api_host: str, api_port: int, include_mocks: bool, open_docs: bool):
+@app.command()
+def start(
+    api_host: Annotated[
+        str, typer.Option("--api-host", help="API service host", envvar="CAMERA_API_HOST")
+    ] = "localhost",
+    api_port: Annotated[
+        int, typer.Option("--api-port", help="API service port", envvar="CAMERA_API_PORT")
+    ] = 8002,
+    include_mocks: Annotated[bool, typer.Option("--include-mocks", help="Include mock cameras")] = False,
+    open_docs: Annotated[bool, typer.Option("--open-docs", help="Open API documentation in browser")] = False,
+):
     """Start camera API service (headless)."""
     logger = RichLogger()
     pm = ProcessManager()
@@ -32,7 +31,7 @@ def start(api_host: str, api_port: int, include_mocks: bool, open_docs: bool):
     # Check if services are already running
     if pm.is_service_running("camera_api"):
         logger.warning("Camera API is already running")
-        if not click.confirm("Stop existing service and restart?"):
+        if not typer.confirm("Stop existing service and restart?"):
             return
         pm.stop_service("camera_api")
         time.sleep(1)
@@ -93,7 +92,7 @@ def start(api_host: str, api_port: int, include_mocks: bool, open_docs: bool):
             logger.success("Camera API stopped")
 
 
-@camera.command()
+@app.command()
 def stop():
     """Stop camera API service."""
     logger = RichLogger()
@@ -108,7 +107,7 @@ def stop():
         logger.info("Camera API was not running")
 
 
-@camera.command()
+@app.command()
 def status():
     """Show camera API service status."""
     pm = ProcessManager()
@@ -118,25 +117,25 @@ def status():
     camera_status = {k: v for k, v in all_status.items() if k == "camera_api"}
 
     if not camera_status:
-        click.echo("Camera API is not running.")
-        click.echo("\nUse 'mindtrace-hw camera start' to launch the service.")
+        typer.echo("Camera API is not running.")
+        typer.echo("\nUse 'mindtrace-hw camera start' to launch the service.")
         return
 
-    click.echo("\nCamera API Status:")
-    click.echo(format_status(camera_status))
+    typer.echo("\nCamera API Status:")
+    format_status(camera_status)
 
     # Show access URLs if running
     if camera_status.get("camera_api", {}).get("running"):
         info = camera_status["camera_api"]
         host = info["host"]
         port = info["port"]
-        click.echo("\nAccess URLs:")
-        click.echo(f"  API: http://{host}:{port}")
-        click.echo(f"  Swagger UI: http://{host}:{port}/docs")
-        click.echo(f"  ReDoc: http://{host}:{port}/redoc")
+        typer.echo("\nAccess URLs:")
+        typer.echo(f"  API: http://{host}:{port}")
+        typer.echo(f"  Swagger UI: http://{host}:{port}/docs")
+        typer.echo(f"  ReDoc: http://{host}:{port}/redoc")
 
 
-@camera.command()
+@app.command()
 def logs():
     """View camera API service logs."""
     logger = RichLogger()

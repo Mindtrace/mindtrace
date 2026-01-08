@@ -3,35 +3,51 @@
 import signal
 import sys
 from pathlib import Path
+from typing import Optional
 
-import click
+import typer
+from typing_extensions import Annotated
 
-from mindtrace.hardware.cli.commands.camera import camera
-from mindtrace.hardware.cli.commands.plc import plc
+from mindtrace.hardware.cli.commands.camera import app as camera_app
+from mindtrace.hardware.cli.commands.plc import app as plc_app
 from mindtrace.hardware.cli.commands.status import status_command
-from mindtrace.hardware.cli.commands.stereo import stereo
+from mindtrace.hardware.cli.commands.stereo import app as stereo_app
 from mindtrace.hardware.cli.core.logger import RichLogger, setup_logger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
 from mindtrace.hardware.cli.utils.display import show_banner
 
+# Create main CLI app
+app = typer.Typer(
+    name="mindtrace-hw",
+    help="Mindtrace Hardware CLI - Manage hardware services and devices.",
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
 
-@click.group(invoke_without_command=True)
-@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
-@click.option("--version", is_flag=True, help="Show version")
-@click.pass_context
-def cli(ctx, verbose: bool, version: bool):
+# Add subcommand apps
+app.add_typer(camera_app, name="camera", help="Manage camera services")
+app.add_typer(plc_app, name="plc", help="Manage PLC services")
+app.add_typer(stereo_app, name="stereo", help="Manage stereo camera services")
+
+
+@app.callback(invoke_without_command=True)
+def main_callback(
+    ctx: typer.Context,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
+    version: Annotated[bool, typer.Option("--version", help="Show version")] = False,
+):
     """Mindtrace Hardware CLI - Manage hardware services and devices."""
     # Handle version flag
     if version:
         from . import __version__
 
-        click.echo(f"mindtrace-hw version {__version__}")
-        ctx.exit()
+        typer.echo(f"mindtrace-hw version {__version__}")
+        raise typer.Exit()
 
     # Show banner if no command specified
     if ctx.invoked_subcommand is None:
         show_banner()
-        click.echo("\nUse 'mindtrace-hw --help' for available commands")
+        typer.echo("\nUse 'mindtrace-hw --help' for available commands")
 
     # Set up logging
     log_file = Path.home() / ".mindtrace" / "hw_cli.log"
@@ -39,22 +55,21 @@ def cli(ctx, verbose: bool, version: bool):
     ctx.obj = setup_logger(verbose=verbose, log_file=log_file)
 
 
-# Add commands
-cli.add_command(camera)
-cli.add_command(plc)
-cli.add_command(stereo)
-cli.add_command(status_command, name="status")
+@app.command()
+def status():
+    """Show status of all hardware services."""
+    status_command()
 
 
-@cli.command()
+@app.command()
 def stop():
     """Stop all hardware services."""
     logger = RichLogger()
     pm = ProcessManager()
 
     # Get all running services
-    status = pm.get_status()
-    running_services = [k for k, v in status.items() if v["running"]]
+    service_status = pm.get_status()
+    running_services = [k for k, v in service_status.items() if v["running"]]
 
     if not running_services:
         logger.info("No services are running")
@@ -83,15 +98,18 @@ def stop():
     logger.success("All hardware services stopped")
 
 
-@cli.command()
-@click.argument("service", type=click.Choice(["camera", "plc", "stereo", "all"]))
-@click.option("-f", "--follow", is_flag=True, help="Follow log output")
-def logs(service: str, follow: bool):
-    """View service logs.
-
-    SERVICE: Service name (camera, plc, stereo, all)
-    """
+@app.command()
+def logs(
+    service: Annotated[str, typer.Argument(help="Service name (camera, plc, stereo, all)")],
+    follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output")] = False,
+):
+    """View service logs."""
     logger = RichLogger()
+
+    valid_services = ["camera", "plc", "stereo", "all"]
+    if service not in valid_services:
+        logger.error(f"Invalid service: {service}. Must be one of: {', '.join(valid_services)}")
+        raise typer.Exit(1)
 
     if service == "camera":
         log_locations = [
@@ -114,10 +132,9 @@ def logs(service: str, follow: bool):
 
     logger.info(f"Log locations for {service}:")
     for location in log_locations:
-        click.echo(f"  - {location}")
+        typer.echo(f"  - {location}")
 
     if follow:
-        # In a real implementation, we would tail the log files
         logger.info("\nLog following not yet implemented")
         logger.info("Use 'tail -f <log_file>' to follow logs")
 
@@ -138,7 +155,7 @@ def main():
     signal.signal(signal.SIGINT, handle_sigterm)
 
     try:
-        cli()
+        app()
     except Exception as e:
         logger = RichLogger()
         logger.error(f"Unexpected error: {e}")
