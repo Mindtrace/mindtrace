@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Type, TypeVar
+from typing import Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -80,9 +80,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
     def __init__(
         self,
-        model_cls: Type[T],
-        db_uri: str,
-        db_name: str,
+        model_cls: Optional[Type[T]] = None,
+        models: Optional[Dict[str, Type[MindtraceDocument]] | str] = None,
+        db_uri: str = "",
+        db_name: str = "",
         allow_index_dropping: bool = False,
         auto_init: bool = False,
         init_mode: InitMode | None = None,
@@ -91,7 +92,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         Initialize the MongoDB ODM backend.
 
         Args:
-            model_cls (Type[ModelType]): The document model class to use for operations.
+            model_cls (Type[ModelType], optional): The document model class to use for operations (single model mode).
+            models (Dict[str, Type[MindtraceDocument]] | str, optional): Dictionary of model names to model classes (multi-model mode).
+                Example: {'user': User, 'address': Address}. When provided, access models via db.user, db.address, etc.
+                For backward compatibility: if a string is provided, it's treated as db_uri.
             db_uri (str): MongoDB connection URI string.
             db_name (str): Name of the MongoDB database to use.
             allow_index_dropping (bool): If True, allows Beanie to drop and recreate
@@ -99,7 +103,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             auto_init (bool): If True, attempts to initialize the backend during construction.
                 In sync contexts, initialization only occurs if init_mode=InitMode.SYNC.
                 In async contexts, initialization is always deferred regardless of init_mode.
-                Defaults to False for backward compatibility. Operations will auto-initialize
+                Defaults to False for backward compatibility. Operations will auto-init
                 on first use regardless.
             init_mode (InitMode | None): Initialization mode. If None, defaults to InitMode.ASYNC
                 for MongoDB. If InitMode.SYNC and auto_init=True, initialization happens
@@ -107,11 +111,59 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 deferred to first operation.
         """
         super().__init__()
-        self.model_cls: Type[T] = model_cls
+
+        # Backward compatibility: if models is a string, it's actually db_uri from old API
+        # Old API: MongoMindtraceODM(model_cls, db_uri, db_name)
+        # New API: MongoMindtraceODM(model_cls=..., models=..., db_uri=..., db_name=...)
+        if isinstance(models, str):
+            # Old API: second positional arg is db_uri, third is db_name
+            # Swap: models (string) -> db_uri, db_uri -> db_name
+            actual_db_uri = models
+            actual_db_name = db_uri if db_uri else ""
+            db_uri = actual_db_uri
+            db_name = actual_db_name
+            models = None
+
+        if not db_uri or not db_name:
+            raise ValueError("db_uri and db_name are required")
+
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
+        self._model_odms: Dict[str, "MongoMindtraceODM"] = {}
+        self._parent_odm: Optional["MongoMindtraceODM"] = None  # Reference to parent in multi-model mode
+
+        # Support both single model and multi-model modes
+        if models is not None:
+            # Multi-model mode
+            if model_cls is not None:
+                raise ValueError("Cannot specify both model_cls and models. Use one or the other.")
+            if not isinstance(models, dict) or len(models) == 0:
+                raise ValueError("models must be a non-empty dictionary")
+            self._models = models
+            self.model_cls = None  # No single model in multi-model mode
+            # Create ODM instances for each model (they share the same client)
+            for name, model in models.items():
+                odm = MongoMindtraceODM(
+                    model_cls=model,
+                    db_uri=db_uri,
+                    db_name=db_name,
+                    allow_index_dropping=allow_index_dropping,
+                    auto_init=False,  # We'll initialize all together
+                    init_mode=init_mode,
+                )
+                # Share the same client instance
+                odm.client = self.client
+                # Store parent reference for initialization delegation
+                odm._parent_odm = self
+                self._model_odms[name] = odm
+        elif model_cls is not None:
+            # Single model mode (backward compatible)
+            self.model_cls: Type[T] = model_cls
+            self._models = None
+        else:
+            raise ValueError("Must specify either model_cls or models")
 
         # Default to async for MongoDB if not specified
         if init_mode is None:
@@ -143,12 +195,22 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
     async def _do_initialize(self):
         """Internal method to perform the actual initialization."""
         if not self._is_initialized:
+            if self._models is not None:
+                # Multi-model mode: initialize all models together
+                document_models = list(self._models.values())
+            else:
+                # Single model mode
+                document_models = [self.model_cls]
+
             await init_beanie(
                 database=self.client[self.db_name],
-                document_models=[self.model_cls],
+                document_models=document_models,
                 allow_index_dropping=self._allow_index_dropping,
             )
             self._is_initialized = True
+            # Mark all model ODMs as initialized
+            for odm in self._model_odms.values():
+                odm._is_initialized = True
 
     async def initialize(self, allow_index_dropping: bool | None = None):
         """
@@ -178,6 +240,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             This method is idempotent - calling it multiple times is safe and
             will only initialize once.
         """
+        # If this is a child ODM in multi-model mode, delegate to parent
+        if self._parent_odm is not None:
+            await self._parent_odm.initialize(allow_index_dropping=allow_index_dropping)
+            return
+
         # Idempotent - return early if already initialized
         if self._is_initialized:
             return
@@ -185,6 +252,24 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if allow_index_dropping is not None:
             self._allow_index_dropping = allow_index_dropping
         await self._do_initialize()
+
+    def __getattr__(self, name: str):
+        """Support attribute-based access to model-specific ODMs in multi-model mode.
+
+        Example:
+            db = MongoMindtraceODM(models={'user': User, 'address': Address}, ...)
+            await db.user.get(user_id)
+            await db.address.insert(address)
+        """
+        if self._models is not None and name in self._model_odms:
+            # Ensure parent is initialized when accessing child ODM
+            # This allows document creation to work (Beanie requires init before creating instances)
+            if not self._is_initialized:
+                # In async context, we can't initialize here synchronously
+                # But we'll initialize on first operation via the child ODM
+                pass
+            return self._model_odms[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def is_async(self) -> bool:
         """
@@ -202,18 +287,21 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """
         return True
 
-    async def insert(self, obj: BaseModel) -> T:
+    async def insert(self, obj: BaseModel | dict) -> T:
         """
         Insert a new document into the MongoDB collection.
 
         Args:
             obj (BaseModel): The document object to insert into the database.
+                Can be a BaseModel instance or a Beanie Document. If it's a Document
+                created before initialization, it will be recreated from dict data.
 
         Returns:
             ModelType: The inserted document with generated fields populated.
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
+            ValueError: If in multi-model mode (use db.model_name.insert() instead).
 
         Example:
             .. code-block:: python
@@ -225,12 +313,32 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 except DuplicateInsertError as e:
                     print(f"Duplicate entry: {e}")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use insert() in multi-model mode. Use db.model_name.insert() instead.")
+
         # Auto-initialize if needed (backward compatible - works with or without explicit init)
         if not self._is_initialized:
             await self.initialize()
 
-        doc = self.model_cls(**obj.model_dump())
+        # Handle DataWrapper from unified_odm (has model_dump() method that returns dict)
+        if hasattr(obj, "model_dump") and not isinstance(obj, BaseModel) and obj.__class__.__name__ == "DataWrapper":
+            data = obj.model_dump()
+        elif isinstance(obj, dict):
+            data = obj.copy()
+            # Beanie handles Document objects in dicts directly for Link fields
+            # No conversion needed - just pass the dict as-is
+        else:
+            data = obj.model_dump()
+
+        # Remove both 'id' and '_id' to ensure new document (Beanie will generate _id)
+        if "id" in data:
+            data.pop("id")
+        if "_id" in data:
+            data.pop("_id")
+
+        doc = self.model_cls(**data)
         doc.id = None
+
         try:
             return await doc.insert()
         except DuplicateKeyError as e:
@@ -238,18 +346,20 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         except Exception as e:
             raise DuplicateInsertError(str(e))
 
-    async def get(self, id: str | PydanticObjectId) -> T:
+    async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """
         Retrieve a document by its unique identifier.
 
         Args:
             id (str): The unique identifier of the document to retrieve.
+            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
 
         Returns:
             ModelType: The retrieved document.
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.get() instead).
 
         Example:
             .. code-block:: python
@@ -257,17 +367,82 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 try:
                     user = await backend.get("507f1f77bcf86cd799439011")
                     print(f"Found user: {user.name}")
+
+                    # With linked documents
+                    user = await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
+                    print(f"User address: {user.address.street}")
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
+
         # Auto-initialize if needed (backward compatible)
         if not self._is_initialized:
             await self.initialize()
 
-        doc = await self.model_cls.get(id)
+        doc = await self.model_cls.get(id, fetch_links=fetch_links)
         if not doc:
             raise DocumentNotFoundError(f"Object with id {id} not found")
         return doc
+
+    async def update(self, obj: BaseModel) -> T:
+        """
+        Update an existing document in the MongoDB collection.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+            ValueError: If in multi-model mode (use db.model_name.update() instead).
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = await backend.get("507f1f77bcf86cd799439011")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = await backend.update(user)
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
+
+        # Auto-initialize if needed
+        if not self._is_initialized:
+            await self.initialize()
+
+        # Check if obj is already a document instance
+        if isinstance(obj, self.model_cls):
+            # If it's already a document instance, just save it
+            if not obj.id:
+                raise DocumentNotFoundError("Document must have an id to be updated")
+            await obj.save()
+            return obj
+        else:
+            # If it's a BaseModel, we need to get the existing document first
+            if not hasattr(obj, "id") or not obj.id:
+                raise DocumentNotFoundError("Document must have an id to be updated")
+
+            doc = await self.model_cls.get(obj.id)
+            if not doc:
+                raise DocumentNotFoundError(f"Object with id {obj.id} not found")
+
+            # Update the document fields
+            for key, value in obj.model_dump(exclude={"id"}).items():
+                setattr(doc, key, value)
+
+            await doc.save()
+            return doc
 
     async def delete(self, id: str):
         """
@@ -278,6 +453,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.delete() instead).
 
         Example:
             .. code-block:: python
@@ -288,6 +464,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
+
         # Auto-initialize if needed (backward compatible)
         if not self._is_initialized:
             await self.initialize()
@@ -305,6 +484,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         Returns:
             List[ModelType]: A list of all documents in the collection.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.all() instead).
+
         Example:
             .. code-block:: python
 
@@ -313,25 +495,29 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
+        if self._models is not None:
+            raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
+
         # Auto-initialize if needed (backward compatible)
         if not self._is_initialized:
             await self.initialize()
 
         return await self.model_cls.find_all().to_list()
 
-    async def find(self, *args, **kwargs) -> List[T]:
-        # Auto-initialize if needed (backward compatible)
-        if not self._is_initialized:
-            await self.initialize()
+    async def find(self, *args, fetch_links: bool = False, **kwargs) -> List[T]:
         """
         Find documents matching the specified criteria.
 
         Args:
             *args: Query conditions and filters.
+            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
             **kwargs: Additional query parameters.
 
         Returns:
             List[ModelType]: A list of documents matching the query criteria.
+
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.find() instead).
 
         Example:
             .. code-block:: python
@@ -341,8 +527,23 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
                 # Find users with name containing "John"
                 users = await backend.find({"name": {"$regex": "John"}})
+
+                # Find users with linked documents
+                users = await backend.find(User.name == "Alice", fetch_links=True)
         """
-        return await self.model_cls.find(*args, **kwargs).to_list()
+        if self._models is not None:
+            raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
+
+        # Auto-initialize if needed (backward compatible)
+        if not self._is_initialized:
+            await self.initialize()
+
+        # Remove fetch_links from kwargs if present (it's a parameter, not a query field)
+        kwargs_without_fetch_links = {k: v for k, v in kwargs.items() if k != "fetch_links"}
+
+        # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
+        query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
+        return await query.to_list()
 
     async def aggregate(self, pipeline: list) -> List[T]:
         """
@@ -376,12 +577,19 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         Returns:
             Type[ModelType]: The document model class.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.get_raw_model() instead).
+
         Example:
             .. code-block:: python
 
                 model_class = backend.get_raw_model()
                 print(f"Using model: {model_class.__name__}")
         """
+        if self._models is not None:
+            raise ValueError(
+                "Cannot use get_raw_model() in multi-model mode. Use db.model_name.get_raw_model() instead."
+            )
         return self.model_cls
 
     # Synchronous wrapper methods for compatibility
@@ -520,6 +728,43 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             if "no running event loop" in str(e).lower():
                 # No running loop, safe to use asyncio.run()
                 return asyncio.run(self.delete(id))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def update_sync(self, obj: BaseModel) -> T:
+        """
+        Update an existing document synchronously (wrapper around async update).
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = backend.get_sync("507f1f77bcf86cd799439011")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = backend.update_sync(user)
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError("update_sync() called from async context. Use await update() instead.")
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.update(obj))
             else:
                 # Re-raise if it's a different RuntimeError (like our custom one)
                 raise

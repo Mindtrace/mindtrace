@@ -1,12 +1,15 @@
 import asyncio
 from enum import Enum
-from typing import List, Optional, Type, TypeVar, Union
+from typing import Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
+
+# Module-level cache for generated MongoDB models to ensure class identity consistency
+_mongo_model_cache: dict[type, type] = {}
 
 
 class BackendType(Enum):
@@ -65,6 +68,12 @@ class UnifiedMindtraceDocument(BaseModel):
     @classmethod
     def _auto_generate_mongo_model(cls) -> Type[MindtraceDocument]:
         """Automatically generate a MongoDB-compatible model from the unified model."""
+        import sys
+
+        current_module = sys.modules[__name__]
+        if cls in current_module._mongo_model_cache:
+            return current_module._mongo_model_cache[cls]
+
         from typing import Annotated
 
         from beanie import Indexed
@@ -73,35 +82,141 @@ class UnifiedMindtraceDocument(BaseModel):
         cls_annotations = getattr(cls, "__annotations__", {})
         meta = getattr(cls, "Meta", cls.Meta)
 
-        # Get the original field values from the class
+        # Get the original field values from the class using model_fields
+
         cls_fields = {}
-        for field_name in cls_annotations:
-            if hasattr(cls, field_name):
-                cls_fields[field_name] = getattr(cls, field_name)
 
-        # Use a simpler approach without exec to avoid annotation issues
+        for field_name, field_info in cls.model_fields.items():
+            cls_fields[field_name] = field_info
 
-        # Build field dictionary properly
-        # fields = {}
         annotations = {}
+        field_defaults = {}
 
         for field_name, field_type in cls_annotations.items():
             if field_name == "id":
                 continue  # Skip id field for MongoDB
 
-            # Handle field annotations properly
+            # Check if field has a default value from Pydantic Field
+            field_default = ...
+            if field_name in cls_fields:
+                field_info = cls_fields[field_name]
+                # check default and default_factory
+                if hasattr(field_info, "default"):
+                    default_val = field_info.default
+                    if default_val is not ...:
+                        # Check if it's not a PydanticUndefined type
+                        default_type_str = str(type(default_val))
+                        if "PydanticUndefined" not in default_type_str:
+                            field_default = default_val
+
+                # Check default_factory if default is not set
+                if field_default is ... and hasattr(field_info, "default_factory"):
+                    default_factory_val = field_info.default_factory
+                    if default_factory_val is not None:
+                        # Check if it's not a PydanticUndefined type
+                        factory_type_str = str(type(default_factory_val))
+                        if "PydanticUndefined" not in factory_type_str:
+                            field_default = default_factory_val
+
+                # If still no default, check if it's Optional - Optional fields default to None
+                if field_default is ...:
+                    from typing import Union, get_args, get_origin
+
+                    origin = get_origin(field_type)
+                    # Check if it's a Union type (including Optional which is Union[T, None])
+                    if origin is not None:
+                        origin_str = str(origin)
+                        if "Union" in origin_str or origin is Union:
+                            args = get_args(field_type)
+                            if type(None) in args:
+                                # It's Optional, default to None
+                                field_default = None
+
+            # Handle Link types - convert Link[UnifiedModel] to Link[MongoModel]
+            from typing import Union, get_args, get_origin
+
+            from beanie import Link
+
+            processed_type = field_type
+            # Check if it's a Link type (may be wrapped in Optional/Union)
+            field_type_str = str(field_type)
+            is_link = "Link" in field_type_str or "beanie" in field_type_str.lower()
+
+            # Handle Optional[Link[...]] or Union[Link[...], None]
+            origin = get_origin(field_type)
+            if origin is Union or (origin is not None and "Union" in str(origin)):
+                # It's Optional/Union - check the args for Link
+                args = get_args(field_type)
+                for arg in args:
+                    if arg is not type(None):  # Skip None type
+                        arg_origin = get_origin(arg)
+                        arg_str = str(arg)
+                        if (
+                            arg_origin is Link
+                            or "Link" in arg_str
+                            or (hasattr(Link, "__origin__") and arg_origin == Link.__origin__)
+                        ):
+                            # Found Link in Union - extract it
+                            link_args = get_args(arg)
+                            if link_args:
+                                target_unified_model = link_args[0]
+                                if isinstance(target_unified_model, type) and issubclass(
+                                    target_unified_model, UnifiedMindtraceDocument
+                                ):
+                                    target_mongo_model = target_unified_model._auto_generate_mongo_model()
+                                    # Reconstruct Optional[Link[MongoModel]]
+                                    processed_type = Union[Link[target_mongo_model], type(None)]
+                                    is_link = True
+                                    break
+            elif not is_link:
+                # Check if it's a direct Link type
+                if origin is not None:
+                    origin_str = str(origin)
+                    is_link = (
+                        origin is Link
+                        or "Link" in origin_str
+                        or (hasattr(Link, "__origin__") and origin == Link.__origin__)
+                    )
+
+            if is_link and processed_type == field_type:
+                # Direct Link type (not wrapped in Optional)
+                link_args = get_args(field_type)
+                if link_args:
+                    target_unified_model = link_args[0]
+                    # Check if it's a UnifiedMindtraceDocument subclass
+                    if isinstance(target_unified_model, type) and issubclass(
+                        target_unified_model, UnifiedMindtraceDocument
+                    ):
+                        # Generate the MongoDB model for the target
+                        target_mongo_model = target_unified_model._auto_generate_mongo_model()
+                        # Convert Link[UnifiedModel] to Link[MongoModel]
+                        processed_type = Link[target_mongo_model]
+
+            # If field has a default, we need to ensure it's Optional and set the default
+            if field_default is not ...:
+                # Ensure the type is Optional if it has a default
+                origin = get_origin(processed_type)
+                if origin is not Union and type(None) not in get_args(processed_type):
+                    # Make it Optional if it's not already
+                    processed_type = Union[processed_type, type(None)]
+                field_defaults[field_name] = field_default
+
             if hasattr(meta, "unique_fields") and field_name in meta.unique_fields:
-                annotations[field_name] = Annotated[field_type, Indexed(unique=True)]
+                annotations[field_name] = Annotated[processed_type, Indexed(unique=True)]
             elif hasattr(meta, "indexed_fields") and field_name in meta.indexed_fields:
-                annotations[field_name] = Annotated[field_type, Indexed()]
+                annotations[field_name] = Annotated[processed_type, Indexed()]
             else:
-                annotations[field_name] = field_type
+                annotations[field_name] = processed_type
 
         # Create the class attributes dictionary
         class_dict = {
             "__annotations__": annotations,
             "__module__": cls.__module__,
         }
+
+        # Add default values to class attributes
+        for field_name, default_value in field_defaults.items():
+            class_dict[field_name] = default_value
 
         # For Beanie, we need to set the Settings class after creation
         # to avoid Pydantic v2 annotation issues
@@ -116,6 +231,11 @@ class UnifiedMindtraceDocument(BaseModel):
         }
         SettingsClass = type("Settings", (), settings_attrs)
         setattr(DynamicMongoModel, "Settings", SettingsClass)
+
+        import sys
+
+        current_module = sys.modules[__name__]
+        current_module._mongo_model_cache[cls] = DynamicMongoModel
 
         return DynamicMongoModel
 
@@ -356,8 +476,11 @@ class UnifiedMindtraceODM(MindtraceODM):
     def __init__(
         self,
         unified_model_cls: Optional[Type[UnifiedMindtraceDocument]] = None,
+        unified_models: Optional[Dict[str, Type[UnifiedMindtraceDocument]]] = None,
         mongo_model_cls: Optional[Type[MindtraceDocument]] = None,
+        mongo_models: Optional[Dict[str, Type[MindtraceDocument]]] = None,
         redis_model_cls: Optional[Type[MindtraceRedisDocument]] = None,
+        redis_models: Optional[Dict[str, Type[MindtraceRedisDocument]]] = None,
         mongo_db_uri: Optional[str] = None,
         mongo_db_name: Optional[str] = None,
         redis_url: Optional[str] = None,
@@ -370,9 +493,13 @@ class UnifiedMindtraceODM(MindtraceODM):
         Initialize the unified backend with both MongoDB and Redis configurations.
 
         Args:
-            unified_model_cls: Unified document model class (preferred)
-            mongo_model_cls: MongoDB document model class (fallback)
-            redis_model_cls: Redis document model class (fallback)
+            unified_model_cls: Unified document model class (preferred, single model mode)
+            unified_models: Dictionary of unified model names to model classes (multi-model mode).
+                Example: {'user': User, 'address': Address}. When provided, access models via db.user, db.address, etc.
+            mongo_model_cls: MongoDB document model class (fallback, single model mode)
+            mongo_models: Dictionary of MongoDB model names to model classes (multi-model mode)
+            redis_model_cls: Redis document model class (fallback, single model mode)
+            redis_models: Dictionary of Redis model names to model classes (multi-model mode)
             mongo_db_uri: MongoDB connection URI
             mongo_db_name: MongoDB database name
             redis_url: Redis connection URL
@@ -392,15 +519,43 @@ class UnifiedMindtraceODM(MindtraceODM):
         self.preferred_backend = preferred_backend
         self._active_backend = None
         self.unified_model_cls = unified_model_cls
+        self._unified_models = unified_models
+        self._model_odms: Dict[str, "UnifiedMindtraceODM"] = {}
 
-        # If unified model is provided, generate backend-specific models automatically
-        if unified_model_cls:
+        # Support multi-model mode with unified models
+        if unified_models is not None:
+            if unified_model_cls is not None:
+                raise ValueError("Cannot specify both unified_model_cls and unified_models. Use one or the other.")
+            if not isinstance(unified_models, dict) or len(unified_models) == 0:
+                raise ValueError("unified_models must be a non-empty dictionary")
+
+            # Create UnifiedMindtraceODM instances for each model
+            for name, model_cls in unified_models.items():
+                odm = UnifiedMindtraceODM(
+                    unified_model_cls=model_cls,
+                    mongo_db_uri=mongo_db_uri,
+                    mongo_db_name=mongo_db_name,
+                    redis_url=redis_url,
+                    preferred_backend=preferred_backend,
+                    allow_index_dropping=allow_index_dropping,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
+                self._model_odms[name] = odm
+
+            # Set primary backends from first model (for backward compatibility)
+            if self._model_odms:
+                first_odm = list(self._model_odms.values())[0]
+                self.mongo_backend = first_odm.mongo_backend
+                self.redis_backend = first_odm.redis_backend
+        elif unified_model_cls:
+            # Single unified model mode
             if mongo_db_uri and mongo_db_name:
                 mongo_model_cls = unified_model_cls._auto_generate_mongo_model()
                 self.mongo_backend = MongoMindtraceODM(
-                    mongo_model_cls,
-                    mongo_db_uri,
-                    mongo_db_name,
+                    model_cls=mongo_model_cls,
+                    db_uri=mongo_db_uri,
+                    db_name=mongo_db_name,
                     allow_index_dropping=allow_index_dropping,
                     auto_init=auto_init,
                     init_mode=init_mode,
@@ -409,18 +564,37 @@ class UnifiedMindtraceODM(MindtraceODM):
             if redis_url:
                 redis_model_cls = unified_model_cls._auto_generate_redis_model()
                 self.redis_backend = RedisMindtraceODM(
-                    redis_model_cls,
-                    redis_url,
+                    model_cls=redis_model_cls,
+                    redis_url=redis_url,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
+        elif mongo_models is not None or redis_models is not None:
+            # Multi-model mode with backend-specific models
+            if mongo_models is not None and mongo_db_uri and mongo_db_name:
+                self.mongo_backend = MongoMindtraceODM(
+                    models=mongo_models,
+                    db_uri=mongo_db_uri,
+                    db_name=mongo_db_name,
+                    allow_index_dropping=allow_index_dropping,
+                    auto_init=auto_init,
+                    init_mode=init_mode,
+                )
+
+            if redis_models is not None and redis_url:
+                self.redis_backend = RedisMindtraceODM(
+                    models=redis_models,
+                    redis_url=redis_url,
                     auto_init=auto_init,
                     init_mode=init_mode,
                 )
         else:
-            # Fallback to individual model classes
+            # Fallback to individual model classes (single model mode)
             if mongo_model_cls and mongo_db_uri and mongo_db_name:
                 self.mongo_backend = MongoMindtraceODM(
-                    mongo_model_cls,
-                    mongo_db_uri,
-                    mongo_db_name,
+                    model_cls=mongo_model_cls,
+                    db_uri=mongo_db_uri,
+                    db_name=mongo_db_name,
                     allow_index_dropping=allow_index_dropping,
                     auto_init=auto_init,
                     init_mode=init_mode,
@@ -428,14 +602,26 @@ class UnifiedMindtraceODM(MindtraceODM):
 
             if redis_model_cls and redis_url:
                 self.redis_backend = RedisMindtraceODM(
-                    redis_model_cls,
-                    redis_url,
+                    model_cls=redis_model_cls,
+                    redis_url=redis_url,
                     auto_init=auto_init,
                     init_mode=init_mode,
                 )
 
         if not self.mongo_backend and not self.redis_backend:
             raise ValueError("At least one backend (MongoDB or Redis) must be configured")
+
+    def __getattr__(self, name: str):
+        """Support attribute-based access to model-specific ODMs in multi-model mode.
+
+        Example:
+            db = UnifiedMindtraceODM(unified_models={'user': User, 'address': Address}, ...)
+            await db.user.get_async(user_id)
+            await db.address.insert_async(address)
+        """
+        if self._unified_models is not None and name in self._model_odms:
+            return self._model_odms[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def _get_active_backend(self):
         """
@@ -666,7 +852,7 @@ class UnifiedMindtraceODM(MindtraceODM):
         Args:
             method_name (str): The name of the method to call on the backend.
             *args: Positional arguments to pass to the method.
-            **kwargs: Keyword arguments to pass to the method.
+            **kwargs: Keyword arguments to pass to the method (including fetch_links).
 
         Returns:
             Any: The result of the backend method call.
@@ -691,19 +877,24 @@ class UnifiedMindtraceODM(MindtraceODM):
                 return asyncio.run(method(*args, **kwargs))
         else:
             # For sync backends (Redis), call method directly
+            # Note: fetch_links is ignored for Redis as it doesn't support Beanie links
+            kwargs_without_fetch_links = {k: v for k, v in kwargs.items() if k != "fetch_links"}
             method = getattr(backend, method_name)
-            return method(*args, **kwargs)
+            return method(*args, **kwargs_without_fetch_links)
 
-    def _convert_unified_to_backend_data(self, obj: BaseModel) -> BaseModel:
+    def _convert_unified_to_backend_data(self, obj: BaseModel | dict) -> BaseModel | dict:
         """Convert unified model data to backend-specific format."""
+
         if isinstance(obj, UnifiedMindtraceDocument):
             backend_type = self.get_current_backend_type()
             if backend_type == BackendType.MONGO:
                 # Convert to MongoDB format - use model_dump to get clean data
-                data = obj.model_dump(exclude_none=True)
+                data = obj.model_dump(exclude_none=False)
                 # Remove 'id' field for MongoDB as it uses '_id'
                 if "id" in data:
                     del data["id"]
+                # Convert any ObjectId values to strings for string fields
+                data = self._convert_objectids_to_strings(data)
                 # Create a simple data wrapper instead of actual model instance
                 # to avoid Beanie initialization issues
                 return DataWrapper(data)
@@ -715,9 +906,43 @@ class UnifiedMindtraceODM(MindtraceODM):
                     if data["id"] is not None:
                         data["pk"] = data["id"]
                     del data["id"]
+                # Convert any ObjectId values to strings
+                data = self._convert_objectids_to_strings(data)
                 # Create a simple data wrapper instead of actual model instance
                 return DataWrapper(data)
+        elif isinstance(obj, dict):
+            # Handle dict input - convert ObjectIds to strings
+            backend_type = self.get_current_backend_type()
+            data = obj.copy()
+            data = self._convert_objectids_to_strings(data)
+            return data
         return obj
+
+    def _convert_objectids_to_strings(self, data: dict) -> dict:
+        """Recursively convert PydanticObjectId values to strings in a dict."""
+        from beanie import PydanticObjectId
+
+        if not isinstance(data, dict):
+            return data
+
+        converted = {}
+        for key, value in data.items():
+            if isinstance(value, PydanticObjectId):
+                converted[key] = str(value)
+            elif isinstance(value, dict):
+                converted[key] = self._convert_objectids_to_strings(value)
+            elif isinstance(value, list):
+                converted[key] = [
+                    str(item)
+                    if isinstance(item, PydanticObjectId)
+                    else self._convert_objectids_to_strings(item)
+                    if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            else:
+                converted[key] = value
+        return converted
 
     # Synchronous interface methods
     def insert(self, obj: BaseModel) -> ModelType:
@@ -743,18 +968,20 @@ class UnifiedMindtraceODM(MindtraceODM):
         converted_obj = self._convert_unified_to_backend_data(obj)
         return self._handle_async_call("insert", converted_obj)
 
-    def get(self, id: str) -> ModelType:
+    def get(self, id: str, fetch_links: bool = False) -> ModelType:
         """
         Retrieve a document by its unique identifier.
 
         Args:
             id (str): The unique identifier of the document to retrieve.
+            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
 
         Returns:
             ModelType: The retrieved document.
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.get() instead).
 
         Example:
             .. code-block:: python
@@ -762,10 +989,48 @@ class UnifiedMindtraceODM(MindtraceODM):
                 try:
                     user = unified_backend.get("user_123")
                     print(f"Found user: {user.name}")
+
+                    # With linked documents (MongoDB only)
+                    user = unified_backend.get("user_123", fetch_links=True)
+                    print(f"User address: {user.address.street}")
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        return self._handle_async_call("get", id)
+        if self._unified_models is not None:
+            raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
+        return self._handle_async_call("get", id, fetch_links=fetch_links)
+
+    def update(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document using the active backend.
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+            ValueError: If in multi-model mode (use db.model_name.update() instead).
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = unified_backend.get("user_123")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = unified_backend.update(user)
+        """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
+        return self._handle_async_call("update", obj)
 
     def delete(self, id: str):
         """
@@ -776,6 +1041,7 @@ class UnifiedMindtraceODM(MindtraceODM):
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.delete() instead).
 
         Example:
             .. code-block:: python
@@ -786,6 +1052,8 @@ class UnifiedMindtraceODM(MindtraceODM):
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
         return self._handle_async_call("delete", id)
 
     def all(self) -> List[ModelType]:
@@ -795,6 +1063,9 @@ class UnifiedMindtraceODM(MindtraceODM):
         Returns:
             List[ModelType]: A list of all documents in the collection.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.all() instead).
+
         Example:
             .. code-block:: python
 
@@ -803,18 +1074,24 @@ class UnifiedMindtraceODM(MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
         return self._handle_async_call("all")
 
-    def find(self, *args, **kwargs) -> List[ModelType]:
+    def find(self, *args, fetch_links: bool = False, **kwargs) -> List[ModelType]:
         """
         Find documents matching the specified criteria.
 
         Args:
             *args: Query conditions and filters.
+            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
             **kwargs: Additional query parameters.
 
         Returns:
             List[ModelType]: A list of documents matching the query criteria.
+
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.find() instead).
 
         Example:
             .. code-block:: python
@@ -824,8 +1101,13 @@ class UnifiedMindtraceODM(MindtraceODM):
 
                 # Find all users if no criteria specified
                 all_users = unified_backend.find()
+
+                # Find users with linked documents (MongoDB only)
+                users = unified_backend.find({"name": "Alice"}, fetch_links=True)
         """
-        return self._handle_async_call("find", *args, **kwargs)
+        if self._unified_models is not None:
+            raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
+        return self._handle_async_call("find", *args, fetch_links=fetch_links, **kwargs)
 
     # Asynchronous interface methods
     async def insert_async(self, obj: BaseModel) -> ModelType:
@@ -840,6 +1122,7 @@ class UnifiedMindtraceODM(MindtraceODM):
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
+            ValueError: If in multi-model mode (use db.model_name.insert_async() instead).
 
         Example:
             .. code-block:: python
@@ -848,6 +1131,8 @@ class UnifiedMindtraceODM(MindtraceODM):
                 inserted_user = await unified_backend.insert_async(user)
                 print(f"Inserted user with ID: {inserted_user.id}")
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use insert_async() in multi-model mode. Use db.model_name.insert_async() instead.")
         converted_obj = self._convert_unified_to_backend_data(obj)
         backend = self._get_active_backend()
         if backend.is_async():
@@ -861,18 +1146,20 @@ class UnifiedMindtraceODM(MindtraceODM):
                 # Fallback to sync method
                 return backend.insert(converted_obj)
 
-    async def get_async(self, id: str) -> ModelType:
+    async def get_async(self, id: str, fetch_links: bool = False) -> ModelType:
         """
         Retrieve a document by its unique identifier (async version).
 
         Args:
             id (str): The unique identifier of the document to retrieve.
+            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
 
         Returns:
             ModelType: The retrieved document.
 
         Raises:
             DocumentNotFoundError: If no document with the given ID exists.
+            ValueError: If in multi-model mode (use db.model_name.get_async() instead).
 
         Example:
             .. code-block:: python
@@ -880,13 +1167,19 @@ class UnifiedMindtraceODM(MindtraceODM):
                 try:
                     user = await unified_backend.get_async("user_123")
                     print(f"Found user: {user.name}")
+
+                    # With linked documents (MongoDB only)
+                    user = await unified_backend.get_async("user_123", fetch_links=True)
+                    print(f"User address: {user.address.street}")
                 except DocumentNotFoundError:
                     print("User not found")
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use get_async() in multi-model mode. Use db.model_name.get_async() instead.")
         backend = self._get_active_backend()
         if backend.is_async():
             # For async backends (MongoDB), call async method directly
-            return await backend.get(id)
+            return await backend.get(id, fetch_links=fetch_links)
         else:
             # For sync backends (Redis), use async wrapper method
             if hasattr(backend, "get_async"):
@@ -894,6 +1187,48 @@ class UnifiedMindtraceODM(MindtraceODM):
             else:
                 # Fallback to sync method
                 return backend.get(id)
+
+    async def update_async(self, obj: BaseModel) -> ModelType:
+        """
+        Update an existing document using the active backend (async version).
+
+        The document object should have been retrieved from the database,
+        modified, and then passed to this method to save the changes.
+
+        Args:
+            obj (BaseModel): The document object with modified fields to save.
+
+        Returns:
+            ModelType: The updated document.
+
+        Raises:
+            DocumentNotFoundError: If the document doesn't exist in the database.
+            ValueError: If in multi-model mode (use db.model_name.update_async() instead).
+
+        Example:
+            .. code-block:: python
+
+                # Get the document
+                user = await unified_backend.get_async("user_123")
+                # Modify it
+                user.age = 31
+                user.name = "John Updated"
+                # Save the changes
+                updated_user = await unified_backend.update_async(user)
+        """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use update_async() in multi-model mode. Use db.model_name.update_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            # For async backends (MongoDB), call async method directly
+            return await backend.update(obj)
+        else:
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "update_async"):
+                return await backend.update_async(obj)
+            else:
+                # Fallback to sync method
+                return backend.update(obj)
 
     async def delete_async(self, id: str):
         """
@@ -933,6 +1268,9 @@ class UnifiedMindtraceODM(MindtraceODM):
         Returns:
             List[ModelType]: A list of all documents in the collection.
 
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.all_async() instead).
+
         Example:
             .. code-block:: python
 
@@ -941,6 +1279,8 @@ class UnifiedMindtraceODM(MindtraceODM):
                 for user in all_users:
                     print(f"- {user.name}")
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use all_async() in multi-model mode. Use db.model_name.all_async() instead.")
         backend = self._get_active_backend()
         if backend.is_async():
             # For async backends (MongoDB), call async method directly
@@ -953,16 +1293,20 @@ class UnifiedMindtraceODM(MindtraceODM):
                 # Fallback to sync method
                 return backend.all()
 
-    async def find_async(self, *args, **kwargs) -> List[ModelType]:
+    async def find_async(self, *args, fetch_links: bool = False, **kwargs) -> List[ModelType]:
         """
         Find documents matching the specified criteria (async version).
 
         Args:
             *args: Query conditions and filters.
+            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
             **kwargs: Additional query parameters.
 
         Returns:
             List[ModelType]: A list of documents matching the query criteria.
+
+        Raises:
+            ValueError: If in multi-model mode (use db.model_name.find_async() instead).
 
         Example:
             .. code-block:: python
@@ -972,11 +1316,16 @@ class UnifiedMindtraceODM(MindtraceODM):
 
                 # Find all users if no criteria specified
                 all_users = await unified_backend.find_async()
+
+                # Find users with linked documents (MongoDB only)
+                users = await unified_backend.find_async({"name": "Alice"}, fetch_links=True)
         """
+        if self._unified_models is not None:
+            raise ValueError("Cannot use find_async() in multi-model mode. Use db.model_name.find_async() instead.")
         backend = self._get_active_backend()
         if backend.is_async():
             # For async backends (MongoDB), call async method directly
-            return await backend.find(*args, **kwargs)
+            return await backend.find(*args, fetch_links=fetch_links, **kwargs)
         else:
             # For sync backends (Redis), use async wrapper method
             if hasattr(backend, "find_async"):

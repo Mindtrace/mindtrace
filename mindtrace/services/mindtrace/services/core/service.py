@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
@@ -348,7 +349,7 @@ class Service(Mindtrace):
         # Create launch command
         server_id = uuid.uuid1()
         launch_command = [
-            "python",
+            sys.executable,
             "-m",
             "mindtrace.services.core.launcher",
             "-s",
