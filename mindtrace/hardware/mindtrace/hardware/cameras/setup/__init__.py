@@ -17,8 +17,8 @@ Each setup script uses Typer for CLI and can be run independently.
 """
 
 from mindtrace.hardware.cameras.setup.setup_basler import PylonSDKInstaller
-from mindtrace.hardware.cameras.setup.setup_genicam import GenICamCTIInstaller
 from mindtrace.hardware.cameras.setup.setup_cameras import CameraSystemSetup, configure_firewall_helper
+from mindtrace.hardware.cameras.setup.setup_genicam import GenICamCTIInstaller
 
 __all__ = [
     # Installer classes

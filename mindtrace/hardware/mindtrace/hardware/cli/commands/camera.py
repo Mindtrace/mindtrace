@@ -18,9 +18,7 @@ def start(
     api_host: Annotated[
         str, typer.Option("--api-host", help="API service host", envvar="CAMERA_API_HOST")
     ] = "localhost",
-    api_port: Annotated[
-        int, typer.Option("--api-port", help="API service port", envvar="CAMERA_API_PORT")
-    ] = 8002,
+    api_port: Annotated[int, typer.Option("--api-port", help="API service port", envvar="CAMERA_API_PORT")] = 8002,
     include_mocks: Annotated[bool, typer.Option("--include-mocks", help="Include mock cameras")] = False,
     open_docs: Annotated[bool, typer.Option("--open-docs", help="Open API documentation in browser")] = False,
 ):

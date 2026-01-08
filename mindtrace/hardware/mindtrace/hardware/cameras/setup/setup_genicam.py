@@ -566,7 +566,8 @@ def install(
     ),
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
@@ -588,7 +589,8 @@ def install(
 def uninstall(
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
@@ -612,7 +614,8 @@ def uninstall(
 def verify(
     verbose: bool = typer.Option(
         False,
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         help="Enable verbose logging",
     ),
 ) -> None:
