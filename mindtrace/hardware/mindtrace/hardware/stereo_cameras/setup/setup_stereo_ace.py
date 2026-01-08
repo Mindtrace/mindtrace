@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Basler Stereo ace Setup Script
 
-This script automates the download and installation of the Basler pylon Supplementary Package
-for Stereo ace cameras on Linux systems. The package provides the GenTL Producer needed
-to connect and use Stereo ace camera systems in the Mindtrace hardware system.
+This script provides a guided installation wizard for the Basler pylon
+Supplementary Package for Stereo ace cameras on Linux systems. The package
+provides the GenTL Producer needed to connect and use Stereo ace camera
+systems.
 
 Features:
-- Automatic package download from Basler or custom URL
+- Interactive guided wizard with browser integration
 - Supports both Debian package (.deb) and tar.gz archive installation
 - Custom installation path support (default: ~/.local/share/pylon_stereo)
 - Environment variable setup for GenTL Producer
 - Shell environment script generation
+- Support for pre-downloaded packages (--package flag)
 - Comprehensive logging and error handling
 - Uninstallation support
 
@@ -26,9 +28,10 @@ Installation Methods:
        - Per-user installation
 
 Usage:
-    python setup_stereo_ace.py                           # Install with defaults
+    python setup_stereo_ace.py                           # Interactive wizard
     python setup_stereo_ace.py --method deb              # Use Debian package
     python setup_stereo_ace.py --method tarball          # Use tar.gz archive
+    python setup_stereo_ace.py --package /path/to/file   # Use pre-downloaded file
     python setup_stereo_ace.py --install-dir ~/pylon     # Custom install location
     python setup_stereo_ace.py --uninstall               # Uninstall
     mindtrace-stereo-basler-install                      # Console script (install)
@@ -47,40 +50,63 @@ Environment Setup:
         echo "source <install-dir>/setup_stereo_env.sh" >> ~/.bashrc
 """
 
-import argparse
 import logging
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 from typing import Optional
 
+import typer
+from rich import print as rprint
+from rich.panel import Panel
+from rich.table import Table
+
 from mindtrace.core import Mindtrace
-from mindtrace.core.utils import download_and_extract_tarball
 from mindtrace.hardware.core.config import get_hardware_config
+
+# Typer app instance
+app = typer.Typer(
+    name="stereo-ace-setup",
+    help="Install or uninstall the Basler Stereo ace Supplementary Package (guided wizard)",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
 
 
 class StereoAceInstaller(Mindtrace):
-    """Basler Stereo ace Supplementary Package installer and manager.
+    """Basler Stereo ace Supplementary Package installer with guided wizard.
 
-    This class handles the download, installation, and uninstallation of the
-    Stereo ace Supplementary Package across different installation methods.
+    This class provides an interactive installation wizard that guides users
+    through downloading and installing the Stereo ace package from the official
+    Basler website.
     """
 
-    # Package URLs - GitHub releases for automatic download
-    GITHUB_TARBALL_URL = "https://github.com/Mindtrace/basler-sdk/releases/download/stereo_ace_v1.0.3/pylon-supplementary-package-for-stereo-ace-1.0.3-Linux_x86_64_setup.tar.gz"
-    GITHUB_DEB_URL = "https://github.com/Mindtrace/basler-sdk/releases/download/stereo_ace_v1.0.3/pylon-supplementary-package-for-stereo-ace-1.0.3_amd64.deb"
+    # Basler official download pages
+    BASLER_DOWNLOAD_PAGE = "https://www.baslerweb.com/en/downloads/software-downloads/"
+    BASLER_DEB_PAGE = "https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-debian/"
+    BASLER_TARBALL_PAGE = "https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-setup-tar-gz/"
 
-    # Fallback: Basler official download pages (manual download)
-    BASLER_DEB_URL = "https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-debian/"
-    BASLER_TARBALL_URL = "https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-setup-tar-gz/"
-
-    # Package file names
-    DEB_PACKAGE_NAME = "pylon-supplementary-package-for-stereo-ace-1.0.3_amd64.deb"
-    TARBALL_PACKAGE_NAME = "pylon-supplementary-package-for-stereo-ace-1.0.3_x86_64_setup.tar.gz"
-    INNER_TARBALL_NAME = "pylon-supplementary-package-for-stereo-ace-1.0.3_x86_64.tar.gz"
+    # Package file patterns for validation
+    PACKAGE_INFO = {
+        "deb": {
+            "search_term": "pylon Supplementary Package for Stereo ace - Linux x86 (64 Bit) - Debian",
+            "file_pattern": "pylon-supplementary-package-for-stereo-ace*amd64.deb",
+            "file_description": "pylon-supplementary-package-for-stereo-ace-X.X.X_amd64.deb",
+            "min_size_mb": 50,
+            "download_page": BASLER_DEB_PAGE,
+        },
+        "tarball": {
+            "search_term": "pylon Supplementary Package for Stereo ace - Linux x86 (64 Bit) - tar.gz",
+            "file_pattern": "pylon-supplementary-package-for-stereo-ace*setup.tar.gz",
+            "file_description": "pylon-supplementary-package-for-stereo-ace-X.X.X-Linux_x86_64_setup.tar.gz",
+            "min_size_mb": 50,
+            "download_page": BASLER_TARBALL_PAGE,
+        },
+    }
 
     def __init__(
         self,
@@ -93,7 +119,7 @@ class StereoAceInstaller(Mindtrace):
         Args:
             installation_method: Installation method ("deb" or "tarball")
             install_dir: Custom installation directory (for tarball method)
-            package_path: Path to downloaded package file (optional)
+            package_path: Path to pre-downloaded package file (optional)
         """
         super().__init__()
 
@@ -104,6 +130,7 @@ class StereoAceInstaller(Mindtrace):
             raise RuntimeError("Stereo ace Supplementary Package is only supported on Linux")
 
         self.installation_method = installation_method
+        self.package_path = Path(package_path) if package_path else None
 
         # Set installation directory
         if install_dir:
@@ -112,10 +139,7 @@ class StereoAceInstaller(Mindtrace):
             if installation_method == "deb":
                 self.install_dir = Path("/opt/pylon")
             else:
-                # Default to user's local directory
                 self.install_dir = Path.home() / ".local" / "share" / "pylon_stereo"
-
-        self.package_path = Path(package_path) if package_path else None
 
         self.logger.info(f"Initializing Stereo ace installer for {self.platform}")
         self.logger.info(f"Installation method: {installation_method}")
@@ -127,151 +151,254 @@ class StereoAceInstaller(Mindtrace):
         Returns:
             True if installation successful, False otherwise
         """
-        self.logger.info("Starting Stereo ace Supplementary Package installation")
+        # If package path provided, skip wizard and install directly
+        if self.package_path:
+            return self._install_from_package(self.package_path)
 
-        try:
-            if self.installation_method == "deb":
-                return self._install_debian_package()
-            elif self.installation_method == "tarball":
-                return self._install_tarball()
-            else:
-                self.logger.error(f"Unknown installation method: {self.installation_method}")
-                return False
+        # Run interactive wizard
+        return self._run_wizard()
 
-        except Exception as e:
-            self.logger.error(f"Installation failed with unexpected error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    def _install_debian_package(self) -> bool:
-        """Install using Debian package (.deb).
+    def _run_wizard(self) -> bool:
+        """Run the interactive installation wizard.
 
         Returns:
             True if installation successful, False otherwise
         """
-        self.logger.info("Installing Stereo ace package using Debian package")
+        package_info = self.PACKAGE_INFO[self.installation_method]
 
-        # Download package if not provided
-        if not self.package_path or not self.package_path.exists():
-            self.logger.info("Package not provided, downloading from GitHub...")
-            try:
-                from mindtrace.core.utils import download_file
+        # Step 1: Display info panel
+        self._display_intro()
 
-                # Download to temporary location
-                download_dir = self.install_dir / "downloads"
-                download_dir.mkdir(parents=True, exist_ok=True)
+        # Step 2: Confirm installation method
+        self._show_method_info()
 
-                self.logger.info(f"Downloading from {self.GITHUB_DEB_URL}")
-                downloaded_path = download_file(
-                    url=self.GITHUB_DEB_URL, destination=str(download_dir / self.DEB_PACKAGE_NAME)
-                )
-                self.package_path = Path(downloaded_path)
-                self.logger.info(f"Downloaded to {self.package_path}")
+        if not typer.confirm("\nProceed with installation?", default=True):
+            rprint("[yellow]Installation cancelled.[/]")
+            return False
 
-            except Exception as e:
-                self.logger.error(f"Failed to download package: {e}")
-                self.logger.info("Please download manually from:")
-                self.logger.info(f"  {self.BASLER_DEB_URL}")
-                self.logger.info(
-                    f"Then run: python setup_stereo_ace.py --method deb --package /path/to/{self.DEB_PACKAGE_NAME}"
-                )
-                return False
+        # Step 3: Open browser
+        self._open_download_page(package_info)
+
+        # Step 4: Show download instructions
+        self._show_download_instructions(package_info)
+
+        # Step 5: Wait for user to download
+        rprint("\n[bold cyan]Step 3/5:[/] Download the package")
+        rprint("         Please download the file from the opened browser page.")
+        rprint("         Accept the EULA when prompted.\n")
+
+        input("         Press Enter when download is complete...")
+
+        # Step 6: Get file path from user
+        package_path = self._prompt_for_file(package_info)
+        if not package_path:
+            return False
+
+        # Step 7: Install
+        return self._install_from_package(package_path)
+
+    def _display_intro(self) -> None:
+        """Display introductory information panel."""
+        intro_text = """[bold]Basler Stereo ace Installation Wizard[/]
+
+This wizard will help you install the Basler pylon Supplementary Package
+for Stereo ace cameras, which provides:
+
+  [cyan]GenTL Producer[/]    - Driver for Stereo ace camera communication
+  [cyan]StereoViewer[/]      - GUI for 3D visualization and configuration
+  [cyan]Python Samples[/]    - Example code for stereo camera integration
+
+[dim]Note: This package is required for Stereo ace cameras to work with pypylon.[/]
+
+You will be guided to download the package from Basler's official website
+where you'll need to accept their End User License Agreement (EULA)."""
+
+        rprint(Panel(intro_text, title="Stereo ace Setup", border_style="blue"))
+
+    def _show_method_info(self) -> None:
+        """Show information about the selected installation method."""
+        rprint(f"\n[bold]Installation Method:[/] {self.installation_method}")
+
+        if self.installation_method == "deb":
+            rprint("  - Requires sudo privileges")
+            rprint("  - Installs system-wide to /opt/pylon")
+            rprint("  - Automatic environment configuration")
+        else:
+            rprint("  - No sudo required")
+            rprint(f"  - Installs to: {self.install_dir}")
+            rprint("  - Manual environment setup required")
+
+    def _open_download_page(self, package_info: dict) -> None:
+        """Open Basler download page in default browser."""
+        rprint("\n[bold cyan]Step 1/5:[/] Opening Basler download page...")
+
+        download_url = package_info.get("download_page", self.BASLER_DOWNLOAD_PAGE)
 
         try:
-            # Install using apt-get
-            self.logger.info(f"Installing {self.package_path}")
-            cmd = ["sudo", "apt-get", "install", "-y", str(self.package_path)]
+            webbrowser.open(download_url)
+            rprint(f"         Browser opened to: [link={download_url}]{download_url}[/]")
+        except Exception as e:
+            rprint(f"[yellow]         Could not open browser automatically: {e}[/]")
+            rprint(f"         Please open manually: {download_url}")
+
+    def _show_download_instructions(self, package_info: dict) -> None:
+        """Show download instructions for the selected method."""
+        rprint("\n[bold cyan]Step 2/5:[/] Find the correct download")
+
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Label", style="dim")
+        table.add_column("Value")
+
+        table.add_row("Method:", f"[green]{self.installation_method}[/]")
+        table.add_row("Search for:", f"[cyan]{package_info['search_term']}[/]")
+        table.add_row("File name:", f"[cyan]{package_info['file_description']}[/]")
+        table.add_row("Expected size:", f">{package_info['min_size_mb']} MB")
+
+        rprint(table)
+
+    def _prompt_for_file(self, package_info: dict) -> Optional[Path]:
+        """Prompt user for downloaded file path.
+
+        Args:
+            package_info: Package-specific information dict
+
+        Returns:
+            Path to the downloaded file, or None if invalid/cancelled
+        """
+        rprint("\n[bold cyan]Step 4/5:[/] Locate the downloaded file")
+
+        while True:
+            path_str = typer.prompt("         Enter path to downloaded file (or 'q' to quit)")
+
+            if path_str.lower() == 'q':
+                rprint("[yellow]Installation cancelled.[/]")
+                return None
+
+            # Handle drag & drop (removes quotes, escapes)
+            path_str = path_str.strip().strip("'\"").replace("\\ ", " ")
+
+            path = Path(path_str).expanduser()
+
+            if not path.exists():
+                rprint(f"[red]         File not found: {path}[/]")
+                continue
+
+            # Validate file
+            if not self._validate_package(path, package_info):
+                if not typer.confirm("         Use this file anyway?", default=False):
+                    continue
+
+            rprint(f"[green]         File accepted: {path.name}[/]")
+            return path
+
+    def _validate_package(self, path: Path, package_info: dict) -> bool:
+        """Validate the downloaded package file.
+
+        Args:
+            path: Path to the package file
+            package_info: Package-specific information dict
+
+        Returns:
+            True if file appears valid, False otherwise
+        """
+        # Check file size
+        size_mb = path.stat().st_size / (1024 * 1024)
+        min_size = package_info["min_size_mb"]
+
+        if size_mb < min_size:
+            rprint(f"[yellow]         Warning: File size ({size_mb:.1f} MB) is smaller than expected (>{min_size} MB)[/]")
+            return False
+
+        # Check file name pattern
+        name = path.name.lower()
+        if "stereo" not in name and "pylon" not in name:
+            rprint(f"[yellow]         Warning: File name doesn't contain 'stereo' or 'pylon'[/]")
+            return False
+
+        rprint(f"         File size: {size_mb:.1f} MB")
+        return True
+
+    def _install_from_package(self, package_path: Path) -> bool:
+        """Install from a local package file.
+
+        Args:
+            package_path: Path to the package file
+
+        Returns:
+            True if installation successful, False otherwise
+        """
+        rprint("\n[bold cyan]Step 5/5:[/] Installing...")
+
+        try:
+            if self.installation_method == "deb" or package_path.suffix == ".deb":
+                return self._install_debian_package(package_path)
+            else:
+                return self._install_tarball(package_path)
+
+        except Exception as e:
+            self.logger.error(f"Installation failed: {e}")
+            rprint(f"[red]Installation failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _install_debian_package(self, package_path: Path) -> bool:
+        """Install using Debian package (.deb).
+
+        Args:
+            package_path: Path to the .deb package
+
+        Returns:
+            True if installation successful, False otherwise
+        """
+        rprint("         Installing Debian package...")
+
+        try:
+            cmd = ["sudo", "apt-get", "install", "-y", str(package_path)]
             self.logger.debug(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
 
-            self.logger.info("✅ Stereo ace Supplementary Package installed successfully!")
-            self.logger.info("")
-            self.logger.info("IMPORTANT: Environment setup required")
-            self.logger.info("  The environment will be set automatically after logout/login.")
-            self.logger.info("  Or run immediately:")
-            self.logger.info("    source /opt/pylon/bin/pylon-setup-env.sh /opt/pylon")
-            self.logger.info("")
-            self.logger.info("  To make persistent, add to ~/.bashrc:")
-            self.logger.info("    echo 'source /opt/pylon/bin/pylon-setup-env.sh /opt/pylon' >> ~/.bashrc")
-
+            self._show_success_message_deb()
             return True
 
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Debian package installation failed: {e}")
-            self.logger.error("Make sure you have sudo privileges")
+            rprint(f"[red]Package installation failed: {e}[/]")
+            rprint("Make sure you have sudo privileges.")
             return False
 
-    def _install_tarball(self) -> bool:
+    def _install_tarball(self, package_path: Path) -> bool:
         """Install using tar.gz archive.
+
+        Args:
+            package_path: Path to the tar.gz package
 
         Returns:
             True if installation successful, False otherwise
         """
-        self.logger.info("Installing Stereo ace package using tar.gz archive")
-
-        # Download package if not provided
-        if not self.package_path or not self.package_path.exists():
-            self.logger.info("Package not provided, downloading from GitHub...")
-            try:
-                # Download and extract directly
-                self.logger.info(f"Downloading from {self.GITHUB_TARBALL_URL}")
-                extracted_dir = download_and_extract_tarball(
-                    url=self.GITHUB_TARBALL_URL, extract_to=str(self.install_dir / "temp_download")
-                )
-                self.logger.info(f"Downloaded and extracted to {extracted_dir}")
-
-                # The extracted directory contains the setup archive, find the inner tarball
-                temp_dir = Path(extracted_dir)
-                inner_tarball = None
-
-                for root, dirs, files in os.walk(temp_dir):
-                    for file in files:
-                        if file.endswith(".tar.gz") and "pylon-supplementary" in file:
-                            inner_tarball = Path(root) / file
-                            break
-                    if inner_tarball:
-                        break
-
-                if not inner_tarball:
-                    self.logger.error("Could not find inner tarball in downloaded package")
-                    return False
-
-                # Use the found inner tarball
-                self.package_path = inner_tarball
-                self.logger.info(f"Found inner tarball: {self.package_path}")
-
-            except Exception as e:
-                self.logger.error(f"Failed to download package: {e}")
-                self.logger.info("Please download manually from:")
-                self.logger.info(f"  {self.BASLER_TARBALL_URL}")
-                self.logger.info(
-                    f"Then run: python setup_stereo_ace.py --method tarball --package /path/to/{self.TARBALL_PACKAGE_NAME}"
-                )
-                import traceback
-
-                traceback.print_exc()
-                return False
+        rprint("         Installing from tar.gz archive...")
 
         try:
-            # Create installation directory
-            self.install_dir.mkdir(parents=True, exist_ok=True)
-            self.logger.info(f"Installation directory: {self.install_dir}")
-
-            # Check if package_path is the outer archive or inner tarball
             import tarfile
 
-            # If it's the setup archive (contains inner tarball), extract it first
-            if "setup" in self.package_path.name.lower():
-                self.logger.info(f"Extracting setup archive {self.package_path.name}")
-                with tarfile.open(self.package_path, "r:gz") as tar:
-                    tar.extractall(path=self.install_dir / "temp_extract")
+            # Create installation directory
+            self.install_dir.mkdir(parents=True, exist_ok=True)
+            rprint(f"         Installation directory: {self.install_dir}")
+
+            # Extract the package
+            rprint("         Extracting package...")
+
+            # Check if it's a setup archive (contains inner tarball)
+            if "setup" in package_path.name.lower():
+                # Extract setup archive to temp location
+                temp_dir = self.install_dir / "temp_extract"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+
+                with tarfile.open(package_path, "r:gz") as tar:
+                    tar.extractall(path=temp_dir)
 
                 # Find the inner tarball
-                temp_dir = self.install_dir / "temp_extract"
                 inner_tarball = None
-
                 for root, dirs, files in os.walk(temp_dir):
                     for file in files:
                         if file.endswith(".tar.gz") and "pylon-supplementary" in file and "setup" not in file.lower():
@@ -281,32 +408,31 @@ class StereoAceInstaller(Mindtrace):
                         break
 
                 if not inner_tarball:
-                    self.logger.error("Could not find inner tarball in package")
+                    rprint("[red]Could not find inner tarball in package[/]")
                     return False
 
-                self.logger.info(f"Found inner tarball: {inner_tarball.name}")
-            else:
-                # It's already the inner tarball
-                inner_tarball = self.package_path
-                temp_dir = None
+                rprint(f"         Found inner tarball: {inner_tarball.name}")
 
-            # Extract inner tarball directly to install_dir
-            self.logger.info(f"Extracting {inner_tarball.name} to {self.install_dir}")
-            with tarfile.open(inner_tarball, "r:gz") as tar:
-                tar.extractall(path=self.install_dir)
+                # Extract inner tarball to install_dir
+                with tarfile.open(inner_tarball, "r:gz") as tar:
+                    tar.extractall(path=self.install_dir)
 
-            # Clean up temporary extraction directory if we created one
-            if temp_dir and temp_dir.exists():
+                # Clean up temp directory
                 shutil.rmtree(temp_dir)
-                self.logger.info("Cleaned up temporary files")
+            else:
+                # Direct extraction
+                with tarfile.open(package_path, "r:gz") as tar:
+                    tar.extractall(path=self.install_dir)
 
             # Verify installation
             gentl_path = self.install_dir / "pylon" / "lib" / "gentlproducer" / "gtl" / "basler_xw.cti"
             if not gentl_path.exists():
-                self.logger.error(f"GenTL producer not found at expected location: {gentl_path}")
-                return False
-
-            self.logger.info(f"✅ GenTL producer found: {gentl_path}")
+                # Try alternate path
+                gentl_candidates = list(self.install_dir.rglob("*.cti"))
+                if gentl_candidates:
+                    rprint(f"         GenTL producer found: {gentl_candidates[0]}")
+                else:
+                    rprint(f"[yellow]         Warning: GenTL producer not found at expected location[/]")
 
             # Create environment setup script
             self._create_environment_script()
@@ -314,68 +440,50 @@ class StereoAceInstaller(Mindtrace):
             # Offer to add to bashrc
             self._offer_bashrc_setup()
 
-            self.logger.info("")
-            self.logger.info("✅ Stereo ace Supplementary Package installed successfully!")
-            self.logger.info("")
-            self.logger.info("IMPORTANT: Environment setup required for current shell")
-            self.logger.info("  Run this command:")
-            self.logger.info(f"    source {self.install_dir}/setup_stereo_env.sh")
-            self.logger.info("")
-            self.logger.info("  Verify installation:")
-            self.logger.info("    echo $GENICAM_GENTL64_PATH")
-            self.logger.info(f"    # Should contain: {self.install_dir}/pylon/lib/gentlproducer/gtl")
-
+            self._show_success_message_tarball()
             return True
 
         except Exception as e:
             self.logger.error(f"tar.gz installation failed: {e}")
-            import traceback
-
-            traceback.print_exc()
+            rprint(f"[red]Installation failed: {e}[/]")
             return False
 
     def _create_environment_script(self) -> None:
         """Create shell environment setup script."""
         script_path = self.install_dir / "setup_stereo_env.sh"
 
-        script_content = """#!/bin/bash
+        script_content = f"""#!/bin/bash
 # Environment setup for Basler Stereo ace cameras
-# Generated by MindTrace Stereo ace installer
+# Generated by Mindtrace Stereo ace installer
 
 # Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYLON_ROOT="${SCRIPT_DIR}/pylon"
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+PYLON_ROOT="${{SCRIPT_DIR}}/pylon"
 
 # Set up pylon environment if pylon-setup-env.sh exists
-if [ -f "${PYLON_ROOT}/bin/pylon-setup-env.sh" ]; then
-    source "${PYLON_ROOT}/bin/pylon-setup-env.sh" "${PYLON_ROOT}"
+if [ -f "${{PYLON_ROOT}}/bin/pylon-setup-env.sh" ]; then
+    source "${{PYLON_ROOT}}/bin/pylon-setup-env.sh" "${{PYLON_ROOT}}"
 fi
 
 # Add Stereo ace GenTL producer path
-export GENICAM_GENTL64_PATH="${PYLON_ROOT}/lib/gentlproducer/gtl:${GENICAM_GENTL64_PATH}"
+export GENICAM_GENTL64_PATH="${{PYLON_ROOT}}/lib/gentlproducer/gtl:${{GENICAM_GENTL64_PATH}}"
 
 # Add to LD_LIBRARY_PATH for runtime library loading
-export LD_LIBRARY_PATH="${PYLON_ROOT}/lib:${PYLON_ROOT}/lib/gentlproducer/gtl:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${{PYLON_ROOT}}/lib:${{PYLON_ROOT}}/lib/gentlproducer/gtl:${{LD_LIBRARY_PATH}}"
 
 echo "Basler Stereo ace environment configured:"
-echo "  PYLON_ROOT: ${PYLON_ROOT}"
-echo "  GENICAM_GENTL64_PATH: ${GENICAM_GENTL64_PATH}"
-echo ""
-echo "Stereo ace components available:"
-echo "  - StereoViewer: ${PYLON_ROOT}/bin/StereoViewer"
-echo "  - Python Samples: ${PYLON_ROOT}/share/pylon/Samples/Stereo_ace/Python"
-echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
+echo "  PYLON_ROOT: ${{PYLON_ROOT}}"
+echo "  GENICAM_GENTL64_PATH: ${{GENICAM_GENTL64_PATH}}"
 """
 
         with open(script_path, "w") as f:
             f.write(script_content)
 
-        # Make script executable
         script_path.chmod(0o755)
-        self.logger.info(f"Created environment setup script: {script_path}")
+        rprint(f"         Created environment script: {script_path}")
 
     def _offer_bashrc_setup(self) -> None:
-        """Offer to add environment setup to ~/.bashrc automatically."""
+        """Offer to add environment setup to ~/.bashrc."""
         bashrc_path = Path.home() / ".bashrc"
         script_path = self.install_dir / "setup_stereo_env.sh"
         source_line = f"source {script_path}"
@@ -383,32 +491,57 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
         # Check if already in bashrc
         if bashrc_path.exists():
             with open(bashrc_path, "r") as f:
-                bashrc_content = f.read()
-                if str(script_path) in bashrc_content:
-                    self.logger.info("✅ Environment setup already in ~/.bashrc")
+                if str(script_path) in f.read():
+                    rprint("         Environment setup already in ~/.bashrc")
                     return
 
         # Check if running in interactive terminal
         if sys.stdin.isatty():
-            self.logger.info("")
-            response = input("Add environment setup to ~/.bashrc? (y/N): ").strip().lower()
-            if response in ["y", "yes"]:
+            rprint("")
+            if typer.confirm("         Add environment setup to ~/.bashrc?", default=False):
                 try:
                     with open(bashrc_path, "a") as f:
                         f.write("\n# Basler Stereo ace environment (added by mindtrace)\n")
                         f.write(f"{source_line}\n")
-                    self.logger.info("✅ Added to ~/.bashrc")
-                    self.logger.info("   Changes will take effect in new terminal sessions")
+                    rprint("         Added to ~/.bashrc")
                 except Exception as e:
-                    self.logger.error(f"Failed to update ~/.bashrc: {e}")
+                    rprint(f"[red]         Failed to update ~/.bashrc: {e}[/]")
             else:
-                self.logger.info("Skipped ~/.bashrc setup")
-                self.logger.info(f"To add manually: echo '{source_line}' >> ~/.bashrc")
-        else:
-            # Non-interactive mode - just inform user
-            self.logger.info("")
-            self.logger.info("To make environment persistent across sessions:")
-            self.logger.info(f"  echo '{source_line}' >> ~/.bashrc")
+                rprint(f"         To add manually: echo '{source_line}' >> ~/.bashrc")
+
+    def _show_success_message_deb(self) -> None:
+        """Display success message for Debian package installation."""
+        success_text = """[bold green]Installation Complete![/]
+
+[bold]Installed Components:[/]
+  GenTL Producer    - Driver for Stereo ace camera communication
+  StereoViewer      - GUI for 3D visualization
+  Python Samples    - Example code in /opt/pylon/share/pylon/Samples/
+
+[bold]Next Steps:[/]
+  1. Log out and log back in for changes to take effect
+  2. Or run: [cyan]source /opt/pylon/bin/pylon-setup-env.sh /opt/pylon[/]
+  3. Verify: [cyan]echo $GENICAM_GENTL64_PATH[/]"""
+
+        rprint(Panel(success_text, border_style="green"))
+
+    def _show_success_message_tarball(self) -> None:
+        """Display success message for tarball installation."""
+        success_text = f"""[bold green]Installation Complete![/]
+
+[bold]Installed Components:[/]
+  GenTL Producer    - Driver for Stereo ace camera communication
+  StereoViewer      - GUI for 3D visualization
+  Python Samples    - Example code in pylon/share/pylon/Samples/
+
+[bold]Next Steps:[/]
+  1. Run: [cyan]source {self.install_dir}/setup_stereo_env.sh[/]
+  2. Verify: [cyan]echo $GENICAM_GENTL64_PATH[/]
+
+[dim]To make permanent, add to ~/.bashrc:
+  echo 'source {self.install_dir}/setup_stereo_env.sh' >> ~/.bashrc[/]"""
+
+        rprint(Panel(success_text, border_style="green"))
 
     def uninstall(self) -> bool:
         """Uninstall the Stereo ace Supplementary Package.
@@ -421,14 +554,12 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
         try:
             if self.installation_method == "deb":
                 return self._uninstall_debian_package()
-            elif self.installation_method == "tarball":
-                return self._uninstall_tarball()
             else:
-                self.logger.error(f"Unknown installation method: {self.installation_method}")
-                return False
+                return self._uninstall_tarball()
 
         except Exception as e:
-            self.logger.error(f"Uninstallation failed with unexpected error: {e}")
+            self.logger.error(f"Uninstallation failed: {e}")
+            rprint(f"[red]Uninstallation failed: {e}[/]")
             return False
 
     def _uninstall_debian_package(self) -> bool:
@@ -437,15 +568,14 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
         Returns:
             True if uninstallation successful, False otherwise
         """
-        self.logger.info("Uninstalling Stereo ace Debian package")
+        rprint("Uninstalling Stereo ace Debian package...")
 
         try:
-            # Remove package using apt-get
             cmd = ["sudo", "apt-get", "remove", "-y", "pylon-supplementary-package-for-stereo-ace"]
             self.logger.debug(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
 
-            self.logger.info("✅ Stereo ace Supplementary Package uninstalled successfully")
+            rprint("[green]Stereo ace Supplementary Package uninstalled successfully.[/]")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -458,20 +588,19 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
         Returns:
             True if uninstallation successful, False otherwise
         """
-        self.logger.info(f"Uninstalling Stereo ace from {self.install_dir}")
+        rprint(f"Uninstalling Stereo ace from {self.install_dir}...")
 
         if not self.install_dir.exists():
-            self.logger.warning(f"Installation directory not found: {self.install_dir}")
+            rprint(f"[yellow]Installation directory not found: {self.install_dir}[/]")
             return True
 
         try:
-            # Remove installation directory
             shutil.rmtree(self.install_dir)
-            self.logger.info(f"Removed {self.install_dir}")
+            rprint(f"         Removed {self.install_dir}")
 
-            self.logger.info("✅ Stereo ace Supplementary Package uninstalled successfully")
-            self.logger.info("")
-            self.logger.info("Don't forget to remove the environment setup from ~/.bashrc if you added it")
+            rprint("[green]Stereo ace Supplementary Package uninstalled successfully.[/]")
+            rprint("")
+            rprint("[dim]Don't forget to remove the environment setup from ~/.bashrc if you added it.[/]")
             return True
 
         except Exception as e:
@@ -479,144 +608,105 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
             return False
 
 
-def install_stereo_ace() -> None:
-    """CLI entry point for installation."""
-    # Parse arguments for install mode
-    parser = argparse.ArgumentParser(
-        description="Install the Basler Stereo ace Supplementary Package",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Automatic download from GitHub (default)
-    %(prog)s
+@app.command()
+def install(
+    method: str = typer.Option(
+        "tarball",
+        "--method", "-m",
+        help="Installation method: 'deb' (requires sudo) or 'tarball' (portable)",
+    ),
+    package: Optional[Path] = typer.Option(
+        None,
+        "--package", "-p",
+        help="Path to pre-downloaded package file (.deb or .tar.gz)",
+        exists=True,
+        dir_okay=False,
+    ),
+    install_dir: Optional[Path] = typer.Option(
+        None,
+        "--install-dir", "-d",
+        help="Custom installation directory (for tarball method)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Install the Basler Stereo ace Supplementary Package using an interactive wizard.
 
-    # Custom installation directory
-    %(prog)s --install-dir ~/my_stereo
+    The wizard will guide you through downloading and installing the package
+    from Basler's official website where you'll accept their EULA.
 
-    # Use Debian package
-    %(prog)s --method deb
+    Methods:
+      deb     - Debian package, requires sudo, installs system-wide
+      tarball - tar.gz archive, no sudo, installs to user directory
 
-    # Install from local package file
-    %(prog)s --package /path/to/pylon-supplementary-package-for-stereo-ace-1.0.3-Linux_x86_64_setup.tar.gz
+    For CI/automation, use --package to provide a pre-downloaded file.
+    """
+    # Validate method
+    if method not in ("deb", "tarball"):
+        raise typer.BadParameter(f"Invalid method: {method}. Must be 'deb' or 'tarball'.")
 
-Download packages from:
-    Debian: https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-debian/
-    tar.gz: https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-setup-tar-gz/
-        """,
-    )
-    parser.add_argument(
-        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
-    )
-    parser.add_argument("--package", help="Path to downloaded package file (.deb or .tar.gz)")
-    parser.add_argument(
-        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    try:
+        installer = StereoAceInstaller(
+            installation_method=method,
+            install_dir=str(install_dir) if install_dir else None,
+            package_path=str(package) if package else None,
+        )
+    except RuntimeError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
-    args = parser.parse_args()
-
-    # Create installer
-    installer = StereoAceInstaller(
-        installation_method=args.method,
-        install_dir=args.install_dir,
-        package_path=args.package,
-    )
-
-    # Configure logging
-    if args.verbose:
+    if verbose:
         installer.logger.setLevel(logging.DEBUG)
 
-    # Install
     success = installer.install()
-    sys.exit(0 if success else 1)
+    raise typer.Exit(code=0 if success else 1)
 
 
-def uninstall_stereo_ace() -> None:
-    """CLI entry point for uninstallation."""
-    # Parse arguments for uninstall mode
-    parser = argparse.ArgumentParser(
-        description="Uninstall the Basler Stereo ace Supplementary Package",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
-    )
-    parser.add_argument(
-        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+@app.command()
+def uninstall(
+    method: str = typer.Option(
+        "tarball",
+        "--method", "-m",
+        help="Installation method used: 'deb' or 'tarball'",
+    ),
+    install_dir: Optional[Path] = typer.Option(
+        None,
+        "--install-dir", "-d",
+        help="Custom installation directory (for tarball method)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Uninstall the Basler Stereo ace Supplementary Package."""
+    # Validate method
+    if method not in ("deb", "tarball"):
+        raise typer.BadParameter(f"Invalid method: {method}. Must be 'deb' or 'tarball'.")
 
-    args = parser.parse_args()
+    try:
+        installer = StereoAceInstaller(
+            installation_method=method,
+            install_dir=str(install_dir) if install_dir else None,
+        )
+    except RuntimeError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
-    # Create installer
-    installer = StereoAceInstaller(
-        installation_method=args.method,
-        install_dir=args.install_dir,
-    )
-
-    # Configure logging
-    if args.verbose:
+    if verbose:
         installer.logger.setLevel(logging.DEBUG)
 
-    # Uninstall
     success = installer.uninstall()
-    sys.exit(0 if success else 1)
+    raise typer.Exit(code=0 if success else 1)
 
 
 def main() -> None:
     """Main entry point for the script."""
-    parser = argparse.ArgumentParser(
-        description="Install or uninstall the Basler Stereo ace Supplementary Package",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Debian package installation (requires sudo)
-    %(prog)s --method deb --package pylon-supplementary-package-for-stereo-ace-1.0.3_amd64.deb
-
-    # tar.gz archive installation (no sudo, custom directory)
-    %(prog)s --method tarball --package pylon-supplementary-package-for-stereo-ace-1.0.3_x86_64_setup.tar.gz
-    %(prog)s --method tarball --package stereo.tar.gz --install-dir ~/basler_stereo
-
-    # Uninstall
-    %(prog)s --uninstall --method tarball --install-dir ~/basler_stereo
-
-Download packages from:
-    Debian: https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-debian/
-    tar.gz: https://www.baslerweb.com/en/downloads/software-downloads/pylon-supplementary-package-for-stereo-ace-1-0-3-linux-x86-64-setup-tar-gz/
-        """,
-    )
-
-    parser.add_argument(
-        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
-    )
-    parser.add_argument("--package", help="Path to downloaded package file (.deb or .tar.gz)")
-    parser.add_argument(
-        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Uninstall instead of install")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-
-    args = parser.parse_args()
-
-    # Create installer
-    installer = StereoAceInstaller(
-        installation_method=args.method,
-        install_dir=args.install_dir,
-        package_path=args.package,
-    )
-
-    # Configure logging
-    if args.verbose:
-        installer.logger.setLevel(logging.DEBUG)
-        installer.logger.debug("Verbose logging enabled")
-
-    # Perform action
-    if args.uninstall:
-        success = installer.uninstall()
-    else:
-        success = installer.install()
-
-    sys.exit(0 if success else 1)
+    app()
 
 
 if __name__ == "__main__":

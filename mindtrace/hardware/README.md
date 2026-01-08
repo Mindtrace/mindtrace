@@ -56,20 +56,20 @@ mindtrace-hw stop
 
 [**→ See CLI Documentation**](mindtrace/hardware/cli/README.md) for comprehensive usage examples, configuration options, and troubleshooting guides.
 
-**Additional Setup Commands:**
+**SDK Setup Commands:**
 ```bash
-# Camera backend setup (2D cameras)
-# Note: Basler SDK operations require sudo on Linux, admin privileges on Windows
-uv run mindtrace-camera-basler-install       # Install Basler Pylon SDK (Linux/Windows)
-sudo uv run mindtrace-camera-basler-uninstall  # Uninstall Basler SDK (Linux - requires sudo)
-uv run mindtrace-camera-genicam-install      # Install GenICam CTI files
-uv run mindtrace-camera-genicam-uninstall    # Uninstall GenICam SDK
-uv run mindtrace-camera-genicam-verify       # Verify GenICam installation
+# Basler 2D cameras - Pylon Viewer & IP Configurator (optional)
+mindtrace-camera-basler install       # Guided wizard for Pylon SDK tools
+mindtrace-camera-basler uninstall
 
-# Stereo camera setup (3D/depth cameras - Linux only)
-# Note: Stereo ace uses tarball installation (no sudo required)
-uv run mindtrace-stereo-basler-install       # Install Stereo ace package
-uv run mindtrace-stereo-basler-uninstall     # Uninstall Stereo ace package
+# GenICam cameras - CTI files (required for camera discovery)
+mindtrace-camera-genicam install      # Install Matrix Vision GenTL Producer
+mindtrace-camera-genicam verify       # Verify CTI installation
+mindtrace-camera-genicam uninstall
+
+# Stereo 3D cameras - Supplementary Package (required for 3D vision)
+mindtrace-stereo-basler install       # Guided wizard for stereo libraries
+mindtrace-stereo-basler uninstall
 ```
 
 ### Camera Configurator App
@@ -206,17 +206,31 @@ git clone https://github.com/Mindtrace/mindtrace.git
 cd mindtrace
 uv sync --extra cameras-all
 
-# Setup camera backends (interactive)
-uv run mindtrace-camera-setup
-
-# Or setup specific backends
-uv run mindtrace-camera-basler-install    # Basler Pylon SDK (Linux/Windows - requires sudo/admin)
-uv run mindtrace-camera-genicam-install   # GenICam cameras (no sudo required)
-
 # For stereo cameras (3D/depth)
 uv sync --extra stereo-all
-uv run mindtrace-stereo-basler-install    # Stereo ace (Linux only - no sudo required)
 ```
+
+### SDK Requirements by Camera Type
+
+| Camera Type | Python Package | External SDK | Why? |
+|-------------|---------------|--------------|------|
+| **Basler 2D** | `pypylon` | Optional | pypylon is self-contained for camera operations. Install Pylon SDK only if you need the Viewer or IP Configurator tools for diagnostics. |
+| **GenICam** | `harvesters` | **Required** | Harvesters needs GenTL Producer (.cti files) to discover and communicate with cameras. The Matrix Vision SDK provides this. |
+| **Stereo ace** | `pypylon` | **Required** | 3D vision requires the Basler Stereo ace Supplementary Package for rectification, disparity, and point cloud libraries. |
+
+**SDK Setup (when needed):**
+```bash
+# Basler 2D: Only if you need Pylon Viewer / IP Configurator
+mindtrace-camera-basler install
+
+# GenICam: Required for camera discovery
+mindtrace-camera-genicam install
+
+# Stereo ace: Required for 3D vision capabilities
+mindtrace-stereo-basler install
+```
+
+Each setup command launches a guided wizard that opens your browser to the vendor's official download page, where you accept the EULA and download the package. The wizard then handles installation from your downloaded file.
 
 ---
 
@@ -354,11 +368,13 @@ The GenICam backend provides support for GenICam-compliant industrial cameras th
 # Install with GenICam support
 uv sync --extra cameras-genicam
 
-# Setup GenICam CTI files (Matrix Vision SDK)
-uv run mindtrace-camera-genicam-install
+# Setup GenICam CTI files (required - Matrix Vision SDK)
+# This is necessary because Harvesters requires GenTL Producer files
+# to discover and communicate with GenICam-compliant cameras
+mindtrace-camera-genicam install
 
 # Verify installation
-uv run mindtrace-camera-genicam-verify
+mindtrace-camera-genicam verify
 ```
 
 **Usage:**
@@ -397,6 +413,8 @@ The GenICam backend automatically detects the CTI file location using this prior
 3. Alternative common paths in `/usr/lib`, `/usr/local/lib`, and user home directory
 
 ### Basler Backend Features
+
+> **Note:** The `pypylon` package is fully self-contained for camera operations. No external SDK installation is required to capture images, configure cameras, or use the Basler backend. The optional Pylon SDK (`mindtrace-camera-basler install`) provides GUI tools like Pylon Viewer and IP Configurator for camera diagnostics and network configuration.
 
 **Multicast Streaming:**
 - IP-based camera discovery for targeted multicast setup
@@ -673,8 +691,10 @@ curl -X POST http://localhost:8004/cameras/capture/point-cloud \
 # Install with stereo camera support
 uv sync --extra stereo-all
 
-# Setup Basler stereo ace SDK (Linux only)
-uv run mindtrace-stereo-basler-install
+# Setup Basler Stereo ace Supplementary Package (required - Linux only)
+# This provides the 3D vision libraries for rectification, disparity
+# computation, and point cloud generation that pypylon alone doesn't include
+mindtrace-stereo-basler install
 
 # Verify installation
 python -c "from pypylon import pylon; print('Stereo SDK ready')"

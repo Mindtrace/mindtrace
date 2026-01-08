@@ -28,7 +28,6 @@ Usage:
     mindtrace-camera-genicam-verify             # Console script (verify)
 """
 
-import argparse
 import ctypes
 import logging
 import os
@@ -39,8 +38,18 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import typer
+
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.core.config import get_hardware_config
+
+# Typer app instance
+app = typer.Typer(
+    name="genicam-setup",
+    help="Install or manage Matrix Vision GenICam CTI files",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
 
 
 class GenICamCTIInstaller(Mindtrace):
@@ -538,23 +547,6 @@ def uninstall_genicam_cti() -> bool:
     return installer.uninstall()
 
 
-def uninstall_main() -> None:
-    """CLI entry point for uninstallation."""
-    installer = GenICamCTIInstaller()
-
-    # Configure basic logging for CLI output
-    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler(sys.stdout)])
-
-    success = installer.uninstall()
-
-    if success:
-        print("✓ Matrix Vision Impact Acquire SDK uninstalled successfully")
-        sys.exit(0)
-    else:
-        print("✗ Matrix Vision Impact Acquire SDK uninstallation failed")
-        sys.exit(1)
-
-
 def verify_genicam_cti() -> bool:
     """Verify the Matrix Vision CTI installation.
 
@@ -565,71 +557,84 @@ def verify_genicam_cti() -> bool:
     return installer.verify_installation()
 
 
-def verify_main() -> None:
-    """CLI entry point for CTI verification."""
+@app.command()
+def install(
+    version: str = typer.Option(
+        "latest",
+        "--version",
+        help="SDK release version to install",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Install the Matrix Vision Impact Acquire SDK and CTI files.
+
+    Downloads and installs the SDK from the official Balluff/Matrix Vision servers.
+    The CTI files are required for GenICam camera communication via Harvesters.
+    """
+    installer = GenICamCTIInstaller(version)
+
+    if verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    success = installer.install()
+    raise typer.Exit(code=0 if success else 1)
+
+
+@app.command()
+def uninstall(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Uninstall the Matrix Vision Impact Acquire SDK."""
     installer = GenICamCTIInstaller()
 
-    # Configure basic logging for CLI output
-    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler(sys.stdout)])
+    if verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    success = installer.uninstall()
+
+    if success:
+        typer.echo("✓ Matrix Vision Impact Acquire SDK uninstalled successfully")
+    else:
+        typer.echo("✗ Matrix Vision Impact Acquire SDK uninstallation failed", err=True)
+
+    raise typer.Exit(code=0 if success else 1)
+
+
+@app.command()
+def verify(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Verify that CTI files are properly installed."""
+    installer = GenICamCTIInstaller()
+
+    if verbose:
+        installer.logger.setLevel(logging.DEBUG)
 
     success = installer.verify_installation()
 
     if success:
-        print("✓ Matrix Vision CTI verification successful")
-        sys.exit(0)
+        typer.echo("✓ Matrix Vision CTI verification successful")
     else:
-        print("✗ Matrix Vision CTI verification failed")
-        sys.exit(1)
+        typer.echo("✗ Matrix Vision CTI verification failed", err=True)
+
+    raise typer.Exit(code=0 if success else 1)
 
 
 def main() -> None:
     """Main entry point for the script."""
-    parser = argparse.ArgumentParser(
-        description="Install or manage Matrix Vision GenICam CTI files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    %(prog)s                    # Install Impact Acquire SDK and CTI files
-    %(prog)s --uninstall        # Uninstall Impact Acquire SDK
-    %(prog)s --verify           # Verify CTI installation
-    
-CTI File Locations:
-    Linux:   /opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti
-    Windows: C:\\\\Program Files\\\\MATRIX VISION\\\\mvIMPACT Acquire\\\\bin\\\\x64\\\\mvGenTLProducer.cti
-    macOS:   /Applications/mvIMPACT_Acquire.app/Contents/Libraries/x86_64/mvGenTLProducer.cti
-
-For more information, visit: https://www.matrix-vision.com/
-        """,
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Uninstall the Impact Acquire SDK")
-    parser.add_argument("--verify", action="store_true", help="Verify CTI installation only")
-    parser.add_argument("--version", default="latest", help="SDK release version to install (default: latest)")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-
-    args = parser.parse_args()
-
-    # Create installer to access logger
-    installer = GenICamCTIInstaller(args.version)
-
-    # Configure logging level
-    if args.verbose:
-        installer.logger.setLevel(logging.DEBUG)
-        installer.logger.debug("Verbose logging enabled")
-
-    # Perform the requested action
-    if args.verify:
-        success = installer.verify_installation()
-        if success:
-            installer.logger.info("✓ CTI verification successful")
-        else:
-            installer.logger.error("✗ CTI verification failed")
-    elif args.uninstall:
-        success = installer.uninstall()
-    else:
-        success = installer.install()
-
-    # Exit with appropriate code
-    sys.exit(0 if success else 1)
+    app()
 
 
 if __name__ == "__main__":
