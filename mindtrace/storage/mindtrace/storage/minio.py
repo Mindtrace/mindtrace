@@ -5,14 +5,18 @@ import os
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
-from minio import Minio
-from minio.error import S3Error
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from .base import FileResult, StorageHandler, StringResult
 
 
 class MinioStorageHandler(StorageHandler):
-    """A thin wrapper around Minio SDK APIs for S3-compatible storage."""
+    """A thin wrapper around boto3 S3 APIs for S3-compatible storage (Minio, AWS S3, etc.).
+
+    Uses boto3 instead of the minio SDK to get conditional write support via IfNoneMatch.
+    """
 
     def __init__(
         self,
@@ -38,31 +42,40 @@ class MinioStorageHandler(StorageHandler):
             create_if_missing: If True, create the bucket if it does not exist.
             region: Optional region for bucket creation.
         """
-        self.client = Minio(
-            endpoint=endpoint,
-            access_key=access_key,
-            secret_key=secret_key,
-            secure=secure,
-            region=region,
+        protocol = "https" if secure else "http"
+        endpoint_url = f"{protocol}://{endpoint}"
+
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=region or "us-east-1",
+            config=Config(signature_version="s3v4"),
         )
         self.bucket_name = bucket_name
         self.endpoint = endpoint
         self.secure = secure
+        self._region = region or "us-east-1" # minio doesnt care
 
         if ensure_bucket:
             self._ensure_bucket(create_if_missing)
 
     def _ensure_bucket(self, create: bool) -> None:
         """Ensure the bucket exists, creating it if necessary."""
-        if self.client.bucket_exists(self.bucket_name):
-            return
-        if not create:
-            raise FileNotFoundError(f"Bucket {self.bucket_name!r} not found")
-        self.client.make_bucket(self.bucket_name)
+        try:
+            self.client.head_bucket(Bucket=self.bucket_name)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchBucket"):
+                if not create:
+                    raise FileNotFoundError(f"Bucket {self.bucket_name!r} not found")
+                self.client.create_bucket(Bucket=self.bucket_name)
+            else:
+                raise
 
     def _full_path(self, remote_path: str) -> str:
         """Return the full S3 URI for a remote path."""
-        protocol = "https" if self.secure else "http"
         return f"s3://{self.bucket_name}/{remote_path}"
 
     # ------------------------------------------------------------------
@@ -82,7 +95,7 @@ class MinioStorageHandler(StorageHandler):
             remote_path: Path in the bucket to upload to.
             metadata: Optional metadata to associate with the object.
             fail_if_exists: If True, return "already_exists" status if object exists.
-                Uses S3 If-None-Match header for atomic create-only semantics.
+                Uses S3 IfNoneMatch='*' for atomic create-only semantics.
 
         Returns:
             FileResult with status "ok", "already_exists", or "error".
@@ -90,29 +103,28 @@ class MinioStorageHandler(StorageHandler):
         full_path = self._full_path(remote_path)
 
         try:
-            # Read file content for put_object (fput_object doesn't support headers)
             with open(local_path, "rb") as f:
                 data = f.read()
 
-            data_io = io.BytesIO(data)
-            # Use If-None-Match: * for atomic create-only (server rejects if exists)
-            headers = {"If-None-Match": "*"} if fail_if_exists else None
+            put_kwargs: Dict[str, Any] = {
+                "Bucket": self.bucket_name,
+                "Key": remote_path,
+                "Body": data,
+            }
+            if metadata:
+                put_kwargs["Metadata"] = metadata
+            if fail_if_exists:
+                put_kwargs["IfNoneMatch"] = "*"
 
-            self.client.put_object(
-                self.bucket_name,
-                remote_path,
-                data_io,
-                len(data),
-                metadata=metadata,
-                headers=headers,
-            )
+            self.client.put_object(**put_kwargs)
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
                 status="ok",
             )
-        except S3Error as e:
-            if e.code == "PreconditionFailed":
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 return FileResult(
                     local_path=local_path,
                     remote_path=full_path,
@@ -159,14 +171,15 @@ class MinioStorageHandler(StorageHandler):
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
 
         try:
-            self.client.fget_object(self.bucket_name, remote_path, local_path)
+            self.client.download_file(self.bucket_name, remote_path, local_path)
             return FileResult(
                 local_path=local_path,
                 remote_path=full_path,
                 status="ok",
             )
-        except S3Error as e:
-            if e.code == "NoSuchKey":
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
                 return FileResult(
                     local_path=local_path,
                     remote_path=full_path,
@@ -196,12 +209,8 @@ class MinioStorageHandler(StorageHandler):
         Args:
             remote_path: Path in the bucket to delete.
         """
-        try:
-            self.client.remove_object(self.bucket_name, remote_path)
-        except S3Error as e:
-            if e.code != "NoSuchKey":
-                raise
-            # Idempotent delete - ignore if not found
+        # S3 delete is idempotent - doesn't error if object doesn't exist
+        self.client.delete_object(Bucket=self.bucket_name, Key=remote_path)
 
     # ------------------------------------------------------------------
     # String Operations (no temp files)
@@ -221,7 +230,7 @@ class MinioStorageHandler(StorageHandler):
             remote_path: Path in the bucket to upload to.
             content_type: MIME type of the content.
             fail_if_exists: If True, fail if the object already exists.
-            if_generation_match: If 0, uses If-None-Match header for atomic create-only.
+            if_generation_match: If 0, uses IfNoneMatch='*' for atomic create-only.
                 This matches GCS semantics where generation=0 means "only if not exists".
 
         Returns:
@@ -232,23 +241,24 @@ class MinioStorageHandler(StorageHandler):
         # Convert string to bytes if needed
         data = content.encode("utf-8") if isinstance(content, str) else content
 
-        # Use If-None-Match: * for atomic create-only (matches GCS if_generation_match=0)
+        # Use IfNoneMatch='*' for atomic create-only (matches GCS if_generation_match=0)
         should_fail_if_exists = fail_if_exists or if_generation_match == 0
-        headers = {"If-None-Match": "*"} if should_fail_if_exists else None
 
         try:
-            data_io = io.BytesIO(data)
-            self.client.put_object(
-                self.bucket_name,
-                remote_path,
-                data_io,
-                len(data),
-                content_type=content_type,
-                headers=headers,
-            )
+            put_kwargs: Dict[str, Any] = {
+                "Bucket": self.bucket_name,
+                "Key": remote_path,
+                "Body": data,
+                "ContentType": content_type,
+            }
+            if should_fail_if_exists:
+                put_kwargs["IfNoneMatch"] = "*"
+
+            self.client.put_object(**put_kwargs)
             return StringResult(remote_path=full_path, status="ok")
-        except S3Error as e:
-            if e.code == "PreconditionFailed":
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 return StringResult(
                     remote_path=full_path,
                     status="already_exists",
@@ -283,17 +293,16 @@ class MinioStorageHandler(StorageHandler):
         full_path = self._full_path(remote_path)
 
         try:
-            response = self.client.get_object(self.bucket_name, remote_path)
-            content = response.data
-            response.close()
-            response.release_conn()
+            response = self.client.get_object(Bucket=self.bucket_name, Key=remote_path)
+            content = response["Body"].read()
             return StringResult(
                 remote_path=full_path,
                 status="ok",
                 content=content,
             )
-        except S3Error as e:
-            if e.code == "NoSuchKey":
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
                 return StringResult(
                     remote_path=full_path,
                     status="not_found",
@@ -333,11 +342,19 @@ class MinioStorageHandler(StorageHandler):
             List of object names (paths) in the bucket.
         """
         objects = []
-        for obj in self.client.list_objects(self.bucket_name, prefix=prefix, recursive=True):
-            if obj.object_name and not obj.object_name.endswith("/"):
-                objects.append(obj.object_name)
-                if max_results and len(objects) >= max_results:
-                    break
+        paginator = self.client.get_paginator("list_objects_v2")
+
+        page_config = {"Bucket": self.bucket_name, "Prefix": prefix}
+        if max_results:
+            page_config["PaginationConfig"] = {"MaxItems": max_results}
+
+        for page in paginator.paginate(**page_config):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith("/"):
+                    objects.append(key)
+                    if max_results and len(objects) >= max_results:
+                        return objects
         return objects
 
     def exists(self, remote_path: str) -> bool:
@@ -350,10 +367,11 @@ class MinioStorageHandler(StorageHandler):
             True if the object exists, False otherwise.
         """
         try:
-            self.client.stat_object(self.bucket_name, remote_path)
+            self.client.head_object(Bucket=self.bucket_name, Key=remote_path)
             return True
-        except S3Error as e:
-            if e.code == "NoSuchKey":
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
                 return False
             raise
 
@@ -375,16 +393,16 @@ class MinioStorageHandler(StorageHandler):
             A presigned URL string.
         """
         if method.upper() == "GET":
-            return self.client.presigned_get_object(
-                self.bucket_name,
-                remote_path,
-                expires=timedelta(minutes=expiration_minutes),
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                ExpiresIn=expiration_minutes * 60,
             )
         elif method.upper() == "PUT":
-            return self.client.presigned_put_object(
-                self.bucket_name,
-                remote_path,
-                expires=timedelta(minutes=expiration_minutes),
+            return self.client.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                ExpiresIn=expiration_minutes * 60,
             )
         else:
             raise ValueError(f"Unsupported method: {method}. Use 'GET' or 'PUT'.")
@@ -398,13 +416,13 @@ class MinioStorageHandler(StorageHandler):
         Returns:
             Dictionary of metadata for the object.
         """
-        stat = self.client.stat_object(self.bucket_name, remote_path)
+        response = self.client.head_object(Bucket=self.bucket_name, Key=remote_path)
         return {
-            "name": stat.object_name,
-            "size": stat.size,
-            "content_type": stat.content_type,
-            "created": stat.last_modified.isoformat() if stat.last_modified else None,
-            "updated": stat.last_modified.isoformat() if stat.last_modified else None,
-            "etag": stat.etag,
-            "metadata": dict(stat.metadata or {}),
+            "name": remote_path,
+            "size": response.get("ContentLength"),
+            "content_type": response.get("ContentType"),
+            "created": response.get("LastModified").isoformat() if response.get("LastModified") else None,
+            "updated": response.get("LastModified").isoformat() if response.get("LastModified") else None,
+            "etag": response.get("ETag", "").strip('"'),
+            "metadata": response.get("Metadata", {}),
         }

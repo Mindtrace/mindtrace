@@ -102,8 +102,10 @@ class MinioRegistryBackend(RegistryBackend):
         """
         super().__init__(uri=uri, **kwargs)
         self._prefix = prefix.strip("/") if prefix else ""
-        self._uri = Path(uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
-        self._uri.mkdir(parents=True, exist_ok=True)
+        # URI includes bucket and prefix for unique cache directory per backend
+        self._uri = Path(uri or f"s3://{bucket}/{self._prefix}".rstrip("/"))
+        # Local temp directory for materializing objects
+
         self._metadata_path = self._prefixed("registry_metadata.json")
         self._max_workers = max_workers
         self._bucket = bucket
@@ -354,7 +356,7 @@ class MinioRegistryBackend(RegistryBackend):
                     if on_conflict == "skip":
                         return OpResult.skipped(obj_name, obj_version)
                     else:
-                        return OpResult.error_result(
+                        return OpResult.failed(
                             obj_name,
                             obj_version,
                             RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
@@ -365,7 +367,7 @@ class MinioRegistryBackend(RegistryBackend):
                     uploaded = [r.remote_path for r in batch_result.results if r.status == "ok"]
                     if uploaded:
                         self.storage.delete_batch(uploaded)
-                    return OpResult.error_result(
+                    return OpResult.failed(
                         obj_name,
                         obj_version,
                         RuntimeError(f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}"),
@@ -383,7 +385,7 @@ class MinioRegistryBackend(RegistryBackend):
                 if on_conflict == "skip":
                     return OpResult.skipped(obj_name, obj_version)
                 else:
-                    return OpResult.error_result(
+                    return OpResult.failed(
                         obj_name,
                         obj_version,
                         RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
@@ -393,7 +395,7 @@ class MinioRegistryBackend(RegistryBackend):
                 uploaded = [remote for _, remote in files]
                 if uploaded:
                     self.storage.delete_batch(uploaded)
-                return OpResult.error_result(
+                return OpResult.failed(
                     obj_name,
                     obj_version,
                     RuntimeError(meta_result.error_message or "Metadata write failed"),
@@ -404,7 +406,7 @@ class MinioRegistryBackend(RegistryBackend):
                 return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
-            return OpResult.error_result(obj_name, obj_version, e)
+            return OpResult.failed(obj_name, obj_version, e)
 
     def push(
         self,
@@ -446,7 +448,7 @@ class MinioRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -488,7 +490,7 @@ class MinioRegistryBackend(RegistryBackend):
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
-                        OpResult.error_result(
+                        OpResult.failed(
                             obj_name,
                             obj_version,
                             LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
@@ -566,7 +568,7 @@ class MinioRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.error_result() on failure
+            - OpResult.failed() on failure
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -632,7 +634,7 @@ class MinioRegistryBackend(RegistryBackend):
                 objects_with_errors.add((obj_name, obj_version))
                 if on_error == "raise":
                     raise
-                results.add(OpResult.error_result(obj_name, obj_version, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         # Batch download all files
         if all_files_to_download:
@@ -649,7 +651,7 @@ class MinioRegistryBackend(RegistryBackend):
                                 f"Failed to download {file_result.remote_path}: {file_result.error_message}"
                             )
                         results.add(
-                            OpResult.error_result(
+                            OpResult.failed(
                                 obj_key[0],
                                 obj_key[1],
                                 error=file_result.error_type or "DownloadError",
@@ -691,7 +693,7 @@ class MinioRegistryBackend(RegistryBackend):
             return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
-            return OpResult.error_result(obj_name, obj_version, e)
+            return OpResult.failed(obj_name, obj_version, e)
 
     def delete(
         self,
@@ -740,7 +742,7 @@ class MinioRegistryBackend(RegistryBackend):
                         raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
-                        OpResult.error_result(
+                        OpResult.failed(
                             obj_name,
                             obj_version,
                             LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
@@ -882,7 +884,7 @@ class MinioRegistryBackend(RegistryBackend):
                     if on_error == "raise":
                         raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
-                    results.add(OpResult.error_result(obj_name, obj_version, e))
+                    results.add(OpResult.failed(obj_name, obj_version, e))
 
             for file_result in batch_result.failed_results:
                 if file_result.local_path not in temp_to_key:
@@ -893,7 +895,7 @@ class MinioRegistryBackend(RegistryBackend):
                 if on_error == "raise":
                     raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
                 results.add(
-                    OpResult.error_result(
+                    OpResult.failed(
                         obj_name,
                         obj_version,
                         error=file_result.error_type or "DownloadError",
@@ -940,7 +942,7 @@ class MinioRegistryBackend(RegistryBackend):
                 if on_error == "raise":
                     raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
-                    OpResult.error_result(
+                    OpResult.failed(
                         obj_name,
                         obj_version,
                         error=file_result.error_type or "DeleteError",
