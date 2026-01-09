@@ -334,12 +334,8 @@ class GCPRegistryBackend(RegistryBackend):
                     if uploaded:
                         self.gcs.delete_batch(uploaded)
 
-                    # Return failed result - caller decides whether to raise
-                    return OpResult.failed(
-                        obj_name,
-                        obj_version,
-                        RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                    )
+                    # Return skipped result - conflict with on_conflict="skip"
+                    return OpResult.skipped(obj_name, obj_version)
 
                 if error_files:
                     # Rollback any successful uploads
@@ -361,12 +357,8 @@ class GCPRegistryBackend(RegistryBackend):
                 if uploaded:
                     self.gcs.delete_batch(uploaded)
 
-                # Return failed result - caller decides whether to raise
-                return OpResult.failed(
-                    obj_name,
-                    obj_version,
-                    RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                )
+                # Return skipped result - conflict with on_conflict="skip"
+                return OpResult.skipped(obj_name, obj_version)
             elif meta_result.status == Status.ERROR:
                 # Rollback uploaded files
                 uploaded = [remote for _, remote in files]
@@ -487,8 +479,9 @@ class GCPRegistryBackend(RegistryBackend):
             # Limit file-level parallelism
             file_workers = min(2, workers)
 
-            # Determine fail_if_exists based on lock and conflict settings
-            fail_if_exists = not acquire_lock  # acquire_lock==mutable.
+            # Determine fail_if_exists based on on_conflict setting
+            # on_conflict="skip" needs conflict detection, "overwrite" doesn't
+            fail_if_exists = on_conflict == OnConflict.SKIP
 
             # Prepare tasks for objects that haven't failed lock acquisition
             push_tasks = [
@@ -505,8 +498,8 @@ class GCPRegistryBackend(RegistryBackend):
             if is_single and push_tasks:
                 result = push_one(push_tasks[0])
                 results.add(result)
-                if result.is_skipped or (result.is_error and result.error == "RegistryVersionConflict"):
-                    raise RegistryVersionConflict(result.message or f"Object {names[0]}@{versions[0]} already exists")
+                if result.is_skipped:
+                    raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
                 elif result.is_error:
                     raise RuntimeError(result.message or "Unknown error")
             else:
@@ -868,12 +861,8 @@ class GCPRegistryBackend(RegistryBackend):
             elif result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             elif result.status == Status.ALREADY_EXISTS:
-                # Return failed result - caller (is_single logic) decides whether to raise
-                return OpResult.failed(
-                    obj_name,
-                    obj_version,
-                    RegistryVersionConflict(result.error_message or f"Object {obj_name}@{obj_version} already exists"),
-                )
+                # Return skipped result - conflict with on_conflict="skip"
+                return OpResult.skipped(obj_name, obj_version)
             else:
                 return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
 
@@ -882,12 +871,11 @@ class GCPRegistryBackend(RegistryBackend):
         if is_single:
             op_result = save_one((names[0], versions[0], metadatas[0]))
             results.add(op_result)
-            # Single ops raise on error
-            if op_result.is_error:
-                if op_result.error == "RegistryVersionConflict":
-                    raise RegistryVersionConflict(op_result.message or "Version conflict")
-                else:
-                    raise RuntimeError(op_result.message or "Unknown error")
+            # Single ops raise on error or conflict
+            if op_result.is_skipped:
+                raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
+            elif op_result.is_error:
+                raise RuntimeError(op_result.message or "Unknown error")
         else:
             # Batch ops return results without raising
             with ThreadPoolExecutor(max_workers=4) as executor:
