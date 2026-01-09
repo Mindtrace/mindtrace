@@ -397,7 +397,7 @@ def test_push_on_conflict_skip_single(backend, sample_object_dir):
 
 
 def test_push_on_conflict_skip_batch(backend, sample_object_dir, temp_dir):
-    """Test push with on_conflict='skip' for batch items returns error result."""
+    """Test push with on_conflict='skip' for batch items returns skipped result."""
     # Push the object initially
     result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
     assert result[("test:object", "1.0.0")].ok
@@ -407,7 +407,7 @@ def test_push_on_conflict_skip_batch(backend, sample_object_dir, temp_dir):
     sample_object_dir2.mkdir()
     (sample_object_dir2 / "file1.txt").write_text("content1")
 
-    # Batch push with skip - existing item should return error result (not raise)
+    # Batch push with skip - existing item should return skipped result (not raise)
     result = backend.push(
         ["test:object", "test:object2"],
         ["1.0.0", "1.0.0"],
@@ -415,8 +415,8 @@ def test_push_on_conflict_skip_batch(backend, sample_object_dir, temp_dir):
         [{"updated": True}, {"name": "test:object2"}],
         on_conflict="skip",
     )
-    # First item (existing) should have error
-    assert result[("test:object", "1.0.0")].is_error
+    # First item (existing) should be skipped
+    assert result[("test:object", "1.0.0")].is_skipped
 
     # Second item (new) should succeed
     assert result[("test:object2", "1.0.0")].ok
