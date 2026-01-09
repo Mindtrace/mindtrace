@@ -303,7 +303,7 @@ def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, t
     (sample_object_dir2 / "file2.txt").write_text("content2")
     sample_metadata2 = {**sample_metadata, "name": "test:object2"}
 
-    # Batch push with skip - existing item should return error result (not raise)
+    # Batch push with skip - existing item should return skipped result (not raise)
     results = backend.push(
         ["test:object", "test:object2"],
         ["1.0.0", "1.0.0"],
@@ -311,9 +311,9 @@ def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, t
         [sample_metadata, sample_metadata2],
         on_conflict="skip",
     )
-    # First item (existing) should be failed (conflict)
+    # First item (existing) should be skipped (conflict)
     result1 = results.get(("test:object", "1.0.0"))
-    assert result1.is_error  # Returns error (not raises) in batch mode
+    assert result1.is_skipped  # Returns skipped (not raises) in batch mode
 
     # Second item (new) should succeed
     result2 = results.get(("test:object2", "1.0.0"))

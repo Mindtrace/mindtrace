@@ -421,8 +421,11 @@ class LocalRegistryBackend(RegistryBackend):
                             meta_path.unlink(missing_ok=True)
                             is_overwrite = True
                         else:
-                            # on_conflict == "skip" - raise for single, return result for batch
-                            raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+                            # on_conflict == "skip" - raise for single, return skipped for batch
+                            if is_single:
+                                raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+                            results.add(OpResult.skipped(obj_name, resolved_version))
+                            continue
 
                     try:
                         # 1. Copy artifacts
@@ -668,16 +671,10 @@ class LocalRegistryBackend(RegistryBackend):
                         yaml.safe_dump(obj_meta, f)
                     results.add(OpResult.overwritten(obj_name, obj_version))
                 else:
-                    # on_conflict == "skip" - raise for single, return failed for batch
+                    # on_conflict == "skip" - raise for single, return skipped for batch
                     if is_single:
                         raise RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists.")
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists."),
-                        )
-                    )
+                    results.add(OpResult.skipped(obj_name, obj_version))
             else:
                 self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
                 with open(meta_path, "w") as f:
