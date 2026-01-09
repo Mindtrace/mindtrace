@@ -43,7 +43,7 @@ class TestRegistryThroughput:
     @pytest.fixture
     def registry(self, temp_registry_dir):
         """Create a Registry instance with a temporary directory."""
-        return Registry(backend=temp_registry_dir, version_objects=True)
+        return Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
 
     @pytest.fixture
     def test_objects(self):
@@ -1018,3 +1018,6 @@ class TestRegistryThroughput:
             json.dump(results_with_timestamp, f, indent=2)
 
         print(f"Results saved to: {filepath}")
+
+
+logging.disable(logging.DEBUG)
