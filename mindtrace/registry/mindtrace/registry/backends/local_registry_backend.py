@@ -23,6 +23,7 @@ if platform.system() == "Windows":
 else:
     msvcrt = None
 
+from mindtrace.core import Timeout
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
     MetadataArg,
@@ -249,7 +250,6 @@ class LocalRegistryBackend(RegistryBackend):
                         with open(exclusive_path, "r") as f:
                             meta = json.loads(f.read().strip())
                         if time.time() > meta.get("expires_at", 0):
-                            # Expired - remove and retry
                             exclusive_path.unlink()
                             return self._acquire_internal_lock(key, lock_id, timeout, shared=False)
                     except (json.JSONDecodeError, IOError, FileNotFoundError):
@@ -345,10 +345,22 @@ class LocalRegistryBackend(RegistryBackend):
         Raises:
             LockAcquisitionError: If the lock cannot be acquired.
         """
+        timeout_handler = Timeout(
+            timeout=5,
+            retry_delay=0.1,  # Short retry delay for lock acquisition
+            exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
+            progress_bar=False,  # Don't show progress bar for lock acquisition
+            desc=f"Acquiring {'shared ' if shared else ''}lock for {key}",
+        )
         lock_id = str(uuid.uuid4())
-        if not self._acquire_internal_lock(key, lock_id, timeout, shared=shared):
-            lock_type = "shared" if shared else "exclusive"
-            raise LockAcquisitionError(f"Cannot acquire {lock_type} lock for {key}")
+
+        def acquire_lock_with_retry():
+            if not self._acquire_internal_lock(key, lock_id, timeout, shared=shared):
+                lock_type = "shared" if shared else "exclusive"
+                raise LockAcquisitionError(f"Cannot acquire {lock_type} lock for {key}")
+            return True
+
+        timeout_handler.run(acquire_lock_with_retry)
         try:
             yield
         finally:
