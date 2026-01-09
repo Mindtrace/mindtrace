@@ -11,6 +11,7 @@ from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.exceptions import LockTimeoutError
 from mindtrace.registry.core.registry import Registry
+from mindtrace.registry.core.registry_with_cache import RegistryWithCache
 
 if check_libs(["ultralytics", "torch"]) == []:
     # Registers the Ultralytics archivers to the Registry class
@@ -29,6 +30,7 @@ __all__ = [
     "MinioRegistryBackend",
     "Registry",
     "RegistryBackend",
+    "RegistryWithCache",
 ]
 
 register_default_materializers()
