@@ -748,19 +748,13 @@ class Registry(Mindtrace):
                         result.results.append(None)
                         result.failed.append(key)
                     elif op.is_error:
-                        # Backend returns error for conflicts - interpret based on registry on_conflict
-                        if on_conflict == "skip" and op.error == "RegistryVersionConflict":
-                            # Treat as skipped (non-fatal)
-                            result.results.append(None)
-                            result.skipped.append((name, op.version))
-                        else:
-                            # Treat as actual error
-                            result.errors[(name, op.version)] = {
-                                "error": op.error or ERROR_UNKNOWN,
-                                "message": op.message or "",
-                            }
-                            result.results.append(None)
-                            result.failed.append((name, op.version))
+                        # Actual error (conflicts return skipped, not error)
+                        result.errors[(name, op.version)] = {
+                            "error": op.error or ERROR_UNKNOWN,
+                            "message": op.message or "",
+                        }
+                        result.results.append(None)
+                        result.failed.append((name, op.version))
                     elif op.is_skipped:
                         result.results.append(None)
                         result.skipped.append((name, op.version))
