@@ -505,7 +505,7 @@ class S3RegistryBackend(RegistryBackend):
         try:
             workers = max_workers or self._max_workers
             file_workers = min(2, workers)
-            fail_if_exists = not acquire_lock
+            fail_if_exists = on_conflict == OnConflict.SKIP
 
             # Prepare tasks for objects that haven't failed lock acquisition
             push_tasks = [
@@ -522,8 +522,8 @@ class S3RegistryBackend(RegistryBackend):
                 # Single item - raise on error or conflict
                 result = push_one(push_tasks[0])
                 results.add(result)
-                if result.is_skipped or (result.is_error and result.error == "RegistryVersionConflict"):
-                    raise RegistryVersionConflict(result.message or f"Object {names[0]}@{versions[0]} already exists")
+                if result.is_skipped:
+                    raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
                 elif result.is_error:
                     raise RuntimeError(result.message or "Unknown error")
             else:

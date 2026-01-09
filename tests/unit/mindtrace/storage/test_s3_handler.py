@@ -94,9 +94,9 @@ def test_ctor_with_ensure_bucket_false(mock_boto3):
 
 @patch("mindtrace.storage.s3.boto3")
 def test_ctor_with_region(mock_boto3):
-    mock_client = _prepare_client(mock_boto3)
+    _prepare_client(mock_boto3)
 
-    handler = S3StorageHandler(
+    S3StorageHandler(
         "bucket",
         endpoint="localhost:9000",
         access_key="access",
@@ -112,7 +112,7 @@ def test_ctor_with_region(mock_boto3):
 
 @patch("mindtrace.storage.s3.boto3")
 def test_ctor_with_secure_false(mock_boto3):
-    mock_client = _prepare_client(mock_boto3)
+    _prepare_client(mock_boto3)
 
     handler = S3StorageHandler(
         "bucket",
@@ -130,9 +130,9 @@ def test_ctor_with_secure_false(mock_boto3):
 
 @patch("mindtrace.storage.s3.boto3")
 def test_ctor_with_secure_true(mock_boto3):
-    mock_client = _prepare_client(mock_boto3)
+    _prepare_client(mock_boto3)
 
-    handler = S3StorageHandler(
+    S3StorageHandler(
         "bucket",
         endpoint="localhost:9000",
         access_key="access",
