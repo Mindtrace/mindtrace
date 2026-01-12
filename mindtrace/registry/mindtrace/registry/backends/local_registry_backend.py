@@ -343,10 +343,10 @@ class LocalRegistryBackend(RegistryBackend):
             None
 
         Raises:
-            LockAcquisitionError: If the lock cannot be acquired.
+            LockAcquisitionError: If the lock cannot be acquired within the timeout period.
         """
         timeout_handler = Timeout(
-            timeout=5,
+            timeout=timeout,
             retry_delay=0.1,  # Short retry delay for lock acquisition
             exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
             progress_bar=False,  # Don't show progress bar for lock acquisition
@@ -360,7 +360,12 @@ class LocalRegistryBackend(RegistryBackend):
                 raise LockAcquisitionError(f"Cannot acquire {lock_type} lock for {key}")
             return True
 
-        timeout_handler.run(acquire_lock_with_retry)
+        try:
+            timeout_handler.run(acquire_lock_with_retry)
+        except TimeoutError as e:
+            # Convert TimeoutError to LockAcquisitionError for semantic clarity
+            lock_type = "shared" if shared else "exclusive"
+            raise LockAcquisitionError(f"Timed out acquiring {lock_type} lock for {key} after {timeout}s") from e
         try:
             yield
         finally:
