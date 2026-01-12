@@ -1827,9 +1827,8 @@ def test_backend_internal_lock_contention(registry):
         other_lock_id = str(uuid.uuid4())
         assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
-        # Using context manager should raise
         with pytest.raises(LockAcquisitionError):
-            with registry.backend._internal_lock(lock_key):
+            with registry.backend._internal_lock(lock_key, timeout=0.5):
                 pass
     finally:
         # Release the lock

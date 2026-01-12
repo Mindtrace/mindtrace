@@ -399,7 +399,7 @@ class RegistryWithCache(Registry):
 
     def __setitem__(self, key: str, value: Any) -> None:
         name, version = self._parse_key(key)
-        self.save(name, value, version=version, on_conflict="error")
+        self.save(name, value, version=version, on_conflict="skip")
 
     def __delitem__(self, key: str) -> None:
         name, version = self._parse_key(key)
