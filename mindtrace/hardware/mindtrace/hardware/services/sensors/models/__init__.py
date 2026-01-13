@@ -1,5 +1,7 @@
 """Sensor API models for request/response data structures."""
 
+from mindtrace.hardware.core.types import ServiceStatus
+
 from .requests import (
     SensorConnectionRequest,
     SensorDataRequest,
@@ -7,6 +9,7 @@ from .requests import (
     SensorStatusRequest,
 )
 from .responses import (
+    HealthCheckResponse,
     SensorConnectionResponse,
     SensorConnectionStatus,
     SensorDataResponse,
@@ -28,4 +31,6 @@ __all__ = [
     "SensorListResponse",
     "SensorInfo",
     "SensorConnectionStatus",
+    "HealthCheckResponse",
+    "ServiceStatus",
 ]

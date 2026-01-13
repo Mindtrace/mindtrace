@@ -3,10 +3,12 @@
 import time
 from typing import Dict, Optional
 
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.sensors import SensorManager
 from mindtrace.services import Service
 
 from .models import (
+    HealthCheckResponse,
     SensorConnectionRequest,
     SensorConnectionResponse,
     SensorConnectionStatus,
@@ -256,3 +258,20 @@ class SensorManagerService(Service):
     def manager(self) -> SensorManager:
         """Get the underlying SensorManager instance."""
         return self._manager
+
+    # Health Check
+    def health_check(self) -> HealthCheckResponse:
+        """Health check endpoint for container healthcheck."""
+        try:
+            sensor_count = len(self._manager.list_sensors())
+            return HealthCheckResponse(
+                status=ServiceStatus.HEALTHY,
+                service="sensor-manager",
+                active_sensors=sensor_count,
+            )
+        except Exception as e:
+            return HealthCheckResponse(
+                status=ServiceStatus.UNHEALTHY,
+                service="sensor-manager",
+                error=str(e),
+            )

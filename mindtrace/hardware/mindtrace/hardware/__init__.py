@@ -85,6 +85,10 @@ def __getattr__(name):
         from .sensors.core.manager import SensorManager
 
         return SensorManager
+    elif name == "ServiceStatus":
+        from mindtrace.hardware.core.types import ServiceStatus
+
+        return ServiceStatus
     elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
         from mindtrace.hardware.cameras.homography import (
             CalibrationData,
@@ -112,4 +116,5 @@ __all__ = [
     "CalibrationData",
     "PlanarHomographyMeasurer",
     "MeasuredBox",
+    "ServiceStatus",
 ]

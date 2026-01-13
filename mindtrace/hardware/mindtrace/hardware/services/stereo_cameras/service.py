@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.stereo_cameras.models import (
     # Responses
     ActiveStereoCamerasResponse,
@@ -27,6 +28,7 @@ from mindtrace.hardware.services.stereo_cameras.models import (
     BatchOperationResponse,
     BatchOperationResult,
     BoolResponse,
+    HealthCheckResponse,
     ListResponse,
     PointCloudBatchResponse,
     PointCloudBatchResult,
@@ -651,15 +653,13 @@ class StereoCameraService(Service):
 
         # Health Check
         @self.app.get("/health")
-        def health_check():
+        def health_check() -> HealthCheckResponse:
             """Service health check."""
-            return {
-                "status": "healthy",
-                "service": "stereo_camera_manager",
-                "version": "1.0.0",
-                "active_cameras": len(self._cameras),
-                "uptime_seconds": time.time() - self._start_time,
-            }
+            return HealthCheckResponse(
+                status=ServiceStatus.HEALTHY,
+                service="stereo_camera_manager",
+                active_cameras=len(self._cameras),
+            )
 
         # Streaming endpoints
         @self.app.post("/stereocameras/stream/start")

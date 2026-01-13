@@ -19,6 +19,7 @@ from mindtrace.hardware.core.exceptions import (
     CameraTimeoutError,
     HardwareOperationError,
 )
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.cameras.models import (
     # Response models
     ActiveCamerasResponse,
@@ -64,6 +65,7 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileResponse,
     HDRCaptureResponse,
     HDRCaptureResult,
+    HealthCheckResponse,
     HomographyBatchMeasurementData,
     HomographyBatchMeasurementResponse,
     HomographyCalibrateCheckerboardRequest,
@@ -1924,24 +1926,24 @@ class CameraManagerService(Service):
             )
 
     # Health Check
-    async def health_check(self) -> dict:
+    async def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:
             manager = await self._get_camera_manager()
-            return {
-                "status": "healthy",
-                "service": "camera-manager",
-                "backends": manager.backends(),
-                "active_cameras": len(manager.active_cameras),
-                "uptime_seconds": time.time() - self._startup_time,
-            }
+            return HealthCheckResponse(
+                status=ServiceStatus.HEALTHY,
+                service="camera-manager",
+                backends=manager.backends(),
+                active_cameras=len(manager.active_cameras),
+                uptime_seconds=time.time() - self._startup_time,
+            )
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
-            return {
-                "status": "unhealthy",
-                "service": "camera-manager",
-                "error": str(e),
-            }
+            return HealthCheckResponse(
+                status=ServiceStatus.UNHEALTHY,
+                service="camera-manager",
+                error=str(e),
+            )
 
     # System Diagnostics
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
