@@ -34,7 +34,7 @@ def restore_log_settings(backend, original_levels, original_propagate):
     backend.logger.propagate = original_propagate
 
 
-# pypylon is already mocked by conftest.py mock_hardware_sdks fixture
+# pypylon is already mocked by conftest.py mock_hardware_run_blockings fixture
 
 
 class MinimalConcreteBackend(CameraBackend):
