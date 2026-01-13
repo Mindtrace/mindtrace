@@ -57,6 +57,9 @@ class RegistryWithCache(Registry):
         # NOTE: We intentionally do NOT call super().__init__()
         # We're using composition, not delegation to parent
 
+        # Remove use_cache from kwargs to avoid duplicate keyword argument
+        kwargs.pop("use_cache", None)
+
         # Create remote registry (no cache to avoid infinite recursion)
         self._remote = Registry(
             backend=backend,
