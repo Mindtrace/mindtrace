@@ -5,6 +5,7 @@ This service provides comprehensive REST API and MCP tools for managing
 Basler Stereo ace cameras with multi-component capture (intensity, disparity, depth).
 """
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Dict
@@ -116,7 +117,7 @@ class StereoCameraService(Service):
 
         # Backend & Discovery Endpoints
         @self.app.get("/stereocameras/backends", response_model=BackendsResponse)
-        async def get_backends():
+        def get_backends():
             """Get list of available stereo camera backends."""
             try:
                 backends = ["BaslerStereoAce"]
@@ -125,7 +126,7 @@ class StereoCameraService(Service):
                 return BackendsResponse(success=False, message=f"Failed to get backends: {e}", data=[])
 
         @self.app.get("/stereocameras/backends/info", response_model=BackendInfoResponse)
-        async def get_backend_info():
+        def get_backend_info():
             """Get detailed information about stereo camera backends."""
             try:
                 backends_info = {
@@ -142,7 +143,7 @@ class StereoCameraService(Service):
                 return BackendInfoResponse(success=False, message=f"Failed to get backend info: {e}", data={})
 
         @self.app.post("/stereocameras/discover", response_model=ListResponse)
-        async def discover_cameras(request: BackendFilterRequest):
+        def discover_cameras(request: BackendFilterRequest):
             """Discover available stereo cameras."""
             try:
                 cameras = BaslerStereoAceBackend.discover()
@@ -250,7 +251,7 @@ class StereoCameraService(Service):
                 return BoolResponse(success=False, message=f"Failed to close all cameras: {e}", data=False)
 
         @self.app.get("/stereocameras/active", response_model=ActiveStereoCamerasResponse)
-        async def get_active_cameras():
+        def get_active_cameras():
             """Get list of active stereo cameras."""
             camera_names = list(self._cameras.keys())
             return ActiveStereoCamerasResponse(
@@ -321,7 +322,7 @@ class StereoCameraService(Service):
                 raise HTTPException(status_code=404, detail=str(e))
 
         @self.app.get("/stereocameras/{camera_name}/calibration")
-        async def get_calibration(camera_name: str):
+        def get_calibration(camera_name: str):
             """Get full calibration data including Q matrix for 2D-to-3D projection."""
             try:
                 if camera_name not in self._cameras:
@@ -460,16 +461,16 @@ class StereoCameraService(Service):
 
                 self._total_captures += 1
 
-                # Save if requested
+                # Save if requested (run in threadpool to avoid blocking event loop)
                 if request.save_intensity_path and result.intensity is not None:
                     import cv2
 
-                    cv2.imwrite(request.save_intensity_path, result.intensity)
+                    await asyncio.to_thread(cv2.imwrite, request.save_intensity_path, result.intensity)
 
                 if request.save_disparity_path and result.disparity is not None:
                     import cv2
 
-                    cv2.imwrite(request.save_disparity_path, result.disparity)
+                    await asyncio.to_thread(cv2.imwrite, request.save_disparity_path, result.disparity)
 
                 capture_result = StereoCaptureResult(
                     camera_name=camera_name,
@@ -632,7 +633,7 @@ class StereoCameraService(Service):
 
         # System Diagnostics
         @self.app.get("/system/diagnostics", response_model=SystemDiagnosticsResponse)
-        async def get_system_diagnostics():
+        def get_system_diagnostics():
             """Get system diagnostics and statistics."""
             import psutil
 
@@ -650,7 +651,7 @@ class StereoCameraService(Service):
 
         # Health Check
         @self.app.get("/health")
-        async def health_check():
+        def health_check():
             """Service health check."""
             return {
                 "status": "healthy",
@@ -662,7 +663,7 @@ class StereoCameraService(Service):
 
         # Streaming endpoints
         @self.app.post("/stereocameras/stream/start")
-        async def start_stream(camera: str, quality: int = 85, fps: int = 10):
+        def start_stream(camera: str, quality: int = 85, fps: int = 10):
             """Start stereo camera stream."""
             import os
 
@@ -694,7 +695,7 @@ class StereoCameraService(Service):
             }
 
         @self.app.post("/stereocameras/stream/stop")
-        async def stop_stream(camera: str):
+        def stop_stream(camera: str):
             """Stop stereo camera stream."""
             was_streaming = camera in self._active_streams
             if was_streaming:
@@ -703,7 +704,7 @@ class StereoCameraService(Service):
             return {"success": True, "message": f"Stream stopped for camera '{camera}'", "data": True}
 
         @self.app.get("/stereocameras/stream/active")
-        async def get_active_streams():
+        def get_active_streams():
             """Get list of active streams."""
             return {"success": True, "message": "Active streams retrieved", "data": list(self._active_streams.keys())}
 
@@ -761,8 +762,10 @@ class StereoCameraService(Service):
                             if frame.dtype != np.uint8:
                                 frame = (frame * 255).astype(np.uint8)
 
-                            # Encode as JPEG
-                            success, jpeg_data = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+                            # Encode as JPEG (run in threadpool to avoid blocking event loop)
+                            success, jpeg_data = await asyncio.to_thread(
+                                cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality]
+                            )
 
                             if success:
                                 frame_data = jpeg_data.tobytes()
