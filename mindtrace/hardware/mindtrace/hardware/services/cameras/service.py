@@ -219,7 +219,7 @@ class CameraManagerService(Service):
             as_tool=True,
         )
         self.add_endpoint(
-            "cameras/configuration",
+            "cameras/config/get",
             self.get_camera_configuration,
             ALL_SCHEMAS["get_camera_configuration"],
             as_tool=True,
@@ -267,14 +267,14 @@ class CameraManagerService(Service):
             as_tool=True,
         )
         self.add_endpoint(
-            "cameras/performance/settings",
+            "cameras/performance/get",
             self.get_performance_settings,
             ALL_SCHEMAS["get_performance_settings"],
             methods=["GET"],
-            as_tool=False,  # Don't register as MCP tool to avoid conflict with POST endpoint
+            as_tool=True,
         )
         self.add_endpoint(
-            "cameras/performance/settings",
+            "cameras/performance/set",
             self.set_performance_settings,
             ALL_SCHEMAS["set_performance_settings"],
             methods=["POST"],
