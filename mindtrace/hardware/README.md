@@ -67,6 +67,33 @@ mindtrace-stereo-basler install       # Guided wizard for stereo libraries
 mindtrace-stereo-basler uninstall
 ```
 
+### Docker Deployment
+
+For containerized deployments, pre-configured Docker images are available for each hardware service. All SDKs and dependencies are bundled - no host installation required.
+
+| Service | Port | Image | Use Case |
+|---------|------|-------|----------|
+| **Camera** | 8002 | `mindtrace-camera` | 2D cameras (Basler, GenICam, OpenCV) |
+| **Stereo** | 8004 | `mindtrace-stereo` | 3D stereo vision, depth perception |
+| **PLC** | 8003 | `mindtrace-plc` | Allen-Bradley, Siemens S7 |
+| **Sensors** | 8005 | `mindtrace-sensors` | MQTT, HTTP, Serial sensors |
+
+**Quick Start:**
+```bash
+# Build from repo root (example: camera with Basler SDK)
+docker build -f docker/hardware/camera/Dockerfile \
+  --build-arg INSTALL_BASLER=true \
+  -t mindtrace-camera:basler .
+
+# Run with host network (required for GigE camera discovery)
+docker run -d --name mindtrace-camera --network host mindtrace-camera:basler
+
+# Verify
+curl http://localhost:8002/health
+```
+
+[**→ See Docker Documentation**](../../../docker/hardware/) for build options, configuration, and deployment guides.
+
 ### Camera Configurator App
 A standalone Reflex web application providing intuitive camera management with real-time streaming capabilities.
 
