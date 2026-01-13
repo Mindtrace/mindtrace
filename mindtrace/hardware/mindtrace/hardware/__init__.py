@@ -27,7 +27,7 @@ Design Philosophy:
 Usage:
     # Import managers only when needed
     from mindtrace.hardware import CameraManager, PLCManager, SensorManager
-    from mindtrace.hardware.api.sensors import SensorManagerService
+    from mindtrace.hardware.services.sensors import SensorManagerService
 
     # Camera operations
     async with CameraManager() as camera_manager:
