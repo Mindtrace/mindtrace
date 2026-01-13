@@ -214,8 +214,10 @@ class BaslerCameraBackend(CameraBackend):
 
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
 
-    async def _sdk(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking pypylon call on a dedicated thread with timeout.
+    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
+        """Run a potentially blocking pypylon call in threadpool with timeout.
+
+        Uses asyncio.to_thread() for modern async/threading integration.
 
         Args:
             func: Callable to execute
@@ -230,24 +232,12 @@ class BaslerCameraBackend(CameraBackend):
             CameraTimeoutError: If operation times out
             HardwareOperationError: If operation fails
         """
-        import concurrent.futures
-
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        if self._sdk_executor is None:
-            self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
-            )
-
-        def _call():
-            return func(*args, **kwargs)
-
-        fut = self._loop.run_in_executor(self._sdk_executor, _call)
+        effective_timeout = timeout or self._op_timeout_s
         try:
-            return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
+            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
         except asyncio.TimeoutError as e:
             raise CameraTimeoutError(
-                f"Pypylon operation timed out after {timeout or self._op_timeout_s:.2f}s for camera '{self.camera_name}'"
+                f"Pypylon operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
             ) from e
         except Exception as e:
             raise HardwareOperationError(f"Pypylon operation failed for camera '{self.camera_name}': {e}") from e
@@ -306,6 +296,24 @@ class BaslerCameraBackend(CameraBackend):
 
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover Basler cameras: {str(e)}")
+
+    @classmethod
+    async def discover_async(
+        cls, include_details: bool = False, target_ips: Optional[List[str]] = None
+    ) -> Union[List[str], Dict[str, Dict[str, str]]]:
+        """Async wrapper for get_available_cameras() - runs discovery in threadpool.
+
+        Use this instead of get_available_cameras() when calling from async context
+        to avoid blocking the event loop during camera enumeration.
+
+        Args:
+            include_details: If True, return a dict of details per camera.
+            target_ips: Optional list of specific IP addresses to target.
+
+        Returns:
+            Union[List[str], Dict[str, Dict[str, str]]]: List of camera names or dict of details.
+        """
+        return await asyncio.to_thread(cls.get_available_cameras, include_details, target_ips)
 
     @staticmethod
     def _discover_by_ip(target_ips: List[str]):
@@ -450,7 +458,7 @@ class BaslerCameraBackend(CameraBackend):
 
                 return cam
 
-            camera = await self._sdk(_create_and_open_by_ip, timeout=self._op_timeout_s)
+            camera = await self._run_blocking(_create_and_open_by_ip, timeout=self._op_timeout_s)
 
             # Log camera details
             try:
@@ -484,7 +492,9 @@ class BaslerCameraBackend(CameraBackend):
         Returns:
             Tuple of (success status, camera object, None)
         """
-        all_devices = await self._sdk(pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s)
+        all_devices = await self._run_blocking(
+            pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s
+        )
         if len(all_devices) == 0:
             raise CameraNotFoundError("No Basler cameras found")
 
@@ -499,7 +509,7 @@ class BaslerCameraBackend(CameraBackend):
                         cam.Open()
                         return cam
 
-                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+                    camera = await self._run_blocking(_create_and_open, timeout=self._op_timeout_s)
 
                     if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
                         self.camera_name = device.GetUserDefinedName()
@@ -534,7 +544,7 @@ class BaslerCameraBackend(CameraBackend):
         Returns:
             Tuple of (success status, camera object, None)
         """
-        devices = await self._sdk(lambda: self._discover_by_ip(self.target_ips), timeout=self._op_timeout_s)
+        devices = await self._run_blocking(lambda: self._discover_by_ip(self.target_ips), timeout=self._op_timeout_s)
         if len(devices) == 0:
             raise CameraNotFoundError(f"No Basler cameras found at target IPs: {self.target_ips}")
 
@@ -550,7 +560,7 @@ class BaslerCameraBackend(CameraBackend):
                         cam.Open()
                         return cam
 
-                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+                    camera = await self._run_blocking(_create_and_open, timeout=self._op_timeout_s)
 
                     if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
                         self.camera_name = device.GetUserDefinedName()
@@ -589,8 +599,8 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
 
         try:
-            if not await self._sdk(self.camera.IsOpen, timeout=self._op_timeout_s):
-                await self._sdk(self.camera.Open, timeout=self._op_timeout_s)
+            if not await self._run_blocking(self.camera.IsOpen, timeout=self._op_timeout_s):
+                await self._run_blocking(self.camera.Open, timeout=self._op_timeout_s)
         except Exception as e:
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' is open: {e}") from e
 
@@ -605,8 +615,8 @@ class BaslerCameraBackend(CameraBackend):
 
         try:
             await self._ensure_open()
-            if not await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
-                await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
+            if not await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s):
+                await self._run_blocking(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
         except Exception as e:
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' is grabbing: {e}") from e
 
@@ -620,8 +630,8 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
 
         try:
-            if await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
-                await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
+            if await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s):
+                await self._run_blocking(self.camera.StopGrabbing, timeout=self._op_timeout_s)
         except Exception as e:
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' stopped grabbing: {e}") from e
 
@@ -634,7 +644,7 @@ class BaslerCameraBackend(CameraBackend):
         was_grabbing = False
         try:
             if self.camera is not None:
-                was_grabbing = await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+                was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
                 if was_grabbing:
                     await self._ensure_stopped_grabbing()
             yield
@@ -659,7 +669,7 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._ensure_open()
 
-            await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
+            await self._run_blocking(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
 
             # Set AcquisitionMode to Continuous for multi-capture support
             # This ensures consistent behavior across all backends
@@ -671,7 +681,7 @@ class BaslerCameraBackend(CameraBackend):
                 except Exception as acq_error:
                     self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
 
-            await self._sdk(_set_acquisition_mode, timeout=self._op_timeout_s)
+            await self._run_blocking(_set_acquisition_mode, timeout=self._op_timeout_s)
 
             # Configure multicast streaming BEFORE starting grabbing if enabled
             # This is critical for proper multicast setup
@@ -728,7 +738,7 @@ class BaslerCameraBackend(CameraBackend):
 
                     # Set transmission type to multicast
                     if hasattr(self.camera.StreamGrabber, "TransmissionType"):
-                        await self._sdk(
+                        await self._run_blocking(
                             self.camera.StreamGrabber.TransmissionType.SetValue, "Multicast", timeout=self._op_timeout_s
                         )
                         self.logger.debug("Set transmission type to Multicast")
@@ -736,7 +746,7 @@ class BaslerCameraBackend(CameraBackend):
 
                     # Set multicast destination address
                     if hasattr(self.camera.StreamGrabber, "DestinationAddr"):
-                        await self._sdk(
+                        await self._run_blocking(
                             self.camera.StreamGrabber.DestinationAddr.SetValue,
                             self.multicast_group,
                             timeout=self._op_timeout_s,
@@ -745,7 +755,7 @@ class BaslerCameraBackend(CameraBackend):
 
                     # Set multicast destination port
                     if hasattr(self.camera.StreamGrabber, "DestinationPort"):
-                        await self._sdk(
+                        await self._run_blocking(
                             self.camera.StreamGrabber.DestinationPort.SetValue,
                             self.multicast_port,
                             timeout=self._op_timeout_s,
@@ -754,13 +764,13 @@ class BaslerCameraBackend(CameraBackend):
 
                     # Verify configuration
                     if stream_grabber_available:
-                        verify_type = await self._sdk(
+                        verify_type = await self._run_blocking(
                             self.camera.StreamGrabber.TransmissionType.GetValue, timeout=self._op_timeout_s
                         )
-                        verify_addr = await self._sdk(
+                        verify_addr = await self._run_blocking(
                             self.camera.StreamGrabber.DestinationAddr.GetValue, timeout=self._op_timeout_s
                         )
-                        verify_port = await self._sdk(
+                        verify_port = await self._run_blocking(
                             self.camera.StreamGrabber.DestinationPort.GetValue, timeout=self._op_timeout_s
                         )
 
@@ -782,7 +792,7 @@ class BaslerCameraBackend(CameraBackend):
                 # Configure multicast destination using GevSC
                 if hasattr(self.camera, "GevSCDA"):
                     # Set multicast destination address
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.GevSCDA.SetValue, self._ip_to_int(self.multicast_group), timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Set GevSCDA multicast address to {self.multicast_group}")
@@ -790,19 +800,21 @@ class BaslerCameraBackend(CameraBackend):
 
                 if hasattr(self.camera, "GevSCPHostPort"):
                     # Set multicast destination port
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.GevSCPHostPort.SetValue, self.multicast_port, timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Set GevSCPHostPort to {self.multicast_port}")
 
                 # Enable multicast mode if available
                 if hasattr(self.camera, "GevSCCFGMulticastEnable"):
-                    await self._sdk(self.camera.GevSCCFGMulticastEnable.SetValue, True, timeout=self._op_timeout_s)
+                    await self._run_blocking(
+                        self.camera.GevSCCFGMulticastEnable.SetValue, True, timeout=self._op_timeout_s
+                    )
                     self.logger.debug("Enabled GevSCCFGMulticastEnable")
 
                 # Configure transmission type to multicast
                 if hasattr(self.camera, "GevSCCFGTransmissionType"):
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.GevSCCFGTransmissionType.SetValue, "Multicast", timeout=self._op_timeout_s
                     )
                     self.logger.debug("Set GevSCCFGTransmissionType to Multicast")
@@ -860,15 +872,15 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try ExposureTime first, fallback to ExposureTimeAbs
             try:
-                min_value = await self._sdk(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
-                max_value = await self._sdk(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
+                min_value = await self._run_blocking(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._run_blocking(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
                 self.logger.debug(f"Using ExposureTime for get_exposure_range on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(
                     f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
                 )
-                min_value = await self._sdk(self.camera.ExposureTimeAbs.GetMin, timeout=self._op_timeout_s)
-                max_value = await self._sdk(self.camera.ExposureTimeAbs.GetMax, timeout=self._op_timeout_s)
+                min_value = await self._run_blocking(self.camera.ExposureTimeAbs.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._run_blocking(self.camera.ExposureTimeAbs.GetMax, timeout=self._op_timeout_s)
 
             return [min_value, max_value]
         except Exception as e:
@@ -894,13 +906,13 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try ExposureTime first, fallback to ExposureTimeAbs
             try:
-                exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                exposure = await self._run_blocking(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
                 self.logger.debug(f"Using ExposureTime for get_exposure on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(
                     f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
                 )
-                exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+                exposure = await self._run_blocking(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
 
             return exposure
         except Exception as e:
@@ -934,15 +946,19 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try ExposureTime first, fallback to ExposureTimeAbs
             try:
-                await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
-                actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._run_blocking(
+                    self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s
+                )
                 self.logger.debug(f"Using ExposureTime for set_exposure on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(
                     f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs"
                 )
-                await self._sdk(self.camera.ExposureTimeAbs.SetValue, exposure, timeout=self._op_timeout_s)
-                actual_exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.ExposureTimeAbs.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._run_blocking(
+                    self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s
+                )
 
             if not (abs(actual_exposure - exposure) < 0.01 * max(1.0, float(exposure))):
                 raise HardwareOperationError(
@@ -973,10 +989,10 @@ class BaslerCameraBackend(CameraBackend):
 
             async with self._grabbing_suspended():
                 trigger_enabled = (
-                    await self._sdk(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s)
+                    await self._run_blocking(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s)
                 ) == "On"
                 trigger_source = (
-                    await self._sdk(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)
+                    await self._run_blocking(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)
                 ) == "Software"
 
                 self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
@@ -1011,11 +1027,13 @@ class BaslerCameraBackend(CameraBackend):
 
             async with self._grabbing_suspended():
                 if triggermode == "continuous":
-                    await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
+                    await self._run_blocking(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
                 else:
-                    await self._sdk(self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s)
-                    await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
-                    await self._sdk(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
+                    await self._run_blocking(
+                        self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s
+                    )
+                    await self._run_blocking(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
+                    await self._run_blocking(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
 
                 self.triggermode = triggermode
 
@@ -1058,30 +1076,32 @@ class BaslerCameraBackend(CameraBackend):
 
                 try:
                     if self.triggermode == "trigger":
-                        await self._sdk(self.camera.TriggerSoftware.Execute, timeout=self._op_timeout_s)
+                        await self._run_blocking(self.camera.TriggerSoftware.Execute, timeout=self._op_timeout_s)
 
-                    grab_result = await self._sdk(
+                    grab_result = await self._run_blocking(
                         self.camera.RetrieveResult,
                         self.timeout_ms,
                         pylon.TimeoutHandling_ThrowException,
                         timeout=self._op_timeout_s + (self.timeout_ms / 1000.0),
                     )
 
-                    if await self._sdk(grab_result.GrabSucceeded, timeout=self._op_timeout_s):
-                        image_converted = await self._sdk(
+                    if await self._run_blocking(grab_result.GrabSucceeded, timeout=self._op_timeout_s):
+                        image_converted = await self._run_blocking(
                             self.converter.Convert, grab_result, timeout=self._op_timeout_s
                         )
-                        image = await self._sdk(image_converted.GetArray, timeout=self._op_timeout_s)
+                        image = await self._run_blocking(image_converted.GetArray, timeout=self._op_timeout_s)
 
                         if self.img_quality_enhancement and image is not None:
                             image = await self._enhance_image(image)
 
-                        await self._sdk(grab_result.Release, timeout=self._op_timeout_s)
+                        await self._run_blocking(grab_result.Release, timeout=self._op_timeout_s)
                         return image
                     else:
-                        error_desc = await self._sdk(grab_result.GetErrorDescription, timeout=self._op_timeout_s)
+                        error_desc = await self._run_blocking(
+                            grab_result.GetErrorDescription, timeout=self._op_timeout_s
+                        )
                         self.logger.warning(f"Grab failed for camera '{self.camera_name}': {error_desc}")
-                        await self._sdk(grab_result.Release, timeout=self._op_timeout_s)
+                        await self._run_blocking(grab_result.Release, timeout=self._op_timeout_s)
 
                 except Exception as e:
                     if "timeout" in str(e).lower():
@@ -1169,8 +1189,12 @@ class BaslerCameraBackend(CameraBackend):
         try:
             import json
 
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
+            # Read config from file (run in threadpool to avoid blocking event loop)
+            def _load_config():
+                with open(config_path, "r") as f:
+                    return json.load(f)
+
+            config_data = await asyncio.to_thread(_load_config)
 
             await self._ensure_open()
 
@@ -1187,7 +1211,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.ExposureTime.SetValue,
                                 float(config_data["exposure_time"]),
                                 timeout=self._op_timeout_s,
@@ -1200,7 +1224,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.WO,
                         ]:
                             self.logger.debug(f"Using ExposureTimeAbs for config import on camera '{self.camera_name}'")
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.ExposureTimeAbs.SetValue,
                                 float(config_data["exposure_time"]),
                                 timeout=self._op_timeout_s,
@@ -1217,7 +1241,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.Gain.SetValue, float(config_data["gain"]), timeout=self._op_timeout_s
                             )
                             success_count += 1
@@ -1233,15 +1257,19 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.WO,
                         ]:
                             if config_data["trigger_mode"] == "continuous":
-                                await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
+                                await self._run_blocking(
+                                    self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s
+                                )
                             else:
                                 if hasattr(self.camera, "TriggerSelector"):
-                                    await self._sdk(
+                                    await self._run_blocking(
                                         self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s
                                     )
-                                await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
+                                await self._run_blocking(
+                                    self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s
+                                )
                                 if hasattr(self.camera, "TriggerSource"):
-                                    await self._sdk(
+                                    await self._run_blocking(
                                         self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s
                                     )
                             self.triggermode = config_data["trigger_mode"]
@@ -1261,15 +1289,15 @@ class BaslerCameraBackend(CameraBackend):
                         ]:
                             wb_mode = config_data["white_balance"]
                             if wb_mode == "off":
-                                await self._sdk(
+                                await self._run_blocking(
                                     self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s
                                 )
                             elif wb_mode == "once":
-                                await self._sdk(
+                                await self._run_blocking(
                                     self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s
                                 )
                             elif wb_mode == "continuous":
-                                await self._sdk(
+                                await self._run_blocking(
                                     self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s
                                 )
                             success_count += 1
@@ -1287,7 +1315,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.Width.SetValue, int(roi.get("width", 1920)), timeout=self._op_timeout_s
                             )
                             roi_success += 1
@@ -1299,7 +1327,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.Height.SetValue, int(roi.get("height", 1080)), timeout=self._op_timeout_s
                             )
                             roi_success += 1
@@ -1311,7 +1339,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.OffsetX.SetValue, int(roi.get("x", 0)), timeout=self._op_timeout_s
                             )
                             roi_success += 1
@@ -1323,7 +1351,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            await self._sdk(
+                            await self._run_blocking(
                                 self.camera.OffsetY.SetValue, int(roi.get("y", 0)), timeout=self._op_timeout_s
                             )
                             roi_success += 1
@@ -1344,7 +1372,7 @@ class BaslerCameraBackend(CameraBackend):
                             available_formats = await self.get_pixel_format_range()
                             pixel_format = config_data["pixel_format"]
                             if pixel_format in available_formats:
-                                await self._sdk(
+                                await self._run_blocking(
                                     self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s
                                 )
                                 success_count += 1
@@ -1418,27 +1446,34 @@ class BaslerCameraBackend(CameraBackend):
             try:
                 # Try ExposureTime first, fallback to ExposureTimeAbs
                 try:
-                    exposure_time = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                    exposure_time = await self._run_blocking(
+                        self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s
+                    )
                 except Exception:
                     self.logger.debug(
                         f"ExposureTime not available for camera '{self.camera_name}', trying ExposureTimeAbs"
                     )
-                    exposure_time = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+                    exposure_time = await self._run_blocking(
+                        self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s
+                    )
             except Exception as e:
                 self.logger.warning(f"Could not get exposure time for camera '{self.camera_name}': {e}")
 
             gain = defaults["gain"]
             try:
                 if hasattr(self.camera, "Gain"):
-                    gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                    gain = await self._run_blocking(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
             except Exception as e:
                 self.logger.warning(f"Could not get gain for camera '{self.camera_name}': {e}")
 
             trigger_mode = defaults["trigger_mode"]
             try:
-                trigger_enabled = await self._sdk(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s) == "On"
+                trigger_enabled = (
+                    await self._run_blocking(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s) == "On"
+                )
                 trigger_source = (
-                    await self._sdk(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s) == "Software"
+                    await self._run_blocking(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)
+                    == "Software"
                 )
                 trigger_mode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
             except Exception as e:
@@ -1450,7 +1485,9 @@ class BaslerCameraBackend(CameraBackend):
                     self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RO
                     or self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RW
                 ):
-                    wb_auto = await self._sdk(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
+                    wb_auto = await self._run_blocking(
+                        self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s
+                    )
                     white_balance = wb_auto.lower()
             except Exception as e:
                 self.logger.warning(f"Could not get white balance for camera '{self.camera_name}': {e}")
@@ -1459,22 +1496,22 @@ class BaslerCameraBackend(CameraBackend):
             width = defaults["width"]
             height = defaults["height"]
             try:
-                width = int(await self._sdk(self.camera.Width.GetValue, timeout=self._op_timeout_s))
-                height = int(await self._sdk(self.camera.Height.GetValue, timeout=self._op_timeout_s))
+                width = int(await self._run_blocking(self.camera.Width.GetValue, timeout=self._op_timeout_s))
+                height = int(await self._run_blocking(self.camera.Height.GetValue, timeout=self._op_timeout_s))
             except Exception as e:
                 self.logger.warning(f"Could not get image dimensions for camera '{self.camera_name}': {e}")
 
             roi_x = defaults["roi_x"]
             roi_y = defaults["roi_y"]
             try:
-                roi_x = int(await self._sdk(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s))
-                roi_y = int(await self._sdk(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s))
+                roi_x = int(await self._run_blocking(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s))
+                roi_y = int(await self._run_blocking(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s))
             except Exception as e:
                 self.logger.warning(f"Could not get ROI offsets for camera '{self.camera_name}': {e}")
 
             pixel_format = defaults["pixel_format"]
             try:
-                pixel_format = await self._sdk(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
+                pixel_format = await self._run_blocking(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
             except Exception as e:
                 self.logger.warning(f"Could not get pixel format for camera '{self.camera_name}': {e}")
 
@@ -1497,8 +1534,12 @@ class BaslerCameraBackend(CameraBackend):
                 "buffer_count": getattr(self, "buffer_count", 25),
             }
 
-            with open(config_path, "w") as f:
-                json.dump(config_data, f, indent=2)
+            # Write config to file (run in threadpool to avoid blocking event loop)
+            def _save_config():
+                with open(config_path, "w") as f:
+                    json.dump(config_data, f, indent=2)
+
+            await asyncio.to_thread(_save_config)
 
             self.logger.debug(
                 f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
@@ -1535,10 +1576,10 @@ class BaslerCameraBackend(CameraBackend):
 
             async with self._grabbing_suspended():
                 # Check bounds against camera capabilities before setting
-                max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
-                max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
-                max_offset_x = await self._sdk(self.camera.OffsetX.GetMax, timeout=self._op_timeout_s)
-                max_offset_y = await self._sdk(self.camera.OffsetY.GetMax, timeout=self._op_timeout_s)
+                max_width = await self._run_blocking(self.camera.Width.GetMax, timeout=self._op_timeout_s)
+                max_height = await self._run_blocking(self.camera.Height.GetMax, timeout=self._op_timeout_s)
+                max_offset_x = await self._run_blocking(self.camera.OffsetX.GetMax, timeout=self._op_timeout_s)
+                max_offset_y = await self._run_blocking(self.camera.OffsetY.GetMax, timeout=self._op_timeout_s)
 
                 if width > max_width or height > max_height:
                     raise CameraConfigurationError(
@@ -1549,20 +1590,20 @@ class BaslerCameraBackend(CameraBackend):
                         f"ROI offsets ({x}, {y}) out of range (max {max_offset_x}, {max_offset_y})"
                     )
 
-                x_inc = await self._sdk(self.camera.OffsetX.GetInc, timeout=self._op_timeout_s)
-                y_inc = await self._sdk(self.camera.OffsetY.GetInc, timeout=self._op_timeout_s)
-                width_inc = await self._sdk(self.camera.Width.GetInc, timeout=self._op_timeout_s)
-                height_inc = await self._sdk(self.camera.Height.GetInc, timeout=self._op_timeout_s)
+                x_inc = await self._run_blocking(self.camera.OffsetX.GetInc, timeout=self._op_timeout_s)
+                y_inc = await self._run_blocking(self.camera.OffsetY.GetInc, timeout=self._op_timeout_s)
+                width_inc = await self._run_blocking(self.camera.Width.GetInc, timeout=self._op_timeout_s)
+                height_inc = await self._run_blocking(self.camera.Height.GetInc, timeout=self._op_timeout_s)
 
                 x = (x // x_inc) * x_inc
                 y = (y // y_inc) * y_inc
                 width = (width // width_inc) * width_inc
                 height = (height // height_inc) * height_inc
 
-                await self._sdk(self.camera.Width.SetValue, width, timeout=self._op_timeout_s)
-                await self._sdk(self.camera.Height.SetValue, height, timeout=self._op_timeout_s)
-                await self._sdk(self.camera.OffsetX.SetValue, x, timeout=self._op_timeout_s)
-                await self._sdk(self.camera.OffsetY.SetValue, y, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.Width.SetValue, width, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.Height.SetValue, height, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.OffsetX.SetValue, x, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.OffsetY.SetValue, y, timeout=self._op_timeout_s)
 
             self.logger.debug(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
 
@@ -1589,10 +1630,10 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             roi = {
-                "x": await self._sdk(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s),
-                "y": await self._sdk(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s),
-                "width": await self._sdk(self.camera.Width.GetValue, timeout=self._op_timeout_s),
-                "height": await self._sdk(self.camera.Height.GetValue, timeout=self._op_timeout_s),
+                "x": await self._run_blocking(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s),
+                "y": await self._run_blocking(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s),
+                "width": await self._run_blocking(self.camera.Width.GetValue, timeout=self._op_timeout_s),
+                "height": await self._run_blocking(self.camera.Height.GetValue, timeout=self._op_timeout_s),
             }
 
             return roi
@@ -1615,19 +1656,19 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             async with self._grabbing_suspended():
-                await self._sdk(self.camera.OffsetX.SetValue, 0, timeout=self._op_timeout_s)
-                await self._sdk(self.camera.OffsetY.SetValue, 0, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.OffsetX.SetValue, 0, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.OffsetY.SetValue, 0, timeout=self._op_timeout_s)
 
-                max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
-                max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
+                max_width = await self._run_blocking(self.camera.Width.GetMax, timeout=self._op_timeout_s)
+                max_height = await self._run_blocking(self.camera.Height.GetMax, timeout=self._op_timeout_s)
 
-                width_inc = await self._sdk(self.camera.Width.GetInc, timeout=self._op_timeout_s)
-                height_inc = await self._sdk(self.camera.Height.GetInc, timeout=self._op_timeout_s)
+                width_inc = await self._run_blocking(self.camera.Width.GetInc, timeout=self._op_timeout_s)
+                height_inc = await self._run_blocking(self.camera.Height.GetInc, timeout=self._op_timeout_s)
                 max_width = (max_width // width_inc) * width_inc
                 max_height = (max_height // height_inc) * height_inc
 
-                await self._sdk(self.camera.Width.SetValue, max_width, timeout=self._op_timeout_s)
-                await self._sdk(self.camera.Height.SetValue, max_height, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.Width.SetValue, max_width, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.Height.SetValue, max_height, timeout=self._op_timeout_s)
 
             self.logger.debug(f"ROI reset to maximum for camera '{self.camera_name}'")
 
@@ -1661,15 +1702,15 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try Gain first, fallback to GainRaw
             try:
-                await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
-                actual_gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
+                actual_gain = await self._run_blocking(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
                 self.logger.debug(f"Using Gain for set_gain on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
                 # GainRaw expects integer value
                 gain_int = int(round(gain))
-                await self._sdk(self.camera.GainRaw.SetValue, gain_int, timeout=self._op_timeout_s)
-                actual_gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.GainRaw.SetValue, gain_int, timeout=self._op_timeout_s)
+                actual_gain = await self._run_blocking(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
 
             if not (abs(actual_gain - gain) < 0.01 * max(1.0, float(gain))):
                 raise HardwareOperationError(
@@ -1701,11 +1742,11 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try Gain first, fallback to GainRaw
             try:
-                gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                gain = await self._run_blocking(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
                 self.logger.debug(f"Using Gain for get_gain on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
-                gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+                gain = await self._run_blocking(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
 
             return gain
 
@@ -1732,13 +1773,13 @@ class BaslerCameraBackend(CameraBackend):
 
             # Try Gain first, fallback to GainRaw
             try:
-                min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
-                max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
+                min_gain = await self._run_blocking(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._run_blocking(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
                 self.logger.debug(f"Using Gain for get_gain_range on camera '{self.camera_name}'")
             except Exception:
                 self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
-                min_gain = await self._sdk(self.camera.GainRaw.GetMin, timeout=self._op_timeout_s)
-                max_gain = await self._sdk(self.camera.GainRaw.GetMax, timeout=self._op_timeout_s)
+                min_gain = await self._run_blocking(self.camera.GainRaw.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._run_blocking(self.camera.GainRaw.GetMax, timeout=self._op_timeout_s)
 
             return [min_gain, max_gain]
 
@@ -1759,18 +1800,18 @@ class BaslerCameraBackend(CameraBackend):
             if hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
                 if limit_mbps is not None and hasattr(self.camera, "DeviceLinkThroughputLimit"):
                     # Enable bandwidth limiting and set limit
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.DeviceLinkThroughputLimitMode.SetValue, "On", timeout=self._op_timeout_s
                     )
                     # Convert Mbps to bytes per second
                     limit_bps = int(limit_mbps * 1024 * 1024 / 8)
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.DeviceLinkThroughputLimit.SetValue, limit_bps, timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Set bandwidth limit to {limit_mbps} Mbps for camera '{self.camera_name}'")
                 elif limit_mbps is None:
                     # Disable bandwidth limiting
-                    await self._sdk(
+                    await self._run_blocking(
                         self.camera.DeviceLinkThroughputLimitMode.SetValue, "Off", timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Disabled bandwidth limit for camera '{self.camera_name}'")
@@ -1791,12 +1832,14 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             if hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
-                mode = await self._sdk(self.camera.DeviceLinkThroughputLimitMode.GetValue, timeout=self._op_timeout_s)
+                mode = await self._run_blocking(
+                    self.camera.DeviceLinkThroughputLimitMode.GetValue, timeout=self._op_timeout_s
+                )
                 if mode == "Off":
                     return 0.0  # No limit
 
                 if hasattr(self.camera, "DeviceLinkThroughputLimit"):
-                    limit_bps = await self._sdk(
+                    limit_bps = await self._run_blocking(
                         self.camera.DeviceLinkThroughputLimit.GetValue, timeout=self._op_timeout_s
                     )
                     # Convert bytes per second to Mbps
@@ -1818,7 +1861,7 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             if hasattr(self.camera, "GevSCPSPacketSize"):
-                await self._sdk(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
                 self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
             else:
                 self.logger.error(f"Packet size control not supported for camera '{self.camera_name}'")
@@ -1837,7 +1880,7 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             if hasattr(self.camera, "GevSCPSPacketSize"):
-                size = await self._sdk(self.camera.GevSCPSPacketSize.GetValue, timeout=self._op_timeout_s)
+                size = await self._run_blocking(self.camera.GevSCPSPacketSize.GetValue, timeout=self._op_timeout_s)
                 return int(size)
             else:
                 raise NotImplementedError(f"Packet size query not supported for camera '{self.camera_name}'")
@@ -1855,7 +1898,7 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             if hasattr(self.camera, "GevSCPD"):
-                await self._sdk(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
                 self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
             else:
                 self.logger.error(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
@@ -1874,7 +1917,7 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             if hasattr(self.camera, "GevSCPD"):
-                delay = await self._sdk(self.camera.GevSCPD.GetValue, timeout=self._op_timeout_s)
+                delay = await self._run_blocking(self.camera.GevSCPD.GetValue, timeout=self._op_timeout_s)
                 return int(delay)
             else:
                 raise NotImplementedError(f"Inter-packet delay query not supported for camera '{self.camera_name}'")
@@ -1930,8 +1973,8 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_width = await self._sdk(self.camera.Width.GetMin, timeout=self._op_timeout_s)
-            max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
+            min_width = await self._run_blocking(self.camera.Width.GetMin, timeout=self._op_timeout_s)
+            max_width = await self._run_blocking(self.camera.Width.GetMax, timeout=self._op_timeout_s)
             return [min_width, max_width]
 
         except Exception as e:
@@ -1954,8 +1997,8 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_height = await self._sdk(self.camera.Height.GetMin, timeout=self._op_timeout_s)
-            max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
+            min_height = await self._run_blocking(self.camera.Height.GetMin, timeout=self._op_timeout_s)
+            max_height = await self._run_blocking(self.camera.Height.GetMax, timeout=self._op_timeout_s)
             return [min_height, max_height]
 
         except Exception as e:
@@ -1982,11 +2025,13 @@ class BaslerCameraBackend(CameraBackend):
 
             # Get available pixel formats from camera
             available_formats = []
-            pixel_format_entries = await self._sdk(self.camera.PixelFormat.GetEntries, timeout=self._op_timeout_s)
+            pixel_format_entries = await self._run_blocking(
+                self.camera.PixelFormat.GetEntries, timeout=self._op_timeout_s
+            )
             for entry in pixel_format_entries:
-                access_mode = await self._sdk(entry.GetAccessMode, timeout=self._op_timeout_s)
+                access_mode = await self._run_blocking(entry.GetAccessMode, timeout=self._op_timeout_s)
                 if access_mode == genicam.RW or access_mode == genicam.RO:
-                    symbolic_name = await self._sdk(entry.GetSymbolic, timeout=self._op_timeout_s)
+                    symbolic_name = await self._run_blocking(entry.GetSymbolic, timeout=self._op_timeout_s)
                     available_formats.append(symbolic_name)
 
             return available_formats if available_formats else ["BGR8", "RGB8", "Mono8"]
@@ -2011,7 +2056,7 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            pixel_format = await self._sdk(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
+            pixel_format = await self._run_blocking(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
             return pixel_format
 
         except Exception as e:
@@ -2044,7 +2089,7 @@ class BaslerCameraBackend(CameraBackend):
 
             # Use the grabbing suspension context manager for thread-safe pixel format change
             async with self._grabbing_suspended():
-                await self._sdk(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
 
             self.logger.debug(f"Pixel format set to '{pixel_format}' for camera '{self.camera_name}'")
 
@@ -2078,7 +2123,7 @@ class BaslerCameraBackend(CameraBackend):
                 self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RO
                 or self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RW
             ):
-                wb_auto = await self._sdk(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
+                wb_auto = await self._run_blocking(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
                 return wb_auto.lower()
             else:
                 self.logger.warning(f"BalanceWhiteAuto feature not available on camera '{self.camera_name}'")
@@ -2120,13 +2165,15 @@ class BaslerCameraBackend(CameraBackend):
                 raise HardwareOperationError(f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'")
 
             if value == "off":
-                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)
                 target_mode = "Off"
             elif value == "once":
-                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s)
+                await self._run_blocking(self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s)
                 target_mode = "Once"
             elif value == "continuous":
-                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s)
+                await self._run_blocking(
+                    self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s
+                )
                 target_mode = "Continuous"
             else:
                 raise CameraConfigurationError(
@@ -2134,7 +2181,7 @@ class BaslerCameraBackend(CameraBackend):
                     "Must be 'off', 'once', or 'continuous'"
                 )
 
-            actual_mode = await self._sdk(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
+            actual_mode = await self._run_blocking(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
             if actual_mode == target_mode:
                 self.logger.debug(f"White balance mode set to '{actual_mode}' for camera '{self.camera_name}'")
             else:
@@ -2181,8 +2228,12 @@ class BaslerCameraBackend(CameraBackend):
                 self.camera.Open()
 
             if hasattr(self.camera, "DeviceLinkThroughputLimit"):
-                min_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMin, timeout=self._op_timeout_s)
-                max_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMax, timeout=self._op_timeout_s)
+                min_val = await self._run_blocking(
+                    self.camera.DeviceLinkThroughputLimit.GetMin, timeout=self._op_timeout_s
+                )
+                max_val = await self._run_blocking(
+                    self.camera.DeviceLinkThroughputLimit.GetMax, timeout=self._op_timeout_s
+                )
                 return [float(min_val) / 1000000, float(max_val) / 1000000]  # Convert to Mbps
             else:
                 return [1.0, 1000.0]  # Default range for non-GigE cameras
@@ -2206,8 +2257,8 @@ class BaslerCameraBackend(CameraBackend):
                 self.camera.Open()
 
             if hasattr(self.camera, "GevSCPSPacketSize"):
-                min_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMin, timeout=self._op_timeout_s)
-                max_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMax, timeout=self._op_timeout_s)
+                min_val = await self._run_blocking(self.camera.GevSCPSPacketSize.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._run_blocking(self.camera.GevSCPSPacketSize.GetMax, timeout=self._op_timeout_s)
                 return [int(min_val), int(max_val)]
             else:
                 return [1476, 9000]  # Default range for non-GigE cameras
@@ -2231,8 +2282,8 @@ class BaslerCameraBackend(CameraBackend):
                 self.camera.Open()
 
             if hasattr(self.camera, "GevSCPD"):
-                min_val = await self._sdk(self.camera.GevSCPD.GetMin, timeout=self._op_timeout_s)
-                max_val = await self._sdk(self.camera.GevSCPD.GetMax, timeout=self._op_timeout_s)
+                min_val = await self._run_blocking(self.camera.GevSCPD.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._run_blocking(self.camera.GevSCPD.GetMax, timeout=self._op_timeout_s)
                 return [int(min_val), int(max_val)]
             else:
                 return [0, 65535]  # Default range for non-GigE cameras
@@ -2254,14 +2305,14 @@ class BaslerCameraBackend(CameraBackend):
                 self.initialized = False
 
                 try:
-                    if await self._sdk(camera.IsGrabbing, timeout=self._op_timeout_s):
-                        await self._sdk(camera.StopGrabbing, timeout=self._op_timeout_s)
+                    if await self._run_blocking(camera.IsGrabbing, timeout=self._op_timeout_s):
+                        await self._run_blocking(camera.StopGrabbing, timeout=self._op_timeout_s)
                 except Exception as e:
                     self.logger.warning(f"Error stopping grab for camera '{self.camera_name}': {str(e)}")
 
                 try:
-                    if await self._sdk(camera.IsOpen, timeout=self._op_timeout_s):
-                        await self._sdk(camera.Close, timeout=self._op_timeout_s)
+                    if await self._run_blocking(camera.IsOpen, timeout=self._op_timeout_s):
+                        await self._run_blocking(camera.Close, timeout=self._op_timeout_s)
                 except Exception as e:
                     self.logger.warning(f"Error closing camera '{self.camera_name}': {str(e)}")
 
