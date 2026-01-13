@@ -53,16 +53,24 @@ def get_db() -> MongoMindtraceODM:
     return _db
 
 
-async def initialize_db() -> None:
+async def initialize_db(run_seed: bool = True) -> None:
     """
     Explicitly initialize the database connection and Beanie ODM.
 
     Should be called during application startup for predictable initialization.
     This initializes the Motor client, connects to MongoDB, and creates indexes
     defined in document Settings.
+
+    Args:
+        run_seed: If True, runs the seed module to create default data.
     """
     db = get_db()
     await db.initialize()
+
+    # Run seed to create default roles and admin user
+    if run_seed:
+        from mindtrace.apps.inspectra.seed import run_seed as seed_data
+        await seed_data()
 
 
 async def close_db() -> None:

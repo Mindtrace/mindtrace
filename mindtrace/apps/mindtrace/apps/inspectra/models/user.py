@@ -4,9 +4,10 @@ Note: The User entity is now defined as UserDocument in models/documents.py
 using MindtraceDocument (Beanie ODM).
 """
 
+from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 # Request/Response models for User Management
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 class UserCreateRequest(BaseModel):
     """Admin request to create a new user."""
 
-    username: str = Field(..., min_length=1, description="Username")
+    email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., min_length=1, description="Initial password")
     role_id: Optional[str] = Field(None, description="Role ID (defaults to 'user' role)")
     plant_id: Optional[str] = Field(None, description="Plant/org ID the user belongs to")
@@ -49,10 +50,11 @@ class UserResponse(BaseModel):
     """API-safe user representation (no password hash)."""
 
     id: str = Field(..., description="User ID")
-    username: str = Field(..., description="Username")
+    email: str = Field(..., description="User email address")
     role_id: str = Field(..., description="Role ID")
     plant_id: Optional[str] = Field(None, description="Plant/org ID")
     is_active: bool = Field(..., description="Whether user is active")
+    password_expires_in: Optional[int] = Field(None, description="Days until password expires")
 
 
 class UserListRequest(BaseModel):
@@ -63,7 +65,7 @@ class UserListRequest(BaseModel):
     is_active: Optional[bool] = Field(None, description="Filter by active status")
     role_id: Optional[str] = Field(None, description="Filter by role")
     plant_id: Optional[str] = Field(None, description="Filter by plant/org")
-    search: Optional[str] = Field(None, description="Search by username")
+    search: Optional[str] = Field(None, description="Search by email")
 
 
 class UserListResponse(BaseModel):

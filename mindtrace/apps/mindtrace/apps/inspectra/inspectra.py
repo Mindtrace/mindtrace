@@ -567,11 +567,11 @@ class InspectraService(Service):
 
     async def register(self, payload: RegisterPayload) -> TokenResponse:
         """Register a new user and return an access token."""
-        existing = await self.user_repo.get_by_username(payload.username)
+        existing = await self.user_repo.get_by_email(payload.email)
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists",
+                detail="Email already exists",
             )
 
         # Validate password against default policy
@@ -588,30 +588,32 @@ class InspectraService(Service):
         default_role_id = await self._get_default_role_id()
 
         user = await self.user_repo.create_user(
-            username=payload.username,
+            email=payload.email,
             password_hash=password_hash,
             role_id=default_role_id,
         )
 
-        token = create_access_token(subject=user.username)
+        token = create_access_token(subject=user.email)
         return TokenResponse(access_token=token)
 
     async def login(self, payload: LoginPayload) -> TokenResponse:
         """Login an existing user and return an access token."""
+        from mindtrace.apps.inspectra.core.security import check_password_expiry
+
         tracker = get_login_tracker()
 
         # Check if account is locked
-        if tracker.is_locked(payload.username):
-            remaining = tracker.get_lockout_remaining(payload.username)
+        if tracker.is_locked(payload.email):
+            remaining = tracker.get_lockout_remaining(payload.email)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Account temporarily locked. Try again in {remaining} seconds.",
             )
 
-        user = await self.user_repo.get_by_username(payload.username)
+        user = await self.user_repo.get_by_email(payload.email)
         if not user or not verify_password(payload.password, user.password_hash):
             # Record failed attempt
-            is_locked = tracker.record_failure(payload.username)
+            is_locked = tracker.record_failure(payload.email)
             if is_locked:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -619,7 +621,7 @@ class InspectraService(Service):
                 )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password",
+                detail="Invalid email or password",
             )
 
         if not user.is_active:
@@ -628,11 +630,28 @@ class InspectraService(Service):
                 detail="User account is deactivated",
             )
 
-        # Clear failed attempts on successful login
-        tracker.record_success(payload.username)
+        # Check password expiry
+        expiry_info = check_password_expiry(user.password_changed_at)
+        if expiry_info["expired"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your password has expired. Please contact Mindtrace admin to reset your password.",
+            )
 
-        token = create_access_token(subject=user.username)
-        return TokenResponse(access_token=token)
+        # Clear failed attempts on successful login
+        tracker.record_success(payload.email)
+
+        token = create_access_token(subject=user.email)
+
+        # Include warning if password expiring soon
+        password_expiry_warning = None
+        if expiry_info["warning"]:
+            password_expiry_warning = expiry_info["days_remaining"]
+
+        return TokenResponse(
+            access_token=token,
+            password_expiry_warning=password_expiry_warning
+        )
 
     # -------------------------------------------------------------------------
     # Plant handlers
@@ -956,7 +975,7 @@ class InspectraService(Service):
         items = [
             UserResponse(
                 id=str(u.id),
-                username=u.username,
+                email=u.email,
                 role_id=u.role_id,
                 plant_id=u.plant_id,
                 is_active=u.is_active,
@@ -969,11 +988,11 @@ class InspectraService(Service):
 
     async def create_user(self, req: UserCreateRequest) -> UserResponse:
         """Create a new user (admin)."""
-        existing = await self.user_repo.get_by_username(req.username)
+        existing = await self.user_repo.get_by_email(req.email)
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists",
+                detail="Email already exists",
             )
 
         # Validate password against default policy
@@ -990,7 +1009,7 @@ class InspectraService(Service):
         password_hash = hash_password(req.password)
 
         user = await self.user_repo.create_user(
-            username=req.username,
+            email=req.email,
             password_hash=password_hash,
             role_id=role_id,
             plant_id=req.plant_id,
@@ -1001,7 +1020,7 @@ class InspectraService(Service):
 
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
@@ -1017,7 +1036,7 @@ class InspectraService(Service):
             )
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
@@ -1035,7 +1054,7 @@ class InspectraService(Service):
             )
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
@@ -1082,7 +1101,7 @@ class InspectraService(Service):
             )
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
@@ -1098,7 +1117,7 @@ class InspectraService(Service):
             )
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
@@ -1108,18 +1127,26 @@ class InspectraService(Service):
         self, current_user: AuthenticatedUser = Depends(get_current_user)
     ) -> UserResponse:
         """Get the current user's profile."""
+        from mindtrace.apps.inspectra.core.security import check_password_expiry
+
         user = await self.user_repo.get_by_id(current_user.user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
             )
+
+        # Calculate password expiry for profile
+        expiry_info = check_password_expiry(user.password_changed_at)
+        password_expires_in = expiry_info["days_remaining"] if not expiry_info["expired"] else 0
+
         return UserResponse(
             id=str(user.id),
-            username=user.username,
+            email=user.email,
             role_id=user.role_id,
             plant_id=user.plant_id,
             is_active=user.is_active,
+            password_expires_in=password_expires_in,
         )
 
     async def change_own_password(

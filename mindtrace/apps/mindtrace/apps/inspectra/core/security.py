@@ -34,12 +34,40 @@ class AuthenticatedUser(BaseModel):
     """Extended authenticated user with role details."""
 
     user_id: str
-    username: str
+    email: str
     role_id: str
     role_name: str
     plant_id: Optional[str] = None
     permissions: List[str] = []
     is_active: bool = True
+
+
+# Password expiry configuration
+PASSWORD_EXPIRY_DAYS = 90
+PASSWORD_WARNING_DAYS = 7
+
+
+def check_password_expiry(password_changed_at: Optional[datetime]) -> dict:
+    """Check if password is expired or expiring soon.
+
+    Args:
+        password_changed_at: When the password was last changed
+
+    Returns:
+        Dict with expired, days_remaining, and warning flags
+    """
+    if not password_changed_at:
+        # No password_changed_at means password should be considered expired
+        return {"expired": True, "days_remaining": 0, "warning": False}
+
+    days_since_change = (datetime.utcnow() - password_changed_at).days
+    days_remaining = PASSWORD_EXPIRY_DAYS - days_since_change
+
+    return {
+        "expired": days_remaining <= 0,
+        "days_remaining": max(0, days_remaining),
+        "warning": 0 < days_remaining <= PASSWORD_WARNING_DAYS
+    }
 
 
 def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
@@ -185,7 +213,7 @@ async def get_current_user(
     from mindtrace.apps.inspectra.repositories.role_repository import RoleRepository
 
     user_repo = UserRepository()
-    user = await user_repo.get_by_username(token_data.sub)
+    user = await user_repo.get_by_email(token_data.sub)
 
     if not user:
         raise HTTPException(
@@ -204,7 +232,7 @@ async def get_current_user(
 
     return AuthenticatedUser(
         user_id=str(user.id),
-        username=user.username,
+        email=user.email,
         role_id=str(user.role_id),
         role_name=role.name if role else "unknown",
         plant_id=str(user.plant_id) if user.plant_id else None,

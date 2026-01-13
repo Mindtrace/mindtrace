@@ -16,11 +16,12 @@ from mindtrace.database import MindtraceDocument
 class UserDocument(MindtraceDocument):
     """User document for authentication and authorization."""
 
-    username: Indexed(str, unique=True)
+    email: Indexed(str, unique=True)
     password_hash: str
     role_id: Indexed(str)
     plant_id: Optional[str] = None
     is_active: bool = True
+    password_changed_at: Optional[datetime] = None  # Track when password was last changed
 
     class Settings:
         name = "users"

@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY frontend/inspectra/package.json frontend/inspectra/package-lock.json* ./
 
 # Install dependencies
 RUN npm ci
@@ -15,7 +15,7 @@ WORKDIR /app
 
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY frontend/inspectra/ .
 
 # Set environment to production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -50,4 +50,3 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
-

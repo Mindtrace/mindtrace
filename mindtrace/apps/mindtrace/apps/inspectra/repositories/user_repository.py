@@ -1,6 +1,7 @@
 """Repository for user CRUD operations using mindtrace.database ODM."""
 
 import re
+from datetime import datetime
 from typing import List, Optional, Tuple
 
 from mindtrace.database import DocumentNotFoundError
@@ -12,10 +13,10 @@ from mindtrace.apps.inspectra.models.documents import UserDocument
 class UserRepository:
     """Repository for managing users via MongoMindtraceODM."""
 
-    async def get_by_username(self, username: str) -> Optional[UserDocument]:
-        """Get user by username."""
+    async def get_by_email(self, email: str) -> Optional[UserDocument]:
+        """Get user by email."""
         db = get_db()
-        users = await UserDocument.find({"username": username}).to_list()
+        users = await UserDocument.find({"email": email}).to_list()
         return users[0] if users else None
 
     async def get_by_id(self, user_id: str) -> Optional[UserDocument]:
@@ -61,7 +62,7 @@ class UserRepository:
             query_filter["plant_id"] = plant_id
 
         if search:
-            query_filter["username"] = {"$regex": re.escape(search), "$options": "i"}
+            query_filter["email"] = {"$regex": re.escape(search), "$options": "i"}
 
         # Build and execute query
         query = UserDocument.find(query_filter)
@@ -74,7 +75,7 @@ class UserRepository:
 
     async def create_user(
         self,
-        username: str,
+        email: str,
         password_hash: str,
         role_id: str,
         plant_id: Optional[str] = None,
@@ -82,11 +83,12 @@ class UserRepository:
         """Create a new user."""
         db = get_db()
         user = UserDocument(
-            username=username,
+            email=email,
             password_hash=password_hash,
             role_id=role_id,
             plant_id=plant_id,
             is_active=True,
+            password_changed_at=datetime.utcnow(),
         )
         return await db.user.insert(user)
 
@@ -116,11 +118,12 @@ class UserRepository:
         return await db.user.update(user)
 
     async def update_password(self, user_id: str, password_hash: str) -> bool:
-        """Update user's password hash."""
+        """Update user's password hash and reset password_changed_at."""
         db = get_db()
         try:
             user = await db.user.get(user_id)
             user.password_hash = password_hash
+            user.password_changed_at = datetime.utcnow()
             await db.user.update(user)
             return True
         except DocumentNotFoundError:
