@@ -1303,7 +1303,7 @@ class CameraManagerService(Service):
                 success=False, message=f"Failed to start stream for '{request.camera}': {str(e)}", data=None
             )
 
-    async def stop_stream(self, request: StreamStopRequest) -> BoolResponse:
+    def stop_stream(self, request: StreamStopRequest) -> BoolResponse:
         """Stop camera stream with resilient state management."""
         try:
             # Remove from active streams regardless of camera state
@@ -1369,12 +1369,9 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get stream status for '{request.camera}': {e}")
             raise
 
-    async def get_active_streams(self) -> ActiveStreamsResponse:
+    def get_active_streams(self) -> ActiveStreamsResponse:
         """Get list of cameras with active streams."""
         try:
-            await self._get_camera_manager()
-
-            # Return list of cameras with active streams
             active_streams = list(self._active_streams.keys())
 
             return ActiveStreamsResponse(
@@ -1384,12 +1381,9 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get active streams: {e}")
             raise
 
-    async def stop_all_streams(self) -> BoolResponse:
+    def stop_all_streams(self) -> BoolResponse:
         """Stop all active camera streams."""
         try:
-            await self._get_camera_manager()
-
-            # Stop all active streams
             stopped_count = len(self._active_streams)
             self._active_streams.clear()
 
@@ -1466,14 +1460,17 @@ class CameraManagerService(Service):
                                 frame_np = (frame_np * 255).astype(np.uint8)
 
                             # Convert RGB to BGR if needed (OpenCV expects BGR)
+                            # Run in threadpool to avoid blocking event loop
                             if len(frame_np.shape) == 3 and frame_np.shape[2] == 3:
                                 # Assuming RGB input, convert to BGR for cv2
-                                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                                frame_bgr = await asyncio.to_thread(cv2.cvtColor, frame_np, cv2.COLOR_RGB2BGR)
                             else:
                                 frame_bgr = frame_np
 
-                            # Encode as JPEG with dynamic quality
-                            success, jpeg_data = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+                            # Encode as JPEG with dynamic quality (run in threadpool)
+                            success, jpeg_data = await asyncio.to_thread(
+                                cv2.imencode, ".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality]
+                            )
 
                             if success:
                                 # Create MJPEG frame (Poseidon format)
@@ -1607,7 +1604,7 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
-    async def calibrate_homography_correspondences(
+    def calibrate_homography_correspondences(
         self, request: HomographyCalibrateCorrespondencesRequest
     ) -> HomographyCalibrationResponse:
         """Calibrate homography from known point correspondences."""
@@ -1664,7 +1661,7 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
-    async def calibrate_homography_multi_view(
+    def calibrate_homography_multi_view(
         self, request: HomographyCalibrateMultiViewRequest
     ) -> HomographyCalibrationResponse:
         """Calibrate homography from multiple checkerboard positions on the same plane.
@@ -1741,9 +1738,7 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
-    async def measure_homography_box(
-        self, request: HomographyMeasureBoundingBoxRequest
-    ) -> HomographyMeasurementResponse:
+    def measure_homography_box(self, request: HomographyMeasureBoundingBoxRequest) -> HomographyMeasurementResponse:
         """Measure bounding box dimensions using homography calibration."""
         try:
             from mindtrace.hardware import BoundingBox, CalibrationData, HomographyMeasurer
@@ -1782,9 +1777,7 @@ class CameraManagerService(Service):
             result = HomographyMeasurementResult(success=False)
             return HomographyMeasurementResponse(success=False, message=f"Measurement failed: {str(e)}", data=result)
 
-    async def measure_homography_batch(
-        self, request: HomographyMeasureBatchRequest
-    ) -> HomographyBatchMeasurementResponse:
+    def measure_homography_batch(self, request: HomographyMeasureBatchRequest) -> HomographyBatchMeasurementResponse:
         """Unified batch measurement for bounding boxes and/or point-pair distances."""
         try:
             import numpy as np
@@ -1888,9 +1881,7 @@ class CameraManagerService(Service):
                 data=data,
             )
 
-    async def measure_homography_distance(
-        self, request: HomographyMeasureDistanceRequest
-    ) -> HomographyDistanceResponse:
+    def measure_homography_distance(self, request: HomographyMeasureDistanceRequest) -> HomographyDistanceResponse:
         """Measure distance between two points using homography calibration."""
         try:
             import numpy as np

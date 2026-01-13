@@ -90,7 +90,7 @@ class PLCManagerService(Service):
         # Register all endpoints with their schemas
         self._register_endpoints()
 
-    async def _get_plc_manager(self) -> PLCManager:
+    def _get_plc_manager(self) -> PLCManager:
         """Get or create PLC manager instance."""
         self.logger.debug(f"_get_plc_manager called, current manager: {self._plc_manager}")
         if self._plc_manager is None:
@@ -158,10 +158,10 @@ class PLCManagerService(Service):
         )
 
     # Backend & Discovery Operations
-    async def discover_backends(self) -> BackendsResponse:
+    def discover_backends(self) -> BackendsResponse:
         """Discover available PLC backends."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             backend_info = manager.get_backend_info()
             backends = list(backend_info.keys())
 
@@ -170,10 +170,10 @@ class PLCManagerService(Service):
             self.logger.error(f"Backend discovery failed: {e}")
             raise
 
-    async def get_backend_info(self) -> BackendInfoResponse:
+    def get_backend_info(self) -> BackendInfoResponse:
         """Get detailed information about all backends."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             backend_info = manager.get_backend_info()
 
             # Convert to BackendInfo models
@@ -199,7 +199,7 @@ class PLCManagerService(Service):
     async def discover_plcs(self, request: BackendFilterRequest) -> ListResponse:
         """Discover available PLCs from all or specific backends."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             discovered_plcs = await manager.discover_plcs()
 
             # Flatten discovered PLCs
@@ -222,7 +222,7 @@ class PLCManagerService(Service):
     async def connect_plc(self, request: PLCConnectRequest) -> BoolResponse:
         """Connect to a PLC."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
 
             # Register PLC
             await manager.register_plc(
@@ -250,7 +250,7 @@ class PLCManagerService(Service):
     async def connect_plcs_batch(self, request: PLCConnectBatchRequest) -> BatchOperationResponse:
         """Connect to multiple PLCs in batch."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             successful = []
             failed = []
             results = {}
@@ -303,7 +303,7 @@ class PLCManagerService(Service):
     async def disconnect_plc(self, request: PLCDisconnectRequest) -> BoolResponse:
         """Disconnect from a PLC."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             success = await manager.disconnect_plc(request.plc)
 
             return BoolResponse(success=success, message=f"PLC '{request.plc}' disconnected successfully", data=success)
@@ -314,7 +314,7 @@ class PLCManagerService(Service):
     async def disconnect_plcs_batch(self, request: PLCDisconnectBatchRequest) -> BatchOperationResponse:
         """Disconnect from multiple PLCs in batch."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             results = await manager.disconnect_all_plcs()
 
             # Filter to requested PLCs only
@@ -342,7 +342,7 @@ class PLCManagerService(Service):
     async def disconnect_all_plcs(self) -> BoolResponse:
         """Disconnect from all active PLCs."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             results = await manager.disconnect_all_plcs()
             plc_count = len(results)
 
@@ -351,10 +351,10 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to disconnect all PLCs: {e}")
             raise
 
-    async def get_active_plcs(self) -> ActivePLCsResponse:
+    def get_active_plcs(self) -> ActivePLCsResponse:
         """Get list of currently active PLCs."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             active_plcs = manager.get_registered_plcs()
 
             return ActivePLCsResponse(success=True, message=f"Found {len(active_plcs)} active PLCs", data=active_plcs)
@@ -366,7 +366,7 @@ class PLCManagerService(Service):
     async def read_tags(self, request: TagReadRequest) -> TagReadResponse:
         """Read tag values from a PLC."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             values = await manager.read_tag(request.plc, request.tags)
 
             self._total_tag_reads += len(values) if isinstance(values, dict) else 1
@@ -380,7 +380,7 @@ class PLCManagerService(Service):
     async def write_tags(self, request: TagWriteRequest) -> TagWriteResponse:
         """Write tag values to a PLC."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             results = await manager.write_tag(request.plc, request.tags)
 
             self._total_tag_writes += len(results) if isinstance(results, dict) else 1
@@ -396,7 +396,7 @@ class PLCManagerService(Service):
     async def read_tags_batch(self, request: TagBatchReadRequest) -> BatchTagReadResponse:
         """Read tags from multiple PLCs in batch."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             results = await manager.read_tags_batch(request.requests)
 
             successful_count = sum(1 for v in results.values() if not isinstance(v, dict) or "error" not in v)
@@ -416,7 +416,7 @@ class PLCManagerService(Service):
     async def write_tags_batch(self, request: TagBatchWriteRequest) -> BatchTagWriteResponse:
         """Write tags to multiple PLCs in batch."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             results = await manager.write_tags_batch(request.requests)
 
             successful_count = sum(1 for v in results.values() if not isinstance(v, dict) or "error" not in v)
@@ -436,7 +436,7 @@ class PLCManagerService(Service):
     async def list_tags(self, request: PLCQueryRequest) -> TagListResponse:
         """List all available tags on a PLC."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             tags = await manager.get_plc_tags(request.plc)
 
             return TagListResponse(success=True, message=f"Found {len(tags)} tags on PLC '{request.plc}'", data=tags)
@@ -447,7 +447,7 @@ class PLCManagerService(Service):
     async def get_tag_info(self, request: TagInfoRequest) -> TagInfoResponse:
         """Get detailed information about a specific tag."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
 
             # Check if PLC is registered
             if request.plc not in manager.get_registered_plcs():
@@ -476,7 +476,7 @@ class PLCManagerService(Service):
     async def get_plc_status(self, request: PLCQueryRequest) -> PLCStatusResponse:
         """Get PLC status information."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             status_dict = await manager.get_plc_status(request.plc)
 
             status = PLCStatus(
@@ -498,7 +498,7 @@ class PLCManagerService(Service):
     async def get_plc_info(self, request: PLCQueryRequest) -> PLCInfoResponse:
         """Get detailed PLC information."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             status_dict = await manager.get_plc_status(request.plc)
 
             info = PLCInfo(
@@ -525,7 +525,7 @@ class PLCManagerService(Service):
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics information."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             all_status = await manager.get_all_plc_status()
 
             active_plcs = len(all_status)
@@ -554,10 +554,10 @@ class PLCManagerService(Service):
             raise
 
     # Health Check
-    async def health_check(self) -> dict:
+    def health_check(self) -> dict:
         """Health check endpoint for container healthcheck."""
         try:
-            manager = await self._get_plc_manager()
+            manager = self._get_plc_manager()
             backend_info = manager.get_backend_info()
             backends = list(backend_info.keys())
             active_plcs = manager.get_registered_plcs()
