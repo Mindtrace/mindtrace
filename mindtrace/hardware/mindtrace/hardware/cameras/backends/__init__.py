@@ -7,11 +7,13 @@ Available Backends:
     - CameraBackend: Abstract base class defining the camera interface
     - BaslerCameraBackend: Industrial cameras from Basler (when available)
     - OpenCVCameraBackend: USB cameras and webcams via OpenCV (when available)
+    - GenICamCameraBackend: GenICam-compliant cameras via Harvesters (when available)
 
 Usage:
 from mindtrace.hardware.cameras.backends import CameraBackend
 from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend
 from mindtrace.hardware.cameras.backends.opencv import OpenCVCameraBackend
+from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
 
 Configuration:
     Camera backends integrate with the Mindtrace configuration system

@@ -13,14 +13,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
 
-try:
-    from mindtrace.storage.gcs import GCSStorageHandler
-
-    STORAGE_AVAILABLE = True
-except ImportError:
-    GCSStorageHandler = None
-    STORAGE_AVAILABLE = False
-
 
 class AsyncCameraManager(Mindtrace):
     """Mindtrace Async Camera Manager class.
@@ -61,6 +53,7 @@ class AsyncCameraManager(Mindtrace):
     _backend_cache: Dict[str, Dict[str, Any]] = {
         "basler": {"checked": False, "available": False, "class": None},
         "opencv": {"checked": False, "available": False, "class": None},
+        "genicam": {"checked": False, "available": False, "class": None},
     }
 
     def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
@@ -92,9 +85,14 @@ class AsyncCameraManager(Mindtrace):
         self._capture_semaphore = asyncio.Semaphore(max_concurrent_captures)
         self._max_concurrent_captures = max_concurrent_captures
 
+        # Performance settings that persist across camera open/close cycles
+        self._timeout_ms = self._hardware_config.cameras.timeout_ms
+        self._retrieve_retry_count = self._hardware_config.cameras.retrieve_retry_count
+
         self.logger.info(
             f"AsyncCameraManager initialized. Available backends: {self._discovered_backends}, "
-            f"max_concurrent_captures={max_concurrent_captures}"
+            f"max_concurrent_captures={max_concurrent_captures}, "
+            f"timeout_ms={self._timeout_ms}, retrieve_retry_count={self._retrieve_retry_count}"
         )
 
     def backends(self) -> List[str]:
@@ -104,7 +102,7 @@ class AsyncCameraManager(Mindtrace):
     def backend_info(self) -> Dict[str, Dict[str, Any]]:
         """Detailed information about all backends."""
         info: Dict[str, Dict[str, Any]] = {}
-        for backend in ["Basler", "OpenCV"]:
+        for backend in ["Basler", "OpenCV", "GenICam"]:
             available, _ = self._discover_backend(backend.lower())
             info[backend] = {"available": available, "type": "hardware", "sdk_required": True}
         if self._include_mocks:
@@ -124,7 +122,7 @@ class AsyncCameraManager(Mindtrace):
             backends: Optional backend(s) to discover cameras from. Can be:
                 - None: Discover from all available backends (default behavior)
                 - str: Single backend name (e.g., "Basler", "OpenCV")
-                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
+                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV", "GenICam"])
             details: If True, return a list of dicts with detailed camera information.
 
         Returns:
@@ -143,7 +141,7 @@ class AsyncCameraManager(Mindtrace):
             baslers = manager.discover("Basler")
 
             # Discover multiple backends
-            mixed = manager.discover(["Basler", "OpenCV"])"""
+            mixed = manager.discover(["Basler", "OpenCV", "GenICam"])"""
         all_cameras: List[str] = []
         all_details: List[Dict[str, Any]] = []
 
@@ -163,6 +161,12 @@ class AsyncCameraManager(Mindtrace):
                     discovered.append("Basler")
             except Exception:
                 pass
+            try:
+                available, _ = cls._discover_backend("genicam")
+                if available:
+                    discovered.append("GenICam")
+            except Exception:
+                pass
             if include_mocks:
                 discovered.append("MockBasler")
             backends_to_search = discovered
@@ -180,7 +184,7 @@ class AsyncCameraManager(Mindtrace):
 
         # Validate specified backends
         for backend in backends_to_search:
-            valid = {"OpenCV", "Basler"}
+            valid = {"OpenCV", "Basler", "GenICam"}
             if include_mocks:
                 valid.add("MockBasler")
             if backend not in valid:
@@ -201,6 +205,10 @@ class AsyncCameraManager(Mindtrace):
                     valid_list.append(b)
             elif b == "Basler":
                 available, _ = cls._discover_backend("basler")
+                if available:
+                    valid_list.append(b)
+            elif b == "GenICam":
+                available, _ = cls._discover_backend("genicam")
                 if available:
                     valid_list.append(b)
             elif b == "MockBasler" and include_mocks:
@@ -277,6 +285,50 @@ class AsyncCameraManager(Mindtrace):
                                         "width": 0,
                                         "height": 0,
                                         "fps": 0.0,
+                                    }
+                                )
+                        else:
+                            all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
+                elif backend == "GenICam":
+                    available, camera_class = cls._discover_backend(backend.lower())
+                    if available and camera_class:
+                        cameras = camera_class.get_available_cameras()
+                        try:
+                            cls.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        except Exception:
+                            pass
+                        if details:
+                            detailed_cameras = camera_class.get_available_cameras(include_details=True)
+                            for cam_id, cam_details in detailed_cameras.items():
+                                # Extract standard camera properties with safe defaults
+                                try:
+                                    width = int(cam_details.get("width", 0))
+                                except Exception:
+                                    width = 0
+                                try:
+                                    height = int(cam_details.get("height", 0))
+                                except Exception:
+                                    height = 0
+                                try:
+                                    fps = float(cam_details.get("fps", 0.0))
+                                except Exception:
+                                    fps = 0.0
+
+                                all_details.append(
+                                    {
+                                        "name": f"{backend}:{cam_id}",
+                                        "backend": backend,
+                                        "index": None,  # GenICam uses device IDs, not numeric indices
+                                        "width": width,
+                                        "height": height,
+                                        "fps": fps,
+                                        "serial_number": cam_details.get("serial_number", ""),
+                                        "model": cam_details.get("model", ""),
+                                        "vendor": cam_details.get("vendor", ""),
+                                        "interface": cam_details.get("interface", ""),
+                                        "display_name": cam_details.get("display_name", ""),
+                                        "user_defined_name": cam_details.get("user_defined_name", ""),
+                                        "device_id": cam_details.get("device_id", ""),
                                     }
                                 )
                         else:
@@ -462,6 +514,64 @@ class AsyncCameraManager(Mindtrace):
         self._capture_semaphore = asyncio.Semaphore(max_captures)
         self.logger.info(f"Max concurrent captures set to {max_captures}")
 
+    @property
+    def timeout_ms(self) -> int:
+        """Get the current capture timeout in milliseconds.
+
+        Returns:
+            Current capture timeout in milliseconds
+        """
+        return self._timeout_ms
+
+    @timeout_ms.setter
+    def timeout_ms(self, timeout: int) -> None:
+        """Set the capture timeout for future camera opens and update active cameras.
+
+        Args:
+            timeout: Timeout in milliseconds
+
+        Raises:
+            ValueError: If timeout is less than 100
+        """
+        if timeout < 100:
+            raise ValueError("timeout_ms must be at least 100")
+        self._timeout_ms = timeout
+        # Update all active cameras
+        for camera_name, camera in self._cameras.items():
+            if hasattr(camera, "_backend") and hasattr(camera._backend, "timeout_ms"):
+                camera._backend.timeout_ms = timeout
+                if hasattr(camera._backend, "_op_timeout_s"):
+                    camera._backend._op_timeout_s = max(1.0, float(timeout) / 1000.0)
+        self.logger.info(f"Capture timeout set to {timeout}ms")
+
+    @property
+    def retrieve_retry_count(self) -> int:
+        """Get the current retrieve retry count.
+
+        Returns:
+            Current number of capture retry attempts
+        """
+        return self._retrieve_retry_count
+
+    @retrieve_retry_count.setter
+    def retrieve_retry_count(self, count: int) -> None:
+        """Set the retrieve retry count for future camera opens and update active cameras.
+
+        Args:
+            count: Number of retry attempts
+
+        Raises:
+            ValueError: If count is less than 1
+        """
+        if count < 1:
+            raise ValueError("retrieve_retry_count must be at least 1")
+        self._retrieve_retry_count = count
+        # Update all active cameras
+        for camera_name, camera in self._cameras.items():
+            if hasattr(camera, "_backend") and hasattr(camera._backend, "retrieve_retry_count"):
+                camera._backend.retrieve_retry_count = count
+        self.logger.info(f"Retrieve retry count set to {count}")
+
     def diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics information including bandwidth management."""
         return {
@@ -507,8 +617,8 @@ class AsyncCameraManager(Mindtrace):
                 if camera_name not in self._cameras:
                     raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                 camera = self._cameras[camera_name]
-                success = await camera.configure(**settings)
-                return camera_name, success
+                await camera.configure(**settings)
+                return camera_name, True
             except Exception as e:
                 self.logger.error(f"Configuration failed for '{camera_name}': {e}")
                 return camera_name, False
@@ -526,9 +636,21 @@ class AsyncCameraManager(Mindtrace):
         return results
 
     async def batch_capture(
-        self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
+        self,
+        camera_names: List[str],
+        save_path_pattern: Optional[str] = None,
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
-        """Capture from multiple cameras with network bandwidth management."""
+        """Capture from multiple cameras with network bandwidth management.
+
+        Args:
+            camera_names: List of camera names to capture from
+            save_path_pattern: Optional path pattern for saving images. Use {camera} placeholder for camera name
+            output_format: Output format for images
+
+        Returns:
+            Dictionary mapping camera names to captured images or file paths
+        """
         results = {}
 
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
@@ -537,8 +659,21 @@ class AsyncCameraManager(Mindtrace):
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
-                    image = await camera.capture(upload_to_gcs=upload_to_gcs, output_format=output_format)
-                    return camera_name, image
+
+                    # Generate save path for this camera if pattern provided
+                    save_path = None
+                    if save_path_pattern:
+                        # Replace {camera} placeholder with camera name (sanitized for filesystem)
+                        safe_camera_name = camera_name.replace(":", "_").replace("/", "_")
+                        save_path = save_path_pattern.replace("{camera}", safe_camera_name)
+
+                    image = await camera.capture(save_path=save_path, output_format=output_format)
+
+                    # When save_path_pattern is provided, return the file path instead of image data
+                    if save_path_pattern and save_path:
+                        return camera_name, save_path
+                    else:
+                        return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
                 return camera_name, None
@@ -562,8 +697,7 @@ class AsyncCameraManager(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}
@@ -585,11 +719,8 @@ class AsyncCameraManager(Mindtrace):
                         exposure_levels=exposure_levels,
                         exposure_multiplier=exposure_multiplier,
                         return_images=return_images,
-                        upload_to_gcs=upload_to_gcs,
                         output_format=output_format,
                     )
-
-                    # HDR upload will be handled by individual camera capture_hdr method
 
                     return camera_name, result
             except Exception as e:
@@ -598,7 +729,6 @@ class AsyncCameraManager(Mindtrace):
                     "success": False,
                     "images": None,
                     "image_paths": None,
-                    "gcs_urls": None,
                     "exposure_levels": [],
                     "successful_captures": 0,
                 }
@@ -638,7 +768,7 @@ class AsyncCameraManager(Mindtrace):
     def _discover_all_backends(self) -> List[str]:
         """Discover all available camera backends."""
         backends = []
-        for backend_name in ["Basler", "OpenCV"]:
+        for backend_name in ["Basler", "OpenCV", "GenICam"]:
             self.logger.debug(f"Checking availability for backend '{backend_name}'")
             available, _ = self._discover_backend(backend_name)
             if available:
@@ -667,18 +797,28 @@ class AsyncCameraManager(Mindtrace):
             self.logger.error(f"Requested backend '{backend}' not in discovered backends: {self._discovered_backends}")
             raise CameraNotFoundError(f"Backend '{backend}' not available")
 
+        # Inject manager's performance settings if not explicitly provided
+        if "timeout_ms" not in kwargs:
+            kwargs["timeout_ms"] = self._timeout_ms
+        if "retrieve_retry_count" not in kwargs:
+            kwargs["retrieve_retry_count"] = self._retrieve_retry_count
+
         try:
-            if backend in ["Basler", "OpenCV"]:
+            if backend in ["Basler", "OpenCV", "GenICam"]:
                 available, camera_class = self._discover_backend(backend.lower())
                 if not available or not camera_class:
                     self.logger.error(f"Requested backend '{backend}' is not available or has no class")
                     raise CameraNotFoundError(f"Backend '{backend}' not available")
-                self.logger.debug(f"Creating camera instance for {backend}:{device_name}")
+                self.logger.debug(
+                    f"Creating camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}"
+                )
                 return camera_class(device_name, **kwargs)
 
             elif backend.startswith("Mock"):
                 backend_name = backend.replace("Mock", "").lower()
-                self.logger.debug(f"Creating mock camera instance for {backend}:{device_name}")
+                self.logger.debug(
+                    f"Creating mock camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}"
+                )
                 mock_class = self._get_mock_camera(backend_name)
                 return mock_class(device_name, **kwargs)
 
@@ -713,6 +853,12 @@ class AsyncCameraManager(Mindtrace):
 
                 cache["available"] = OPENCV_AVAILABLE
                 cache["class"] = OpenCVCameraBackend if OPENCV_AVAILABLE else None
+
+            elif cache_key == "genicam":
+                from mindtrace.hardware.cameras.backends.genicam import GENICAM_AVAILABLE, GenICamCameraBackend
+
+                cache["available"] = GENICAM_AVAILABLE
+                cache["class"] = GenICamCameraBackend if GENICAM_AVAILABLE else None
 
             if cache["available"]:
                 try:

@@ -19,6 +19,14 @@ from mindtrace.hardware.api.cameras.schemas.config_schemas import (
     GetCameraConfigurationSchema,
     ImportCameraConfigSchema,
 )
+from mindtrace.hardware.api.cameras.schemas.homography_schemas import (
+    CalibrateHomographyCheckerboardSchema,
+    CalibrateHomographyCorrespondencesSchema,
+    CalibrateHomographyMultiViewSchema,
+    MeasureHomographyBatchSchema,
+    MeasureHomographyBoxSchema,
+    MeasureHomographyDistanceSchema,
+)
 from mindtrace.hardware.api.cameras.schemas.info_schemas import (
     GetCameraCapabilitiesSchema,
     GetCameraInfoSchema,
@@ -34,9 +42,16 @@ from mindtrace.hardware.api.cameras.schemas.lifecycle_schemas import (
     OpenCameraSchema,
 )
 from mindtrace.hardware.api.cameras.schemas.network_schemas import (
-    GetBandwidthSettingsSchema,
     GetNetworkDiagnosticsSchema,
-    SetBandwidthLimitSchema,
+    GetPerformanceSettingsSchema,
+    SetPerformanceSettingsSchema,
+)
+from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
+    GetActiveStreamsSchema,
+    StopAllStreamsSchema,
+    StreamStartSchema,
+    StreamStatusSchema,
+    StreamStopSchema,
 )
 
 # All schemas for easy import - maintains backward compatibility
@@ -68,10 +83,23 @@ ALL_SCHEMAS = {
     "capture_images_batch": CaptureImagesBatchSchema,
     "capture_hdr_image": CaptureHDRImageSchema,
     "capture_hdr_images_batch": CaptureHDRImagesBatchSchema,
-    # Network & Bandwidth
-    "get_bandwidth_settings": GetBandwidthSettingsSchema,
-    "set_bandwidth_limit": SetBandwidthLimitSchema,
+    # Network & Performance
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
+    "get_performance_settings": GetPerformanceSettingsSchema,
+    "set_performance_settings": SetPerformanceSettingsSchema,
+    # Streaming
+    "stream_start": StreamStartSchema,
+    "stream_stop": StreamStopSchema,
+    "stream_status": StreamStatusSchema,
+    "get_active_streams": GetActiveStreamsSchema,
+    "stop_all_streams": StopAllStreamsSchema,
+    # Homography
+    "calibrate_homography_checkerboard": CalibrateHomographyCheckerboardSchema,
+    "calibrate_homography_correspondences": CalibrateHomographyCorrespondencesSchema,
+    "calibrate_homography_multi_view": CalibrateHomographyMultiViewSchema,
+    "measure_homography_box": MeasureHomographyBoxSchema,
+    "measure_homography_batch": MeasureHomographyBatchSchema,
+    "measure_homography_distance": MeasureHomographyDistanceSchema,
 }
 
 __all__ = [
@@ -102,10 +130,23 @@ __all__ = [
     "CaptureImagesBatchSchema",
     "CaptureHDRImageSchema",
     "CaptureHDRImagesBatchSchema",
-    # Network & Bandwidth
-    "GetBandwidthSettingsSchema",
-    "SetBandwidthLimitSchema",
+    # Network & Performance
     "GetNetworkDiagnosticsSchema",
+    "GetPerformanceSettingsSchema",
+    "SetPerformanceSettingsSchema",
+    # Streaming
+    "StreamStartSchema",
+    "StreamStopSchema",
+    "StreamStatusSchema",
+    "GetActiveStreamsSchema",
+    "StopAllStreamsSchema",
+    # Homography
+    "CalibrateHomographyCheckerboardSchema",
+    "CalibrateHomographyCorrespondencesSchema",
+    "CalibrateHomographyMultiViewSchema",
+    "MeasureHomographyBoxSchema",
+    "MeasureHomographyBatchSchema",
+    "MeasureHomographyDistanceSchema",
     # All schemas dictionary
     "ALL_SCHEMAS",
 ]

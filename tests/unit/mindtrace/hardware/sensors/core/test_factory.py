@@ -24,6 +24,7 @@ class TestSensorFactory:
 
     def test_create_mqtt_backend_success(self):
         """Test creating MQTT sensor backend."""
+        pytest.importorskip("aiomqtt")
         backend = create_backend("mqtt", broker_url="mqtt://localhost:1883")
 
         from mindtrace.hardware.sensors.backends.mqtt import MQTTSensorBackend
@@ -33,6 +34,7 @@ class TestSensorFactory:
 
     def test_create_mqtt_backend_with_params(self):
         """Test creating MQTT backend with additional parameters."""
+        pytest.importorskip("aiomqtt")
         backend = create_backend(
             "mqtt", broker_url="mqtt://test.broker:1883", identifier="test_client", username="user", password="pass"
         )
@@ -69,6 +71,7 @@ class TestSensorFactory:
 
     def test_create_mqtt_simulator_success(self):
         """Test creating MQTT sensor simulator."""
+        pytest.importorskip("aiomqtt")
         simulator = create_simulator_backend("mqtt", broker_url="mqtt://localhost:1883")
 
         from mindtrace.hardware.sensors.simulators.mqtt import MQTTSensorSimulator
@@ -78,6 +81,7 @@ class TestSensorFactory:
 
     def test_create_mqtt_simulator_with_params(self):
         """Test creating MQTT simulator with additional parameters."""
+        pytest.importorskip("aiomqtt")
         simulator = create_simulator_backend(
             "mqtt",
             broker_url="mqtt://sim.broker:1883",
@@ -277,6 +281,7 @@ class TestSensorFactory:
 
     def test_case_insensitive_backend_types(self):
         """Test that backend type lookup is case insensitive."""
+        pytest.importorskip("aiomqtt")
         backend1 = create_backend("mqtt", broker_url="mqtt://test:1883")
         backend2 = create_backend("MQTT", broker_url="mqtt://test:1883")
         backend3 = create_backend("Mqtt", broker_url="mqtt://test:1883")

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.7.0"
+version = "0.7.1"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,27 +13,32 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.5.0",
-  "mindtrace-jobs>=0.5.0",
-  "mindtrace-registry>=0.5.0",
-  "mindtrace-database>=0.5.0",
-  "mindtrace-services>=0.5.0",
-  "mindtrace-hardware>=0.5.0",
-  "mindtrace-cluster>=0.5.0",
-  "mindtrace-models>=0.5.0",
-  "mindtrace-automation>=0.5.0",
-  "mindtrace-apps>=0.5.0",
-  "mindtrace-ui>=0.5.0",
-  "mindtrace-datalake>=0.5.0",
-  "mindtrace-storage>=0.5.0",
-  "pydantic-settings>=2.12.0",
-  "passlib[bcrypt]>=1.7.4",
+  "mindtrace-core>=0.7.1",
+  "mindtrace-jobs>=0.7.1",
+  "mindtrace-registry>=0.7.1",
+  "mindtrace-database>=0.7.1",
+  "mindtrace-services>=0.7.1",
+  "mindtrace-hardware>=0.7.1",
+  "mindtrace-cluster>=0.7.1",
+  "mindtrace-models>=0.7.1",
+  "mindtrace-automation>=0.7.1",
+  "mindtrace-apps>=0.7.1",
+  "mindtrace-ui>=0.7.1",
+  "mindtrace-datalake>=0.7.1",
+  "mindtrace-storage>=0.7.1",
+  "pypylon>=4.2.0",
 ]
 
 [project.optional-dependencies]
-cameras-basler = ["mindtrace-hardware[cameras-basler]"]
-cameras-all = ["mindtrace-hardware[cameras-all]"]
-hardware-all = ["mindtrace-hardware[hardware-all]"]
+cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.7.1"]
+cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.7.1"]
+cameras-all = ["mindtrace-hardware[cameras-all]>=0.7.1"]
+stereo-basler = [
+    "mindtrace-hardware[stereo-basler]>=0.7.1",
+    "plyfile>=1.1.3",
+]
+stereo-all = ["mindtrace-hardware[stereo-all]>=0.7.1"]
+hardware-all = ["mindtrace-hardware[hardware-all]>=0.7.1"]
 
 [dependency-groups]
 dev = [
@@ -47,6 +52,7 @@ dev = [
     "fakeredis>=2.24.1",
     "pre-commit>=4.2.0",
     "twine>=6.1.0",
+    "tomlkit>=0.13.3",
 ]
 docs = [
     "mkdocs-material>=9.6.21",
@@ -126,9 +132,9 @@ test = """
 publish_to_pypi = """
     # Push all packages to PyPI
     # First build all packages: uv build --all-packages
-    # ds publish_to_pypi                    # Push to Test PyPI (default)
-    # ds publish_to_pypi testpypi          # Push to Test PyPI (explicit)
-    # ds publish_to_pypi pypi              # Push to production PyPI
+    # ds publish_to_pypi                          # Push to Test PyPI (default)
+    # ds publish_to_pypi: testpypi 0.2.0          # Push to Test PyPI (explicit)
+    # ds publish_to_pypi: pypi 0.2.0              # Push to production PyPI
 
     bash scripts/push_to_pypi.sh ${@:-}
 """
