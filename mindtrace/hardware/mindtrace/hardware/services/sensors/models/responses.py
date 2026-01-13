@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from mindtrace.hardware.core.types import ServiceStatus
+
 
 class SensorConnectionStatus(str, Enum):
     """Status of sensor connection."""
@@ -123,3 +125,14 @@ class SensorListResponse(BaseModel):
                 "message": "Retrieved 1 sensors",
             }
         }
+
+
+# Health Check
+class HealthCheckResponse(BaseModel):
+    """Health check response model."""
+
+    status: ServiceStatus
+    service: str
+    version: str = "1.0.0"
+    active_sensors: int = 0
+    error: Optional[str] = None

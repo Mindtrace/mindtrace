@@ -1,5 +1,6 @@
 """Models for CameraManagerService API."""
 
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.cameras.models.requests import (
     # Backend & Discovery
     BackendFilterRequest,
@@ -86,6 +87,8 @@ from mindtrace.hardware.services.cameras.models.responses import (
     FloatResponse,
     HDRCaptureResponse,
     HDRCaptureResult,
+    # Health Check
+    HealthCheckResponse,
     # Homography
     HomographyBatchMeasurementData,
     HomographyBatchMeasurementResponse,
@@ -205,4 +208,6 @@ __all__ = [
     "HomographyBatchMeasurementResponse",
     "HomographyDistanceResult",
     "HomographyDistanceResponse",
+    "HealthCheckResponse",
+    "ServiceStatus",
 ]

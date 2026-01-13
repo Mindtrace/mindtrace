@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from mindtrace.hardware.core.types import ServiceStatus
+
 
 class BaseResponse(BaseModel):
     """Base response model for all API endpoints."""
@@ -468,3 +470,16 @@ class HomographyBatchMeasurementResponse(BaseResponse):
     """Response model for unified batch homography measurements."""
 
     data: HomographyBatchMeasurementData
+
+
+# Health Check
+class HealthCheckResponse(BaseModel):
+    """Health check response model."""
+
+    status: ServiceStatus
+    service: str
+    version: str = "1.0.0"
+    backends: List[str] = Field(default_factory=list)
+    active_cameras: int = 0
+    uptime_seconds: float = 0.0
+    error: Optional[str] = None

@@ -1,5 +1,7 @@
 """PLC API models - Request and Response models."""
 
+from mindtrace.hardware.core.types import ServiceStatus
+
 from .requests import (
     BackendFilterRequest,
     PLCConnectBatchRequest,
@@ -26,6 +28,7 @@ from .responses import (
     BoolResponse,
     DictResponse,
     FloatResponse,
+    HealthCheckResponse,
     IntResponse,
     ListResponse,
     PLCInfo,
@@ -82,4 +85,6 @@ __all__ = [
     "BatchTagWriteResponse",
     "SystemDiagnostics",
     "SystemDiagnosticsResponse",
+    "HealthCheckResponse",
+    "ServiceStatus",
 ]

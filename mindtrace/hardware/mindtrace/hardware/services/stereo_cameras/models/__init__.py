@@ -1,5 +1,6 @@
 """Models for StereoCameraService API."""
 
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.stereo_cameras.models.requests import (
     BackendFilterRequest,
     PointCloudCaptureBatchRequest,
@@ -24,6 +25,7 @@ from mindtrace.hardware.services.stereo_cameras.models.responses import (
     BatchOperationResult,
     BoolResponse,
     DictResponse,
+    HealthCheckResponse,
     ListResponse,
     PointCloudBatchResponse,
     PointCloudBatchResult,
@@ -86,4 +88,6 @@ __all__ = [
     "ActiveStereoCamerasResponse",
     "SystemDiagnostics",
     "SystemDiagnosticsResponse",
+    "HealthCheckResponse",
+    "ServiceStatus",
 ]

@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from mindtrace.hardware.core.types import ServiceStatus
+
 
 class BaseResponse(BaseModel):
     """Base response model for all API endpoints."""
@@ -224,6 +226,17 @@ class SystemDiagnosticsResponse(BaseResponse):
     data: SystemDiagnostics
 
 
+# Health Check
+class HealthCheckResponse(BaseModel):
+    """Health check response model."""
+
+    status: ServiceStatus
+    service: str
+    version: str = "1.0.0"
+    active_cameras: int = 0
+    error: Optional[str] = None
+
+
 __all__ = [
     # Base
     "BaseResponse",
@@ -261,4 +274,7 @@ __all__ = [
     # System
     "SystemDiagnostics",
     "SystemDiagnosticsResponse",
+    # Health Check
+    "HealthCheckResponse",
+    "ServiceStatus",
 ]

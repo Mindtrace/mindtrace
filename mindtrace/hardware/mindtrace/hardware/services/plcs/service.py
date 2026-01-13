@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 
 from mindtrace.hardware.core.exceptions import PLCNotFoundError
+from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.plcs.plc_manager import PLCManager
 from mindtrace.hardware.services.plcs.models import (
     # Response models
@@ -23,6 +24,7 @@ from mindtrace.hardware.services.plcs.models import (
     BatchTagReadResponse,
     BatchTagWriteResponse,
     BoolResponse,
+    HealthCheckResponse,
     ListResponse,
     PLCConnectBatchRequest,
     PLCConnectRequest,
@@ -554,7 +556,7 @@ class PLCManagerService(Service):
             raise
 
     # Health Check
-    def health_check(self) -> dict:
+    def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:
             manager = self._get_plc_manager()
@@ -562,17 +564,17 @@ class PLCManagerService(Service):
             backends = list(backend_info.keys())
             active_plcs = manager.get_registered_plcs()
 
-            return {
-                "status": "healthy",
-                "service": "plc-manager",
-                "backends": backends,
-                "active_plcs": len(active_plcs),
-                "uptime_seconds": time.time() - self._startup_time,
-            }
+            return HealthCheckResponse(
+                status=ServiceStatus.HEALTHY,
+                service="plc-manager",
+                backends=backends,
+                active_plcs=len(active_plcs),
+                uptime_seconds=time.time() - self._startup_time,
+            )
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
-            return {
-                "status": "unhealthy",
-                "service": "plc-manager",
-                "error": str(e),
-            }
+            return HealthCheckResponse(
+                status=ServiceStatus.UNHEALTHY,
+                service="plc-manager",
+                error=str(e),
+            )
