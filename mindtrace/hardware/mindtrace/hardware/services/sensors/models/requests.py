@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SensorConnectionRequest(BaseModel):
@@ -13,8 +13,8 @@ class SensorConnectionRequest(BaseModel):
     config: Dict[str, Any] = Field(..., description="Backend-specific configuration")
     address: str = Field(..., description="Sensor address (topic, endpoint, or port)")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "sensor_id": "office_temp",
                 "backend_type": "mqtt",
@@ -22,6 +22,7 @@ class SensorConnectionRequest(BaseModel):
                 "address": "sensors/office/temperature",
             }
         }
+    )
 
 
 class SensorDataRequest(BaseModel):
@@ -30,8 +31,7 @@ class SensorDataRequest(BaseModel):
     sensor_id: str = Field(..., description="Unique identifier for the sensor", min_length=1)
     timeout: Optional[float] = Field(None, description="Read timeout in seconds")
 
-    class Config:
-        json_schema_extra = {"example": {"sensor_id": "office_temp", "timeout": 5.0}}
+    model_config = ConfigDict(json_schema_extra={"example": {"sensor_id": "office_temp", "timeout": 5.0}})
 
 
 class SensorStatusRequest(BaseModel):
@@ -39,8 +39,7 @@ class SensorStatusRequest(BaseModel):
 
     sensor_id: str = Field(..., description="Unique identifier for the sensor", min_length=1)
 
-    class Config:
-        json_schema_extra = {"example": {"sensor_id": "office_temp"}}
+    model_config = ConfigDict(json_schema_extra={"example": {"sensor_id": "office_temp"}})
 
 
 class SensorListRequest(BaseModel):
@@ -48,5 +47,4 @@ class SensorListRequest(BaseModel):
 
     include_status: bool = Field(False, description="Include connection status for each sensor")
 
-    class Config:
-        json_schema_extra = {"example": {"include_status": True}}
+    model_config = ConfigDict(json_schema_extra={"example": {"include_status": True}})

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from mindtrace.hardware.core.types import ServiceStatus
 
@@ -25,8 +25,8 @@ class SensorInfo(BaseModel):
     status: SensorConnectionStatus = Field(..., description="Connection status")
     last_data_time: Optional[float] = Field(None, description="Timestamp of last data read")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "sensor_id": "office_temp",
                 "backend_type": "mqtt",
@@ -35,6 +35,7 @@ class SensorInfo(BaseModel):
                 "last_data_time": 1640995200.0,
             }
         }
+    )
 
 
 class SensorConnectionResponse(BaseModel):
@@ -45,8 +46,8 @@ class SensorConnectionResponse(BaseModel):
     status: SensorConnectionStatus = Field(..., description="Connection status")
     message: Optional[str] = Field(None, description="Additional information or error message")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "sensor_id": "office_temp",
@@ -54,6 +55,7 @@ class SensorConnectionResponse(BaseModel):
                 "message": "Successfully connected to MQTT sensor",
             }
         }
+    )
 
 
 class SensorDataResponse(BaseModel):
@@ -65,8 +67,8 @@ class SensorDataResponse(BaseModel):
     timestamp: Optional[float] = Field(None, description="Timestamp when data was read")
     message: Optional[str] = Field(None, description="Additional information or error message")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "sensor_id": "office_temp",
@@ -75,6 +77,7 @@ class SensorDataResponse(BaseModel):
                 "message": "Data read successfully",
             }
         }
+    )
 
 
 class SensorStatusResponse(BaseModel):
@@ -84,8 +87,8 @@ class SensorStatusResponse(BaseModel):
     sensor_info: Optional[SensorInfo] = Field(None, description="Sensor information")
     message: Optional[str] = Field(None, description="Additional information or error message")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "sensor_info": {
@@ -98,6 +101,7 @@ class SensorStatusResponse(BaseModel):
                 "message": "Status retrieved successfully",
             }
         }
+    )
 
 
 class SensorListResponse(BaseModel):
@@ -108,8 +112,8 @@ class SensorListResponse(BaseModel):
     count: int = Field(..., description="Number of sensors")
     message: Optional[str] = Field(None, description="Additional information")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "sensors": [
@@ -125,6 +129,7 @@ class SensorListResponse(BaseModel):
                 "message": "Retrieved 1 sensors",
             }
         }
+    )
 
 
 # Health Check
@@ -134,5 +139,7 @@ class HealthCheckResponse(BaseModel):
     status: ServiceStatus
     service: str
     version: str = "1.0.0"
+    backends: Optional[List[str]] = None
     active_sensors: int = 0
+    uptime_seconds: Optional[float] = None
     error: Optional[str] = None
