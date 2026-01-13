@@ -112,6 +112,7 @@ RUN if [ "$INSTALL_BASLER" = "true" ]; then \
         echo "==> Basler Pylon SDK installed successfully"; \
     else \
         echo "==> Skipping Basler Pylon SDK installation"; \
+        mkdir -p /opt/pylon; \
     fi
 
 # Set GenICam environment variables
