@@ -130,9 +130,9 @@ FROM camera-sdk AS dependencies
 
 WORKDIR /workspace
 
-# Copy dependency files for caching (context is /home/yasser/mindtrace/)
-# Need root pyproject.toml for workspace definition and uv.lock
-COPY pyproject.toml uv.lock ./
+# Copy dependency files for caching (context is mindtrace repo root)
+# Need root pyproject.toml for workspace definition
+COPY pyproject.toml ./
 
 # Copy all workspace member pyproject.toml files for proper dependency resolution
 # (uv requires all workspace members listed in root pyproject.toml to be present)
@@ -154,7 +154,7 @@ COPY mindtrace/ui/pyproject.toml ./mindtrace/ui/
 # Note: Camera backend packages (pypylon, harvesters, genicam) will be installed
 # in the application stage via --extra flags based on build args
 RUN echo "==> Installing Python dependencies with uv..." && \
-    uv sync --no-install-project --no-dev --locked
+    uv sync --no-install-project --no-dev
 
 # =============================================================================
 # Stage 4: Application - Install mindtrace-hardware
