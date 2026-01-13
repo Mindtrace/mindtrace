@@ -131,9 +131,9 @@ cli/
 ```
 
 ### Service Integration Architecture
-- **Camera API**: Managed via `mindtrace.hardware.api.cameras.launcher`
-- **Stereo Camera API**: Managed via `mindtrace.hardware.api.stereo_cameras.launcher`
-- **PLC API**: Managed via `mindtrace.hardware.api.plcs.launcher`
+- **Camera API**: Managed via `mindtrace.hardware.services.cameras.launcher`
+- **Stereo Camera API**: Managed via `mindtrace.hardware.services.stereo_cameras.launcher`
+- **PLC API**: Managed via `mindtrace.hardware.services.plcs.launcher`
 - **Process Coordination**: PID tracking in `~/.mindtrace/hw_services.json`
 - **Health Monitoring**: TCP port checks and process validation
 
