@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.database import UnifiedMindtraceDocument
+from mindtrace.jobs import Job
 
 
 class ProxyWorker(BaseModel):
@@ -21,6 +22,7 @@ class JobStatus(UnifiedMindtraceDocument):
     worker_id: str = Field(description="Worker's id")
     status: str = Field(description="Job's status")
     output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
 
     class Meta:
         collection_name = "job_status"
