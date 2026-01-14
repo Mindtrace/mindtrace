@@ -27,7 +27,12 @@ def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str,
         raise ValueError(f"Expected 1 entry for {sort_key} == {find_key}, got {len(entries)}")
     entry = entries[0]
     for key, value in update_dict.items():
-        setattr(entry, key, value)
+        curr_entry = entry
+        while "." in key:
+            key, subkey = key.split(".", 1)
+            curr_entry = getattr(curr_entry, key)
+            key = subkey
+        setattr(curr_entry, key, value)
     database.insert(entry)
     return entry
 
@@ -539,7 +544,7 @@ class ClusterManager(Gateway):
         """
         job_id = payload["job_id"]
         update_database(
-            self.job_status_database, "job_id", job_id, {"status": "running", "worker_id": payload["worker_id"]}
+            self.job_status_database, "job_id", job_id, {"status": "running", "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()}
         )
         update_database(
             self.worker_status_database,
@@ -559,7 +564,7 @@ class ClusterManager(Gateway):
         job_id = payload["job_id"]
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
         job_status = update_database(
-            self.job_status_database, "job_id", job_id, {"status": payload["status"], "output": payload["output"]}
+            self.job_status_database, "job_id", job_id, {"status": payload["status"], "output": payload["output"], "job.completed_at": datetime.now().isoformat()}
         )
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
