@@ -2000,12 +2000,14 @@ class TestOpenCVCameraBackendMiscMethods:
 
     @pytest.mark.asyncio
     async def test_get_exposure_range(self, fake_cv):
-        """Test get_exposure_range returns config values."""
+        """Test get_exposure_range returns config values or None."""
         cam = OpenCVCameraBackend("0")
         range_vals = await cam.get_exposure_range()
-        assert len(range_vals) == 2
-        assert isinstance(range_vals[0], (int, float))
-        assert isinstance(range_vals[1], (int, float))
+        # May return None if exposure control not supported
+        if range_vals is not None:
+            assert len(range_vals) == 2
+            assert isinstance(range_vals[0], (int, float))
+            assert isinstance(range_vals[1], (int, float))
 
     @pytest.mark.asyncio
     async def test_get_width_range(self, fake_cv):

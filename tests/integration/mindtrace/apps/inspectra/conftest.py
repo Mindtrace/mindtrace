@@ -7,21 +7,29 @@ from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 
 from mindtrace.apps.inspectra.core import reset_inspectra_config
-from mindtrace.apps.inspectra.db import close_client
+from mindtrace.apps.inspectra.db import reset_db
 from mindtrace.apps.inspectra.inspectra import InspectraService
 
 # ---------------------------------------------------------------------------
 # Test database configuration
 # ---------------------------------------------------------------------------
 
-TEST_MONGO_URI = "mongodb://localhost:27018"
 """MongoDB URI used exclusively for Inspectra integration tests."""
+TEST_MONGO_URI = "mongodb://localhost:27018"
 
-TEST_DB_NAME = "inspectra_test"
 """Database name used for Inspectra integration tests."""
+TEST_DB_NAME = "inspectra_test"
 
-TEST_COLLECTIONS: List[str] = ["users", "roles", "plants", "lines"]
 """Collections that are wiped before and after each test to ensure isolation."""
+TEST_COLLECTIONS: List[str] = [
+    "users",
+    "roles",
+    "plants",
+    "lines",
+    "password_policies",
+    "policy_rules",
+    "licenses",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +43,7 @@ def _set_inspectra_test_env() -> Generator[None, None, None]:
 
     This fixture:
     - Sets INSPECTRA Mongo environment variables
+    - Disables license validation for tests
     - Resets cached Inspectra config so env vars are reloaded
     - Runs once per test session
     - Is autouse to guarantee it executes before any Inspectra code runs
@@ -43,6 +52,7 @@ def _set_inspectra_test_env() -> Generator[None, None, None]:
     """
     os.environ["INSPECTRA__MONGO_URI"] = TEST_MONGO_URI
     os.environ["INSPECTRA__MONGO_DB"] = TEST_DB_NAME
+    os.environ["INSPECTRA__LICENSE_VALIDATION_ENABLED"] = "false"
     reset_inspectra_config()
 
     yield
@@ -126,15 +136,15 @@ def _clear_inspectra_collections(_set_inspectra_test_env):
     Ensure Inspectra tests run with a clean database state.
 
     This fixture:
-    - Closes any existing Motor client (prevents event loop issues)
+    - Resets any existing ODM instance (prevents event loop issues)
     - Wipes test collections before each test
     - Wipes test collections again after each test
 
     Scope: function
     Autouse: ensures isolation even if a test crashes.
     """
-    close_client()
+    reset_db()
     _wipe_test_collections()
     yield
-    close_client()
+    reset_db()
     _wipe_test_collections()

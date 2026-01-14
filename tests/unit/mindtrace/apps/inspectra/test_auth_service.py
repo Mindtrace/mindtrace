@@ -8,7 +8,6 @@ from mindtrace.apps.inspectra.inspectra import InspectraService
 from mindtrace.apps.inspectra.models import (
     LoginPayload,
     RegisterPayload,
-    Role,
     TokenResponse,
 )
 
@@ -28,7 +27,22 @@ class _FakeUser:
     username: str
     password_hash: str
     role_id: str
+    plant_id: Optional[str] = None
     is_active: bool = True
+
+
+@dataclass
+class _FakeRole:
+    """
+    Lightweight in-memory Role model used by FakeRoleRepository.
+
+    Mirrors the shape required by InspectraService auth logic
+    without any persistence or database dependency.
+    """
+    id: str
+    name: str
+    description: Optional[str] = None
+    permissions: Optional[list] = None
 
 
 class FakeUserRepository:
@@ -47,13 +61,20 @@ class FakeUserRepository:
         """Return a user by username if it exists."""
         return self._users.get(username)
 
-    async def create_user(self, username: str, password_hash: str, role_id: str) -> _FakeUser:
+    async def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        role_id: str,
+        plant_id: Optional[str] = None,
+    ) -> _FakeUser:
         """Create and store a new fake user."""
         user = _FakeUser(
             id=str(len(self._users) + 1),
             username=username,
             password_hash=password_hash,
             role_id=role_id,
+            plant_id=plant_id,
             is_active=True,
         )
         self._users[username] = user
@@ -69,21 +90,21 @@ class FakeRoleRepository:
     """
 
     def __init__(self) -> None:
-        self._roles_by_name: dict[str, Role] = {
-            "user": Role(
+        self._roles_by_name: dict[str, _FakeRole] = {
+            "user": _FakeRole(
                 id="role_user",
                 name="user",
                 description="Default user role",
             ),
         }
 
-    async def get_by_name(self, name: str) -> Optional[Role]:
+    async def get_by_name(self, name: str) -> Optional[_FakeRole]:
         """Return a role by name if it exists."""
         return self._roles_by_name.get(name)
 
-    async def create(self, payload) -> Role:
+    async def create(self, payload) -> _FakeRole:
         """Create and store a new role."""
-        role = Role(
+        role = _FakeRole(
             id=f"role_{len(self._roles_by_name) + 1}",
             name=payload.name,
             description=getattr(payload, "description", None),
@@ -91,6 +112,18 @@ class FakeRoleRepository:
         )
         self._roles_by_name[role.name] = role
         return role
+
+
+class FakePasswordPolicyRepository:
+    """
+    In-memory fake password policy repository for unit testing.
+
+    Returns None for default policy (no password validation).
+    """
+
+    async def get_default_policy(self):
+        """Return None to skip password policy validation."""
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +156,7 @@ class TestAuthBehaviour:
 
         svc._user_repo = FakeUserRepository()
         svc._role_repo = FakeRoleRepository()
+        svc._password_policy_repo = FakePasswordPolicyRepository()
 
         return svc
 

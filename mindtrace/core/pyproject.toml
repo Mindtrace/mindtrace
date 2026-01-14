@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-core"
-version = "0.7.0"
+version = "0.7.1"
 description = "Core functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"

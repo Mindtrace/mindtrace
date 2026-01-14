@@ -25,6 +25,10 @@ class InspectraSettings(BaseModel):
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
 
+    # License
+    LICENSE_SECRET: SecretStr = SecretStr("default-license-secret-change-in-production")
+    LICENSE_VALIDATION_ENABLED: bool = False
+
 
 _config: Optional[Config] = None
 
