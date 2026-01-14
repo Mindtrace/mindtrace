@@ -251,7 +251,7 @@ class ClusterManager(Gateway):
             JobOutput: The output of the job.
         """
 
-        job_status = cluster_types.JobStatus(job_id=job.id, status="running", output={}, worker_id=endpoint)
+        job_status = cluster_types.JobStatus(job_id=job.id, status="running", output={}, worker_id=endpoint, job=job)
         endpoint_url = f"{self._url}{endpoint}"
         self.job_status_database.insert(job_status)
         self.logger.info(f"Submitted job {job.id} to {endpoint_url}")
@@ -283,20 +283,25 @@ class ClusterManager(Gateway):
         Returns:
             JobOutput: The output of the job.
         """
-        job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="")
-        self.job_status_database.insert(job_status)
 
         job_schema_targeting_list = self.job_schema_targeting_database.find(
             self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job.schema_name
         )
         if not job_schema_targeting_list:
             self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
-            return cluster_types.JobStatus(
+            job_status = cluster_types.JobStatus(
                 job_id=job.id,
                 status="error",
                 output={"error": f"No job schema targeting found for job type {job.schema_name}"},
                 worker_id="",
+                job=job,
             )
+            self.job_status_database.insert(job_status)
+            return job_status
+
+        job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="", job=job)
+        self.job_status_database.insert(job_status)
+
         job_schema_targeting = job_schema_targeting_list[0]
         if job_schema_targeting.target_endpoint == "@orchestrator":
             self.logger.info(f"Submitting job {job.id} to orchestrator")

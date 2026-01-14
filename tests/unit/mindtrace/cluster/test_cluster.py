@@ -321,7 +321,7 @@ def test_get_job_status_success(cluster_manager):
     """Test get_job_status when job exists."""
     job_id = "test-job-123"
     expected_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={"result": "test"}, worker_id="worker-123"
+        job_id=job_id, status="running", output={"result": "test"}, worker_id="worker-123", job=make_job()
     )
 
     cluster_manager.job_status_database.find.return_value = [expected_job_status]
@@ -352,7 +352,7 @@ def test_worker_alert_started_job(cluster_manager):
     worker_id = "worker-456"
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="")
+    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="", job=make_job())
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -394,7 +394,7 @@ def test_worker_alert_completed_job(cluster_manager):
     output = {"result": "success"}
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="running", output={}, worker_id="worker-123")
+    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="running", output={}, worker_id="worker-123", job=make_job())
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -2431,7 +2431,7 @@ def test_clear_databases_with_partial_failure(cluster_manager):
 def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
-    job_status = cluster_types.JobStatus(job_id="job-123", status="running", output={}, worker_id="different-worker")
+    job_status = cluster_types.JobStatus(job_id="job-123", status="running", output={}, worker_id="different-worker", job=make_job())
 
     # Mock database to return this job status for job lookup
     cluster_manager.job_status_database.find.return_value = [job_status]
