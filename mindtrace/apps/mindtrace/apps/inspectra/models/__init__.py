@@ -1,85 +1,46 @@
-"""Inspectra models - request/response schemas and document models."""
+"""Models package for the Inspectra application.
 
-from .auth import LoginPayload, RegisterPayload, TokenResponse
-from .documents import (
-    LicenseDocument,
-    LineDocument,
-    PasswordPolicyDocument,
-    PlantDocument,
-    PolicyRuleDocument,
-    RoleDocument,
-    UserDocument,
-)
-from .line import (
-    LineCreateRequest,
-    LineIdRequest,
-    LineListResponse,
-    LineResponse,
-    LineUpdateRequest,
-)
-from .plant import (
-    PlantBase,
-    PlantCreateRequest,
-    PlantListResponse,
-    PlantResponse,
-    PlantUpdateRequest,
-)
-from .role import (
-    RoleBase,
-    RoleCreateRequest,
-    RoleListResponse,
-    RoleResponse,
-    RoleUpdateRequest,
-)
-from .user import (
-    ChangeOwnPasswordRequest,
-    UserCreateRequest,
-    UserIdRequest,
-    UserListRequest,
-    UserListResponse,
-    UserPasswordResetRequest,
-    UserResponse,
-    UserUpdateRequest,
-)
+This package contains all Beanie ODM models for the Inspectra application,
+including models for organizations, plants, lines, parts, scans, inferences,
+and related entities.
+"""
+
+from .camera import Camera
+from .camera_position import CameraPosition
+from .camera_service import CameraService
+from .camera_set import CameraSet
+from .inference import Inference
+from .line import Line
+from .media import Media
+from .model import Model
+from .model_deployment import ModelDeployment
+from .model_version import ModelVersion
+from .organization import Organization
+from .part import Part
+from .part_group import PartGroup
+from .plant import Plant
+from .roi import Roi
+from .scan import Scan
+from .stage import Stage
+from .user import User
 
 __all__ = [
-    # Auth
-    "LoginPayload",
-    "RegisterPayload",
-    "TokenResponse",
-    # Document models (MindtraceDocument subclasses)
-    "UserDocument",
-    "RoleDocument",
-    "PlantDocument",
-    "LineDocument",
-    "PasswordPolicyDocument",
-    "PolicyRuleDocument",
-    "LicenseDocument",
-    # Role schemas
-    "RoleBase",
-    "RoleCreateRequest",
-    "RoleUpdateRequest",
-    "RoleResponse",
-    "RoleListResponse",
-    # Line schemas
-    "LineCreateRequest",
-    "LineIdRequest",
-    "LineListResponse",
-    "LineResponse",
-    "LineUpdateRequest",
-    # Plant schemas
-    "PlantBase",
-    "PlantCreateRequest",
-    "PlantUpdateRequest",
-    "PlantResponse",
-    "PlantListResponse",
-    # User schemas
-    "UserCreateRequest",
-    "UserIdRequest",
-    "UserListRequest",
-    "UserListResponse",
-    "UserPasswordResetRequest",
-    "UserResponse",
-    "UserUpdateRequest",
-    "ChangeOwnPasswordRequest",
+    "Line",
+    "Organization",
+    "Plant",
+    "User",
+    "PartGroup",
+    "Part",
+    "Model",
+    "ModelDeployment",
+    "ModelVersion",
+    "CameraService",
+    "Camera",
+    "CameraSet",
+    "CameraPosition",
+    "Roi",
+    "Stage",
+    "Scan",
+    "Media",
+    "Inference",
 ]

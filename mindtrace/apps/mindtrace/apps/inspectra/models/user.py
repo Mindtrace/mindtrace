@@ -1,83 +1,62 @@
-"""User request/response models for user management.
+"""User model for the Inspectra application."""
 
-Note: The User entity is now defined as UserDocument in models/documents.py
-using MindtraceDocument (Beanie ODM).
-"""
+from datetime import datetime, timezone
+from typing import List
 
-from datetime import datetime
-from typing import List, Optional
+from beanie import Delete, Insert, Link, Replace, SaveChanges, after_event, before_event
+from pydantic import EmailStr, Field
+from typing_extensions import Any, Dict, Literal
 
-from pydantic import BaseModel, EmailStr, Field
-
-
-# Request/Response models for User Management
-
-
-class UserCreateRequest(BaseModel):
-    """Admin request to create a new user."""
-
-    email: EmailStr = Field(..., description="User email address")
-    password: str = Field(..., min_length=1, description="Initial password")
-    role_id: Optional[str] = Field(None, description="Role ID (defaults to 'user' role)")
-    plant_id: Optional[str] = Field(None, description="Plant/org ID the user belongs to")
-    is_active: bool = Field(True, description="Whether user is active")
+from mindtrace.apps.inspectra.models.enums import UserRole
+from mindtrace.apps.inspectra.models.line import Line
+from mindtrace.apps.inspectra.models.organization import Organization
+from mindtrace.apps.inspectra.models.plant import Plant
+from mindtrace.database import MindtraceDocument
 
 
-class UserUpdateRequest(BaseModel):
-    """Admin request to update a user."""
+class User(MindtraceDocument):
+    """User model representing a system user."""
 
-    id: Optional[str] = Field(None, description="User ID (set from path param)")
-    role_id: Optional[str] = Field(None, description="Updated role ID")
-    plant_id: Optional[str] = Field(None, description="Updated plant/org ID")
-    is_active: Optional[bool] = Field(None, description="Updated active status")
+    organization: Link[Organization]
+    email: EmailStr
+    email_norm: str = ""
+    role: UserRole
+    first_name: str
+    last_name: str
+    pw_hash: str
+    plants: List[Link[Plant]] = Field(default_factory=list)
+    lines: List[Link[Line]] = Field(default_factory=list)
+    status: Literal["active", "inactive"] = "active"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
+    async def before_save(self):
+        """Normalize email to lowercase before saving."""
+        self.email_norm = self.email.casefold()
 
-class UserPasswordResetRequest(BaseModel):
-    """Admin request to reset a user's password."""
+    class Settings:
+        """Beanie settings for the User collection."""
 
-    id: Optional[str] = Field(None, description="User ID (set from path param)")
-    new_password: str = Field(..., min_length=1, description="New password")
+        name = "users"
 
+    @before_event(Insert)
+    async def before_insert(self):
+        """Set created_at and updated_at timestamps before document insertion."""
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
-class ChangeOwnPasswordRequest(BaseModel):
-    """User request to change own password."""
+    @before_event(Replace)
+    async def before_replace(self):
+        """Update updated_at timestamp before document replacement."""
+        self.updated_at = datetime.now(timezone.utc)
 
-    current_password: str = Field(..., description="Current password")
-    new_password: str = Field(..., description="New password")
+    @after_event(SaveChanges)
+    async def after_save(self):
+        """Update updated_at timestamp after document save."""
+        self.updated_at = datetime.now(timezone.utc)
 
-
-class UserResponse(BaseModel):
-    """API-safe user representation (no password hash)."""
-
-    id: str = Field(..., description="User ID")
-    email: str = Field(..., description="User email address")
-    role_id: str = Field(..., description="Role ID")
-    plant_id: Optional[str] = Field(None, description="Plant/org ID")
-    is_active: bool = Field(..., description="Whether user is active")
-    password_expires_in: Optional[int] = Field(None, description="Days until password expires")
-
-
-class UserListRequest(BaseModel):
-    """Request for listing users with filters and pagination."""
-
-    page: int = Field(1, ge=1, description="Page number")
-    page_size: int = Field(50, ge=1, le=100, description="Items per page")
-    is_active: Optional[bool] = Field(None, description="Filter by active status")
-    role_id: Optional[str] = Field(None, description="Filter by role")
-    plant_id: Optional[str] = Field(None, description="Filter by plant/org")
-    search: Optional[str] = Field(None, description="Search by email")
-
-
-class UserListResponse(BaseModel):
-    """Paginated user list response."""
-
-    items: List[UserResponse] = Field(..., description="List of users")
-    total: int = Field(..., description="Total number of users matching filters")
-    page: int = Field(..., description="Current page number")
-    page_size: int = Field(..., description="Items per page")
-
-
-class UserIdRequest(BaseModel):
-    """Request with user ID."""
-
-    id: str = Field(..., description="User ID")
+    @after_event(Delete)
+    async def after_delete(self):
+        """Update updated_at timestamp after document deletion."""
+        self.updated_at = datetime.now(timezone.utc)

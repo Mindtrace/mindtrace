@@ -1,51 +1,41 @@
-"""Line request/response models.
+"""Line model for the Inspectra application."""
 
-Note: The Line entity is now defined as LineDocument in models/documents.py
-using MindtraceDocument (Beanie ODM).
-"""
+from datetime import datetime, timezone
 
-from typing import List, Optional
+from beanie import Insert, Link, Replace, before_event
+from pydantic import Field
+from typing_extensions import Any, Dict
 
-from pydantic import BaseModel, Field
-
-
-class LineCreateRequest(BaseModel):
-    """Payload for creating a new line."""
-
-    name: str = Field(..., description="Line name")
-    plant_id: Optional[str] = Field(
-        default=None,
-        description="Associated plant ID (if any)",
-    )
+from mindtrace.apps.inspectra.models import CameraService, Organization, Plant
+from mindtrace.apps.inspectra.models.enums import LineStatus
+from mindtrace.database import MindtraceDocument
 
 
-class LineResponse(BaseModel):
-    """Response model representing a production line."""
+class Line(MindtraceDocument):
+    """Line model representing a production line."""
 
-    id: str = Field(..., description="Line ID")
-    name: str = Field(..., description="Line name")
-    plant_id: Optional[str] = Field(
-        default=None,
-        description="Associated plant ID (if any)",
-    )
+    organization: Link[Organization]
+    plant: Link[Plant]
+    name: str
+    status: LineStatus = LineStatus.PENDING
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
+    camera_service: Link[CameraService] = None
 
-class LineListResponse(BaseModel):
-    """Response model for listing lines."""
+    @before_event(Insert)
+    async def before_insert(self):
+        """Set created_at and updated_at timestamps before document insertion."""
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
-    items: List[LineResponse]
-    total: int = Field(..., description="Total number of lines")
+    @before_event(Replace)
+    async def before_replace(self):
+        """Update updated_at timestamp before document replacement."""
+        self.updated_at = datetime.now(timezone.utc)
 
+    class Settings:
+        """Beanie settings for the Line collection."""
 
-class LineUpdateRequest(BaseModel):
-    """Request model for updating an existing line."""
-
-    id: Optional[str] = Field(None, description="Line ID (set from path param)")
-    name: Optional[str] = Field(None, description="Updated line name")
-    plant_id: Optional[str] = Field(None, description="Updated plant ID")
-
-
-class LineIdRequest(BaseModel):
-    """Request with line ID."""
-
-    id: str = Field(..., description="Line ID")
+        name = "lines"
