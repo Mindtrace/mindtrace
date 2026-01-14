@@ -1,7 +1,7 @@
 """Media model for the Inspectra application."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
@@ -37,6 +37,8 @@ class Media(MindtraceDocument):
     kind: MediaKind = Field(default=MediaKind.IMAGE)
     uri: str  # relative/path to the media file within the media storage bucket
     bucket: str
+    thumbnail_uri: Optional[str] = None
+    thumbnail_bucket: Optional[str] = None
     inference: List[Link[Inference]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
