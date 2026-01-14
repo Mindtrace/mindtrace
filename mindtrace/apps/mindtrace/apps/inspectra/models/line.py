@@ -1,39 +1,41 @@
-from dataclasses import dataclass
-from typing import List, Optional
+"""Line model for the Inspectra application."""
 
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+
+from beanie import Insert, Link, Replace, before_event
+from pydantic import Field
+from typing_extensions import Any, Dict
+
+from mindtrace.apps.inspectra.models import CameraService, Organization, Plant
+from mindtrace.apps.inspectra.models.enums import LineStatus
+from mindtrace.database import MindtraceDocument
 
 
-@dataclass
-class Line:
-    id: str
+class Line(MindtraceDocument):
+    """Line model representing a production line."""
+
+    organization: Link[Organization]
+    plant: Link[Plant]
     name: str
-    plant_id: Optional[str] = None
+    status: LineStatus = LineStatus.PENDING
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
-class LineCreateRequest(BaseModel):
-    """Payload for creating a new line."""
+    camera_service: Link[CameraService] = None
 
-    name: str = Field(..., description="Line name")
-    plant_id: Optional[str] = Field(
-        default=None,
-        description="Associated plant ID (if any)",
-    )
+    @before_event(Insert)
+    async def before_insert(self):
+        """Set created_at and updated_at timestamps before document insertion."""
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
+    @before_event(Replace)
+    async def before_replace(self):
+        """Update updated_at timestamp before document replacement."""
+        self.updated_at = datetime.now(timezone.utc)
 
-class LineResponse(BaseModel):
-    """Response model representing a production line."""
+    class Settings:
+        """Beanie settings for the Line collection."""
 
-    id: str = Field(..., description="Line ID")
-    name: str = Field(..., description="Line name")
-    plant_id: Optional[str] = Field(
-        default=None,
-        description="Associated plant ID (if any)",
-    )
-
-
-class LineListResponse(BaseModel):
-    """Response model for listing lines."""
-
-    items: List[LineResponse]
-    total: int = Field(..., description="Total number of lines")
-    
+        name = "lines"
