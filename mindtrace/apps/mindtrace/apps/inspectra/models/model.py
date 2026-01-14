@@ -1,22 +1,20 @@
-"""Plant model for the Inspectra application."""
+"""Model model for the Inspectra application."""
 
 from datetime import datetime, timezone
-from typing import Dict, Optional, Union
+from typing import Any, Dict
 
-from beanie import Insert, Link, Replace, before_event
+from beanie import Insert, Replace, before_event
 from pydantic import Field
-from typing_extensions import Any
 
-from mindtrace.apps.inspectra.models import Organization
-from mindtrace.database import MindtraceDocument
+from mindtrace.apps.inspectra.models import ModelVersion
+from mindtrace.database import Link, MindtraceDocument
 
 
-class Plant(MindtraceDocument):
-    """Plant model representing a manufacturing plant or facility."""
+class Model(MindtraceDocument):
+    """Model model representing a machine learning model."""
 
-    organization: Link[Organization]
     name: str
-    location: Optional[Union[str, Dict[str, Any]]] = None
+    version: Link[ModelVersion]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
@@ -33,6 +31,6 @@ class Plant(MindtraceDocument):
         self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
-        """Beanie settings for the Plant collection."""
+        """Beanie settings for the Model collection."""
 
-        name = "plants"
+        name = "models"
