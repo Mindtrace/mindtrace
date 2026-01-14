@@ -12,12 +12,12 @@ class UserRole(str, Enum):
 
     ADMIN = "admin"
     USER = "user"
-    PLANE_MANAGER = "plane_manager"
+    PLANT_MANAGER = "plant_manager"
     LINE_MANAGER = "line_manager"
     QC = "qc"
     CEO = "ceo"
     SUPER_ADMIN = "super_admin"
-    MT_USER = "mt_qc"
+    MT_USER = "mt_user"
 
 
 class MediaKind(str, Enum):
