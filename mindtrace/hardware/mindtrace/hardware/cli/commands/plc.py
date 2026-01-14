@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 from mindtrace.hardware.cli.core.logger import RichLogger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
 from mindtrace.hardware.cli.utils.display import console, format_status
-from mindtrace.hardware.cli.utils.network import check_port_available, wait_for_service
+from mindtrace.hardware.cli.utils.network import ServiceTimeoutError, is_port_available, wait_for_service
 
 app = typer.Typer(help="Manage PLC services")
 
@@ -31,7 +31,7 @@ def start(
         time.sleep(1)
 
     # Check port availability
-    if not check_port_available(api_host, api_port):
+    if not is_port_available(api_host, api_port):
         logger.error(f"Port {api_port} is already in use on {api_host}")
         return
 
@@ -41,9 +41,10 @@ def start(
             pm.start_plc_api(api_host, api_port)
 
             # Wait for API to be ready
-            if wait_for_service(api_host, api_port, timeout=10):
+            try:
+                wait_for_service(api_host, api_port, timeout=10)
                 status.update("[green]PLC API started")
-            else:
+            except ServiceTimeoutError:
                 logger.error("PLC API failed to start (timeout)")
                 pm.stop_service("plc_api")
                 return
