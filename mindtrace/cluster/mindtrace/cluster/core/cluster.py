@@ -64,6 +64,10 @@ class ClusterManager(Gateway):
                 unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
             )
             self.job_status_database.initialize_sync()
+            self.dlq_database = UnifiedMindtraceODM(
+                unified_model_cls=cluster_types.DLQJobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+            )
+            self.dlq_database.initialize_sync()
             self.worker_auto_connect_database = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.WorkerAutoConnect,
                 redis_url=self.redis_url,
@@ -225,6 +229,34 @@ class ClusterManager(Gateway):
             ),
             methods=["POST"],
         )
+        self.add_endpoint(
+            "/get_dlq_jobs",
+            func=self.get_dlq_jobs,
+            schema=TaskSchema(
+                name="get_dlq_jobs",
+                output_schema=cluster_types.GetDLQJobsOutput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/requeue_from_dlq",
+            func=self.requeue_from_dlq,
+            schema=TaskSchema(
+                name="requeue_from_dlq",
+                input_schema=cluster_types.RequeueFromDLQInput,
+                output_schema=cluster_types.JobStatus,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/discard_from_dlq",
+            func=self.discard_from_dlq,
+            schema=TaskSchema(
+                name="discard_from_dlq",
+                input_schema=cluster_types.DiscardFromDLQInput,
+            ),
+            methods=["POST"],
+        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
@@ -292,19 +324,22 @@ class ClusterManager(Gateway):
         job_schema_targeting_list = self.job_schema_targeting_database.find(
             self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job.schema_name
         )
+
+        job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job.id)
+        if not job_status_list:
+            job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="", job=job)
+        else:
+            job_status = job_status_list[0]
+            job_status.status = "queued"
+            job_status.worker_id = ""
+
         if not job_schema_targeting_list:
             self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
-            job_status = cluster_types.JobStatus(
-                job_id=job.id,
-                status="error",
-                output={"error": f"No job schema targeting found for job type {job.schema_name}"},
-                worker_id="",
-                job=job,
-            )
+            job_status.status = "error"
+            job_status.output = {"error": f"No job schema targeting found for job type {job.schema_name}"}
             self.job_status_database.insert(job_status)
             return job_status
 
-        job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="", job=job)
         self.job_status_database.insert(job_status)
 
         job_schema_targeting = job_schema_targeting_list[0]
@@ -570,12 +605,54 @@ class ClusterManager(Gateway):
             self.logger.warning(
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
+        if job_status.status == "error" or job_status.status == "failed":
+            self.logger.warning(f"Job {job_id} has failed, adding to DLQ")
+            self.dlq_database.insert(
+                cluster_types.DLQJobStatus(
+                    job_id=job_id,
+                    output=job_status.output,
+                    job=job_status.job,
+                )
+            )
+
         update_database(
             self.worker_status_database,
             "worker_id",
             payload["worker_id"],
             {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()},
         )
+    
+    def requeue_from_dlq(self, payload: dict):
+        """
+        Requeue a job from the DLQ.
+        """
+        job_id = payload["job_id"]
+        job_status_list = self.dlq_database.find(self.dlq_database.redis_backend.model_cls.job_id == job_id)
+        if not job_status_list or len(job_status_list) != 1:
+            raise ValueError(f"Job not found in DLQ for job id {job_id}")
+        job_status = job_status_list[0]
+        self.dlq_database.delete(job_status.pk)
+        job_status = self.submit_job(job_status.job)
+        self.logger.info(f"Requeued job {job_id} from DLQ")
+        return job_status
+    
+    def discard_from_dlq(self, payload: dict):
+        """
+        Discard a job from the DLQ.
+        """
+        job_id = payload["job_id"]
+        job_status_list = self.dlq_database.find(self.dlq_database.redis_backend.model_cls.job_id == job_id)
+        if not job_status_list or len(job_status_list) != 1:
+            raise ValueError(f"Job not found in DLQ for job id {job_id}")
+        job_status = job_status_list[0]
+        self.dlq_database.delete(job_status.pk)
+        self.logger.info(f"Discarded job {job_id} from DLQ")
+    
+    def get_dlq_jobs(self):
+        """
+        Get all jobs in the DLQ.
+        """
+        return {"jobs": self.dlq_database.all()}
 
     def register_node(self, payload: dict):
         """
@@ -626,6 +703,7 @@ class ClusterManager(Gateway):
         for db in [
             self.job_schema_targeting_database,
             self.job_status_database,
+            self.dlq_database,
             self.worker_auto_connect_database,
             self.worker_status_database,
         ]:
