@@ -1,85 +1,61 @@
-"""Integration tests for Registry caching functionality."""
+"""Integration tests for Registry caching functionality.
 
-import os
+GCP fixtures (gcs_client, gcp_test_bucket, gcp_project_id, gcp_credentials_path, gcp_test_prefix)
+are inherited from tests/integration/conftest.py
+"""
+
 import shutil
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from mindtrace.core import CoreConfig
 from mindtrace.registry import GCPRegistryBackend, Registry
 
-
-@pytest.fixture(scope="session")
-def gcs_client():
-    """Create a GCS client for testing."""
-    config = CoreConfig()
-    project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
-    if not credentials_path:
-        pytest.skip("No GCP credentials path provided")
-    if not os.path.exists(credentials_path):
-        pytest.skip(f"GCP credentials path does not exist: {credentials_path}")
-
-    from google.cloud import storage
-
-    client = storage.Client(project=project_id)
-    yield client
+# ─────────────────────────────────────────────────────────────────────────────
+# Fixtures
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
-def test_bucket(gcs_client):
-    """Create a temporary bucket for testing."""
-    bucket_name = f"mt-test-cache-{uuid.uuid4().hex[:8]}"
-
-    try:
-        # Create bucket
-        bucket = gcs_client.bucket(bucket_name)
-        bucket.create()
-        yield bucket_name
-    except Exception as e:
-        pytest.skip(f"GCP bucket creation failed: {e}")
-
-    # Cleanup - delete all objects first, then the bucket
-    try:
-        bucket = gcs_client.bucket(bucket_name)
-        for blob in bucket.list_blobs():
-            blob.delete()
-        bucket.delete()
-    except Exception:
-        pass
-
-
-@pytest.fixture
-def gcp_backend(test_bucket):
-    """Create a GCPRegistryBackend instance with a test bucket."""
-    config = CoreConfig()
-    project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
-
+def gcp_backend(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
+    """Create a GCPRegistryBackend instance with test isolation via prefix."""
     try:
         return GCPRegistryBackend(
-            uri=f"gs://{test_bucket}",
-            project_id=project_id,
-            bucket_name=test_bucket,
-            credentials_path=credentials_path,
+            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+            project_id=gcp_project_id,
+            bucket_name=gcp_test_bucket,
+            credentials_path=gcp_credentials_path,
+            prefix=gcp_test_prefix,
         )
     except Exception as e:
         pytest.skip(f"GCP backend creation failed: {e}")
 
 
 @pytest.fixture
-def gcp_registry(gcp_backend):
-    """Create a Registry instance with GCP backend."""
-    registry = Registry(backend=gcp_backend, version_objects=True)
+def gcp_registry(gcp_backend, gcp_test_bucket, gcp_test_prefix, gcs_client):
+    """Create a Registry instance with GCP backend and caching enabled."""
+    registry = Registry(backend=gcp_backend, version_objects=True, use_cache=True)
     # Increase lock timeout for GCP operations
     registry.config["MINDTRACE_LOCK_TIMEOUT"] = 30
-    return registry
+    yield registry
+
+    # Cleanup: delete all objects with our test prefix
+    try:
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+        for blob in blobs:
+            blob.delete()
+    except Exception:
+        pass  # Best effort cleanup
 
 
-def test_cache_performance_with_large_dataset(gcp_registry, gcs_client, test_bucket):
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Performance Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_cache_performance_with_large_dataset(gcp_registry):
     """Integration test: Compare cache vs remote performance with large data."""
     # Create images one at a time (saving individually to avoid list materializer issues)
     try:
@@ -178,6 +154,11 @@ def test_cache_performance_with_large_dataset(gcp_registry, gcs_client, test_buc
         assert gcp_registry._cache.has_object(image_name, "1.0.0")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Hash Verification Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def test_cache_hash_verification_with_remote_backend(gcp_registry):
     """Integration test: Verify cache hash verification works with remote backend."""
     # Save test data
@@ -237,6 +218,11 @@ def test_cache_concurrent_access(gcp_registry):
     assert gcp_registry._cache.has_object("test:concurrent", "1.0.0")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Verification Flag Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def test_cache_load_with_verify_hash_false(gcp_registry):
     """Integration test: Verify that loading with verify_hash=False uses cache even if hash doesn't match."""
     import json
@@ -293,8 +279,8 @@ def test_cache_load_with_verify_hash_false(gcp_registry):
     assert loaded_with_verification == original_data, "Should load original remote version when verify_hash=True"
 
 
-def test_cache_load_with_verify_cache_false(gcp_registry):
-    """Integration test: Verify that loading with verify_cache=False returns cache immediately if available, otherwise loads from remote."""
+def test_cache_load_verify_hash_false_cache_first(gcp_registry):
+    """Integration test: Verify that loading with verify_hash=False returns cache immediately if available, otherwise loads from remote."""
     # Save data to registry
     test_data = {"key": "test_value", "number": 123}
     gcp_registry.save("test:verify:cache", test_data, version="1.0.0")
@@ -306,23 +292,23 @@ def test_cache_load_with_verify_cache_false(gcp_registry):
     # Verify cache was populated
     assert gcp_registry._cache.has_object("test:verify:cache", "1.0.0")
 
-    # Load with verify_cache=False - should return cache immediately without remote operations
+    # Load with verify_hash=False - should return cache immediately without staleness check
     # This is a completely local operation when cache exists
-    loaded_from_cache = gcp_registry.load("test:verify:cache", version="1.0.0", verify_cache=False)
-    assert loaded_from_cache == test_data, "Should load from cache when verify_cache=False and cache exists"
+    loaded_from_cache = gcp_registry.load("test:verify:cache", version="1.0.0", verify_hash=False)
+    assert loaded_from_cache == test_data, "Should load from cache when verify_hash=False and cache exists"
 
-    # Test that verify_cache=False falls through to remote loading when cache doesn't exist
+    # Test that verify_hash=False falls through to remote loading when cache doesn't exist
     # Delete from cache but keep in remote
     gcp_registry._cache.delete("test:verify:cache", "1.0.0")
     assert not gcp_registry._cache.has_object("test:verify:cache", "1.0.0")
 
-    # Should fall through to remote loading when cache doesn't exist and verify_cache=False
-    loaded_from_remote = gcp_registry.load("test:verify:cache", version="1.0.0", verify_cache=False)
-    assert loaded_from_remote == test_data, "Should load from remote when verify_cache=False and cache doesn't exist"
+    # Should fall through to remote loading when cache doesn't exist and verify_hash=False
+    loaded_from_remote = gcp_registry.load("test:verify:cache", version="1.0.0", verify_hash=False)
+    assert loaded_from_remote == test_data, "Should load from remote when verify_hash=False and cache doesn't exist"
 
     # Verify cache was repopulated after loading from remote
     assert gcp_registry._cache.has_object("test:verify:cache", "1.0.0")
 
-    # Test with verify_cache=True (default) - should work normally
-    loaded_with_verify = gcp_registry.load("test:verify:cache", version="1.0.0", verify_cache=True)
-    assert loaded_with_verify == test_data, "Should load normally when verify_cache=True"
+    # Test with verify_hash=True (default) - should work normally
+    loaded_with_verify = gcp_registry.load("test:verify:cache", version="1.0.0", verify_hash=True)
+    assert loaded_with_verify == test_data, "Should load normally when verify_hash=True"

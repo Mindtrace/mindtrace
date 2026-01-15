@@ -704,9 +704,9 @@ def test_internal_lock_raises_on_acquisition_failure(backend):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": existing_lock_id, "expires_at": time.time() + 60}, f)
 
-    # Context manager should raise LockAcquisitionError
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
-        with backend._internal_lock(lock_key):
+    # Context manager should raise LockAcquisitionError (timeout converts to LockAcquisitionError)
+    with pytest.raises(LockAcquisitionError, match="Timed out acquiring exclusive lock"):
+        with backend._internal_lock(lock_key, timeout=1):
             pass  # Should never reach here
 
     # Clean up
@@ -730,8 +730,8 @@ def test_push_blocked_by_active_lock(backend, sample_object_dir):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
-    # Push should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
+    # Push should fail because lock is held (timeout converts to LockAcquisitionError)
+    with pytest.raises(LockAcquisitionError, match="Timed out acquiring exclusive lock"):
         backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
 
     # Clean up
@@ -758,8 +758,8 @@ def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
-    # Delete should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
+    # Delete should fail because lock is held (timeout converts to LockAcquisitionError)
+    with pytest.raises(LockAcquisitionError, match="Timed out acquiring exclusive lock"):
         backend.delete("test:object", "1.0.0")
 
     # Verify object still exists (delete was blocked)
