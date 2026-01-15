@@ -65,7 +65,9 @@ class ClusterManager(Gateway):
             )
             self.job_status_database.initialize_sync()
             self.dlq_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.DLQJobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+                unified_model_cls=cluster_types.DLQJobStatus,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
             )
             self.dlq_database.initialize_sync()
             self.worker_auto_connect_database = UnifiedMindtraceODM(
@@ -325,7 +327,9 @@ class ClusterManager(Gateway):
             self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job.schema_name
         )
 
-        job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job.id)
+        job_status_list = self.job_status_database.find(
+            self.job_status_database.redis_backend.model_cls.job_id == job.id
+        )
         if not job_status_list:
             job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="", job=job)
         else:
@@ -579,7 +583,10 @@ class ClusterManager(Gateway):
         """
         job_id = payload["job_id"]
         update_database(
-            self.job_status_database, "job_id", job_id, {"status": "running", "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()}
+            self.job_status_database,
+            "job_id",
+            job_id,
+            {"status": "running", "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()},
         )
         update_database(
             self.worker_status_database,
@@ -599,7 +606,10 @@ class ClusterManager(Gateway):
         job_id = payload["job_id"]
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
         job_status = update_database(
-            self.job_status_database, "job_id", job_id, {"status": payload["status"], "output": payload["output"], "job.completed_at": datetime.now().isoformat()}
+            self.job_status_database,
+            "job_id",
+            job_id,
+            {"status": payload["status"], "output": payload["output"], "job.completed_at": datetime.now().isoformat()},
         )
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
@@ -621,7 +631,7 @@ class ClusterManager(Gateway):
             payload["worker_id"],
             {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()},
         )
-    
+
     def requeue_from_dlq(self, payload: dict):
         """
         Requeue a job from the DLQ.
@@ -635,7 +645,7 @@ class ClusterManager(Gateway):
         job_status = self.submit_job(job_status.job)
         self.logger.info(f"Requeued job {job_id} from DLQ")
         return job_status
-    
+
     def discard_from_dlq(self, payload: dict):
         """
         Discard a job from the DLQ.
@@ -647,7 +657,7 @@ class ClusterManager(Gateway):
         job_status = job_status_list[0]
         self.dlq_database.delete(job_status.pk)
         self.logger.info(f"Discarded job {job_id} from DLQ")
-    
+
     def get_dlq_jobs(self):
         """
         Get all jobs in the DLQ.

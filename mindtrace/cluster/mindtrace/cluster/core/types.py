@@ -44,6 +44,7 @@ class DLQJobStatus(UnifiedMindtraceDocument):
         indexed_fields = ["job_id"]
         unique_fields = ["job_id"]
 
+
 class JobSchemaTargeting(UnifiedMindtraceDocument):
     schema_name: str = Field(description="Schema name")
     target_endpoint: str = Field(description="Target endpoint")
@@ -216,8 +217,10 @@ class RequeueFromDLQInput(BaseModel):
 class DiscardFromDLQInput(BaseModel):
     job_id: str
 
+
 class GetDLQJobsOutput(BaseModel):
     jobs: list[DLQJobStatus]
+
 
 class RegisterJobSchemaToWorkerTypeInput(BaseModel):
     job_schema_name: str

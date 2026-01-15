@@ -1,11 +1,11 @@
 import time
 import warnings
 
-from fastapi.exceptions import HTTPException
 import pytest
+from fastapi.exceptions import HTTPException
+from pydantic import BaseModel
 
 from mindtrace.cluster import ClusterManager, Node
-from pydantic import BaseModel
 from mindtrace.cluster.core.types import WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
@@ -1123,10 +1123,12 @@ class ErrorWorker(EchoWorker):
             return {"status": "error", "output": {"error": "Job encountered an error"}}
         return super()._run(job_dict)
 
+
 class ErrorInput(BaseModel):
     message: str
     should_error: bool
     delay: int = 0
+
 
 class FailingWorker(EchoWorker):
     def _run(self, job_dict: dict) -> dict:
@@ -1136,10 +1138,12 @@ class FailingWorker(EchoWorker):
             return {"status": "failed", "output": {"error": "Job encountered a failure"}}
         return super()._run(job_dict)
 
+
 class FailingInput(BaseModel):
     message: str
     should_fail: bool
     delay: int = 0
+
 
 @pytest.mark.integration
 def test_dlq_job_failure_and_requeue():
@@ -1177,9 +1181,9 @@ def test_dlq_job_failure_and_requeue():
         # Wait for requeued job to complete
         time.sleep(2)
         final_status = cluster_cm.get_job_status(job_id=job.id)
+        assert final_status.status == "error"
         # Note: The job will fail again because it has should_fail=True
         # But we've tested the requeue functionality
-
 
     finally:
         if worker_cm is not None:
@@ -1242,9 +1246,7 @@ def test_dlq_multiple_failed_jobs():
         # Submit multiple jobs that will fail
         jobs = []
         for i in range(3):
-            job = job_from_schema(
-                echo_job_schema, input_data={"message": f"Job {i} will fail", "should_error": True}
-            )
+            job = job_from_schema(echo_job_schema, input_data={"message": f"Job {i} will fail", "should_error": True})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == "queued"
@@ -1284,7 +1286,7 @@ def test_dlq_requeue_nonexistent_job():
 
     try:
         # Try to requeue a job that doesn't exist in DLQ
-        with pytest.raises(HTTPException): # the exception is raised in the cluster manager so all we get is a 404
+        with pytest.raises(HTTPException):  # the exception is raised in the cluster manager so all we get is a 404
             cluster_cm.requeue_from_dlq(job_id="nonexistent-job")
 
     finally:
@@ -1300,7 +1302,7 @@ def test_dlq_discard_nonexistent_job():
 
     try:
         # Try to discard a job that doesn't exist in DLQ
-        with pytest.raises(HTTPException): # the exception is raised in the cluster manager so all we get is a 404
+        with pytest.raises(HTTPException):  # the exception is raised in the cluster manager so all we get is a 404
             cluster_cm.discard_from_dlq(job_id="nonexistent-job")
 
     finally:
