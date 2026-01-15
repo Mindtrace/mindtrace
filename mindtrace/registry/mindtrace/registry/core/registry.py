@@ -622,9 +622,12 @@ class Registry(Mindtrace):
         # In non-versioned mode, always use "1"
         if not self.version_objects:
             version = "1"
+        elif version is None:
+            # Auto-increment version when not specified
+            version = self._next_version(name)
 
         # Validate version
-        validated_version = self._validate_version(version) if version is not None else None
+        validated_version = self._validate_version(version)
         with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
             object_class = f"{type(obj).__module__}.{type(obj).__name__}"
             materializer_class = self._find_materializer(obj, materializer)

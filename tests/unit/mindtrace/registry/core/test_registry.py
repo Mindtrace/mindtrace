@@ -1827,9 +1827,8 @@ def test_backend_internal_lock_contention(registry):
         other_lock_id = str(uuid.uuid4())
         assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
-        # Using context manager should raise
         with pytest.raises(LockAcquisitionError):
-            with registry.backend._internal_lock(lock_key):
+            with registry.backend._internal_lock(lock_key, timeout=0.5):
                 pass
     finally:
         # Release the lock
@@ -2655,18 +2654,19 @@ def test_load_cache_hit(temp_registry_dir):
     # Get the hash from cache
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # fetch_metadata returns Dict[Tuple[str, str], status_dict] with status and metadata
+    # fetch_metadata returns OpResults
     mock_backend.fetch_metadata = Mock(
-        return_value={
-            ("test:obj", "1.0.0"): {
-                "status": "ok",
-                "metadata": {
+        return_value=_make_op_results(
+            OpResult.success(
+                "test:obj",
+                "1.0.0",
+                metadata={
                     "class": "builtins.str",
                     "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
                     "hash": cached_hash,
                 },
-            }
-        }
+            )
+        )
     )
 
     # Load should use cache
@@ -2970,19 +2970,21 @@ def test_load_cache_metadata_sync(temp_registry_dir):
     registry._cache.save("test:obj", "value", version="1.0.0")
     cached_hash = registry._cache.info("test:obj", "1.0.0")["hash"]
 
-    # Mock remote metadata - fetch_metadata returns Dict[Tuple, status_dict]
-    remote_metadata = {
-        ("test:obj", "1.0.0"): {
-            "status": "ok",
-            "metadata": {
-                "class": "builtins.str",
-                "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
-                "hash": cached_hash,
-                "metadata": {"from_remote": "true"},
-            },
-        }
-    }
-    mock_backend.fetch_metadata = Mock(return_value=remote_metadata)
+    # Mock remote metadata - fetch_metadata returns OpResults
+    mock_backend.fetch_metadata = Mock(
+        return_value=_make_op_results(
+            OpResult.success(
+                "test:obj",
+                "1.0.0",
+                metadata={
+                    "class": "builtins.str",
+                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "hash": cached_hash,
+                    "metadata": {"from_remote": "true"},
+                },
+            )
+        )
+    )
 
     # Load from cache with verify_hash=True (default) - uses remote metadata
     result = registry.load("test:obj", "1.0.0", verify_hash=True)
