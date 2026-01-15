@@ -22,8 +22,11 @@ def temp_dir() -> Generator[Path, None, None]:
 
 @pytest.fixture
 def backend(temp_dir):
-    """Create a LocalRegistryBackend instance with a temporary directory."""
-    return LocalRegistryBackend(uri=str(temp_dir))
+    """Create a LocalRegistryBackend instance with a temporary directory.
+
+    Uses a short lock_timeout (1 second) for faster tests.
+    """
+    return LocalRegistryBackend(uri=str(temp_dir), lock_timeout=1)
 
 
 @pytest.fixture
@@ -96,9 +99,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
 
 
 def test_fetch_metadata_empty_file_single(backend):
-    """Test that single item fetch_metadata raises for empty metadata files."""
-    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
+    """Test that fetch_metadata returns failed result for empty metadata files."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
     meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
     meta_path.touch()  # Create empty file
@@ -107,13 +108,14 @@ def test_fetch_metadata_empty_file_single(backend):
     obj_dir = backend.uri / "test:object" / "1.0.0"
     obj_dir.mkdir(parents=True)
 
-    # Single item fetch_metadata raises RegistryObjectNotFound for empty/corrupted files
-    with pytest.raises(RegistryObjectNotFound):
-        backend.fetch_metadata("test:object", "1.0.0")
+    # Backend returns failed result (doesn't raise)
+    result = backend.fetch_metadata(["test:object"], ["1.0.0"])
+    assert ("test:object", "1.0.0") in result
+    assert result[("test:object", "1.0.0")].is_error
 
 
 def test_fetch_metadata_empty_file_batch(backend, sample_metadata):
-    """Test that batch fetch_metadata skips empty metadata files."""
+    """Test that fetch_metadata returns failed result for empty metadata files in batch."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
     meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
     meta_path.touch()  # Create empty file
@@ -123,13 +125,14 @@ def test_fetch_metadata_empty_file_batch(backend, sample_metadata):
     obj_dir.mkdir(parents=True)
 
     # Create a valid object for batch
-    backend.save_metadata("test:valid", "1.0.0", sample_metadata)
+    backend.save_metadata(["test:valid"], ["1.0.0"], [sample_metadata])
 
-    # Batch fetch_metadata skips empty/corrupted entries
+    # fetch_metadata returns failed result for empty/corrupted entries
     result = backend.fetch_metadata(["test:object", "test:valid"], ["1.0.0", "1.0.0"])
-    # Empty file entry should be skipped
-    assert ("test:object", "1.0.0") not in result
-    # Valid entry should be present
+    # Empty file entry should have failed result
+    assert ("test:object", "1.0.0") in result
+    assert result[("test:object", "1.0.0")].is_error
+    # Valid entry should be present and OK
     assert ("test:valid", "1.0.0") in result
     assert result[("test:valid", "1.0.0")].ok
 
@@ -216,9 +219,12 @@ def test_delete_object(backend, sample_object_dir):
 
 
 def test_invalid_object_name(backend):
-    """Test handling of invalid object names."""
-    with pytest.raises(ValueError):
-        backend.push("invalid_name", "1.0.0", "some_path")
+    """Test handling of invalid object names returns failed result."""
+    result = backend.push(["invalid_name"], ["1.0.0"], ["some_path"], [{"test": True}])
+
+    # Backend returns failed result for validation errors
+    assert ("invalid_name", "1.0.0") in result
+    assert result[("invalid_name", "1.0.0")].is_error
 
 
 def test_register_materializer_metadata_not_exists(backend):
@@ -384,16 +390,14 @@ def test_fetch_registry_metadata_error(backend):
 
 
 def test_push_on_conflict_skip_single(backend, sample_object_dir):
-    """Test push with on_conflict='skip' for single item raises RegistryVersionConflict."""
-    from mindtrace.registry.core.exceptions import RegistryVersionConflict
-
+    """Test push with on_conflict='skip' returns skipped result when version exists."""
     # Push the object initially
-    result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
+    result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"initial": True}])
     assert result[("test:object", "1.0.0")].ok
 
-    # Try to push again with on_conflict="skip" - single item raises
-    with pytest.raises(RegistryVersionConflict):
-        backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True}, on_conflict="skip")
+    # Try to push again with on_conflict="skip" - returns skipped result
+    result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"updated": True}], on_conflict="skip")
+    assert result[("test:object", "1.0.0")].is_skipped
 
 
 def test_push_on_conflict_skip_batch(backend, sample_object_dir, temp_dir):
@@ -443,17 +447,15 @@ def test_push_on_conflict_overwrite(backend, sample_object_dir, temp_dir):
     assert (object_path / "new_file.txt").read_text() == "new content"
 
 
-def test_push_default_raises_when_version_exists(backend, sample_object_dir):
-    """Test push default (on_conflict='skip') raises when version exists for single item."""
-    from mindtrace.registry.core.exceptions import RegistryVersionConflict
-
+def test_push_default_skips_when_version_exists(backend, sample_object_dir):
+    """Test push default (on_conflict='skip') returns skipped result when version exists."""
     # Push the object initially with metadata (metadata file is the existence check)
-    result = backend.push("test:object", "1.0.0", sample_object_dir, {"initial": True})
+    result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"initial": True}])
     assert result[("test:object", "1.0.0")].ok
 
-    # Try to push again - single item with default on_conflict="skip" raises
-    with pytest.raises(RegistryVersionConflict, match="already exists"):
-        backend.push("test:object", "1.0.0", sample_object_dir, {"updated": True})
+    # Try to push again - returns skipped result with default on_conflict="skip"
+    result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"updated": True}])
+    assert result[("test:object", "1.0.0")].is_skipped
 
 
 def test_push_auto_increment_version(backend, sample_object_dir):
@@ -704,8 +706,9 @@ def test_internal_lock_raises_on_acquisition_failure(backend):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": existing_lock_id, "expires_at": time.time() + 60}, f)
 
-    # Context manager should raise LockAcquisitionError
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
+    # Context manager itself should still raise LockAcquisitionError
+    # (the backend methods catch this and return failed results)
+    with pytest.raises(LockAcquisitionError, match="lock"):
         with backend._internal_lock(lock_key):
             pass  # Should never reach here
 
@@ -714,12 +717,10 @@ def test_internal_lock_raises_on_acquisition_failure(backend):
 
 
 def test_push_blocked_by_active_lock(backend, sample_object_dir):
-    """Test that push is blocked when another operation holds the lock."""
+    """Test that push returns failed result when another operation holds the lock."""
     import json
     import time
     import uuid
-
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     # Simulate an active exclusive lock on the object@version (push uses "{name}@{version}" lock key)
     lock_key = "test:object@1.0.0"
@@ -730,24 +731,24 @@ def test_push_blocked_by_active_lock(backend, sample_object_dir):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
-    # Push should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
-        backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
+    # Push should return failed result because lock is held
+    result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"test": True}])
+    assert ("test:object", "1.0.0") in result
+    assert result[("test:object", "1.0.0")].is_error
+    assert "lock" in result[("test:object", "1.0.0")].message.lower()
 
     # Clean up
     exclusive_path.unlink()
 
 
 def test_delete_blocked_by_active_lock(backend, sample_object_dir):
-    """Test that delete is blocked when another operation holds the lock."""
+    """Test that delete returns failed result when another operation holds the lock."""
     import json
     import time
     import uuid
 
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
-
     # First, push an object so we have something to delete
-    backend.push("test:object", "1.0.0", sample_object_dir, {"test": True})
+    backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"test": True}])
 
     # Simulate an active exclusive lock on the object@version (as if another delete is in progress)
     lock_key = "test:object@1.0.0"
@@ -758,13 +759,15 @@ def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
 
-    # Delete should fail because lock is held
-    with pytest.raises(LockAcquisitionError, match="Cannot acquire exclusive lock"):
-        backend.delete("test:object", "1.0.0")
+    # Delete should return failed result because lock is held
+    result = backend.delete(["test:object"], ["1.0.0"])
+    assert ("test:object", "1.0.0") in result
+    assert result[("test:object", "1.0.0")].is_error
+    assert "lock" in result[("test:object", "1.0.0")].message.lower()
 
     # Verify object still exists (delete was blocked)
-    result = backend.has_object("test:object", "1.0.0")
-    assert result[("test:object", "1.0.0")] is True
+    exists_result = backend.has_object(["test:object"], ["1.0.0"])
+    assert exists_result[("test:object", "1.0.0")] is True
 
     # Clean up
     exclusive_path.unlink()
@@ -798,8 +801,10 @@ def test_push_releases_lock_on_failure(backend, sample_object_dir):
     # Try to push with an invalid path that will cause failure
     invalid_path = "/nonexistent/path/that/does/not/exist"
 
-    with pytest.raises(Exception):  # Will fail during copytree
-        backend.push("test:object", "1.0.0", invalid_path, {"test": True})
+    # Backend returns failed result instead of raising
+    result = backend.push(["test:object"], ["1.0.0"], [invalid_path], [{"test": True}])
+    assert ("test:object", "1.0.0") in result
+    assert result[("test:object", "1.0.0")].is_error
 
     # Verify lock is released (exclusive lock file should not exist)
     lock_key = "test:object@1.0.0"
@@ -826,11 +831,13 @@ def test_delete_releases_lock_on_success(backend, sample_object_dir):
 
 
 def test_pull_object_not_found(backend):
-    """Test pull raises RegistryObjectNotFound for missing objects."""
-    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+    """Test pull returns failed result for missing objects."""
+    result = backend.pull(["nonexistent:object"], ["1.0.0"], ["/tmp/dest"])
 
-    with pytest.raises(RegistryObjectNotFound, match="not found"):
-        backend.pull("nonexistent:object", "1.0.0", "/tmp/dest")
+    # Backend returns failed result (doesn't raise)
+    assert ("nonexistent:object", "1.0.0") in result
+    assert result[("nonexistent:object", "1.0.0")].is_error
+    assert "not found" in result[("nonexistent:object", "1.0.0")].message.lower()
 
 
 def test_batch_operations(backend, sample_metadata):
@@ -867,9 +874,9 @@ def test_batch_operations(backend, sample_metadata):
 
 
 def test_fetch_metadata_missing_entry(backend, sample_metadata):
-    """Test fetch_metadata returns partial results when some entries are missing."""
+    """Test fetch_metadata returns failed results for missing entries."""
     # Save only one object
-    backend.save_metadata("exists:obj", "1.0", sample_metadata)
+    backend.save_metadata(["exists:obj"], ["1.0"], [sample_metadata])
 
     # Try to fetch both existing and non-existing
     result = backend.fetch_metadata(
@@ -877,6 +884,9 @@ def test_fetch_metadata_missing_entry(backend, sample_metadata):
         ["1.0", "1.0"],
     )
 
-    # Only existing entry should be in result
+    # Both entries should be in result - existing one OK, missing one failed
     assert ("exists:obj", "1.0") in result
-    assert ("missing:obj", "1.0") not in result
+    assert result[("exists:obj", "1.0")].ok
+
+    assert ("missing:obj", "1.0") in result
+    assert result[("missing:obj", "1.0")].is_error
