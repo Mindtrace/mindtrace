@@ -353,7 +353,9 @@ def test_worker_alert_started_job(cluster_manager):
     worker_id = "worker-456"
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="", job=make_job())
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status="queued", output={}, worker_id="", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -395,7 +397,9 @@ def test_worker_alert_completed_job(cluster_manager):
     output = {"result": "success"}
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="running", output={}, worker_id="worker-123", job=make_job())
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status="running", output={}, worker_id="worker-123", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -2470,7 +2474,9 @@ def test_clear_databases_with_partial_failure(cluster_manager):
 def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
-    job_status = cluster_types.JobStatus(job_id="job-123", status="running", output={}, worker_id="different-worker", job=make_job())
+    job_status = cluster_types.JobStatus(
+        job_id="job-123", status="running", output={}, worker_id="different-worker", job=make_job()
+    )
 
     # Mock database to return this job status for job lookup
     cluster_manager.job_status_database.find.return_value = [job_status]
@@ -2509,7 +2515,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
     """Test worker_alert_completed_job adds failed jobs to DLQ."""
     job_id = "failed-job-123"
     job = make_job()
-    
+
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
         job_id=job_id, status="running", output={}, worker_id="worker-123", job=job
@@ -2532,7 +2538,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
         "output": {"error": "Job failed"},
         "worker_id": "worker-123",
     }
-    
+
     cluster_manager.worker_alert_completed_job(payload)
 
     # Verify job was added to DLQ
@@ -2541,7 +2547,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
     assert dlq_call_args.job_id == job_id
     assert dlq_call_args.output == {"error": "Job failed"}
     assert dlq_call_args.job == job
-    
+
     # Verify warning was logged
     cluster_manager.logger.warning.assert_any_call(f"Job {job_id} has failed, adding to DLQ")
 
@@ -2550,7 +2556,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
     """Test worker_alert_completed_job adds error jobs to DLQ."""
     job_id = "error-job-123"
     job = make_job()
-    
+
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
         job_id=job_id, status="running", output={}, worker_id="worker-123", job=job
@@ -2573,7 +2579,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
         "output": {"error": "Job error"},
         "worker_id": "worker-123",
     }
-    
+
     cluster_manager.worker_alert_completed_job(payload)
 
     # Verify job was added to DLQ
@@ -2587,12 +2593,8 @@ def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
 def test_get_dlq_jobs(cluster_manager):
     """Test get_dlq_jobs method."""
     # Mock DLQ database to return some jobs
-    dlq_job1 = cluster_types.DLQJobStatus(
-        job_id="job-1", output={"error": "Error 1"}, job=make_job()
-    )
-    dlq_job2 = cluster_types.DLQJobStatus(
-        job_id="job-2", output={"error": "Error 2"}, job=make_job()
-    )
+    dlq_job1 = cluster_types.DLQJobStatus(job_id="job-1", output={"error": "Error 1"}, job=make_job())
+    dlq_job2 = cluster_types.DLQJobStatus(job_id="job-2", output={"error": "Error 2"}, job=make_job())
     cluster_manager.dlq_database.all.return_value = [dlq_job1, dlq_job2]
 
     result = cluster_manager.get_dlq_jobs()
@@ -2616,7 +2618,7 @@ def test_requeue_from_dlq(cluster_manager):
     """Test requeue_from_dlq method."""
     job_id = "job-123"
     job = make_job()
-    
+
     # Mock DLQ database to return a job
     dlq_job_status = MagicMock()
     dlq_job_status.job_id = job_id
@@ -2624,11 +2626,9 @@ def test_requeue_from_dlq(cluster_manager):
     dlq_job_status.job = job
     dlq_job_status.pk = "dlq-pk-123"
     cluster_manager.dlq_database.find.return_value = [dlq_job_status]
-    
+
     # Mock submit_job to return a new job status
-    new_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="queued", output={}, worker_id="", job=job
-    )
+    new_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="", job=job)
     cluster_manager.submit_job = MagicMock(return_value=new_job_status)
 
     payload = {"job_id": job_id}
@@ -2637,11 +2637,11 @@ def test_requeue_from_dlq(cluster_manager):
     # Verify job was removed from DLQ
     cluster_manager.dlq_database.find.assert_called_once()
     cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
-    
+
     # Verify job was requeued
     cluster_manager.submit_job.assert_called_once_with(job)
     assert result == new_job_status
-    
+
     # Verify logging
     cluster_manager.logger.info.assert_called_with(f"Requeued job {job_id} from DLQ")
 
@@ -2652,7 +2652,7 @@ def test_requeue_from_dlq_job_not_found(cluster_manager):
     cluster_manager.dlq_database.find.return_value = []
 
     payload = {"job_id": job_id}
-    
+
     with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
         cluster_manager.requeue_from_dlq(payload)
 
@@ -2667,7 +2667,7 @@ def test_requeue_from_dlq_multiple_jobs(cluster_manager):
     cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
 
     payload = {"job_id": job_id}
-    
+
     with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
         cluster_manager.requeue_from_dlq(payload)
 
@@ -2675,7 +2675,7 @@ def test_requeue_from_dlq_multiple_jobs(cluster_manager):
 def test_discard_from_dlq(cluster_manager):
     """Test discard_from_dlq method."""
     job_id = "job-123"
-    
+
     # Mock DLQ database to return a job
     dlq_job_status = MagicMock()
     dlq_job_status.job_id = job_id
@@ -2690,7 +2690,7 @@ def test_discard_from_dlq(cluster_manager):
     # Verify job was removed from DLQ
     cluster_manager.dlq_database.find.assert_called_once()
     cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
-    
+
     # Verify logging
     cluster_manager.logger.info.assert_called_with(f"Discarded job {job_id} from DLQ")
 
@@ -2701,7 +2701,7 @@ def test_discard_from_dlq_job_not_found(cluster_manager):
     cluster_manager.dlq_database.find.return_value = []
 
     payload = {"job_id": job_id}
-    
+
     with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
         cluster_manager.discard_from_dlq(payload)
 
@@ -2716,7 +2716,7 @@ def test_discard_from_dlq_multiple_jobs(cluster_manager):
     cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
 
     payload = {"job_id": job_id}
-    
+
     with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
         cluster_manager.discard_from_dlq(payload)
 

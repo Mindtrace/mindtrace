@@ -1,5 +1,6 @@
 from pprint import pprint as pp
 
+
 def process_dlq(cluster_manager):
     jobs = cluster_manager.get_dlq_jobs().jobs
     requeue_jobs = []
