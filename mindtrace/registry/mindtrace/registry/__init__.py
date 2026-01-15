@@ -8,6 +8,7 @@ from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
+
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.exceptions import LockTimeoutError
 from mindtrace.registry.core.registry import Registry
