@@ -136,9 +136,18 @@ class RegistryWithCache(Registry):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            return bool(remote_hash and cache_hash and remote_hash != cache_hash)
-        except Exception:
-            return False
+            # If we can't get remote hash, assume stale (safer)
+            if not remote_hash:
+                return True
+
+            # If we can't get cache hash, it's definitely stale
+            if not cache_hash:
+                return True
+
+            return remote_hash != cache_hash
+        except Exception as e:
+            self.logger.debug(f"Error checking cache staleness for {name}@{version}: {e}")
+            return True
 
     def _find_stale_indices(self, resolved: List[tuple[str, str]], indices: List[int]) -> set[int]:
         """Find indices of stale cached items by comparing hashes."""
@@ -195,26 +204,45 @@ class RegistryWithCache(Registry):
         verify_hash: bool = True,
         **kwargs,
     ) -> Any:
-        """Load a single object with cache-first pattern."""
-        # Try cache first
+        """Load a single object with cache-first pattern.
+
+        Cache validation strategy:
+        - If verify_hash=False: Use cache if available, no validation
+        - If verify_hash=True: Check staleness (remote updated), let inner Registry verify corruption
+        """
+        # Resolve version from remote (authoritative source)
+        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+
+        # Try cache first (with error handling to fall through to remote on any failure)
         try:
-            obj = self._cache.load(name, version, output_dir=output_dir, verify_hash=False, **kwargs)
-            if not (verify_hash and self._is_cache_stale(name, version)):
-                return obj
-            # Fall through to remote load if stale
+            if resolved_v and self._cache.has_object(name, resolved_v):
+                # Check staleness only if verify_hash is True
+                if not verify_hash or not self._is_cache_stale(name, resolved_v):
+                    try:
+                        # Load from cache - verify_hash catches corruption via inner Registry
+                        return self._cache.load(
+                            name, resolved_v, output_dir=output_dir, verify_hash=verify_hash, **kwargs
+                        )
+                    except ValueError:
+                        # Hash verification failed = corrupted cache
+                        self.logger.debug(f"Cache corrupted for {name}@{resolved_v}, re-downloading")
+                        try:
+                            self._cache.delete(name, resolved_v)
+                        except Exception:
+                            pass
         except Exception:
-            pass  # Cache miss
+            pass  # Any cache error - fall through to remote
 
         # Load from remote
         obj = self._remote.load(name, version, output_dir=output_dir, verify_hash=verify_hash, **kwargs)
 
-        # Update cache (best effort)
-        try:
-            resolved_v = version if version and version != "latest" else self._remote._latest(name)
-            if resolved_v:
-                self._cache.save(name, obj, version=resolved_v, on_conflict="overwrite")
-        except Exception as e:
-            self.logger.warning(f"Error caching {name}: {e}")
+        # Update cache (best effort) - resolve version again if needed
+        cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
+        if cache_v:
+            try:
+                self._cache.save(name, obj, version=cache_v, on_conflict="overwrite")
+            except Exception as e:
+                self.logger.warning(f"Error caching {name}: {e}")
 
         return obj
 
@@ -226,7 +254,12 @@ class RegistryWithCache(Registry):
         verify_hash: bool = True,
         **kwargs,
     ) -> BatchResult:
-        """Load multiple objects with cache-first pattern."""
+        """Load multiple objects with cache-first pattern.
+
+        Cache validation strategy:
+        - If verify_hash=False: Use cache if available, no validation
+        - If verify_hash=True: Check staleness (remote updated), inner Registry verifies integrity(declared hash vs actual hash)
+        """
         n = len(names)
         versions_list = versions if isinstance(versions, list) else [versions] * n
 
@@ -243,24 +276,24 @@ class RegistryWithCache(Registry):
         # Indices to process (skip resolution errors)
         pending = [i for i in range(n) if resolved[i] not in errors]
 
-        # Step 1: Batch cache load
+        # Step 1: Batch cache load (verify_hash catches corruption via inner Registry)
         if pending:
             cache_result = self._cache.load(
                 [resolved[i][0] for i in pending],
                 [resolved[i][1] for i in pending],
-                verify_hash=False,
+                verify_hash=verify_hash,
                 **kwargs,
             )
             for i, obj in zip(pending, cache_result.results):
-                objects[i] = obj  # None if cache miss
+                objects[i] = obj  # None if cache miss or hash verification failed
 
-        # Step 2: Check staleness for cache hits
+        # Step 2: Check staleness for cache hits (only if verify_hash=True)
         if verify_hash:
             cached = [i for i in pending if objects[i] is not None]
             for i in self._find_stale_indices(resolved, cached):
                 objects[i] = None  # Mark stale items for remote fetch
 
-        # Step 3: Remote load for misses
+        # Step 3: Remote load for misses (cache miss, corrupted, or stale)
         misses = [i for i in pending if objects[i] is None]
         if misses:
             remote_result = self._remote.load(
