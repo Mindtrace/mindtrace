@@ -32,6 +32,18 @@ class JobStatus(UnifiedMindtraceDocument):
         unique_fields = ["job_id"]
 
 
+class DLQJobStatus(UnifiedMindtraceDocument):
+    job_id: str = Field(description="Job's id")
+    output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
+
+    class Meta:
+        collection_name = "dlq_job_status"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["job_id"]
+        unique_fields = ["job_id"]
+
 class JobSchemaTargeting(UnifiedMindtraceDocument):
     schema_name: str = Field(description="Schema name")
     target_endpoint: str = Field(description="Target endpoint")
@@ -196,6 +208,16 @@ class ClusterRegisterJobToWorkerInput(BaseModel):
     job_type: str
     worker_url: str
 
+
+class RequeueFromDLQInput(BaseModel):
+    job_id: str
+
+
+class DiscardFromDLQInput(BaseModel):
+    job_id: str
+
+class GetDLQJobsOutput(BaseModel):
+    jobs: list[DLQJobStatus]
 
 class RegisterJobSchemaToWorkerTypeInput(BaseModel):
     job_schema_name: str
