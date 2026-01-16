@@ -77,7 +77,7 @@ class MINDTRACE_GCP(BaseModel):
     GCP_CREDENTIALS_PATH: str
     GCP_LOCATION: str
     GCP_STORAGE_CLASS: str
-    GCP_TEST_BUCKET: str = ""
+    GCP_TEST_BUCKET: str
 
 
 def load_ini_settings() -> Dict[str, Any]:

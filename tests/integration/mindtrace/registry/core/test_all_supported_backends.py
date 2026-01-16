@@ -131,16 +131,8 @@ def backend(request, backend_type, temp_dir, minio_test_bucket):
 def registry(backend):
     """Create a Registry instance with the backend (no cache for test isolation)."""
     # Disable cache for test isolation - cache introduces complexity in version management
-    reg = Registry(backend=backend, version_objects=True, use_cache=False)
-    # GCP operations are slower; increase lock timeout to avoid false timeouts
-    try:
-        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
-
-        if isinstance(backend, GCPRegistryBackend):
-            reg.config["MINDTRACE_LOCK_TIMEOUT"] = 30
-    except Exception:
-        pass
-    return reg
+    # Note: lock_timeout is configured directly on the backend via __init__, not registry config
+    return Registry(backend=backend, version_objects=True, use_cache=False)
 
 
 @pytest.fixture
@@ -926,11 +918,17 @@ def test_delete_all_versions(registry):
 
 
 def test_delete_nonexistent_raises(registry):
-    """Test that deleting nonexistent object raises error."""
+    """Test that deleting nonexistent object raises error when version is None.
+    Note: Deleting with a specific version is idempotent (succeeds even if not found).
+    """
     from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
+    # Deleting with specific version is idempotent - no error
+    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
+
+    # Deleting with version=None raises because object has no versions
     with pytest.raises(RegistryObjectNotFound):
-        registry.delete("test:nonexistent", version="1.0.0")
+        registry.delete("test:nonexistent", version=None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

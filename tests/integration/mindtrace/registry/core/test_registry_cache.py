@@ -1,7 +1,7 @@
 """Integration tests for Registry caching functionality.
 
 GCP fixtures (gcs_client, gcp_test_bucket, gcp_project_id, gcp_credentials_path, gcp_test_prefix)
-are inherited from tests/integration/conftest.py
+are inherited from tests/integration/mindtrace/registry/conftest.py
 """
 
 import shutil
@@ -34,10 +34,11 @@ def gcp_backend(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credential
 
 @pytest.fixture
 def gcp_registry(gcp_backend, gcp_test_bucket, gcp_test_prefix, gcs_client):
-    """Create a Registry instance with GCP backend and caching enabled."""
+    """Create a Registry instance with GCP backend and caching enabled.
+
+    Note: lock_timeout is configured directly on the backend via __init__, not registry config.
+    """
     registry = Registry(backend=gcp_backend, version_objects=True, use_cache=True)
-    # Increase lock timeout for GCP operations
-    registry.config["MINDTRACE_LOCK_TIMEOUT"] = 30
     yield registry
 
     # Cleanup: delete all objects with our test prefix
