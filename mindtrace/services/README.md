@@ -115,6 +115,84 @@ class EchoService(Service):
         return EchoOutput(echoed=payload.message)
 ```
 
+## Authentication
+
+The services module supports stateless authentication using OAuth2 Bearer tokens.
+
+### Setting Up Authentication
+
+1. **Define a token verifier function** that validates tokens and returns user information:
+
+```python
+from fastapi import HTTPException
+from mindtrace.services import set_token_verifier, Scope
+
+def verify_token(token: str) -> dict:
+    """Verify JWT token and return user information.
+    
+    Args:
+        token: Bearer token from Authorization header
+        
+    Returns:
+        dict: User information (e.g., {"user_id": "123", "username": "john"})
+        
+    Raises:
+        HTTPException: If token is invalid
+    """
+    # Your token verification logic here
+    # For example, verify JWT signature, check expiration, etc.
+    try:
+        # Decode and verify JWT token
+        payload = decode_jwt_token(token)  # Your JWT library
+        return {
+            "user_id": payload["user_id"],
+            "username": payload["username"],
+            "email": payload.get("email"),
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token: {str(e)}"
+        )
+
+# Set the token verifier before launching services
+set_token_verifier(verify_token)
+```
+
+2. **Use Scope enum when adding endpoints**:
+
+```python
+from mindtrace.services import Service, Scope
+
+class MyService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Public endpoint (no authentication required)
+        self.add_endpoint(
+            "public_data",
+            self.get_public_data,
+            schema=public_schema,
+            scope=Scope.PUBLIC
+        )
+        
+        # Authenticated endpoint (requires Bearer token)
+        self.add_endpoint(
+            "private_data",
+            self.get_private_data,
+            schema=private_schema,
+            scope=Scope.AUTHENTICATED
+        )
+```
+
+### How It Works
+
+- **Public endpoints** (`Scope.PUBLIC`): No authentication required, accessible by anyone
+- **Authenticated endpoints** (`Scope.AUTHENTICATED`): Require a valid Bearer token in the `Authorization` header:
+  ```
+  Authorization: Bearer <your-token>
+  ```
+
 ## Testing and Coverage
 
 The test runner supports unit, integration, and stress tests:

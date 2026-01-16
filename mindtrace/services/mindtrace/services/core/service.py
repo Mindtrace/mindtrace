@@ -24,6 +24,7 @@ from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.core.logging.logger import track_operation
+from mindtrace.services.core.auth import get_auth_dependency
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
@@ -31,6 +32,7 @@ from mindtrace.services.core.types import (
     Heartbeat,
     HeartbeatSchema,
     PIDFileSchema,
+    Scope,
     ServerIDSchema,
     ServerStatus,
     ShutdownSchema,
@@ -559,12 +561,36 @@ class Service(Mindtrace):
         api_route_kwargs=None,
         autolog_kwargs=None,
         methods: list[str] | None = None,
-        scope: str = "public",
+        scope: Scope | str = Scope.PUBLIC,
         as_tool: bool = False,
     ):
-        """Register a new endpoint with optional role."""
+        """Register a new endpoint with optional authentication scope.
+
+        Args:
+            path: Endpoint path (leading slash will be removed)
+            func: Function to handle the endpoint
+            schema: TaskSchema for the endpoint
+            api_route_kwargs: Additional kwargs to pass to FastAPI's add_api_route
+            autolog_kwargs: Configuration for operation tracking
+            methods: HTTP methods (default: ["POST"])
+            scope: Access scope - Scope.PUBLIC (no auth) or Scope.AUTHENTICATED
+                (requires Bearer token)
+            as_tool: Whether to register as an MCP tool
+        """
+        # Convert string scope to enum if needed (for backward compatibility)
+        if isinstance(scope, str):
+            try:
+                scope = Scope(scope.lower())
+            except ValueError:
+                self.logger.warning("Invalid scope '%s', defaulting to PUBLIC", scope)
+                scope = Scope.PUBLIC
+
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
+
+        # Get authentication dependency based on scope
+        auth_dependency = get_auth_dependency(scope)
+
         # Merge and override default autolog_kwargs
         default_autolog_kwargs = {
             "log_level": logging.INFO,
@@ -584,6 +610,14 @@ class Service(Mindtrace):
             include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
             system_metrics=autolog_kwargs.get("system_metrics"),
         )(func)
+
+        # Add authentication dependency if required
+        dependencies = list(api_route_kwargs.get("dependencies", []))
+        if auth_dependency is not None:
+            dependencies.append(auth_dependency)
+
+        if dependencies:
+            api_route_kwargs["dependencies"] = dependencies
 
         self.app.add_api_route(
             "/" + path,
