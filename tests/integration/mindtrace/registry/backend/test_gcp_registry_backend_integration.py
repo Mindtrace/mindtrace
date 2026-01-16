@@ -339,14 +339,15 @@ def test_registered_materializers(backend):
 
 
 def test_push_conflict_skip_single(backend, sample_object_dir, sample_metadata):
-    """Test that single push with on_conflict='skip' raises on conflict."""
+    """Test that single push with on_conflict='skip' returns skipped result."""
     # First push should succeed
     results1 = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
     assert results1.all_ok
 
-    # Second push should raise RegistryVersionConflict
-    with pytest.raises(RegistryVersionConflict):
-        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
+    # Second push should return skipped result (backend is batch-only)
+    results2 = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [sample_metadata], on_conflict="skip")
+    assert ("test:object", "1.0.0") in results2
+    assert results2[("test:object", "1.0.0")].is_skipped
 
 
 def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, temp_dir):

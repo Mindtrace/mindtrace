@@ -24,7 +24,6 @@ from mindtrace.registry.backends.registry_backend import (
 from mindtrace.registry.core.exceptions import (
     LockAcquisitionError,
     RegistryObjectNotFound,
-    RegistryVersionConflict,
 )
 from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
 from mindtrace.storage import GCSStorageHandler, Status, StringResult
@@ -443,7 +442,6 @@ class GCPRegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
-        is_single = len(names) == 1
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
         failed_locks: set = set()  # Track which objects failed lock acquisition
@@ -459,10 +457,6 @@ class GCPRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    # Single ops raise, batch ops record failure
-                    if is_single:
-                        self._release_locks_batch(acquired_locks)
-                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
                         OpResult.failed(
@@ -494,19 +488,9 @@ class GCPRegistryBackend(RegistryBackend):
                     obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
                 )
 
-            # Single operations: process and raise on error or conflict
-            if is_single and push_tasks:
-                result = push_one(push_tasks[0])
-                results.add(result)
-                if result.is_skipped:
-                    raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
-                elif result.is_error:
-                    raise RuntimeError(result.message or "Unknown error")
-            else:
-                # Batch operations: process in parallel, return results without raising
-                with ThreadPoolExecutor(max_workers=workers) as executor:
-                    for result in executor.map(push_one, push_tasks):
-                        results.add(result)
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(push_one, push_tasks):
+                    results.add(result)
 
         finally:
             if acquired_locks:
@@ -563,8 +547,6 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
 
-        is_single = len(names) == 1
-
         # Use pre-fetched metadata if provided, otherwise fetch it
         if metadata is not None:
             if isinstance(metadata, dict):
@@ -620,8 +602,6 @@ class GCPRegistryBackend(RegistryBackend):
 
             except Exception as e:
                 objects_with_errors.add((obj_name, obj_version))
-                if is_single:
-                    raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
         # Batch download all files
@@ -634,10 +614,6 @@ class GCPRegistryBackend(RegistryBackend):
                     obj_key = file_to_object[dest_path_str]
                     if obj_key not in objects_with_errors:
                         objects_with_errors.add(obj_key)
-                        if is_single:
-                            raise RuntimeError(
-                                f"Failed to download {file_result.remote_path}: {file_result.error_message}"
-                            )
                         results.add(
                             OpResult.failed(
                                 obj_key[0],
@@ -729,7 +705,6 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         workers = max_workers or self._max_workers
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
@@ -746,10 +721,6 @@ class GCPRegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    # Single ops raise, batch ops record failure
-                    if is_single:
-                        self._release_locks_batch(acquired_locks)
-                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
                         OpResult.failed(
@@ -779,17 +750,9 @@ class GCPRegistryBackend(RegistryBackend):
                 obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
                 return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
 
-            # Single operations: process and raise on error
-            if is_single and delete_tasks:
-                result = delete_one(delete_tasks[0])
-                results.add(result)
-                if result.is_error:
-                    raise RuntimeError(result.message or "Unknown error")
-            else:
-                # Batch operations: process in parallel, return results without raising
-                with ThreadPoolExecutor(max_workers=workers) as executor:
-                    for result in executor.map(delete_one, delete_tasks):
-                        results.add(result)
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(delete_one, delete_tasks):
+                    results.add(result)
 
         finally:
             if acquired_locks:
@@ -866,21 +829,9 @@ class GCPRegistryBackend(RegistryBackend):
             else:
                 return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
 
-        is_single = len(names) == 1
-
-        if is_single:
-            op_result = save_one((names[0], versions[0], metadatas[0]))
-            results.add(op_result)
-            # Single ops raise on error or conflict
-            if op_result.is_skipped:
-                raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
-            elif op_result.is_error:
-                raise RuntimeError(op_result.message or "Unknown error")
-        else:
-            # Batch ops return results without raising
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                for op_result in executor.map(save_one, zip(names, versions, metadatas)):
-                    results.add(op_result)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for op_result in executor.map(save_one, zip(names, versions, metadatas)):
+                results.add(op_result)
 
         return results
 
@@ -913,7 +864,6 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
 
         # Prepare batch download - create temp files and mapping
@@ -931,9 +881,6 @@ class GCPRegistryBackend(RegistryBackend):
             # Batch download all metadata files
             batch_result = self.gcs.download_batch(files_to_download, on_error="skip")
 
-            # Track not found for single ops
-            not_found_keys: set = set()
-
             # Process successful downloads
             for file_result in batch_result.ok_results:
                 obj_name, obj_version = temp_to_key[file_result.local_path]
@@ -946,21 +893,24 @@ class GCPRegistryBackend(RegistryBackend):
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:
-                    if is_single:
-                        raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
 
-            # Process failures (not_found entries are omitted for batch, errors are reported)
+            # Process failures - add to results without raising
             for file_result in batch_result.failed_results:
                 if file_result.local_path not in temp_to_key:
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 if file_result.status == Status.NOT_FOUND:
-                    not_found_keys.add((obj_name, obj_version))
-                    continue  # Skip missing entries (omit from results)
-                if is_single:
-                    raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
+                    # Record not found as failed result
+                    results.add(
+                        OpResult.failed(
+                            obj_name,
+                            obj_version,
+                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
+                        )
+                    )
+                    continue
                 results.add(
                     OpResult.failed(
                         obj_name,
@@ -969,11 +919,6 @@ class GCPRegistryBackend(RegistryBackend):
                         message=file_result.error_message or "Unknown error",
                     )
                 )
-
-            # Single ops raise if not found
-            if is_single and not_found_keys:
-                obj_name, obj_version = list(not_found_keys)[0]
-                raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
 
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1008,8 +953,6 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
-
         # Build mapping from path to (name, version)
         path_to_key: Dict[str, Tuple[str, str]] = {}
         paths_to_delete: List[str] = []
@@ -1021,7 +964,6 @@ class GCPRegistryBackend(RegistryBackend):
         # Batch delete all metadata files
         batch_result = self.gcs.delete_batch(paths_to_delete)
 
-        # Process results
         results = OpResults()
         for file_result in batch_result.results:
             key = path_to_key.get(file_result.remote_path)
@@ -1031,8 +973,6 @@ class GCPRegistryBackend(RegistryBackend):
             if file_result.status == Status.OK:
                 results.add(OpResult.success(obj_name, obj_version))
             else:
-                if is_single:
-                    raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
                     OpResult.failed(
                         obj_name,
