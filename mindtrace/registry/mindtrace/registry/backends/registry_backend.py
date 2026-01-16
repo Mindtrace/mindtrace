@@ -118,8 +118,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
 
         If version is None, auto-increments to next version atomically.
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s). Single string or list.
@@ -133,7 +133,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 - "_files": list of relative file paths
                 - "hash": content hash for verification
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip": Return skipped result.
                 "overwrite": Replace existing version.
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on atomic operations for immutability. Default is False.
@@ -141,14 +141,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            LockAcquisitionError: Single item and lock cannot be acquired.
-            ValueError: If inputs are invalid.
+            - OpResult.failed() on failure
         """
         pass
 
@@ -166,8 +161,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Uses the "_files" manifest from metadata to know exactly which
         files to download, avoiding expensive blob storage listing.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s).
@@ -182,11 +177,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
-            LockAcquisitionError: Single item and lock cannot be acquired.
+            - OpResult.failed() on failure
         """
         pass
 
@@ -199,8 +190,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     ) -> OpResults:
         """Delete artifact(s) and metadata.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s).
@@ -211,10 +202,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         pass
 
@@ -232,22 +220,22 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     ) -> "OpResults":
         """Save metadata for object version(s).
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s).
             version: Version string(s).
             metadata: Metadata dict(s).
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip": Return skipped result.
                 "overwrite": Replace existing version.
 
         Returns:
-            OpResults with status for each (name, version).
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            OpResults with status for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
         """
         pass
 
@@ -262,9 +250,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         This is the canonical existence check - if metadata doesn't exist,
         the object doesn't exist.
 
-        Single item operations raise exceptions if not found.
-        Batch operations return OpResults without raising, letting caller inspect results.
-        Missing entries (not found) are omitted from the batch result.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s).
@@ -273,10 +260,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and metadata doesn't exist.
+            - OpResult.failed() on failure (not found or error)
         """
         pass
 
@@ -288,8 +272,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     ) -> OpResults:
         """Delete metadata for object version(s).
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        Backends are batch-only and always return OpResults. Single-item exception
+        handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s).
@@ -298,10 +282,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RuntimeError: Single item and deletion fails.
+            - OpResult.failed() on failure
         """
         pass
 
