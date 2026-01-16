@@ -57,6 +57,7 @@ class OpResult:
     error: str | None = None
     message: str | None = None
     path: str | None = None
+    exception: Exception | None = None  # Original exception for re-raising in single-item ops
 
     @property
     def key(self) -> Tuple[str, str]:
@@ -105,7 +106,11 @@ class OpResult:
         error_type: str | None = None,
         message: str | None = None,
     ) -> "OpResult":
-        """Create a failed result from an exception or explicit error_type/message."""
+        """Create a failed result from an exception or explicit error_type/message.
+
+        The original exception is preserved for re-raising in single-item operations
+        at the Registry API surface.
+        """
         if exception is not None:
             error_type = type(exception).__name__
             message = str(exception)
@@ -116,6 +121,7 @@ class OpResult:
             status="error",
             error=error_type,
             message=message,
+            exception=exception,
         )
 
     @classmethod
