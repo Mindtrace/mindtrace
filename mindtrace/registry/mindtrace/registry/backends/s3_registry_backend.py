@@ -84,6 +84,7 @@ class S3RegistryBackend(RegistryBackend):
         secure: bool = True,
         prefix: str = "",
         max_workers: int = 4,
+        lock_timeout: int = 30,
         **kwargs,
     ):
         """Initialize the S3RegistryBackend.
@@ -97,6 +98,7 @@ class S3RegistryBackend(RegistryBackend):
             secure: Whether to use HTTPS.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
@@ -106,6 +108,7 @@ class S3RegistryBackend(RegistryBackend):
 
         self._metadata_path = self._prefixed("registry_metadata.json")
         self._max_workers = max_workers
+        self._lock_timeout = lock_timeout
         self._bucket = bucket
         self.logger.debug(f"Initializing S3Backend with uri: {self._uri}, prefix: {self._prefix}")
 
@@ -423,8 +426,8 @@ class S3RegistryBackend(RegistryBackend):
         Objects are processed in parallel for maximum efficiency. Each object's
         push is atomic with proper rollback on failure.
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
         Atomicity strategy depends on acquire_lock:
         - acquire_lock=False (immutable): Check if exists before upload.
@@ -437,7 +440,7 @@ class S3RegistryBackend(RegistryBackend):
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped.
+                "skip": Return skipped result.
                 "overwrite": Replace existing version (requires acquire_lock=True).
             acquire_lock: If True, acquire locks before push (for mutable registries).
                 If False, rely on fail_if_exists check for atomicity (immutable registries).
@@ -446,13 +449,9 @@ class S3RegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            LockAcquisitionError: Single item and lock cannot be acquired.
+            - OpResult.failed() on failure
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -474,7 +473,6 @@ class S3RegistryBackend(RegistryBackend):
         for obj_name in names:
             self.validate_object_name(obj_name)
 
-        is_single = len(names) == 1
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
         failed_locks: set = set()
@@ -482,7 +480,7 @@ class S3RegistryBackend(RegistryBackend):
         # Acquire locks if mutable registry
         if acquire_lock:
             lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
 
             for obj_name, obj_version in zip(names, versions):
                 lock_key = f"{obj_name}@{obj_version}"
@@ -490,9 +488,6 @@ class S3RegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if is_single:
-                        self._release_locks_batch(acquired_locks)
-                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
                         OpResult.failed(
@@ -518,19 +513,10 @@ class S3RegistryBackend(RegistryBackend):
                     obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
                 )
 
-            if is_single and push_tasks:
-                # Single item - raise on error or conflict
-                result = push_one(push_tasks[0])
-                results.add(result)
-                if result.is_skipped:
-                    raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
-                elif result.is_error:
-                    raise RuntimeError(result.message or "Unknown error")
-            else:
-                # Batch - return results without raising
-                with ThreadPoolExecutor(max_workers=workers) as executor:
-                    for result in executor.map(push_one, push_tasks):
-                        results.add(result)
+            # Process all tasks in parallel
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(push_one, push_tasks):
+                    results.add(result)
 
         finally:
             if acquired_locks:
@@ -553,8 +539,8 @@ class S3RegistryBackend(RegistryBackend):
         expensive object listing operations. All files across all objects
         are downloaded in a single batch for maximum efficiency.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
         Note: The acquire_lock parameter is accepted for API compatibility but
         ignored. Read locks are not implemented because:
@@ -573,10 +559,7 @@ class S3RegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -585,8 +568,6 @@ class S3RegistryBackend(RegistryBackend):
 
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
-
-        is_single = len(names) == 1
 
         # Use pre-fetched metadata if provided, otherwise fetch it
         if metadata is not None:
@@ -602,8 +583,6 @@ class S3RegistryBackend(RegistryBackend):
             for n, v, m in zip(names, versions, metadatas):
                 metadata_results.add(OpResult.success(n, v, metadata=m))
         else:
-            # For batch, fetch_metadata won't raise (batch behavior)
-            # For single, we handle the raise below
             metadata_results = self.fetch_metadata(names, versions)
 
         results = OpResults()
@@ -644,8 +623,6 @@ class S3RegistryBackend(RegistryBackend):
 
             except Exception as e:
                 objects_with_errors.add((obj_name, obj_version))
-                if is_single:
-                    raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
         # Batch download all files
@@ -658,10 +635,6 @@ class S3RegistryBackend(RegistryBackend):
                     obj_key = file_to_object[dest_path_str]
                     if obj_key not in objects_with_errors:
                         objects_with_errors.add(obj_key)
-                        if is_single:
-                            raise RuntimeError(
-                                f"Failed to download {file_result.remote_path}: {file_result.error_message}"
-                            )
                         results.add(
                             OpResult.failed(
                                 obj_key[0],
@@ -716,8 +689,10 @@ class S3RegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Delete artifact(s) and metadata.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
+
+        Delete is idempotent - succeeds even if object doesn't exist.
 
         Args:
             name: Name of the object(s).
@@ -726,11 +701,9 @@ class S3RegistryBackend(RegistryBackend):
             max_workers: Maximum parallel workers.
 
         Returns:
-            OpResults with OpResult for each (name, version).
-
-        Raises:
-            LockAcquisitionError: Single item and lock cannot be acquired.
-            RuntimeError: Single item and deletion fails.
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -738,7 +711,6 @@ class S3RegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         workers = max_workers or self._max_workers
         results = OpResults()
         acquired_locks: Dict[str, str] = {}
@@ -747,7 +719,7 @@ class S3RegistryBackend(RegistryBackend):
         # Acquire locks if mutable registry
         if acquire_lock:
             lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
 
             for obj_name, obj_version in zip(names, versions):
                 lock_key = f"{obj_name}@{obj_version}"
@@ -755,9 +727,6 @@ class S3RegistryBackend(RegistryBackend):
                 if lock_id:
                     acquired_locks[lock_key] = lock_id
                 else:
-                    if is_single:
-                        self._release_locks_batch(acquired_locks)
-                        raise LockAcquisitionError(f"Failed to acquire lock for {lock_key}")
                     failed_locks.add((obj_name, obj_version))
                     results.add(
                         OpResult.failed(
@@ -786,17 +755,10 @@ class S3RegistryBackend(RegistryBackend):
                 obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
                 return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
 
-            if is_single and delete_tasks:
-                # Single item - raise on error
-                result = delete_one(delete_tasks[0])
-                results.add(result)
-                if result.is_error:
-                    raise RuntimeError(result.message or "Unknown error")
-            else:
-                # Batch - return results without raising
-                with ThreadPoolExecutor(max_workers=workers) as executor:
-                    for result in executor.map(delete_one, delete_tasks):
-                        results.add(result)
+            # Process all tasks in parallel
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(delete_one, delete_tasks):
+                    results.add(result)
 
         finally:
             if acquired_locks:
@@ -817,27 +779,23 @@ class S3RegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Save metadata for object version(s).
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
         Args:
             name: Object name(s).
             version: Object version(s).
             metadata: Metadata dict(s) to save.
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped.
+                "skip": Return skipped result.
                 "overwrite": Replace existing version.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            RuntimeError: Single item with unexpected error.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -868,26 +826,14 @@ class S3RegistryBackend(RegistryBackend):
             elif result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             elif result.status == Status.ALREADY_EXISTS:
-                # on_conflict="skip" means don't overwrite - for batch, return skipped; for single, will raise
                 return OpResult.skipped(obj_name, obj_version)
             else:
                 return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
 
-        is_single = len(names) == 1
-
-        if is_single:
-            op_result = save_one((names[0], versions[0], metadatas[0]))
-            results.add(op_result)
-            # Single ops raise on error or conflict (skipped = conflict)
-            if op_result.status == "skipped":
-                raise RegistryVersionConflict(f"Object {names[0]}@{versions[0]} already exists")
-            elif op_result.is_error:
-                raise RuntimeError(op_result.message or "Unknown error")
-        else:
-            # Batch ops return results without raising
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                for op_result in executor.map(save_one, zip(names, versions, metadatas)):
-                    results.add(op_result)
+        # Process all tasks in parallel
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for op_result in executor.map(save_one, zip(names, versions, metadatas)):
+                results.add(op_result)
 
         return results
 
@@ -898,19 +844,19 @@ class S3RegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Fetch metadata for object version(s) using batch download.
 
-        Single item operations raise exceptions if not found.
-        Batch operations return OpResults without raising, letting caller inspect results.
-        Missing entries (not found) are omitted from the batch result.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
+        Missing entries (not found) are omitted from the result.
 
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
 
         Returns:
-            OpResults with OpResult for each (name, version).
-
-        Raises:
-            RegistryObjectNotFound: Single item and metadata doesn't exist.
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() with metadata on success
+            - OpResult.failed() on failure (excluding not found)
+            Note: Not found objects are simply omitted from the result.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -918,7 +864,6 @@ class S3RegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
         temp_dir = tempfile.mkdtemp()
         files_to_download: List[Tuple[str, str]] = []
@@ -944,8 +889,6 @@ class S3RegistryBackend(RegistryBackend):
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:
-                    if is_single:
-                        raise
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
 
@@ -954,11 +897,7 @@ class S3RegistryBackend(RegistryBackend):
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 if file_result.status == Status.NOT_FOUND:
-                    if is_single:
-                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
-                    continue  # Skip missing entries for batch
-                if is_single:
-                    raise RuntimeError(file_result.error_message or f"Failed to fetch {obj_name}@{obj_version}")
+                    continue  # Skip missing entries - not an error
                 results.add(
                     OpResult.failed(
                         obj_name,
@@ -980,11 +919,13 @@ class S3RegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Delete metadata for object version(s).
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
-        Raises:
-            RuntimeError: Single item and deletion fails.
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -992,7 +933,6 @@ class S3RegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         path_to_key: Dict[str, Tuple[str, str]] = {}
         paths_to_delete: List[str] = []
         for obj_name, obj_version in zip(names, versions):
@@ -1011,8 +951,6 @@ class S3RegistryBackend(RegistryBackend):
             if file_result.status == Status.OK:
                 results.add(OpResult.success(obj_name, obj_version))
             else:
-                if is_single:
-                    raise RuntimeError(file_result.error_message or f"Failed to delete metadata for {key}")
                 results.add(
                     OpResult.failed(
                         obj_name,

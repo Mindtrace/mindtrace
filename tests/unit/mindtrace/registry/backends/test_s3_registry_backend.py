@@ -5,7 +5,6 @@ from typing import List, Tuple
 import pytest
 
 from mindtrace.registry import S3RegistryBackend
-from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -271,24 +270,26 @@ def test_push(backend, sample_object_dir, sample_metadata):
     assert result.version == "1.0.0"
 
 
-def test_push_conflict_error(backend, sample_object_dir, sample_metadata):
-    """Test push with conflict raises error by default."""
+def test_push_conflict_returns_skipped(backend, sample_object_dir, sample_metadata):
+    """Test push with conflict returns skipped result (batch-only behavior)."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Second push should fail
-    with pytest.raises(RegistryVersionConflict):
-        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    # Second push should return skipped result (not raise)
+    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    result = results.get(("test:object", "1.0.0"))
+    assert result.is_skipped
 
 
-def test_push_conflict_skip_single(backend, sample_object_dir, sample_metadata):
-    """Test push with on_conflict='skip' for single item raises RegistryVersionConflict."""
+def test_push_conflict_skip_returns_skipped(backend, sample_object_dir, sample_metadata):
+    """Test push with on_conflict='skip' returns skipped result (batch-only behavior)."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Second push (single item) with skip should raise RegistryVersionConflict
-    with pytest.raises(RegistryVersionConflict):
-        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
+    # Second push with skip should return skipped result (not raise)
+    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip")
+    result = results.get(("test:object", "1.0.0"))
+    assert result.is_skipped
 
 
 def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, tmp_path):
@@ -360,10 +361,11 @@ def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
 
 
 def test_pull_not_found(backend, tmp_path):
-    """Test pull of non-existent object."""
+    """Test pull of non-existent object returns failed result (batch-only behavior)."""
     dest_path = tmp_path / "pulled"
-    with pytest.raises(Exception):  # RegistryObjectNotFound
-        backend.pull("nonexistent:object", "1.0.0", dest_path)
+    results = backend.pull("nonexistent:object", "1.0.0", dest_path)
+    result = results.get(("nonexistent:object", "1.0.0"))
+    assert result.is_error
 
 
 def test_pull_batch(backend, sample_object_dir, sample_metadata, tmp_path):
@@ -440,11 +442,10 @@ def test_fetch_metadata(backend, sample_object_dir, sample_metadata):
 
 
 def test_fetch_metadata_not_found_single(backend):
-    """Test fetch_metadata for non-existent object (single) raises."""
-    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
-    with pytest.raises(RegistryObjectNotFound):
-        backend.fetch_metadata("nonexistent:object", "1.0.0")
+    """Test fetch_metadata for non-existent object returns empty (batch-only behavior)."""
+    results = backend.fetch_metadata("nonexistent:object", "1.0.0")
+    # Not found objects are omitted from results (same as batch behavior)
+    assert results.get(("nonexistent:object", "1.0.0")) is None
 
 
 def test_fetch_metadata_not_found_batch(backend, sample_object_dir, sample_metadata):
@@ -498,12 +499,14 @@ def test_save_metadata(backend):
 
 
 def test_save_metadata_conflict(backend):
-    """Test save_metadata with existing object raises error."""
+    """Test save_metadata with existing object returns skipped result (batch-only behavior)."""
     metadata = {"class": "dict"}
     backend.save_metadata("test:object", "1.0.0", metadata)
 
-    with pytest.raises(RegistryVersionConflict):
-        backend.save_metadata("test:object", "1.0.0", metadata)
+    # Second save should return skipped result (not raise)
+    results = backend.save_metadata("test:object", "1.0.0", metadata)
+    result = results.get(("test:object", "1.0.0"))
+    assert result.is_skipped
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -10,7 +10,6 @@ import pytest
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import S3RegistryBackend
-from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
 
 def test_init(s3_backend, s3_test_bucket, s3_client):
@@ -270,8 +269,8 @@ def test_init_creates_bucket(s3_client):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_push_conflict_skip_single(s3_backend, sample_object_dir, sample_metadata):
-    """Test that pushing with on_conflict='skip' raises RegistryVersionConflict for single items."""
+def test_push_conflict_skip_returns_skipped(s3_backend, sample_object_dir, sample_metadata):
+    """Test that pushing with on_conflict='skip' returns skipped result (batch-only behavior)."""
     object_name = f"test:conflict-skip-{uuid.uuid4().hex[:8]}"
     version = "1.0.0"
 
@@ -279,9 +278,10 @@ def test_push_conflict_skip_single(s3_backend, sample_object_dir, sample_metadat
     result1 = s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata)
     assert result1.first().ok
 
-    # Second push with skip should raise RegistryVersionConflict for single-item operations
-    with pytest.raises(RegistryVersionConflict):
-        s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata, on_conflict="skip")
+    # Second push with skip should return skipped result (not raise)
+    results = s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata, on_conflict="skip")
+    result = results.get((object_name, version))
+    assert result.is_skipped
 
 
 def test_push_overwrite_requires_lock(s3_backend, sample_object_dir, sample_metadata):
@@ -342,8 +342,8 @@ def test_lock_released_after_successful_push(s3_backend, sample_object_dir, samp
     s3_backend._release_lock(lock_key, lock_id)
 
 
-def test_lock_prevents_concurrent_push_single(s3_backend, sample_object_dir, sample_metadata):
-    """Test that holding a lock prevents concurrent push (single item raises)."""
+def test_lock_prevents_concurrent_push_returns_failed(s3_backend, sample_object_dir, sample_metadata):
+    """Test that holding a lock prevents concurrent push (batch-only returns failed result)."""
     from mindtrace.registry.core.exceptions import LockAcquisitionError
 
     object_name = f"test:lock-prevent-{uuid.uuid4().hex[:8]}"
@@ -356,16 +356,19 @@ def test_lock_prevents_concurrent_push_single(s3_backend, sample_object_dir, sam
     assert acquired
 
     try:
-        # Try to push with lock - single item should raise LockAcquisitionError
-        with pytest.raises(LockAcquisitionError):
-            s3_backend.push(
-                object_name,
-                version,
-                sample_object_dir,
-                metadata=sample_metadata,
-                on_conflict="overwrite",
-                acquire_lock=True,
-            )
+        # Try to push with lock - should return failed result (not raise)
+        results = s3_backend.push(
+            object_name,
+            version,
+            sample_object_dir,
+            metadata=sample_metadata,
+            on_conflict="overwrite",
+            acquire_lock=True,
+        )
+        result = results.get((object_name, version))
+        assert result.is_error
+        # result.error is the error type string, result.exception is the actual exception
+        assert result.error == "LockAcquisitionError" or isinstance(result.exception, LockAcquisitionError)
     finally:
         s3_backend._release_lock(lock_key, lock_id)
 
