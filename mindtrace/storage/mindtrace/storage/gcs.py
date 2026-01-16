@@ -135,9 +135,11 @@ class GCSStorageHandler(StorageHandler):
             fail_if_exists: If True, return "already_exists" status if blob exists.
         Returns:
             FileResult with status "ok", "already_exists", or "error".
+            Note: remote_path in result is the blob name (not full gs:// URI) for use with delete().
         """
         sanitized_path = self._sanitize_blob_path(remote_path)
         blob = self._bucket().blob(sanitized_path)
+        full_path = f"gs://{self.bucket_name}/{sanitized_path}"
         if metadata:
             blob.metadata = metadata
         try:
@@ -146,21 +148,21 @@ class GCSStorageHandler(StorageHandler):
             blob.upload_from_filename(local_path, if_generation_match=generation_match)
             return FileResult(
                 local_path=local_path,
-                remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
+                remote_path=sanitized_path,  # Blob name only, not full gs:// URI
                 status=Status.OK,
             )
         except gexc.PreconditionFailed:
             return FileResult(
                 local_path=local_path,
-                remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
+                remote_path=sanitized_path,
                 status=Status.ALREADY_EXISTS,
                 error_type="PreconditionFailed",
-                error_message=f"Blob already exists: gs://{self.bucket_name}/{sanitized_path}",
+                error_message=f"Blob already exists: {full_path}",
             )
         except Exception as e:
             return FileResult(
                 local_path=local_path,
-                remote_path=f"gs://{self.bucket_name}/{sanitized_path}",
+                remote_path=sanitized_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
@@ -244,6 +246,7 @@ class GCSStorageHandler(StorageHandler):
 
         Returns:
             StringResult with status "ok", "already_exists", or "error".
+            Note: remote_path in result is the blob name (not full gs:// URI) for use with delete().
         """
         sanitized_path = self._sanitize_blob_path(remote_path)
         blob = self._bucket().blob(sanitized_path)
@@ -259,17 +262,17 @@ class GCSStorageHandler(StorageHandler):
 
         try:
             blob.upload_from_string(data, content_type=content_type, if_generation_match=generation_match)
-            return StringResult(remote_path=full_path, status=Status.OK)
+            return StringResult(remote_path=sanitized_path, status=Status.OK)  # Blob name only
         except gexc.PreconditionFailed:
             return StringResult(
-                remote_path=full_path,
+                remote_path=sanitized_path,
                 status=Status.ALREADY_EXISTS,
                 error_type="PreconditionFailed",
                 error_message=f"Generation mismatch or blob already exists: {full_path}",
             )
         except Exception as e:
             return StringResult(
-                remote_path=full_path,
+                remote_path=sanitized_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
