@@ -69,13 +69,15 @@ class TestImmutableRegistryConcurrency:
                     acquire_lock=False,  # Immutable mode
                 )
 
+                # Note: skipped has ok=True, so check is_skipped FIRST
+                first = result.first()
                 with results_lock:
-                    if result.first().ok:
-                        results.append((thread_id, "success"))
-                    elif result.first().is_skipped:
+                    if first.is_skipped:
                         results.append((thread_id, "skipped"))
+                    elif first.ok:
+                        results.append((thread_id, "success"))
                     else:
-                        results.append((thread_id, f"error: {result.first().message}"))
+                        results.append((thread_id, f"error: status={first.status} msg={first.message}"))
             except RegistryVersionConflict:
                 with results_lock:
                     results.append((thread_id, "conflict"))
@@ -195,11 +197,15 @@ class TestMutableRegistryConcurrency:
                     acquire_lock=True,  # Mutable mode - required for overwrite
                 )
 
+                first = result.first()
                 with results_lock:
-                    if result.first().ok or result.first().is_overwritten:
+                    if first.ok or first.is_overwritten:
                         results.append((thread_id, "success"))
+                    elif first.is_error and "lock" in (first.message or "").lower():
+                        # Lock acquisition failure returned as OpResult (batch-only behavior)
+                        results.append((thread_id, "lock_failed"))
                     else:
-                        results.append((thread_id, f"failed: {result.first().message}"))
+                        results.append((thread_id, f"failed: {first.message}"))
             except Exception as e:
                 with results_lock:
                     # Lock acquisition failure is expected with concurrent access
