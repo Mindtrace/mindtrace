@@ -91,13 +91,14 @@ class S3StorageHandler(StorageHandler):
 
         Args:
             local_path: Path to the local file to upload.
-            remote_path: Path in the bucket to upload to.
+            remote_path: Path in the bucket to upload to (key only, no s3:// prefix).
             metadata: Optional metadata to associate with the object.
             fail_if_exists: If True, return ALREADY_EXISTS status if object exists.
                 Uses S3 IfNoneMatch='*' for atomic create-only semantics.
 
         Returns:
             FileResult with status OK, ALREADY_EXISTS, or ERROR.
+            Note: remote_path in result is the key (not full s3:// URI) for use with delete().
         """
         full_path = self._full_path(remote_path)
 
@@ -118,7 +119,7 @@ class S3StorageHandler(StorageHandler):
             self.client.put_object(**put_kwargs)
             return FileResult(
                 local_path=local_path,
-                remote_path=full_path,
+                remote_path=remote_path,  # Key only, not full s3:// URI
                 status=Status.OK,
             )
         except ClientError as e:
@@ -126,14 +127,14 @@ class S3StorageHandler(StorageHandler):
             if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 return FileResult(
                     local_path=local_path,
-                    remote_path=full_path,
+                    remote_path=remote_path,
                     status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object already exists: {full_path}",
                 )
             return FileResult(
                 local_path=local_path,
-                remote_path=full_path,
+                remote_path=remote_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
@@ -141,7 +142,7 @@ class S3StorageHandler(StorageHandler):
         except Exception as e:
             return FileResult(
                 local_path=local_path,
-                remote_path=full_path,
+                remote_path=remote_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
@@ -226,7 +227,7 @@ class S3StorageHandler(StorageHandler):
 
         Args:
             content: String or bytes content to upload.
-            remote_path: Path in the bucket to upload to.
+            remote_path: Path in the bucket to upload to (key only, no s3:// prefix).
             content_type: MIME type of the content.
             fail_if_exists: If True, fail if the object already exists.
             if_generation_match: If 0, uses IfNoneMatch='*' for atomic create-only.
@@ -234,6 +235,7 @@ class S3StorageHandler(StorageHandler):
 
         Returns:
             StringResult with status OK, ALREADY_EXISTS, or ERROR.
+            Note: remote_path in result is the key (not full s3:// URI) for use with delete().
         """
         full_path = self._full_path(remote_path)
 
@@ -254,25 +256,25 @@ class S3StorageHandler(StorageHandler):
                 put_kwargs["IfNoneMatch"] = "*"
 
             self.client.put_object(**put_kwargs)
-            return StringResult(remote_path=full_path, status=Status.OK)
+            return StringResult(remote_path=remote_path, status=Status.OK)  # Key only
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
                 return StringResult(
-                    remote_path=full_path,
+                    remote_path=remote_path,
                     status=Status.ALREADY_EXISTS,
                     error_type="PreconditionFailed",
                     error_message=f"Object already exists: {full_path}",
                 )
             return StringResult(
-                remote_path=full_path,
+                remote_path=remote_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
         except Exception as e:
             return StringResult(
-                remote_path=full_path,
+                remote_path=remote_path,
                 status=Status.ERROR,
                 error_type=type(e).__name__,
                 error_message=str(e),

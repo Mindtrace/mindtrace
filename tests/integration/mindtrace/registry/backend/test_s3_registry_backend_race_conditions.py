@@ -1,9 +1,5 @@
 """Integration tests for concurrency in S3RegistryBackend.
 
-These tests verify that concurrent operations are handled correctly:
-- Immutable registries: Rely on atomic S3 operations for conflict detection
-- Mutable registries: Use internal locking for serialization
-
 Tests use the public push()/pull()/delete() API with acquire_lock parameter
 to control locking behavior.
 """
@@ -14,8 +10,6 @@ import uuid
 from typing import List, Tuple
 
 import pytest
-
-from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
 
 @pytest.fixture
@@ -69,19 +63,19 @@ class TestImmutableRegistryConcurrency:
                     acquire_lock=False,  # Immutable mode
                 )
 
+                # Batch-only API: check result status instead of catching exceptions
+                # Note: skipped has ok=True, so check is_skipped FIRST
+                first = result.first()
                 with results_lock:
-                    if result.first().ok:
-                        results.append((thread_id, "success"))
-                    elif result.first().is_skipped:
+                    if first.is_skipped:
                         results.append((thread_id, "skipped"))
+                    elif first.ok:
+                        results.append((thread_id, "success"))
                     else:
-                        results.append((thread_id, f"error: {result.first().message}"))
-            except RegistryVersionConflict:
-                with results_lock:
-                    results.append((thread_id, "conflict"))
+                        results.append((thread_id, f"error: status={first.status} msg={first.message}"))
             except Exception as e:
                 with results_lock:
-                    results.append((thread_id, f"error: {e}"))
+                    results.append((thread_id, f"exception: {e}"))
 
         # Start all threads simultaneously
         threads = []
@@ -195,18 +189,18 @@ class TestMutableRegistryConcurrency:
                     acquire_lock=True,  # Mutable mode - required for overwrite
                 )
 
+                # Batch-only API: check result status instead of catching exceptions
                 with results_lock:
-                    if result.first().ok or result.first().is_overwritten:
+                    first = result.first()
+                    if first.ok or first.is_overwritten:
                         results.append((thread_id, "success"))
-                    else:
-                        results.append((thread_id, f"failed: {result.first().message}"))
-            except Exception as e:
-                with results_lock:
-                    # Lock acquisition failure is expected with concurrent access
-                    if "lock" in str(e).lower():
+                    elif first.is_error and "lock" in (first.message or "").lower():
                         results.append((thread_id, "lock_failed"))
                     else:
-                        results.append((thread_id, f"error: {e}"))
+                        results.append((thread_id, f"failed: {first.message}"))
+            except Exception as e:
+                with results_lock:
+                    results.append((thread_id, f"error: {e}"))
 
         threads = []
         for i in range(num_threads):
