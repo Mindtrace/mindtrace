@@ -1696,6 +1696,13 @@ class Registry(Mindtrace):
         """
         try:
             name, version = self._parse_key(key)
+            if version is None:
+                if not self.list_versions(name):
+                    raise RegistryObjectNotFound(f"Object {name} does not exist")
+            else:
+                exists = self.backend.has_object([name], [version])
+                if not exists.get((name, version), False):
+                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
             self.delete(name=name, version=version)
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
