@@ -77,3 +77,12 @@ class TestMCPClientManagerGetDescriptor:
         class_access = MCPClientManager.__get__(manager, None, MyService)
         assert isinstance(class_access, MCPClientManager)
         assert class_access.service_cls is MyService
+
+    def test_get_descriptor_from_instance_returns_new_manager(self):
+        """Test that accessing mcp from instance returns new MCPClientManager for instance's class."""
+        # When accessing from instance (obj is not None), should return new manager for instance's class
+        service_instance = MyService()
+        # Accessing from instance should return a new manager for the instance's class
+        instance_access = MCPClientManager.__get__(MyService.mcp, service_instance, MyService)
+        assert isinstance(instance_access, MCPClientManager)
+        assert instance_access.service_cls is MyService

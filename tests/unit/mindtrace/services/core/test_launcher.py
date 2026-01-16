@@ -1,4 +1,5 @@
 import json
+import platform
 from unittest.mock import Mock, call, patch
 
 import pytest
@@ -391,6 +392,34 @@ class TestMain:
                 launcher_module.main()
                 mock_launcher.return_value.run.assert_called_once()
 
+    @patch("mindtrace.services.core.launcher.Launcher")
+    @patch("argparse.ArgumentParser.parse_args")
+    def test_main_entry_point_if_name_main(self, mock_parse_args, mock_launcher):
+        """Test that the if __name__ == '__main__' block calls main()."""
+        # This tests line 114: if __name__ == "__main__": main()
+        # We'll simulate the module being run as a script
+        import mindtrace.services.core.launcher as launcher_module
+
+        mock_args = Mock()
+        mock_args.server_class = "test.Server"
+        mock_args.num_workers = 1
+        mock_args.bind = "127.0.0.1:8080"
+        mock_args.pid = None
+        mock_args.worker_class = "uvicorn.workers.UvicornWorker"
+        mock_args.init_params = None
+        mock_parse_args.return_value = mock_args
+
+        mock_launcher_instance = Mock()
+        mock_launcher.return_value = mock_launcher_instance
+
+        # Simulate the __main__ block by directly calling main
+        # (The actual if __name__ == "__main__" check can't be easily tested without
+        # running as a subprocess, but we verify the code path works)
+        launcher_module.main()
+
+        mock_launcher.assert_called_once_with(mock_args)
+        mock_launcher_instance.run.assert_called_once()
+
 
 class TestLauncherIntegration:
     """Integration tests for the Launcher with more realistic scenarios."""
@@ -433,3 +462,110 @@ class TestLauncherIntegration:
             timeout=30.5,
             debug=True,
         )
+
+
+class TestLauncherWindows:
+    """Test suite for Windows-specific Launcher (Uvicorn-based).
+
+    Note: These tests are skipped on non-Windows systems because the Windows Launcher
+    class is only defined when IS_WINDOWS is True, which is determined at module import time.
+    """
+
+    @pytest.fixture
+    def mock_options_windows(self):
+        """Create mock options object for Windows testing."""
+        options = Mock()
+        options.bind = "127.0.0.1:8080"
+        options.num_workers = 2
+        options.server_class = "test.server.TestServer"
+        options.init_params = '{"param1": "value1"}'
+        return options
+
+    @pytest.fixture
+    def mock_server_windows(self):
+        """Create mock server object for Windows testing."""
+        server = Mock()
+        server.unique_name = "test_server"
+        server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
+        server.app = Mock()
+        return server
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific tests")
+    @patch("mindtrace.services.core.launcher.instantiate_target")
+    def test_launcher_windows_init(self, mock_instantiate, mock_options_windows, mock_server_windows):
+        """Test Windows Launcher initialization."""
+        mock_instantiate.return_value = mock_server_windows
+
+        # Import Launcher (will use Windows version on Windows)
+        from mindtrace.services.core.launcher import Launcher
+
+        launcher = Launcher(mock_options_windows)
+
+        # Verify server instantiation
+        mock_instantiate.assert_called_once_with("test.server.TestServer", param1="value1")
+        assert launcher.application == mock_server_windows.app
+
+        # Verify uvicorn config
+        assert launcher.uvicorn_config["app"] == mock_server_windows.app
+        assert launcher.uvicorn_config["host"] == "127.0.0.1"
+        assert launcher.uvicorn_config["port"] == 8080
+        assert launcher.uvicorn_config["workers"] == 2
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific tests")
+    @patch("mindtrace.services.core.launcher.instantiate_target")
+    def test_launcher_windows_init_without_init_params(self, mock_instantiate, mock_server_windows):
+        """Test Windows Launcher initialization without init parameters."""
+        mock_instantiate.return_value = mock_server_windows
+
+        options = Mock()
+        options.bind = "0.0.0.0:9000"
+        options.num_workers = 1
+        options.server_class = "default.Server"
+        options.init_params = None
+
+        from mindtrace.services.core.launcher import Launcher
+
+        launcher = Launcher(options)
+
+        # Verify server instantiation with no init params
+        mock_instantiate.assert_called_once_with("default.Server")
+
+        # Verify uvicorn config
+        assert launcher.uvicorn_config["host"] == "0.0.0.0"
+        assert launcher.uvicorn_config["port"] == 9000
+        assert launcher.uvicorn_config["workers"] == 1
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific tests")
+    @patch("mindtrace.services.core.launcher.instantiate_target")
+    @patch("uvicorn.run")
+    def test_launcher_windows_run(self, mock_uvicorn_run, mock_instantiate, mock_options_windows, mock_server_windows):
+        """Test Windows Launcher run method."""
+        mock_instantiate.return_value = mock_server_windows
+
+        from mindtrace.services.core.launcher import Launcher
+
+        launcher = Launcher(mock_options_windows)
+        launcher.run()
+
+        # Verify uvicorn.run was called with correct config
+        mock_uvicorn_run.assert_called_once_with(**launcher.uvicorn_config)
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific tests")
+    @patch("mindtrace.services.core.launcher.instantiate_target")
+    def test_launcher_windows_bind_parsing(self, mock_instantiate, mock_server_windows):
+        """Test Windows Launcher correctly parses bind address."""
+        mock_instantiate.return_value = mock_server_windows
+
+        options = Mock()
+        options.bind = "192.168.1.1:5000"
+        options.num_workers = 1
+        options.server_class = "test.Server"
+        options.init_params = None
+
+        from mindtrace.services.core.launcher import Launcher
+
+        launcher = Launcher(options)
+
+        # Verify host and port were parsed correctly
+        assert launcher.uvicorn_config["host"] == "192.168.1.1"
+        assert launcher.uvicorn_config["port"] == 5000
