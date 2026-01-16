@@ -12,7 +12,7 @@ from zenml.materializers.base_materializer import BaseMaterializer
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
 from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult
 
 
@@ -649,9 +649,6 @@ class Registry(Mindtrace):
                 "_files": self._build_file_manifest(temp_dir),
             }
 
-            # Backend raises RegistryVersionConflict for single item conflicts
-            # For single items, we let the exception bubble up regardless of on_conflict
-            # The on_conflict setting only affects batch behavior
             push_result = self.backend.push(
                 [name],
                 [validated_version],
@@ -661,8 +658,14 @@ class Registry(Mindtrace):
                 acquire_lock=self.mutable,
             )
 
-            # Get result - single item
-            result = next(iter(push_result))
+            # Get result and check for errors - single items raise, batch returns results
+            result = push_result.first()
+            if result.is_error:
+                if result.exception:
+                    raise result.exception
+                raise RuntimeError(f"Failed to save {name}@{validated_version}: {result.message}")
+            if result.is_skipped:
+                raise RegistryVersionConflict(f"Object {name}@{validated_version} already exists.")
 
             self._invalidate_versions_cache(name)
             return result.version
@@ -831,9 +834,9 @@ class Registry(Mindtrace):
         resolved, _ = self._resolve_versions([name], [version], on_error="raise")
         n, v = resolved[0]
 
-        # Fetch metadata (single item - backend raises RegistryObjectNotFound if not found)
+        # Fetch metadata (single item)
         fetch_results = self.backend.fetch_metadata([n], [v])
-        result = fetch_results.get((n, v))
+        result = fetch_results.first()
         if not result or not result.ok:
             raise RegistryObjectNotFound(f"Object {n}@{v} not found.")
         metadata = result.metadata
@@ -843,7 +846,13 @@ class Registry(Mindtrace):
             temp_dir = Path(base_temp_dir) / f"{n}_{v}".replace(":", "_")
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            self.backend.pull([n], [v], [temp_dir], acquire_lock=self.mutable, metadata=[metadata])
+            pull_results = self.backend.pull([n], [v], [temp_dir], acquire_lock=self.mutable, metadata=[metadata])
+            pull_result = pull_results.first()
+            if pull_result and pull_result.is_error:
+                # Raise the original exception if available, otherwise create one
+                if pull_result.exception:
+                    raise pull_result.exception
+                raise RuntimeError(f"Failed to pull {n}@{v}: {pull_result.message}")
 
             # Hash verification
             if verify_hash:
@@ -1032,12 +1041,20 @@ class Registry(Mindtrace):
             resolved, _ = self._resolve_versions([name], [version], on_error="raise")
             versions_to_delete = [resolved[0][1]]
 
-        # Delete - single item backend raises RegistryObjectNotFound if version doesn't exist
-        self.backend.delete(
+        # Delete and check for errors
+        delete_results = self.backend.delete(
             [name] * len(versions_to_delete),
             versions_to_delete,
             acquire_lock=self.mutable,
         )
+
+        # For single object delete, raise on any error
+        for del_result in delete_results:
+            if del_result.is_error:
+                if del_result.exception:
+                    raise del_result.exception
+                # Fallback when exception not preserved (e.g., remote backends)
+                raise RuntimeError(f"Failed to delete {name}@{del_result.version}: {del_result.message}")
 
         self._invalidate_versions_cache(name)
         self.logger.debug(f"Deleted {len(versions_to_delete)} version(s) of {name}.")

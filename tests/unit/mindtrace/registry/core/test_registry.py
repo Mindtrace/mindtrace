@@ -2864,6 +2864,7 @@ def test_load_cache_error_fallback(temp_registry_dir):
 
 def test_delete_with_cache(temp_registry_dir):
     """Test that delete() removes from both remote and cache."""
+    from mindtrace.registry.core.types import OpResult, OpResults
 
     # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
@@ -2874,7 +2875,10 @@ def test_delete_with_cache(temp_registry_dir):
     mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
-    mock_backend.delete = Mock()
+    # delete returns OpResults
+    delete_results = OpResults()
+    delete_results.add(OpResult.success("test:obj", "1.0.0"))
+    mock_backend.delete = Mock(return_value=delete_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 
@@ -2908,7 +2912,10 @@ def test_delete_cache_error_handling(temp_registry_dir):
     mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
-    mock_backend.delete = Mock()
+    # delete returns OpResults
+    delete_results = OpResults()
+    delete_results.add(OpResult.success("test:obj", "1.0.0"))
+    mock_backend.delete = Mock(return_value=delete_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 
@@ -3157,6 +3164,8 @@ def test_delete_cache_delete_error(temp_registry_dir):
     """Test that delete() handles error when deleting from cache."""
     from unittest.mock import patch
 
+    from mindtrace.registry.core.types import OpResult, OpResults
+
     # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -3166,7 +3175,10 @@ def test_delete_cache_delete_error(temp_registry_dir):
     mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
     # list_versions returns Dict[str, List[str]]
     mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
-    mock_backend.delete = Mock()
+    # delete returns OpResults
+    delete_results = OpResults()
+    delete_results.add(OpResult.success("test:obj", "1.0.0"))
+    mock_backend.delete = Mock(return_value=delete_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 

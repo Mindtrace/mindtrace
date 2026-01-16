@@ -35,7 +35,6 @@ from mindtrace.registry.backends.registry_backend import (
 from mindtrace.registry.core.exceptions import (
     LockAcquisitionError,
     RegistryObjectNotFound,
-    RegistryVersionConflict,
 )
 from mindtrace.registry.core.types import VERSION_PENDING, OnConflict, OpResult, OpResults
 
@@ -47,12 +46,13 @@ class LocalRegistryBackend(RegistryBackend):
     methods for uploading, downloading, and managing object files and metadata.
     """
 
-    def __init__(self, uri: str | Path, **kwargs):
+    def __init__(self, uri: str | Path, lock_timeout: int = 30, **kwargs):
         """Initialize the LocalRegistryBackend.
 
         Args:
             uri (str | Path): The base directory path where all object files and metadata will be stored.
                               Supports "file://" URI scheme which will be automatically stripped.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         if isinstance(uri, str) and uri.startswith("file://"):
@@ -61,6 +61,7 @@ class LocalRegistryBackend(RegistryBackend):
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
+        self._lock_timeout = lock_timeout
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
 
     @property
@@ -331,12 +332,12 @@ class LocalRegistryBackend(RegistryBackend):
             pass
 
     @contextmanager
-    def _internal_lock(self, key: str, timeout: int = 30, shared: bool = False):
+    def _internal_lock(self, key: str, timeout: int | None = None, shared: bool = False):
         """Context manager for internal locking.
 
         Args:
             key: The key to acquire the lock for.
-            timeout: The timeout in seconds for the lock.
+            timeout: The timeout in seconds for the lock. If None, uses self._lock_timeout.
             shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
 
         Yields:
@@ -345,6 +346,8 @@ class LocalRegistryBackend(RegistryBackend):
         Raises:
             LockAcquisitionError: If the lock cannot be acquired within the timeout period.
         """
+        if timeout is None:
+            timeout = self._lock_timeout
         timeout_handler = Timeout(
             timeout=timeout,
             retry_delay=0.1,  # Short retry delay for lock acquisition
@@ -403,16 +406,11 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            LockAcquisitionError: Single item and lock cannot be acquired.
+            - OpResult.failed() on failure
         """
         entries = self._normalize_inputs(name, version, local_path, metadata)
-        is_single = len(entries) == 1
         results = OpResults()
 
         for obj_name, obj_version, obj_path, obj_meta in entries:
@@ -438,9 +436,7 @@ class LocalRegistryBackend(RegistryBackend):
                             meta_path.unlink(missing_ok=True)
                             is_overwrite = True
                         else:
-                            # on_conflict == "skip" - raise for single, return skipped for batch
-                            if is_single:
-                                raise RegistryVersionConflict(f"Object {obj_name}@{resolved_version} already exists.")
+                            # on_conflict == "skip" - return skipped result
                             results.add(OpResult.skipped(obj_name, resolved_version))
                             continue
 
@@ -474,9 +470,6 @@ class LocalRegistryBackend(RegistryBackend):
                         raise RuntimeError(f"Push failed for {obj_name}@{resolved_version}: {e}") from e
 
             except Exception as e:
-                # Single ops raise, batch ops record failure
-                if is_single:
-                    raise
                 ver = resolved_version or obj_version or VERSION_PENDING
                 results.add(OpResult.failed(obj_name, ver, e))
 
@@ -492,9 +485,6 @@ class LocalRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Copy a directory from the backend store to a local path.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
-
         Args:
             name: Name of the object(s).
             version: Version string(s).
@@ -508,10 +498,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         # Note: metadata parameter is ignored for local backend since we copy
         # the entire directory. Remote backends use it for _files manifest.
@@ -522,7 +509,6 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions) or len(names) != len(paths):
             raise ValueError("Input list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
@@ -547,9 +533,6 @@ class LocalRegistryBackend(RegistryBackend):
                 results.add(OpResult.success(obj_name, obj_version))
 
             except Exception as e:
-                # Single ops raise, batch ops record failure
-                if is_single:
-                    raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
@@ -564,9 +547,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         Also removes empty parent directories.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
-
         Args:
             name: Name of the object(s).
             version: Version string(s).
@@ -576,10 +556,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -587,7 +564,6 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
@@ -621,9 +597,6 @@ class LocalRegistryBackend(RegistryBackend):
 
                 results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
-                # Single ops raise, batch ops record failure
-                if is_single:
-                    raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
@@ -641,22 +614,19 @@ class LocalRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Save metadata for object version(s).
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
-
         Args:
             name: Name of the object(s).
             version: Version of the object(s).
             metadata: Metadata to save (single dict for one object, or list of dicts).
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip" (default): Return skipped result.
                 "overwrite": Replace existing version.
 
         Returns:
-            OpResults with status for each (name, version).
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            OpResults with status for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -675,7 +645,6 @@ class LocalRegistryBackend(RegistryBackend):
                 raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
 
         results = OpResults()
-        is_single = len(names) == 1
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
             self.validate_object_name(obj_name)
@@ -688,9 +657,7 @@ class LocalRegistryBackend(RegistryBackend):
                         yaml.safe_dump(obj_meta, f)
                     results.add(OpResult.overwritten(obj_name, obj_version))
                 else:
-                    # on_conflict == "skip" - raise for single, return skipped for batch
-                    if is_single:
-                        raise RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists.")
+                    # on_conflict == "skip" - return skipped result
                     results.add(OpResult.skipped(obj_name, obj_version))
             else:
                 self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
@@ -705,11 +672,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
     ) -> OpResults:
-        """Load metadata for a object version.
-
-        Single item operations raise exceptions if not found.
-        Batch operations return OpResults without raising, letting caller inspect results.
-        Missing entries (not found) are omitted from the batch result.
+        """Load metadata for object version(s).
 
         Args:
             name: Name of the object(s).
@@ -718,10 +681,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and metadata doesn't exist.
+            - OpResult.failed() on failure (not found or error)
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -729,9 +689,7 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
-        not_found_keys: set = set()
 
         for obj_name, obj_version in zip(names, versions):
             meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -747,7 +705,13 @@ class LocalRegistryBackend(RegistryBackend):
                         f"Metadata file for {obj_name}@{obj_version} is empty or corrupted. "
                         f"This may indicate a race condition during concurrent writes."
                     )
-                    not_found_keys.add((obj_name, obj_version))
+                    results.add(
+                        OpResult.failed(
+                            obj_name,
+                            obj_version,
+                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found (empty metadata)"),
+                        )
+                    )
                     continue
 
                 # Add the path to the object directory to the metadata
@@ -759,19 +723,16 @@ class LocalRegistryBackend(RegistryBackend):
                 results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
             except FileNotFoundError:
-                not_found_keys.add((obj_name, obj_version))
-                continue  # Skip missing entries for batch ops
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
+                    )
+                )
             except Exception as e:
-                # Single ops raise, batch ops skip
-                if is_single:
-                    raise
                 self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
                 results.add(OpResult.failed(obj_name, obj_version, e))
-
-        # Single ops raise if not found
-        if is_single and not_found_keys:
-            obj_name, obj_version = list(not_found_keys)[0]
-            raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
 
         return results
 
@@ -780,10 +741,7 @@ class LocalRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
     ) -> OpResults:
-        """Delete metadata for a object version.
-
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        """Delete metadata for object version(s).
 
         Args:
             name: Name of the object(s).
@@ -792,10 +750,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RuntimeError: Single item and deletion fails.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -803,7 +758,6 @@ class LocalRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        is_single = len(names) == 1
         results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
@@ -814,9 +768,6 @@ class LocalRegistryBackend(RegistryBackend):
                     meta_path.unlink()
                 results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
-                # Single ops raise, batch ops record failure
-                if is_single:
-                    raise
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
