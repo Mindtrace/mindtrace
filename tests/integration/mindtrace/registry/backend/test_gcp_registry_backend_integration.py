@@ -1,106 +1,45 @@
-"""Integration tests for GCPRegistryBackend."""
+"""Integration tests for GCPRegistryBackend.
+
+GCP fixtures (gcs_client, gcp_test_bucket, gcp_project_id, gcp_credentials_path, gcp_test_prefix)
+are inherited from tests/integration/mindtrace/registry/conftest.py
+
+Backend fixture (gcp_backend) is inherited from tests/integration/mindtrace/registry/backend/conftest.py
+"""
 
 import os
-import tempfile
-import uuid
-from pathlib import Path
-from typing import Generator
 
 import pytest
-from google.cloud import storage
-from google.cloud.exceptions import NotFound
 
-from mindtrace.core import CoreConfig
 from mindtrace.registry import GCPRegistryBackend, Registry
 from mindtrace.registry.core.exceptions import RegistryVersionConflict
 
-
-@pytest.fixture(scope="session")
-def config():
-    """Create a CoreConfig instance for testing."""
-    return CoreConfig()
-
-
-@pytest.fixture(scope="session")
-def gcs_client(config):
-    """Create a GCS client for testing."""
-
-    project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
-    if not credentials_path:
-        pytest.skip("No GCP credentials path provided")
-    if not os.path.exists(credentials_path):
-        pytest.skip(f"GCP credentials path does not exist: {credentials_path}")
-
-    client = storage.Client(project=project_id)
-    yield client
+# ─────────────────────────────────────────────────────────────────────────────
+# Fixture Aliases (for backwards compatibility with existing tests)
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
-def test_bucket(gcs_client, config) -> Generator[str, None, None]:
-    """Create a temporary bucket for testing, or use existing one.
-
-    Set GCP_TEST_BUCKET env var to use an existing bucket instead of creating one.
-    """
-    existing_bucket = config["MINDTRACE_GCP"]["GCP_BUCKET_NAME"]
-
-    if existing_bucket:
-        # Use existing bucket - verify it exists
-        bucket = gcs_client.bucket(existing_bucket)
-        if not bucket.exists():
-            pytest.skip(f"GCP_TEST_BUCKET '{existing_bucket}' does not exist")
-        yield existing_bucket
-        # Don't delete existing bucket
-    else:
-        # Create a new temporary bucket
-        bucket_name = f"mindtrace-test-{uuid.uuid4()}"
-        try:
-            bucket = gcs_client.bucket(bucket_name)
-            bucket.create()
-            yield bucket_name
-        except Exception as e:
-            pytest.skip(f"GCP bucket creation failed: {e}")
-
-        # Cleanup - delete all objects first, then the bucket
-        try:
-            for blob in bucket.list_blobs():
-                blob.delete()
-            bucket.delete()
-        except NotFound:
-            pass
+def test_bucket(gcp_test_bucket):
+    """Alias for gcp_test_bucket."""
+    return gcp_test_bucket
 
 
 @pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for testing."""
-    temp_dir = Path(tempfile.mkdtemp())
-    yield temp_dir
-    import shutil
-
-    shutil.rmtree(temp_dir)
+def test_prefix(gcp_test_prefix):
+    """Alias for gcp_test_prefix."""
+    return gcp_test_prefix
 
 
 @pytest.fixture
-def test_prefix():
-    """Generate a unique prefix for test isolation."""
-    return f"test-{uuid.uuid4()}"
-
-
-@pytest.fixture
-def backend(temp_dir, test_bucket, gcs_client, test_prefix):
+def backend(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path, gcs_client):
     """Create a GCPRegistryBackend instance with a test bucket."""
-
-    config = CoreConfig()
-    project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
-
     try:
         backend = GCPRegistryBackend(
-            uri=f"gs://{test_bucket}/{test_prefix}",
-            project_id=project_id,
-            bucket_name=test_bucket,
-            credentials_path=credentials_path,
-            prefix=test_prefix,
+            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+            project_id=gcp_project_id,
+            bucket_name=gcp_test_bucket,
+            credentials_path=gcp_credentials_path,
+            prefix=gcp_test_prefix,
         )
         yield backend
     except Exception as e:
@@ -108,12 +47,17 @@ def backend(temp_dir, test_bucket, gcs_client, test_prefix):
 
     # Cleanup: delete all objects with our test prefix
     try:
-        bucket = gcs_client.bucket(test_bucket)
-        blobs = list(bucket.list_blobs(prefix=test_prefix))
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
         for blob in blobs:
             blob.delete()
     except Exception:
         pass  # Best effort cleanup
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test-specific Fixtures
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -139,18 +83,6 @@ def sample_object_dir(temp_dir):
     file3.write_text("test content 3")
 
     return temp_dir
-
-
-@pytest.fixture
-def sample_metadata():
-    """Create sample metadata for testing."""
-    return {
-        "name": "test:object",
-        "version": "1.0.0",
-        "description": "A test object",
-        "created_at": "2023-01-01T00:00:00Z",
-        "tags": ["test", "integration"],
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

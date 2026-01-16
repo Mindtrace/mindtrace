@@ -67,6 +67,7 @@ class GCPRegistryBackend(RegistryBackend):
         credentials_path: str | None = None,
         prefix: str = "",
         max_workers: int = 4,
+        lock_timeout: int = 30,
         **kwargs,
     ):
         """Initialize the GCPRegistryBackend.
@@ -78,6 +79,7 @@ class GCPRegistryBackend(RegistryBackend):
             credentials_path: Optional path to service account JSON file.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations. Default is 4.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
@@ -85,6 +87,7 @@ class GCPRegistryBackend(RegistryBackend):
         self._uri = Path(uri or f"gs://{bucket_name}/{self._prefix}".rstrip("/"))
         self._metadata_path = self._prefixed("registry_metadata.json")
         self._max_workers = max_workers
+        self._lock_timeout = lock_timeout
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}, prefix: {self._prefix}")
 
         self.gcs = GCSStorageHandler(
@@ -449,7 +452,7 @@ class GCPRegistryBackend(RegistryBackend):
         # Acquire locks if mutable registry
         if acquire_lock:
             lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
 
             for obj_name, obj_version in zip(names, versions):
                 lock_key = f"{obj_name}@{obj_version}"
@@ -713,7 +716,7 @@ class GCPRegistryBackend(RegistryBackend):
         # Acquire locks if mutable registry
         if acquire_lock:
             lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=30)
+            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
 
             for obj_name, obj_version in zip(names, versions):
                 lock_key = f"{obj_name}@{obj_version}"
