@@ -1,11 +1,17 @@
+"""Local filesystem-based registry backend.
+
+All object directories and registry files are stored under a configurable base directory.
+"""
+
 import json
 import os
 import platform
 import shutil
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple, Union
 
 import yaml
 
@@ -15,12 +21,22 @@ if platform.system() == "Windows":
 
     fcntl = None
 else:
-    import fcntl
-
     msvcrt = None
 
-from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError
+from mindtrace.core import Timeout
+from mindtrace.registry.backends.registry_backend import (
+    ConcreteVersionArg,
+    MetadataArg,
+    NameArg,
+    PathArg,
+    RegistryBackend,
+    VersionArg,
+)
+from mindtrace.registry.core.exceptions import (
+    LockAcquisitionError,
+    RegistryObjectNotFound,
+)
+from mindtrace.registry.core.types import VERSION_PENDING, OnConflict, OpResult, OpResults
 
 
 class LocalRegistryBackend(RegistryBackend):
@@ -30,12 +46,13 @@ class LocalRegistryBackend(RegistryBackend):
     methods for uploading, downloading, and managing object files and metadata.
     """
 
-    def __init__(self, uri: str | Path, **kwargs):
+    def __init__(self, uri: str | Path, lock_timeout: int = 30, **kwargs):
         """Initialize the LocalRegistryBackend.
 
         Args:
             uri (str | Path): The base directory path where all object files and metadata will be stored.
                               Supports "file://" URI scheme which will be automatically stripped.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         if isinstance(uri, str) and uri.startswith("file://"):
@@ -44,6 +61,7 @@ class LocalRegistryBackend(RegistryBackend):
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
+        self._lock_timeout = lock_timeout
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
 
     @property
@@ -55,6 +73,10 @@ class LocalRegistryBackend(RegistryBackend):
     def metadata_path(self) -> Path:
         """The resolved metadata file path for the backend."""
         return self._metadata_path
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Path Helpers
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _full_path(self, remote_key: str) -> Path:
         """Convert a remote key to a full filesystem path.
@@ -102,243 +124,654 @@ class LocalRegistryBackend(RegistryBackend):
         """
         return f"_meta_{name.replace(':', '_')}@"
 
-    def push(self, name: str, version: str, local_path: str | Path):
-        """Upload a local directory to the remote backend.
+    def _lock_dir(self, key: str) -> Path:
+        """Get the directory for lock files for a given key."""
+        return self._full_path(f"_locks_{key}")
+
+    def _exclusive_lock_path(self, key: str) -> Path:
+        """Get the path for an exclusive lock file."""
+        return self._lock_dir(key) / "_exclusive"
+
+    def _shared_lock_path(self, key: str, lock_id: str) -> Path:
+        """Get the path for a shared lock file."""
+        return self._lock_dir(key) / f"_shared_{lock_id}"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal Locking
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _acquire_internal_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Acquire internal lock using one-file-per-holder approach.
+
+        Supports both shared (read) and exclusive (write) locks:
+        - Shared locks: Multiple readers can hold shared locks simultaneously
+        - Exclusive locks: Only one writer can hold an exclusive lock, and no readers
+
+        Lock files are stored in a directory per key:
+        - _locks_{key}/_exclusive           - exclusive lock file
+        - _locks_{key}/_shared_{lock_id}    - shared lock file per holder
 
         Args:
-            name: Name of the object.
-            version: Version string.
-            local_path: Path to the local directory to upload.
-        """
-        self.validate_object_name(name)
-        dst = self._full_path(self._object_key(name, version))
-        self.logger.debug(f"Uploading directory from {local_path} to {dst}")
-        shutil.copytree(local_path, dst, dirs_exist_ok=True)
-        self.logger.debug(f"Upload complete. Contents: {list(dst.rglob('*'))}")
+            key: The key to acquire the lock for.
+            lock_id: The ID of the lock to acquire.
+            timeout: The timeout in seconds for the lock.
+            shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
 
-    def pull(self, name: str, version: str, local_path: str | Path):
+        Returns:
+            True if the lock was acquired, False otherwise.
+        """
+        lock_dir = self._lock_dir(key)
+        lock_dir.mkdir(parents=True, exist_ok=True)
+
+        exclusive_path = self._exclusive_lock_path(key)
+        expires_at = time.time() + timeout
+
+        try:
+            if shared:
+                # For shared lock: check no exclusive lock exists, then create shared lock file
+                # First, clean up expired exclusive lock if any
+                if exclusive_path.exists():
+                    try:
+                        with open(exclusive_path, "r") as f:
+                            meta = json.loads(f.read().strip())
+                        if time.time() > meta.get("expires_at", 0):
+                            exclusive_path.unlink()
+                        else:
+                            # Valid exclusive lock exists - cannot acquire shared
+                            return False
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        # Corrupted or deleted - try to clean up
+                        try:
+                            exclusive_path.unlink()
+                        except FileNotFoundError:
+                            pass
+
+                # Create shared lock file atomically
+                shared_path = self._shared_lock_path(key, lock_id)
+                try:
+                    if platform.system() == "Windows":
+                        fd = os.open(shared_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    else:
+                        fd = os.open(shared_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+
+                    with os.fdopen(fd, "w") as f:
+                        f.write(json.dumps({"lock_id": lock_id, "expires_at": expires_at}))
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Double-check no exclusive lock was created while we were writing
+                    if exclusive_path.exists():
+                        try:
+                            with open(exclusive_path, "r") as f:
+                                meta = json.loads(f.read().strip())
+                            if time.time() <= meta.get("expires_at", 0):
+                                # Exclusive lock appeared - rollback our shared lock
+                                shared_path.unlink()
+                                return False
+                        except (json.JSONDecodeError, IOError, FileNotFoundError):
+                            pass
+
+                    return True
+                except FileExistsError:
+                    # Our lock file already exists (shouldn't happen with UUID)
+                    return True
+
+            else:
+                # For exclusive lock: check no locks exist, then create exclusive lock file
+                # First, clean up expired locks
+                self._cleanup_expired_locks(key)
+
+                # Check for any existing shared locks
+                for f in lock_dir.glob("_shared_*"):
+                    try:
+                        with open(f, "r") as fp:
+                            meta = json.loads(fp.read().strip())
+                        if time.time() <= meta.get("expires_at", 0):
+                            # Valid shared lock exists - cannot acquire exclusive
+                            return False
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        pass
+
+                # Try to create exclusive lock atomically
+                try:
+                    if platform.system() == "Windows":
+                        fd = os.open(exclusive_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    else:
+                        fd = os.open(exclusive_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+
+                    with os.fdopen(fd, "w") as f:
+                        f.write(json.dumps({"lock_id": lock_id, "expires_at": expires_at}))
+                        f.flush()
+                        os.fsync(f.fileno())
+                    return True
+
+                except FileExistsError:
+                    # Exclusive lock exists - check if expired
+                    try:
+                        with open(exclusive_path, "r") as f:
+                            meta = json.loads(f.read().strip())
+                        if time.time() > meta.get("expires_at", 0):
+                            exclusive_path.unlink()
+                            return self._acquire_internal_lock(key, lock_id, timeout, shared=False)
+                    except (json.JSONDecodeError, IOError, FileNotFoundError):
+                        pass
+                    return False
+
+        except Exception as e:
+            self.logger.error(f"Error acquiring {'shared' if shared else 'exclusive'} lock for {key}: {e}")
+            return False
+
+    def _cleanup_expired_locks(self, key: str) -> None:
+        """Remove expired lock files for a key."""
+        lock_dir = self._lock_dir(key)
+        if not lock_dir.exists():
+            return
+
+        now = time.time()
+        for lock_file in lock_dir.iterdir():
+            try:
+                with open(lock_file, "r") as f:
+                    meta = json.loads(f.read().strip())
+                if now > meta.get("expires_at", 0):
+                    lock_file.unlink()
+            except (json.JSONDecodeError, IOError, FileNotFoundError):
+                # Corrupted or already deleted - try to clean up
+                try:
+                    lock_file.unlink()
+                except FileNotFoundError:
+                    pass
+
+    def _release_internal_lock(self, key: str, lock_id: str) -> bool:
+        """Release internal lock by removing the appropriate lock file.
+
+        For exclusive locks: removes _exclusive file if we own it.
+        For shared locks: removes our _shared_{lock_id} file.
+
+        Args:
+            key: The key to release the lock for.
+            lock_id: The ID of the lock to release.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        try:
+            # Try to release exclusive lock first
+            exclusive_path = self._exclusive_lock_path(key)
+            if exclusive_path.exists():
+                try:
+                    with open(exclusive_path, "r") as f:
+                        meta = json.loads(f.read().strip())
+                    if meta.get("lock_id") == lock_id:
+                        exclusive_path.unlink()
+                        self._cleanup_lock_dir(key)
+                        return True
+                except (json.JSONDecodeError, IOError, FileNotFoundError):
+                    pass
+
+            # Try to release shared lock
+            shared_path = self._shared_lock_path(key, lock_id)
+            if shared_path.exists():
+                shared_path.unlink()
+                self._cleanup_lock_dir(key)
+                return True
+
+            # Lock file doesn't exist - consider it released
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error releasing lock for {key}: {e}")
+            return False
+
+    def _cleanup_lock_dir(self, key: str) -> None:
+        """Remove lock directory if empty."""
+        lock_dir = self._lock_dir(key)
+        try:
+            if lock_dir.exists() and not any(lock_dir.iterdir()):
+                lock_dir.rmdir()
+        except (OSError, FileNotFoundError):
+            pass
+
+    @contextmanager
+    def _internal_lock(self, key: str, timeout: int | None = None, shared: bool = False):
+        """Context manager for internal locking.
+
+        Args:
+            key: The key to acquire the lock for.
+            timeout: The timeout in seconds for the lock. If None, uses self._lock_timeout.
+            shared: If True, acquire a shared (read) lock. If False, acquire an exclusive (write) lock.
+
+        Yields:
+            None
+
+        Raises:
+            LockAcquisitionError: If the lock cannot be acquired within the timeout period.
+        """
+        if timeout is None:
+            timeout = self._lock_timeout
+        timeout_handler = Timeout(
+            timeout=timeout,
+            retry_delay=0.1,  # Short retry delay for lock acquisition
+            exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
+            progress_bar=False,  # Don't show progress bar for lock acquisition
+            desc=f"Acquiring {'shared ' if shared else ''}lock for {key}",
+        )
+        lock_id = str(uuid.uuid4())
+
+        def acquire_lock_with_retry():
+            if not self._acquire_internal_lock(key, lock_id, timeout, shared=shared):
+                lock_type = "shared" if shared else "exclusive"
+                raise LockAcquisitionError(f"Cannot acquire {lock_type} lock for {key}")
+            return True
+
+        try:
+            timeout_handler.run(acquire_lock_with_retry)
+        except TimeoutError as e:
+            # Convert TimeoutError to LockAcquisitionError for semantic clarity
+            lock_type = "shared" if shared else "exclusive"
+            raise LockAcquisitionError(f"Timed out acquiring {lock_type} lock for {key} after {timeout}s") from e
+        try:
+            yield
+        finally:
+            self._release_internal_lock(key, lock_id)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Artifact + Metadata Operations
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def push(
+        self,
+        name: NameArg,
+        version: VersionArg,
+        local_path: PathArg,
+        metadata: MetadataArg = None,
+        on_conflict: str = OnConflict.SKIP,
+        acquire_lock: bool = False,
+    ) -> OpResults:
+        """Atomically push artifacts and metadata with rollback on failure.
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Object name(s). Single string or list.
+            version: Version string(s), None for auto-increment, or list.
+            local_path: Local source directory/directories to upload from.
+            metadata: Metadata dict(s) to store.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+            acquire_lock: Accepted for API compatibility. Local backend always uses
+                internal locking regardless of this parameter.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.failed() on failure
+        """
+        entries = self._normalize_inputs(name, version, local_path, metadata)
+        results = OpResults()
+
+        for obj_name, obj_version, obj_path, obj_meta in entries:
+            resolved_version = None
+            try:
+                self.validate_object_name(obj_name)
+
+                # Resolve version first (outside lock to avoid deadlock with list_versions)
+                resolved_version = self._resolve_version(obj_name, obj_version)
+
+                # Lock on the specific object@version for proper coordination with pull() and delete()
+                with self._internal_lock(f"{obj_name}@{resolved_version}"):
+                    artifact_dst = self._full_path(self._object_key(obj_name, resolved_version))
+                    meta_path = self._object_metadata_path(obj_name, resolved_version)
+
+                    # Check for existing version
+                    is_overwrite = False
+                    if meta_path.exists():
+                        if on_conflict == OnConflict.OVERWRITE:
+                            # Remove existing artifacts and metadata before overwriting
+                            if artifact_dst.exists():
+                                shutil.rmtree(artifact_dst, ignore_errors=True)
+                            meta_path.unlink(missing_ok=True)
+                            is_overwrite = True
+                        else:
+                            # on_conflict == "skip" - return skipped result
+                            results.add(OpResult.skipped(obj_name, resolved_version))
+                            continue
+
+                    try:
+                        # 1. Copy artifacts
+                        self.logger.debug(f"Uploading directory from {obj_path} to {artifact_dst}")
+                        shutil.copytree(obj_path, artifact_dst, dirs_exist_ok=True)
+                        self.logger.debug(f"Upload complete. Contents: {list(artifact_dst.rglob('*'))}")
+
+                        # 2. Write metadata (commit point)
+                        if obj_meta is not None:
+                            # Add path to metadata
+                            obj_meta = dict(obj_meta)
+                            obj_meta["path"] = str(artifact_dst)
+
+                            self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
+                            with open(meta_path, "w") as f:
+                                yaml.safe_dump(obj_meta, f)
+
+                        if is_overwrite:
+                            results.add(OpResult.overwritten(obj_name, resolved_version))
+                        else:
+                            results.add(OpResult.success(obj_name, resolved_version))
+
+                    except Exception as e:
+                        # Rollback: remove artifacts and metadata
+                        if artifact_dst.exists():
+                            shutil.rmtree(artifact_dst, ignore_errors=True)
+                        if meta_path.exists():
+                            meta_path.unlink(missing_ok=True)
+                        raise RuntimeError(f"Push failed for {obj_name}@{resolved_version}: {e}") from e
+
+            except Exception as e:
+                ver = resolved_version or obj_version or VERSION_PENDING
+                results.add(OpResult.failed(obj_name, ver, e))
+
+        return results
+
+    def pull(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        local_path: PathArg,
+        acquire_lock: bool = False,
+        metadata: MetadataArg = None,
+    ) -> OpResults:
         """Copy a directory from the backend store to a local path.
 
         Args:
-            name: Name of the object.
-            version: Version string.
-            local_path: Destination directory path to copy to.
-        """
-        src = self._full_path(self._object_key(name, version))
-        self.logger.debug(f"Downloading directory from {src} to {local_path}")
-        shutil.copytree(src, local_path, dirs_exist_ok=True)
-        self.logger.debug(f"Download complete. Contents: {list(Path(local_path).rglob('*'))}")
+            name: Name of the object(s).
+            version: Version string(s).
+            local_path: Destination directory path(s) to copy to.
+            acquire_lock: If True, acquire a shared (read) lock before pulling.
+                This is needed for mutable registries to prevent read-write races.
+                Default is False (no locking, for immutable registries).
+            metadata: Optional pre-fetched metadata (unused for local backend,
+                but accepted for API compatibility with remote backends).
 
-    def delete(self, name: str, version: str):
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure
+        """
+        # Note: metadata parameter is ignored for local backend since we copy
+        # the entire directory. Remote backends use it for _files manifest.
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+        paths = self._normalize_paths(local_path, len(names))
+
+        if len(names) != len(versions) or len(names) != len(paths):
+            raise ValueError("Input list lengths must match")
+
+        results = OpResults()
+
+        for obj_name, obj_version, dest_path in zip(names, versions, paths):
+            try:
+                src = self._full_path(self._object_key(obj_name, obj_version))
+
+                if not src.exists():
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+
+                if acquire_lock:
+                    # Acquire shared lock for read operation in mutable registries
+                    with self._internal_lock(f"{obj_name}@{obj_version}", shared=True):
+                        self.logger.debug(f"Downloading directory from {src} to {dest_path} (with shared lock)")
+                        shutil.copytree(src, dest_path, dirs_exist_ok=True)
+                        self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
+                else:
+                    # No locking for immutable registries (fast path)
+                    self.logger.debug(f"Downloading directory from {src} to {dest_path}")
+                    shutil.copytree(src, dest_path, dirs_exist_ok=True)
+                    self.logger.debug(f"Download complete. Contents: {list(Path(dest_path).rglob('*'))}")
+
+                results.add(OpResult.success(obj_name, obj_version))
+
+            except Exception as e:
+                results.add(OpResult.failed(obj_name, obj_version, e))
+
+        return results
+
+    def delete(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        acquire_lock: bool = False,
+    ) -> OpResults:
         """Delete a directory from the backend store.
 
         Also removes empty parent directories.
 
         Args:
-            name: Name of the object.
-            version: Version string.
+            name: Name of the object(s).
+            version: Version string(s).
+            acquire_lock: Accepted for API compatibility. Local backend always uses
+                internal locking regardless of this parameter.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure
         """
-        target = self._full_path(self._object_key(name, version))
-        self.logger.debug(f"Deleting directory: {target}")
-        shutil.rmtree(target, ignore_errors=True)
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-        # Cleanup parent if empty
-        parent = target.parent
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
 
-        # Use a lock file for the parent directory
-        lock_path = self._lock_path(f"{name}@parent")
-        with open(lock_path, "w") as f:
-            if self._acquire_file_lock(f):
-                try:
+        results = OpResults()
+
+        for obj_name, obj_version in zip(names, versions):
+            try:
+                with self._internal_lock(f"{obj_name}@{obj_version}"):
+                    target = self._full_path(self._object_key(obj_name, obj_version))
+                    meta_path = self._object_metadata_path(obj_name, obj_version)
+                    # Delete directory
+                    self.logger.debug(f"Deleting directory: {target}")
+                    if target.exists():
+                        shutil.rmtree(target)
+
+                    # Delete metadata
+                    self.logger.debug(f"Deleting metadata file: {meta_path}")
+                    if meta_path.exists():
+                        meta_path.unlink()
+
+                    # Cleanup parent if empty
+                    parent = target.parent
                     if parent.exists() and not any(parent.iterdir()):
                         self.logger.debug(f"Removing empty parent directory: {parent}")
                         try:
                             parent.rmdir()
-                        except Exception as e:
-                            if parent.exists():
-                                self.logger.error(f"Error deleting parent directory: {e}")
-                                raise
-                finally:
-                    self._release_file_lock(f)
+                        except Exception:
+                            pass
 
-    def save_metadata(self, name: str, version: str, metadata: dict):
-        """Save metadata for a object version.
+                results.add(OpResult.success(obj_name, obj_version))
+            except Exception as e:
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
-        Args:
-            name: Name of the object.
-            version: Version of the object.
-            metadata: Metadata to save.
-        """
-        self.validate_object_name(name)
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
+        return results
 
-        # Use atomic write: write to temp file with unique name, then rename
-        temp_path = meta_path.parent / f".tmp_{uuid.uuid4().hex}_{meta_path.name}"
-        try:
-            with open(temp_path, "w") as f:
-                yaml.safe_dump(metadata, f)
-                f.flush()
-                os.fsync(f.fileno())
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metadata-Only Operations
+    # ─────────────────────────────────────────────────────────────────────────
 
-            # rename is atomic on POSIX systems if source and dest are on same filesystem
-            temp_path.rename(meta_path)
-        except Exception:
-            # Clean up temp file on failure
-            if temp_path.exists():
-                temp_path.unlink()
-            raise
-
-    def fetch_metadata(self, name: str, version: str) -> dict:
-        """Load metadata for a object version.
+    def save_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        metadata: Union[dict, List[dict]],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResults:
+        """Save metadata for object version(s).
 
         Args:
-            name: Name of the object.
-            version: Version of the object.
+            name: Name of the object(s).
+            version: Version of the object(s).
+            metadata: Metadata to save (single dict for one object, or list of dicts).
+            on_conflict: Behavior when version exists.
+                "skip" (default): Return skipped result.
+                "overwrite": Replace existing version.
 
         Returns:
-            dict: The loaded metadata.
-
-        Raises:
-            ValueError: If the metadata file is empty or corrupted.
+            OpResults with status for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
         """
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Loading metadata from: {meta_path}")
-        with open(meta_path, "r") as f:
-            metadata = yaml.safe_load(f)
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-        # Handle case where yaml.safe_load returns None (empty file or whitespace only)
-        if metadata is None:
-            raise ValueError(
-                f"Metadata file for {name}@{version} is empty or corrupted. "
-                f"This may indicate a race condition during concurrent writes."
-            )
-
-        # Add the path to the object directory to the metadata:
-        object_key = self._object_key(name, version)
-        object_path = self._full_path(object_key)
-        metadata.update({"path": str(object_path)})
-
-        self.logger.debug(f"Loaded metadata: {metadata}")
-        return metadata
-
-    def delete_metadata(self, name: str, version: str):
-        """Delete metadata for a object version.
-
-        Args:
-            name: Name of the object.
-            version: Version of the object.
-        """
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Deleting metadata file: {meta_path}")
-        if meta_path.exists():
-            meta_path.unlink()
-
-    def list_objects(self) -> List[str]:
-        """List all objects in the backend.
-
-        Returns:
-            List of object names sorted alphabetically.
-        """
-        objects = set()
-        # Look for metadata files that follow the pattern _meta_objectname@version.yaml
-        for meta_file in self.uri.glob("_meta_*.yaml"):
-            # Extract the object name from the metadata filename
-            # Remove '_meta_' prefix and split at '@' to get the object name part
-            name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
-            # Convert back from filesystem-safe format to original object name
-            name = name_part.replace("_", ":")
-            objects.add(name)
-
-        return sorted(list(objects))
-
-    def list_versions(self, name: str) -> List[str]:
-        """List all versions available for the given object.
-
-        Args:
-            name: Name of the object
-
-        Returns:
-            Sorted list of version strings available for the object
-        """
-        # Build the prefix used in metadata filenames for this object.
-        prefix = self._object_metadata_prefix(name)
-        versions = []
-
-        # Search for metadata files matching the prefix pattern in the base directory.
-        for meta_file in self.uri.glob(f"{prefix}*.yaml"):
-            # Extract the version from the filename by removing the prefix and the '.yaml' extension.
-            version = meta_file.name[len(prefix) : -5]
-            versions.append(version)
-        return sorted(versions)
-
-    def has_object(self, name: str, version: str) -> bool:
-        """Check if a specific object version exists in the backend.
-
-        This method uses direct existence checks instead of listing all objects
-        for better performance, especially with large registries.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-
-        Returns:
-            True if the object version exists, False otherwise.
-        """
-        # Check if metadata file exists directly (much faster than listing all objects)
-        meta_path = self._object_metadata_path(name, version)
-        return meta_path.exists()
-
-    def register_materializer(self, object_class: str, materializer_class: str):
-        """Register a materializer for an object class.
-
-        Args:
-            object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
-        """
-        try:
-            if not self._metadata_path.exists():
-                metadata = {"materializers": {}}
-            else:
-                with open(self._metadata_path, "r") as f:
-                    metadata = json.load(f)
-            metadata["materializers"][object_class] = materializer_class
-            with open(self._metadata_path, "w") as f:
-                json.dump(metadata, f)
-        except Exception as e:
-            self.logger.error(f"Error registering materializer for {object_class}: {e}")
-            raise e
+        # Validate metadata - must be list with matching length for multiple objects
+        if isinstance(metadata, dict):
+            if len(names) != 1:
+                raise ValueError(
+                    "metadata must be a list of dicts when saving multiple objects. "
+                    "Use metadata=[meta_dict, ...] with one dict per object."
+                )
+            metadatas = [metadata]
         else:
-            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
 
-    def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class.
+        results = OpResults()
+
+        for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
+            self.validate_object_name(obj_name)
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+
+            if meta_path.exists():
+                if on_conflict == OnConflict.OVERWRITE:
+                    self.logger.debug(f"Overwriting metadata at {meta_path}: {obj_meta}")
+                    with open(meta_path, "w") as f:
+                        yaml.safe_dump(obj_meta, f)
+                    results.add(OpResult.overwritten(obj_name, obj_version))
+                else:
+                    # on_conflict == "skip" - return skipped result
+                    results.add(OpResult.skipped(obj_name, obj_version))
+            else:
+                self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
+                with open(meta_path, "w") as f:
+                    yaml.safe_dump(obj_meta, f)
+                results.add(OpResult.success(obj_name, obj_version))
+
+        return results
+
+    def fetch_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> OpResults:
+        """Load metadata for object version(s).
 
         Args:
-            object_class: Object class to get the registered materializer for.
+            name: Name of the object(s).
+            version: Version of the object(s).
 
         Returns:
-            Materializer class string, or None if no materializer is registered for the object class.
+            OpResults with OpResult for each (name, version):
+            - OpResult.success(metadata=...) on success
+            - OpResult.failed() on failure (not found or error)
         """
-        return self.registered_materializers().get(object_class, None)
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-    def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        results = OpResults()
+
+        for obj_name, obj_version in zip(names, versions):
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            self.logger.debug(f"Loading metadata from: {meta_path}")
+
+            try:
+                with open(meta_path, "r") as f:
+                    meta = yaml.safe_load(f)
+
+                # Handle case where yaml.safe_load returns None (empty file or whitespace only)
+                if meta is None:
+                    self.logger.warning(
+                        f"Metadata file for {obj_name}@{obj_version} is empty or corrupted. "
+                        f"This may indicate a race condition during concurrent writes."
+                    )
+                    results.add(
+                        OpResult.failed(
+                            obj_name,
+                            obj_version,
+                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found (empty metadata)"),
+                        )
+                    )
+                    continue
+
+                # Add the path to the object directory to the metadata
+                object_key = self._object_key(obj_name, obj_version)
+                object_path = self._full_path(object_key)
+                meta["path"] = str(object_path)
+
+                self.logger.debug(f"Loaded metadata: {meta}")
+                results.add(OpResult.success(obj_name, obj_version, metadata=meta))
+
+            except FileNotFoundError:
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
+                    )
+                )
+            except Exception as e:
+                self.logger.warning(f"Error fetching metadata for {obj_name}@{obj_version}: {e}")
+                results.add(OpResult.failed(obj_name, obj_version, e))
+
+        return results
+
+    def delete_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> OpResults:
+        """Delete metadata for object version(s).
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
 
         Returns:
-            Dictionary mapping object classes to their registered materializer classes.
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure
         """
-        try:
-            if not self._metadata_path.exists():
-                return {}
-            with open(self._metadata_path, "r") as f:
-                materializers = json.load(f).get("materializers", {})
-        except Exception as e:
-            self.logger.error(f"Error loading materializers: {e}")
-            raise e
-        return materializers
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-    def save_registry_metadata(self, metadata: dict):
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        results = OpResults()
+
+        for obj_name, obj_version in zip(names, versions):
+            try:
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                self.logger.debug(f"Deleting metadata file: {meta_path}")
+                if meta_path.exists():
+                    meta_path.unlink()
+                results.add(OpResult.success(obj_name, obj_version))
+            except Exception as e:
+                results.add(OpResult.failed(obj_name, obj_version, e))
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Registry-Level Metadata
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def save_registry_metadata(self, metadata: dict) -> None:
         """Save registry-level metadata to the backend.
 
         Args:
@@ -366,321 +799,176 @@ class LocalRegistryBackend(RegistryBackend):
             self.logger.debug(f"Could not load registry metadata: {e}")
             return {}
 
-    def _lock_path(self, key: str) -> Path:
-        """Get the path for a lock file."""
-        return self._full_path(f"_lock_{key}")
+    # ─────────────────────────────────────────────────────────────────────────
+    # Discovery
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _get_key_from_path(self, lock_path: Path) -> str:
-        """Extract the key from a lock file path."""
-        # Remove the _lock_ prefix and convert back to original key
-        key_part = lock_path.name.replace("_lock_", "")
-        return key_part
-
-    def _acquire_file_lock(self, file_obj) -> bool:
-        """Acquire a file lock using the appropriate mechanism for the OS."""
-        try:
-            if platform.system() == "Windows":
-                # Windows: Try to lock the file using msvcrt
-                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
-                msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
-                return True
-            else:
-                # Unix: Try to acquire an exclusive file lock
-                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
-                fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
-        except (IOError, OSError):
-            return False
-
-    def _release_file_lock(self, file_obj) -> None:
-        """Release a file lock using the appropriate mechanism for the OS."""
-        try:
-            if platform.system() == "Windows":
-                # Windows: Unlock the file
-                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
-                msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                # Unix: Release the file lock
-                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
-                fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
-        except (IOError, OSError) as e:
-            self.logger.warning(f"Error releasing file lock: {e}")
-
-    def _acquire_shared_lock(self, file_obj) -> bool:
-        """Acquire a shared (read) lock using the appropriate mechanism for the OS."""
-        try:
-            if platform.system() == "Windows":
-                # Windows: Try to lock the file using msvcrt
-                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
-                msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
-                return True
-            else:
-                # Unix: Try to acquire a shared file lock
-                # Use blocking mode for shared locks since multiple readers should be able to share
-                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
-                fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH)
-                return True
-        except (IOError, OSError):
-            return False
-
-    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Acquire a lock using atomic file operations.
-
-        Uses atomic file creation with O_EXCL to ensure only one process can create the lock file.
-        The lock file contains both the lock_id and expiration time in JSON format.
-
-        Args:
-            key: The key to acquire the lock for.
-            lock_id: The ID of the lock to acquire.
-            timeout: The timeout in seconds for the lock.
-            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
+    def list_objects(self) -> List[str]:
+        """List all objects in the backend.
 
         Returns:
-            True if the lock was acquired, False otherwise.
+            List of object names sorted alphabetically.
         """
-        lock_path = self._lock_path(key)
+        objects = set()
+        # Look for metadata files that follow the pattern _meta_objectname@version.yaml
+        for meta_file in self.uri.glob("_meta_*.yaml"):
+            # Extract the object name from the metadata filename
+            # Remove '_meta_' prefix and split at '@' to get the object name part
+            name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
+            # Convert back from filesystem-safe format to original object name
+            name = name_part.replace("_", ":")
+            objects.add(name)
 
-        try:
-            # Ensure parent directory exists
-            lock_path.parent.mkdir(parents=True, exist_ok=True)
+        return sorted(list(objects))
 
-            # Try atomic file creation first - only one process can create the file
-            try:
-                # Use O_EXCL flag to ensure atomic creation
-                if platform.system() == "Windows":
-                    # Windows: Use exclusive creation
-                    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-                else:
-                    # Unix: Use O_EXCL for atomic creation
-                    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
-
-                # File created successfully - we have the lock
-                with os.fdopen(fd, "r+") as f:
-                    # Write our lock information
-                    metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
-                    f.write(json.dumps(metadata))
-                    f.flush()
-                    os.fsync(fd)  # Ensure data is written to disk
-                    return True
-
-            except FileExistsError:
-                # File already exists - try to acquire existing lock
-                if not self._acquire_existing_lock(lock_path, lock_id, timeout, shared):
-                    raise LockAcquisitionError(f"Lock {key} is currently in use")
-                return True
-
-        except LockAcquisitionError:
-            # Re-raise LockAcquisitionError
-            raise
-        except Exception as e:
-            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
-            return False
-
-    def _acquire_existing_lock(self, lock_path: Path, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Acquire a lock on an existing lock file.
-
-        This method handles the case where the lock file already exists and we need to
-        check if the existing lock is expired and potentially acquire it.
+    def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
+        """List all versions available for the given object(s).
 
         Args:
-            lock_path: Path to the lock file.
-            lock_id: The ID of the lock to acquire.
-            timeout: The timeout in seconds for the lock.
-            shared: Whether to acquire a shared (read) lock.
+            name: Name of the object(s)
 
         Returns:
-            True if the lock was acquired, False otherwise.
+            Dict mapping object names to sorted lists of version strings.
         """
-        try:
-            # Check if lock file exists and read current lock info
-            if not lock_path.exists():
-                return False
+        names = self._normalize_to_list(name)
+        results: Dict[str, List[str]] = {}
 
-            try:
-                with open(lock_path, "r") as f:
-                    content = f.read().strip()
-                    if not content:
-                        return False
-                    metadata = json.loads(content)
-            except (json.JSONDecodeError, IOError):
-                # Corrupted lock file - remove it and retry
+        for obj_name in names:
+            # Build the prefix used in metadata filenames for this object.
+            prefix = self._object_metadata_prefix(obj_name)
+            versions = []
+
+            # Search for metadata files matching the prefix pattern in the base directory.
+            for meta_file in self.uri.glob(f"{prefix}*.yaml"):
+                # Extract the version from the filename by removing the prefix and the '.yaml' extension.
+                version = meta_file.name[len(prefix) : -5]
+                versions.append(version)
+
+            # Semantic sort
+            def version_key(v):
                 try:
-                    lock_path.unlink()
-                except FileNotFoundError:
-                    pass
-                return False
+                    return [int(x) for x in v.split(".")]
+                except ValueError:
+                    return [0]
 
-            # Check if existing lock is expired
-            if time.time() > metadata.get("expires_at", 0):
-                # Lock is expired - remove it and retry acquisition
-                lock_path.unlink()
+            results[obj_name] = sorted(versions, key=version_key)
 
-                # Retry acquisition with the original key
-                return self.acquire_lock(self._get_key_from_path(lock_path), lock_id, timeout, shared)
+        return results
 
-            # Lock is still valid - check if we can acquire it
-            existing_shared = metadata.get("shared", False)
+    def has_object(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> Dict[Tuple[str, str], bool]:
+        """Check if a specific object version exists in the backend.
 
-            if shared:
-                # For shared locks, we can acquire if existing lock is also shared
-                if existing_shared:
-                    return True
-                else:
-                    return False
+        This method uses direct existence checks instead of listing all objects
+        for better performance, especially with large registries.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+
+        Returns:
+            Dict mapping (name, version) tuples to existence booleans.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        results: Dict[Tuple[str, str], bool] = {}
+
+        for obj_name, obj_version in zip(names, versions):
+            # Check if metadata file exists directly (much faster than listing all objects)
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            results[(obj_name, obj_version)] = meta_path.exists()
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Materializer Registry
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def register_materializer(
+        self,
+        object_class: NameArg,
+        materializer_class: NameArg,
+    ) -> None:
+        """Register a materializer for an object class.
+
+        Args:
+            object_class: Object class(es) to register the materializer for.
+            materializer_class: Materializer class(es) to register.
+        """
+        obj_classes = self._normalize_to_list(object_class)
+        mat_classes = self._normalize_to_list(materializer_class)
+
+        if len(obj_classes) != len(mat_classes):
+            raise ValueError("object_class and materializer_class list lengths must match")
+
+        try:
+            if not self._metadata_path.exists():
+                metadata = {"materializers": {}}
             else:
-                # For exclusive locks, we can only acquire if no lock exists
-                return False
+                with open(self._metadata_path, "r") as f:
+                    metadata = json.load(f)
+
+            if "materializers" not in metadata:
+                metadata["materializers"] = {}
+
+            for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+                metadata["materializers"][obj_cls] = mat_cls
+
+            with open(self._metadata_path, "w") as f:
+                json.dump(metadata, f)
 
         except Exception as e:
-            self.logger.error(f"Error acquiring existing lock for {lock_path}: {e}")
-            return False
-
-    def release_lock(self, key: str, lock_id: str) -> bool:
-        """Release a lock by verifying ownership and removing the file.
-
-        Uses platform-specific file locking to ensure atomic operations during release.
-
-        Args:
-            key: The key to release the lock for.
-            lock_id: The ID of the lock to release.
-
-        Returns:
-            True if the lock was released, False otherwise.
-        """
-        lock_path = self._lock_path(key)
-
-        try:
-            if not lock_path.exists():
-                return True
-
-            with open(lock_path, "r+") as f:
-                # Try to acquire an exclusive file lock
-                if not self._acquire_file_lock(f):
-                    return False
-
-                try:
-                    # Verify lock ownership
-                    try:
-                        metadata = json.loads(f.read().strip())
-                        if metadata.get("lock_id") != lock_id:
-                            self._release_file_lock(f)  # Release lock if not ours
-                            return False
-                    except (json.JSONDecodeError, IOError):
-                        self._release_file_lock(f)  # Release lock on error
-                        return False
-
-                    # Remove the lock file - use unlink with missing_ok=True to handle race conditions
-                    try:
-                        lock_path.unlink()
-                    except FileNotFoundError:
-                        # File was already deleted by another thread, which is fine
-                        pass
-                    return True
-
-                except Exception as e:
-                    self._release_file_lock(f)  # Release lock on any other error
-                    self.logger.error(f"Error releasing lock for {key}: {e}")
-                    return False
-
-        except Exception as e:
-            self.logger.error(f"Error releasing lock for {key}: {e}")
-            return False
-
-    def check_lock(self, key: str) -> tuple[bool, str | None]:
-        """Check if a key is currently locked.
-
-        Uses platform-specific file locking to ensure atomic read operations.
-
-        Args:
-            key: The key to check the lock for.
-
-        Returns:
-            Tuple containing a boolean indicating if the key is locked and the lock ID if it is, or None if it is not.
-        """
-        lock_path = self._lock_path(key)
-
-        try:
-            if not lock_path.exists():
-                return False, None
-
-            with open(lock_path, "r") as f:
-                # Try to acquire a shared file lock
-                if not self._acquire_shared_lock(f):
-                    # File is locked by someone else
-                    return True, None
-
-                try:
-                    # Check if lock is expired
-                    try:
-                        metadata = json.loads(f.read().strip())
-                        if time.time() > metadata.get("expires_at", 0):
-                            return False, None
-                        return True, metadata.get("lock_id")
-                    except (json.JSONDecodeError, IOError):
-                        return False, None
-
-                finally:
-                    self._release_file_lock(f)
-
-        except Exception as e:
-            self.logger.error(f"Error checking lock for {key}: {e}")
-            return False, None
-
-    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
-        """Overwrite an object.
-
-        This method supports saving objects to a temporary source location first, and then moving it to a target
-        object in a single atomic operation.
-
-        After the overwrite method completes, the source object should be deleted, and the target object should be
-        updated to be the new source version.
-
-        Args:
-            source_name: Name of the source object.
-            source_version: Version of the source object.
-            target_name: Name of the target object.
-            target_version: Version of the target object.
-        """
-        # Get the source and target paths
-        source_path = self._full_path(self._object_key(source_name, source_version))
-        target_path = self._full_path(self._object_key(target_name, target_version))
-
-        # Get the source and target metadata paths
-        source_meta_path = self._object_metadata_path(source_name, source_version)
-        target_meta_path = self._object_metadata_path(target_name, target_version)
-
-        self.logger.debug(f"Overwriting {target_name}@{target_version} with {source_name}@{source_version}")
-
-        try:
-            # If target exists, delete it first
-            if target_path.exists():
-                shutil.rmtree(target_path)
-            if target_meta_path.exists():
-                target_meta_path.unlink()
-
-            # Move source to target using atomic rename
-            source_path.rename(target_path)
-
-            # Move metadata file
-            if source_meta_path.exists():
-                source_meta_path.rename(target_meta_path)
-
-            # Update metadata to reflect new name/version
-            if target_meta_path.exists():
-                with open(target_meta_path, "r") as f:
-                    metadata = yaml.safe_load(f)
-
-                # Update the path in metadata
-                metadata["path"] = str(target_path)
-
-                with open(target_meta_path, "w") as f:
-                    yaml.dump(metadata, f)
-
-            self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
-
-        except Exception as e:
-            self.logger.error(f"Error during overwrite operation: {e}")
-            # Cleanup any partial state
-            if target_path.exists() and not source_path.exists():
-                shutil.rmtree(target_path)
+            self.logger.error(f"Error registering materializers: {e}")
             raise e
+        else:
+            self.logger.debug(f"Registered {len(obj_classes)} materializer(s)")
+
+    def registered_materializer(self, object_class: str) -> str | None:
+        """Get the registered materializer for an object class.
+
+        Args:
+            object_class: Object class to get the registered materializer for.
+
+        Returns:
+            Materializer class string, or None if no materializer is registered for the object class.
+        """
+        return self.registered_materializers().get(object_class, None)
+
+    def registered_materializers(
+        self,
+        object_class: Union[str, None, List[str]] = None,
+    ) -> Dict[str, str]:
+        """Get all registered materializers.
+
+        Args:
+            object_class: If None, return all materializers.
+                If string or list, return only matching object classes.
+
+        Returns:
+            Dictionary mapping object classes to their registered materializer classes.
+        """
+        try:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
+                all_materializers = json.load(f).get("materializers", {})
+        except Exception as e:
+            self.logger.error(f"Error loading materializers: {e}")
+            raise e
+
+        if object_class is None:
+            return all_materializers
+
+        if isinstance(object_class, str):
+            obj_classes = [object_class]
+        else:
+            obj_classes = object_class
+
+        return {k: v for k, v in all_materializers.items() if k in obj_classes}
