@@ -339,7 +339,9 @@ class Service(Mindtrace):
             if existing_status != ServerStatus.DOWN:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {cls.unique_name} at {launch_url} is already running with status {existing_status}.",
+                    detail=(
+                        f"Server {cls.unique_name} at {launch_url} is already running with status {existing_status}."
+                    ),
                 )
         except RuntimeError as e:
             cls.logger.warning(f"Another service is already running at {launch_url}. New service was NOT launched.")
@@ -379,7 +381,8 @@ class Service(Mindtrace):
                 signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
             except ValueError:
                 cls.logger.warning(
-                    "Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service."
+                    "Could not register signal handlers for server shutdown. "
+                    "This is normal if you launch a Service from another Service."
                 )
 
         # Wait for server to be available and get connection manager
