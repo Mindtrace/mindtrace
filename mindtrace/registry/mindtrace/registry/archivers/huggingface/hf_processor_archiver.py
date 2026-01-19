@@ -14,7 +14,7 @@ from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver, Registry
 
-# Import processor types at module level for ASSOCIATED_TYPES
+# Check if transformers is available
 try:
     from transformers import (
         PreTrainedTokenizerBase,
@@ -22,6 +22,7 @@ try:
         ImageProcessingMixin,
         FeatureExtractionMixin,
     )
+    _HF_AVAILABLE = True
     _HF_PROCESSOR_TYPES: Tuple[Type[Any], ...] = (
         PreTrainedTokenizerBase,
         ProcessorMixin,
@@ -29,7 +30,8 @@ try:
         FeatureExtractionMixin,
     )
 except ImportError:
-    _HF_PROCESSOR_TYPES = ()
+    _HF_AVAILABLE = False
+    _HF_PROCESSOR_TYPES = (object,)  # Fallback to prevent ZenML error
 
 
 class HuggingFaceProcessorArchiver(Archiver):
@@ -60,6 +62,9 @@ class HuggingFaceProcessorArchiver(Archiver):
         Args:
             processor: The processor or tokenizer instance to save.
         """
+        if not _HF_AVAILABLE:
+            raise ImportError("transformers is not installed")
+
         os.makedirs(self.uri, exist_ok=True)
         processor.save_pretrained(self.uri)
         self.logger.debug(f"Saved HuggingFace processor to {self.uri}")
@@ -75,6 +80,9 @@ class HuggingFaceProcessorArchiver(Archiver):
         Returns:
             The loaded processor/tokenizer instance.
         """
+        if not _HF_AVAILABLE:
+            raise ImportError("transformers is not installed")
+
         from transformers import AutoProcessor, AutoTokenizer, AutoImageProcessor
 
         # Try to load as processor first (most general)

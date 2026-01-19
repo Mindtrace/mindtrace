@@ -38,7 +38,7 @@ class OnnxModelArchiver(Archiver):
     """
 
     ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (
-        (ModelProto,) if _ONNX_AVAILABLE else ()
+        (ModelProto,) if _ONNX_AVAILABLE else (object,)  # Fallback to prevent ZenML error
     )
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
