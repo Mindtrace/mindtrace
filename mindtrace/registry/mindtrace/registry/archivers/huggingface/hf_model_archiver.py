@@ -9,16 +9,18 @@ Handles saving and loading of:
 import os
 from typing import Any, ClassVar, Tuple, Type
 
+from torch import nn
 from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver, Registry
 
-# Import PreTrainedModel at module level for ASSOCIATED_TYPES
+# Check if transformers is available
 try:
     from transformers import PreTrainedModel
-    _HF_MODEL_TYPES: Tuple[Type[Any], ...] = (PreTrainedModel,)
+    _HF_AVAILABLE = True
 except ImportError:
-    _HF_MODEL_TYPES = ()
+    _HF_AVAILABLE = False
+    PreTrainedModel = None
 
 
 class HuggingFaceModelArchiver(Archiver):
@@ -39,11 +41,18 @@ class HuggingFaceModelArchiver(Archiver):
         >>> loaded_model = registry.load("vit:v1")
     """
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = _HF_MODEL_TYPES
+    # HuggingFace models are nn.Module subclasses
+    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (nn.Module,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)
+
+    def _is_hf_model(self, model: Any) -> bool:
+        """Check if model is a HuggingFace model."""
+        if not _HF_AVAILABLE:
+            return False
+        return isinstance(model, PreTrainedModel)
 
     def save(self, model: Any) -> None:
         """Save the HuggingFace model to storage.
@@ -51,6 +60,9 @@ class HuggingFaceModelArchiver(Archiver):
         Args:
             model: The PreTrainedModel instance to save.
         """
+        if not _HF_AVAILABLE:
+            raise ImportError("transformers is not installed")
+
         os.makedirs(self.uri, exist_ok=True)
 
         # Save the base model
@@ -100,6 +112,9 @@ class HuggingFaceModelArchiver(Archiver):
         Returns:
             The loaded model instance.
         """
+        if not _HF_AVAILABLE:
+            raise ImportError("transformers is not installed")
+
         from transformers import AutoConfig
 
         config_path = os.path.join(self.uri, "config.json")
