@@ -19,6 +19,17 @@ dependencies = [
     "zenml>=0.82.1",
 ]
 
+[project.optional-dependencies]
+timm = ["timm>=1.0"]
+huggingface = ["transformers>=4.0", "peft>=0.5"]
+ultralytics = ["ultralytics>=8.0"]
+ml = [
+    "timm>=1.0",
+    "transformers>=4.0",
+    "peft>=0.5",
+    "ultralytics>=8.0",
+]
+
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry"
