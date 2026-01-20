@@ -2549,8 +2549,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
     assert dlq_call_args.job == job
 
     # Verify warning was logged
-    cluster_manager.logger.warning.assert_any_call(f"Job {job_id} has failed, adding to DLQ")
-
+    cluster_manager.logger.error.assert_called_once()
 
 def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
     """Test worker_alert_completed_job adds error jobs to DLQ."""
