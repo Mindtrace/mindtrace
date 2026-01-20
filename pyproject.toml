@@ -27,6 +27,7 @@ dependencies = [
   "mindtrace-datalake>=0.7.1",
   "mindtrace-storage>=0.7.1",
   "pypylon>=4.2.0",
+  "mindtrace-agents>=0.7.1",
 ]
 
 [project.optional-dependencies]
@@ -81,7 +82,7 @@ mindtrace-registry = { workspace = true }
 mindtrace-ui = { workspace = true }
 mindtrace-datalake = { workspace = true }
 mindtrace-storage = { workspace = true }
-
+mindtrace-agents = { workspace = true }
 [tool.uv.workspace]
 members = [
   "mindtrace/core",
@@ -97,6 +98,7 @@ members = [
   "mindtrace/ui",
   "mindtrace/datalake",
   "mindtrace/storage",
+  "mindtrace/agents",
 ]
 
 [tool.ds.scripts]
@@ -155,6 +157,7 @@ src = [
     "mindtrace/services",
     "mindtrace/storage",
     "mindtrace/ui",
+    "mindtrace/agents",
 ]
 
 # Exclude a variety of commonly ignored directories.

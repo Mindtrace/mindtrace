@@ -1,0 +1,40 @@
+[project]
+name = "mindtrace-agents"
+version = "0.7.1"
+description = "Agents for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mindtrace-core>=0.7.1",
+    "mindtrace-registry>=0.7.1",
+    "mindtrace-database>=0.7.1",
+    "mindtrace-services>=0.7.1",
+    "mindtrace-datalake>=0.7.1",
+    "mindtrace-models>=0.7.1",
+    "mindtrace-cluster>=0.7.1",
+    "mindtrace-jobs>=0.7.1",
+    "mindtrace-hardware>=0.7.1",
+    "fastmcp>=2.13.0",
+    "typer>=0.9.0",
+    "uvicorn>=0.25.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "httpx>=0.25.0"
+]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/apps"
+
+[project.scripts]
+mindtrace = "mindtrace.agents.cli.main:app"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -921,6 +921,45 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             return await self._backend.import_config(config_path)
 
+    async def discover_camera_parameters(self) -> Dict[str, Any]:
+        """Discover all available parameters for this camera."""
+        if not hasattr(self._backend, "discover_camera_parameters"):
+            raise NotImplementedError(
+                f"Parameter discovery not supported for camera '{self._full_name}' backend type"
+            )
+        return await self._backend.discover_camera_parameters()
+
+    async def set_camera_parameter(self, parameter_name: str, value: Any) -> Dict[str, Any]:
+        """Set a camera parameter by name.
+
+        This is a generic method that can set any writable camera parameter.
+        It automatically handles different parameter types (integer, float, enum, boolean, string).
+
+        Args:
+            parameter_name: Name of the parameter to set (e.g., "ExposureTime", "Gain", "TriggerMode")
+            value: Value to set. Type should match parameter type.
+
+        Returns:
+            Dictionary containing:
+            - success: bool - Whether the operation succeeded
+            - parameter_name: str - Name of the parameter
+            - old_value: Any - Previous value before setting
+            - new_value: Any - Value that was set
+            - message: str - Status message
+
+        Raises:
+            NotImplementedError: If backend doesn't support parameter setting
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If parameter doesn't exist, is not writable, or value is invalid
+            HardwareOperationError: If parameter setting fails
+        """
+        if not hasattr(self._backend, "set_camera_parameter"):
+            raise NotImplementedError(
+                f"Parameter setting not supported for camera '{self._full_name}' backend type"
+            )
+        async with self._lock:
+            return await self._backend.set_camera_parameter(parameter_name, value)
+
     async def close(self):
         """Close the camera and release resources."""
         async with self._lock:
