@@ -75,8 +75,8 @@ class HuggingFaceModelArchiver(Archiver):
     def _save_peft_adapter(self, model: Any) -> None:
         """Save PEFT adapter if the model has one attached."""
         try:
-            from peft import PeftModel, get_peft_model_state_dict
             import torch
+            from peft import PeftModel, get_peft_model_state_dict
 
             # Check if model is a PeftModel or has peft_config
             if isinstance(model, PeftModel) or hasattr(model, "peft_config"):
@@ -172,8 +172,8 @@ class HuggingFaceModelArchiver(Archiver):
             return model
 
         try:
-            from peft import PeftConfig, inject_adapter_in_model, set_peft_model_state_dict
             import torch
+            from peft import PeftConfig, inject_adapter_in_model, set_peft_model_state_dict
 
             # Load adapter config and inject
             peft_config = PeftConfig.from_pretrained(adapter_dir)

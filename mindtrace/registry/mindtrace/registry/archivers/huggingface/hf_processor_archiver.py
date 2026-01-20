@@ -17,10 +17,10 @@ from mindtrace.registry import Archiver, Registry
 # Check if transformers is available
 try:
     from transformers import (
+        FeatureExtractionMixin,
+        ImageProcessingMixin,
         PreTrainedTokenizerBase,
         ProcessorMixin,
-        ImageProcessingMixin,
-        FeatureExtractionMixin,
     )
     _HF_AVAILABLE = True
     _HF_PROCESSOR_TYPES: Tuple[Type[Any], ...] = (
@@ -83,7 +83,7 @@ class HuggingFaceProcessorArchiver(Archiver):
         if not _HF_AVAILABLE:
             raise ImportError("transformers is not installed")
 
-        from transformers import AutoProcessor, AutoTokenizer, AutoImageProcessor
+        from transformers import AutoImageProcessor, AutoProcessor, AutoTokenizer
 
         # Try to load as processor first (most general)
         try:
@@ -116,10 +116,10 @@ class HuggingFaceProcessorArchiver(Archiver):
 def _register_processor_archivers():
     try:
         from transformers import (
+            FeatureExtractionMixin,
+            ImageProcessingMixin,
             PreTrainedTokenizerBase,
             ProcessorMixin,
-            ImageProcessingMixin,
-            FeatureExtractionMixin,
         )
 
         for processor_type in [
