@@ -322,7 +322,11 @@ def test_get_job_status_success(cluster_manager):
     """Test get_job_status when job exists."""
     job_id = "test-job-123"
     expected_job_status = cluster_types.JobStatus(
-        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={"result": "test"}, worker_id="worker-123", job=make_job()
+        job_id=job_id,
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={"result": "test"},
+        worker_id="worker-123",
+        job=make_job(),
     )
 
     cluster_manager.job_status_database.find.return_value = [expected_job_status]
@@ -2475,7 +2479,11 @@ def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
     job_status = cluster_types.JobStatus(
-        job_id="job-123", status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="different-worker", job=make_job()
+        job_id="job-123",
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={},
+        worker_id="different-worker",
+        job=make_job(),
     )
 
     # Mock database to return this job status for job lookup
@@ -2550,6 +2558,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
 
     # Verify warning was logged
     cluster_manager.logger.error.assert_called_once()
+
 
 def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
     """Test worker_alert_completed_job adds error jobs to DLQ."""
@@ -2627,7 +2636,9 @@ def test_requeue_from_dlq(cluster_manager):
     cluster_manager.dlq_database.find.return_value = [dlq_job_status]
 
     # Mock submit_job to return a new job status
-    new_job_status = cluster_types.JobStatus(job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job)
+    new_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job
+    )
     cluster_manager.submit_job = MagicMock(return_value=new_job_status)
 
     payload = {"job_id": job_id}

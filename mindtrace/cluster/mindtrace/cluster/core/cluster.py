@@ -290,7 +290,9 @@ class ClusterManager(Gateway):
             JobOutput: The output of the job.
         """
 
-        job_status = cluster_types.JobStatus(job_id=job.id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id=endpoint, job=job)
+        job_status = cluster_types.JobStatus(
+            job_id=job.id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id=endpoint, job=job
+        )
         endpoint_url = f"{self._url}{endpoint}"
         self.job_status_database.insert(job_status)
         self.logger.info(f"Submitted job {job.id} to {endpoint_url}")
@@ -332,7 +334,9 @@ class ClusterManager(Gateway):
             self.job_status_database.redis_backend.model_cls.job_id == job.id
         )
         if not job_status_list:
-            job_status = cluster_types.JobStatus(job_id=job.id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job)
+            job_status = cluster_types.JobStatus(
+                job_id=job.id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job
+            )
         else:
             job_status = job_status_list[0]
             job_status.status = cluster_types.JobStatusEnum.QUEUED
@@ -587,7 +591,11 @@ class ClusterManager(Gateway):
             self.job_status_database,
             "job_id",
             job_id,
-            {"status": cluster_types.JobStatusEnum.RUNNING, "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()},
+            {
+                "status": cluster_types.JobStatusEnum.RUNNING,
+                "worker_id": payload["worker_id"],
+                "job.started_at": datetime.now().isoformat(),
+            },
         )
         update_database(
             self.worker_status_database,
@@ -617,8 +625,13 @@ class ClusterManager(Gateway):
             self.logger.warning(
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
-        if job_status.status == cluster_types.JobStatusEnum.ERROR or job_status.status == cluster_types.JobStatusEnum.FAILED:
-            self.logger.error(f"Job {job_id} has failed, adding to DLQ. Schema: {job_status.job.schema_name}, worker id: {payload['worker_id']}, output: {payload['output']}")
+        if (
+            job_status.status == cluster_types.JobStatusEnum.ERROR
+            or job_status.status == cluster_types.JobStatusEnum.FAILED
+        ):
+            self.logger.error(
+                f"Job {job_id} has failed, adding to DLQ. Schema: {job_status.job.schema_name}, worker id: {payload['worker_id']}, output: {payload['output']}"
+            )
             self.dlq_database.insert(
                 cluster_types.DLQJobStatus(
                     job_id=job_id,
