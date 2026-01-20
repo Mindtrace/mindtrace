@@ -6,8 +6,8 @@ The Stereo ace Supplementary Package provides the GenTL Producer needed to use B
 
 ### Platform Support
 
-- ✅ **Linux**: Full support (Debian and tar.gz methods)
-- ❌ **Windows**: Not supported (Basler does not provide Windows version)
+- **Linux**: Full support (Debian and tar.gz methods)
+- **Windows**: Not supported (Basler does not provide Windows version)
 
 ### Prerequisites
 

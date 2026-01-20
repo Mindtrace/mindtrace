@@ -19,6 +19,9 @@ from mindtrace.hardware.services.cameras.schemas.config_schemas import (
     GetCameraConfigurationSchema,
     ImportCameraConfigSchema,
 )
+from mindtrace.hardware.services.cameras.schemas.health_schemas import (
+    HealthSchema,
+)
 from mindtrace.hardware.services.cameras.schemas.homography_schemas import (
     CalibrateHomographyCheckerboardSchema,
     CalibrateHomographyCorrespondencesSchema,
@@ -56,6 +59,8 @@ from mindtrace.hardware.services.cameras.schemas.stream_schemas import (
 
 # All schemas for easy import - maintains backward compatibility
 ALL_SCHEMAS = {
+    # Health
+    "health": HealthSchema,
     # Backend & Discovery
     "discover_backends": DiscoverBackendsSchema,
     "get_backend_info": GetBackendInfoSchema,
@@ -103,6 +108,8 @@ ALL_SCHEMAS = {
 }
 
 __all__ = [
+    # Health
+    "HealthSchema",
     # Backend & Discovery
     "DiscoverBackendsSchema",
     "GetBackendInfoSchema",

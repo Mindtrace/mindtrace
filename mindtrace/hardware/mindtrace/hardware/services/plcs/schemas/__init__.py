@@ -6,6 +6,9 @@ from mindtrace.hardware.services.plcs.schemas.backend_schemas import (
     DiscoverPLCsSchema,
     GetBackendInfoSchema,
 )
+from mindtrace.hardware.services.plcs.schemas.health_schemas import (
+    HealthSchema,
+)
 from mindtrace.hardware.services.plcs.schemas.lifecycle_schemas import (
     ConnectPLCsBatchSchema,
     ConnectPLCSchema,
@@ -30,6 +33,8 @@ from mindtrace.hardware.services.plcs.schemas.tag_schemas import (
 
 # All schemas for easy import - maintains backward compatibility
 ALL_SCHEMAS = {
+    # Health
+    "health": HealthSchema,
     # Backend & Discovery
     "discover_backends": DiscoverBackendsSchema,
     "get_backend_info": GetBackendInfoSchema,
@@ -55,6 +60,8 @@ ALL_SCHEMAS = {
 }
 
 __all__ = [
+    # Health
+    "HealthSchema",
     # Backend & Discovery
     "DiscoverBackendsSchema",
     "GetBackendInfoSchema",

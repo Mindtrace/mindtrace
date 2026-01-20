@@ -49,7 +49,7 @@ from mindtrace.hardware.services.plcs.models import (
     TagWriteResponse,
 )
 from mindtrace.hardware.services.plcs.models.requests import BackendFilterRequest
-from mindtrace.hardware.services.plcs.schemas import ALL_SCHEMAS
+from mindtrace.hardware.services.plcs.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
 
 
@@ -160,7 +160,7 @@ class PLCManagerService(Service):
         )
 
         # Health check endpoint (for container healthcheck - not an MCP tool)
-        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
 
     # Backend & Discovery Operations
     def discover_backends(self) -> BackendsResponse:

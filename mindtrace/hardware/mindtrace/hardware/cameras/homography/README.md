@@ -11,12 +11,12 @@ Convert pixel-space object detections to real-world metric dimensions using homo
 The homography module enables accurate physical measurements from camera images for objects on flat surfaces. It bridges the gap between computer vision (pixels) and physical reality (millimeters, centimeters, etc.).
 
 **Core Capabilities:**
-- ✅ Automatic checkerboard calibration
-- ✅ Manual point correspondence calibration
-- ✅ Real-world dimension measurement from bounding boxes
-- ✅ Multi-unit support (mm, cm, m, in, ft)
-- ✅ RANSAC-based robust estimation
-- ✅ Framework-integrated logging and configuration
+- Automatic checkerboard calibration
+- Manual point correspondence calibration
+- Real-world dimension measurement from bounding boxes
+- Multi-unit support (mm, cm, m, in, ft)
+- RANSAC-based robust estimation
+- Framework-integrated logging and configuration
 
 ---
 
@@ -484,23 +484,23 @@ measurer = HomographyMeasurer(calibration)
 
 ## Limitations & Constraints
 
-### ⚠️ Planar Surface Assumption
+### Planar Surface Assumption
 
 **The homography only works for objects on a FLAT PLANE (Z=0).**
 
-✅ Works for:
+Works for:
 - Overhead cameras viewing flat surfaces
 - Objects on tables, floors, conveyor belts
 - Parts lying flat on inspection stations
 
-❌ Does NOT work for:
+Does NOT work for:
 - 3D objects at varying heights
 - Tilted or curved surfaces
 - Objects not on the calibration plane
 
 **Solution:** For full 3D, use stereo vision or depth cameras.
 
-### ⚠️ Static Camera Requirement
+### Static Camera Requirement
 
 **Camera must remain fixed after calibration.**
 
@@ -510,7 +510,7 @@ measurer = HomographyMeasurer(calibration)
 
 **Solution:** Mount cameras rigidly, recalibrate after any movement.
 
-### ⚠️ Viewing Angle Effects
+### Viewing Angle Effects
 
 **Accuracy degrades with severe perspective angles.**
 
