@@ -17,6 +17,7 @@ from mindtrace.registry import Archiver, Registry
 # Check if transformers is available
 try:
     from transformers import PreTrainedModel
+
     _HF_AVAILABLE = True
 except ImportError:
     _HF_AVAILABLE = False
@@ -153,13 +154,11 @@ class HuggingFaceModelArchiver(Archiver):
             try:
                 return getattr(transformers, arch_name)
             except AttributeError:
-                self.logger.warning(
-                    f"Architecture {arch_name} not found in transformers, "
-                    "falling back to AutoModel"
-                )
+                self.logger.warning(f"Architecture {arch_name} not found in transformers, falling back to AutoModel")
 
         # Fallback to AutoModel
         from transformers import AutoModel
+
         return AutoModel
 
     def _load_peft_adapter(self, model: Any) -> Any:
@@ -197,6 +196,7 @@ class HuggingFaceModelArchiver(Archiver):
 def _register_hf_archiver():
     try:
         from transformers import PreTrainedModel
+
         Registry.register_default_materializer(PreTrainedModel, HuggingFaceModelArchiver)
     except ImportError:
         pass

@@ -18,6 +18,7 @@ from mindtrace.registry import Archiver
 
 try:
     import timm
+
     _TIMM_AVAILABLE = True
 except ImportError:
     _TIMM_AVAILABLE = False
@@ -88,8 +89,7 @@ class TimmModelArchiver(Archiver):
             config["architecture"] = model.pretrained_cfg.get("architecture", "unknown")
             # Store full pretrained_cfg for reference
             config["pretrained_cfg"] = {
-                k: v for k, v in model.pretrained_cfg.items()
-                if isinstance(v, (str, int, float, bool, list, tuple))
+                k: v for k, v in model.pretrained_cfg.items() if isinstance(v, (str, int, float, bool, list, tuple))
             }
         elif hasattr(model, "default_cfg") and model.default_cfg:
             config["architecture"] = model.default_cfg.get("architecture", "unknown")

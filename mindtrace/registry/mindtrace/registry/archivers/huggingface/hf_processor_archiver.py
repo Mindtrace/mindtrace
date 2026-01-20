@@ -22,6 +22,7 @@ try:
         PreTrainedTokenizerBase,
         ProcessorMixin,
     )
+
     _HF_AVAILABLE = True
     _HF_PROCESSOR_TYPES: Tuple[Type[Any], ...] = (
         PreTrainedTokenizerBase,
@@ -107,9 +108,7 @@ class HuggingFaceProcessorArchiver(Archiver):
             self.logger.debug(f"Loaded HuggingFace image processor from {self.uri}")
             return image_processor
         except Exception as e:
-            raise RuntimeError(
-                f"Could not load processor/tokenizer from {self.uri}: {e}"
-            )
+            raise RuntimeError(f"Could not load processor/tokenizer from {self.uri}: {e}")
 
 
 # Register the archiver for processor types
