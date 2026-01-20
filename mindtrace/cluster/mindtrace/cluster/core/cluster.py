@@ -616,7 +616,7 @@ class ClusterManager(Gateway):
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
         if job_status.status == "error" or job_status.status == "failed":
-            self.logger.warning(f"Job {job_id} has failed, adding to DLQ")
+            self.logger.error(f"Job {job_id} has failed, adding to DLQ. Schema: {job_status.job.schema_name}, worker id: {payload['worker_id']}, output: {payload['output']}")
             self.dlq_database.insert(
                 cluster_types.DLQJobStatus(
                     job_id=job_id,
