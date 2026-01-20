@@ -1447,6 +1447,7 @@ class TestBaslerCameraBackendAdvancedErrorScenarios:
         assert "RGB8" in formats
         assert "Mono8" in formats
 
+
 class TestBaslerCameraBackendConcurrentOperations:
     """Test concurrent operations and threading scenarios."""
 
@@ -1759,6 +1760,7 @@ class TestBaslerCameraBackendMissingCoverageLines:
         basler_camera.camera.Gain = None
         with pytest.raises(HardwareOperationError):
             await basler_camera.set_gain(2.0)
+
 
 class TestBaslerCameraBackendUncoveredErrorPaths:
     """Test specific uncovered error paths in BaslerCameraBackend."""

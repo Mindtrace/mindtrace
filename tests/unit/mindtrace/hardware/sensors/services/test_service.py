@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from mindtrace.hardware.sensors.core.manager import SensorManager
 from mindtrace.hardware.services.sensors.models import (
     SensorConnectionRequest,
     SensorConnectionResponse,
@@ -21,7 +22,6 @@ from mindtrace.hardware.services.sensors.models import (
     SensorStatusResponse,
 )
 from mindtrace.hardware.services.sensors.service import SensorManagerService
-from mindtrace.hardware.sensors.core.manager import SensorManager
 
 
 class TestSensorManagerService:
