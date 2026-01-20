@@ -3,6 +3,8 @@
 import time
 from typing import Dict, Optional
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.sensors import SensorManager
 from mindtrace.services import Service
@@ -33,9 +35,24 @@ class SensorManagerService(Service):
             manager: Optional SensorManager instance. If None, creates a new one.
             **kwargs: Additional arguments passed to the Service base class
         """
-        super().__init__(**kwargs)
+        super().__init__(
+            summary="Sensor Management Service",
+            description="REST API and MCP tools for comprehensive sensor management and data access",
+            **kwargs,
+        )
+
+        # Enable CORS for cross-origin requests from frontend
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
         self._manager = manager or SensorManager()
         self._last_data_times: Dict[str, float] = {}
+        self._startup_time = time.time()
 
         # Register MCP endpoints
         self._register_endpoints()
@@ -43,32 +60,35 @@ class SensorManagerService(Service):
     def _register_endpoints(self) -> None:
         """Register all sensor management endpoints as MCP tools."""
 
+        # Health check endpoint
+        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+
         # Lifecycle management endpoints
         self.add_endpoint(
-            path="/connect_sensor", schema=SensorLifecycleSchemas.connect_sensor, func=self.connect_sensor, as_tool=True
+            path="sensors/connect", schema=SensorLifecycleSchemas.connect_sensor, func=self.connect_sensor, as_tool=True
         )
 
         self.add_endpoint(
-            path="/disconnect_sensor",
+            path="sensors/disconnect",
             schema=SensorLifecycleSchemas.disconnect_sensor,
             func=self.disconnect_sensor,
             as_tool=True,
         )
 
         self.add_endpoint(
-            path="/get_sensor_status",
+            path="sensors/status",
             schema=SensorLifecycleSchemas.get_sensor_status,
             func=self.get_sensor_status,
             as_tool=True,
         )
 
         self.add_endpoint(
-            path="/list_sensors", schema=SensorLifecycleSchemas.list_sensors, func=self.list_sensors, as_tool=True
+            path="sensors/list", schema=SensorLifecycleSchemas.list_sensors, func=self.list_sensors, as_tool=True
         )
 
         # Data access endpoints
         self.add_endpoint(
-            path="/read_sensor_data",
+            path="sensors/read",
             schema=SensorDataSchemas.read_sensor_data,
             func=self.read_sensor_data,
             as_tool=True,
@@ -259,17 +279,34 @@ class SensorManagerService(Service):
         """Get the underlying SensorManager instance."""
         return self._manager
 
+    async def shutdown_cleanup(self):
+        """Cleanup sensors on shutdown."""
+        sensor_ids = self._manager.list_sensors()
+        for sensor_id in sensor_ids:
+            try:
+                sensor = self._manager.get_sensor(sensor_id)
+                if sensor:
+                    await sensor.disconnect()
+            except Exception as e:
+                self.logger.error(f"Error disconnecting sensor {sensor_id}: {e}")
+        self._last_data_times.clear()
+        await super().shutdown_cleanup()
+
     # Health Check
     def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:
+            backends = ["mqtt", "http", "serial"]
             sensor_count = len(self._manager.list_sensors())
             return HealthCheckResponse(
                 status=ServiceStatus.HEALTHY,
                 service="sensor-manager",
+                backends=backends,
                 active_sensors=sensor_count,
+                uptime_seconds=time.time() - self._startup_time,
             )
         except Exception as e:
+            self.logger.error(f"Health check failed: {e}")
             return HealthCheckResponse(
                 status=ServiceStatus.UNHEALTHY,
                 service="sensor-manager",
