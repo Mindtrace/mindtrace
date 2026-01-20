@@ -272,7 +272,7 @@ class S3RegistryBackend(RegistryBackend):
         meta_path = self._object_metadata_path(name, version)
         data = json.dumps(metadata)
 
-        if on_conflict == "overwrite":
+        if on_conflict == OnConflict.OVERWRITE:
             # Check if exists first to determine status
             existed = self.storage.exists(meta_path)
             result = self.storage.upload_string(data, meta_path)
@@ -356,7 +356,7 @@ class S3RegistryBackend(RegistryBackend):
                     if uploaded:
                         self.storage.delete_batch(uploaded)
 
-                    if on_conflict == "skip":
+                    if on_conflict == OnConflict.SKIP:
                         return OpResult.skipped(obj_name, obj_version)
                     else:
                         return OpResult.failed(
@@ -385,7 +385,7 @@ class S3RegistryBackend(RegistryBackend):
                 if uploaded:
                     self.storage.delete_batch(uploaded)
 
-                if on_conflict == "skip":
+                if on_conflict == OnConflict.SKIP:
                     return OpResult.skipped(obj_name, obj_version)
                 else:
                     return OpResult.failed(
