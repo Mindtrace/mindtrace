@@ -157,9 +157,9 @@ def test_submit_job_success(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -171,9 +171,9 @@ def test_submit_job_registry_reload(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -182,7 +182,7 @@ def test_submit_job_failure(cluster_manager):
     job = make_job(schema_name="unknown_job")
     cluster_manager.job_schema_targeting_database.find.return_value = []
     result = cluster_manager.submit_job(job)
-    assert result.status == "error"
+    assert result.status == cluster_types.JobStatusEnum.ERROR
     assert result.output == {"error": "No job schema targeting found for job type unknown_job"}
 
 
@@ -199,7 +199,7 @@ def test_submit_job_to_orchestrator(cluster_manager):
         # Verify orchestrator was called
         mock_publish.assert_called_once_with("test_job", job)
         # Verify job status was created with queued status
-        assert result.status == "queued"
+        assert result.status == cluster_types.JobStatusEnum.QUEUED
         assert result.worker_id == ""
 
 
@@ -224,7 +224,7 @@ def test_submit_job_to_endpoint_json_error(cluster_manager):
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.side_effect = Exception("bad json")
         result = cluster_manager._submit_job_to_endpoint(job, "/test/test")
-        assert result.status == "completed"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {}  # fallback on JSON error
 
 
@@ -322,7 +322,7 @@ def test_get_job_status_success(cluster_manager):
     """Test get_job_status when job exists."""
     job_id = "test-job-123"
     expected_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={"result": "test"}, worker_id="worker-123", job=make_job()
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={"result": "test"}, worker_id="worker-123", job=make_job()
     )
 
     cluster_manager.job_status_database.find.return_value = [expected_job_status]
@@ -354,7 +354,7 @@ def test_worker_alert_started_job(cluster_manager):
 
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="queued", output={}, worker_id="", job=make_job()
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=make_job()
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
@@ -372,7 +372,7 @@ def test_worker_alert_started_job(cluster_manager):
     cluster_manager.worker_alert_started_job(payload)
 
     # Verify job status was updated and saved
-    assert existing_job_status.status == "running"
+    assert existing_job_status.status == cluster_types.JobStatusEnum.RUNNING
     assert existing_job_status.worker_id == worker_id
     cluster_manager.job_status_database.insert.assert_called_with(existing_job_status)
 
@@ -398,7 +398,7 @@ def test_worker_alert_completed_job(cluster_manager):
 
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={}, worker_id="worker-123", job=make_job()
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=make_job()
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
@@ -2177,7 +2177,7 @@ def test_submit_job_to_endpoint_with_partial_response(cluster_manager):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use provided status but default output
-        assert result.status == "running"
+        assert result.status == cluster_types.JobStatusEnum.RUNNING
         assert result.output == {}
 
 
@@ -2475,7 +2475,7 @@ def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
     job_status = cluster_types.JobStatus(
-        job_id="job-123", status="running", output={}, worker_id="different-worker", job=make_job()
+        job_id="job-123", status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="different-worker", job=make_job()
     )
 
     # Mock database to return this job status for job lookup
@@ -2518,7 +2518,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
 
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={}, worker_id="worker-123", job=job
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
@@ -2558,7 +2558,7 @@ def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
 
     # Mock existing job status
     existing_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={}, worker_id="worker-123", job=job
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
@@ -2627,7 +2627,7 @@ def test_requeue_from_dlq(cluster_manager):
     cluster_manager.dlq_database.find.return_value = [dlq_job_status]
 
     # Mock submit_job to return a new job status
-    new_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="", job=job)
+    new_job_status = cluster_types.JobStatus(job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job)
     cluster_manager.submit_job = MagicMock(return_value=new_job_status)
 
     payload = {"job_id": job_id}
