@@ -15,6 +15,7 @@ from mindtrace.registry import Archiver
 
 try:
     import tensorrt as trt
+
     _TRT_AVAILABLE = True
 except ImportError:
     _TRT_AVAILABLE = False

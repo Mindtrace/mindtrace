@@ -3,18 +3,26 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.registry.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
+from mindtrace.registry.archivers.huggingface.hf_model_archiver import (
+    _HF_AVAILABLE,
+    HuggingFaceModelArchiver,
+)
 
 # Check if peft is available
 try:
-    import peft
+    import peft  # noqa: F401
+
     HAS_PEFT = True
 except ImportError:
     HAS_PEFT = False
+
+
+# Skip all tests in this module if transformers is not installed
+pytestmark = pytest.mark.skipif(not _HF_AVAILABLE, reason="transformers not installed")
 
 
 @pytest.fixture
@@ -81,11 +89,7 @@ def test_hf_archiver_load(hf_archiver, temp_dir):
         mock_bert.from_pretrained.return_value = mock_model_instance
 
         # Need to patch getattr on transformers module
-        with patch.object(
-            HuggingFaceModelArchiver,
-            "_get_model_class",
-            return_value=mock_bert
-        ):
+        with patch.object(HuggingFaceModelArchiver, "_get_model_class", return_value=mock_bert):
             result = hf_archiver.load(MagicMock)
 
             assert result == mock_model_instance
@@ -105,6 +109,7 @@ def test_hf_archiver_get_model_class_from_architectures(hf_archiver):
     with patch("transformers.ViTForImageClassification") as mock_vit:
         with patch.dict("transformers.__dict__", {"ViTForImageClassification": mock_vit}):
             import transformers
+
             with patch.object(transformers, "ViTForImageClassification", mock_vit, create=True):
                 # The method uses getattr(transformers, arch_name)
                 result = hf_archiver._get_model_class(mock_config)
@@ -117,7 +122,7 @@ def test_hf_archiver_get_model_class_fallback_to_automodel(hf_archiver):
     mock_config = MagicMock()
     mock_config.architectures = None
 
-    with patch("transformers.AutoModel") as mock_auto:
+    with patch("transformers.AutoModel"):
         result = hf_archiver._get_model_class(mock_config)
         # Should fall back to AutoModel
         assert result is not None
@@ -184,7 +189,7 @@ def test_hf_archiver_load_with_peft_adapter(hf_archiver, temp_dir):
                         with patch("torch.load") as mock_torch_load:
                             mock_torch_load.return_value = {}
 
-                            result = hf_archiver.load(MagicMock)
+                            hf_archiver.load(MagicMock)
 
                             # Verify adapter was loaded
                             mock_peft_config.from_pretrained.assert_called_once()

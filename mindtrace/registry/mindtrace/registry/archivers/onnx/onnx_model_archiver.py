@@ -14,6 +14,7 @@ from mindtrace.registry import Archiver
 try:
     import onnx
     from onnx import ModelProto
+
     _ONNX_AVAILABLE = True
 except ImportError:
     _ONNX_AVAILABLE = False
@@ -77,8 +78,7 @@ class OnnxModelArchiver(Archiver):
         # Get opset imports
         if model.opset_import:
             metadata["opset_imports"] = [
-                {"domain": op.domain or "ai.onnx", "version": op.version}
-                for op in model.opset_import
+                {"domain": op.domain or "ai.onnx", "version": op.version} for op in model.opset_import
             ]
 
         # Get IR version
@@ -110,13 +110,9 @@ class OnnxModelArchiver(Archiver):
         # Get input/output info
         if model.graph:
             if model.graph.input:
-                metadata["inputs"] = [
-                    {"name": inp.name} for inp in model.graph.input
-                ]
+                metadata["inputs"] = [{"name": inp.name} for inp in model.graph.input]
             if model.graph.output:
-                metadata["outputs"] = [
-                    {"name": out.name} for out in model.graph.output
-                ]
+                metadata["outputs"] = [{"name": out.name} for out in model.graph.output]
 
         return metadata
 

@@ -4,19 +4,27 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from mindtrace.registry.archivers.onnx.onnx_model_archiver import OnnxModelArchiver
+from mindtrace.registry.archivers.onnx.onnx_model_archiver import (
+    _ONNX_AVAILABLE,
+    OnnxModelArchiver,
+)
 
 # Check if onnx is available
 try:
     import onnx
     from onnx import TensorProto, helper
+
     HAS_ONNX = True
 except ImportError:
     HAS_ONNX = False
+
+
+# Skip all tests in this module if onnx is not installed
+pytestmark = pytest.mark.skipif(not _ONNX_AVAILABLE, reason="onnx not installed")
 
 
 @pytest.fixture
@@ -137,21 +145,10 @@ def _create_simple_onnx_model():
     one = helper.make_tensor("one", TensorProto.FLOAT, [1], [1.0])
 
     # Create the Add node
-    add_node = helper.make_node(
-        "Add",
-        inputs=["X", "one"],
-        outputs=["Y"],
-        name="add_node"
-    )
+    add_node = helper.make_node("Add", inputs=["X", "one"], outputs=["Y"], name="add_node")
 
     # Create the graph
-    graph = helper.make_graph(
-        [add_node],
-        "test_graph",
-        [X],
-        [Y],
-        [one]
-    )
+    graph = helper.make_graph([add_node], "test_graph", [X], [Y], [one])
 
     # Create the model
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])

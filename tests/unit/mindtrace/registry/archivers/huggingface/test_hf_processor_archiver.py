@@ -2,12 +2,17 @@
 
 import os
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.registry.archivers.huggingface.hf_processor_archiver import HuggingFaceProcessorArchiver
+from mindtrace.registry.archivers.huggingface.hf_processor_archiver import (
+    _HF_AVAILABLE,
+    HuggingFaceProcessorArchiver,
+)
+
+# Skip all tests in this module if transformers is not installed
+pytestmark = pytest.mark.skipif(not _HF_AVAILABLE, reason="transformers not installed")
 
 
 @pytest.fixture

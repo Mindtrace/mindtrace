@@ -9,14 +9,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from mindtrace.registry.archivers.timm.timm_model_archiver import TimmModelArchiver
+from mindtrace.registry.archivers.timm.timm_model_archiver import (
+    _TIMM_AVAILABLE,
+    TimmModelArchiver,
+)
 
 # Check if timm is available
 try:
     import timm
+
     HAS_TIMM = True
 except ImportError:
     HAS_TIMM = False
+
+
+# Skip all tests in this module if timm is not installed
+pytestmark = pytest.mark.skipif(not _TIMM_AVAILABLE, reason="timm not installed")
 
 
 @pytest.fixture

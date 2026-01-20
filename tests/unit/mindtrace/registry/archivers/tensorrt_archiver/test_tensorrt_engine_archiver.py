@@ -1,19 +1,27 @@
 """Unit tests for TensorRTEngineArchiver."""
 
-import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+from mindtrace.registry.archivers.tensorrt.tensorrt_engine_archiver import (
+    _TRT_AVAILABLE,
+)
 
 # Check if tensorrt is available
 try:
     import tensorrt as trt
+
     HAS_TRT = True
 except ImportError:
     HAS_TRT = False
+
+
+# Skip all tests in this module if tensorrt is not installed
+pytestmark = pytest.mark.skipif(not _TRT_AVAILABLE, reason="tensorrt not installed")
 
 
 @pytest.fixture
@@ -40,6 +48,7 @@ def mock_trt_module():
 def test_tensorrt_archiver_init(temp_dir):
     """Test TensorRTEngineArchiver initialization."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
     assert archiver.uri == temp_dir
     assert hasattr(archiver, "logger")
@@ -49,6 +58,7 @@ def test_tensorrt_archiver_init(temp_dir):
 def test_tensorrt_archiver_save(temp_dir):
     """Test save method with mock engine."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
 
     # Create mock engine
@@ -57,10 +67,7 @@ def test_tensorrt_archiver_save(temp_dir):
     mock_engine.serialize.return_value = b"fake_serialized_engine"
     mock_engine.num_io_tensors = 2
     mock_engine.get_tensor_name.side_effect = ["input", "output"]
-    mock_engine.get_tensor_mode.side_effect = [
-        trt.TensorIOMode.INPUT,
-        trt.TensorIOMode.OUTPUT
-    ]
+    mock_engine.get_tensor_mode.side_effect = [trt.TensorIOMode.INPUT, trt.TensorIOMode.OUTPUT]
     mock_engine.get_tensor_shape.return_value = [1, 3, 224, 224]
     mock_engine.get_tensor_dtype.return_value = trt.float32
     mock_engine.device_memory_size = 1024
@@ -80,6 +87,7 @@ def test_tensorrt_archiver_save(temp_dir):
 def test_tensorrt_archiver_save_creates_directory(temp_dir):
     """Test that save creates the directory if it doesn't exist."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     nested_dir = os.path.join(temp_dir, "nested", "path")
     archiver = TensorRTEngineArchiver(uri=nested_dir)
 
@@ -96,6 +104,7 @@ def test_tensorrt_archiver_save_creates_directory(temp_dir):
 def test_tensorrt_archiver_load_missing_engine(temp_dir):
     """Test load raises error when engine is missing."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
 
     with pytest.raises(FileNotFoundError, match="TensorRT engine not found"):
@@ -106,6 +115,7 @@ def test_tensorrt_archiver_load_missing_engine(temp_dir):
 def test_tensorrt_archiver_load(temp_dir):
     """Test load method."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
 
     # Create fake engine file
@@ -114,7 +124,7 @@ def test_tensorrt_archiver_load(temp_dir):
 
     # Mock the runtime
     mock_engine = MagicMock()
-    with patch.object(archiver, "_logger") as mock_logger:
+    with patch.object(archiver, "_logger"):
         mock_runtime = MagicMock()
         mock_runtime.deserialize_cuda_engine.return_value = mock_engine
 
@@ -129,6 +139,7 @@ def test_tensorrt_archiver_load(temp_dir):
 def test_tensorrt_archiver_load_deserialization_failure(temp_dir):
     """Test load raises error when deserialization fails."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
 
     # Create fake engine file
@@ -148,6 +159,7 @@ def test_tensorrt_archiver_load_deserialization_failure(temp_dir):
 def test_tensorrt_archiver_extract_metadata(temp_dir):
     """Test _extract_metadata method."""
     from mindtrace.registry.archivers.tensorrt import TensorRTEngineArchiver
+
     archiver = TensorRTEngineArchiver(uri=temp_dir)
 
     mock_engine = MagicMock()
@@ -155,10 +167,7 @@ def test_tensorrt_archiver_extract_metadata(temp_dir):
     mock_engine.num_io_tensors = 2
     mock_engine.device_memory_size = 2048
     mock_engine.get_tensor_name.side_effect = ["input_tensor", "output_tensor"]
-    mock_engine.get_tensor_mode.side_effect = [
-        trt.TensorIOMode.INPUT,
-        trt.TensorIOMode.OUTPUT
-    ]
+    mock_engine.get_tensor_mode.side_effect = [trt.TensorIOMode.INPUT, trt.TensorIOMode.OUTPUT]
     mock_engine.get_tensor_shape.return_value = [1, 3, 224, 224]
     mock_engine.get_tensor_dtype.return_value = trt.float32
 
