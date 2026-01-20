@@ -642,9 +642,13 @@ class ClusterManager(Gateway):
             raise ValueError(f"Job not found in DLQ for job id {job_id}")
         job_status = job_status_list[0]
         self.dlq_database.delete(job_status.pk)
-        job_status = self.submit_job(job_status.job)
+        job = job_status.job
+        job.started_at = None
+        job.completed_at = None
+        job.error = None
+        job_status_requeued = self.submit_job(job)
         self.logger.info(f"Requeued job {job_id} from DLQ")
-        return job_status
+        return job_status_requeued
 
     def discard_from_dlq(self, payload: dict):
         """
