@@ -1248,6 +1248,7 @@ class TestOpenCVCameraBackendClose:
         # After close, cap should be None
         assert cam.cap is None
 
+
 class TestOpenCVCameraBackendExposure:
     """Test suite for exposure-related methods."""
 
