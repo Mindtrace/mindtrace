@@ -1,6 +1,6 @@
 # Mindtrace Agents
 
-## Quick Start
+## Mindtrace Tools
 
 ### CLI Commands
 
