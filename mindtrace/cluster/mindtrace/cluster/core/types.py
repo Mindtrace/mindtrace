@@ -17,10 +17,18 @@ class ProxyWorker(BaseModel):
     worker_params: dict
 
 
+class JobStatusEnum(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ERROR = "error"
+
+
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")
     worker_id: str = Field(description="Worker's id")
-    status: str = Field(description="Job's status")
+    status: JobStatusEnum = Field(description="Job's status")
     output: Any = Field(description="Job's output")
     job: Job = Field(description="Job's instance")
 

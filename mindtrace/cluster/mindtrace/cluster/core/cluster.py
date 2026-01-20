@@ -290,7 +290,7 @@ class ClusterManager(Gateway):
             JobOutput: The output of the job.
         """
 
-        job_status = cluster_types.JobStatus(job_id=job.id, status="running", output={}, worker_id=endpoint, job=job)
+        job_status = cluster_types.JobStatus(job_id=job.id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id=endpoint, job=job)
         endpoint_url = f"{self._url}{endpoint}"
         self.job_status_database.insert(job_status)
         self.logger.info(f"Submitted job {job.id} to {endpoint_url}")
@@ -306,7 +306,8 @@ class ClusterManager(Gateway):
         except Exception:
             result = {"status": "completed", "output": {}}
 
-        job_status.status = result.get("status") or "completed"
+        status_str = result.get("status") or "completed"
+        job_status.status = cluster_types.JobStatusEnum(status_str)
         job_status.output = result.get("output") or {}
         self.job_status_database.insert(job_status)
         self.logger.info(f"Completed job {job.id} with status {job_status.status}")
@@ -331,15 +332,15 @@ class ClusterManager(Gateway):
             self.job_status_database.redis_backend.model_cls.job_id == job.id
         )
         if not job_status_list:
-            job_status = cluster_types.JobStatus(job_id=job.id, status="queued", output={}, worker_id="", job=job)
+            job_status = cluster_types.JobStatus(job_id=job.id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job)
         else:
             job_status = job_status_list[0]
-            job_status.status = "queued"
+            job_status.status = cluster_types.JobStatusEnum.QUEUED
             job_status.worker_id = ""
 
         if not job_schema_targeting_list:
             self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
-            job_status.status = "error"
+            job_status.status = cluster_types.JobStatusEnum.ERROR
             job_status.output = {"error": f"No job schema targeting found for job type {job.schema_name}"}
             self.job_status_database.insert(job_status)
             return job_status
@@ -586,7 +587,7 @@ class ClusterManager(Gateway):
             self.job_status_database,
             "job_id",
             job_id,
-            {"status": "running", "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()},
+            {"status": cluster_types.JobStatusEnum.RUNNING, "worker_id": payload["worker_id"], "job.started_at": datetime.now().isoformat()},
         )
         update_database(
             self.worker_status_database,
@@ -605,17 +606,18 @@ class ClusterManager(Gateway):
         """
         job_id = payload["job_id"]
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
+        status_enum = cluster_types.JobStatusEnum(payload["status"])
         job_status = update_database(
             self.job_status_database,
             "job_id",
             job_id,
-            {"status": payload["status"], "output": payload["output"], "job.completed_at": datetime.now().isoformat()},
+            {"status": status_enum, "output": payload["output"], "job.completed_at": datetime.now().isoformat()},
         )
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
-        if job_status.status == "error" or job_status.status == "failed":
+        if job_status.status == cluster_types.JobStatusEnum.ERROR or job_status.status == cluster_types.JobStatusEnum.FAILED:
             self.logger.error(f"Job {job_id} has failed, adding to DLQ. Schema: {job_status.job.schema_name}, worker id: {payload['worker_id']}, output: {payload['output']}")
             self.dlq_database.insert(
                 cluster_types.DLQJobStatus(
@@ -1051,7 +1053,7 @@ class Worker(Service, Consumer):
         try:
             output = self._run(job_dict["payload"])
         except Exception as e:
-            output = {"status": "failed", "output": {}}
+            output = {"status": cluster_types.JobStatusEnum.FAILED, "output": {}}
             self.logger.error(f"Error running job {job_dict['id']}: {e}")
         if cm:
             cm.worker_alert_completed_job(
