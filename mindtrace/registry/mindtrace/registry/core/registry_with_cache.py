@@ -9,7 +9,7 @@ from zenml.materializers.base_materializer import BaseMaterializer
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.registry import Registry
-from mindtrace.registry.core.types import BatchResult
+from mindtrace.registry.core.types import BatchResult, OnConflict
 
 
 class RegistryWithCache(Registry):
@@ -240,7 +240,7 @@ class RegistryWithCache(Registry):
         cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
         if cache_v:
             try:
-                self._cache.save(name, obj, version=cache_v, on_conflict="overwrite")
+                self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
             except Exception as e:
                 self.logger.warning(f"Error caching {name}: {e}")
 
@@ -320,7 +320,7 @@ class RegistryWithCache(Registry):
                         [t[0] for t in to_cache],
                         [t[2] for t in to_cache],
                         version=[t[1] for t in to_cache],
-                        on_conflict="overwrite",
+                        on_conflict=OnConflict.OVERWRITE,
                     )
                 except Exception as e:
                     self.logger.warning(f"Error updating cache: {e}")
@@ -382,12 +382,12 @@ class RegistryWithCache(Registry):
                             [t[0] for t in to_cache],
                             [t[2] for t in to_cache],
                             version=[t[1] for t in to_cache],
-                            on_conflict="overwrite",
+                            on_conflict=OnConflict.OVERWRITE,
                         )
             else:
                 # Single: result is version string or None
                 if result is not None:
-                    self._cache.save(name, obj, version=result, on_conflict="overwrite")
+                    self._cache.save(name, obj, version=result, on_conflict=OnConflict.OVERWRITE)
         except Exception as e:
             self.logger.warning(f"Error updating cache: {e}")
 
@@ -435,7 +435,7 @@ class RegistryWithCache(Registry):
 
     def __setitem__(self, key: str, value: Any) -> None:
         name, version = self._parse_key(key)
-        self.save(name, value, version=version, on_conflict="skip")
+        self.save(name, value, version=version, on_conflict=OnConflict.SKIP)
 
     def __delitem__(self, key: str) -> None:
         name, version = self._parse_key(key)

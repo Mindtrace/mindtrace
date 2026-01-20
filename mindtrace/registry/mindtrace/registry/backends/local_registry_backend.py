@@ -571,11 +571,6 @@ class LocalRegistryBackend(RegistryBackend):
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
                     meta_path = self._object_metadata_path(obj_name, obj_version)
-
-                    # Check if anything exists to delete
-                    if not target.exists() and not meta_path.exists():
-                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} does not exist")
-
                     # Delete directory
                     self.logger.debug(f"Deleting directory: {target}")
                     if target.exists():
