@@ -2,9 +2,11 @@ import time
 import warnings
 
 import pytest
+from fastapi.exceptions import HTTPException
+from pydantic import BaseModel
 
 from mindtrace.cluster import ClusterManager, Node
-from mindtrace.cluster.core.types import WorkerStatusEnum
+from mindtrace.cluster.core.types import JobStatusEnum, WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
@@ -29,7 +31,7 @@ def test_cluster_manager_as_gateway():
         cluster_cm.register_job_to_endpoint(job_type="gateway_echo_job", endpoint="echo/run")
         job = job_from_schema(echo_job, EchoInput(message="integration test"))
         result = cluster_cm.submit_job(job)
-        assert result.status == "completed"
+        assert result.status == JobStatusEnum.COMPLETED
         assert result.output == {"echoed": "integration test"}
     finally:
         # Clean up in reverse order
@@ -52,12 +54,12 @@ def test_cluster_manager_with_prelaunched_worker():
         # Submit a job
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, Worker!"})
         result = cluster_cm.submit_job(job)
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
-        assert result.status == "completed"
+        assert result.status == JobStatusEnum.COMPLETED
         assert result.output == {"echoed": "Hello, Worker!"}
 
         # Test both status methods after job completion
@@ -94,11 +96,11 @@ def test_cluster_manager_multiple_jobs_with_worker():
             job = job_from_schema(echo_job_schema, input_data={"message": msg})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
-            assert result.status == "queued"
+            assert result.status == JobStatusEnum.QUEUED
         time.sleep(1)
         for i, job in enumerate(jobs):
             result = cluster_cm.get_job_status(job_id=job.id)
-            assert result.status == "completed"
+            assert result.status == JobStatusEnum.COMPLETED
             assert result.output == {"echoed": messages[i]}
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
@@ -125,7 +127,7 @@ def test_cluster_manager_worker_failure():
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
         result = cluster_cm.submit_job(job)
         time.sleep(1)
-        assert result.status == "queued"  # Should still succeed but the job is queued
+        assert result.status == JobStatusEnum.QUEUED  # Should still succeed but the job is queued
     finally:
         if cluster_cm is not None:
             cluster_cm.clear_databases()
@@ -149,7 +151,7 @@ def test_cluster_manager_with_node():
         result = cluster_cm.submit_job(job)
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
-        assert result.status == "completed"
+        assert result.status == JobStatusEnum.COMPLETED
         assert result.output == {"echoed": "Hello, World!"}
     finally:
         node.shutdown()
@@ -188,7 +190,7 @@ def test_cluster_manager_launch_worker():
         result = cluster_cm.submit_job(job)
 
         # Initially the job should be queued
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
         # Wait for the job to be processed
@@ -239,7 +241,7 @@ def test_cluster_manager_launch_worker_multiple_workers():
             job = job_from_schema(echo_job_schema, input_data={"message": f"Job {i + 1} from worker {worker_url}"})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
-            assert result.status == "queued"
+            assert result.status == JobStatusEnum.QUEUED
 
         # Wait for all jobs to be processed
         time.sleep(3)
@@ -313,7 +315,7 @@ def test_register_worker_type_with_job_schema_name():
             result = cluster_cm.submit_job(job)
 
             # Initially the job should be queued
-            assert result.status == "queued"
+            assert result.status == JobStatusEnum.QUEUED
             assert result.output == {}
 
             # Wait for the job to be processed
@@ -367,7 +369,7 @@ def test_register_job_schema_to_worker_type():
             result = cluster_cm.submit_job(job)
 
             # Initially the job should be queued
-            assert result.status == "queued"
+            assert result.status == JobStatusEnum.QUEUED
             assert result.output == {}
 
             # Wait for the job to be processed
@@ -441,7 +443,7 @@ def test_launch_worker_with_auto_connect_database():
         result = cluster_cm.submit_job(job)
 
         # Initially the job should be queued
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
         # Wait for the job to be processed
@@ -494,7 +496,7 @@ def test_launch_worker_without_auto_connect_database():
         result = cluster_cm.submit_job(job2)
 
         # Initially the job should be queued
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
         # Wait for the job to be processed
@@ -602,7 +604,7 @@ def test_launch_worker_with_delay():
         result = cluster_cm.submit_job(job)
 
         # Initially the job should be queued
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)  # even this is potentially a race
@@ -615,7 +617,7 @@ def test_launch_worker_with_delay():
         time.sleep(1)
 
         job_result = cluster_cm.get_job_status(job_id=job.id)
-        assert job_result.status == "running"
+        assert job_result.status == JobStatusEnum.RUNNING
 
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.RUNNING.value
@@ -671,7 +673,7 @@ def test_query_worker_status_integration():
         echo_job_schema = JobSchema(name="query_status_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Query status test!"})
         result = cluster_cm.submit_job(job)
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
 
         # Wait a bit for the job to run
         time.sleep(2)
@@ -717,7 +719,7 @@ def test_query_worker_status_by_url_integration():
         echo_job_schema = JobSchema(name="query_status_by_url_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Query status by URL test!"})
         result = cluster_cm.submit_job(job)
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
 
         # Wait a bit for the job to start
         time.sleep(0.5)
@@ -935,7 +937,7 @@ def test_query_worker_status_vs_get_worker_status():
         echo_job_schema = JobSchema(name="status_comparison_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Status comparison test!"})
         result = cluster_cm.submit_job(job)
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to start
         time.sleep(0.5)
@@ -990,7 +992,7 @@ def test_query_worker_status_real_time_updates():
         echo_job_schema = JobSchema(name="realtime_status_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Real-time status test!", "delay": 2})
         result = cluster_cm.submit_job(job)
-        assert result.status == "queued"
+        assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to start
         time.sleep(0.5)
@@ -1111,3 +1113,232 @@ def test_node_shutdown_worker_by_port():
         node.shutdown()
         cluster_cm.clear_databases()
         cluster_cm.shutdown()
+
+
+class ErrorWorker(EchoWorker):
+    def _run(self, job_dict: dict) -> dict:
+        print(f"ErrorWorker running job: {job_dict}")
+        if job_dict.get("should_error", False):
+            time.sleep(0.5)
+            return {"status": "error", "output": {"error": "Job encountered an error"}}
+        return super()._run(job_dict)
+
+
+class ErrorInput(BaseModel):
+    message: str
+    should_error: bool
+    delay: int = 0
+
+
+class FailingWorker(EchoWorker):
+    def _run(self, job_dict: dict) -> dict:
+        print(f"FailingWorker running job: {job_dict}")
+        if job_dict.get("should_fail", False):
+            time.sleep(0.5)
+            return {"status": "failed", "output": {"error": "Job encountered a failure"}}
+        return super()._run(job_dict)
+
+
+class FailingInput(BaseModel):
+    message: str
+    should_fail: bool
+    delay: int = 0
+
+
+@pytest.mark.integration
+def test_dlq_job_failure_and_requeue():
+    """Integration test for DLQ: job fails, goes to DLQ, can be requeued."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8164, wait_for_launch=True, timeout=15)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8165, wait_for_launch=True, timeout=15)
+    echo_job_schema = JobSchema(name="dlq_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
+
+    try:
+        cluster_cm.register_job_to_worker(job_type="dlq_test_echo", worker_url=str(worker_cm.url))
+
+        # Submit a job that will fail
+        job = job_from_schema(echo_job_schema, input_data={"message": "This will fail", "should_error": True})
+        result = cluster_cm.submit_job(job)
+        assert result.status == JobStatusEnum.QUEUED
+
+        # Wait for job to complete (and fail)
+        time.sleep(2)
+        job_status = cluster_cm.get_job_status(job_id=job.id)
+        assert job_status.status == JobStatusEnum.ERROR
+
+        # Check that job is in DLQ
+        dlq_jobs = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs.jobs) == 1
+        assert dlq_jobs.jobs[0].job_id == job.id
+
+        # Requeue the job (this time it should succeed)
+        requeued_job = cluster_cm.requeue_from_dlq(job_id=job.id)
+        assert requeued_job.status == "queued"
+
+        # Verify job is no longer in DLQ after requeue
+        dlq_jobs_after = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs_after.jobs) == 0
+
+        # Wait for requeued job to complete
+        time.sleep(2)
+        final_status = cluster_cm.get_job_status(job_id=job.id)
+        assert final_status.status == JobStatusEnum.ERROR
+        # Note: The job will fail again because it has should_fail=True
+        # But we've tested the requeue functionality
+
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_dlq_job_failure_and_discard():
+    """Integration test for DLQ: job fails, goes to DLQ, can be discarded."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8166, wait_for_launch=True, timeout=15)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8167, wait_for_launch=True, timeout=15)
+    echo_job_schema = JobSchema(name="dlq_discard_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
+
+    try:
+        cluster_cm.register_job_to_worker(job_type="dlq_discard_test_echo", worker_url=str(worker_cm.url))
+
+        # Submit a job that will fail
+        job = job_from_schema(echo_job_schema, input_data={"message": "This will fail", "should_error": True})
+        result = cluster_cm.submit_job(job)
+        assert result.status == JobStatusEnum.QUEUED
+
+        # Wait for job to complete (and fail)
+        time.sleep(1)
+        job_status = cluster_cm.get_job_status(job_id=job.id)
+        assert job_status.status == JobStatusEnum.ERROR
+
+        # Check that job is in DLQ
+        dlq_jobs = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs.jobs) == 1
+        assert dlq_jobs.jobs[0].job_id == job.id
+
+        # Discard the job from DLQ
+        cluster_cm.discard_from_dlq(job_id=job.id)
+
+        # Verify job is no longer in DLQ
+        dlq_jobs_after = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs_after.jobs) == 0
+
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_dlq_multiple_failed_jobs():
+    """Integration test for DLQ with multiple failed jobs."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8168, wait_for_launch=True, timeout=15)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8169, wait_for_launch=True, timeout=15)
+    echo_job_schema = JobSchema(name="dlq_multiple_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
+
+    try:
+        cluster_cm.register_job_to_worker(job_type="dlq_multiple_test_echo", worker_url=str(worker_cm.url))
+
+        # Submit multiple jobs that will fail
+        jobs = []
+        for i in range(3):
+            job = job_from_schema(echo_job_schema, input_data={"message": f"Job {i} will fail", "should_error": True})
+            jobs.append(job)
+            result = cluster_cm.submit_job(job)
+            assert result.status == JobStatusEnum.QUEUED
+
+        # Wait for all jobs to complete (and fail)
+        time.sleep(3)
+
+        # Check that all jobs are in DLQ
+        dlq_jobs = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs.jobs) == 3
+        dlq_job_ids = {job.job_id for job in dlq_jobs.jobs}
+        assert dlq_job_ids == {job.id for job in jobs}
+
+        # Requeue one job
+        cluster_cm.requeue_from_dlq(job_id=jobs[0].id)
+        dlq_jobs_after_requeue = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs_after_requeue.jobs) == 2
+
+        # Discard another job
+        cluster_cm.discard_from_dlq(job_id=jobs[1].id)
+        dlq_jobs_after_discard = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs_after_discard.jobs) == 1
+        assert dlq_jobs_after_discard.jobs[0].job_id == jobs[2].id
+
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_dlq_requeue_nonexistent_job():
+    """Integration test for requeue_from_dlq with non-existent job."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8170, wait_for_launch=True, timeout=15)
+
+    try:
+        # Try to requeue a job that doesn't exist in DLQ
+        with pytest.raises(HTTPException):  # the exception is raised in the cluster manager so all we get is a 404
+            cluster_cm.requeue_from_dlq(job_id="nonexistent-job")
+
+    finally:
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_dlq_discard_nonexistent_job():
+    """Integration test for discard_from_dlq with non-existent job."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8171, wait_for_launch=True, timeout=15)
+
+    try:
+        # Try to discard a job that doesn't exist in DLQ
+        with pytest.raises(HTTPException):  # the exception is raised in the cluster manager so all we get is a 404
+            cluster_cm.discard_from_dlq(job_id="nonexistent-job")
+
+    finally:
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_dlq_failed_job_adds_to_dlq():
+    """Integration test for DLQ: job with error status goes to DLQ."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8172, wait_for_launch=True, timeout=15)
+    worker_cm = FailingWorker.launch(host="localhost", port=8173, wait_for_launch=True, timeout=15)
+    echo_job_schema = JobSchema(name="dlq_failed_test_echo", input_schema=FailingInput, output_schema=EchoOutput)
+
+    try:
+        cluster_cm.register_job_to_worker(job_type="dlq_failed_test_echo", worker_url=str(worker_cm.url))
+
+        # Submit a job that will error
+        job = job_from_schema(echo_job_schema, input_data={"message": "This will fail", "should_fail": True})
+        result = cluster_cm.submit_job(job)
+        assert result.status == JobStatusEnum.QUEUED
+
+        # Wait for job to complete (and error)
+        time.sleep(2)
+        job_status = cluster_cm.get_job_status(job_id=job.id)
+        assert job_status.status == JobStatusEnum.FAILED
+
+        # Check that job is in DLQ
+        dlq_jobs = cluster_cm.get_dlq_jobs()
+        assert len(dlq_jobs.jobs) == 1
+        assert dlq_jobs.jobs[0].job_id == job.id
+
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
