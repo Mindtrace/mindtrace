@@ -9,12 +9,12 @@ import os
 from typing import Any, ClassVar, Tuple, Type
 
 import torch
-from zenml.enums import ArtifactType
-
-from mindtrace.registry import Archiver, Registry
 
 # Import timm at module level for ASSOCIATED_TYPES
 from torch import nn
+from zenml.enums import ArtifactType
+
+from mindtrace.registry import Archiver
 
 try:
     import timm
