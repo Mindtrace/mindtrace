@@ -13,7 +13,7 @@ from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, 
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
-from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult
+from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult, OnConflict
 
 
 class Registry(Mindtrace):
@@ -592,13 +592,13 @@ class Registry(Mindtrace):
         """
         # Infer on_conflict from mutable if not specified
         if on_conflict is None:
-            on_conflict = "overwrite" if self.mutable else "skip"
+            on_conflict = OnConflict.OVERWRITE if self.mutable else OnConflict.SKIP
 
-        if on_conflict not in ("skip", "overwrite"):
+        if on_conflict not in (OnConflict.SKIP, OnConflict.OVERWRITE):
             raise ValueError(f"on_conflict must be 'skip' or 'overwrite', got '{on_conflict}'")
 
         # Validate that overwrite is only allowed for mutable registries
-        if on_conflict == "overwrite" and not self.mutable:
+        if on_conflict == OnConflict.OVERWRITE and not self.mutable:
             raise ValueError(
                 "Cannot use on_conflict='overwrite' with an immutable registry. "
                 "Create the registry with mutable=True to allow overwrites."
@@ -616,7 +616,7 @@ class Registry(Mindtrace):
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
-        on_conflict: str = "skip",
+        on_conflict: str = OnConflict.SKIP,
     ) -> str | None:
         """Save a single object to the registry. Raises on conflict."""
         # In non-versioned mode, always use "1"
@@ -678,7 +678,7 @@ class Registry(Mindtrace):
         versions: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
-        on_conflict: str = "skip",
+        on_conflict: str = OnConflict.SKIP,
     ) -> BatchResult:
         """Save multiple objects to the registry. Returns BatchResult with skipped items on conflict."""
         # Normalize inputs to lists
@@ -1682,7 +1682,7 @@ class Registry(Mindtrace):
         """
         name, version = self._parse_key(key)
         # Dict interface always raises on conflict - use explicit save() with on_conflict="overwrite" to overwrite
-        self.save(name=name, obj=value, version=version, on_conflict="skip")
+        self.save(name=name, obj=value, version=version, on_conflict=OnConflict.SKIP)
 
     def __delitem__(self, key: str) -> None:
         """Delete an object from the registry using dictionary-like syntax.
@@ -1696,6 +1696,13 @@ class Registry(Mindtrace):
         """
         try:
             name, version = self._parse_key(key)
+            if version is None:
+                if not self.list_versions(name):
+                    raise RegistryObjectNotFound(f"Object {name} does not exist")
+            else:
+                exists = self.backend.has_object([name], [version])
+                if not exists.get((name, version), False):
+                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
             self.delete(name=name, version=version)
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
