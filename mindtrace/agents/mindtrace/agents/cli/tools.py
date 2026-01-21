@@ -311,7 +311,6 @@ def serve_tools(
         # or
         mindtrace tools stop --port 8000
     """
-    from mindtrace.agents.server.tool_service import ToolService
     from mindtrace.registry import Registry
     
     rprint(f"\n[bold cyan]Mindtrace Tool Service[/bold cyan]")
@@ -330,7 +329,6 @@ def serve_tools(
         tag_set = set(tags) if tags else None
         
         # Import ToolService to get config paths
-        from mindtrace.agents.server.tool_service import ToolService
         
         # Check if a server with the same name already exists
         try:

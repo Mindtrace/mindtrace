@@ -65,6 +65,10 @@ class ToolService(Service):
         # Handle default values
         toolkits = toolkits or []
         
+        # Convert tags to Set if it's a list (from JSON deserialization)
+        if tags is not None and not isinstance(tags, set):
+            tags = set(tags) if isinstance(tags, (list, tuple)) else {tags}
+        
         # Store server_name before calling super().__init__
         self._server_name = server_name
         

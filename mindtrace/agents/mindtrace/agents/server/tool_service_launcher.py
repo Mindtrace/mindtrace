@@ -27,21 +27,19 @@ def main():
     if args.tags:
         tags = {t.strip() for t in args.tags.split(",") if t.strip()}
 
-    # Create service instance
-    service = ToolService(
-        toolkits=toolkits,
-        tags=tags,
-        server_name=args.server_name,
-    )
-
     # Launch the service (blocking to keep process alive)
     # This follows the hardware launcher pattern
-    connection_manager = service.launch(
+    # Pass toolkits, tags, and server_name as kwargs so they're included in init_params
+    # when the subprocess instantiates ToolService
+    connection_manager = ToolService.launch(
         host=args.host,
         port=args.port,
         num_workers=args.workers,
         wait_for_launch=True,
         block=True,  # Block to keep the process alive (like hardware launchers)
+        toolkits=toolkits,
+        tags=tags,
+        server_name=args.server_name,
     )
 
     return connection_manager
