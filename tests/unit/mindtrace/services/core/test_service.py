@@ -576,7 +576,7 @@ class TestServiceMethods:
             assert call_args[1]["summary"] == "Test endpoint"
 
     def test_add_endpoint_with_invalid_scope_string(self):
-        """Test add_endpoint with invalid scope string defaults to PUBLIC."""
+        """Test add_endpoint with invalid scope string raises ValueError."""
         service = Service()
 
         def test_handler():
@@ -584,32 +584,49 @@ class TestServiceMethods:
 
         test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
 
-        with patch.object(service.app, "add_api_route") as mock_add_route:
-            with patch.object(service.logger, "warning") as mock_warning:
-                service.add_endpoint(
-                    "test",
-                    test_handler,
-                    schema=test_schema,
-                    scope="invalid_scope",  # Invalid scope string
-                )
+        with pytest.raises(ValueError) as exc_info:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope="invalid_scope",  # Invalid scope string
+            )
 
-                # Verify warning was logged
-                mock_warning.assert_called_once()
-                format_string = mock_warning.call_args[0][0]
-                format_args = mock_warning.call_args[0][1:]
-                assert "Invalid scope" in format_string
-                assert "defaulting to PUBLIC" in format_string
-                assert len(format_args) > 0
-                assert format_args[0] == "invalid_scope"
+        assert "Invalid scope" in str(exc_info.value)
+        assert "invalid_scope" in str(exc_info.value)
+        assert "prevents accidentally exposing" in str(exc_info.value)
 
-                # Verify endpoint was still added (with PUBLIC scope)
-                mock_add_route.assert_called_once()
+    def test_add_endpoint_with_authenticated_scope_raises_without_verifier(self):
+        """Test add_endpoint with AUTHENTICATED scope raises RuntimeError when no verifier is set."""
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+
+        def test_handler():
+            return {"test": "response"}
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope=Scope.AUTHENTICATED,
+            )
+
+        assert "Token verifier not set" in str(exc_info.value)
 
     def test_add_endpoint_with_authenticated_scope_adds_auth_dependency(self):
         """Test add_endpoint with AUTHENTICATED scope adds auth dependency."""
         from mindtrace.services.core.types import Scope
 
         service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_token_verifier(test_verifier)
 
         def test_handler():
             return {"test": "response"}
@@ -639,6 +656,11 @@ class TestServiceMethods:
     def test_add_endpoint_with_authenticated_scope_string_adds_auth_dependency(self):
         """Test add_endpoint with 'authenticated' scope string adds auth dependency."""
         service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_token_verifier(test_verifier)
 
         def test_handler():
             return {"test": "response"}
@@ -672,6 +694,11 @@ class TestServiceMethods:
         from mindtrace.services.core.types import Scope
 
         service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_token_verifier(test_verifier)
 
         def test_handler():
             return {"test": "response"}

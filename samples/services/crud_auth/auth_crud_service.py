@@ -9,7 +9,7 @@ with MongoDB for persistent storage.
 
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Optional, Union
+from typing import Annotated, Optional, Union
 
 import jwt
 from fastapi import Depends, Form, HTTPException, status
@@ -19,8 +19,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from mindtrace.core import TaskSchema
 from mindtrace.database import MindtraceDocument, MongoMindtraceODM
-from mindtrace.services import Scope, Service, set_token_verifier
-from mindtrace.services.core.auth import verify_token as get_current_user
+from mindtrace.services import Scope, Service
 
 # ============================================================================
 # MongoDB Models
@@ -120,7 +119,7 @@ class LoginForm:
 
     def __init__(
         self,
-        email: str = Form(..., description="User email address", example="user@example.com"),
+        email: str = Form(..., description="User email address", examples=["user@example.com"]),
         password: str = Form(..., description="User password"),
     ):
         self.email = email
@@ -221,7 +220,7 @@ if not os.getenv("JWT_SECRET"):
         "WARNING: Using default JWT_SECRET. This is INSECURE for production! "
         "Set JWT_SECRET environment variable: export JWT_SECRET=$(openssl rand -hex 32)",
         UserWarning,
-        stacklevel=2,
+        stacklevel=3,
     )
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -440,7 +439,10 @@ class AuthenticatedCRUDService(Service):
         set_service_instance(self)
 
         # Set up token verification (use async version)
-        set_token_verifier(verify_token_async)
+        self.set_token_verifier(verify_token_async)
+
+        # Allows endpoints to inject the current user via Depends()
+        self._get_current_user = self.get_current_user_dependency()
 
         # Register all CRUD endpoints with authentication
         # Public endpoints (no auth required)
@@ -473,23 +475,40 @@ class AuthenticatedCRUDService(Service):
             methods=["POST"],
             scope=Scope.PUBLIC,
         )
+        # Get the current user dependency for injection into endpoint methods
+        get_current_user = self._get_current_user
+
+        # Create a wrapper that properly injects the dependency for GET requests
+        async def get_user_wrapper(user_id: str, current_user: Annotated[dict, Depends(get_current_user)]):
+            return await self.get_user(user_id, current_user)
+
         self.add_endpoint(
             "get_user",
-            self.get_user,
+            get_user_wrapper,
             schema=get_user_schema,
             methods=["GET"],
             scope=Scope.AUTHENTICATED,
         )
+
+        # Create wrappers that properly inject the dependency for PUT/DELETE requests
+        async def update_user_wrapper(
+            payload: UserUpdateInput, current_user: Annotated[dict, Depends(get_current_user)]
+        ):
+            return await self.update_user(payload, current_user)
+
+        async def delete_user_wrapper(user_id: str, current_user: Annotated[dict, Depends(get_current_user)]):
+            return await self.delete_user(user_id, current_user)
+
         self.add_endpoint(
             "update_user",
-            self.update_user,
+            update_user_wrapper,
             schema=update_user_schema,
             methods=["PUT"],
             scope=Scope.AUTHENTICATED,
         )
         self.add_endpoint(
             "delete_user",
-            self.delete_user,
+            delete_user_wrapper,
             schema=delete_user_schema,
             methods=["DELETE"],
             scope=Scope.AUTHENTICATED,
@@ -588,7 +607,7 @@ class AuthenticatedCRUDService(Service):
             updated_at=user.updated_at.isoformat(),
         )
 
-    async def get_user(self, user_id: str, current_user: dict = Depends(get_current_user)) -> UserOutput:
+    async def get_user(self, user_id: str, current_user: dict) -> UserOutput:
         """Get a user by ID (authenticated).
 
         Users can view any user's profile in this example.
@@ -626,7 +645,7 @@ class AuthenticatedCRUDService(Service):
     async def update_user(
         self,
         payload: UserUpdateInput,
-        current_user: dict = Depends(get_current_user),
+        current_user: dict,
     ) -> UserOutput:
         """Update an existing user (authenticated).
 
@@ -678,11 +697,12 @@ class AuthenticatedCRUDService(Service):
             email=updated_user.email,
             age=updated_user.age,
             skills=updated_user.skills,
+            disabled=updated_user.disabled,
             created_at=updated_user.created_at.isoformat(),
             updated_at=updated_user.updated_at.isoformat(),
         )
 
-    async def delete_user(self, user_id: str, current_user: dict = Depends(get_current_user)) -> UserOutput:
+    async def delete_user(self, user_id: str, current_user: dict) -> UserOutput:
         """Delete a user by ID (authenticated).
 
         Users can only delete their own account.
