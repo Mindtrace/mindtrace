@@ -46,6 +46,90 @@ curl "http://localhost:8080/list_users"
 
 ## Usage
 
+### Using ConnectionManager with Headers (Recommended)
+
+The ConnectionManager supports authentication headers in two ways:
+
+**Option 1: Default Headers (Recommended for most cases)**
+```python
+from auth_crud_service import AuthenticatedCRUDService
+
+# Launch service
+cm = AuthenticatedCRUDService.launch(port=8080, host="localhost", wait_for_launch=True)
+
+# Create user (public - no auth needed)
+user = cm.create_user(
+    name="Alice",
+    email="alice@example.com",
+    password="SecurePass123",
+    age=30
+)
+
+# Login to get token
+login_response = cm.login(email="alice@example.com", password="SecurePass123")
+token = login_response["access_token"]
+
+# Set default headers - all subsequent requests will use this token
+cm.set_default_headers({"Authorization": f"Bearer {token}"})
+
+# Now all authenticated endpoints automatically use the token
+retrieved = cm.get_user(user_id=user["id"])
+updated = cm.update_user(user_id=user["id"], age=31)
+
+# Public endpoints still work without headers
+users = cm.list_users()
+```
+
+**Option 2: Per-Request Headers (Useful for dynamic tokens)**
+```python
+from auth_crud_service import AuthenticatedCRUDService
+
+# Launch service
+cm = AuthenticatedCRUDService.launch(port=8080, host="localhost", wait_for_launch=True)
+
+# Create user
+user = cm.create_user(
+    name="Alice",
+    email="alice@example.com",
+    password="SecurePass123",
+    age=30
+)
+
+# Login to get token
+login_response = cm.login(email="alice@example.com", password="SecurePass123")
+token = login_response["access_token"]
+
+# Pass headers per-request
+retrieved = cm.get_user(user_id=user["id"], headers={"Authorization": f"Bearer {token}"})
+updated = cm.update_user(user_id=user["id"], age=31, headers={"Authorization": f"Bearer {token}"})
+```
+
+**Async Methods with Headers**
+```python
+import asyncio
+from auth_crud_service import AuthenticatedCRUDService
+
+async def main():
+    cm = AuthenticatedCRUDService.launch(port=8080, host="localhost", wait_for_launch=True)
+    
+    # Login
+    login_response = await cm.alogin(email="alice@example.com", password="SecurePass123")
+    token = login_response["access_token"]
+    
+    # Set default headers
+    cm.set_default_headers({"Authorization": f"Bearer {token}"})
+    
+    # Use async methods
+    user = await cm.aget_user(user_id="some_id")
+    
+    # Or pass headers per-request
+    user = await cm.aget_user(user_id="some_id", headers={"Authorization": f"Bearer {token}"})
+
+asyncio.run(main())
+```
+
+### Using Direct HTTP Requests
+
 ```python
 from auth_crud_service import AuthenticatedCRUDService
 import httpx
@@ -72,7 +156,6 @@ token = response.json()["access_token"]
 headers = {"Authorization": f"Bearer {token}"}
 
 # Other CRUD operations (authenticated)
-
 retrieved = httpx.get(f"http://localhost:8080/get_user?user_id={user['id']}", headers=headers).json()
 updated = httpx.put("http://localhost:8080/update_user", json={
     "user_id": user['id'], "age": 31
@@ -111,8 +194,18 @@ Fields: `name`, `email` (unique, used for login), `password` (hashed with Argon2
 ## Demo
 
 ```bash
+# Basic CRUD operations demo
 python auth_crud_demo.py
+
+# Header usage examples (ConnectionManager with authentication)
+python auth_crud_with_headers.py
 ```
+
+The `auth_crud_with_headers.py` script demonstrates:
+- Setting default headers on ConnectionManager
+- Using per-request headers
+- Mixing default and per-request headers
+- Using headers with async methods
 
 ## Notes
 

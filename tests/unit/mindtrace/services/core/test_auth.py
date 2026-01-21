@@ -1,6 +1,6 @@
 """Unit tests for instance-based authentication in Service class."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException, status
@@ -467,3 +467,249 @@ class TestServiceAuthIntegration:
         assert dep1 is not None
         assert dep2 is not None
         assert dep1.dependency != dep2.dependency
+
+
+class TestConnectionManagerHeaders:
+    """Test ConnectionManager header functionality for authentication."""
+
+    def test_set_default_headers(self):
+        """Test setting default headers on ConnectionManager."""
+        from urllib3.util.url import parse_url
+
+        from mindtrace.services.core.connection_manager import ConnectionManager
+
+        cm = ConnectionManager(url=parse_url("http://test.com"))
+        # Use getattr to avoid protected member warning
+        assert getattr(cm, "_default_headers", {}) == {}
+
+        cm.set_default_headers({"Authorization": "Bearer token123"})
+        assert getattr(cm, "_default_headers") == {"Authorization": "Bearer token123"}
+
+        # Setting again should update
+        cm.set_default_headers({"Authorization": "Bearer token456", "X-Custom": "value"})
+        assert getattr(cm, "_default_headers") == {"Authorization": "Bearer token456", "X-Custom": "value"}
+
+    def test_clear_default_headers(self):
+        """Test clearing default headers."""
+        from urllib3.util.url import parse_url
+
+        from mindtrace.services.core.connection_manager import ConnectionManager
+
+        cm = ConnectionManager(url=parse_url("http://test.com"))
+        cm.set_default_headers({"Authorization": "Bearer token123"})
+        assert getattr(cm, "_default_headers") != {}
+
+        cm.clear_default_headers()
+        assert getattr(cm, "_default_headers") == {}
+
+    def test_default_headers_inherited_by_generated_connection_manager(self):
+        """Test that generated connection managers inherit default headers functionality."""
+        from pydantic import BaseModel
+        from urllib3.util.url import parse_url
+
+        from mindtrace.core import TaskSchema
+        from mindtrace.services.core.service import Service
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        class TestOutput(BaseModel):
+            result: str
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=TestOutput)
+
+        class TestService(Service):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.add_endpoint("test", self.test_handler, schema=test_schema)
+
+            def test_handler(self):
+                return TestOutput(result="ok")
+
+        # Generate connection manager
+        ConnectionManagerClass = generate_connection_manager(TestService)
+        cm = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Should have default headers functionality
+        assert hasattr(cm, "set_default_headers")
+        assert hasattr(cm, "clear_default_headers")
+        assert getattr(cm, "_default_headers", {}) == {}
+
+        # Set default headers
+        cm.set_default_headers({"Authorization": "Bearer token123"})
+        assert getattr(cm, "_default_headers") == {"Authorization": "Bearer token123"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_includes_default_headers(self, mock_httpx):
+        """Test that generated methods include default headers in requests."""
+        from pydantic import BaseModel
+        from urllib3.util.url import parse_url
+
+        from mindtrace.core import TaskSchema
+        from mindtrace.services.core.service import Service
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        class TestOutput(BaseModel):
+            result: str
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=TestOutput)
+
+        class TestService(Service):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.add_endpoint("test", self.test_handler, schema=test_schema)
+
+            def test_handler(self):
+                return TestOutput(result="ok")
+
+        ConnectionManagerClass = generate_connection_manager(TestService)
+        cm = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Set default headers
+        cm.set_default_headers({"Authorization": "Bearer token123"})
+
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        mock_httpx.post.return_value = mock_response
+
+        # Call method
+        cm.test()
+
+        # Verify headers were included
+        mock_httpx.post.assert_called_once()
+        call_kwargs = mock_httpx.post.call_args[1]
+        assert "headers" in call_kwargs
+        assert call_kwargs["headers"] == {"Authorization": "Bearer token123"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_per_request_headers(self, mock_httpx):
+        """Test that per-request headers override default headers."""
+        from pydantic import BaseModel
+        from urllib3.util.url import parse_url
+
+        from mindtrace.core import TaskSchema
+        from mindtrace.services.core.service import Service
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        class TestOutput(BaseModel):
+            result: str
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=TestOutput)
+
+        class TestService(Service):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.add_endpoint("test", self.test_handler, schema=test_schema)
+
+            def test_handler(self):
+                return TestOutput(result="ok")
+
+        ConnectionManagerClass = generate_connection_manager(TestService)
+        cm = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Set default headers
+        cm.set_default_headers({"Authorization": "Bearer default_token", "X-Custom": "default"})
+
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        mock_httpx.post.return_value = mock_response
+
+        # Call method with per-request headers
+        cm.test(headers={"Authorization": "Bearer per_request_token"})
+
+        # Verify per-request headers override defaults
+        mock_httpx.post.assert_called_once()
+        call_kwargs = mock_httpx.post.call_args[1]
+        assert "headers" in call_kwargs
+        # Per-request should override default, but default X-Custom should remain
+        assert call_kwargs["headers"]["Authorization"] == "Bearer per_request_token"
+        assert call_kwargs["headers"]["X-Custom"] == "default"
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_no_headers_when_empty(self, mock_httpx):
+        """Test that headers parameter is not included when no headers are set (backward compatibility)."""
+        from pydantic import BaseModel
+        from urllib3.util.url import parse_url
+
+        from mindtrace.core import TaskSchema
+        from mindtrace.services.core.service import Service
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        class TestOutput(BaseModel):
+            result: str
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=TestOutput)
+
+        class TestService(Service):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.add_endpoint("test", self.test_handler, schema=test_schema)
+
+            def test_handler(self):
+                return TestOutput(result="ok")
+
+        ConnectionManagerClass = generate_connection_manager(TestService)
+        cm = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        mock_httpx.post.return_value = mock_response
+
+        # Call method without headers
+        cm.test()
+
+        # Verify headers parameter is not included (backward compatibility)
+        mock_httpx.post.assert_called_once()
+        call_kwargs = mock_httpx.post.call_args[1]
+        assert "headers" not in call_kwargs
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_includes_default_headers(self, mock_httpx):
+        """Test that generated async methods include default headers in requests."""
+        from pydantic import BaseModel
+        from urllib3.util.url import parse_url
+
+        from mindtrace.core import TaskSchema
+        from mindtrace.services.core.service import Service
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        class TestOutput(BaseModel):
+            result: str
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=TestOutput)
+
+        class TestService(Service):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.add_endpoint("test", self.test_handler, schema=test_schema)
+
+            def test_handler(self):
+                return TestOutput(result="ok")
+
+        ConnectionManagerClass = generate_connection_manager(TestService)
+        cm = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        # Set default headers
+        cm.set_default_headers({"Authorization": "Bearer token123"})
+
+        # Setup mock async client
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        mock_client.post.return_value = mock_response
+        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
+
+        # Call async method
+        await cm.atest()
+
+        # Verify headers were included
+        mock_client.post.assert_called_once()
+        call_kwargs = mock_client.post.call_args[1]
+        assert "headers" in call_kwargs
+        assert call_kwargs["headers"] == {"Authorization": "Bearer token123"}

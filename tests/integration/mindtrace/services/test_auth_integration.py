@@ -336,3 +336,141 @@ class TestAuthIntegration:
         data2 = response2.json()
         assert data2["user_id"] == "user2"
         assert data2["email"] == "user2@example.com"
+
+    @pytest.mark.asyncio
+    async def test_default_headers_with_connection_manager(self, auth_service_manager):
+        """Test using default headers on ConnectionManager for authenticated endpoints."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Login to get token
+        token_response = auth_service_manager.login(email="user1@example.com", password="TestPass123")
+        token = token_response.access_token
+
+        # Set default headers on connection manager
+        auth_service_manager.set_default_headers({"Authorization": f"Bearer {token}"})
+
+        # Now authenticated endpoints should work without passing headers each time
+        result = auth_service_manager.protected_data()
+        assert result.message == "This is protected data"
+        assert result.user_id == "unknown"  # Protected endpoint doesn't inject user
+        assert result.email == "unknown"
+
+        # User profile should also work
+        profile = auth_service_manager.user_profile()
+        assert profile.user_id == "user1"
+        assert profile.email == "user1@example.com"
+
+    @pytest.mark.asyncio
+    async def test_per_request_headers_override_defaults(self, auth_service_manager):
+        """Test that per-request headers can override default headers."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Login as user1
+        token1_response = auth_service_manager.login(email="user1@example.com", password="TestPass123")
+        token1 = token1_response.access_token
+
+        # Login as user2
+        token2_response = auth_service_manager.login(email="user2@example.com", password="TestPass456")
+        token2 = token2_response.access_token
+
+        # Set default headers with user1's token
+        auth_service_manager.set_default_headers({"Authorization": f"Bearer {token1}"})
+
+        # Call with default headers (should use user1)
+        profile1 = auth_service_manager.user_profile()
+        assert profile1.user_id == "user1"
+
+        # Call with per-request headers (should use user2, overriding default)
+        profile2 = auth_service_manager.user_profile(headers={"Authorization": f"Bearer {token2}"})
+        assert profile2.user_id == "user2"
+
+        # Call again without headers (should use default user1)
+        profile1_again = auth_service_manager.user_profile()
+        assert profile1_again.user_id == "user1"
+
+    @pytest.mark.asyncio
+    async def test_async_methods_with_default_headers(self, auth_service_manager):
+        """Test that async methods work with default headers."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Login to get token
+        token_response = await auth_service_manager.alogin(email="user1@example.com", password="TestPass123")
+        token = token_response.access_token
+
+        # Set default headers
+        auth_service_manager.set_default_headers({"Authorization": f"Bearer {token}"})
+
+        # Use async method with default headers
+        result = await auth_service_manager.aprotected_data()
+        assert result.message == "This is protected data"
+        assert result.user_id == "unknown"  # Protected endpoint doesn't inject user
+        assert result.email == "unknown"
+
+        # Async user profile
+        profile = await auth_service_manager.auser_profile()
+        assert profile.user_id == "user1"
+
+    @pytest.mark.asyncio
+    async def test_async_methods_with_per_request_headers(self, auth_service_manager):
+        """Test that async methods work with per-request headers."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Login as user1
+        token1_response = await auth_service_manager.alogin(email="user1@example.com", password="TestPass123")
+        token1 = token1_response.access_token
+
+        # Login as user2
+        token2_response = await auth_service_manager.alogin(email="user2@example.com", password="TestPass456")
+        token2 = token2_response.access_token
+
+        # Use async method with per-request headers
+        profile1 = await auth_service_manager.auser_profile(headers={"Authorization": f"Bearer {token1}"})
+        assert profile1.user_id == "user1"
+
+        profile2 = await auth_service_manager.auser_profile(headers={"Authorization": f"Bearer {token2}"})
+        assert profile2.user_id == "user2"
+
+    @pytest.mark.asyncio
+    async def test_clear_default_headers(self, auth_service_manager):
+        """Test clearing default headers."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Login to get token
+        token_response = auth_service_manager.login(email="user1@example.com", password="TestPass123")
+        token = token_response.access_token
+
+        # Set default headers
+        auth_service_manager.set_default_headers({"Authorization": f"Bearer {token}"})
+
+        # Verify it works
+        profile = auth_service_manager.user_profile()
+        assert profile.user_id == "user1"
+
+        # Clear default headers
+        auth_service_manager.clear_default_headers()
+
+        # Now should fail without headers
+        import httpx
+
+        base_url = str(auth_service_manager.url).rstrip("/")
+        response = httpx.post(f"{base_url}/user_profile", timeout=5.0)
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_public_endpoints_work_without_headers(self, auth_service_manager):
+        """Test that public endpoints work regardless of default headers."""
+        if auth_service_manager is None:
+            pytest.skip("Service not available")
+
+        # Set some default headers
+        auth_service_manager.set_default_headers({"Authorization": "Bearer some_token"})
+
+        # Public endpoint should still work (headers are sent but not required)
+        result = auth_service_manager.public_data()
+        assert result.message == "This is public data"
+        assert result.data == "Anyone can access this"

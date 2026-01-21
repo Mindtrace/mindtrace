@@ -23,6 +23,7 @@ class ConnectionManager(Mindtrace):
         self._server_id = server_id
         self._server_pid_file = server_pid_file
         self._mcp_client: Client | None = None
+        self._default_headers: dict[str, str] = {}
 
     def shutdown(self, block: bool = True):
         """Shutdown the server.
@@ -148,6 +149,26 @@ class ConnectionManager(Mindtrace):
         mount = str(self.config["MINDTRACE_MCP"]["MOUNT_PATH"]).strip("/")
         app = str(self.config["MINDTRACE_MCP"]["HTTP_APP_PATH"]).strip("/")
         return urljoin(urljoin(base, mount + "/"), app)
+
+    def set_default_headers(self, headers: dict[str, str]):
+        """Set default headers to be included in all requests made by this connection manager.
+
+        These headers will be merged with any per-request headers, with per-request headers taking precedence.
+
+        Args:
+            headers: Dictionary of header name-value pairs (e.g., {"Authorization": "Bearer token123"})
+
+        Example::
+            cm = MyService.launch()
+            cm.set_default_headers({"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"})
+            # All subsequent requests will include the Authorization header
+            result = cm.some_endpoint(...)
+        """
+        self._default_headers.update(headers)
+
+    def clear_default_headers(self):
+        """Clear all default headers."""
+        self._default_headers.clear()
 
     @property
     def mcp_client(self) -> Client:

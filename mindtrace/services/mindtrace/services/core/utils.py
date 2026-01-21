@@ -134,7 +134,14 @@ def generate_connection_manager(
         endpoint_path = f"/{endpoint_name}"
 
         def make_method(endpoint_path, input_schema, output_schema):
-            def method(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
+            def method(
+                self,
+                *args,
+                validate_input: bool = True,
+                validate_output: bool = True,
+                headers: dict[str, str] | None = None,
+                **kwargs,
+            ):
                 if validate_input:
                     if args:
                         if len(args) != 1:
@@ -154,7 +161,16 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
+
+                request_headers = {**self._default_headers}
+                if headers:
+                    request_headers.update(headers)
+
+                post_kwargs = {"json": payload, "timeout": 60}
+                if request_headers:
+                    post_kwargs["headers"] = request_headers
+
+                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, **post_kwargs)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -168,7 +184,14 @@ def generate_connection_manager(
                     return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
 
-            async def amethod(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
+            async def amethod(
+                self,
+                *args,
+                validate_input: bool = True,
+                validate_output: bool = True,
+                headers: dict[str, str] | None = None,
+                **kwargs,
+            ):
                 if validate_input:
                     if args:
                         if len(args) != 1:
@@ -188,8 +211,17 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
+
+                request_headers = {**self._default_headers}
+                if headers:
+                    request_headers.update(headers)
+
+                post_kwargs = {"json": payload, "timeout": 60}
+                if request_headers:
+                    post_kwargs["headers"] = request_headers
+
                 async with httpx.AsyncClient(timeout=60) as client:
-                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
+                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, **post_kwargs)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
