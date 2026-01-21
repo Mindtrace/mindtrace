@@ -644,11 +644,9 @@ class Service(Mindtrace):
                 )
 
             try:
-                # Check if verifier is async
-                if inspect.iscoroutinefunction(verifier):
-                    user_info = await verifier(token)
-                else:
-                    user_info = verifier(token)
+                user_info = verifier(token)
+                if inspect.isawaitable(user_info):
+                    user_info = await user_info
                 return user_info
             except HTTPException:
                 raise
