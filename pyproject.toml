@@ -26,17 +26,13 @@ dependencies = [
   "mindtrace-ui>=0.7.1",
   "mindtrace-datalake>=0.7.1",
   "mindtrace-storage>=0.7.1",
-  "pypylon>=4.2.0",
 ]
 
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.7.1"]
 cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.7.1"]
 cameras-all = ["mindtrace-hardware[cameras-all]>=0.7.1"]
-stereo-basler = [
-    "mindtrace-hardware[stereo-basler]>=0.7.1",
-    "plyfile>=1.1.3",
-]
+stereo-basler = ["mindtrace-hardware[stereo-basler]>=0.7.1"]
 stereo-all = ["mindtrace-hardware[stereo-all]>=0.7.1"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.7.1"]
 
