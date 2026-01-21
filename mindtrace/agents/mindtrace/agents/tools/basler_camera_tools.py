@@ -1,9 +1,3 @@
-"""Basler Camera Tools - MCP-compatible tools for controlling Basler cameras.
-
-This module provides async functions for discovering and controlling Basler cameras.
-Each function is designed to work with FastMCP and can be served over remote MCP.
-"""
-
 from typing import Any, Dict
 from mindtrace.hardware import AsyncCameraManager
 

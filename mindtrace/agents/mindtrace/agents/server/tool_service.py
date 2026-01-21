@@ -1,9 +1,3 @@
-"""Service-based toolkit server with full infrastructure support.
-
-This module provides a Service-based implementation for serving toolkits via MCP,
-offering features like worker management, logging, and lifecycle handling.
-"""
-
 from pathlib import Path
 from typing import List, Optional, Set
 

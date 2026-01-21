@@ -1,10 +1,3 @@
-"""Toolkit system for managing and discovering tools.
-
-This module provides a central registry for discovering and managing toolkits
-without using a global registry pattern. Instead, it uses dynamic module inspection
-and Python entry points for external package discovery.
-"""
-
 import importlib
 import inspect
 from dataclasses import dataclass, field
