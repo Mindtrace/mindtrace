@@ -1,7 +1,7 @@
 """Service-based toolkit server with full infrastructure support.
 
 This module provides a Service-based implementation for serving toolkits via MCP,
-offering production-grade features like worker management, logging, and lifecycle handling.
+offering features like worker management, logging, and lifecycle handling.
 """
 
 from pathlib import Path
@@ -154,9 +154,4 @@ class ToolService(Service):
         
         if failed_toolkits:
             self.logger.warning(f"Failed to load toolkits: {', '.join(failed_toolkits)}")
-    
-    async def shutdown_cleanup(self):
-        """Cleanup when shutting down the service."""
-        self.logger.info("Shutting down ToolService...")
-        await super().shutdown_cleanup()
 

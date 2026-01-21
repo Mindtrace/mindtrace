@@ -282,7 +282,7 @@ def serve_tools(
 ):
     """Serve tools over MCP using Service infrastructure.
     
-    Launches a production-grade ToolService as a detached background process with:
+    Launches a ToolService as a detached background process with:
     - Multiple worker processes (Gunicorn/Uvicorn)
     - Structured logging to files
     - Graceful shutdown handling
@@ -402,72 +402,43 @@ def serve_tools(
             # No existing entry, that's fine - proceed normally
             pass
         
-        # Generate unique server ID and PID file
-        server_id = uuid.uuid1()
-        config = ToolService.config
-        pid_dir = config["MINDTRACE_DIR_PATHS"]["SERVER_PIDS_DIR"]
-        Path(pid_dir).mkdir(parents=True, exist_ok=True)
-        pid_file = os.path.join(pid_dir, f"ToolService_{server_id}_pid.txt")
-        
-        # Prepare init params for the service
-        init_params = {
-            "url": f"http://{host}:{port}/",
-            "toolkits": toolkits,
-            "tags": list(tag_set) if tag_set else None,
-            "server_name": name,  # Pass server name for unique logging
-        }
-        
-        # Check if port is available
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        try:
-            result = sock.connect_ex((host if host != "0.0.0.0" else "127.0.0.1", port))
-            if result == 0:
-                rprint(f"[bold red]Error:[/bold red] Port {port} on {host} is already in use")
-                rprint(f"[yellow]Try a different port:[/yellow] mindtrace tools serve {' '.join(toolkits)} --port <different_port>")
-                raise typer.Exit(code=1)
-        except (socket.error, OSError):
-            pass
-        finally:
-            sock.close()
-        
-        # Build launcher command
-        launcher_cmd = [
-            sys.executable,
-            "-m",
-            "mindtrace.services.core.launcher",
-            "-s",
-            "mindtrace.agents.server.tool_service.ToolService",
-            "-w",
-            str(workers),
-            "-b",
-            f"{host}:{port}",
-            "-p",
-            pid_file,
-            "-k",
-            "uvicorn.workers.UvicornWorker",
-            "--init-params",
-            json.dumps(init_params),
-        ]
+        # ToDo: add check if port is available
         
         rprint(f"[dim]Launching detached process...[/dim]")
         
-        # Launch as detached background process
-        # Use nohup-like behavior: detach from terminal, redirect output
+        # Build launcher command (following hardware pattern)
+        cmd = [
+            sys.executable,
+            "-m",
+            "mindtrace.agents.server.tool_service_launcher",
+            "--host", host,
+            "--port", str(port),
+            "--workers", str(workers),
+            "--toolkits", ",".join(toolkits),
+        ]
         
-        # Redirect stdout/stderr to /dev/null (or NUL on Windows) since Service handles its own logging
+        if tag_set:
+            cmd.extend(["--tags", ",".join(tag_set)])
+        
+        if name:
+            cmd.extend(["--server-name", name])
+        
+        # Launch launcher module in a detached subprocess (following hardware pattern)
+        # Redirect stdout/stderr to /dev/null since Service handles its own logging
         devnull = os.open(os.devnull, os.O_RDWR)
         try:
             process = subprocess.Popen(
-                launcher_cmd,
+                cmd,
                 stdout=devnull,
                 stderr=devnull,
-                start_new_session=True,  # Detach from terminal session
+                start_new_session=True,  # Detach from terminal session (like hardware)
                 cwd=os.getcwd(),
             )
         finally:
             os.close(devnull)
+        
+        # Generate server_id for registry tracking
+        server_id = uuid.uuid1()
         
         # Wait a moment to see if process crashes immediately
         import time
@@ -484,26 +455,21 @@ def serve_tools(
             rprint(f"[bold red]Error:[/bold red] Failed to check process status: {e}")
             raise typer.Exit(code=1)
         
-        # Verify server is listening on the port (with retries)
-        rprint(f"[dim]Verifying server is listening on {host}:{port}...[/dim]")
-        max_retries = 10
-        retry_delay = 0.5
-        server_ready = False
+        # Verify server is up by checking /status endpoint
+        rprint(f"[dim]Verifying server is up at {host}:{port}...[/dim]")
         
-        for attempt in range(max_retries):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                result = sock.connect_ex((host if host != "0.0.0.0" else "127.0.0.1", port))
-                sock.close()
-                if result == 0:
-                    server_ready = True
-                    break
-            except Exception:
-                pass
-            time.sleep(retry_delay)
+        # Build status URL
+        status_host = host if host != "0.0.0.0" else "127.0.0.1"
+        status_url = f"http://{status_host}:{port}/status"
         
-        if not server_ready:
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.post(status_url)
+                if response.status_code in [200, 202]:
+                    rprint(f"[green]✓[/green] Server is up and responding at {status_url}")
+                else:
+                    rprint(f"[yellow]⚠[/yellow] Server responded with status {response.status_code}")
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
             # Check if process is still running
             if process.poll() is None:
                 rprint(f"[yellow]⚠[/yellow] Server process is running but not responding on port {port}")
@@ -513,8 +479,8 @@ def serve_tools(
                 rprint(f"[bold red]Error:[/bold red] Server process has stopped")
                 rprint(f"[yellow]The server failed to start. Check logs for details.[/yellow]")
                 raise typer.Exit(code=1)
-        else:
-            rprint(f"[green]✓[/green] Server is listening on port {port}")
+        except Exception as e:
+            rprint(f"[yellow]⚠[/yellow] Could not verify server status: {e}")
         
 
         
@@ -525,8 +491,7 @@ def serve_tools(
                 "name": name,
                 "host": host,
                 "port": port,
-                "pid": process.pid,
-                "pid_file": pid_file,
+                "pid": process.pid,  # PID of the launcher process
                 "server_id": str(server_id),
                 "toolkits": toolkits,
                 "tags": list(tag_set) if tag_set else None,
@@ -549,7 +514,6 @@ def serve_tools(
         rprint(f"  Host: http://{host}:{port}")
         rprint(f"  MCP endpoint: http://{host}:{port}/mcp-server/mcp/")
         rprint(f"  Status: http://{host}:{port}/status")
-        rprint(f"  PID file: {pid_file}")
         
         rprint(f"\n[yellow]Server is running in background[/yellow]")
         rprint(f"[dim]To stop the server:[/dim]")

@@ -17,20 +17,14 @@ mindtrace tools list basler_camera_tools
 mindtrace tools list basler_camera_tools --verbose
 ```
 
-#### Verify a Toolkit
+#### Get Information
 
 ```bash
-# Verify a built-in toolkit
-mindtrace tools pull basler_camera_tools
+# Get toolkit information
+mindtrace tools info basler_camera_tools
 
-# Pull from external package (must be installed)
-mindtrace tools pull external_tools --package external-tools
-
-# Install and pull from external package
-mindtrace tools pull external_tools --package external-tools --install
-
-# Install from GitHub and pull
-mindtrace tools pull my_tools --package git+https://github.com/user/tools.git --install
+# Get specific tool information
+mindtrace tools info basler_camera_tools --tool discover_camera_parameters
 ```
 
 #### Serve Tools over Remote MCP
@@ -65,6 +59,8 @@ mindtrace tools list-servers --verbose
 mindtrace tools list-servers --cleanup
 ```
 
+
+
 #### Stop a Running Server
 
 ```bash
@@ -81,14 +77,20 @@ mindtrace tools stop --host localhost --port 8000
 mindtrace tools stop --url http://localhost:8000
 ```
 
-#### Get Information
+#### Verify a Toolkit
 
 ```bash
-# Get toolkit information
-mindtrace tools info basler_camera_tools
+# Verify a built-in toolkit
+mindtrace tools pull basler_camera_tools
 
-# Get specific tool information
-mindtrace tools info basler_camera_tools --tool discover_camera_parameters
+# Pull from external package (must be installed)
+mindtrace tools pull external_tools --package external-tools
+
+# Install and pull from external package
+mindtrace tools pull external_tools --package external-tools --install
+
+# Install from GitHub and pull
+mindtrace tools pull my_tools --package git+https://github.com/user/tools.git --install
 ```
 
 ### Serving Tools Programmatically
@@ -261,23 +263,7 @@ Each toolkit module should define the following metadata:
 - ✅ Use `async def` for I/O-bound operations
 - ✅ Provide detailed docstrings with Args and Returns sections
 - ✅ Use type hints for all parameters and return values
-- ✅ Return dictionaries for complex data structures
-- ✅ Handle errors gracefully with try/except
 
-### Error Handling
-
-```python
-async def my_tool(param: str) -> Dict[str, Any]:
-    """Tool with proper error handling."""
-    try:
-        # Your logic here
-        result = await some_operation(param)
-        return {"success": True, "data": result}
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        return {"success": False, "error": f"Unexpected error: {e}"}
-```
 
 ### Toolkit Organization
 
@@ -321,44 +307,3 @@ service = ToolService(
 # Launch with multiple workers
 service.launch(num_workers=4, block=True)
 ```
-
-## Troubleshooting
-
-### Import Errors
-
-```bash
-# Verify toolkit can be loaded
-mindtrace tools pull basler_camera_tools
-
-# Check if toolkit is discoverable
-mindtrace tools list
-```
-
-### Server Won't Start
-
-```bash
-# Check if port is already in use
-lsof -i :8000
-
-# Try a different port
-mindtrace tools serve basler_camera_tools --port 8001
-```
-
-### Tool Not Found
-
-Ensure the tool is:
-1. Defined in the toolkit module
-2. Listed in `__all__`
-3. A callable function (not a class or variable)
-
-## Contributing
-
-To add new toolkits to mindtrace:
-
-1. Create your toolkit module in `mindtrace/agents/tools/`
-2. Follow the toolkit structure and metadata guidelines
-3. Add tests for your tools
-4. Update `tools/__init__.py` to export your toolkit
-5. Update this README with usage examples if needed
-
-
