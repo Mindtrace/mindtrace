@@ -592,8 +592,19 @@ class Service(Mindtrace):
             **api_route_kwargs,
         )
 
-    def add_tool(self, tool_name, func):
-        """Add a tool to the MCP server, with an informative description including the tool and service name."""
+    def add_tool(self, tool_name, func, autolog_kwargs=None):
+        """Add a tool to the MCP server, with an informative description including the tool and service name.
+        
+        The tool function is automatically wrapped with track_operation for logging, similar to add_endpoint.
+        
+        Args:
+            tool_name: Name of the tool
+            func: The tool function to register
+            autolog_kwargs: Optional dict with autologging configuration:
+                - log_level: Log level (default: logging.INFO)
+                - include_system_metrics: Include system metrics (default: True)
+                - system_metrics: List of metrics to track (default: ["cpu_percent", "memory_percent"])
+        """
         service_name = getattr(self, "name", self.__class__.__name__)
         # Use the function's docstring if available, otherwise log and use a default description
         if doc := func.__doc__:
@@ -602,4 +613,22 @@ class Service(Mindtrace):
             base_desc = "No description provided."
             self.logger.warning(f"Function '{tool_name}' for service '{service_name}' has no docstring.")
         full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
-        self.mcp.tool(name=tool_name, description=full_desc)(func)
+        
+        # Wrap function with track_operation for autologging (similar to add_endpoint)
+        default_autolog_kwargs = {
+            "log_level": logging.INFO,
+            "include_system_metrics": True,
+            "system_metrics": ["cpu_percent", "memory_percent"],
+        }
+        autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
+        
+        wrapped_func = track_operation(
+            name=tool_name,
+            service_name=service_name,
+            logger=self.logger,
+            log_level=autolog_kwargs.get("log_level", logging.INFO),
+            include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
+            system_metrics=autolog_kwargs.get("system_metrics"),
+        )(func)
+        
+        self.mcp.tool(name=tool_name, description=full_desc)(wrapped_func)
