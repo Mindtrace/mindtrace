@@ -15,7 +15,6 @@ from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 
-from mindtrace.agents.server.mcp_server import create_mcp_server
 from mindtrace.agents.toolkit import ToolkitLoader
 
 tools_app = typer.Typer(

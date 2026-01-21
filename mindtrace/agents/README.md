@@ -94,16 +94,28 @@ mindtrace tools info basler_camera_tools --tool discover_camera_parameters
 ### Serving Tools Programmatically
 
 ```python
-from mindtrace.agents.server import create_mcp_server
+from mindtrace.agents.server import ToolService
 
-# Create and run a server
-server = create_mcp_server(
+# Launch a server in foreground (blocking)
+ToolService.launch(
     toolkits=["basler_camera_tools"],
     tags={"camera"},  # Optional: filter by tags
-    name="mindtrace-camera-tools",
+    host="0.0.0.0",
+    port=8000,
+    num_workers=4,
+    block=True
 )
 
-server.run(host="0.0.0.0", port=8000)
+# Or launch in background and get connection manager
+connection = ToolService.launch(
+    toolkits=["basler_camera_tools"],
+    tags={"camera"},
+    host="localhost",
+    port=8000,
+    wait_for_launch=True
+)
+# Server running, use connection to interact
+connection.shutdown()  # Stop the server
 ```
 
 ## Using External Toolkits
@@ -293,26 +305,21 @@ toolkit = loader.load_toolkit("basler_camera_tools")
 camera_tools = toolkit.filter_by_tags({"camera"})
 ```
 
-### MCPServer
+### ToolService
 
 ```python
-from mindtrace.agents.server import MCPServer
+from mindtrace.agents.server import ToolService
 
-# Create a custom server
-server = MCPServer(
-    name="my-custom-server",
-    version="1.0.0",
-    description="My custom MCP server"
+# Create and launch a service
+service = ToolService(
+    toolkits=["basler_camera_tools"],
+    tags={"camera"},  # Optional: filter by tags
+    url="http://0.0.0.0:8000/",
+    server_name="my-custom-server"
 )
 
-# Add toolkits with filtering
-server.add_toolkit("basler_camera_tools", tags={"camera"})
-
-# List registered tools
-print(server.list_tools())
-
-# Run the server
-server.run(host="0.0.0.0", port=8000)
+# Launch with multiple workers
+service.launch(num_workers=4, block=True)
 ```
 
 ## Troubleshooting
