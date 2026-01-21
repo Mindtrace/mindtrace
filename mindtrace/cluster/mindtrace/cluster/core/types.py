@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.database import UnifiedMindtraceDocument
-from mindtrace.jobs import Job
+from mindtrace.jobs import Job, JobSchema
 
 
 class ProxyWorker(BaseModel):
@@ -193,7 +193,7 @@ class RegisterWorkerTypeInput(BaseModel):
     worker_class: str
     worker_params: dict
     materializer_name: str | None = None
-    job_type: str | None = None
+    job_schema: JobSchema | None = None
     git_repo_url: str | None = None
     git_branch: str | None = None
     git_commit: str | None = None
@@ -231,7 +231,7 @@ class GetDLQJobsOutput(BaseModel):
 
 
 class RegisterJobSchemaToWorkerTypeInput(BaseModel):
-    job_schema_name: str
+    job_schema: JobSchema
     worker_type: str
 
 

@@ -291,11 +291,12 @@ def test_register_worker_type_with_job_schema_name():
 
     try:
         # Register a worker type with job schema name
+        echo_job_schema = JobSchema(name="auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_cm.register_worker_type(
             worker_name="echoworker",
             worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
             worker_params={},
-            job_type="auto_connect_echo",  # This should trigger auto-registration
+            job_schema=echo_job_schema,  # This should trigger auto-registration
         )
 
         # Verify that the job schema was automatically registered to the worker type
@@ -310,7 +311,6 @@ def test_register_worker_type_with_job_schema_name():
             cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
             # Submit a job - it should be processed automatically without manual registration
-            echo_job_schema = JobSchema(name="auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
             job = job_from_schema(echo_job_schema, input_data={"message": "Auto-connected worker test!"})
             result = cluster_cm.submit_job(job)
 

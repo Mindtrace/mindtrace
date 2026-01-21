@@ -423,7 +423,7 @@ class ClusterManager(Gateway):
         git_branch = payload.get("git_branch", None)
         git_commit = payload.get("git_commit", None)
         git_working_dir = payload.get("git_working_dir", None)
-        job_schema_name = payload["job_type"]
+        job_schema = payload["job_schema"]
         proxy_worker = cluster_types.ProxyWorker(
             worker_type=worker_class,
             worker_params=worker_params,
@@ -433,8 +433,8 @@ class ClusterManager(Gateway):
             git_working_dir=git_working_dir,
         )
         self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
-        if job_schema_name:
-            self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
+        if job_schema:
+            self.register_job_schema_to_worker_type({"job_schema": job_schema, "worker_type": worker_name})
 
     def register_job_schema_to_worker_type(self, payload: dict):
         """
@@ -444,7 +444,8 @@ class ClusterManager(Gateway):
             self.logger.warning(f"Worker type {payload['worker_type']} not found in registry")
             return
 
-        job_schema_name = payload["job_schema_name"]
+        job_schema = payload["job_schema"]
+        job_schema_name = job_schema.name
         worker_type = payload["worker_type"]
         self.job_schema_targeting_database.insert(
             cluster_types.JobSchemaTargeting(schema_name=job_schema_name, target_endpoint="@orchestrator")
