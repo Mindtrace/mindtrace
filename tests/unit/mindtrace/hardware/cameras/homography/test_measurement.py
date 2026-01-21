@@ -2,8 +2,9 @@ import numpy as np
 import pytest
 
 from mindtrace.core.types.bounding_box import BoundingBox
-from mindtrace.hardware.cameras.homography.calibration import CalibrationData
-from mindtrace.hardware.cameras.homography.measurement import MeasuredBox, PlanarHomographyMeasurer
+from mindtrace.hardware.cameras.homography.data import CalibrationData, MeasuredBox
+from mindtrace.hardware.cameras.homography.measurer import HomographyMeasurer
+from mindtrace.hardware.core.exceptions import CameraConfigurationError
 
 
 class TestMeasuredBox:
@@ -34,8 +35,8 @@ class TestMeasuredBox:
             assert measured_box.unit == unit
 
 
-class TestPlanarHomographyMeasurer:
-    """Test the PlanarHomographyMeasurer class."""
+class TestHomographyMeasurer:
+    """Test the HomographyMeasurer class."""
 
     def setup_method(self):
         """Set up test fixtures."""
@@ -52,10 +53,10 @@ class TestPlanarHomographyMeasurer:
 
         self.calibration_data = CalibrationData(H=self.H, world_unit="mm")
 
-        self.measurer = PlanarHomographyMeasurer(self.calibration_data)
+        self.measurer = HomographyMeasurer(self.calibration_data)
 
     def test_measurer_creation(self):
-        """Test PlanarHomographyMeasurer instantiation."""
+        """Test HomographyMeasurer instantiation."""
         assert self.measurer is not None
         assert np.array_equal(self.measurer.calibration.H, self.H)
         assert self.measurer.calibration.world_unit == "mm"
@@ -65,48 +66,48 @@ class TestPlanarHomographyMeasurer:
         invalid_H = np.eye(2, dtype=np.float64)  # 2x2 instead of 3x3
         invalid_calib = CalibrationData(H=invalid_H)
 
-        with pytest.raises(ValueError, match="CalibrationData.H must be 3x3"):
-            PlanarHomographyMeasurer(invalid_calib)
+        with pytest.raises(CameraConfigurationError, match="Invalid homography matrix shape"):
+            HomographyMeasurer(invalid_calib)
 
     def test_unit_scale_conversion(self):
         """Test unit scaling conversion factors."""
         # Test all supported unit conversions
-        assert PlanarHomographyMeasurer._unit_scale("mm", "mm") == 1.0
-        assert PlanarHomographyMeasurer._unit_scale("mm", "cm") == 0.1
-        assert PlanarHomographyMeasurer._unit_scale("mm", "m") == 0.001
+        assert HomographyMeasurer._unit_scale("mm", "mm") == 1.0
+        assert HomographyMeasurer._unit_scale("mm", "cm") == 0.1
+        assert HomographyMeasurer._unit_scale("mm", "m") == 0.001
 
-        assert PlanarHomographyMeasurer._unit_scale("cm", "mm") == 10.0
-        assert PlanarHomographyMeasurer._unit_scale("cm", "cm") == 1.0
-        assert PlanarHomographyMeasurer._unit_scale("cm", "m") == 0.01
+        assert HomographyMeasurer._unit_scale("cm", "mm") == 10.0
+        assert HomographyMeasurer._unit_scale("cm", "cm") == 1.0
+        assert HomographyMeasurer._unit_scale("cm", "m") == 0.01
 
-        assert PlanarHomographyMeasurer._unit_scale("m", "mm") == 1000.0
-        assert PlanarHomographyMeasurer._unit_scale("m", "cm") == 100.0
-        assert PlanarHomographyMeasurer._unit_scale("m", "m") == 1.0
+        assert HomographyMeasurer._unit_scale("m", "mm") == 1000.0
+        assert HomographyMeasurer._unit_scale("m", "cm") == 100.0
+        assert HomographyMeasurer._unit_scale("m", "m") == 1.0
 
         # Test inches conversions
-        assert abs(PlanarHomographyMeasurer._unit_scale("mm", "in") - (1.0 / 25.4)) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("in", "mm") - 25.4) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("in", "in") - 1.0) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("in", "cm") - 2.54) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("cm", "in") - (1.0 / 2.54)) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("mm", "in") - (1.0 / 25.4)) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("in", "mm") - 25.4) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("in", "in") - 1.0) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("in", "cm") - 2.54) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("cm", "in") - (1.0 / 2.54)) < 1e-10
 
         # Test feet conversions
-        assert abs(PlanarHomographyMeasurer._unit_scale("mm", "ft") - (1.0 / 304.8)) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "mm") - 304.8) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "ft") - 1.0) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "in") - 12.0) < 1e-10
-        assert abs(PlanarHomographyMeasurer._unit_scale("in", "ft") - (1.0 / 12.0)) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("mm", "ft") - (1.0 / 304.8)) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("ft", "mm") - 304.8) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("ft", "ft") - 1.0) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("ft", "in") - 12.0) < 1e-10
+        assert abs(HomographyMeasurer._unit_scale("in", "ft") - (1.0 / 12.0)) < 1e-10
 
     def test_unit_scale_invalid_units(self):
         """Test error handling for invalid units."""
-        with pytest.raises(ValueError, match="Units must be one of"):
-            PlanarHomographyMeasurer._unit_scale("mm", "inches")  # Should be "in", not "inches"
+        with pytest.raises(CameraConfigurationError, match="Unsupported unit"):
+            HomographyMeasurer._unit_scale("mm", "inches")  # Should be "in", not "inches"
 
-        with pytest.raises(ValueError, match="Units must be one of"):
-            PlanarHomographyMeasurer._unit_scale("feet", "mm")  # Should be "ft", not "feet"
+        with pytest.raises(CameraConfigurationError, match="Unsupported unit"):
+            HomographyMeasurer._unit_scale("feet", "mm")  # Should be "ft", not "feet"
 
-        with pytest.raises(ValueError, match="Units must be one of"):
-            PlanarHomographyMeasurer._unit_scale("mm", "yards")  # Unsupported unit
+        with pytest.raises(CameraConfigurationError, match="Unsupported unit"):
+            HomographyMeasurer._unit_scale("mm", "yards")  # Unsupported unit
 
     def test_pixels_to_world_basic(self):
         """Test basic pixel to world coordinate conversion."""
@@ -140,13 +141,13 @@ class TestPlanarHomographyMeasurer:
     def test_pixels_to_world_errors(self):
         """Test error handling in pixel to world conversion."""
         # Test wrong dimensionality
-        with pytest.raises(ValueError, match="points_px must be Nx2"):
+        with pytest.raises(CameraConfigurationError, match="points_px must be Nx2"):
             self.measurer.pixels_to_world(np.array([100.0, 50.0]))  # 1D array
 
-        with pytest.raises(ValueError, match="points_px must be Nx2"):
+        with pytest.raises(CameraConfigurationError, match="points_px must be Nx2"):
             self.measurer.pixels_to_world(np.array([[[100.0, 50.0]]]))  # 3D array
 
-        with pytest.raises(ValueError, match="points_px must be Nx2"):
+        with pytest.raises(CameraConfigurationError, match="points_px must be Nx2"):
             self.measurer.pixels_to_world(np.array([[100.0, 50.0, 0.0]]))  # Nx3 array
 
     def test_measure_bounding_box_basic(self):
@@ -309,7 +310,7 @@ class TestPlanarHomographyMeasurer:
         """Test measurer with different calibration units."""
         # Create calibration data with centimeters
         calib_cm = CalibrationData(H=self.H, world_unit="cm")
-        measurer_cm = PlanarHomographyMeasurer(calib_cm)
+        measurer_cm = HomographyMeasurer(calib_cm)
 
         bbox = BoundingBox(x=100, y=50, width=100, height=100)
         measured = measurer_cm.measure_bounding_box(bbox)
@@ -344,7 +345,7 @@ class TestPlanarHomographyMeasurer:
         )
 
         calib_complex = CalibrationData(H=H_complex, world_unit="mm")
-        measurer_complex = PlanarHomographyMeasurer(calib_complex)
+        measurer_complex = HomographyMeasurer(calib_complex)
 
         bbox = BoundingBox(x=200, y=100, width=60, height=60)
         measured = measurer_complex.measure_bounding_box(bbox)
@@ -412,7 +413,7 @@ class TestPlanarHomographyMeasurer:
             H=self.H, camera_matrix=camera_matrix, dist_coeffs=dist_coeffs, world_unit="mm"
         )
 
-        measurer_with_camera = PlanarHomographyMeasurer(calib_with_camera)
+        measurer_with_camera = HomographyMeasurer(calib_with_camera)
 
         bbox = BoundingBox(x=100, y=50, width=100, height=100)
         measured = measurer_with_camera.measure_bounding_box(bbox)

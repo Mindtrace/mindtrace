@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-storage"
-version = "0.7.0"
+version = "0.7.1"
 description = "Storage functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,6 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "mindtrace-core>=0.7.1",
     "google-cloud-storage",
 ]
 
