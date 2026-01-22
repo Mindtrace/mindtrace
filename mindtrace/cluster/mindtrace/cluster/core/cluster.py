@@ -45,12 +45,16 @@ class ClusterManager(Gateway):
         """
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
+            rabbitmq_password = (
+                self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD")
+                or self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PASSWORD"]
+            )
             self.orchestrator = Orchestrator(
                 backend=RabbitMQClient(
                     host=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
                     port=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
                     username=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
-                    password=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PASSWORD"],
+                    password=rabbitmq_password,
                 )
             )
             self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
