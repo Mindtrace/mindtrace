@@ -1,5 +1,5 @@
 import json
-
+import os
 import pytest
 import requests
 from mcp.client.session import ClientSession
@@ -143,6 +143,7 @@ class TestServiceIntegration:
         assert isinstance(pid_file_result, PIDFileOutput)
         # PID file might be None if not configured, that's okay
         assert pid_file_result.pid_file is not None
+        assert os.path.exists(pid_file_result.pid_file)
 
         # Test pid_file endpoint (async)
         apid_file_result = await echo_service_manager.apid_file()
