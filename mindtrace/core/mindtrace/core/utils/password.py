@@ -2,7 +2,6 @@
 
 from pwdlib import PasswordHash
 
-
 def _get_password_hasher() -> PasswordHash:
     """Get or create the password hasher instance.
 
