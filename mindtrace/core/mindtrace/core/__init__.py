@@ -26,7 +26,15 @@ from mindtrace.core.utils.conversions import (
     tensor_to_pil,
 )
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
-from mindtrace.core.utils.hashing import compute_dir_hash
+from mindtrace.core.utils.hashing import (
+    PasswordHashPolicy,
+    compute_dir_hash,
+    fingerprint,
+    hash_password,
+    needs_rehash,
+    verify_and_maybe_upgrade,
+    verify_password,
+)
 from mindtrace.core.utils.lambdas import named_lambda
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
@@ -39,8 +47,8 @@ __all__ = [
     "bytes_to_pil",
     "check_libs",
     "compute_dir_hash",
-    "ContextListener",
     "Config",
+    "ContextListener",
     "CoreConfig",
     "cv2_to_pil",
     "discord_file_to_pil",
@@ -48,8 +56,10 @@ __all__ = [
     "EchoOutput",
     "echo_task",
     "EventBus",
+    "fingerprint",
     "first_not_none",
     "get_class",
+    "hash_password",
     "ifnone",
     "ifnone_url",
     "instantiate_target",
@@ -59,6 +69,9 @@ __all__ = [
     "named_lambda",
     "ndarray_to_pil",
     "ndarray_to_tensor",
+    "needs_rehash",
+    "ObservableContext",
+    "PasswordHashPolicy",
     "pil_to_ascii",
     "pil_to_base64",
     "pil_to_bytes",
@@ -66,12 +79,13 @@ __all__ = [
     "pil_to_discord_file",
     "pil_to_ndarray",
     "pil_to_tensor",
-    "ObservableContext",
+    "SystemMetricsCollector",
     "TaskSchema",
     "tensor_to_ndarray",
     "tensor_to_pil",
+    "Timeout",
     "Timer",
     "TimerCollection",
-    "Timeout",
-    "SystemMetricsCollector",
+    "verify_and_maybe_upgrade",
+    "verify_password",
 ]
