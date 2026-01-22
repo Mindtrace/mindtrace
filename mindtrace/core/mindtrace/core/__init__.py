@@ -28,6 +28,7 @@ from mindtrace.core.utils.conversions import (
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
 from mindtrace.core.utils.hashing import compute_dir_hash
 from mindtrace.core.utils.lambdas import named_lambda
+from mindtrace.core.utils.password import get_password_hasher, hash_password, verify_password
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
@@ -50,6 +51,8 @@ __all__ = [
     "EventBus",
     "first_not_none",
     "get_class",
+    "get_password_hasher",
+    "hash_password",
     "ifnone",
     "ifnone_url",
     "instantiate_target",
@@ -74,4 +77,5 @@ __all__ = [
     "TimerCollection",
     "Timeout",
     "SystemMetricsCollector",
+    "verify_password",
 ]

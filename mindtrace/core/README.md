@@ -46,6 +46,7 @@ The core module is organized into several submodules:
 ### Utilities (`utils/`)
 - `checks`: Type checking and validation utilities
 - `dynamic`: Dynamic class instantiation and import helpers
+- `password`: Password hashing and verification utilities
 
 ### Logging (`logging/`)
 - Structured logging configuration and utilities
@@ -284,4 +285,38 @@ Dynamically instantiate a class from string reference.
 ```python
 from mindtrace.core import instantiate_target
 instance = instantiate_target("my.module.MyClass", param="value")
+```
+
+#### `hash_password(password)`
+Hash a password using Argon2 (via pwdlib).
+
+```python
+from mindtrace.core import hash_password
+
+hashed = hash_password("my_secure_password")
+# Store hashed in database
+user.hashed_password = hashed
+```
+
+#### `verify_password(plain_password, hashed_password)`
+Verify a password against its hash.
+
+```python
+from mindtrace.core import verify_password
+
+if verify_password(user_input, stored_hash):
+    login_user()
+else:
+    raise AuthenticationError()
+```
+
+#### `get_password_hasher()`
+Get the underlying PasswordHash instance for advanced usage.
+
+```python
+from mindtrace.core import get_password_hasher
+
+hasher = get_password_hasher()
+# Use custom settings or access other pwdlib methods
+custom_hash = hasher.hash("password", rounds=10)
 ```

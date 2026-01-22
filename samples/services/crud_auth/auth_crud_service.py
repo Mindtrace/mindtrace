@@ -14,10 +14,9 @@ from typing import Annotated, Optional, Union
 import jwt
 from fastapi import Depends, Form, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from mindtrace.core import TaskSchema
+from mindtrace.core import TaskSchema, hash_password, verify_password
 from mindtrace.database import MindtraceDocument, MongoMindtraceODM
 from mindtrace.services import Scope, Service
 
@@ -225,41 +224,8 @@ if not os.getenv("JWT_SECRET"):
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Password hashing using pwdlib with Argon2 (recommended by FastAPI)
-# See: https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/#why-use-password-hashing
-password_hash = PasswordHash.recommended()
-
 # OAuth2 scheme for token endpoint
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash.
-
-    Uses pwdlib with Argon2 as recommended by FastAPI.
-
-    Args:
-        plain_password: Plain text password
-        hashed_password: Hashed password from database
-
-    Returns:
-        True if password matches, False otherwise
-    """
-    return password_hash.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Hash a password using Argon2.
-
-    Uses pwdlib with Argon2 as recommended by FastAPI.
-
-    Args:
-        password: Plain text password
-
-    Returns:
-        Hashed password string
-    """
-    return password_hash.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:
@@ -580,7 +546,7 @@ class AuthenticatedCRUDService(Service):
             raise HTTPException(status_code=400, detail="An account with this email address already exists.")
 
         # Hash password using Argon2
-        hashed_password = get_password_hash(payload.password)
+        hashed_password = hash_password(payload.password)
 
         # Create user document
         user_data = {
