@@ -134,14 +134,11 @@ class AsyncStereoCamera(Mindtrace):
             calibrate_disparity=calibrate_disparity,
         )
 
-    async def capture_point_cloud(
-        self, include_colors: bool = True, remove_outliers: bool = False, downsample_factor: int = 1
-    ) -> PointCloudData:
+    async def capture_point_cloud(self, include_colors: bool = True, downsample_factor: int = 1) -> PointCloudData:
         """Capture and generate 3D point cloud.
 
         Args:
             include_colors: Whether to include color information from intensity
-            remove_outliers: Whether to remove statistical outliers
             downsample_factor: Downsampling factor (1 = no downsampling)
 
         Returns:
@@ -155,7 +152,6 @@ class AsyncStereoCamera(Mindtrace):
         Examples:
             >>> point_cloud = await camera.capture_point_cloud()
             >>> point_cloud.save_ply("output.ply")
-            >>> pcd = point_cloud.to_open3d()
         """
         if self._calibration is None:
             raise CameraConfigurationError("Calibration data not available")
@@ -169,9 +165,6 @@ class AsyncStereoCamera(Mindtrace):
         # Post-processing
         if downsample_factor > 1:
             point_cloud = point_cloud.downsample(downsample_factor)
-
-        if remove_outliers:
-            point_cloud = point_cloud.remove_statistical_outliers()
 
         return point_cloud
 

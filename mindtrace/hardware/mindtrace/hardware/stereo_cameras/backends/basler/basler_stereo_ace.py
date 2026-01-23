@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
-from mindtrace.core import Mindtrace
+import cv2
+import numpy as np
+
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -19,7 +21,12 @@ from mindtrace.hardware.core.exceptions import (
     HardwareOperationError,
     SDKNotAvailableError,
 )
-from mindtrace.hardware.stereo_cameras.core.models import StereoCalibrationData, StereoGrabResult
+from mindtrace.hardware.stereo_cameras.backends.stereo_camera_backend import StereoCameraBackend
+from mindtrace.hardware.stereo_cameras.core.models import (
+    PointCloudData,
+    StereoCalibrationData,
+    StereoGrabResult,
+)
 
 try:
     from pypylon import pylon
@@ -31,12 +38,15 @@ except ImportError:
 T = TypeVar("T")
 
 
-class BaslerStereoAceBackend(Mindtrace):
+class BaslerStereoAceBackend(StereoCameraBackend):
     """Backend for Basler Stereo ace cameras using pypylon.
 
     The Stereo ace camera is accessed through a unified device interface
     (DeviceClass: BaslerGTC/Basler/basler_xw) that presents the stereo pair
     as a single camera with multi-component output.
+
+    Extends StereoCameraBackend to provide consistent interface across
+    different stereo camera manufacturers.
     """
 
     DEVICE_CLASS = "BaslerGTC/Basler/basler_xw"
@@ -54,22 +64,20 @@ class BaslerStereoAceBackend(Mindtrace):
         Raises:
             SDKNotAvailableError: If pypylon is not available
         """
-        super().__init__()
-
         if not PYPYLON_AVAILABLE:
             raise SDKNotAvailableError("pypylon not available. Install with: pip install pypylon")
 
-        self.serial_number = serial_number
+        super().__init__(serial_number=serial_number, op_timeout_s=op_timeout_s)
+
         self._camera: Optional[pylon.InstantCamera] = None
-        self._is_open = False
         self._grab_strategy = pylon.GrabStrategy_LatestImageOnly
-        self._calibration: Optional[StereoCalibrationData] = None
-        self._op_timeout_s = op_timeout_s
 
     async def _run_blocking(
         self, func: Callable[..., T], *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> T:
         """Run a blocking Pylon SDK call in threadpool with timeout.
+
+        Overrides base class to add Basler-specific exception handling.
 
         Args:
             func: The blocking function to call
@@ -918,6 +926,90 @@ class BaslerStereoAceBackend(Mindtrace):
             await self._run_blocking(_execute)
         except Exception as e:
             raise CameraConfigurationError(f"Failed to execute trigger: {e}") from e
+
+    async def capture_point_cloud(
+        self,
+        include_colors: bool = True,
+        include_confidence: bool = False,
+        downsample_factor: int = 1,
+        timeout_ms: int = 20000,
+    ) -> PointCloudData:
+        """Capture and generate 3D point cloud.
+
+        Args:
+            include_colors: Whether to include color information from intensity
+            include_confidence: Whether to include confidence values (not supported)
+            downsample_factor: Downsampling factor (1 = no downsampling)
+            timeout_ms: Capture timeout in milliseconds
+
+        Returns:
+            PointCloudData with 3D points and optional colors
+
+        Raises:
+            CameraConnectionError: If camera not opened
+            CameraCaptureError: If capture fails
+            CameraConfigurationError: If calibration not available
+        """
+        if self._calibration is None:
+            raise CameraConfigurationError("Calibration data not available")
+
+        # Capture stereo data
+        result = await self.capture(
+            timeout_ms=timeout_ms,
+            enable_intensity=include_colors,
+            enable_disparity=True,
+            calibrate_disparity=True,
+        )
+
+        if not result.has_disparity or result.disparity is None:
+            raise CameraConfigurationError("Disparity data required for point cloud generation")
+
+        # Use calibrated disparity if available, otherwise calibrate now
+        if result.disparity_calibrated is not None:
+            disp_cal = result.disparity_calibrated
+        else:
+            disp_cal = self._calibration.calibrate_disparity(result.disparity)
+
+        # Reproject to 3D using Q matrix
+        points_3d = await asyncio.to_thread(cv2.reprojectImageTo3D, disp_cal, self._calibration.Q)
+
+        # Prepare colors if requested
+        colors = None
+        if include_colors and result.has_intensity and result.intensity is not None:
+            # Resize intensity to match disparity resolution
+            h, w = result.disparity.shape
+            intensity_resized = await asyncio.to_thread(
+                cv2.resize, result.intensity, (w, h), interpolation=cv2.INTER_LINEAR
+            )
+
+            # Convert grayscale to RGB if needed
+            if intensity_resized.ndim == 2:
+                colors = cv2.cvtColor(intensity_resized, cv2.COLOR_GRAY2RGB)
+            else:
+                colors = intensity_resized
+
+            # Normalize to [0, 1] and flatten
+            colors = colors.reshape(-1, 3).astype(np.float64) / 255.0
+
+        # Flatten points
+        points = points_3d.reshape(-1, 3).astype(np.float64)
+
+        # Remove invalid points (infinite/NaN from zero disparity)
+        valid = np.isfinite(points).all(axis=1)
+        points = points[valid]
+
+        if colors is not None:
+            colors = colors[valid]
+
+        point_cloud = PointCloudData(
+            points=points, colors=colors, num_points=len(points), has_colors=(colors is not None)
+        )
+
+        # Post-processing
+        if downsample_factor > 1:
+            point_cloud = point_cloud.downsample(downsample_factor)
+
+        return point_cloud
 
     async def close(self) -> None:
         """Close camera and release resources."""

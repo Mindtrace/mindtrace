@@ -167,14 +167,11 @@ class StereoCamera(Mindtrace):
             )
         )
 
-    def capture_point_cloud(
-        self, include_colors: bool = True, remove_outliers: bool = False, downsample_factor: int = 1
-    ) -> PointCloudData:
+    def capture_point_cloud(self, include_colors: bool = True, downsample_factor: int = 1) -> PointCloudData:
         """Capture and generate 3D point cloud.
 
         Args:
             include_colors: Whether to include color information from intensity
-            remove_outliers: Whether to remove statistical outliers
             downsample_factor: Downsampling factor (1 = no downsampling)
 
         Returns:
@@ -193,9 +190,7 @@ class StereoCamera(Mindtrace):
             >>> camera.close()
         """
         return self._submit(
-            self._backend.capture_point_cloud(
-                include_colors=include_colors, remove_outliers=remove_outliers, downsample_factor=downsample_factor
-            )
+            self._backend.capture_point_cloud(include_colors=include_colors, downsample_factor=downsample_factor)
         )
 
     # Configuration
