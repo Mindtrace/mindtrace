@@ -597,7 +597,7 @@ class TestServiceMethods:
         assert "prevents accidentally exposing" in str(exc_info.value)
 
     def test_add_endpoint_with_authenticated_scope_raises_without_verifier(self):
-        """Test add_endpoint with AUTHENTICATED scope raises RuntimeError when no verifier is set."""
+        """Test add_endpoint with AUTHENTICATED scope raises RuntimeError when no authenticator is set."""
         from mindtrace.services.core.types import Scope
 
         service = Service()
@@ -615,7 +615,7 @@ class TestServiceMethods:
                 scope=Scope.AUTHENTICATED,
             )
 
-        assert "Token verifier not set" in str(exc_info.value)
+        assert "User authenticator not set" in str(exc_info.value)
 
     def test_add_endpoint_with_authenticated_scope_adds_auth_dependency(self):
         """Test add_endpoint with AUTHENTICATED scope adds auth dependency."""
@@ -626,7 +626,7 @@ class TestServiceMethods:
         def test_verifier(token: str) -> dict:
             return {"user_id": "123"}
 
-        service.set_token_verifier(test_verifier)
+        service.set_user_authenticator(test_verifier)
 
         def test_handler():
             return {"test": "response"}
@@ -660,7 +660,7 @@ class TestServiceMethods:
         def test_verifier(token: str) -> dict:
             return {"user_id": "123"}
 
-        service.set_token_verifier(test_verifier)
+        service.set_user_authenticator(test_verifier)
 
         def test_handler():
             return {"test": "response"}
@@ -698,7 +698,7 @@ class TestServiceMethods:
         def test_verifier(token: str) -> dict:
             return {"user_id": "123"}
 
-        service.set_token_verifier(test_verifier)
+        service.set_user_authenticator(test_verifier)
 
         def test_handler():
             return {"test": "response"}

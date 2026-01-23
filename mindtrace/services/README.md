@@ -119,115 +119,63 @@ class EchoService(Service):
 
 The services module supports stateless authentication using OAuth2 Bearer tokens.
 
-### Setting Up Authentication
+### Setup
 
-1. **Define a token verifier function** in your service class and set it as an instance variable:
+Define a user authenticator function and set it on your service instance:
 
 ```python
 from fastapi import HTTPException
 from mindtrace.services import Scope, Service
-
-class MyService(Service):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # Set token verifier for this service instance
-        self.set_token_verifier(self.verify_token)
-    
-    def verify_token(self, token: str) -> dict:
-        """Verify JWT token and return user information.
-        
-        Args:
-            token: Bearer token from Authorization header
-        
-        Returns:
-            dict: User information (e.g., {"user_id": "123", "username": "john"})
-            
-        Raises:
-            HTTPException: If token is invalid
-        """
-        # Your token verification logic here
-        # For example, verify JWT signature, check expiration, etc.
-        try:
-            # Decode and verify JWT token
-            payload = decode_jwt_token(token)  # Your JWT library
-            return {
-                "user_id": payload["user_id"],
-                "username": payload["username"],
-                "email": payload.get("email"),
-            }
-        except Exception as e:
-            raise HTTPException(
-                status_code=401,
-                detail=f"Invalid token: {str(e)}"
-            )
-```
-
-2. **Use Scope enum when adding endpoints**:
-
-```python
-from mindtrace.services import Service, Scope
-
-class MyService(Service):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # Public endpoint (no authentication required)
-        self.add_endpoint(
-            "public_data",
-            self.get_public_data,
-            schema=public_schema,
-            scope=Scope.PUBLIC
-        )
-        
-        # Authenticated endpoint (requires Bearer token)
-        self.add_endpoint(
-            "private_data",
-            self.get_private_data,
-            schema=private_schema,
-            scope=Scope.AUTHENTICATED
-        )
-```
-
-### Accessing the Current User in Endpoints
-
-When you need to access the authenticated user's information in your endpoint function, use `get_current_user_dependency()` with FastAPI's `Depends()`:
-
-```python
 from fastapi import Depends
 from typing import Annotated
-from mindtrace.services import Service, Scope
 
 class MyService(Service):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.set_token_verifier(self.verify_token)
-        
-        # Get the dependency for injecting current user
-        get_current_user = self.get_current_user_dependency()
-        
-        # Register endpoint with user injection
-        self.add_endpoint(
-            "get_profile",
-            self.get_profile,
-            schema=profile_schema,
-            methods=["GET"],
-            scope=Scope.AUTHENTICATED,
-        )
+        self.set_user_authenticator(self.authenticate_user)
     
-    async def get_profile(
-        self, 
-        current_user: Annotated[dict, Depends(get_current_user)]
-    ) -> dict:
-        """Get current user's profile."""
-        user_id = current_user["user_id"]
-        # Use user_id for authorization, etc.
-        return {"user_id": user_id, "email": current_user.get("email")}
+    def authenticate_user(self, token: str) -> dict | None:
+        """Authenticate user from JWT token.
+        
+        Returns:
+            dict: User information (required for get_current_user_dependency())
+            None: Just authentication (works for scope=Scope.AUTHENTICATED)
+        """
+        # Your authentication logic - verify JWT, check DB, etc.
+        payload = decode_jwt_token(token)
+        return {"user_id": payload["user_id"], "email": payload.get("email")}
 ```
 
-**Note:** The difference between `get_auth_dependency()` and `get_current_user_dependency()`:
-- `get_auth_dependency()`: Returns a `Security` dependency for authentication enforcement (used internally by `scope=Scope.AUTHENTICATED`)
-- `get_current_user_dependency()`: Returns the raw dependency function for injecting user info into your endpoint function parameters
+### Usage Patterns
+
+**Pattern 1: Authentication only (no user data needed)**
+```python
+# Lightweight - just verifies token, doesn't return user data
+self.add_endpoint("protected", self.get_data, schema=schema, scope=Scope.AUTHENTICATED)
+
+async def get_data(self) -> dict:
+    # Token verified, but no user data available
+    return {"message": "protected data"}
+```
+
+**Pattern 2: Authentication + user data (for authorization)**
+```python
+# Get dependency for user injection
+get_current_user = self.get_current_user_dependency()
+
+# Endpoint with user data injection
+self.add_endpoint("profile", self.get_profile, schema=schema, scope=Scope.PUBLIC)
+
+async def get_profile(
+    self,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> dict:
+    # Both authenticated AND have user data for authorization
+    user_id = current_user["user_id"]
+    return {"user_id": user_id, "email": current_user.get("email")}
+```
+
+**Note:** `Depends(get_current_user)` already enforces authentication. Using `scope=Scope.AUTHENTICATED` is redundant but fine for clarity.
 
 ### Using Authentication Headers with ConnectionManager
 

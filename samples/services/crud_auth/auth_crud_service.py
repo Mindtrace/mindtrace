@@ -439,7 +439,7 @@ class AuthenticatedCRUDService(Service):
         set_service_instance(self)
 
         # Set up token verification (use async version)
-        self.set_token_verifier(verify_token_async)
+        self.set_user_authenticator(verify_token_async)
 
         # Allows endpoints to inject the current user via Depends()
         self._get_current_user = self.get_current_user_dependency()

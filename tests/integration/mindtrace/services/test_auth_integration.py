@@ -87,7 +87,7 @@ class AuthenticatedTestService(Service):
         super().__init__(*args, **kwargs)
 
         # Set up token verification
-        self.set_token_verifier(verify_test_token)
+        self.set_user_authenticator(verify_test_token)
         get_current_user = self.get_current_user_dependency()
 
         # Public endpoints
