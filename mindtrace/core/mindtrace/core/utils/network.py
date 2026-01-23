@@ -169,9 +169,7 @@ def wait_for_service(
 
         time.sleep(poll_interval)
 
-    raise ServiceTimeoutError(
-        f"Service at {host}:{port} did not become available within {timeout} seconds"
-    )
+    raise ServiceTimeoutError(f"Service at {host}:{port} did not become available within {timeout} seconds")
 
 
 def get_local_ip() -> str:
