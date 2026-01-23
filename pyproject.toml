@@ -38,6 +38,11 @@ stereo-basler = [
     "plyfile>=1.1.3",
 ]
 stereo-all = ["mindtrace-hardware[stereo-all]>=0.7.1"]
+scanners-photoneo = [
+    "mindtrace-hardware[scanners-photoneo]>=0.7.1",
+    "plyfile>=1.1.3",
+]
+scanners-all = ["mindtrace-hardware[scanners-all]>=0.7.1"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.7.1"]
 
 [dependency-groups]
