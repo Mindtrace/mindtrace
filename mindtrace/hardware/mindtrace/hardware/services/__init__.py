@@ -9,6 +9,8 @@ __all__ = [
     "SensorConnectionManager",
     "StereoCameraService",
     "StereoCameraConnectionManager",
+    "Scanner3DService",
+    "Scanner3DConnectionManager",
 ]
 
 
@@ -33,5 +35,10 @@ def __getattr__(name: str):
         from mindtrace.hardware.services.stereo_cameras import StereoCameraConnectionManager, StereoCameraService
 
         return StereoCameraService if name == "StereoCameraService" else StereoCameraConnectionManager
+
+    if name in ("Scanner3DService", "Scanner3DConnectionManager"):
+        from mindtrace.hardware.services.scanners_3d import Scanner3DConnectionManager, Scanner3DService
+
+        return Scanner3DService if name == "Scanner3DService" else Scanner3DConnectionManager
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
