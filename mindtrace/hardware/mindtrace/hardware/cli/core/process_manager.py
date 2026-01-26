@@ -80,7 +80,15 @@ class ProcessManager:
         if port is None:
             port = int(os.getenv("CAMERA_API_PORT", "8002"))
         # Build command
-        cmd = [sys.executable, "-m", "mindtrace.hardware.api.cameras.launcher", "--host", host, "--port", str(port)]
+        cmd = [
+            sys.executable,
+            "-m",
+            "mindtrace.hardware.services.cameras.launcher",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
 
         if include_mocks:
             cmd.append("--include-mocks")
@@ -134,7 +142,7 @@ class ProcessManager:
             port = int(os.getenv("PLC_API_PORT", "8003"))
 
         # Build command
-        cmd = [sys.executable, "-m", "mindtrace.hardware.api.plcs.launcher", "--host", host, "--port", str(port)]
+        cmd = [sys.executable, "-m", "mindtrace.hardware.services.plcs.launcher", "--host", host, "--port", str(port)]
 
         # Set PLC API environment variables for other services to use
         os.environ["PLC_API_HOST"] = host
@@ -188,7 +196,7 @@ class ProcessManager:
         cmd = [
             sys.executable,
             "-m",
-            "mindtrace.hardware.api.stereo_cameras.launcher",
+            "mindtrace.hardware.services.stereo_cameras.launcher",
             "--host",
             host,
             "--port",

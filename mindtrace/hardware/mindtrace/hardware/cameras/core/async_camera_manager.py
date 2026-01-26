@@ -375,6 +375,210 @@ class AsyncCameraManager(Mindtrace):
             return all_details
         return all_cameras
 
+    @classmethod
+    async def discover_async(
+        cls,
+        backends: Optional[Union[str, List[str]]] = None,
+        details: bool = False,
+        include_mocks: bool = False,
+    ) -> Union[List[str], List[Dict[str, Any]]]:
+        """Discover available cameras across specified backends in parallel.
+
+        This async version runs backend discovery concurrently using asyncio.gather(),
+        significantly improving discovery time when multiple backends are available.
+
+        Args:
+            backends: Optional backend(s) to discover cameras from. Can be:
+                - None: Discover from all available backends (default behavior)
+                - str: Single backend name (e.g., "Basler", "OpenCV")
+                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV", "GenICam"])
+            details: If True, return a list of dicts with detailed camera information.
+            include_mocks: Include mock cameras in discovery.
+
+        Returns:
+            If details is False (default): List of camera names in format "Backend:device_name".
+            If details is True: List of records with keys {name, backend, index, width, height, fps}.
+
+        Example::
+
+            # Discover all cameras in parallel
+            cameras = await AsyncCameraManager.discover_async()
+
+            # Discover multiple backends in parallel
+            mixed = await AsyncCameraManager.discover_async(["Basler", "OpenCV", "GenICam"])
+        """
+        all_cameras: List[str] = []
+        all_details: List[Dict[str, Any]] = []
+
+        # Determine which backends to search
+        if backends is None:
+            discovered = []
+            try:
+                available, _ = cls._discover_backend("opencv")
+                if available:
+                    discovered.append("OpenCV")
+            except Exception:
+                pass
+            try:
+                available, _ = cls._discover_backend("basler")
+                if available:
+                    discovered.append("Basler")
+            except Exception:
+                pass
+            try:
+                available, _ = cls._discover_backend("genicam")
+                if available:
+                    discovered.append("GenICam")
+            except Exception:
+                pass
+            if include_mocks:
+                discovered.append("MockBasler")
+            backends_to_search = discovered
+        elif isinstance(backends, str):
+            backends_to_search = [backends]
+        elif isinstance(backends, list):
+            backends_to_search = backends
+        else:
+            raise ValueError(f"Invalid backends parameter: {backends}. Must be None, str, or List[str]")
+
+        # Filter to valid/available backends
+        valid_list = []
+        for b in backends_to_search:
+            if b == "OpenCV":
+                available, _ = cls._discover_backend("opencv")
+                if available:
+                    valid_list.append(b)
+            elif b == "Basler":
+                available, _ = cls._discover_backend("basler")
+                if available:
+                    valid_list.append(b)
+            elif b == "GenICam":
+                available, _ = cls._discover_backend("genicam")
+                if available:
+                    valid_list.append(b)
+            elif b == "MockBasler" and include_mocks:
+                valid_list.append(b)
+        backends_to_search = valid_list
+
+        # Create async discovery tasks for each backend
+        async def discover_opencv(with_details: bool) -> Tuple[str, Union[List[str], Dict[str, Dict[str, str]]]]:
+            from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
+            result = await OpenCVCameraBackend.discover_async(include_details=with_details)
+            return "OpenCV", result
+
+        async def discover_basler(with_details: bool) -> Tuple[str, Union[List[str], Dict[str, Dict[str, str]]]]:
+            available, camera_class = cls._discover_backend("basler")
+            if available and camera_class:
+                result = await camera_class.discover_async(include_details=with_details)
+                return "Basler", result
+            return "Basler", [] if not with_details else {}
+
+        async def discover_genicam(with_details: bool) -> Tuple[str, Union[List[str], Dict[str, Dict[str, str]]]]:
+            available, camera_class = cls._discover_backend("genicam")
+            if available and camera_class:
+                result = await camera_class.discover_async(include_details=with_details)
+                return "GenICam", result
+            return "GenICam", [] if not with_details else {}
+
+        async def discover_mock_basler(with_details: bool) -> Tuple[str, Union[List[str], Dict[str, Dict[str, str]]]]:
+            mock_class = cls._get_mock_camera("basler")
+            # Mock backend doesn't have async discovery, run in threadpool
+            result = await asyncio.to_thread(mock_class.get_available_cameras)
+            return "MockBasler", result
+
+        # Build task list based on requested backends
+        tasks = []
+        for backend in backends_to_search:
+            if backend == "OpenCV":
+                tasks.append(discover_opencv(details))
+            elif backend == "Basler":
+                tasks.append(discover_basler(details))
+            elif backend == "GenICam":
+                tasks.append(discover_genicam(details))
+            elif backend == "MockBasler":
+                tasks.append(discover_mock_basler(details))
+
+        # Execute all discovery tasks in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        for result in results:
+            if isinstance(result, Exception):
+                try:
+                    cls.logger.warning(f"Backend discovery failed: {result}")
+                except Exception:
+                    pass
+                continue
+
+            backend_name, cameras = result
+
+            if details:
+                if isinstance(cameras, dict):
+                    # Detailed result from get_available_cameras(include_details=True)
+                    for cam_name, cam_info in cameras.items():
+                        try:
+                            idx = int(cam_info.get("index", -1))
+                        except Exception:
+                            idx = -1
+                        try:
+                            w = int(cam_info.get("width", 0))
+                        except Exception:
+                            w = 0
+                        try:
+                            h = int(cam_info.get("height", 0))
+                        except Exception:
+                            h = 0
+                        try:
+                            fps = float(cam_info.get("fps", 0.0))
+                        except Exception:
+                            fps = 0.0
+
+                        detail_record = {
+                            "name": f"{backend_name}:{cam_name}",
+                            "backend": backend_name,
+                            "index": idx,
+                            "width": w,
+                            "height": h,
+                            "fps": fps,
+                        }
+                        # Add GenICam-specific fields if present
+                        if backend_name == "GenICam":
+                            for field in [
+                                "serial_number",
+                                "model",
+                                "vendor",
+                                "interface",
+                                "display_name",
+                                "user_defined_name",
+                                "device_id",
+                            ]:
+                                if field in cam_info:
+                                    detail_record[field] = cam_info.get(field, "")
+                        all_details.append(detail_record)
+                elif isinstance(cameras, list):
+                    # Simple list result - create minimal detail records
+                    for cam in cameras:
+                        all_details.append(
+                            {
+                                "name": f"{backend_name}:{cam}",
+                                "backend": backend_name,
+                                "index": None,
+                                "width": 0,
+                                "height": 0,
+                                "fps": 0.0,
+                            }
+                        )
+            else:
+                if isinstance(cameras, list):
+                    all_cameras.extend([f"{backend_name}:{cam}" for cam in cameras])
+                elif isinstance(cameras, dict):
+                    all_cameras.extend([f"{backend_name}:{cam}" for cam in cameras.keys()])
+
+        if details:
+            return all_details
+        return all_cameras
+
     async def open(
         self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
     ) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:

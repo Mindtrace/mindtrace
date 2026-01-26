@@ -27,7 +27,7 @@ Design Philosophy:
 Usage:
     # Import managers only when needed
     from mindtrace.hardware import CameraManager, PLCManager, SensorManager
-    from mindtrace.hardware.api.sensors import SensorManagerService
+    from mindtrace.hardware.services.sensors import SensorManagerService
 
     # Camera operations
     async with CameraManager() as camera_manager:
@@ -85,6 +85,10 @@ def __getattr__(name):
         from .sensors.core.manager import SensorManager
 
         return SensorManager
+    elif name == "ServiceStatus":
+        from mindtrace.hardware.core.types import ServiceStatus
+
+        return ServiceStatus
     elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
         from mindtrace.hardware.cameras.homography import (
             CalibrationData,
@@ -112,4 +116,5 @@ __all__ = [
     "CalibrationData",
     "PlanarHomographyMeasurer",
     "MeasuredBox",
+    "ServiceStatus",
 ]

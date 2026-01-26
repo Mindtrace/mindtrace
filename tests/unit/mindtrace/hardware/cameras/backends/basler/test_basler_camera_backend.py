@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import json
 import os
 import tempfile
@@ -1328,16 +1329,16 @@ class TestBaslerCameraBackendErrorHandling:
     """Test error handling scenarios."""
 
     @pytest.mark.asyncio
-    async def test_sdk_timeout_handling(self, basler_camera, monkeypatch):
+    async def test_run_blocking_timeout_handling(self, basler_camera, monkeypatch):
         """Test SDK timeout error handling."""
         await basler_camera.initialize()
 
-        # Mock the _sdk method to simulate timeout
-        async def mock_sdk_timeout(*args, **kwargs):
+        # Mock the _run_blocking method to simulate timeout
+        async def mock_run_blocking_timeout(*args, **kwargs):
             await asyncio.sleep(0.01)  # Small delay
             raise asyncio.TimeoutError("SDK timeout")
 
-        monkeypatch.setattr(basler_camera, "_sdk", mock_sdk_timeout)
+        monkeypatch.setattr(basler_camera, "_run_blocking", mock_run_blocking_timeout)
 
         with pytest.raises(CameraConnectionError, match="Failed to ensure camera.*is open"):
             await basler_camera.set_exposure(10000)
@@ -1445,20 +1446,6 @@ class TestBaslerCameraBackendAdvancedErrorScenarios:
         assert "BGR8" in formats
         assert "RGB8" in formats
         assert "Mono8" in formats
-
-    @pytest.mark.asyncio
-    async def test_sdk_executor_shutdown_error(self, basler_camera, monkeypatch):
-        """Test error handling during executor shutdown."""
-        await basler_camera.initialize()
-
-        # Mock executor to raise error on shutdown
-        mock_executor = Mock()
-        mock_executor.shutdown.side_effect = RuntimeError("Shutdown error")
-        basler_camera._sdk_executor = mock_executor
-
-        # Should not raise error (errors are caught and ignored)
-        await basler_camera.close()
-        assert basler_camera.initialized is False
 
 
 class TestBaslerCameraBackendConcurrentOperations:
@@ -1697,32 +1684,15 @@ class TestBaslerCameraBackendMissingCoverageLines:
         assert PYPYLON_AVAILABLE is True
 
     @pytest.mark.asyncio
-    async def test_sdk_method_loop_and_executor_initialization(self, basler_camera):
-        """Test that _sdk method properly initializes asyncio loop and thread pool executor when needed."""
-        await basler_camera.initialize()
-
-        # Reset loop and executor to trigger initialization paths
-        basler_camera._loop = None
-        basler_camera._sdk_executor = None
-
-        def test_func():
-            return "test_result"
-
-        result = await basler_camera._sdk(test_func)
-        assert result == "test_result"
-        assert basler_camera._loop is not None
-        assert basler_camera._sdk_executor is not None
-
-    @pytest.mark.asyncio
-    async def test_sdk_method_hardware_operation_error_branch(self, basler_camera):
-        """Test that _sdk method properly wraps exceptions in HardwareOperationError."""
+    async def test_run_blocking_method_hardware_operation_error_branch(self, basler_camera):
+        """Test that _run_blocking method properly wraps exceptions in HardwareOperationError."""
         await basler_camera.initialize()
 
         def failing_func():
             raise RuntimeError("Generic SDK error")
 
         with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
-            await basler_camera._sdk(failing_func)
+            await basler_camera._run_blocking(failing_func)
 
     def test_discovery_error_handling_branches(self, mock_pypylon):
         """Test error handling when device enumeration fails during camera discovery."""
@@ -1791,19 +1761,6 @@ class TestBaslerCameraBackendMissingCoverageLines:
         with pytest.raises(HardwareOperationError):
             await basler_camera.set_gain(2.0)
 
-    @pytest.mark.asyncio
-    async def test_close_error_branches(self, basler_camera):
-        """Test close method error branches."""
-        await basler_camera.initialize()
-
-        # Test executor shutdown error
-        mock_executor = Mock()
-        mock_executor.shutdown.side_effect = Exception("Shutdown failed")
-        basler_camera._sdk_executor = mock_executor
-
-        # Should handle executor errors gracefully - this tests the exception handling in close()
-        await basler_camera.close()
-
 
 class TestBaslerCameraBackendUncoveredErrorPaths:
     """Test specific uncovered error paths in BaslerCameraBackend."""
@@ -1832,7 +1789,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         assert camera._op_timeout_s == 5.0
 
     @pytest.mark.asyncio
-    async def test_sdk_timeout_error_conversion(self, basler_camera, monkeypatch):
+    async def test_run_blocking_timeout_error_conversion(self, basler_camera, monkeypatch):
         """Test SDK timeout error conversion."""
         await basler_camera.initialize()
 
@@ -1844,10 +1801,10 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
 
         # This should convert asyncio.TimeoutError to CameraTimeoutError
         with pytest.raises(CameraTimeoutError, match="Pypylon operation timed out after .* for camera"):
-            await basler_camera._sdk(lambda: None, timeout=1.0)
+            await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
-    async def test_sdk_generic_exception_conversion(self, basler_camera, monkeypatch):
+    async def test_run_blocking_generic_exception_conversion(self, basler_camera, monkeypatch):
         """Test SDK generic exception conversion."""
         await basler_camera.initialize()
 
@@ -1859,7 +1816,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
 
         # This should convert generic Exception to HardwareOperationError
         with pytest.raises(HardwareOperationError, match="Pypylon operation failed for camera"):
-            await basler_camera._sdk(lambda: None, timeout=1.0)
+            await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
     async def test_discovery_pypylon_not_available(self, monkeypatch):
@@ -1872,56 +1829,6 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         # Should raise SDKNotAvailableError
         with pytest.raises(SDKNotAvailableError, match="Basler SDK \\(pypylon\\) is not available"):
             BaslerCameraBackend.get_available_cameras()
-
-    @pytest.mark.asyncio
-    async def test_sdk_executor_creation_failure(self, basler_camera, monkeypatch):
-        """Test SDK executor creation failure during _sdk method."""
-        await basler_camera.initialize()
-
-        # Clear existing executor to force recreation
-        basler_camera._sdk_executor = None
-
-        # Mock ThreadPoolExecutor to fail
-        import concurrent.futures
-
-        def failing_executor(*args, **kwargs):
-            raise RuntimeError("Cannot create thread pool")
-
-        monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", failing_executor)
-
-        # Should handle executor creation failure - the RuntimeError will bubble up directly
-        with pytest.raises(RuntimeError, match="Cannot create thread pool"):
-            await basler_camera._sdk(lambda: None)
-
-    @pytest.mark.asyncio
-    async def test_sdk_loop_access_failure(self, basler_camera, monkeypatch):
-        """Test failure to get event loop in _sdk method."""
-        await basler_camera.initialize()
-
-        # Mock asyncio.get_running_loop to fail
-        def failing_get_loop():
-            raise RuntimeError("No running event loop")
-
-        monkeypatch.setattr(asyncio, "get_running_loop", failing_get_loop)
-
-        # Clear loop to force recreation
-        basler_camera._loop = None
-
-        # Should handle loop access failure - the RuntimeError will bubble up directly
-        with pytest.raises(RuntimeError, match="No running event loop"):
-            await basler_camera._sdk(lambda: None)
-
-    @pytest.mark.asyncio
-    async def test_sdk_future_creation_failure(self, basler_camera, monkeypatch):
-        """Test failure during future creation in _sdk method."""
-        await basler_camera.initialize()
-
-        # Mock loop.run_in_executor to fail
-        basler_camera._loop.run_in_executor = Mock(side_effect=RuntimeError("Future creation failed"))
-
-        # Should handle future creation failure - the RuntimeError will bubble up directly
-        with pytest.raises(RuntimeError, match="Future creation failed"):
-            await basler_camera._sdk(lambda: None)
 
     @pytest.mark.asyncio
     async def test_config_timeout_edge_cases(self, mock_pypylon, monkeypatch):
@@ -1945,26 +1852,26 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             assert camera._op_timeout_s == 5.0
 
     @pytest.mark.asyncio
-    async def test_sdk_with_none_function(self, basler_camera):
-        """Test _sdk method with None function parameter."""
+    async def test_run_blocking_with_none_function(self, basler_camera):
+        """Test _run_blocking method with None function parameter."""
         await basler_camera.initialize()
 
         # Should handle None function gracefully
         with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
-            await basler_camera._sdk(None)
+            await basler_camera._run_blocking(None)
 
     @pytest.mark.asyncio
-    async def test_sdk_with_non_callable(self, basler_camera):
-        """Test _sdk method with non-callable parameter."""
+    async def test_run_blocking_with_non_callable(self, basler_camera):
+        """Test _run_blocking method with non-callable parameter."""
         await basler_camera.initialize()
 
         # Should handle non-callable parameter
         with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
-            await basler_camera._sdk("not_callable")
+            await basler_camera._run_blocking("not_callable")
 
     @pytest.mark.asyncio
     async def test_timeout_parameter_edge_cases(self, basler_camera):
-        """Test _sdk method with various timeout parameter edge cases."""
+        """Test _run_blocking method with various timeout parameter edge cases."""
         await basler_camera.initialize()
 
         # Test with very short timeout that should trigger timeout
@@ -1974,7 +1881,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             return "success"
 
         with pytest.raises(CameraTimeoutError):
-            await basler_camera._sdk(slow_operation, timeout=0.001)  # Very short timeout
+            await basler_camera._run_blocking(slow_operation, timeout=0.001)  # Very short timeout
 
     @pytest.mark.asyncio
     async def test_discovery_exception_during_device_enumeration(self, mock_pypylon, monkeypatch):
@@ -2427,13 +2334,13 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
         # Set the camera
         camera.camera = mock_camera
 
-        # Mock the _sdk method to return False for IsGrabbing (not currently grabbing)
-        async def mock_sdk_not_grabbing(func, *args, **kwargs):
+        # Mock the _run_blocking method to return False for IsGrabbing (not currently grabbing)
+        async def mock_run_blocking_not_grabbing(func, *args, **kwargs):
             if func == mock_camera.IsGrabbing:
                 return False
             return None
 
-        camera._sdk = mock_sdk_not_grabbing
+        camera._run_blocking = mock_run_blocking_not_grabbing
 
         # Test when camera is not grabbing - should not call StopGrabbing or StartGrabbing
         async with camera._grabbing_suspended():
@@ -2490,11 +2397,11 @@ class TestBaslerCameraBackendConfigureCameraPypylonCheck:
         mock_camera.IsOpen.return_value = True
         camera.camera = mock_camera
 
-        # Mock the _sdk method to return success
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock the _run_blocking method to return success
+        async def mock_run_blocking(func, *args, **kwargs):
             return None
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # _configure_camera should succeed when PYPYLON_AVAILABLE is True
         await camera._configure_camera()
@@ -2606,11 +2513,11 @@ class TestBaslerCameraBackendExceptionHandlingAndChecks:
 
         camera._ensure_open = mock_ensure_open
 
-        # Mock _sdk to raise an exception to trigger the error handling
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock _run_blocking to raise an exception to trigger the error handling
+        async def mock_run_blocking(func, *args, **kwargs):
             raise RuntimeError("Exposure retrieval failed")
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # get_exposure should catch the exception and return the default value
         result = await camera.get_exposure()
@@ -2672,11 +2579,11 @@ class TestBaslerCameraBackendAdditionalLineCoverage:
 
         camera._ensure_open = mock_ensure_open
 
-        # Mock _sdk to return different values for SetValue and GetValue to trigger verification failure
+        # Mock _run_blocking to return different values for SetValue and GetValue to trigger verification failure
         # The verification logic is: abs(actual_exposure - exposure) < 0.01 * exposure
         # With exposure = 20000.0, tolerance = 0.01 * 20000.0 = 200.0
         # We need actual_exposure to be outside this range
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == mock_camera.ExposureTime.SetValue:
                 return None  # SetValue succeeds
             elif func == mock_camera.ExposureTime.GetValue:
@@ -2684,7 +2591,7 @@ class TestBaslerCameraBackendAdditionalLineCoverage:
             else:
                 return None
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Mock get_exposure_range to return valid range
         async def mock_get_exposure_range():
@@ -2749,11 +2656,11 @@ class TestBaslerCameraBackendAdditionalLineCoverage:
 
         camera._grabbing_suspended = lambda: MockGrabbingSuspended()
 
-        # Mock _sdk to raise an exception to trigger the error handling
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock _run_blocking to raise an exception to trigger the error handling
+        async def mock_run_blocking(func, *args, **kwargs):
             raise RuntimeError("Trigger mode retrieval failed")
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # get_triggermode should catch the exception and re-raise as HardwareOperationError
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -2805,11 +2712,11 @@ class TestBaslerCameraBackendErrorHandlingAndFallbackPaths:
 
         camera._grabbing_suspended = lambda: MockGrabbingSuspended()
 
-        # Mock _sdk to raise an exception to trigger the error handling
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock _run_blocking to raise an exception to trigger the error handling
+        async def mock_run_blocking(func, *args, **kwargs):
             raise RuntimeError("Trigger mode setting failed")
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # set_triggermode should catch the exception and re-raise as HardwareOperationError
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -2852,14 +2759,14 @@ class TestBaslerCameraBackendErrorHandlingAndFallbackPaths:
         camera._ensure_open = mock_ensure_open
         camera._ensure_grabbing = mock_ensure_grabbing
 
-        # Mock _sdk to raise a non-timeout exception to trigger the error handling
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock _run_blocking to raise a non-timeout exception to trigger the error handling
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == mock_camera.RetrieveResult:
                 raise RuntimeError("Image retrieval failed")
             else:
                 return None
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # capture should catch the non-timeout exception and re-raise as CameraCaptureError
         with pytest.raises(CameraCaptureError) as exc_info:
@@ -3096,11 +3003,11 @@ class TestBaslerCameraBackendHardwareFeatureAvailabilityChecks:
 
         camera._ensure_open = mock_ensure_open
 
-        # Mock _sdk to succeed
-        async def mock_sdk(func, *args, **kwargs):
+        # Mock _run_blocking to succeed
+        async def mock_run_blocking(func, *args, **kwargs):
             return None
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Test when TriggerMode is available but TriggerSelector is NOT available
         config_data = {"trigger_mode": "trigger"}
@@ -3112,12 +3019,17 @@ class TestBaslerCameraBackendHardwareFeatureAvailabilityChecks:
 
         try:
             # Mock hasattr to return True for TriggerMode but False for TriggerSelector
+            # Use original hasattr as fallback to not break asyncio internals
+            original_hasattr = builtins.hasattr
+
             def mock_hasattr(obj, attr):
-                if attr == "TriggerMode":
-                    return True
-                elif attr == "TriggerSelector":
+                if obj is mock_camera:
+                    if attr == "TriggerMode":
+                        return True
+                    elif attr == "TriggerSelector":
+                        return False
                     return False
-                return False
+                return original_hasattr(obj, attr)
 
             with patch("builtins.hasattr", side_effect=mock_hasattr):
                 # Mock GetAccessMode to return RW for TriggerMode
@@ -3140,13 +3052,16 @@ class TestBaslerCameraBackendHardwareFeatureAvailabilityChecks:
             config_path = f.name
 
         try:
+            original_hasattr = builtins.hasattr
 
             def mock_hasattr_with_source(obj, attr):
-                if attr in ["TriggerMode", "TriggerSelector"]:
-                    return True
-                elif attr == "TriggerSource":
+                if obj is mock_camera:
+                    if attr in ["TriggerMode", "TriggerSelector"]:
+                        return True
+                    elif attr == "TriggerSource":
+                        return False
                     return False
-                return False
+                return original_hasattr(obj, attr)
 
             with patch("builtins.hasattr", side_effect=mock_hasattr_with_source):
                 # Mock GetAccessMode to return RW for both
@@ -3456,11 +3371,11 @@ class TestBaslerCameraBackendROIOperations:
             config_path = f.name
 
         try:
-            # Mock _sdk to succeed
-            async def mock_sdk(func, *args, **kwargs):
+            # Mock _run_blocking to succeed
+            async def mock_run_blocking(func, *args, **kwargs):
                 return None
 
-            camera._sdk = mock_sdk
+            camera._run_blocking = mock_run_blocking
 
             # Mock Width feature to be available
             mock_width = MagicMock()
@@ -3511,11 +3426,11 @@ class TestBaslerCameraBackendROIOperations:
             config_path = f.name
 
         try:
-            # Mock _sdk to succeed
-            async def mock_sdk(func, *args, **kwargs):
+            # Mock _run_blocking to succeed
+            async def mock_run_blocking(func, *args, **kwargs):
                 return None
 
-            camera._sdk = mock_sdk
+            camera._run_blocking = mock_run_blocking
 
             # Mock Height feature to be available
             mock_height = MagicMock()
@@ -3566,11 +3481,11 @@ class TestBaslerCameraBackendROIOperations:
             config_path = f.name
 
         try:
-            # Mock _sdk to succeed
-            async def mock_sdk(func, *args, **kwargs):
+            # Mock _run_blocking to succeed
+            async def mock_run_blocking(func, *args, **kwargs):
                 return None
 
-            camera._sdk = mock_sdk
+            camera._run_blocking = mock_run_blocking
 
             # Mock OffsetX feature to be available
             mock_offset_x = MagicMock()
@@ -3621,11 +3536,11 @@ class TestBaslerCameraBackendROIOperations:
             config_path = f.name
 
         try:
-            # Mock _sdk to succeed
-            async def mock_sdk(func, *args, **kwargs):
+            # Mock _run_blocking to succeed
+            async def mock_run_blocking(func, *args, **kwargs):
                 return None
 
-            camera._sdk = mock_sdk
+            camera._run_blocking = mock_run_blocking
 
             # Mock OffsetY feature to be available
             mock_offset_y = MagicMock()
@@ -3686,21 +3601,21 @@ class TestBaslerCameraBackendROIOperations:
             config_path = f.name
 
         try:
-            # Mock _sdk to succeed for Width but fail for others
-            async def mock_sdk_partial_success(func, *args, **kwargs):
+            # Mock _run_blocking to succeed for Width but fail for others
+            async def mock_run_blocking_partial_success(func, *args, **kwargs):
                 if "Width" in str(func):
                     return None  # Width succeeds
                 else:
                     raise RuntimeError("Feature not available")  # Others fail
 
-            camera._sdk = mock_sdk_partial_success
+            camera._run_blocking = mock_run_blocking_partial_success
 
             # Mock Width feature to be available
             mock_width = MagicMock()
             mock_width.GetAccessMode.return_value = mock_genicam.RW
             mock_camera.Width = mock_width
 
-            # Mock other features to be unavailable to avoid _sdk calls
+            # Mock other features to be unavailable to avoid _run_blocking calls
             mock_camera.Height = None
             mock_camera.OffsetX = None
             mock_camera.OffsetY = None
@@ -3744,13 +3659,13 @@ class TestBaslerCameraBackendROIOperations:
         config_path = "test_export_config.json"
 
         try:
-            # Mock _sdk to fail for ROI offset retrieval
-            async def mock_sdk_failing(func, *args, **kwargs):
+            # Mock _run_blocking to fail for ROI offset retrieval
+            async def mock_run_blocking_failing(func, *args, **kwargs):
                 if "OffsetX" in str(func) or "OffsetY" in str(func):
                     raise RuntimeError("ROI offset retrieval failed")
                 return None
 
-            camera._sdk = mock_sdk_failing
+            camera._run_blocking = mock_run_blocking_failing
 
             # Mock Width and Height to succeed
             mock_width = MagicMock()
@@ -4066,15 +3981,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Mock the _sdk method to raise exception for pixel format setting
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for pixel format setting
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.PixelFormat.SetValue:
                 raise Exception("Pixel format not supported")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Import should succeed despite pixel format failure (no exception)
         await camera.import_config(str(config_path))
@@ -4100,15 +4015,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Mock the _sdk method to raise exception for white balance setting
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for white balance setting
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.SetValue:
                 raise Exception("White balance not supported")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Import should succeed despite white balance failure (no exception)
         await camera.import_config(str(config_path))
@@ -4127,15 +4042,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for white balance retrieval
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for white balance retrieval
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.GetValue:
                 raise Exception("White balance retrieval failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Export should succeed despite white balance failure
         config_path = tmp_path / "export_config.json"
@@ -4160,15 +4075,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for pixel format retrieval
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for pixel format retrieval
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.PixelFormat.GetValue:
                 raise Exception("Pixel format retrieval failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Export should succeed despite pixel format failure
         config_path = tmp_path / "export_config.json"
@@ -4193,15 +4108,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for white balance retrieval
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for white balance retrieval
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.GetValue:
                 raise Exception("Feature not available")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Get white balance should raise HardwareOperationError when feature not available
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -4227,15 +4142,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         # Mock BalanceWhiteAuto to be available but fail when getting value
         # Note: We can't reassign properties, so we'll test the exception path differently
 
-        # Mock the _sdk method to raise exception
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.GetValue:
                 raise Exception("Hardware error")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Get white balance should raise HardwareOperationError
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -4257,15 +4172,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for white balance setting
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for white balance setting
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.SetValue:
                 raise Exception("Feature not writable")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Set white balance should raise HardwareOperationError when feature not writable
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -4287,15 +4202,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for white balance setting
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for white balance setting
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.SetValue:
                 raise Exception("Verification failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Set white balance should raise HardwareOperationError when verification fails
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -4318,15 +4233,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.BalanceWhiteAuto.SetValue:
                 raise Exception("Hardware error")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Set white balance should raise HardwareOperationError
         with pytest.raises(HardwareOperationError) as exc_info:
@@ -4413,15 +4328,15 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
 
-        # Mock the _sdk method to raise exception for pixel format operations
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for pixel format operations
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.PixelFormat.GetEntries:
                 raise Exception("Pixel format operation failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Get pixel format range should return default formats when camera operations fail
         result = await camera.get_pixel_format_range()
@@ -4497,15 +4412,15 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         # Set trigger mode to "trigger" to ensure trigger software execution is tested
         await camera.set_triggermode("trigger")
 
-        # Mock the _sdk method to raise exception for TriggerSoftware.Execute
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for TriggerSoftware.Execute
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.TriggerSoftware.Execute:
                 raise Exception("Trigger software execute failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Capture should raise CameraCaptureError due to trigger software failure
         with pytest.raises(CameraCaptureError) as exc_info:
@@ -4514,7 +4429,7 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         assert "Trigger software execute failed" in str(exc_info.value)
 
         # Restore original method
-        camera._sdk = original_sdk
+        camera._run_blocking = original_run_blocking
 
     @pytest.mark.asyncio
     async def test_grab_failed_with_release_handling(self, mock_pypylon):
@@ -4535,10 +4450,10 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         mock_grab_result.ErrorDescription.return_value = "Grab failed"
         mock_grab_result.Release.return_value = None  # Release succeeds, but grab failed
 
-        # Mock the _sdk method to simulate grab failure
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to simulate grab failure
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.RetrieveResult:
                 return mock_grab_result
             elif func == mock_grab_result.GrabSucceeded:
@@ -4547,9 +4462,9 @@ class TestBaslerCameraBackendSpecificLineCoverage:
                 return "Grab failed"  # Get error description for failed grab
             elif func == mock_grab_result.Release:
                 return None  # Release after failed grab
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # This should trigger grab failure error handling:
         # Get error description from failed grab result
@@ -4562,7 +4477,7 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         assert "Failed to capture image after" in str(exc_info.value)
 
         # Restore original method
-        camera._sdk = original_sdk
+        camera._run_blocking = original_run_blocking
 
     @pytest.mark.asyncio
     async def test_capture_exhausted_retry_attempts(self, mock_pypylon):
@@ -4577,10 +4492,10 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         camera = BaslerCameraBackend("12345670", retrieve_retry_count=2)
         await camera.initialize()
 
-        # Mock the _sdk method to always return failed grab results
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to always return failed grab results
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.RetrieveResult:
                 # Always return failed grab result
                 mock_grab_result = MagicMock()
@@ -4588,9 +4503,9 @@ class TestBaslerCameraBackendSpecificLineCoverage:
                 mock_grab_result.ErrorDescription.return_value = "Always fails"
                 mock_grab_result.Release.return_value = None
                 return mock_grab_result
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # This should exhaust all retry attempts and raise the final capture error
         with pytest.raises(CameraCaptureError) as exc_info:
@@ -4599,7 +4514,7 @@ class TestBaslerCameraBackendSpecificLineCoverage:
         assert "Failed to capture image after 2 attempts" in str(exc_info.value)
 
         # Restore original method
-        camera._sdk = original_sdk
+        camera._run_blocking = original_run_blocking
 
     @pytest.mark.asyncio
     async def test_import_config_camera_none(self, mock_pypylon, tmp_path):
@@ -4663,21 +4578,21 @@ class TestBaslerCameraBackendRemainingLineCoverage:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Mock the _sdk method to raise exception for gain setting
-        original_sdk = camera._sdk
+        # Mock the _run_blocking method to raise exception for gain setting
+        original_run_blocking = camera._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == camera.camera.Gain.SetValue:
                 raise Exception("Gain setting failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        camera._sdk = mock_sdk
+        camera._run_blocking = mock_run_blocking
 
         # Import should succeed despite gain setting failure (warning logged)
         await camera.import_config(str(config_path))
 
         # Restore original method
-        camera._sdk = original_sdk
+        camera._run_blocking = original_run_blocking
 
     @pytest.mark.asyncio
     async def test_import_config_trigger_source_setting(self, mock_pypylon, tmp_path):

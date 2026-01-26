@@ -216,8 +216,8 @@ class AsyncCamera(Mindtrace):
                         if save_path:
                             dirname = os.path.dirname(save_path)
                             if dirname:
-                                os.makedirs(dirname, exist_ok=True)
-                            cv2.imwrite(save_path, image)
+                                await asyncio.to_thread(os.makedirs, dirname, exist_ok=True)
+                            await asyncio.to_thread(cv2.imwrite, save_path, image)
                             self.logger.debug(f"Saved captured image to '{save_path}'")
 
                         self.logger.debug(
@@ -831,8 +831,8 @@ class AsyncCamera(Mindtrace):
                             if save_path and save_path.strip():
                                 save_dir = os.path.dirname(save_path)
                                 if save_dir:
-                                    os.makedirs(save_dir, exist_ok=True)
-                                cv2.imwrite(save_path, image)
+                                    await asyncio.to_thread(os.makedirs, save_dir, exist_ok=True)
+                                await asyncio.to_thread(cv2.imwrite, save_path, image)
                                 image_paths.append(save_path)
                             if return_images:
                                 # Convert image to requested format before adding to results

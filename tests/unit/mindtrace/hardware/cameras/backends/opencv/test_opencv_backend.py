@@ -231,26 +231,26 @@ async def test_capture_timeout_and_generic_errors(fake_cv, monkeypatch):
     await cam.initialize()
 
     # Timeout on read path
-    original_sdk = cam._sdk
+    original_run_blocking = cam._run_blocking
 
-    async def _sdk_timeout(func, *args, **kwargs):  # noqa: ARG001
+    async def _run_blocking_timeout(func, *args, **kwargs):  # noqa: ARG001
         # Only simulate timeout for cap.read
         if func == cam.cap.read:
             raise CameraTimeoutError("timeout")
-        return await original_sdk(func, *args, **kwargs)
+        return await original_run_blocking(func, *args, **kwargs)
 
-    monkeypatch.setattr(cam, "_sdk", _sdk_timeout, raising=False)
+    monkeypatch.setattr(cam, "_run_blocking", _run_blocking_timeout, raising=False)
     cam.retrieve_retry_count = 2
     with pytest.raises(CameraTimeoutError):
         await cam.capture()
 
     # Generic error -> CameraCaptureError after retries
-    async def _sdk_error(func, *args, **kwargs):  # noqa: ARG001
+    async def _run_blocking_error(func, *args, **kwargs):  # noqa: ARG001
         if func == cam.cap.read:
             raise RuntimeError("read failed")
-        return await original_sdk(func, *args, **kwargs)
+        return await original_run_blocking(func, *args, **kwargs)
 
-    monkeypatch.setattr(cam, "_sdk", _sdk_error, raising=False)
+    monkeypatch.setattr(cam, "_run_blocking", _run_blocking_error, raising=False)
     cam.retrieve_retry_count = 2
     with pytest.raises(CameraCaptureError):
         await cam.capture()
@@ -345,12 +345,12 @@ async def test_check_connection_failure_branches(monkeypatch):
     cam4 = OpenCVCameraBackend("0")
     cam4.initialized = True
     cam4.cap = cv2.VideoCapture(0)
-    _original = cam4._sdk
+    _original = cam4._run_blocking
 
     async def _boom(func, *a, **k):  # noqa: ARG001
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(cam4, "_sdk", _boom, raising=False)
+    monkeypatch.setattr(cam4, "_run_blocking", _boom, raising=False)
     assert (await cam4.check_connection()) is False
 
 
@@ -364,7 +364,7 @@ async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monke
         "height": 600,
         "fps": 25,
         "exposure_time": -5.0,
-        # Optional ones: force failures by returning False from _sdk for set
+        # Optional ones: force failures by returning False from _run_blocking for set
         "brightness": 0.4,
         "contrast": 0.4,
         "saturation": 0.4,
@@ -381,9 +381,9 @@ async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monke
     with open(path, "w") as f:
         json.dump(data, f)
 
-    original_sdk = cam._sdk
+    original_run_blocking = cam._run_blocking
 
-    async def _sdk_maybe_fail(func, *args, **kwargs):
+    async def _run_blocking_maybe_fail(func, *args, **kwargs):
         # If setting optional properties, return False; otherwise call through
         if (
             func == cam.cap.set
@@ -401,9 +401,9 @@ async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monke
             }
         ):
             return False
-        return await original_sdk(func, *args, **kwargs)
+        return await original_run_blocking(func, *args, **kwargs)
 
-    monkeypatch.setattr(cam, "_sdk", _sdk_maybe_fail, raising=False)
+    monkeypatch.setattr(cam, "_run_blocking", _run_blocking_maybe_fail, raising=False)
     await cam.import_config(path)
     await cam.close()
 
@@ -540,7 +540,7 @@ class TestOpenCVAdvancedFeatures:
 class TestOpenCVCameraBackendInitialization:
     """Test suite for OpenCVCameraBackend initialization and configuration."""
 
-    def test_init_with_sdk_not_available(self, monkeypatch):
+    def test_init_with_run_blocking_not_available(self, monkeypatch):
         """Test initialization when OpenCV SDK is not available."""
         monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
         monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
@@ -611,8 +611,8 @@ class TestOpenCVCameraBackendSDKMethods:
     """Test suite for SDK execution methods."""
 
     @pytest.mark.asyncio
-    async def test_sdk_timeout_error(self, fake_cv):
-        """Test _sdk method with timeout error."""
+    async def test_run_blocking_timeout_error(self, fake_cv):
+        """Test _run_blocking method with timeout error."""
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
@@ -624,13 +624,13 @@ class TestOpenCVCameraBackendSDKMethods:
 
         # Use a very short timeout to trigger timeout error
         with pytest.raises(CameraTimeoutError):
-            await cam._sdk(slow_func, timeout=0.01)
+            await cam._run_blocking(slow_func, timeout=0.01)
 
         await cam.close()
 
     @pytest.mark.asyncio
-    async def test_sdk_generic_exception(self, fake_cv):
-        """Test _sdk method with generic exception."""
+    async def test_run_blocking_generic_exception(self, fake_cv):
+        """Test _run_blocking method with generic exception."""
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
@@ -638,46 +638,16 @@ class TestOpenCVCameraBackendSDKMethods:
             raise RuntimeError("Test error")
 
         with pytest.raises(HardwareOperationError, match="OpenCV operation failed"):
-            await cam._sdk(failing_func)
+            await cam._run_blocking(failing_func)
 
         await cam.close()
-
-    def test_sdk_sync_basic(self, fake_cv):
-        """Test _sdk_sync method basic functionality."""
-        cam = OpenCVCameraBackend("0")
-        cam.initialized = True
-        import cv2
-
-        cam.cap = cv2.VideoCapture(0)
-
-        def test_func():
-            return 42
-
-        result = cam._sdk_sync(test_func)
-        assert result == 42
-
-    def test_sdk_sync_timeout(self, fake_cv):
-        """Test _sdk_sync method with timeout."""
-        cam = OpenCVCameraBackend("0")
-        cam._sdk_executor = None  # Will be created in _sdk_sync
-        cam._op_timeout_s = 0.01
-
-        def slow_func():
-            import time
-
-            time.sleep(1)
-            return "result"
-
-        # Should raise TimeoutError from future.result()
-        with pytest.raises(Exception):  # Could be TimeoutError or other exception
-            cam._sdk_sync(slow_func, timeout=0.01)
 
 
 class TestOpenCVCameraBackendEnsureOpen:
     """Test suite for _ensure_open method."""
 
     @pytest.mark.asyncio
-    async def test_ensure_open_sdk_not_available(self, fake_cv, monkeypatch):
+    async def test_ensure_open_run_blocking_not_available(self, fake_cv, monkeypatch):
         """Test _ensure_open when OpenCV is not available."""
         # Create camera first with OpenCV available
         cam = OpenCVCameraBackend("0")
@@ -708,7 +678,7 @@ class TestOpenCVCameraBackendEnsureOpen:
         await cam.initialize()
 
         # Manually close the cap to simulate it not being opened
-        await cam._sdk(cam.cap.release)
+        await cam._run_blocking(cam.cap.release)
         cam.cap._opened = False
 
         with pytest.raises(CameraConnectionError, match="is not open"):
@@ -720,7 +690,7 @@ class TestOpenCVCameraBackendEnsureOpen:
 class TestOpenCVCameraBackendInitialize:
     """Test suite for initialize method error paths."""
 
-    def test_initialize_sdk_not_available(self, monkeypatch):
+    def test_initialize_run_blocking_not_available(self, monkeypatch):
         """Test initialize when OpenCV is not available."""
         monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
         monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.cv2", None)
@@ -798,7 +768,7 @@ class TestOpenCVCameraBackendInitialize:
         assert cam.initialized is False
 
     @pytest.mark.asyncio
-    async def test_initialize_with_sdk_not_available(self, fake_cv, monkeypatch):
+    async def test_initialize_with_run_blocking_not_available(self, fake_cv, monkeypatch):
         """Test initialize raises SDKNotAvailableError when OpenCV is not available."""
         # Create camera object first (when OpenCV is available)
         cam = OpenCVCameraBackend("0")
@@ -828,16 +798,16 @@ class TestOpenCVCameraBackendInitialize:
         cam = OpenCVCameraBackend("0")
 
         # Make initialization fail after cap is created
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.isOpened:
                 return True
             if func == cam.cap.set:
                 raise RuntimeError("Configuration failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         # Initialize should fail, and cleanup should handle release exception gracefully
         with pytest.raises(CameraInitializationError):
@@ -857,14 +827,14 @@ class TestOpenCVCameraBackendConfigureCamera:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.set:
                 raise RuntimeError("Set failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(CameraConfigurationError, match="Failed to configure camera"):
             await cam._configure_camera()
@@ -872,7 +842,7 @@ class TestOpenCVCameraBackendConfigureCamera:
         await cam.close()
 
     @pytest.mark.asyncio
-    async def test_configure_camera_with_sdk_not_available(self, fake_cv, monkeypatch):
+    async def test_configure_camera_with_run_blocking_not_available(self, fake_cv, monkeypatch):
         """Test _configure_camera raises SDKNotAvailableError when OpenCV is not available."""
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
@@ -1226,14 +1196,14 @@ class TestOpenCVCameraBackendCapture:
         async def failing_read():
             return False, None
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.read:
                 return await failing_read()
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(CameraCaptureError, match="All.*capture attempts failed"):
             await cam.capture()
@@ -1244,7 +1214,7 @@ class TestOpenCVCameraBackendCapture:
 class TestOpenCVCameraBackendEnhanceImageQuality:
     """Test suite for _enhance_image_quality method."""
 
-    def test_enhance_image_quality_sdk_not_available(self, fake_cv, monkeypatch):
+    def test_enhance_image_quality_run_blocking_not_available(self, fake_cv, monkeypatch):
         """Test _enhance_image_quality when OpenCV is not available."""
         # Create camera first with OpenCV available
         cam = OpenCVCameraBackend("0")
@@ -1278,23 +1248,6 @@ class TestOpenCVCameraBackendClose:
         # After close, cap should be None
         assert cam.cap is None
 
-    @pytest.mark.asyncio
-    async def test_close_executor_shutdown_error(self, fake_cv, monkeypatch):
-        """Test close when executor shutdown raises exception."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        def failing_shutdown(wait=True):
-            raise RuntimeError("Shutdown failed")
-
-        cam._sdk_executor.shutdown = failing_shutdown
-
-        # Should handle exception gracefully
-        await cam.close()
-
-        # After close, executor should be None
-        assert cam._sdk_executor is None
-
 
 class TestOpenCVCameraBackendExposure:
     """Test suite for exposure-related methods."""
@@ -1305,14 +1258,14 @@ class TestOpenCVCameraBackendExposure:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.get:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         result = await cam.is_exposure_control_supported()
         assert result is False
@@ -1360,14 +1313,14 @@ class TestOpenCVCameraBackendExposure:
         monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=True))
         monkeypatch.setattr(cam, "get_exposure_range", lambda: asyncio.sleep(0, result=[-13.0, -1.0]))
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
         async def failing_set(func, *args, **kwargs):
             if func == cam.cap.set:
                 return False  # Set failed
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_set, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_set, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to set exposure"):
             await cam.set_exposure(-5.0)
@@ -1383,17 +1336,17 @@ class TestOpenCVCameraBackendExposure:
         monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=True))
         monkeypatch.setattr(cam, "get_exposure_range", lambda: asyncio.sleep(0, result=[-13.0, -1.0]))
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             # Only fail on set/get operations, not on isOpened check
             import cv2
 
             if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_EXPOSURE):
                 raise RuntimeError("SDK error")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to set exposure"):
             await cam.set_exposure(-5.0)
@@ -1428,14 +1381,14 @@ class TestOpenCVCameraBackendExposure:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.get:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to get exposure"):
             await cam.get_exposure()
@@ -1461,16 +1414,16 @@ class TestOpenCVCameraBackendGain:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
         import cv2
 
-        async def failing_set_sdk(func, *args, **kwargs):
+        async def failing_set_run_blocking(func, *args, **kwargs):
             # Return False when setting gain
             if func == cam.cap.set and args and args[0] == cv2.CAP_PROP_GAIN:
                 return False
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_set_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_set_run_blocking, raising=False)
 
         with pytest.raises(CameraConfigurationError, match="Failed to set gain to"):
             await cam.set_gain(10.0)
@@ -1483,17 +1436,17 @@ class TestOpenCVCameraBackendGain:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             # Only fail on set/get operations, not on isOpened check
             import cv2
 
             if func == cam.cap.set or (func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAIN):
                 raise RuntimeError("SDK error")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(CameraConfigurationError, match="Failed to set gain"):
             await cam.set_gain(10.0)
@@ -1516,14 +1469,14 @@ class TestOpenCVCameraBackendGain:
         await cam.initialize()
 
         # Mock isOpened to return False
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def mock_sdk(func, *args, **kwargs):
+        async def mock_run_blocking(func, *args, **kwargs):
             if func == cam.cap.isOpened:
                 return False
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", mock_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", mock_run_blocking, raising=False)
 
         gain = await cam.get_gain()
         assert gain == 0.0
@@ -1536,16 +1489,16 @@ class TestOpenCVCameraBackendGain:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             import cv2
 
             if func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAIN:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         # Should return 0.0 on exception
         result = await cam.get_gain()
@@ -1573,14 +1526,14 @@ class TestOpenCVCameraBackendROI:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.get:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         # Should return default ROI on exception
         roi = await cam.get_ROI()
@@ -1608,14 +1561,14 @@ class TestOpenCVCameraBackendWhiteBalance:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.get:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         wb = await cam.get_wb()
         assert wb == "unknown"
@@ -1649,14 +1602,14 @@ class TestOpenCVCameraBackendWhiteBalance:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
         async def failing_set(func, *args, **kwargs):
             if func == cam.cap.set:
                 return False
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_set, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_set, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to set white balance"):
             await cam.set_auto_wb_once("auto")
@@ -1669,16 +1622,16 @@ class TestOpenCVCameraBackendWhiteBalance:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             # Only fail on set operations, not on isOpened or ensure_open checks
 
             if func == cam.cap.set:
                 raise RuntimeError("SDK error")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to set white balance"):
             await cam.set_auto_wb_once("auto")
@@ -1732,14 +1685,14 @@ class TestOpenCVCameraBackendExportConfig:
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
-        async def failing_sdk(func, *args, **kwargs):
+        async def failing_run_blocking(func, *args, **kwargs):
             if func == cam.cap.get:
                 raise RuntimeError("Get failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_sdk, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
         config_path = os.path.join(tmp_path, "config.json")
 
@@ -1874,14 +1827,14 @@ class TestOpenCVCameraBackendImportConfig:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        original_sdk = cam._sdk
+        original_run_blocking = cam._run_blocking
 
         async def failing_wb_set(func, *args, **kwargs):
             if func == cam.cap.set and args and args[0] == getattr(__import__("cv2"), "CAP_PROP_AUTO_WB"):
                 raise RuntimeError("WB set failed")
-            return await original_sdk(func, *args, **kwargs)
+            return await original_run_blocking(func, *args, **kwargs)
 
-        monkeypatch.setattr(cam, "_sdk", failing_wb_set, raising=False)
+        monkeypatch.setattr(cam, "_run_blocking", failing_wb_set, raising=False)
 
         # Should handle exception gracefully
         await cam.import_config(config_path)
@@ -1951,23 +1904,6 @@ class TestOpenCVCameraBackendDestructor:
         import cv2
 
         cam.cap = cv2.VideoCapture(0)
-        cam._sdk_executor = None
-
-        # Call destructor manually
-        cam.__del__()
-
-        # Cap should be None after cleanup
-        assert cam.cap is None
-
-    def test_del_with_executor(self, fake_cv):
-        """Test __del__ with executor present."""
-        import concurrent.futures
-
-        cam = OpenCVCameraBackend("0")
-        import cv2
-
-        cam.cap = cv2.VideoCapture(0)
-        cam._sdk_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         # Call destructor manually
         cam.__del__()

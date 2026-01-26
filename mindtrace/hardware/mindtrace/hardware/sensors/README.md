@@ -304,7 +304,7 @@ The sensor system includes a service layer that exposes sensor management capabi
 The service provides a RESTful API and MCP tool registration for sensor operations:
 
 ```python
-from mindtrace.hardware.api.sensors import SensorManagerService
+from mindtrace.hardware.services.sensors import SensorManagerService
 
 # Launch service on port 8007
 service = SensorManagerService.launch(port=8007)
@@ -332,7 +332,7 @@ service = SensorManagerService.launch(port=8007)
 Use the `SensorConnectionManager` for strongly-typed access:
 
 ```python
-from mindtrace.hardware.api.sensors import SensorConnectionManager
+from mindtrace.hardware.services.sensors import SensorConnectionManager
 
 # Create connection manager
 manager = SensorConnectionManager("sensor_manager")
