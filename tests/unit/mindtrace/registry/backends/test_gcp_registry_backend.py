@@ -85,9 +85,11 @@ class MockGCSHandler:
             f.write(self._objects[remote_path])
         return MockFileResult(local_path=local_path, remote_path=remote_path, status="ok", ok=True)
 
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> MockFileResult:
         if remote_path in self._objects:
             del self._objects[remote_path]
+        # Idempotent delete - always returns ok (even if not found)
+        return MockFileResult(local_path="", remote_path=remote_path, status="ok", ok=True)
 
     def list_objects(self, prefix: str = "") -> List[str]:
         return [name for name in self._objects.keys() if name.startswith(prefix)]
@@ -178,8 +180,8 @@ class MockGCSHandler:
         """Delete multiple files."""
         results = []
         for path in paths:
-            self.delete(path)
-            results.append(MockFileResult(remote_path=path, status="ok", ok=True))
+            result = self.delete(path)
+            results.append(result)
         return MockBatchResult(results=results)
 
 
@@ -240,11 +242,6 @@ def test_init(backend):
     assert backend.gcs.bucket_name == "test-bucket"
 
 
-def test_object_key(backend):
-    """Test object key generation."""
-    assert backend._object_key("test:object", "1.0.0") == "objects/test:object/1.0.0"
-
-
 def test_lock_key(backend):
     """Test lock key generation."""
     assert backend._lock_path("test-key") == "_lock_test-key"
@@ -261,11 +258,19 @@ def test_push(backend, sample_object_dir, sample_metadata):
     assert result.name == "test:object"
     assert result.version == "1.0.0"
 
-    # Verify objects were uploaded
-    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0")
+    # Verify objects were uploaded to a UUID subfolder
+    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0/")
     assert len(objects) == 2
-    assert "objects/test:object/1.0.0/file1.txt" in objects
-    assert "objects/test:object/1.0.0/file2.txt" in objects
+    # Files should be in a UUID subfolder - verify pattern
+    for obj in objects:
+        assert obj.startswith("objects/test:object/1.0.0/")
+        # Should have UUID in path: objects/test:object/1.0.0/{uuid}/file.txt
+        parts = obj.split("/")
+        assert len(parts) == 5  # objects, name, version, uuid, filename
+
+    # Verify commit plan was created and deleted (cleanup succeeded)
+    staging_objects = backend.gcs.list_objects(prefix="_staging/")
+    assert len(staging_objects) == 0  # Commit plan should be deleted after success
 
 
 def test_push_conflict_skip_single(backend, sample_object_dir, sample_metadata):
@@ -313,10 +318,13 @@ def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
     # First push some objects
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Now pull to a new location
+    # Now pull to a new location - fetch metadata first to get UUID
+    metadata_results = backend.fetch_metadata("test:object", "1.0.0")
+    fetched_metadata = metadata_results[("test:object", "1.0.0")].metadata
+
     download_dir = tmp_path / "download"
     download_dir.mkdir()
-    results = backend.pull("test:object", "1.0.0", str(download_dir), metadata=[sample_metadata])
+    results = backend.pull("test:object", "1.0.0", str(download_dir), metadata=[fetched_metadata])
 
     # Verify OpResults
     assert results.all_ok
@@ -335,8 +343,8 @@ def test_delete(backend, sample_object_dir, sample_metadata):
     # First push some objects
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Verify objects exist
-    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0")
+    # Verify objects exist (in UUID subfolder)
+    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0/")
     assert len(objects) == 2
 
     # Delete the objects
@@ -348,7 +356,7 @@ def test_delete(backend, sample_object_dir, sample_metadata):
     assert result.ok
 
     # Verify objects were deleted
-    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0")
+    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0/")
     assert len(objects) == 0
 
 
@@ -376,8 +384,28 @@ def test_fetch_metadata(backend, sample_metadata):
     assert fetched_metadata["name"] == sample_metadata["name"]
     assert fetched_metadata["version"] == sample_metadata["version"]
     assert fetched_metadata["description"] == sample_metadata["description"]
-    assert "path" in fetched_metadata  # Should be added by fetch_metadata
-    assert fetched_metadata["path"] == "gs://test-bucket/objects/test:object/1.0.0"
+    # Note: path is only added during push, not save_metadata
+
+
+def test_fetch_metadata_after_push(backend, sample_object_dir, sample_metadata):
+    """Test fetching metadata after push contains _storage.uuid."""
+    # Push an object
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Fetch metadata
+    results = backend.fetch_metadata("test:object", "1.0.0")
+    result = results[("test:object", "1.0.0")]
+    assert result.ok
+    fetched_metadata = result.metadata
+
+    # Verify _storage field with UUID
+    assert "_storage" in fetched_metadata
+    assert "uuid" in fetched_metadata["_storage"]
+    assert "created_at" in fetched_metadata["_storage"]
+
+    # Path should include UUID
+    uuid_str = fetched_metadata["_storage"]["uuid"]
+    assert uuid_str in fetched_metadata["path"]
 
 
 def test_fetch_metadata_not_found_single(backend):
@@ -596,38 +624,33 @@ def test_batch_delete(backend, sample_object_dir, sample_metadata, tmp_path):
     assert results.all_ok
     assert len(results) == 2
 
-    # Verify objects were deleted
-    assert len(backend.gcs.list_objects(prefix="objects/test:object1/1.0.0")) == 0
-    assert len(backend.gcs.list_objects(prefix="objects/test:object2/1.0.0")) == 0
-
-
-def test_push_with_overwrite_requires_lock(backend, sample_object_dir, sample_metadata):
-    """Test that overwrite requires acquire_lock=True."""
-    with pytest.raises(ValueError, match="requires acquire_lock=True"):
-        backend.push(
-            "test:object",
-            "1.0.0",
-            sample_object_dir,
-            sample_metadata,
-            on_conflict="overwrite",
-            acquire_lock=False,
-        )
+    # Verify objects were deleted (UUID subfolders)
+    assert len(backend.gcs.list_objects(prefix="objects/test:object1/1.0.0/")) == 0
+    assert len(backend.gcs.list_objects(prefix="objects/test:object2/1.0.0/")) == 0
 
 
 def test_push_with_overwrite(backend, sample_object_dir, sample_metadata):
-    """Test push with overwrite."""
+    """Test push with overwrite (lock-free)."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Overwrite with acquire_lock=True
+    # Get initial metadata to verify UUID changes after overwrite
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    initial_uuid = meta_results[("test:object", "1.0.0")].metadata["_storage"]["uuid"]
+
+    # Overwrite - no acquire_lock needed with lock-free model
     results = backend.push(
         "test:object",
         "1.0.0",
         sample_object_dir,
         sample_metadata,
         on_conflict="overwrite",
-        acquire_lock=True,
     )
     result = results.first()
     assert result.ok
     assert result.is_overwritten
+
+    # Verify UUID changed after overwrite
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    new_uuid = meta_results[("test:object", "1.0.0")].metadata["_storage"]["uuid"]
+    assert new_uuid != initial_uuid  # New UUID created for overwrite

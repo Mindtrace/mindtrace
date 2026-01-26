@@ -135,12 +135,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     assert result.ok
     fetched_metadata = result.metadata
 
-    # Remove the path field for comparison since it's added by fetch_metadata
-    path = fetched_metadata.pop("path", None)
-    assert path is not None  # Verify path was added
-    assert path.startswith("gs://")
-
-    # Verify metadata content
+    # Verify metadata content (path is only added during push, not save_metadata)
     assert fetched_metadata["name"] == sample_metadata["name"]
     assert fetched_metadata["version"] == sample_metadata["version"]
     assert fetched_metadata["description"] == sample_metadata["description"]
@@ -311,14 +306,29 @@ def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, t
     assert result2.ok
 
 
-def test_push_overwrite_requires_lock(backend, sample_object_dir, sample_metadata):
-    """Test that overwrite without lock raises error."""
+def test_push_overwrite_without_lock(backend, sample_object_dir, sample_metadata, temp_dir):
+    """Test that overwrite works without lock (lock-free model)."""
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Overwrite without lock should raise
-    with pytest.raises(ValueError, match="acquire_lock=True"):
-        backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="overwrite")
+    # Create modified content
+    modified_dir = temp_dir / "modified"
+    modified_dir.mkdir()
+    (modified_dir / "file1.txt").write_text("modified content")
+    (modified_dir / "file2.txt").write_text("test content 2")
+    modified_metadata = {**sample_metadata, "_files": ["file1.txt", "file2.txt"]}
+
+    # Overwrite without lock should work (lock-free UUID-based model)
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        str(modified_dir),
+        modified_metadata,
+        on_conflict="overwrite",
+        acquire_lock=False,  # Explicitly false - should still work
+    )
+    assert results.all_ok
+    assert results.first().is_overwritten
 
 
 def test_push_overwrite_with_lock(backend, sample_object_dir, sample_metadata, temp_dir):
