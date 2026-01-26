@@ -4,6 +4,7 @@ from mindtrace.services import Gateway
 from mindtrace.services.discord import DiscordService
 from mindtrace.services.samples.echo_mcp import EchoService as echo_mcp_service
 from mindtrace.services.samples.echo_service import EchoService
+from tests.integration.mindtrace.services.test_auth_integration import AuthenticatedTestService
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -95,4 +96,20 @@ async def discord_service_manager():
             yield cm
     except Exception as e:
         print(f"Discord service launch failed: {e}")
+        raise
+
+
+@pytest_asyncio.fixture(scope="session")
+async def auth_service_manager():
+    """Launch AuthenticatedTestService and provide a connection manager for testing.
+
+    This fixture uses the AuthenticatedTestService.launch context manager to properly start and stop the service,
+    yielding a connection manager that tests can use to interact with the running service.
+
+    """
+    try:
+        with AuthenticatedTestService.launch(url="http://localhost:8096", timeout=30) as cm:
+            yield cm
+    except Exception as e:
+        print(f"Authenticated test service launch failed: {e}")
         raise

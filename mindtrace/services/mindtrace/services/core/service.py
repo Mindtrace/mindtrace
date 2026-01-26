@@ -1,6 +1,7 @@
 """Service base class. Provides unified methods for all Mindtrace (micro)services."""
 
 import atexit
+import inspect
 import json
 import logging
 import os
@@ -12,13 +13,14 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Dict, Literal, Type, TypeVar, overload
+from typing import Any, Awaitable, Callable, Dict, Literal, Optional, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
 import psutil
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
 
@@ -31,6 +33,7 @@ from mindtrace.services.core.types import (
     Heartbeat,
     HeartbeatSchema,
     PIDFileSchema,
+    Scope,
     ServerIDSchema,
     ServerStatus,
     ShutdownSchema,
@@ -85,6 +88,8 @@ class Service(Mindtrace):
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
+
+        self.user_authenticator: Callable[[str], dict | None] | Callable[[str], Awaitable[dict | None]] | None = None
 
         # Build URL with the following priority:
         # 1. Explicit URL parameter
@@ -338,7 +343,9 @@ class Service(Mindtrace):
             if existing_status != ServerStatus.DOWN:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {cls.unique_name} at {launch_url} is already running with status {existing_status}.",
+                    detail=(
+                        f"Server {cls.unique_name} at {launch_url} is already running with status {existing_status}."
+                    ),
                 )
         except RuntimeError as e:
             cls.logger.warning(f"Another service is already running at {launch_url}. New service was NOT launched.")
@@ -378,7 +385,8 @@ class Service(Mindtrace):
                 signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
             except ValueError:
                 cls.logger.warning(
-                    "Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service."
+                    "Could not register signal handlers for server shutdown. "
+                    "This is normal if you launch a Service from another Service."
                 )
 
         # Wait for server to be available and get connection manager
@@ -552,6 +560,236 @@ class Service(Mindtrace):
         """Get the default log file for this server type."""
         return os.path.join(cls.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"], f"{cls.__name__}_logs.txt")
 
+    def set_user_authenticator(
+        self,
+        authenticator: Callable[[str], dict | None] | Callable[[str], Awaitable[dict | None]],
+    ):
+        """Set a custom user authentication function for this service instance.
+
+        The authenticator function can be either synchronous or asynchronous:
+        - Accept a token string as input
+        - Return a dict with user information if token is valid (or Awaitable[dict] for async)
+        - Return None if token is valid but no user data needed (or Awaitable[None] for async)
+        - Raise HTTPException if token is invalid
+
+        Args:
+            authenticator: A function that authenticates users and optionally returns user info (sync or async)
+                         - Returns dict: User information (required for get_current_user_dependency())
+                         - Returns None: Just authentication (works for scope=Scope.AUTHENTICATED)
+
+        Example:
+            # Synchronous authenticator with user data
+            def authenticate_user(token: str) -> dict:
+                # Verify JWT token, check signature, etc.
+                # Return user info like {"user_id": "123", "username": "john"}
+                return {"user_id": "123", "username": "john"}
+
+            # Synchronous authenticator without user data (just authentication)
+            def authenticate_user_lightweight(token: str) -> None:
+                # Just verify token is valid, no user data needed
+                jwt.decode(token, SECRET, algorithms=["HS256"])
+                return None
+
+            # Asynchronous authenticator
+            async def authenticate_user_async(token: str) -> dict:
+                # Async user authentication (e.g., checking against database)
+                pass
+
+            service.set_user_authenticator(authenticate_user)  # or authenticate_user_lightweight or authenticate_user_async
+        """
+        self.user_authenticator = authenticator
+
+    def _create_verify_token_dependency(self):
+        """Create a lightweight token verification dependency that only verifies tokens.
+
+        Returns:
+            A FastAPI dependency function that verifies tokens (returns None on success)
+
+        Raises:
+            RuntimeError: If token_verifier is not set
+        """
+        if self.user_authenticator is None:
+            raise RuntimeError(
+                "User authenticator not set. Call service.set_user_authenticator() before registering "
+                "endpoints with scope=Scope.AUTHENTICATED."
+            )
+
+        bearer_scheme = HTTPBearer(
+            auto_error=False,
+            scheme_name="Bearer",
+            description="JWT Bearer token authentication. Format: Bearer <token>",
+        )
+
+        async def verify_token(
+            credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+        ) -> None:
+            """Verify OAuth2 Bearer token.
+
+            Args:
+                credentials: HTTPAuthorizationCredentials from FastAPI security
+
+            Returns:
+                None on successful verification
+
+            Raises:
+                HTTPException: If token is missing or invalid
+            """
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            token = credentials.credentials
+            authenticator = self.user_authenticator
+
+            if authenticator is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="User authenticator not configured.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            try:
+                result = authenticator(token)
+                if inspect.isawaitable(result):
+                    result = await result
+                return None
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(
+                    "Token verification failed",
+                    exc_info=True,
+                    extra={"error_type": type(e).__name__, "error_message": str(e)},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token verification failed",
+                    headers={"WWW-Authenticate": "Bearer"},
+                ) from e
+
+        return verify_token
+
+    def _create_get_user_dependency(self):
+        """Create a dependency that verifies tokens and returns user information.
+
+        Returns:
+            A FastAPI dependency function that uses this service's user_authenticator and returns user data
+
+        Raises:
+            RuntimeError: If user_authenticator is not set
+        """
+        if self.user_authenticator is None:
+            raise RuntimeError(
+                "User authenticator not set. Call service.set_user_authenticator() before registering "
+                "endpoints with scope=Scope.AUTHENTICATED."
+            )
+
+        bearer_scheme = HTTPBearer(
+            auto_error=False,
+            scheme_name="Bearer",
+            description="JWT Bearer token authentication. Format: Bearer <token>",
+        )
+
+        async def get_user(
+            credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+        ) -> dict:
+            """Verify OAuth2 Bearer token and return user information.
+
+            This dependency uses this service instance's user_authenticator.
+
+            Args:
+                credentials: HTTPAuthorizationCredentials from FastAPI security
+
+            Returns:
+                dict: User information from verified token
+
+            Raises:
+                HTTPException: If token is missing or invalid
+            """
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            token = credentials.credentials
+            authenticator = self.user_authenticator
+
+            # Additional safety check (should never happen due to check above, but defensive)
+            if authenticator is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="User authenticator not configured.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            try:
+                user_info = authenticator(token)
+                if inspect.isawaitable(user_info):
+                    user_info = await user_info
+
+                if user_info is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="User authenticator returned None. get_current_user_dependency() requires an authenticator that returns user data (dict).",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                return user_info
+            except HTTPException:
+                raise
+            except Exception as e:
+                # Log the actual error server-side for debugging
+                self.logger.error(
+                    "Token verification failed",
+                    exc_info=True,
+                    extra={"error_type": type(e).__name__, "error_message": str(e)},
+                )
+                # Return generic error message to client to avoid leaking implementation details
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token verification failed",
+                    headers={"WWW-Authenticate": "Bearer"},
+                ) from e
+
+        return get_user
+
+    def get_auth_dependency(self, scope: Scope):
+        """Get authentication dependency based on scope for this service instance.
+
+        Args:
+            scope: The endpoint scope (PUBLIC or AUTHENTICATED)
+
+        Returns:
+            Security dependency for AUTHENTICATED scope, None for PUBLIC
+        """
+        if scope == Scope.AUTHENTICATED:
+            return Security(self._create_verify_token_dependency())
+        return None
+
+    def get_current_user_dependency(self):
+        """Get a FastAPI dependency for accessing the current authenticated user.
+
+
+        Returns:
+            A FastAPI dependency function that returns the current user dict
+
+        Example:
+            get_current_user = service.get_current_user_dependency()
+
+            async def my_endpoint(
+                self,
+                current_user: Annotated[dict, Depends(get_current_user)]
+            ):
+                user_id = current_user["user_id"]
+                # Use user data for authorization, etc.
+        """
+        return self._create_get_user_dependency()
+
     def add_endpoint(
         self,
         path,
@@ -560,12 +798,38 @@ class Service(Mindtrace):
         api_route_kwargs=None,
         autolog_kwargs=None,
         methods: list[str] | None = None,
-        scope: str = "public",
+        scope: Scope | str = Scope.PUBLIC,
         as_tool: bool = False,
     ):
-        """Register a new endpoint with optional role."""
+        """Register a new endpoint with optional authentication scope.
+
+        Args:
+            path: Endpoint path (leading slash will be removed)
+            func: Function to handle the endpoint
+            schema: TaskSchema for the endpoint
+            api_route_kwargs: Additional kwargs to pass to FastAPI's add_api_route
+            autolog_kwargs: Configuration for operation tracking
+            methods: HTTP methods (default: ["POST"])
+            scope: Access scope - Scope.PUBLIC (no auth) or Scope.AUTHENTICATED
+                (requires Bearer token)
+            as_tool: Whether to register as an MCP tool
+        """
+        # Convert string scope to enum if needed (for backward compatibility)
+        if isinstance(scope, str):
+            try:
+                scope = Scope(scope.lower())
+            except ValueError:
+                raise ValueError(
+                    f"Invalid scope '{scope}'. Must be one of: {[s.value for s in Scope]}. "
+                    f"This prevents accidentally exposing protected endpoints with typos."
+                )
+
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
+
+        # Get authentication dependency based on scope
+        auth_dependency = self.get_auth_dependency(scope)
+
         # Merge and override default autolog_kwargs
         default_autolog_kwargs = {
             "log_level": logging.INFO,
@@ -585,6 +849,14 @@ class Service(Mindtrace):
             include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
             system_metrics=autolog_kwargs.get("system_metrics"),
         )(func)
+
+        # Add authentication dependency if required
+        dependencies = list(api_route_kwargs.get("dependencies", []))
+        if auth_dependency is not None:
+            dependencies.insert(0, auth_dependency)
+
+        if dependencies:
+            api_route_kwargs["dependencies"] = dependencies
 
         self.app.add_api_route(
             "/" + path,

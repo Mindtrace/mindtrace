@@ -1,3 +1,9 @@
+"""Mindtrace Services Module.
+
+This module provides the core services framework for building microservices with
+authentication, connection management, and service lifecycle support.
+"""
+
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.service import Service
 from mindtrace.services.core.types import (
@@ -5,6 +11,7 @@ from mindtrace.services.core.types import (
     Heartbeat,
     HeartbeatSchema,
     PIDFileSchema,
+    Scope,
     ServerIDSchema,
     ServerStatus,
     ShutdownSchema,
@@ -28,6 +35,7 @@ __all__ = [
     "PIDFileSchema",
     "ProxyConnectionManager",
     "RegisterAppTaskSchema",
+    "Scope",
     "ServerIDSchema",
     "Service",
     "ServerStatus",
