@@ -308,6 +308,10 @@ class TestConcurrentPullOperations:
             acquire_lock=False,
         )
 
+        # Fetch the actual metadata (contains _storage.uuid for the correct path)
+        fetched_metadata = gcp_backend.fetch_metadata(object_name, version)
+        actual_metadata = fetched_metadata[(object_name, version)].metadata
+
         num_threads = 5
         results: List[Tuple[int, str]] = []
         results_lock = threading.Lock()
@@ -324,7 +328,7 @@ class TestConcurrentPullOperations:
                     version,
                     pull_dir,
                     acquire_lock=False,
-                    metadata=[test_metadata],  # Pull requires list of dicts
+                    metadata=[actual_metadata],  # Use actual metadata with UUID
                 )
 
                 with results_lock:

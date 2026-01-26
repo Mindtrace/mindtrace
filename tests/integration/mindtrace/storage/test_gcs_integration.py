@@ -467,31 +467,19 @@ def test_upload_batch_fail_if_exists(gcs_handler, sample_files):
     assert remote_path in result.skipped_results[0].remote_path
 
 
-def test_upload_batch_on_error_skip(gcs_handler, sample_files):
-    """Test batch upload continues on error when on_error='skip'."""
+def test_upload_batch_with_errors(gcs_handler, sample_files):
+    """Test batch upload handles errors gracefully and returns results."""
     prefix = gcs_handler._test_prefix
     files = [
         ("nonexistent/file.txt", f"{prefix}/batch/will_fail.txt"),  # Will error
         (str(sample_files / "file1.txt"), f"{prefix}/batch/will_succeed.txt"),  # Will succeed
     ]
 
-    result = gcs_handler.upload_batch(files, on_error="skip")
+    result = gcs_handler.upload_batch(files)
 
     assert len(result) == 2
     assert len(result.ok_results) == 1
     assert len(result.failed_results) == 1
-
-
-def test_upload_batch_on_error_raise(gcs_handler, sample_files):
-    """Test batch upload raises on error when on_error='raise'."""
-    prefix = gcs_handler._test_prefix
-    files = [
-        ("nonexistent/file.txt", f"{prefix}/batch/will_fail.txt"),  # Will error
-        (str(sample_files / "file1.txt"), f"{prefix}/batch/will_succeed.txt"),
-    ]
-
-    with pytest.raises(RuntimeError, match="Failed to upload"):
-        gcs_handler.upload_batch(files, on_error="raise")
 
 
 def test_download_batch_basic(gcs_handler, sample_files):
@@ -542,8 +530,8 @@ def test_download_batch_skip_if_exists(gcs_handler, sample_files):
     result = gcs_handler.download_batch(files, skip_if_exists=True)
 
     assert len(result) == 2
-    assert len(result.ok_results) == 1
-    assert len(result.skipped_results) == 1
+    assert len(result.ok_results) == 2  # Both success: 1 downloaded (OK), 1 skipped (SKIPPED)
+    assert len(result.skipped_results) == 1  # 1 skipped
 
     # Verify existing file wasn't overwritten
     assert existing_local.read_text() == "existing content"
@@ -565,7 +553,7 @@ def test_download_batch_not_found(gcs_handler, sample_files):
         (f"{prefix}/batch/does_not_exist.txt", str(download_dir / "notfound.txt")),
     ]
 
-    result = gcs_handler.download_batch(files, on_error="skip")
+    result = gcs_handler.download_batch(files)
 
     assert len(result) == 2
     assert len(result.ok_results) == 1

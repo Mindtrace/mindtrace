@@ -212,15 +212,31 @@ class GCSStorageHandler(StorageHandler):
                 error_message=str(e),
             )
 
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> FileResult:
         """Delete a file from GCS.
+
         Args:
             remote_path: Path in the bucket to delete.
+
+        Returns:
+            FileResult with status "ok" (including if blob didn't exist - idempotent)
+            or "error" on failure.
         """
+        sanitized_path = self._sanitize_blob_path(remote_path)
         try:
-            self._bucket().blob(self._sanitize_blob_path(remote_path)).delete(if_generation_match=None)
+            self._bucket().blob(sanitized_path).delete(if_generation_match=None)
+            return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
         except gexc.NotFound:
-            pass  # idempotent delete
+            # Idempotent delete - not found is success
+            return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=sanitized_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
 
     # ------------------------------------------------------------------
     # String Operations (no temp files)
