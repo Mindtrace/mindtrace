@@ -508,15 +508,36 @@ class TestDiscordService:
             await discord_service._run_bot()
             mock_start.assert_called_once()
 
-    def test_launch_context_manager(self, discord_service):
+    def test_launch_context_manager(self):
         """Test DiscordService.launch context manager."""
-        # Test the launch method returns a connection manager
-        cm = discord_service.launch()
-        assert cm is not None
+        # Mock the connection manager returned by Service.launch
+        mock_cm = Mock()
+        mock_cm.url = "http://localhost:8000"
+        mock_cm.__enter__ = Mock(return_value=mock_cm)
+        mock_cm.__exit__ = Mock(return_value=False)
 
-        # Test that the context manager can be used
-        with cm:
+        # Patch Service.launch to avoid spawning a server, time.sleep to avoid delay,
+        # and requests.post to simulate Discord bot ready
+        with (
+            patch("mindtrace.services.Service.launch", return_value=mock_cm),
+            patch("time.sleep"),
+            patch("requests.post") as mock_post,
+        ):
+            # Simulate Discord bot is ready
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"bot_name": "TestBot", "status": "online"}
+
+            # Test the launch method returns a connection manager
+            cm = DiscordService.launch()
             assert cm is not None
+
+            # Test that the context manager can be used
+            with cm:
+                assert cm is not None
+
+            # Verify context manager methods were called
+            mock_cm.__enter__.assert_called_once()
+            mock_cm.__exit__.assert_called_once()
 
     def test_parse_command_parameters_empty_content(self, discord_service):
         """Test command parameter parsing with empty content."""
