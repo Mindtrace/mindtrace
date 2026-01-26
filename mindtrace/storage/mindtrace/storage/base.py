@@ -45,8 +45,8 @@ class FileResult:
 
     @property
     def ok(self) -> bool:
-        """Check if operation succeeded."""
-        return self.status == Status.OK
+        """Check if operation succeeded (OK, OVERWRITTEN, or SKIPPED)."""
+        return self.status in (Status.OK, Status.OVERWRITTEN, Status.SKIPPED)
 
 
 @dataclass
@@ -69,8 +69,8 @@ class StringResult:
 
     @property
     def ok(self) -> bool:
-        """Check if operation succeeded."""
-        return self.status == Status.OK
+        """Check if operation succeeded (OK, OVERWRITTEN, or SKIPPED)."""
+        return self.status in (Status.OK, Status.OVERWRITTEN, Status.SKIPPED)
 
 
 @dataclass
@@ -91,17 +91,29 @@ class BatchResult:
 
     @property
     def ok_results(self) -> List[FileResult]:
-        """Get all successful operations."""
-        return [r for r in self.results if r.status == Status.OK]
+        """Get all successful operations (OK, OVERWRITTEN, or SKIPPED)."""
+        return [r for r in self.results if r.ok]
 
     @property
     def skipped_results(self) -> List[FileResult]:
-        """Get operations that were skipped."""
+        """Get operations where no action was taken.
+
+        Includes:
+        - SKIPPED: Intentionally skipped (e.g., file already exists locally)
+        - ALREADY_EXISTS: Conflict (tried to create but already exists)
+
+        Note: SKIPPED is considered success (.ok=True), ALREADY_EXISTS is conflict (.ok=False).
+        """
         return [r for r in self.results if r.status in (Status.SKIPPED, Status.ALREADY_EXISTS)]
 
     @property
+    def conflict_results(self) -> List[FileResult]:
+        """Get operations that conflicted (tried to create but already exists)."""
+        return [r for r in self.results if r.status == Status.ALREADY_EXISTS]
+
+    @property
     def failed_results(self) -> List[FileResult]:
-        """Get all failed operations."""
+        """Get all failed operations (NOT_FOUND or ERROR)."""
         return [r for r in self.results if r.status in (Status.NOT_FOUND, Status.ERROR)]
 
     @property
@@ -153,10 +165,15 @@ class StorageHandler(MindtraceABC, ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> FileResult:
         """Delete a file at remote_path in storage.
+
         Args:
             remote_path: Path in the storage backend to delete.
+
+        Returns:
+            FileResult with status "ok" (including if file didn't exist - idempotent)
+            or "error" on failure.
         """
         pass  # pragma: no cover
 
@@ -209,7 +226,6 @@ class StorageHandler(MindtraceABC, ABC):
         files: List[Tuple[str, str]],
         metadata: Optional[Dict[str, str]] = None,
         max_workers: int = 4,
-        on_error: str = "raise",
         fail_if_exists: bool = False,
     ) -> BatchResult:
         """Upload multiple files concurrently.
@@ -218,33 +234,21 @@ class StorageHandler(MindtraceABC, ABC):
             files: List of (local_path, remote_path) tuples to upload.
             metadata: Optional metadata to associate with each file.
             max_workers: Number of parallel upload workers.
-            on_error: 'raise' to raise on first error, 'skip' to continue on errors.
-            fail_if_exists: If True, report "already_exists" status if file exists.
+            fail_if_exists: If True, report ALREADY_EXISTS status if file exists.
 
         Returns:
-            BatchResult with per-file status:
-            - "ok": Upload succeeded
-            - "already_exists": File existed and fail_if_exists=True
-            - "error": Other error occurred
+            BatchResult with per-file results. Use batch_result.all_ok to check success,
+            batch_result.failed_results to inspect failures.
         """
-        if on_error not in ("raise", "skip"):
-            raise ValueError("on_error must be 'raise' or 'skip'")
 
         def upload_one(args: Tuple[str, str]) -> FileResult:
             local_path, remote_path = args
             return self.upload(local_path, remote_path, metadata, fail_if_exists=fail_if_exists)
 
         results: List[FileResult] = []
-        first_error: Exception | None = None
-
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for result in executor.map(upload_one, files):
                 results.append(result)
-                if result.status == "error" and on_error == "raise" and first_error is None:
-                    first_error = RuntimeError(f"Failed to upload: {result.error_message}")
-
-        if first_error:
-            raise first_error
 
         return BatchResult(results=results)
 
@@ -253,7 +257,6 @@ class StorageHandler(MindtraceABC, ABC):
         files: List[Tuple[str, str]],
         max_workers: int = 4,
         skip_if_exists: bool = False,
-        on_error: str = "raise",
     ) -> BatchResult:
         """Download multiple files concurrently.
 
@@ -261,33 +264,20 @@ class StorageHandler(MindtraceABC, ABC):
             files: List of (remote_path, local_path) tuples to download.
             max_workers: Number of parallel download workers.
             skip_if_exists: If True, skip files that already exist locally.
-            on_error: 'raise' to raise on first error, 'skip' to continue on errors.
 
         Returns:
-            BatchResult with per-file status:
-            - "ok": Download succeeded
-            - "skipped": Local file existed and skip_if_exists=True
-            - "not_found": Remote file doesn't exist
-            - "error": Other error occurred
+            BatchResult with per-file results. Use batch_result.all_ok to check success,
+            batch_result.failed_results to inspect failures.
         """
-        if on_error not in ("raise", "skip"):
-            raise ValueError("on_error must be 'raise' or 'skip'")
 
         def download_one(args: Tuple[str, str]) -> FileResult:
             remote_path, local_path = args
             return self.download(remote_path, local_path, skip_if_exists=skip_if_exists)
 
         results: List[FileResult] = []
-        first_error: Exception | None = None
-
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for result in executor.map(download_one, files):
                 results.append(result)
-                if result.status == "error" and on_error == "raise" and first_error is None:
-                    first_error = RuntimeError(f"Failed to download: {result.error_message}")
-
-        if first_error:
-            raise first_error
 
         return BatchResult(results=results)
 
@@ -307,23 +297,9 @@ class StorageHandler(MindtraceABC, ABC):
             - "ok": Delete succeeded (or file didn't exist - idempotent)
             - "error": Other error occurred
         """
-
-        def delete_one(remote_path: str) -> FileResult:
-            try:
-                self.delete(remote_path)
-                return FileResult(local_path="", remote_path=remote_path, status=Status.OK)
-            except Exception as e:
-                return FileResult(
-                    local_path="",
-                    remote_path=remote_path,
-                    status=Status.ERROR,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                )
-
         results: List[FileResult] = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for result in executor.map(delete_one, paths):
+            for result in executor.map(self.delete, paths):
                 results.append(result)
 
         return BatchResult(results=results)
@@ -336,10 +312,10 @@ class StorageHandler(MindtraceABC, ABC):
         exclude_patterns: Optional[List[str]] = None,
         metadata: Optional[Dict[str, str]] = None,
         max_workers: int = 4,
-        on_error: str = "raise",
         fail_if_exists: bool = False,
     ) -> BatchResult:
         """Upload all files in a local folder recursively.
+
         Args:
             local_folder: Path to the local folder to upload.
             remote_prefix: Prefix to prepend to all remote paths.
@@ -347,10 +323,10 @@ class StorageHandler(MindtraceABC, ABC):
             exclude_patterns: List of glob patterns to exclude.
             metadata: Optional metadata to associate with each file.
             max_workers: Number of parallel upload workers.
-            on_error: 'raise' to raise on first error, 'skip' to continue on errors.
-            fail_if_exists: If True, report "already_exists" status if file exists.
+            fail_if_exists: If True, report ALREADY_EXISTS status if file exists.
+
         Returns:
-            BatchResult with per-file status.
+            BatchResult with per-file results.
         """
         import fnmatch
 
@@ -376,7 +352,7 @@ class StorageHandler(MindtraceABC, ABC):
                     remote_path = f"{remote_prefix}/{relative_path}".strip("/")
                     files_to_upload.append((str(file_path), remote_path))
 
-        return self.upload_batch(files_to_upload, metadata, max_workers, on_error, fail_if_exists)
+        return self.upload_batch(files_to_upload, metadata, max_workers, fail_if_exists)
 
     def download_folder(
         self,
@@ -384,17 +360,17 @@ class StorageHandler(MindtraceABC, ABC):
         local_folder: str,
         max_workers: int = 4,
         skip_if_exists: bool = False,
-        on_error: str = "raise",
     ) -> BatchResult:
         """Download all objects with a given prefix to a local folder.
+
         Args:
             remote_prefix: Prefix of remote objects to download.
             local_folder: Local folder to download files into.
             max_workers: Number of parallel download workers.
             skip_if_exists: If True, skip files that already exist locally.
-            on_error: 'raise' to raise on first error, 'skip' to continue on errors.
+
         Returns:
-            BatchResult with per-file status.
+            BatchResult with per-file results.
         """
         remote_objects = self.list_objects(prefix=remote_prefix)
 
@@ -405,7 +381,7 @@ class StorageHandler(MindtraceABC, ABC):
             local_path = os.path.join(local_folder, relative_path)
             files_to_download.append((remote_path, local_path))
 
-        return self.download_batch(files_to_download, max_workers, skip_if_exists, on_error)
+        return self.download_batch(files_to_download, max_workers, skip_if_exists)
 
     # Introspection ---------------------------------------------------------
     @abstractmethod
