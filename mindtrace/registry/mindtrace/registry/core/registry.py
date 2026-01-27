@@ -13,7 +13,7 @@ from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, 
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
-from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult, OnConflict
+from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult, OnConflict, VerifyLevel
 
 
 class Registry(Mindtrace):
@@ -797,7 +797,7 @@ class Registry(Mindtrace):
         name: str | List[str],
         version: str | None | List[str | None] = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.INTEGRITY,
         **kwargs,
     ) -> Any | BatchResult:
         """Load object(s) from the registry.
@@ -806,7 +806,11 @@ class Registry(Mindtrace):
             name: Name(s) of the object(s). Single string or list.
             version: Version(s). Defaults to "latest".
             output_dir: If loaded object is a Path, move contents here.
-            verify_hash: Whether to verify artifact hash after downloading.
+            verify: Verification level for loaded artifacts.
+                - "none": No verification, trust download completely.
+                - "integrity": Verify downloaded files match declared hash (default).
+                - "full": Same as "integrity" for base Registry (staleness check
+                  only applies in RegistryWithCache).
             **kwargs: Additional keyword arguments passed to materializers.
 
         Returns:
@@ -816,18 +820,18 @@ class Registry(Mindtrace):
         Raises:
             RegistryObjectNotFound: If object does not exist (single item only).
             LockAcquisitionError: If lock cannot be acquired (single item only).
-            ValueError: If verify_hash is True and hash doesn't match (single item only).
+            ValueError: If verification fails and hash doesn't match (single item only).
         """
         if isinstance(name, list):
-            return self._load_batch(name, version, output_dir, verify_hash, **kwargs)
-        return self._load_single(name, version, output_dir, verify_hash, **kwargs)
+            return self._load_batch(name, version, output_dir, verify, **kwargs)
+        return self._load_single(name, version, output_dir, verify, **kwargs)
 
     def _load_single(
         self,
         name: str,
         version: str | None = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.INTEGRITY,
         **kwargs,
     ) -> Any:
         """Load a single object from the registry. Raises on error."""
@@ -854,8 +858,8 @@ class Registry(Mindtrace):
                     raise pull_result.exception
                 raise RuntimeError(f"Failed to pull {n}@{v}: {pull_result.message}")
 
-            # Hash verification
-            if verify_hash:
+            # Hash verification (INTEGRITY or FULL level)
+            if verify != VerifyLevel.NONE:
                 expected_hash = metadata.get("hash")
                 if expected_hash:
                     computed_hash = compute_dir_hash(str(temp_dir))
@@ -888,7 +892,7 @@ class Registry(Mindtrace):
         names: List[str],
         versions: str | None | List[str | None] = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.INTEGRITY,
         **kwargs,
     ) -> BatchResult:
         """Load multiple objects from the registry. Returns BatchResult."""
@@ -960,8 +964,8 @@ class Registry(Mindtrace):
                     metadata = all_metadata[(n, v)]
                     temp_dir = temp_dirs[(n, v)]
 
-                    # Hash verification
-                    if verify_hash:
+                    # Hash verification (INTEGRITY or FULL level)
+                    if verify != VerifyLevel.NONE:
                         expected_hash = metadata.get("hash")
                         if expected_hash:
                             computed_hash = compute_dir_hash(str(temp_dir))
