@@ -374,6 +374,11 @@ class BaslerCameraBackend(CameraBackend):
             CameraInitializationError: If camera initialization fails
             CameraConnectionError: If camera connection fails
         """
+        # Return early if already initialized
+        if self.initialized and self.camera is not None:
+            self.logger.debug(f"Camera '{self.camera_name}' is already initialized, skipping re-initialization")
+            return (True, self.camera, None)
+
         if not PYPYLON_AVAILABLE:
             raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available for camera discovery")
         else:
