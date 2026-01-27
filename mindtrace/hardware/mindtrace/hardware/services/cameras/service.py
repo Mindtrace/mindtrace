@@ -802,6 +802,22 @@ class CameraManagerService(Service):
             except Exception:
                 image_enhancement = None
 
+            # GigE network settings (camera-level)
+            try:
+                bandwidth_limit = await camera_proxy.get_bandwidth_limit()
+            except Exception:
+                bandwidth_limit = None
+
+            try:
+                packet_size = await camera_proxy.get_packet_size()
+            except Exception:
+                packet_size = None
+
+            try:
+                inter_packet_delay = await camera_proxy.get_inter_packet_delay()
+            except Exception:
+                inter_packet_delay = None
+
             config = CameraConfiguration(
                 exposure_time=exposure_time,
                 gain=gain,
@@ -810,6 +826,9 @@ class CameraManagerService(Service):
                 pixel_format=pixel_format,
                 white_balance=white_balance,
                 image_enhancement=image_enhancement,
+                bandwidth_limit=bandwidth_limit,
+                packet_size=packet_size,
+                inter_packet_delay=inter_packet_delay,
             )
 
             return CameraConfigurationResponse(
