@@ -85,9 +85,10 @@ class MockMinioHandler:
             f.write(self._objects[remote_path])
         return MockFileResult(local_path=local_path, remote_path=remote_path, status="ok", ok=True)
 
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> MockFileResult:
         if remote_path in self._objects:
             del self._objects[remote_path]
+        return MockFileResult(local_path="", remote_path=remote_path, status="ok", ok=True)
 
     def list_objects(self, prefix: str = "", **kwargs) -> List[str]:
         return [name for name in self._objects.keys() if name.startswith(prefix)]
@@ -129,7 +130,6 @@ class MockMinioHandler:
     def upload_batch(
         self,
         files: List[Tuple[str, str]],
-        on_error: str = "raise",
         fail_if_exists: bool = False,
         max_workers: int = 4,
     ) -> MockBatchResult:
@@ -168,8 +168,8 @@ class MockMinioHandler:
     def download_batch(
         self,
         files: List[Tuple[str, str]],
-        on_error: str = "raise",
         max_workers: int = 4,
+        skip_if_exists: bool = False,
     ) -> MockBatchResult:
         """Download multiple files."""
         results = []
@@ -641,17 +641,28 @@ def test_push_with_lock(backend, sample_object_dir, sample_metadata):
     assert results.all_ok
 
 
-def test_push_overwrite_requires_lock(backend, sample_object_dir, sample_metadata):
-    """Test push with on_conflict=overwrite requires lock."""
-    with pytest.raises(ValueError, match="requires acquire_lock=True"):
-        backend.push(
-            "test:object",
-            "1.0.0",
-            sample_object_dir,
-            sample_metadata,
-            on_conflict="overwrite",
-            acquire_lock=False,
-        )
+def test_push_overwrite_without_lock(backend, sample_object_dir, sample_metadata):
+    """Test push with on_conflict=overwrite works without lock (MVCC handles concurrency)."""
+    # First push
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+    )
+    assert results.all_ok
+
+    # Overwrite without lock (MVCC handles this lock-free)
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+        on_conflict="overwrite",
+        acquire_lock=False,
+    )
+    assert results.all_ok
+    assert results.get(("test:object", "1.0.0")).overwritten
 
 
 def test_push_overwrite_with_lock(backend, sample_object_dir, sample_metadata):

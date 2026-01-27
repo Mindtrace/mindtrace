@@ -203,14 +203,27 @@ class S3StorageHandler(StorageHandler):
                 error_message=str(e),
             )
 
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> FileResult:
         """Delete a file from S3.
 
         Args:
             remote_path: Path in the bucket to delete.
+
+        Returns:
+            FileResult with status OK or ERROR. S3 delete is idempotent - succeeds
+            even if object doesn't exist.
         """
-        # S3 delete is idempotent - doesn't error if object doesn't exist
-        self.client.delete_object(Bucket=self.bucket_name, Key=remote_path)
+        try:
+            self.client.delete_object(Bucket=self.bucket_name, Key=remote_path)
+            return FileResult(local_path="", remote_path=remote_path, status=Status.OK)
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
 
     # ------------------------------------------------------------------
     # String Operations (no temp files)

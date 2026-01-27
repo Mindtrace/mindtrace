@@ -518,31 +518,19 @@ def test_upload_batch_fail_if_exists(s3_handler, sample_files):
     assert remote_path in result.skipped_results[0].remote_path
 
 
-def test_upload_batch_on_error_skip(s3_handler, sample_files):
-    """Test batch upload continues on error when on_error='skip'."""
+def test_upload_batch_with_errors(s3_handler, sample_files):
+    """Test batch upload handles errors gracefully and returns results."""
     prefix = s3_handler._test_prefix
     files = [
         ("nonexistent/file.txt", f"{prefix}/batch/will_fail.txt"),  # Will error
         (str(sample_files / "file1.txt"), f"{prefix}/batch/will_succeed.txt"),  # Will succeed
     ]
 
-    result = s3_handler.upload_batch(files, on_error="skip")
+    result = s3_handler.upload_batch(files)
 
     assert len(result) == 2
     assert len(result.ok_results) == 1
     assert len(result.failed_results) == 1
-
-
-def test_upload_batch_on_error_raise(s3_handler, sample_files):
-    """Test batch upload raises on error when on_error='raise'."""
-    prefix = s3_handler._test_prefix
-    files = [
-        ("nonexistent/file.txt", f"{prefix}/batch/will_fail.txt"),  # Will error
-        (str(sample_files / "file1.txt"), f"{prefix}/batch/will_succeed.txt"),
-    ]
-
-    with pytest.raises(RuntimeError, match="Failed to upload"):
-        s3_handler.upload_batch(files, on_error="raise")
 
 
 def test_download_batch_basic(s3_handler, sample_files):
@@ -593,7 +581,7 @@ def test_download_batch_skip_if_exists(s3_handler, sample_files):
     result = s3_handler.download_batch(files, skip_if_exists=True)
 
     assert len(result) == 2
-    assert len(result.ok_results) == 1
+    assert len(result.ok_results) == 2  # OK + SKIPPED (both have .ok = True)
     assert len(result.skipped_results) == 1
 
     # Verify existing file wasn't overwritten
@@ -616,7 +604,7 @@ def test_download_batch_not_found(s3_handler, sample_files):
         (f"{prefix}/batch/does_not_exist.txt", str(download_dir / "notfound.txt")),
     ]
 
-    result = s3_handler.download_batch(files, on_error="skip")
+    result = s3_handler.download_batch(files)
 
     assert len(result) == 2
     assert len(result.ok_results) == 1
