@@ -33,6 +33,26 @@ class OnConflict(str, Enum):
     OVERWRITE = "overwrite"
 
 
+class VerifyLevel(str, Enum):
+    """Verification level for load operations.
+
+    Controls what checks are performed when loading artifacts:
+
+    - NONE: No verification. Trust cache/download completely. Fastest option.
+    - INTEGRITY: Verify downloaded files match declared hash in metadata.
+        Catches corruption but not remote storage corruption.
+    - FULL: Integrity check + staleness check (cache layer only).
+        Ensures cached data matches current remote state.
+
+    The staleness check (FULL vs INTEGRITY) only applies when using
+    RegistryWithCache. For base Registry, FULL behaves like INTEGRITY.
+    """
+
+    NONE = "none"
+    INTEGRITY = "integrity"
+    FULL = "full"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Backend Operation Results
 # ─────────────────────────────────────────────────────────────────────────────

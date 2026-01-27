@@ -2311,23 +2311,23 @@ def test_load_verifies_hash_by_default(registry, test_config):
     assert loaded_config == test_config
 
 
-def test_load_with_verify_hash_true(registry, test_config):
-    """Test that load() verifies hash when verify_hash=True."""
+def test_load_with_verify_integrity(registry, test_config):
+    """Test that load() verifies hash when verify='integrity'."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Load with explicit verify_hash=True
-    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    # Load with explicit verify="integrity"
+    loaded_config = registry.load("test:config", version="1.0.0", verify="integrity")
     assert loaded_config == test_config
 
 
-def test_load_with_verify_hash_false(registry, test_config):
-    """Test that load() skips hash verification when verify_hash=False."""
+def test_load_with_verify_none(registry, test_config):
+    """Test that load() skips hash verification when verify='none'."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Load with verify_hash=False should still work
-    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=False)
+    # Load with verify="none" should still work
+    loaded_config = registry.load("test:config", version="1.0.0", verify="none")
     assert loaded_config == test_config
 
 
@@ -2348,7 +2348,7 @@ def test_load_hash_mismatch_detection(registry, test_config):
 
     # Load should detect hash mismatch and raise ValueError
     with pytest.raises(ValueError, match="Artifact hash verification failed"):
-        registry.load("test:config", version="1.0.0", verify_hash=True)
+        registry.load("test:config", version="1.0.0", verify="integrity")
 
 
 def test_load_missing_hash_warning(registry, test_config, caplog):
@@ -2367,7 +2367,7 @@ def test_load_missing_hash_warning(registry, test_config, caplog):
         yaml.safe_dump(metadata, f)
 
     # Load should still work but log a warning
-    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    loaded_config = registry.load("test:config", version="1.0.0", verify="integrity")
     assert loaded_config == test_config
 
     # Verify warning was logged
@@ -2376,12 +2376,12 @@ def test_load_missing_hash_warning(registry, test_config, caplog):
 
 
 def test_load_hash_verification_passed_logging(registry, test_config, caplog):
-    """Test that load() successfully verifies hash when verify_hash=True."""
+    """Test that load() successfully verifies hash when verify='integrity'."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
     # Load with hash verification - should succeed without errors
-    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    loaded_config = registry.load("test:config", version="1.0.0", verify="integrity")
     assert loaded_config == test_config
 
     # Verify no hash verification errors were logged
@@ -2409,7 +2409,7 @@ def test_load_hash_mismatch_error_message(registry, test_config):
 
     # Load should raise ValueError with informative message
     with pytest.raises(ValueError) as exc_info:
-        registry.load("test:config", version="1.0.0", verify_hash=True)
+        registry.load("test:config", version="1.0.0", verify="integrity")
 
     error_message = str(exc_info.value)
     assert "Artifact hash verification failed" in error_message
@@ -2498,19 +2498,19 @@ def test_load_hash_verification_with_basic_types(registry):
     # Test with string
     registry.save("test:str", "hello", version="1.0.0")
     assert "hash" in registry.info("test:str", version="1.0.0")
-    loaded = registry.load("test:str", version="1.0.0", verify_hash=True)
+    loaded = registry.load("test:str", version="1.0.0", verify="integrity")
     assert loaded == "hello"
 
     # Test with int
     registry.save("test:int", 42, version="1.0.0")
     assert "hash" in registry.info("test:int", version="1.0.0")
-    loaded = registry.load("test:int", version="1.0.0", verify_hash=True)
+    loaded = registry.load("test:int", version="1.0.0", verify="integrity")
     assert loaded == 42
 
     # Test with float
     registry.save("test:float", 3.14, version="1.0.0")
     assert "hash" in registry.info("test:float", version="1.0.0")
-    loaded = registry.load("test:float", version="1.0.0", verify_hash=True)
+    loaded = registry.load("test:float", version="1.0.0", verify="integrity")
     assert loaded == 3.14
 
 
@@ -2520,14 +2520,14 @@ def test_load_hash_verification_with_container_types(registry):
     test_list = [1, 2, 3]
     registry.save("test:list", test_list, version="1.0.0")
     assert "hash" in registry.info("test:list", version="1.0.0")
-    loaded = registry.load("test:list", version="1.0.0", verify_hash=True)
+    loaded = registry.load("test:list", version="1.0.0", verify="integrity")
     assert loaded == test_list
 
     # Test with dict
     test_dict = {"a": 1, "b": 2}
     registry.save("test:dict", test_dict, version="1.0.0")
     assert "hash" in registry.info("test:dict", version="1.0.0")
-    loaded = registry.load("test:dict", version="1.0.0", verify_hash=True)
+    loaded = registry.load("test:dict", version="1.0.0", verify="integrity")
     assert loaded == test_dict
 
 
@@ -2792,7 +2792,8 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
         mock_backend.pull = Mock(side_effect=mock_pull)
 
         # Load should detect stale cache, fetch from remote, and return new value
-        result = registry.load("test:obj", "1.0.0", verify_hash=True)
+        # verify="full" is needed for staleness check (integrity only checks hash, not staleness)
+        result = registry.load("test:obj", "1.0.0", verify="full")
         assert result == "new_value"
 
         # Verify remote pull was called (to refresh stale cache)
@@ -2959,7 +2960,7 @@ def test_save_cache_error_handling(temp_registry_dir):
 
 
 def test_load_cache_metadata_sync(temp_registry_dir):
-    """Test that loading from cache uses remote metadata for materialization when verify_hash=True."""
+    """Test that loading from cache uses remote metadata for staleness check when verify='full'."""
 
     # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
@@ -2993,8 +2994,8 @@ def test_load_cache_metadata_sync(temp_registry_dir):
         )
     )
 
-    # Load from cache with verify_hash=True (default) - uses remote metadata
-    result = registry.load("test:obj", "1.0.0", verify_hash=True)
+    # Load from cache with verify="full" - fetches remote metadata for staleness check
+    result = registry.load("test:obj", "1.0.0", verify="full")
     assert result == "value"
 
     # Verify remote metadata was fetched (for hash verification)
@@ -3203,8 +3204,8 @@ def test_registry_invalid_backend_type(temp_registry_dir):
         Registry(backend=123)  # Invalid type
 
 
-def test_load_verify_hash_false_with_cache_hit(temp_registry_dir):
-    """Test that load() uses cache when verify_hash=False and cache has object."""
+def test_load_verify_none_with_cache_hit(temp_registry_dir):
+    """Test that load() uses cache when verify='none' and cache has object."""
 
     # Create a mock remote backend with correct return types for new batch API
     mock_backend = Mock(spec=RegistryBackend)
@@ -3222,15 +3223,15 @@ def test_load_verify_hash_false_with_cache_hit(temp_registry_dir):
     test_value = "cached_value"
     registry._cache.save("test:obj", test_value, version="1.0.0")
 
-    # Load with verify_hash=False - should use cache without remote metadata fetch
-    result = registry.load("test:obj", version="1.0.0", verify_hash=False)
+    # Load with verify="none" - should use cache without remote metadata fetch
+    result = registry.load("test:obj", version="1.0.0", verify="none")
     assert result == test_value
 
     # Remote backend should not need to fetch metadata or pull (cache has it)
     # Note: has_object is still called for cache check, but no remote pull needed
 
 
-def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
+def test_load_verify_integrity_cache_dir_not_exists(temp_registry_dir):
     """Test that load() fetches from remote when cache directory doesn't exist."""
 
     # Create a mock remote backend with correct return types for new batch API
@@ -3279,16 +3280,16 @@ def test_load_verify_hash_true_cache_dir_not_exists(temp_registry_dir):
             )
         )
 
-        # Load with verify_hash=True - should fetch from remote
-        result = registry.load("test:obj", version="1.0.0", verify_hash=True)
+        # Load with verify="integrity" - should fetch from remote
+        result = registry.load("test:obj", version="1.0.0", verify="integrity")
         assert result == "test_value"
 
         # Verify remote pull was called
         mock_backend.pull.assert_called_once()
 
 
-def test_load_verify_hash_false_uses_cache(temp_registry_dir):
-    """Test that load() uses cache when verify_hash=False without checking hash."""
+def test_load_verify_none_uses_cache(temp_registry_dir):
+    """Test that load() uses cache when verify='none' without checking hash."""
 
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
@@ -3311,8 +3312,8 @@ def test_load_verify_hash_false_uses_cache(temp_registry_dir):
         "hash": "test_hash",
     }
 
-    # Load with verify_hash=False - should use cache without checking hash
-    result = registry.load("test:obj", version="1.0.0", verify_hash=False)
+    # Load with verify="none" - should use cache without checking hash
+    result = registry.load("test:obj", version="1.0.0", verify="none")
     assert result == test_value
 
     # Verify remote pull was not called (cache was used)
