@@ -9,7 +9,7 @@ from zenml.materializers.base_materializer import BaseMaterializer
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.registry import Registry
-from mindtrace.registry.core.types import BatchResult, OnConflict
+from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
 class RegistryWithCache(Registry):
@@ -188,41 +188,54 @@ class RegistryWithCache(Registry):
         name: str | List[str],
         version: str | None | List[str | None] = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> Any | BatchResult:
-        """Load object(s) with cache-first pattern."""
+        """Load object(s) with cache-first pattern.
+
+        Args:
+            name: Name(s) of the object(s). Single string or list.
+            version: Version(s). Defaults to "latest".
+            output_dir: If loaded object is a Path, move contents here.
+            verify: Verification level for loaded artifacts.
+                - "none": No verification, trust cache completely. Fastest.
+                - "integrity": Verify hash integrity only (no staleness check).
+                - "full": Verify integrity + check if cache is stale vs remote (default).
+            **kwargs: Additional keyword arguments passed to materializers.
+        """
         if isinstance(name, list):
-            return self._load_batch(name, version, output_dir, verify_hash, **kwargs)
-        return self._load_single(name, version, output_dir, verify_hash, **kwargs)
+            return self._load_batch(name, version, output_dir, verify, **kwargs)
+        return self._load_single(name, version, output_dir, verify, **kwargs)
 
     def _load_single(
         self,
         name: str,
         version: str | None = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> Any:
         """Load a single object with cache-first pattern.
 
         Cache validation strategy:
-        - If verify_hash=False: Use cache if available, no validation
-        - If verify_hash=True: Check staleness (remote updated), let inner Registry verify corruption
+        - "none": Use cache if available, no validation
+        - "integrity": Verify hash integrity only, no staleness check
+        - "full": Check staleness (remote updated) + integrity check
         """
         # Resolve version from remote (authoritative source)
         resolved_v = version if version and version != "latest" else self._remote._latest(name)
 
+        # Determine verification behavior
+        check_staleness = verify == VerifyLevel.FULL
+
         # Try cache first (with error handling to fall through to remote on any failure)
         try:
             if resolved_v and self._cache.has_object(name, resolved_v):
-                # Check staleness only if verify_hash is True
-                if not verify_hash or not self._is_cache_stale(name, resolved_v):
+                # Check staleness only if verify == FULL
+                if not check_staleness or not self._is_cache_stale(name, resolved_v):
                     try:
-                        # Load from cache - verify_hash catches corruption via inner Registry
-                        return self._cache.load(
-                            name, resolved_v, output_dir=output_dir, verify_hash=verify_hash, **kwargs
-                        )
+                        # Load from cache - verify param catches corruption via inner Registry
+                        return self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
                     except ValueError:
                         # Hash verification failed = corrupted cache
                         self.logger.debug(f"Cache corrupted for {name}@{resolved_v}, re-downloading")
@@ -234,7 +247,7 @@ class RegistryWithCache(Registry):
             pass  # Any cache error - fall through to remote
 
         # Load from remote
-        obj = self._remote.load(name, version, output_dir=output_dir, verify_hash=verify_hash, **kwargs)
+        obj = self._remote.load(name, version, output_dir=output_dir, verify=verify, **kwargs)
 
         # Update cache (best effort) - resolve version again if needed
         cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
@@ -251,20 +264,24 @@ class RegistryWithCache(Registry):
         names: List[str],
         versions: str | None | List[str | None] = "latest",
         output_dir: str | None = None,
-        verify_hash: bool = True,
+        verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> BatchResult:
         """Load multiple objects with cache-first pattern.
 
         Cache validation strategy:
-        - If verify_hash=False: Use cache if available, no validation
-        - If verify_hash=True: Check staleness (remote updated), inner Registry verifies integrity(declared hash vs actual hash)
+        - "none": Use cache if available, no validation
+        - "integrity": Verify hash integrity only, no staleness check
+        - "full": Check staleness (remote updated) + integrity check
         """
         n = len(names)
         versions_list = versions if isinstance(versions, list) else [versions] * n
 
         if n != len(versions_list):
             raise ValueError("name and version lists must have same length")
+
+        # Determine verification behavior
+        check_staleness = verify == VerifyLevel.FULL
 
         # Resolve versions
         resolved, resolve_errors = self._remote._resolve_versions(names, versions_list, on_error="skip")
@@ -276,19 +293,19 @@ class RegistryWithCache(Registry):
         # Indices to process (skip resolution errors)
         pending = [i for i in range(n) if resolved[i] not in errors]
 
-        # Step 1: Batch cache load (verify_hash catches corruption via inner Registry)
+        # Step 1: Batch cache load (verify param catches corruption via inner Registry)
         if pending:
             cache_result = self._cache.load(
                 [resolved[i][0] for i in pending],
                 [resolved[i][1] for i in pending],
-                verify_hash=verify_hash,
+                verify=verify,
                 **kwargs,
             )
             for i, obj in zip(pending, cache_result.results):
                 objects[i] = obj  # None if cache miss or hash verification failed
 
-        # Step 2: Check staleness for cache hits (only if verify_hash=True)
-        if verify_hash:
+        # Step 2: Check staleness for cache hits (only if verify == FULL)
+        if check_staleness:
             cached = [i for i in pending if objects[i] is not None]
             for i in self._find_stale_indices(resolved, cached):
                 objects[i] = None  # Mark stale items for remote fetch
@@ -300,7 +317,7 @@ class RegistryWithCache(Registry):
                 [resolved[i][0] for i in misses],
                 [resolved[i][1] for i in misses],
                 output_dir=output_dir,
-                verify_hash=verify_hash,
+                verify=verify,
                 **kwargs,
             )
 
