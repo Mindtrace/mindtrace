@@ -296,6 +296,10 @@ class TestConcurrentPullOperations:
             acquire_lock=False,
         )
 
+        # Fetch metadata (includes _storage.uuid from MVCC)
+        fetched = s3_backend.fetch_metadata(object_name, version)
+        fetched_meta = fetched.first().metadata
+
         num_threads = 5
         results: List[Tuple[int, str]] = []
         results_lock = threading.Lock()
@@ -312,7 +316,7 @@ class TestConcurrentPullOperations:
                     version,
                     pull_dir,
                     acquire_lock=False,
-                    metadata=[test_metadata],
+                    metadata=[fetched_meta],
                 )
 
                 with results_lock:

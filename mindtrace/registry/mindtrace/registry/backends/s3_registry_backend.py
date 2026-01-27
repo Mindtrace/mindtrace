@@ -1,6 +1,7 @@
 """S3-compatible registry backend.
 
-Uses S3-compatible storage (AWS S3, Minio, etc.) for both artifact and metadata storage as well as locks.
+Uses S3-compatible storage (AWS S3, Minio, etc.) for both artifact and metadata storage.
+
 """
 
 import json
@@ -10,6 +11,7 @@ import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
@@ -34,17 +36,25 @@ class S3RegistryBackend(RegistryBackend):
     """An S3-compatible registry backend.
 
     Works with AWS S3, Minio, DigitalOcean Spaces, and other S3-compatible services.
-    Stores objects and metadata in an S3 bucket with atomic operations.
+    Stores objects and metadata in an S3 bucket with lock-free concurrency via UUID isolation.
 
-    Locking strategy:
-    - Writers (push/delete): Use exclusive locks when acquire_lock=True (mutable registries)
-    - Readers (pull): No locking. Metadata is written LAST, so if readable, files exist.
+    Lock-free concurrency model:
+    - Each push writes files to a unique UUID folder: objects/{name}/{version}/{uuid}/
+    - Commit plans in _staging/ track in-progress operations for janitor cleanup
+    - Metadata write is the atomic "commit point" (points to active UUID)
+    - For immutable: IfNoneMatch='*' on metadata ensures first-write-wins
+    - For mutable: last metadata write wins, orphaned UUIDs cleaned by janitor
 
-    Atomicity for immutable registries (acquire_lock=False):
-    - Uses IfNoneMatch='*' for atomic create-only (fail if exists)
-    - Metadata written LAST (the "commit point")
+    Storage structure:
+        {prefix}/
+          objects/{name}/{version}/{uuid}/    # UUID-namespaced artifact folder
+            file1.bin
+            file2.json
+          _meta_{name}@{version}.json         # Metadata pointing to active UUID
+          _staging/{request_id}.json          # Commit plans for janitor cleanup
+          registry_metadata.json              # Global registry config
 
-    Uses `_files` manifest from metadata to avoid expensive object listing on pull.
+    Uses `_files` manifest from metadata to avoid expensive blob listing on pull.
 
     Local Docker Example (Minio):
         To run a local MinIO registry, first start a MinIO server using docker:
@@ -151,7 +161,19 @@ class S3RegistryBackend(RegistryBackend):
             self.storage.upload_string(data, self._metadata_path)
 
     def _object_key(self, name: str, version: str) -> str:
-        """Convert object name and version to a storage key."""
+        """Convert object name and version to a storage key.
+
+        .. deprecated::
+            Use :meth:`_object_key_with_uuid` instead. With MVCC, all object
+            storage uses UUID-based paths for isolation.
+        """
+        import warnings
+
+        warnings.warn(
+            "_object_key is deprecated. Use _object_key_with_uuid for MVCC-based storage.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self._prefixed(f"objects/{name}/{version}")
 
     def _object_metadata_path(self, name: str, version: str) -> str:
@@ -166,8 +188,142 @@ class S3RegistryBackend(RegistryBackend):
         """Get the path for a write lock file."""
         return self._prefixed(f"_lock_{key.replace('/', '_').replace('@', '_')}")
 
+    def _object_key_with_uuid(self, name: str, version: str, uuid_str: str) -> str:
+        """Convert object name, version, and UUID to a storage key."""
+        return self._prefixed(f"objects/{name}/{version}/{uuid_str}")
+
+    def _staging_path(self, request_id: str) -> str:
+        """Get the path for a commit plan in staging."""
+        return self._prefixed(f"_staging/{request_id}.json")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Commit Plan Helpers (for lock-free MVCC)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _create_commit_plan(
+        self,
+        request_id: str,
+        name: str,
+        version: str,
+        uuid_str: str,
+        old_uuid: str | None = None,
+        operation: str = "push",
+        expires_hours: int = 1,
+    ) -> bool:
+        """Create a commit plan to track an in-progress operation.
+
+        Commit plans allow janitor to clean up failed/incomplete operations.
+
+        Args:
+            request_id: Unique identifier for this operation (used as filename).
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID for the artifact folder (new for push, existing for delete).
+            old_uuid: For overwrites, the UUID of the previous version to clean up.
+            operation: Operation type - "push" or "delete".
+            expires_hours: Hours until this plan expires (for janitor).
+
+        Returns:
+            True if commit plan was created successfully.
+
+        Janitor behavior by operation:
+            - push: Delete uuid folder (incomplete push), keep old_uuid (was current)
+            - delete: Delete uuid folder (delete committed but cleanup failed)
+        """
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+        plan = {
+            "operation": operation,
+            "name": name,
+            "version": version,
+            "uuid": uuid_str,
+            "old_uuid": old_uuid,
+            "expires_at": expires_at.isoformat(),
+        }
+
+        staging_path = self._staging_path(request_id)
+        data = json.dumps(plan)
+
+        try:
+            result = self.storage.upload_string(data, staging_path)
+            return result.ok
+        except Exception as e:
+            self.logger.warning(f"Failed to create commit plan {request_id}: {e}")
+            return False
+
+    def _delete_commit_plan(self, request_id: str) -> bool:
+        """Delete a commit plan after successful completion.
+
+        Args:
+            request_id: The request ID of the commit plan to delete.
+
+        Returns:
+            True if deleted successfully, False otherwise.
+        """
+        staging_path = self._staging_path(request_id)
+        result = self.storage.delete(staging_path)
+        if not result.ok:
+            self.logger.warning(f"Failed to delete commit plan {request_id}: {result.error_message}")
+            return False
+        return True
+
+    def _delete_uuid_folder(self, name: str, version: str, uuid_str: str) -> bool:
+        """Delete all files in a UUID folder.
+
+        Args:
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID of the folder to delete.
+
+        Returns:
+            True if all files deleted successfully, False otherwise.
+        """
+        folder_prefix = self._object_key_with_uuid(name, version, uuid_str)
+        try:
+            # List all files in the UUID folder
+            files = self.storage.list_objects(prefix=folder_prefix)
+            if files:
+                batch_result = self.storage.delete_batch(files)
+                # Check if any deletes failed
+                if batch_result.failed_results:
+                    failed_count = len(batch_result.failed_results)
+                    self.logger.warning(f"Failed to delete {failed_count} files in UUID folder {folder_prefix}")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to delete UUID folder {folder_prefix}: {e}")
+            return False
+
+    def _attempt_rollback(
+        self,
+        request_id: str,
+        name: str,
+        version: str,
+        uuid_str: str,
+    ) -> bool:
+        """Attempt to clean up after a failed push operation.
+
+        Best-effort cleanup of UUID folder and commit plan. If cleanup fails,
+        the commit plan remains for janitor to handle later.
+
+        Args:
+            request_id: The request ID for the commit plan.
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID of the folder to clean up.
+
+        Returns:
+            True if cleanup succeeded, False otherwise.
+        """
+        cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
+        if cleanup_ok:
+            self._delete_commit_plan(request_id)
+        return cleanup_ok
+
     # ─────────────────────────────────────────────────────────────────────────
     # Internal Locking (exclusive only, for mutable registry writes)
+    # NOTE: Locks are being phased out in favor of UUID-based isolation.
+    # Kept for delete operations and backward compatibility.
     # ─────────────────────────────────────────────────────────────────────────
 
     def _acquire_lock(self, key: str, lock_id: str, timeout: int = 30) -> bool:
@@ -305,27 +461,60 @@ class S3RegistryBackend(RegistryBackend):
         obj_path: Path,
         obj_meta: dict,
         on_conflict: str,
-        fail_if_exists: bool,
         max_workers: int = 4,
     ) -> OpResult:
-        """Push a single object's files and metadata.
+        """Push a single object's files and metadata using UUID-based MVCC.
+
+        Lock-free concurrency:
+        - Files are uploaded to a unique UUID folder: objects/{name}/{version}/{uuid}/
+        - Commit plan tracks the operation for janitor cleanup on failure
+        - Metadata write is the atomic "commit point"
+        - For immutable (skip): if_generation_match=0 ensures first-write-wins
+        - For mutable (overwrite): last metadata write wins
 
         Args:
             obj_name: Object name.
             obj_version: Object version.
             obj_path: Local path to upload from.
             obj_meta: Metadata dict.
-            on_conflict: "error", "skip", or "overwrite".
-            fail_if_exists: If True, fail if files already exist.
+            on_conflict: "skip" or "overwrite".
             max_workers: Maximum parallel workers for file uploads.
 
         Returns:
             OpResult indicating success, skip, overwrite, or error.
         """
-        try:
-            remote_key = self._object_key(obj_name, obj_version)
+        request_id: str | None = None
+        uuid_str: str | None = None
+        old_uuid: str | None = None
+        is_overwrite = on_conflict == OnConflict.OVERWRITE
 
-            # Use _files manifest from metadata if available (built by Registry)
+        try:
+            # Step 1: Check existing metadata
+            # - For on_conflict=skip: return if exists (avoid uploading files that will be discarded)
+            # - For on_conflict=overwrite: get old_uuid (current) for cleanup after successful write
+            try:
+                existing_meta = self.fetch_metadata(obj_name, obj_version)
+                existing_result = existing_meta.get((obj_name, obj_version))
+                if existing_result and existing_result.ok and existing_result.metadata:
+                    if not is_overwrite:
+                        # Skip mode: object exists, return early (no upload needed)
+                        return OpResult.skipped(obj_name, obj_version)
+                    # Overwrite mode: get old_uuid for cleanup
+                    storage_info = existing_result.metadata.get("_storage", {})
+                    old_uuid = storage_info.get("uuid")
+            except Exception:
+                # No existing metadata or fetch failed, proceed with push
+                pass
+
+            # Step 2: Generate unique identifiers and create commit plan
+            request_id = str(uuid.uuid4())
+            uuid_str = str(uuid.uuid4())
+            if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, old_uuid):
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
+
+            # Step 3: Build file list for UUID folder
+            remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
+
             files_manifest = obj_meta.get("_files") if obj_meta else None
             if files_manifest is not None:
                 files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
@@ -337,78 +526,66 @@ class S3RegistryBackend(RegistryBackend):
                         relative = file_path.relative_to(obj_path).as_posix()
                         files.append((str(file_path), f"{remote_key}/{relative}"))
 
-            # Prepare metadata with path
-            prepared_meta = dict(obj_meta) if obj_meta else {}
-            prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
-
+            # Step 4: Upload files to UUID folder (no conflict possible - UUID is unique)
             if files:
                 batch_result = self.storage.upload_batch(
-                    files, on_error="skip", fail_if_exists=fail_if_exists, max_workers=max_workers
+                    files, fail_if_exists=False, max_workers=max_workers
                 )
 
-                # Check for conflicts (already_exists) or errors
-                conflict_files = [r for r in batch_result.results if r.status == Status.ALREADY_EXISTS]
-                error_files = [r for r in batch_result.results if r.status == Status.ERROR]
-
-                if conflict_files:
-                    # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
-                    if uploaded:
-                        self.storage.delete_batch(uploaded)
-
-                    if on_conflict == OnConflict.SKIP:
-                        return OpResult.skipped(obj_name, obj_version)
-                    else:
-                        return OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                        )
-
-                if error_files:
-                    # Rollback any successful uploads
-                    uploaded = [r.remote_path for r in batch_result.results if r.status == Status.OK]
-                    if uploaded:
-                        self.storage.delete_batch(uploaded)
+                # Check for failures
+                if batch_result.failed_results:
+                    self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                    first_error = batch_result.failed_results[0]
                     return OpResult.failed(
                         obj_name,
                         obj_version,
-                        RuntimeError(f"Failed to upload {len(error_files)} file(s): {error_files[0].error_message}"),
+                        RuntimeError(
+                            f"Failed to upload {len(batch_result.failed_results)} file(s): {first_error.error_message}"
+                        ),
                     )
 
-            # Write metadata LAST (the "commit point")
+            # Step 5: Prepare metadata with _storage info
+            prepared_meta = dict(obj_meta) if obj_meta else {}
+            prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
+            prepared_meta["_storage"] = {
+                "uuid": uuid_str,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Step 6: Write metadata (the "commit point")
             meta_result = self._save_metadata_single(obj_name, obj_version, prepared_meta, on_conflict)
 
+            # Handle conflict (immutable mode - another writer won the race)
             if meta_result.status == Status.ALREADY_EXISTS:
-                # Rollback uploaded files
-                uploaded = [remote for _, remote in files]
-                if uploaded:
-                    self.storage.delete_batch(uploaded)
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                return OpResult.skipped(obj_name, obj_version)
 
-                if on_conflict == OnConflict.SKIP:
-                    return OpResult.skipped(obj_name, obj_version)
-                else:
-                    return OpResult.failed(
-                        obj_name,
-                        obj_version,
-                        RegistryVersionConflict(f"Object {obj_name}@{obj_version} already exists"),
-                    )
-            elif meta_result.status == Status.ERROR:
-                # Rollback uploaded files
-                uploaded = [remote for _, remote in files]
-                if uploaded:
-                    self.storage.delete_batch(uploaded)
+            # Handle any error (.ok checks for OK or OVERWRITTEN)
+            if not meta_result.ok:
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
                 return OpResult.failed(
                     obj_name,
                     obj_version,
-                    RuntimeError(meta_result.error_message or "Metadata write failed"),
+                    RuntimeError(meta_result.error_message or f"Metadata write failed: {meta_result.status}"),
                 )
-            elif meta_result.status == Status.OVERWRITTEN:
+
+            # Step 7: Success. Clean up old UUID folder and commit plan
+            cleanup_ok = True
+            if old_uuid:
+                cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid)
+
+            if cleanup_ok:
+                self._delete_commit_plan(request_id)
+
+            if meta_result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             else:
                 return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
+            # Attempt cleanup if we created a commit plan
+            if request_id and uuid_str:
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
             return OpResult.failed(obj_name, obj_version, e)
 
     def push(
@@ -423,16 +600,18 @@ class S3RegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Push artifacts and metadata to the registry.
 
-        Objects are processed in parallel for maximum efficiency. Each object's
-        push is atomic with proper rollback on failure.
+        Objects are processed in parallel for maximum efficiency. Uses lock-free
+        UUID-based MVCC for concurrent safety.
 
-        This is a batch-only method - it never raises exceptions for individual
-        object failures. The caller (Registry) handles single vs batch semantics.
+        Lock-free concurrency model:
+        - Each push writes files to a unique UUID folder
+        - Commit plans track operations for janitor cleanup on failure
+        - Metadata write is the atomic "commit point"
+        - For immutable (skip): if_generation_match=0 ensures first-write-wins
+        - For mutable (overwrite): last metadata write wins
 
-        Atomicity strategy depends on acquire_lock:
-        - acquire_lock=False (immutable): Check if exists before upload.
-          If any file exists, the push fails. Metadata written LAST.
-        - acquire_lock=True (mutable): Acquire locks first, then overwrite files freely.
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Object name(s). Single string or list.
@@ -440,18 +619,20 @@ class S3RegistryBackend(RegistryBackend):
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
             on_conflict: Behavior when version exists.
-                "skip": Return skipped result.
-                "overwrite": Replace existing version (requires acquire_lock=True).
-            acquire_lock: If True, acquire locks before push (for mutable registries).
-                If False, rely on fail_if_exists check for atomicity (immutable registries).
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+            acquire_lock: Ignored. Kept for API compatibility. Lock-free model used.
             max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
         """
         # Normalize inputs
         names = self._normalize_to_list(name)
@@ -462,65 +643,28 @@ class S3RegistryBackend(RegistryBackend):
         if not (len(names) == len(versions) == len(paths) == len(metadatas)):
             raise ValueError("Input list lengths must match")
 
-        # Validate on_conflict + acquire_lock combination
-        if on_conflict == OnConflict.OVERWRITE and not acquire_lock:
-            raise ValueError(
-                "on_conflict='overwrite' requires acquire_lock=True. "
-                "Overwriting without a lock is unsafe for concurrent access."
-            )
-
         # Validate all names upfront
         for obj_name in names:
             self.validate_object_name(obj_name)
 
         results = OpResults()
-        acquired_locks: Dict[str, str] = {}
-        failed_locks: set = set()
 
-        # Acquire locks if mutable registry
-        if acquire_lock:
-            lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
+        # Use provided max_workers or fall back to instance default
+        workers = max_workers or self._max_workers
 
-            for obj_name, obj_version in zip(names, versions):
-                lock_key = f"{obj_name}@{obj_version}"
-                lock_id = lock_results.get(lock_key)
-                if lock_id:
-                    acquired_locks[lock_key] = lock_id
-                else:
-                    failed_locks.add((obj_name, obj_version))
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
-                        )
-                    )
+        # Limit file-level parallelism
+        file_workers = min(2, workers)
 
-        try:
-            workers = max_workers or self._max_workers
-            file_workers = min(2, workers)
-            fail_if_exists = on_conflict == OnConflict.SKIP
+        # Prepare all tasks
+        push_tasks = list(zip(names, versions, paths, metadatas))
 
-            # Prepare tasks for objects that haven't failed lock acquisition
-            push_tasks = [
-                (n, v, p, m) for n, v, p, m in zip(names, versions, paths, metadatas) if (n, v) not in failed_locks
-            ]
+        def push_one(args: Tuple[str, str, Path, dict]) -> OpResult:
+            obj_name, obj_version, obj_path, obj_meta = args
+            return self._push_single_object(obj_name, obj_version, obj_path, obj_meta, on_conflict, file_workers)
 
-            def push_one(args: Tuple[str, str, Path, dict]) -> OpResult:
-                obj_name, obj_version, obj_path, obj_meta = args
-                return self._push_single_object(
-                    obj_name, obj_version, obj_path, obj_meta, on_conflict, fail_if_exists, file_workers
-                )
-
-            # Process all tasks in parallel
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(push_one, push_tasks):
-                    results.add(result)
-
-        finally:
-            if acquired_locks:
-                self._release_locks_batch(acquired_locks)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for result in executor.map(push_one, push_tasks):
+                results.add(result)
 
         return results
 
@@ -592,12 +736,21 @@ class S3RegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
-                remote_key = self._object_key(obj_name, obj_version)
                 meta_result = metadata_results.get((obj_name, obj_version))
                 if not meta_result or not meta_result.ok:
                     raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
 
                 obj_metadata = meta_result.metadata or {}
+
+                # Get remote key from _storage.uuid
+                storage_info = obj_metadata.get("_storage", {})
+                uuid_str = storage_info.get("uuid")
+                if not uuid_str:
+                    raise RegistryObjectNotFound(
+                        f"Object {obj_name}@{obj_version} has corrupted metadata (missing _storage.uuid)"
+                    )
+                remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
+
                 files_manifest = obj_metadata.get("_files")
 
                 if files_manifest:
@@ -608,7 +761,7 @@ class S3RegistryBackend(RegistryBackend):
                         all_files_to_download.append((remote_path, str(dest_file)))
                         file_to_object[str(dest_file)] = (obj_name, obj_version)
                 else:
-                    # Fallback to listing (expensive)
+                    # Fallback to listing (not preferred)
                     objects_list = self.storage.list_objects(prefix=remote_key)
                     if not objects_list:
                         raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
@@ -627,7 +780,7 @@ class S3RegistryBackend(RegistryBackend):
 
         # Batch download all files
         if all_files_to_download:
-            download_result = self.storage.download_batch(all_files_to_download, max_workers=workers, on_error="skip")
+            download_result = self.storage.download_batch(all_files_to_download, max_workers=workers)
 
             for file_result in download_result.failed_results:
                 dest_path_str = file_result.local_path
@@ -658,26 +811,70 @@ class S3RegistryBackend(RegistryBackend):
         max_workers: int = 4,
         metadata: dict | None = None,
     ) -> OpResult:
-        """Delete a single object's files and metadata."""
+        """Delete a single object's files and metadata using MVCC pattern.
+
+        MVCC delete flow:
+        1. Get UUID from metadata (if available)
+        2. Create delete commit plan (for janitor cleanup if crash after step 3)
+        3. Delete metadata (the "commit point" - object becomes invisible)
+        4. Delete UUID folder (cleanup)
+        5. Delete commit plan on success
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            max_workers: Maximum parallel workers for batch delete.
+            metadata: Optional pre-fetched metadata containing "_files" manifest and "_storage.uuid".
+
+        Returns:
+            OpResult indicating success or error.
+        """
+        request_id: str | None = None
+        uuid_str: str | None = None
+
         try:
-            remote_key = self._object_key(obj_name, obj_version)
+            # Step 1: Get UUID from metadata
+            if metadata:
+                storage_info = metadata.get("_storage", {})
+                uuid_str = storage_info.get("uuid")
 
-            # Use _files manifest if available, otherwise fallback to listing
-            if metadata and "_files" in metadata:
-                paths_to_delete = [f"{remote_key}/{f}".replace("\\", "/") for f in metadata["_files"]]
-            else:
-                paths_to_delete = self.storage.list_objects(prefix=remote_key)
+            # Step 2: Create delete commit plan (if we have UUID to clean up)
+            if uuid_str:
+                request_id = str(uuid.uuid4())
+                if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, operation="delete"):
+                    return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create delete commit plan"))
 
-            # Add metadata path
+            # Step 3: Delete metadata (the "commit point")
+            # After this, readers no longer see the object
             meta_path = self._object_metadata_path(obj_name, obj_version)
-            paths_to_delete.append(meta_path)
+            meta_result = self.storage.delete(meta_path)
 
-            # Batch delete all files
-            self.storage.delete_batch(paths_to_delete, max_workers=max_workers)
+            if not meta_result.ok:
+                # Cleanup commit plan if we created one
+                if request_id:
+                    self._delete_commit_plan(request_id)
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RuntimeError(f"Failed to delete metadata: {meta_result.error_message}"),
+                )
+
+            # Step 4: Delete UUID folder (cleanup)
+            # If this fails, janitor will clean it up later using the commit plan
+            if uuid_str:
+                self._delete_uuid_folder(obj_name, obj_version, uuid_str)
+            # else: No UUID means metadata-only object, nothing to clean up
+
+            # Step 5: Delete commit plan on success
+            if request_id:
+                self._delete_commit_plan(request_id)
 
             return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
+            # Best-effort cleanup of commit plan
+            if request_id:
+                self._delete_commit_plan(request_id)
             return OpResult.failed(obj_name, obj_version, e)
 
     def delete(
@@ -876,16 +1073,14 @@ class S3RegistryBackend(RegistryBackend):
                 files_to_download.append((meta_path, temp_path))
                 temp_to_key[temp_path] = (obj_name, obj_version)
 
-            batch_result = self.storage.download_batch(files_to_download, on_error="skip")
+            batch_result = self.storage.download_batch(files_to_download)
 
             for file_result in batch_result.ok_results:
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 try:
                     with open(file_result.local_path, "r") as f:
                         meta = json.load(f)
-
-                    object_key = self._object_key(obj_name, obj_version)
-                    meta["path"] = f"s3://{self._bucket}/{object_key}"
+                    # Path is already in metadata from push (includes UUID folder)
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:

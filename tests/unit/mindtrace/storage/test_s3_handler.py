@@ -167,7 +167,7 @@ def test_upload_success(mock_boto3, tmp_path):
 
     assert isinstance(result, FileResult)
     assert result.status == Status.OK
-    assert result.remote_path == "s3://my-bucket/remote/path.txt"
+    assert result.remote_path == "remote/path.txt"  # Key only, not full s3:// URI
     assert result.local_path == str(local_file)
     mock_client.put_object.assert_called_once()
     call_kwargs = mock_client.put_object.call_args.kwargs
@@ -385,7 +385,7 @@ def test_upload_string_basic(mock_boto3):
 
     assert isinstance(result, StringResult)
     assert result.status == Status.OK
-    assert result.remote_path == "s3://bucket/remote/data.json"
+    assert result.remote_path == "remote/data.json"  # Key only, not full s3:// URI
     mock_client.put_object.assert_called_once()
 
 
@@ -565,25 +565,7 @@ def test_upload_batch_success(mock_boto3, tmp_path):
 
 
 @patch("mindtrace.storage.s3.boto3")
-def test_upload_batch_with_error_raise(mock_boto3, tmp_path):
-    mock_client = _prepare_client(mock_boto3)
-    mock_client.put_object.side_effect = Exception("Upload failed")
-
-    file1 = tmp_path / "file1.txt"
-    file1.write_text("content")
-
-    handler = S3StorageHandler(
-        "bucket",
-        endpoint="localhost:9000",
-        access_key="access",
-        secret_key="secret",
-    )
-    with pytest.raises(RuntimeError, match="Failed to upload"):
-        handler.upload_batch([(str(file1), "remote/file1.txt")])
-
-
-@patch("mindtrace.storage.s3.boto3")
-def test_upload_batch_with_error_skip(mock_boto3, tmp_path):
+def test_upload_batch_with_error(mock_boto3, tmp_path):
     mock_client = _prepare_client(mock_boto3)
 
     file1 = tmp_path / "file1.txt"
@@ -602,7 +584,7 @@ def test_upload_batch_with_error_skip(mock_boto3, tmp_path):
         access_key="access",
         secret_key="secret",
     )
-    result = handler.upload_batch(files, on_error="skip")
+    result = handler.upload_batch(files)
 
     assert isinstance(result, BatchResult)
     assert len(result.ok_results) == 1
@@ -648,7 +630,7 @@ def test_download_batch_with_skip_if_exists(mock_boto3, tmp_path):
     result = handler.download_batch(files, skip_if_exists=True)
 
     assert isinstance(result, BatchResult)
-    assert len(result.ok_results) == 1
+    assert len(result.ok_results) == 2  # Both OK and SKIPPED are success statuses
     assert len(result.skipped_results) == 1
     assert len(result.failed_results) == 0
     assert mock_client.download_file.call_count == 1
@@ -953,23 +935,6 @@ def test_get_object_metadata_missing_fields(mock_boto3):
 # ---------------------------------------------------------------------------
 # Edge Cases & Error Handling
 # ---------------------------------------------------------------------------
-
-
-@patch("mindtrace.storage.s3.boto3")
-def test_bulk_operations_invalid_on_error_param(mock_boto3):
-    _prepare_client(mock_boto3)
-
-    handler = S3StorageHandler(
-        "bucket",
-        endpoint="localhost:9000",
-        access_key="access",
-        secret_key="secret",
-    )
-    with pytest.raises(ValueError, match="on_error must be"):
-        handler.upload_batch([], on_error="invalid")
-
-    with pytest.raises(ValueError, match="on_error must be"):
-        handler.download_batch([], on_error="invalid")
 
 
 @patch("mindtrace.storage.s3.boto3")

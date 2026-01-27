@@ -18,20 +18,25 @@ def test_init(s3_backend, s3_test_bucket, s3_client):
 
 
 def test_push_and_pull(s3_backend, sample_object_dir, s3_client, s3_test_bucket):
-    """Test pushing and pulling objects."""
-    # Push the object
-    result = s3_backend.push("test:object", "1.0.0", sample_object_dir)
+    """Test pushing and pulling objects with MVCC (UUID-based isolation)."""
+    # Push the object with metadata containing _files manifest
+    metadata = {"_files": ["file1.txt", "file2.txt"]}
+    result = s3_backend.push("test:object", "1.0.0", sample_object_dir, metadata=metadata)
     assert result.first().ok
 
-    # Verify the object was pushed to S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="objects/test:object/1.0.0/"))
-    assert len(objects) == 2
+    # Verify the object was pushed to S3 (UUID folder contains 2 files)
+    # With MVCC, path is: objects/test:object/1.0.0/{uuid}/file1.txt
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="objects/test:object/1.0.0/", recursive=True))
+    # Should have 2 files in the UUID folder
+    files = [obj for obj in objects if not obj.is_dir]
+    assert len(files) == 2
 
-    # Download to a new location
+    # Download to a new location - use fetch_metadata to get _storage.uuid
     download_dir = s3_backend.uri / "download"
     download_dir.mkdir(parents=True, exist_ok=True)
-    metadata = {"_files": ["file1.txt", "file2.txt"]}
-    result = s3_backend.pull("test:object", "1.0.0", str(download_dir), metadata=[metadata])
+    fetched = s3_backend.fetch_metadata("test:object", "1.0.0")
+    assert fetched.first().ok
+    result = s3_backend.pull("test:object", "1.0.0", str(download_dir), metadata=[fetched.first().metadata])
     assert result.first().ok
 
     # Verify the download
@@ -56,9 +61,8 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert fetch_result.first().ok
     fetched_metadata = fetch_result.first().metadata
 
-    # Remove the path field for comparison since it's added by fetch_metadata
-    path = fetched_metadata.pop("path", None)
-    assert path is not None  # Verify path was added
+    # With MVCC, path is only set during push() - save_metadata is low-level
+    # Just verify the metadata we saved is returned correctly
     assert fetched_metadata == sample_metadata
 
     # Delete metadata
@@ -284,17 +288,34 @@ def test_push_conflict_skip_returns_skipped(s3_backend, sample_object_dir, sampl
     assert result.is_skipped
 
 
-def test_push_overwrite_requires_lock(s3_backend, sample_object_dir, sample_metadata):
-    """Test that overwrite without lock raises error."""
-    object_name = f"test:overwrite-no-lock-{uuid.uuid4().hex[:8]}"
+def test_push_overwrite_without_lock(s3_backend, sample_object_dir, sample_metadata, s3_temp_dir):
+    """Test that overwrite works without lock using MVCC."""
+    object_name = f"test:overwrite-mvcc-{uuid.uuid4().hex[:8]}"
     version = "1.0.0"
 
     # First push
-    s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata)
+    result1 = s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata)
+    assert result1.first().ok
 
-    # Overwrite without lock should fail
-    with pytest.raises(ValueError, match="acquire_lock=True"):
-        s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata, on_conflict="overwrite")
+    # Create modified data
+    modified_dir = s3_temp_dir / "modified"
+    modified_dir.mkdir()
+    (modified_dir / "file1.txt").write_text("modified content")
+    (modified_dir / "file2.txt").write_text("modified content 2")
+
+    # Overwrite without lock should succeed using MVCC
+    result2 = s3_backend.push(
+        object_name, version, str(modified_dir), metadata=sample_metadata, on_conflict="overwrite"
+    )
+    assert result2.first().ok or result2.first().overwritten
+
+    # Verify pull gets the modified content
+    download_dir = s3_backend.uri / "download_verify"
+    download_dir.mkdir(parents=True, exist_ok=True)
+    fetched = s3_backend.fetch_metadata(object_name, version)
+    result = s3_backend.pull(object_name, version, str(download_dir), metadata=[fetched.first().metadata])
+    assert result.first().ok
+    assert (download_dir / "file1.txt").read_text() == "modified content"
 
 
 def test_push_overwrite_with_lock(s3_backend, sample_object_dir, sample_metadata, s3_temp_dir):
@@ -342,69 +363,45 @@ def test_lock_released_after_successful_push(s3_backend, sample_object_dir, samp
     s3_backend._release_lock(lock_key, lock_id)
 
 
-def test_lock_prevents_concurrent_push_returns_failed(s3_backend, sample_object_dir, sample_metadata):
-    """Test that holding a lock prevents concurrent push (batch-only returns failed result)."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
-
-    object_name = f"test:lock-prevent-{uuid.uuid4().hex[:8]}"
+def test_mvcc_concurrent_push_first_wins(s3_backend, sample_object_dir, sample_metadata):
+    """Test that with MVCC, concurrent pushes with on_conflict='skip' result in first-write-wins."""
+    object_name = f"test:mvcc-concurrent-{uuid.uuid4().hex[:8]}"
     version = "1.0.0"
 
-    # Acquire lock manually
-    lock_key = f"{object_name}@{version}"
-    lock_id = f"holder-{uuid.uuid4().hex[:8]}"
-    acquired = s3_backend._acquire_lock(lock_key, lock_id, timeout=5)
-    assert acquired
+    # First push should succeed
+    result1 = s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata, on_conflict="skip")
+    assert result1.first().ok
 
-    try:
-        # Try to push with lock - should return failed result (not raise)
-        results = s3_backend.push(
-            object_name,
-            version,
-            sample_object_dir,
-            metadata=sample_metadata,
-            on_conflict="overwrite",
-            acquire_lock=True,
-        )
-        result = results.get((object_name, version))
-        assert result.is_error
-        # result.error is the error type string, result.exception is the actual exception
-        assert result.error == "LockAcquisitionError" or isinstance(result.exception, LockAcquisitionError)
-    finally:
-        s3_backend._release_lock(lock_key, lock_id)
+    # Second push with skip should return skipped (first write wins)
+    result2 = s3_backend.push(object_name, version, sample_object_dir, metadata=sample_metadata, on_conflict="skip")
+    assert result2.first().is_skipped
 
 
-def test_lock_prevents_concurrent_push_batch(s3_backend, sample_object_dir, sample_metadata):
-    """Test that holding a lock prevents concurrent push (batch returns failed result)."""
-    object_name1 = f"test:lock-batch1-{uuid.uuid4().hex[:8]}"
-    object_name2 = f"test:lock-batch2-{uuid.uuid4().hex[:8]}"
+def test_mvcc_batch_push_mixed_results(s3_backend, sample_object_dir, sample_metadata):
+    """Test batch push with mixed results (some exist, some new)."""
+    object_name1 = f"test:mvcc-batch1-{uuid.uuid4().hex[:8]}"
+    object_name2 = f"test:mvcc-batch2-{uuid.uuid4().hex[:8]}"
     version = "1.0.0"
 
-    # Acquire lock on first object only
-    lock_key = f"{object_name1}@{version}"
-    lock_id = f"holder-{uuid.uuid4().hex[:8]}"
-    acquired = s3_backend._acquire_lock(lock_key, lock_id, timeout=5)
-    assert acquired
+    # Pre-push first object to make it exist
+    pre_result = s3_backend.push(object_name1, version, sample_object_dir, metadata=sample_metadata)
+    assert pre_result.first().ok
 
-    try:
-        # Batch push - should NOT raise, should return results
-        result = s3_backend.push(
-            [object_name1, object_name2],
-            [version, version],
-            [sample_object_dir, sample_object_dir],
-            metadata=[sample_metadata, sample_metadata],
-            on_conflict="overwrite",
-            acquire_lock=True,
-        )
+    # Batch push both with skip - first should skip, second should succeed
+    result = s3_backend.push(
+        [object_name1, object_name2],
+        [version, version],
+        [sample_object_dir, sample_object_dir],
+        metadata=[sample_metadata, sample_metadata],
+        on_conflict="skip",
+    )
 
-        # First should fail (lock held), second should succeed
-        assert len(result) == 2
-        result1 = result.get((object_name1, version))
-        result2 = result.get((object_name2, version))
+    assert len(result) == 2
+    result1 = result.get((object_name1, version))
+    result2 = result.get((object_name2, version))
 
-        assert result1 is not None and result1.is_error, "First object should fail due to lock"
-        assert result2 is not None and result2.ok, "Second object should succeed"
-    finally:
-        s3_backend._release_lock(lock_key, lock_id)
+    assert result1 is not None and result1.is_skipped, "First object should be skipped (exists)"
+    assert result2 is not None and result2.ok, "Second object should succeed"
 
 
 def test_delete_with_lock(s3_backend, sample_object_dir, sample_metadata):
@@ -431,19 +428,23 @@ def test_delete_with_lock(s3_backend, sample_object_dir, sample_metadata):
     s3_backend._release_lock(lock_key, lock_id)
 
 
-def test_pull_with_lock(s3_backend, sample_object_dir, sample_metadata, s3_temp_dir):
-    """Test pull operation with acquire_lock=True."""
-    object_name = f"test:pull-lock-{uuid.uuid4().hex[:8]}"
+def test_pull_with_metadata(s3_backend, sample_object_dir, sample_metadata, s3_temp_dir):
+    """Test pull operation with pre-fetched metadata."""
+    object_name = f"test:pull-meta-{uuid.uuid4().hex[:8]}"
     version = "1.0.0"
 
-    # Push with metadata (push() handles metadata automatically)
+    # Push with metadata
     metadata = {**sample_metadata, "_files": ["file1.txt", "file2.txt"]}
     s3_backend.push(object_name, version, sample_object_dir, metadata=metadata)
 
-    # Pull with lock
+    # Fetch metadata (includes _storage.uuid from MVCC)
+    fetched = s3_backend.fetch_metadata(object_name, version)
+    assert fetched.first().ok
+
+    # Pull with pre-fetched metadata
     download_dir = s3_temp_dir / "pull_test"
     download_dir.mkdir()
-    result = s3_backend.pull(object_name, version, str(download_dir), acquire_lock=True, metadata=[metadata])
+    result = s3_backend.pull(object_name, version, str(download_dir), metadata=[fetched.first().metadata])
     assert result.first().ok
 
     # Verify files downloaded
