@@ -788,19 +788,23 @@ class GCPRegistryBackend(RegistryBackend):
             OpResult indicating success or error.
         """
         request_id: str | None = None
-        uuid_str: str | None = None
 
         try:
-            # Step 1: Get UUID from metadata
-            if metadata:
-                storage_info = metadata.get("_storage", {})
-                uuid_str = storage_info.get("uuid")
+            # Step 1: Extract UUID from metadata (caller fetches metadata in delete())
+            # If no metadata, object doesn't exist - nothing to delete
+            if not metadata:
+                return OpResult.success(obj_name, obj_version)  # Idempotent delete
 
-            # Step 2: Create delete commit plan (if we have UUID to clean up)
-            if uuid_str:
-                request_id = str(uuid.uuid4())
-                if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, operation="delete"):
-                    return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create delete commit plan"))
+            uuid_str = metadata.get("_storage", {}).get("uuid")
+            if not uuid_str:
+                self.logger.warning(f"Metadata for {obj_name}@{obj_version} missing _storage.uuid")
+
+            # Step 2: Create delete commit plan
+            # The plan marks this name/version as needing cleanup - janitor will
+            # list all UUID folders and delete non-current ones
+            request_id = str(uuid.uuid4())
+            if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str or "", operation="delete"):
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create delete commit plan"))
 
             # Step 3: Delete metadata (the "commit point")
             # After this, readers no longer see the object
@@ -808,9 +812,7 @@ class GCPRegistryBackend(RegistryBackend):
             meta_result = self.gcs.delete(meta_path)
 
             if not meta_result.ok:
-                # Cleanup commit plan if we created one
-                if request_id:
-                    self._delete_commit_plan(request_id)
+                self._delete_commit_plan(request_id)
                 return OpResult.failed(
                     obj_name,
                     obj_version,
@@ -821,11 +823,9 @@ class GCPRegistryBackend(RegistryBackend):
             # If this fails, janitor will clean it up later using the commit plan
             if uuid_str:
                 self._delete_uuid_folder(obj_name, obj_version, uuid_str)
-            # else: No UUID means metadata-only object, nothing to clean up
 
             # Step 5: Delete commit plan on success
-            if request_id:
-                self._delete_commit_plan(request_id)
+            self._delete_commit_plan(request_id)
 
             return OpResult.success(obj_name, obj_version)
 
