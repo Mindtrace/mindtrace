@@ -637,7 +637,7 @@ class TestOpenCVCameraBackendSDKMethods:
         def failing_func():
             raise RuntimeError("Test error")
 
-        with pytest.raises(HardwareOperationError, match="OpenCV operation failed"):
+        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
             await cam._run_blocking(failing_func)
 
         await cam.close()

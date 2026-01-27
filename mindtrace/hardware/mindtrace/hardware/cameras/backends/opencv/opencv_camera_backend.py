@@ -38,6 +38,12 @@ class OpenCVCameraBackend(CameraBackend):
     OpenCV's ``VideoCapture`` with robust error handling and resource management. It works across Windows, Linux, and
     macOS with platform-aware discovery.
 
+    Thread Model:
+        OpenCV's VideoCapture is thread-safe and does not require thread affinity. This backend
+        uses the default shared thread pool via ``asyncio.to_thread()`` for blocking operations,
+        avoiding the overhead of per-camera dedicated executors. A per-instance asyncio.Lock
+        serializes mutating operations to prevent concurrent set/read races.
+
     Features:
         - USB camera and webcam support across Windows, Linux, and macOS
         - Automatic camera discovery and enumeration
@@ -45,7 +51,6 @@ class OpenCVCameraBackend(CameraBackend):
         - Optional image quality enhancement (CLAHE)
         - Robust error handling with retries and bounded timeouts
         - BGR to RGB conversion for consistency
-        - Thread-safe operations with per-instance serialization
         - Platform-specific optimizations
 
     Configuration:
@@ -58,11 +63,6 @@ class OpenCVCameraBackend(CameraBackend):
         - ``MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT``: Enable CLAHE enhancement
         - ``MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT``: Number of capture retry attempts
         - ``MINDTRACE_CAMERA_TIMEOUT_MS``: Capture timeout in milliseconds
-
-    Concurrency and serialization:
-    - All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
-    - A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
-    - Unlike Basler, OpenCV cameras do not have an explicit "grabbing" state; all operations use continuous mode.
 
     Attributes:
         camera_index: Camera device index or path
@@ -85,6 +85,8 @@ class OpenCVCameraBackend(CameraBackend):
                 image = await camera.capture()
                 await camera.close()
     """
+
+    REQUIRES_THREAD_AFFINITY = False
 
     def __init__(
         self,
@@ -163,9 +165,7 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception:
             self._op_timeout_s = 5.0
 
-        # Executor and loop for thread-affinity and event-loop hygiene
-        self._sdk_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Lock for serializing mutating operations
         self._io_lock: asyncio.Lock = asyncio.Lock()
 
         self.logger.info(
@@ -173,45 +173,19 @@ class OpenCVCameraBackend(CameraBackend):
             f"resolution={width}x{height}, fps={fps}, exposure={exposure}, timeout={timeout_ms}ms"
         )
 
-    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking OpenCV call in threadpool with timeout.
-
-        Uses asyncio.to_thread() for modern async/threading integration.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-        """
-        effective_timeout = timeout or self._op_timeout_s
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"OpenCV operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"OpenCV operation failed for camera '{self.camera_name}': {e}") from e
-
     def _sdk_sync(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking OpenCV call on a dedicated thread synchronously with timeout.
+        """Run a potentially blocking OpenCV call synchronously with timeout.
 
-        Intended for use inside synchronous methods where awaiting is not possible.
+        Intended for use inside synchronous methods (e.g., __del__) where awaiting is not possible.
+        Creates a temporary executor for the call since OpenCV doesn't require thread affinity.
         """
-        if self._sdk_executor is None:
-            self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix=f"opencv-{self.camera_name}"
-            )
 
         def _call():
             return func(*args, **kwargs)
 
-        future = self._sdk_executor.submit(_call)
-        return future.result(timeout or self._op_timeout_s)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_call)
+            return future.result(timeout or self._op_timeout_s)
 
     async def _ensure_open(self):
         """Ensure the VideoCapture is initialized and open.
@@ -286,14 +260,6 @@ class OpenCVCameraBackend(CameraBackend):
         self.logger.debug(f"Initializing OpenCV camera: {self.camera_name}")
 
         try:
-            # Prepare executor/loop
-            if self._loop is None:
-                self._loop = asyncio.get_running_loop()
-            if self._sdk_executor is None:
-                self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix=f"opencv-{self.camera_name}"
-                )
-
             # Create VideoCapture (constructor call is quick in practice)
             self.cap = cv2.VideoCapture(self.camera_index)
 
@@ -733,24 +699,6 @@ class OpenCVCameraBackend(CameraBackend):
 
         self.initialized = False
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
-
-        # Shutdown executor if present
-        if self._sdk_executor is not None:
-            try:
-                # Cancel any pending futures first
-                for future in list(self._sdk_executor._threads if hasattr(self._sdk_executor, "_threads") else []):
-                    try:
-                        future.cancel()
-                    except Exception:
-                        pass
-
-                # Shutdown with proper timeout handling
-                self._sdk_executor.shutdown(wait=False)
-                self._sdk_executor = None
-                self.logger.debug(f"Executor shutdown completed for camera '{self.camera_name}'")
-            except Exception as e:
-                self.logger.warning(f"Error shutting down executor for camera '{self.camera_name}': {e}")
-                self._sdk_executor = None
 
     async def is_exposure_control_supported(self) -> bool:
         """
@@ -1398,13 +1346,8 @@ class OpenCVCameraBackend(CameraBackend):
         """Destructor to ensure proper cleanup."""
         try:
             if hasattr(self, "cap") and self.cap is not None:
-                # Direct call is OK in destructor since we can't await here
-                # and this is just cleanup
                 try:
-                    if self._sdk_executor:
-                        self._sdk_executor.submit(self.cap.release).result(timeout=0.5)
-                    else:
-                        self.cap.release()
+                    self.cap.release()
                 except Exception:
                     pass
                 self.cap = None

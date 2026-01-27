@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+import functools
 import uuid
 from abc import abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
 from mindtrace.core import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
-from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
+from mindtrace.hardware.core.exceptions import (
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
+)
 
 
 class CameraBackend(MindtraceABC):
@@ -16,9 +25,29 @@ class CameraBackend(MindtraceABC):
 
     This class defines the async interface that all camera backends must implement
     to ensure consistent behavior across different camera types and manufacturers.
-    Uses async-first design consistent with PLC backends.
+
+    Thread Model:
+        Backends declare their threading requirements via the ``REQUIRES_THREAD_AFFINITY``
+        class attribute:
+
+        - When ``True``, a dedicated single-thread executor is created per camera instance
+          to ensure all SDK calls for that camera execute on the same OS thread. This is
+          required by SDKs like Pypylon and Harvesters that bind camera objects to the
+          thread that opened them.
+
+        - When ``False``, blocking calls are dispatched via ``asyncio.to_thread()`` using
+          the default shared thread pool. This is suitable for thread-safe SDKs like OpenCV.
+
+        All blocking SDK calls should use the ``_run_blocking()`` method, which automatically
+        selects the appropriate execution strategy based on ``REQUIRES_THREAD_AFFINITY``.
+
+    Subclass Requirements:
+        - Set ``REQUIRES_THREAD_AFFINITY = True`` if the SDK requires thread affinity
+        - Use ``_run_blocking()`` for all SDK calls that may block
+        - Call ``await self._cleanup_executor()`` in ``close()`` to release thread resources
 
     Attributes:
+        REQUIRES_THREAD_AFFINITY: Class attribute indicating thread affinity requirement
         camera_name: Unique identifier for the camera
         camera_config_file: Path to camera configuration file
         img_quality_enhancement: Whether image quality enhancement is enabled
@@ -26,32 +55,9 @@ class CameraBackend(MindtraceABC):
         camera: The initialized camera object (implementation-specific)
         device_manager: Device manager object (implementation-specific)
         initialized: Camera initialization status
-
-    Implementation Guide:
-        - Offload blocking SDK calls from async methods:
-          Use ``asyncio.to_thread`` for simple cases or ``loop.run_in_executor`` with a per-instance single-thread
-          executor when the SDK requires thread affinity.
-        - Thread affinity:
-          Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread
-          executor created during ``initialize()`` and shut down in ``close()`` to serialize SDK access without
-          blocking the event loop.
-        - Timeouts and cancellation:
-          Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with ``asyncio.wait_for`` to
-          bound runtime. Note that cancelling an await does not stop the underlying thread function; design
-          idempotent/short tasks when possible.
-        - Event loop hygiene:
-          Never call blocking functions (e.g., long SDK calls, ``time.sleep``) directly in async methods. Replace
-          sleeps with ``await asyncio.sleep`` or run blocking work in the executor.
-        - Sync helpers:
-          Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the
-          SDK, route it through the executor to avoid blocking.
-        - Errors:
-          Map SDK-specific exceptions to the domain exceptions in ``mindtrace.hardware.core.exceptions`` with clear,
-          contextual messages.
-        - Cleanup:
-          Ensure resources (device handles, executors, buffers) are released in ``close()``. ``__aenter__/__aexit__``
-          already call ``setup_camera``/``close`` for async contexts.
     """
+
+    REQUIRES_THREAD_AFFINITY: bool = False
 
     def __init__(
         self,
@@ -91,6 +97,9 @@ class CameraBackend(MindtraceABC):
         self.device_manager: Optional[Any] = None
         self.initialized: bool = False
 
+        # Thread executor for SDK calls requiring thread affinity
+        self._sdk_executor: Optional[ThreadPoolExecutor] = None
+
         self.logger.info(
             f"Camera base initialized: camera_name={self.camera_name}, "
             f"img_quality_enhancement={self.img_quality_enhancement}, "
@@ -118,6 +127,76 @@ class CameraBackend(MindtraceABC):
             self.logger.setLevel(logging.INFO)
 
         self.logger.propagate = False
+
+    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs) -> Any:
+        """Execute a blocking SDK call without blocking the event loop.
+
+        This method automatically selects the appropriate execution strategy based
+        on the ``REQUIRES_THREAD_AFFINITY`` class attribute:
+
+        - When ``True``: Uses a dedicated per-camera single-thread executor to ensure
+          all SDK calls for this camera instance execute on the same OS thread.
+          The executor is lazily created on first use.
+
+        - When ``False``: Uses ``asyncio.to_thread()`` with the default shared pool.
+
+        Args:
+            func: The blocking callable to execute
+            *args: Positional arguments passed to the callable
+            timeout: Maximum time to wait in seconds. If None, uses a default of 5.0s.
+            **kwargs: Keyword arguments passed to the callable
+
+        Returns:
+            The result of the callable
+
+        Raises:
+            CameraTimeoutError: If the operation exceeds the timeout
+            HardwareOperationError: If the operation fails
+        """
+        effective_timeout = timeout if timeout is not None else 5.0
+
+        try:
+            if self.REQUIRES_THREAD_AFFINITY:
+                loop = asyncio.get_running_loop()
+                if self._sdk_executor is None:
+                    self._sdk_executor = ThreadPoolExecutor(
+                        max_workers=1,
+                        thread_name_prefix=f"{self.__class__.__name__}_{self.camera_name}",
+                    )
+                return await asyncio.wait_for(
+                    loop.run_in_executor(self._sdk_executor, functools.partial(func, *args, **kwargs)),
+                    timeout=effective_timeout,
+                )
+            else:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(func, *args, **kwargs),
+                    timeout=effective_timeout,
+                )
+        except asyncio.TimeoutError as e:
+            raise CameraTimeoutError(
+                f"SDK operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
+            ) from e
+        except Exception as e:
+            raise HardwareOperationError(f"SDK operation failed for camera '{self.camera_name}': {e}") from e
+
+    async def _cleanup_executor(self) -> None:
+        """Shutdown the dedicated thread executor if one was created.
+
+        This method should be called in the ``close()`` implementation of subclasses
+        that use thread affinity. It safely shuts down the executor and releases
+        thread resources.
+
+        The shutdown is performed with ``wait=False`` to avoid blocking the event
+        loop, and ``cancel_futures=True`` to prevent queued operations from executing
+        after camera closure.
+        """
+        if self._sdk_executor is not None:
+            try:
+                self._sdk_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as e:
+                self.logger.warning(f"Error shutting down executor for camera '{self.camera_name}': {e}")
+            finally:
+                self._sdk_executor = None
 
     async def setup_camera(self):
         """Common setup method for camera initialization.
