@@ -951,3 +951,203 @@ def test_full_path_uses_s3_uri(mock_boto3):
     full_path = handler._full_path("path/to/file.txt")
 
     assert full_path == "s3://my-bucket/path/to/file.txt"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_ensure_bucket_propagates_non_404_error(mock_boto3):
+    """Test that _ensure_bucket propagates non-404 errors."""
+    mock_client = MagicMock(name="S3Client")
+    mock_boto3.client.return_value = mock_client
+    mock_client.head_bucket.side_effect = _make_client_error("AccessDenied", "forbidden")
+
+    with pytest.raises(ClientError) as exc_info:
+        S3StorageHandler(
+            "bucket",
+            endpoint="localhost:9000",
+            access_key="access",
+            secret_key="secret",
+        )
+    assert "AccessDenied" in str(exc_info.value.response)
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_upload_client_error_non_precondition(mock_boto3, tmp_path):
+    """Test upload handles non-PreconditionFailed ClientError."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.put_object.side_effect = _make_client_error("AccessDenied", "forbidden")
+
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("content")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.upload(str(local_file), "remote/file.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_not_found_nosuchkey(mock_boto3, tmp_path):
+    """Test download handles NoSuchKey error code."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.download_file.side_effect = _make_client_error("NoSuchKey", "not found")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.download("remote/missing.txt", str(tmp_path / "out.txt"))
+
+    assert result.status == Status.NOT_FOUND
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_not_found_404(mock_boto3):
+    """Test download_string handles 404 error code."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.get_object.side_effect = _make_client_error("404", "not found")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.download_string("remote/missing.txt")
+
+    assert result.status == Status.NOT_FOUND
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_delete_error(mock_boto3):
+    """Test delete handles errors."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.delete_object.side_effect = Exception("Network error")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.delete("file.txt")
+
+    assert result.status == Status.ERROR
+    assert "Network error" in result.error_message
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_list_objects_empty_response(mock_boto3):
+    """Test list_objects with no objects (no Contents key)."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_paginator = MagicMock()
+    mock_paginator.paginate.return_value = [{}]  # No Contents key
+    mock_client.get_paginator.return_value = mock_paginator
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.list_objects()
+
+    assert result == []
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_list_objects_pagination_multiple_pages(mock_boto3):
+    """Test list_objects with multiple pages."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_paginator = MagicMock()
+    mock_paginator.paginate.return_value = [
+        {"Contents": [{"Key": "a.txt"}, {"Key": "b.txt"}]},
+        {"Contents": [{"Key": "c.txt"}]},
+    ]
+    mock_client.get_paginator.return_value = mock_paginator
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.list_objects()
+
+    assert result == ["a.txt", "b.txt", "c.txt"]
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_exists_nosuchkey(mock_boto3):
+    """Test exists handles NoSuchKey error code."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("NoSuchKey", "not found")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    assert handler.exists("missing.txt") is False
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_upload_string_client_error_non_precondition(mock_boto3):
+    """Test upload_string handles non-PreconditionFailed ClientError."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.put_object.side_effect = _make_client_error("AccessDenied", "forbidden")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.upload_string("content", "file.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_client_error_non_not_found(mock_boto3, tmp_path):
+    """Test download handles non-404/NoSuchKey ClientError."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.download_file.side_effect = _make_client_error("AccessDenied", "forbidden")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.download("remote/file.txt", str(tmp_path / "out.txt"))
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_client_error_non_not_found(mock_boto3):
+    """Test download_string handles non-404/NoSuchKey ClientError."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.get_object.side_effect = _make_client_error("AccessDenied", "forbidden")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.download_string("remote/file.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"

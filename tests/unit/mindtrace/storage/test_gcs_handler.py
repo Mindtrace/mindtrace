@@ -845,3 +845,126 @@ def test_download_string_error(mock_client_cls):
     assert result.status == "error"
     assert result.error_type == "Exception"
     assert "Network error" in result.error_message
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_precondition_failed(mock_client_cls, tmp_path):
+    """Test upload returns ALREADY_EXISTS on PreconditionFailed."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_filename.side_effect = PreconditionFailed("exists")
+
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("content")
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload(str(local_file), "remote/file.txt", fail_if_exists=True)
+
+    assert result.status == "already_exists"
+    assert result.error_type == "PreconditionFailed"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_generic_error(mock_client_cls, tmp_path):
+    """Test upload returns ERROR on generic exception."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_filename.side_effect = Exception("Network error")
+
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("content")
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload(str(local_file), "remote/file.txt")
+
+    assert result.status == "error"
+    assert result.error_type == "Exception"
+    assert "Network error" in result.error_message
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_not_found(mock_client_cls, tmp_path):
+    """Test download returns NOT_FOUND."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_to_filename.side_effect = NotFound("not found")
+
+    h = GCSStorageHandler("bucket")
+    result = h.download("remote/missing.txt", str(tmp_path / "out.txt"))
+
+    assert result.status == "not_found"
+    assert result.error_type == "NotFound"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_generic_error(mock_client_cls, tmp_path):
+    """Test download returns ERROR on generic exception."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_to_filename.side_effect = Exception("Network error")
+
+    h = GCSStorageHandler("bucket")
+    result = h.download("remote/file.txt", str(tmp_path / "out.txt"))
+
+    assert result.status == "error"
+    assert result.error_type == "Exception"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_delete_generic_error(mock_client_cls):
+    """Test delete returns ERROR on non-NotFound exception."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.delete.side_effect = Exception("Permission denied")
+
+    h = GCSStorageHandler("bucket")
+    result = h.delete("file.txt")
+
+    assert result.status == "error"
+    assert result.error_type == "Exception"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_with_gs_uri(mock_client_cls):
+    """Test upload_string sanitizes gs:// URI paths."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("my-bucket")
+    result = h.upload_string("content", "gs://my-bucket/path/file.txt")
+
+    assert result.status == "ok"
+    assert result.remote_path == "path/file.txt"  # Sanitized
+    bucket.blob.assert_called_with("path/file.txt")
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_with_gs_uri(mock_client_cls):
+    """Test download_string sanitizes gs:// URI paths."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.return_value = b"content"
+
+    h = GCSStorageHandler("my-bucket")
+    result = h.download_string("gs://my-bucket/path/file.txt")
+
+    assert result.status == "ok"
+    bucket.blob.assert_called_with("path/file.txt")
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_list_objects_empty(mock_client_cls):
+    """Test list_objects with no objects."""
+    mock_client, _, _ = _prepare_client(mock_client_cls)
+    mock_client.list_blobs.return_value = []
+
+    h = GCSStorageHandler("bucket")
+    result = h.list_objects()
+
+    assert result == []
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_delete_returns_file_result(mock_client_cls):
+    """Test delete returns FileResult with correct fields."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    result = h.delete("path/to/file.txt")
+
+    assert result.status == "ok"
+    assert result.remote_path == "path/to/file.txt"
+    assert result.local_path == ""
