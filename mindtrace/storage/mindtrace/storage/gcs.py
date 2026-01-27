@@ -8,7 +8,7 @@ from google.api_core import exceptions as gexc
 from google.cloud import storage
 from google.oauth2 import service_account
 
-from .base import StorageHandler
+from .base import FileResult, Status, StorageHandler, StringResult
 
 
 class GCSStorageHandler(StorageHandler):
@@ -125,45 +125,211 @@ class GCSStorageHandler(StorageHandler):
         local_path: str,
         remote_path: str,
         metadata: Optional[Dict[str, str]] = None,
-    ) -> str:
+        fail_if_exists: bool = False,
+    ) -> FileResult:
         """Upload a file to GCS.
         Args:
             local_path: Path to the local file to upload.
             remote_path: Path in the bucket to upload to.
             metadata: Optional metadata to associate with the blob.
+            fail_if_exists: If True, return "already_exists" status if blob exists.
         Returns:
-            The gs:// URI of the uploaded file.
+            FileResult with status "ok", "already_exists", or "error".
+            Note: remote_path in result is the blob name (not full gs:// URI) for use with delete().
         """
         sanitized_path = self._sanitize_blob_path(remote_path)
         blob = self._bucket().blob(sanitized_path)
+        full_path = f"gs://{self.bucket_name}/{sanitized_path}"
         if metadata:
             blob.metadata = metadata
-        blob.upload_from_filename(local_path)
-        return f"gs://{self.bucket_name}/{sanitized_path}"
+        try:
+            # if_generation_match=0 means "only upload if blob doesn't exist"
+            generation_match = 0 if fail_if_exists else None
+            blob.upload_from_filename(local_path, if_generation_match=generation_match)
+            return FileResult(
+                local_path=local_path,
+                remote_path=sanitized_path,  # Blob name only, not full gs:// URI
+                status=Status.OK,
+            )
+        except gexc.PreconditionFailed:
+            return FileResult(
+                local_path=local_path,
+                remote_path=sanitized_path,
+                status=Status.ALREADY_EXISTS,
+                error_type="PreconditionFailed",
+                error_message=f"Blob already exists: {full_path}",
+            )
+        except Exception as e:
+            return FileResult(
+                local_path=local_path,
+                remote_path=sanitized_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
 
-    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:
+    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> FileResult:
         """Download a file from GCS to a local path.
         Args:
             remote_path: Path in the bucket to download from.
             local_path: Local path to save the file.
             skip_if_exists: If True, skip download if local_path exists.
+        Returns:
+            FileResult with status "ok", "skipped", "not_found", or "error".
         """
+        sanitized_path = self._sanitize_blob_path(remote_path)
+
         if skip_if_exists and os.path.exists(local_path):
-            return
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.SKIPPED,
+            )
 
-        blob = self._bucket().blob(self._sanitize_blob_path(remote_path))
+        blob = self._bucket().blob(sanitized_path)
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
-        blob.download_to_filename(local_path)
+        try:
+            blob.download_to_filename(local_path)
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.OK,
+            )
+        except gexc.NotFound:
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.NOT_FOUND,
+                error_type="NotFound",
+                error_message=f"Blob not found: gs://{self.bucket_name}/{sanitized_path}",
+            )
+        except Exception as e:
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
 
-    def delete(self, remote_path: str) -> None:
+    def delete(self, remote_path: str) -> FileResult:
         """Delete a file from GCS.
+
         Args:
             remote_path: Path in the bucket to delete.
+
+        Returns:
+            FileResult with status "ok" (including if blob didn't exist - idempotent)
+            or "error" on failure.
         """
+        sanitized_path = self._sanitize_blob_path(remote_path)
         try:
-            self._bucket().blob(self._sanitize_blob_path(remote_path)).delete(if_generation_match=None)
+            self._bucket().blob(sanitized_path).delete(if_generation_match=None)
+            return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
         except gexc.NotFound:
-            pass  # idempotent delete
+            # Idempotent delete - not found is success
+            return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=sanitized_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    # ------------------------------------------------------------------
+    # String Operations (no temp files)
+    # ------------------------------------------------------------------
+    def upload_string(
+        self,
+        content: str | bytes,
+        remote_path: str,
+        content_type: str = "application/json",
+        fail_if_exists: bool = False,
+        if_generation_match: int | None = None,
+    ) -> StringResult:
+        """Upload string/bytes content directly to GCS without temp files.
+
+        Args:
+            content: String or bytes content to upload.
+            remote_path: Path in the bucket to upload to.
+            content_type: MIME type of the content.
+            fail_if_exists: If True, fail if the blob already exists.
+            if_generation_match: If set, only upload if the blob's generation
+                matches this value. Use 0 to only create new blobs.
+                Takes precedence over fail_if_exists.
+
+        Returns:
+            StringResult with status "ok", "already_exists", or "error".
+            Note: remote_path in result is the blob name (not full gs:// URI) for use with delete().
+        """
+        sanitized_path = self._sanitize_blob_path(remote_path)
+        blob = self._bucket().blob(sanitized_path)
+        full_path = f"gs://{self.bucket_name}/{sanitized_path}"
+
+        # Convert string to bytes if needed
+        data = content.encode("utf-8") if isinstance(content, str) else content
+
+        # Determine generation match constraint
+        generation_match = if_generation_match
+        if generation_match is None and fail_if_exists:
+            generation_match = 0
+
+        try:
+            blob.upload_from_string(data, content_type=content_type, if_generation_match=generation_match)
+            return StringResult(remote_path=sanitized_path, status=Status.OK)  # Blob name only
+        except gexc.PreconditionFailed:
+            return StringResult(
+                remote_path=sanitized_path,
+                status=Status.ALREADY_EXISTS,
+                error_type="PreconditionFailed",
+                error_message=f"Generation mismatch or blob already exists: {full_path}",
+            )
+        except Exception as e:
+            return StringResult(
+                remote_path=sanitized_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    def download_string(self, remote_path: str) -> StringResult:
+        """Download blob content as bytes without temp files.
+
+        Args:
+            remote_path: Path in the bucket to download from.
+
+        Returns:
+            StringResult with:
+            - status: "ok", "not_found", or "error"
+            - content: Downloaded bytes if status is "ok"
+        """
+        sanitized_path = self._sanitize_blob_path(remote_path)
+        blob = self._bucket().blob(sanitized_path)
+        full_path = f"gs://{self.bucket_name}/{sanitized_path}"
+
+        try:
+            content = blob.download_as_bytes()
+            return StringResult(
+                remote_path=full_path,
+                status=Status.OK,
+                content=content,
+            )
+        except gexc.NotFound:
+            return StringResult(
+                remote_path=full_path,
+                status=Status.NOT_FOUND,
+                error_type="NotFound",
+                error_message=f"Blob not found: {full_path}",
+            )
+        except Exception as e:
+            return StringResult(
+                remote_path=full_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
 
     # ------------------------------------------------------------------
     # Introspection

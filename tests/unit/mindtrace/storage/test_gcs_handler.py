@@ -3,10 +3,9 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import NotFound, PreconditionFailed
 
-from mindtrace.storage import GCSStorageHandler
-from mindtrace.storage.base import BulkOperationResult
+from mindtrace.storage import BatchResult, FileResult, GCSStorageHandler, StringResult
 
 
 def _prepare_client(mock_client_cls, *, bucket_exists: bool = True):
@@ -51,16 +50,19 @@ def test_ctor_errors_when_bucket_missing_and_create_false(mock_client_cls):
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
-def test_upload_returns_gs_uri_and_calls_api(mock_client_cls, tmp_path):
+def test_upload_returns_file_result_and_calls_api(mock_client_cls, tmp_path):
     _, bucket, blob = _prepare_client(mock_client_cls)
     local_file = tmp_path / "file.txt"
     local_file.write_text("dummy")
 
     h = GCSStorageHandler("my-bucket")
-    uri = h.upload(str(local_file), "remote/path.txt", metadata={"foo": "bar"})
+    result = h.upload(str(local_file), "remote/path.txt", metadata={"foo": "bar"})
 
-    assert uri == "gs://my-bucket/remote/path.txt"
-    blob.upload_from_filename.assert_called_once_with(str(local_file))
+    assert isinstance(result, FileResult)
+    assert result.status == "ok"
+    assert result.remote_path == "remote/path.txt"  # Blob name only, not full gs:// URI
+    assert result.local_path == str(local_file)
+    blob.upload_from_filename.assert_called_once_with(str(local_file), if_generation_match=None)
     assert blob.metadata == {"foo": "bar"}
 
 
@@ -69,7 +71,11 @@ def test_download_creates_parent_dirs_and_invokes_api(mock_client_cls, tmp_path)
     _, bucket, blob = _prepare_client(mock_client_cls)
     dest = tmp_path / "nested/dir/out.bin"
 
-    GCSStorageHandler("b").download("remote/blob.bin", dest.as_posix())
+    result = GCSStorageHandler("b").download("remote/blob.bin", dest.as_posix())
+    assert isinstance(result, FileResult)
+    assert result.status == "ok"
+    assert result.remote_path == "remote/blob.bin"
+    assert result.local_path == dest.as_posix()
     blob.download_to_filename.assert_called_once_with(dest.as_posix())
     # Parent directory must now exist
     assert dest.parent.exists()
@@ -82,8 +88,10 @@ def test_download_with_skip_if_exists(mock_client_cls, tmp_path):
     existing_file.write_text("already here")
 
     h = GCSStorageHandler("bucket")
-    h.download("remote/file.txt", str(existing_file), skip_if_exists=True)
+    result = h.download("remote/file.txt", str(existing_file), skip_if_exists=True)
 
+    assert isinstance(result, FileResult)
+    assert result.status == "skipped"
     # Should not call download API since file exists
     blob.download_to_filename.assert_not_called()
 
@@ -117,28 +125,17 @@ def test_upload_batch_success(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     result = h.upload_batch(files, metadata={"batch": "test"})
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 2
-    assert len(result.failed) == 0
-    assert all(uri.startswith("gs://bucket/") for uri in result.succeeded)
+    print(result)
+
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 2
+    assert len(result.failed_results) == 0
+    assert all(r.remote_path.startswith("remote/") for r in result.ok_results)
     assert blob.upload_from_filename.call_count == 2
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
-def test_upload_batch_with_error_raise(mock_client_cls, tmp_path):
-    _, bucket, blob = _prepare_client(mock_client_cls)
-    blob.upload_from_filename.side_effect = Exception("Upload failed")
-
-    file1 = tmp_path / "file1.txt"
-    file1.write_text("content")
-
-    h = GCSStorageHandler("bucket")
-    with pytest.raises(RuntimeError, match="Failed to upload"):
-        h.upload_batch([(str(file1), "remote/file1.txt")])
-
-
-@patch("mindtrace.storage.gcs.storage.Client")
-def test_upload_batch_with_error_skip(mock_client_cls, tmp_path):
+def test_upload_batch_with_error(mock_client_cls, tmp_path):
     _, bucket, blob = _prepare_client(mock_client_cls)
 
     file1 = tmp_path / "file1.txt"
@@ -152,12 +149,12 @@ def test_upload_batch_with_error_skip(mock_client_cls, tmp_path):
     files = [(str(file1), "remote/file1.txt"), (str(file2), "remote/file2.txt")]
 
     h = GCSStorageHandler("bucket")
-    result = h.upload_batch(files, on_error="skip")
+    result = h.upload_batch(files)
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 1
-    assert len(result.failed) == 1
-    assert "Upload failed" in result.failed[0][1]
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 1
+    assert len(result.failed_results) == 1
+    assert "Upload failed" in result.failed_results[0].error_message
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
@@ -169,9 +166,9 @@ def test_download_batch_success(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     result = h.download_batch(files)
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 2
-    assert len(result.failed) == 0
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 2
+    assert len(result.failed_results) == 0
     assert blob.download_to_filename.call_count == 2
 
 
@@ -188,9 +185,10 @@ def test_download_batch_with_skip_if_exists(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     result = h.download_batch(files, skip_if_exists=True)
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 2  # 1 skipped + 1 downloaded
-    assert len(result.failed) == 0
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 2  # Both success: 1 downloaded (OK), 1 skipped (SKIPPED)
+    assert len(result.skipped_results) == 1  # 1 skipped (SKIPPED is also in ok_results)
+    assert len(result.failed_results) == 0
     assert blob.download_to_filename.call_count == 1  # Only new file downloaded
 
 
@@ -202,24 +200,12 @@ def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
     files = [("remote/file1.txt", str(tmp_path / "file1.txt")), ("remote/file2.txt", str(tmp_path / "file2.txt"))]
 
     h = GCSStorageHandler("bucket")
-    result = h.download_batch(files, on_error="skip")
+    result = h.download_batch(files)
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 1
-    assert len(result.failed) == 1
-    assert "Download failed" in result.failed[0][1]
-
-
-@patch("mindtrace.storage.gcs.storage.Client")
-def test_download_batch_with_error_raise(mock_client_cls, tmp_path):
-    _, bucket, blob = _prepare_client(mock_client_cls)
-    blob.download_to_filename.side_effect = [Exception("Download failed"), None]
-
-    files = [("remote/file1.txt", str(tmp_path / "file1.txt")), ("remote/file2.txt", str(tmp_path / "file2.txt"))]
-
-    h = GCSStorageHandler("bucket")
-    with pytest.raises(RuntimeError, match="Failed to download"):
-        h.download_batch(files, on_error="raise")
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 1
+    assert len(result.failed_results) == 1
+    assert "Download failed" in result.failed_results[0].error_message
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
@@ -237,9 +223,9 @@ def test_upload_folder(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     result = h.upload_folder(str(folder), "remote/prefix", include_patterns=["*.txt"], exclude_patterns=["*.log"])
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 2  # Only .txt files, not .log
-    assert len(result.failed) == 0
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 2  # Only .txt files, not .log
+    assert len(result.failed_results) == 0
     assert blob.upload_from_filename.call_count == 2
 
 
@@ -254,11 +240,11 @@ def test_upload_folder_with_error_skip(mock_client_cls, tmp_path):
     (folder / "file2.txt").write_text("content2")
 
     h = GCSStorageHandler("bucket")
-    result = h.upload_folder(str(folder), on_error="skip")
+    result = h.upload_folder(str(folder))
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 1
-    assert len(result.failed) == 1
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 1
+    assert len(result.failed_results) == 1
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
@@ -275,9 +261,9 @@ def test_download_folder(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     result = h.download_folder("prefix/", str(tmp_path / "local"))
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 2
-    assert len(result.failed) == 0
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 2
+    assert len(result.failed_results) == 0
     assert blob.download_to_filename.call_count == 2
     mock_client.list_blobs.assert_called_once_with("bucket", prefix="prefix/", max_results=None)
 
@@ -294,11 +280,11 @@ def test_download_folder_with_error_skip(mock_client_cls, tmp_path):
     mock_client.list_blobs.return_value = [mock_blob1, mock_blob2]
 
     h = GCSStorageHandler("bucket")
-    result = h.download_folder("prefix/", str(tmp_path / "local"), on_error="skip")
+    result = h.download_folder("prefix/", str(tmp_path / "local"))
 
-    assert isinstance(result, BulkOperationResult)
-    assert len(result.succeeded) == 1
-    assert len(result.failed) == 1
+    assert isinstance(result, BatchResult)
+    assert len(result.ok_results) == 1
+    assert len(result.failed_results) == 1
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
@@ -308,18 +294,6 @@ def test_upload_folder_nonexistent_folder(mock_client_cls, tmp_path):
     h = GCSStorageHandler("bucket")
     with pytest.raises(ValueError, match="does not exist or is not a directory"):
         h.upload_folder(str(tmp_path / "nonexistent"))
-
-
-@patch("mindtrace.storage.gcs.storage.Client")
-def test_bulk_operations_invalid_on_error_param(mock_client_cls):
-    _, bucket, blob = _prepare_client(mock_client_cls)
-
-    h = GCSStorageHandler("bucket")
-    with pytest.raises(ValueError, match="on_error must be"):
-        h.upload_batch([], on_error="invalid")
-
-    with pytest.raises(ValueError, match="on_error must be"):
-        h.download_batch([], on_error="invalid")
 
 
 # ---------------------------------------------------------------------------
@@ -385,9 +359,10 @@ def test_upload_without_metadata(mock_client_cls, tmp_path):
     local_file = tmp_path / "file.txt"
     local_file.write_text("dummy")
     h = GCSStorageHandler("bucket")
-    uri = h.upload(str(local_file), "remote/path.txt")
-    assert uri == "gs://bucket/remote/path.txt"
-    blob.upload_from_filename.assert_called_once_with(str(local_file))
+    result = h.upload(str(local_file), "remote/path.txt")
+    assert result.status == "ok"
+    assert result.remote_path == "remote/path.txt"  # Blob name only, not full gs:// URI
+    blob.upload_from_filename.assert_called_once_with(str(local_file), if_generation_match=None)
 
 
 # --- delete when object exists (no exception) ---
@@ -395,7 +370,9 @@ def test_upload_without_metadata(mock_client_cls, tmp_path):
 def test_delete_when_object_exists(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.delete.return_value = None  # No exception
-    GCSStorageHandler("bucket").delete("foo.txt")
+    result = GCSStorageHandler("bucket").delete("foo.txt")
+    assert result.status == "ok"
+    assert result.remote_path == "foo.txt"
     blob.delete.assert_called_once()
 
 
@@ -702,7 +679,8 @@ def test_download_creates_parent_dir_for_root_file(mock_client_cls, tmp_path):
     dest = tmp_path / "file.txt"  # No nested directory
 
     h = GCSStorageHandler("bucket")
-    h.download("remote/file.txt", str(dest))
+    result = h.download("remote/file.txt", str(dest))
+    assert result.status == "ok"
     blob.download_to_filename.assert_called_once_with(str(dest))
     # Parent directory should exist (even if it's just tmp_path)
     assert dest.parent.exists()
@@ -716,8 +694,154 @@ def test_upload_with_gs_uri_remote_path(mock_client_cls, tmp_path):
     local_file.write_text("content")
 
     h = GCSStorageHandler("my-bucket")
-    uri = h.upload(str(local_file), "gs://my-bucket/remote/path.txt")
-    assert uri == "gs://my-bucket/remote/path.txt"
-    blob.upload_from_filename.assert_called_once_with(str(local_file))
+    result = h.upload(str(local_file), "gs://my-bucket/remote/path.txt")
+    assert result.status == "ok"
+    assert result.remote_path == "remote/path.txt"  # Blob name only, not full gs:// URI
+    blob.upload_from_filename.assert_called_once_with(str(local_file), if_generation_match=None)
     # Should sanitize the path correctly
     bucket.blob.assert_called_once_with("remote/path.txt")
+
+
+# ---------------------------------------------------------------------------
+# String Operations (upload_string / download_string)
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_basic(mock_client_cls):
+    """Test basic upload_string functionality."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string('{"key": "value"}', "remote/data.json")
+
+    assert isinstance(result, StringResult)
+    assert result.status == "ok"
+    assert result.remote_path == "remote/data.json"  # Blob name only, not full gs:// URI
+    blob.upload_from_string.assert_called_once_with(
+        b'{"key": "value"}', content_type="application/json", if_generation_match=None
+    )
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_with_bytes(mock_client_cls):
+    """Test upload_string with bytes content."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string(b"binary data", "remote/data.bin", content_type="application/octet-stream")
+
+    assert result.status == "ok"
+    blob.upload_from_string.assert_called_once_with(
+        b"binary data", content_type="application/octet-stream", if_generation_match=None
+    )
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_fail_if_exists(mock_client_cls):
+    """Test upload_string with fail_if_exists=True."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string("content", "remote/file.txt", fail_if_exists=True)
+
+    assert result.status == "ok"
+    blob.upload_from_string.assert_called_once_with(b"content", content_type="application/json", if_generation_match=0)
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_already_exists(mock_client_cls):
+    """Test upload_string when blob already exists and fail_if_exists=True."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_string.side_effect = PreconditionFailed("exists")
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string("content", "remote/file.txt", fail_if_exists=True)
+
+    assert result.status == "already_exists"
+    assert result.error_type == "PreconditionFailed"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_with_generation_match(mock_client_cls):
+    """Test upload_string with if_generation_match for conditional updates."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string("content", "remote/file.txt", if_generation_match=12345)
+
+    assert result.status == "ok"
+    blob.upload_from_string.assert_called_once_with(
+        b"content", content_type="application/json", if_generation_match=12345
+    )
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_generation_mismatch(mock_client_cls):
+    """Test upload_string when generation doesn't match."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_string.side_effect = PreconditionFailed("generation mismatch")
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string("content", "remote/file.txt", if_generation_match=12345)
+
+    assert result.status == "already_exists"
+    assert "Generation mismatch" in result.error_message
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_string_error(mock_client_cls):
+    """Test upload_string error handling."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_string.side_effect = Exception("Network error")
+
+    h = GCSStorageHandler("bucket")
+    result = h.upload_string("content", "remote/file.txt")
+
+    assert result.status == "error"
+    assert result.error_type == "Exception"
+    assert "Network error" in result.error_message
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_basic(mock_client_cls):
+    """Test basic download_string functionality."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.return_value = b'{"key": "value"}'
+
+    h = GCSStorageHandler("bucket")
+    result = h.download_string("remote/data.json")
+
+    assert isinstance(result, StringResult)
+    assert result.status == "ok"
+    assert result.content == b'{"key": "value"}'
+    assert result.remote_path == "gs://bucket/remote/data.json"
+    blob.download_as_bytes.assert_called_once()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_not_found(mock_client_cls):
+    """Test download_string when blob doesn't exist."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.side_effect = NotFound("not found")
+
+    h = GCSStorageHandler("bucket")
+    result = h.download_string("remote/missing.txt")
+
+    assert result.status == "not_found"
+    assert result.error_type == "NotFound"
+    assert result.content is None
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_error(mock_client_cls):
+    """Test download_string error handling."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.side_effect = Exception("Network error")
+
+    h = GCSStorageHandler("bucket")
+    result = h.download_string("remote/file.txt")
+
+    assert result.status == "error"
+    assert result.error_type == "Exception"
+    assert "Network error" in result.error_message

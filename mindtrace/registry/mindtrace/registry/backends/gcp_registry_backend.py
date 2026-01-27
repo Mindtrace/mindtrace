@@ -1,28 +1,61 @@
+"""Google Cloud Storage-based registry backend.
+
+Uses GCS for both artifact and metadata storage.
+
+"""
+
 import json
 import os
+import shutil
 import tempfile
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple, Union
 
-from google.api_core import exceptions as gexc
-
-from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError
-from mindtrace.storage.gcs import GCSStorageHandler
+from mindtrace.registry.backends.registry_backend import (
+    ConcreteVersionArg,
+    MetadataArg,
+    NameArg,
+    PathArg,
+    RegistryBackend,
+    VersionArg,
+)
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
+from mindtrace.storage import GCSStorageHandler, Status, StringResult
 
 
 class GCPRegistryBackend(RegistryBackend):
     """A Google Cloud Storage-based registry backend.
 
     This backend stores objects and metadata in a GCS bucket, providing distributed
-    storage capabilities with atomic operations and distributed locking.
+    storage capabilities with lock-free concurrency via UUID isolation.
+
+    Lock-free concurrency model:
+    - Each push writes files to a unique UUID folder: objects/{name}/{version}/{uuid}/
+    - Commit plans in _staging/ track in-progress operations for janitor cleanup
+    - Metadata write is the atomic "commit point" (points to active UUID)
+    - For immutable: generation_match=0 on metadata ensures first-write-wins
+    - For mutable: last metadata write wins, orphaned UUIDs cleaned by janitor
+
+    Storage structure:
+        {prefix}/
+          objects/{name}/{version}/{uuid}/    # UUID-namespaced artifact folder
+            file1.bin
+            file2.json
+          _meta_{name}@{version}.json         # Metadata pointing to active UUID
+          _staging/{request_id}.json          # Commit plans for janitor cleanup
+          registry_metadata.json              # Global registry config
+
+    Uses `_files` manifest from metadata to avoid expensive blob listing on pull.
 
     Usage Example::
 
         from mindtrace.registry import Registry, GCPRegistryBackend
 
-        # Connect to a GCS-based registry
         gcp_backend = GCPRegistryBackend(
             uri="gs://my-registry-bucket",
             project_id="my-project",
@@ -30,11 +63,6 @@ class GCPRegistryBackend(RegistryBackend):
             credentials_path="/path/to/service-account.json"
         )
         registry = Registry(backend=gcp_backend)
-
-        # Save some objects to the registry
-        registry.save("test:int", 42)
-        registry.save("test:float", 3.14)
-        registry.save("test:str", "Hello, World!")
     """
 
     def __init__(
@@ -44,23 +72,31 @@ class GCPRegistryBackend(RegistryBackend):
         project_id: str,
         bucket_name: str,
         credentials_path: str | None = None,
+        prefix: str = "",
+        max_workers: int = 4,
+        lock_timeout: int = 30,
         **kwargs,
     ):
         """Initialize the GCPRegistryBackend.
 
         Args:
-            uri: The base URI for the registry (e.g., "gs://my-bucket").
+            uri: The base URI for the registry (e.g., "gs://my-bucket/prefix").
             project_id: GCP project ID.
             bucket_name: GCS bucket name.
             credentials_path: Optional path to service account JSON file.
+            prefix: Optional prefix (subfolder) within the bucket for all registry objects.
+            max_workers: Maximum number of parallel workers for batch operations. Default is 4.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or f"gs://{bucket_name}")
-        self._metadata_path = "registry_metadata.json"
-        self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
+        self._prefix = prefix.strip("/") if prefix else ""
+        self._uri = Path(uri or f"gs://{bucket_name}/{self._prefix}".rstrip("/"))
+        self._metadata_path = self._prefixed("registry_metadata.json")
+        self._max_workers = max_workers
+        self._lock_timeout = lock_timeout
+        self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}, prefix: {self._prefix}")
 
-        # Initialize GCS storage handler
         self.gcs = GCSStorageHandler(
             bucket_name=bucket_name,
             project_id=project_id,
@@ -69,8 +105,13 @@ class GCPRegistryBackend(RegistryBackend):
             create_if_missing=True,
         )
 
-        # Initialize metadata file if it doesn't exist
         self._ensure_metadata_file()
+
+    def _prefixed(self, path: str) -> str:
+        """Add prefix to a path if prefix is set."""
+        if self._prefix:
+            return f"{self._prefix}/{path}"
+        return path
 
     @property
     def uri(self) -> Path:
@@ -82,6 +123,10 @@ class GCPRegistryBackend(RegistryBackend):
         """The resolved metadata file path for the backend."""
         return Path(self._metadata_path)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Path Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""
         try:
@@ -89,945 +134,1123 @@ class GCPRegistryBackend(RegistryBackend):
         except Exception:
             exists = False
         if not exists:
-            # Create empty metadata file if it doesn't exist
-            data = json.dumps({"materializers": {}}).encode()
-            with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
-                f.write(data)
-                temp_path = f.name
-
-            try:
-                self.gcs.upload(temp_path, self._metadata_path)
-            finally:
-                os.unlink(temp_path)
-
-    def _object_key(self, name: str, version: str) -> str:
-        """Convert object name and version to a storage key.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-
-        Returns:
-            Storage key for the object version.
-        """
-        return f"objects/{name}/{version}"
+            data = json.dumps({"materializers": {}})
+            self.gcs.upload_string(data, self._metadata_path)
 
     def _object_metadata_path(self, name: str, version: str) -> str:
-        """Generate the metadata file path for an object version.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-
-        Returns:
-            Metadata file path (e.g., "_meta_object_name@1.0.0.json").
-        """
-        return f"_meta_{name.replace(':', '_')}@{version}.json"
+        """Generate the metadata file path for an object version."""
+        return self._prefixed(f"_meta_{name.replace(':', '_')}@{version}.json")
 
     def _object_metadata_prefix(self, name: str) -> str:
-        """Generate the metadata file prefix for listing versions of an object.
+        """Generate the metadata file prefix for listing versions."""
+        return self._prefixed(f"_meta_{name.replace(':', '_')}@")
+
+    def _lock_path(self, key: str) -> str:
+        """Get the path for a write lock file."""
+        return self._prefixed(f"_lock_{key.replace('/', '_').replace('@', '_')}")
+
+    def _object_key_with_uuid(self, name: str, version: str, uuid_str: str) -> str:
+        """Convert object name, version, and UUID to a storage key."""
+        return self._prefixed(f"objects/{name}/{version}/{uuid_str}")
+
+    def _staging_path(self, request_id: str) -> str:
+        """Get the path for a commit plan in staging."""
+        return self._prefixed(f"_staging/{request_id}.json")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Commit Plan Helpers (for lock-free MVCC)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _create_commit_plan(
+        self,
+        request_id: str,
+        name: str,
+        version: str,
+        uuid_str: str,
+        old_uuid: str | None = None,
+        operation: str = "push",
+        expires_hours: int = 1,
+    ) -> bool:
+        """Create a commit plan to track an in-progress operation.
+
+        Commit plans allow janitor to clean up failed/incomplete operations.
 
         Args:
-            name: Name of the object.
+            request_id: Unique identifier for this operation (used as filename).
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID for the artifact folder (new for push, existing for delete).
+            old_uuid: For overwrites, the UUID of the previous version to clean up.
+            operation: Operation type - "push" or "delete".
+            expires_hours: Hours until this plan expires (for janitor).
 
         Returns:
-            Metadata file prefix (e.g., "_meta_object_name@").
+            True if commit plan was created successfully.
+
+        Janitor behavior by operation:
+            - push: Delete uuid folder (incomplete push), keep old_uuid (was current)
+            - delete: Delete uuid folder (delete committed but cleanup failed)
         """
-        return f"_meta_{name.replace(':', '_')}@"
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
 
-    def _lock_key(self, key: str) -> str:
-        """Convert a key to a lock file key.
+        plan = {
+            "operation": operation,
+            "name": name,
+            "version": version,
+            "uuid": uuid_str,
+            "old_uuid": old_uuid,
+            "expires_at": expires_at.isoformat(),
+        }
 
-        Args:
-            key: The key to convert.
-
-        Returns:
-            Lock file key.
-        """
-        return f"_lock_{key}"
-
-    def push(self, name: str, version: str, local_path: str | Path):
-        """Upload a local directory to GCS.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-            local_path: Path to the local directory to upload.
-        """
-        self.validate_object_name(name)
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Uploading directory from {local_path} to {remote_key}")
-
-        local_path = Path(local_path)
-        uploaded_files = []
-        for file_path in local_path.rglob("*"):
-            if file_path.is_file():
-                relative_path = file_path.relative_to(local_path)
-                remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
-                self.logger.debug(f"Uploading file {file_path} to {remote_path}")
-                self.gcs.upload(str(file_path), remote_path)
-                uploaded_files.append(remote_path)
-
-        self.logger.debug(f"Upload complete. Files uploaded: {uploaded_files}")
-
-    def pull(self, name: str, version: str, local_path: str | Path):
-        """Download a directory from GCS.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-            local_path: Path to the local directory to download to.
-        """
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Downloading directory from {remote_key} to {local_path}")
-
-        local_path = Path(local_path)
-        downloaded_files = []
-
-        # List all objects with the prefix
-        objects = self.gcs.list_objects(prefix=remote_key)
-        for obj_name in objects:
-            if not obj_name.endswith("/"):  # Skip directory markers
-                relative_path = obj_name[len(remote_key) :].lstrip("/")
-                if relative_path:
-                    dest_path = local_path / relative_path
-                    dest_path.parent.mkdir(parents=True, exist_ok=True)
-                    self.logger.debug(f"Downloading {obj_name} to {dest_path}")
-                    self.gcs.download(obj_name, str(dest_path))
-                    downloaded_files.append(str(dest_path))
-
-        self.logger.debug(f"Download complete. Files downloaded: {downloaded_files}")
-
-    def delete(self, name: str, version: str):
-        """Delete a version directory from GCS.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-        """
-        remote_key = self._object_key(name, version)
-        self.logger.debug(f"Deleting directory: {remote_key}")
-
-        objects = self.gcs.list_objects(prefix=remote_key)
-        for obj_name in objects:
-            self.gcs.delete(obj_name)
-
-    def save_metadata(self, name: str, version: str, metadata: dict):
-        """Save object metadata to GCS.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-            metadata: Dictionary containing object metadata.
-        """
-        self.validate_object_name(name)
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
-
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(metadata, f)
-            temp_path = f.name
+        staging_path = self._staging_path(request_id)
+        data = json.dumps(plan)
 
         try:
-            self.gcs.upload(temp_path, meta_path)
-        finally:
-            os.unlink(temp_path)
+            result = self.gcs.upload_string(data, staging_path)
+            return result.ok
+        except Exception as e:
+            self.logger.warning(f"Failed to create commit plan {request_id}: {e}")
+            return False
 
-    def fetch_metadata(self, name: str, version: str) -> dict:
-        """Fetch object metadata from GCS.
+    def _delete_commit_plan(self, request_id: str) -> bool:
+        """Delete a commit plan after successful completion.
 
         Args:
-            name: Name of the object.
-            version: Version string.
+            request_id: The request ID of the commit plan to delete.
 
         Returns:
-            Dictionary containing object metadata.
+            True if deleted successfully, False otherwise.
         """
-        meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Loading metadata from: {meta_path}")
+        staging_path = self._staging_path(request_id)
+        result = self.gcs.delete(staging_path)
+        if not result.ok:
+            self.logger.warning(f"Failed to delete commit plan {request_id}: {result.error_message}")
+            return False
+        return True
 
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            temp_path = f.name
-
-        try:
-            self.gcs.download(meta_path, temp_path)
-            with open(temp_path, "r") as f:
-                metadata = json.load(f)
-
-            # Add the GCS path to the metadata
-            object_key = self._object_key(name, version)
-            metadata["path"] = f"gs://{self.gcs.bucket_name}/{object_key}"
-
-            self.logger.debug(f"Loaded metadata: {metadata}")
-            return metadata
-        finally:
-            os.unlink(temp_path)
-
-    def delete_metadata(self, name: str, version: str):
-        """Delete object metadata from GCS.
+    def _delete_uuid_folder(self, name: str, version: str, uuid_str: str) -> bool:
+        """Delete all files in a UUID folder.
 
         Args:
-            name: Name of the object.
-            version: Version of the object.
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID of the folder to delete.
+
+        Returns:
+            True if all files deleted successfully, False otherwise.
+        """
+        folder_prefix = self._object_key_with_uuid(name, version, uuid_str)
+        try:
+            # List all files in the UUID folder
+            files = self.gcs.list_objects(prefix=folder_prefix)
+            if files:
+                batch_result = self.gcs.delete_batch(files)
+                # Check if any deletes failed
+                if batch_result.failed_results:
+                    failed_count = len(batch_result.failed_results)
+                    self.logger.warning(f"Failed to delete {failed_count} files in UUID folder {folder_prefix}")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to delete UUID folder {folder_prefix}: {e}")
+            return False
+
+    def _attempt_rollback(
+        self,
+        request_id: str,
+        name: str,
+        version: str,
+        uuid_str: str,
+    ) -> bool:
+        """Attempt to clean up after a failed push operation.
+
+        Best-effort cleanup of UUID folder and commit plan. If cleanup fails,
+        the commit plan remains for janitor to handle later.
+
+        Args:
+            request_id: The request ID for the commit plan.
+            name: Object name.
+            version: Object version.
+            uuid_str: UUID of the folder to clean up.
+
+        Returns:
+            True if cleanup succeeded, False otherwise.
+        """
+        cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
+        if cleanup_ok:
+            self._delete_commit_plan(request_id)
+        return cleanup_ok
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal Locking (exclusive only, for mutable registry writes)
+    # NOTE: Locks are being phased out in favor of UUID-based isolation.
+    # Kept for delete operations and backward compatibility.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _acquire_lock(self, key: str, lock_id: str, timeout: int = 30) -> bool:
+        """Acquire exclusive lock using atomic GCS operations.
+
+        Args:
+            key: The key to acquire the lock for.
+            lock_id: Unique identifier for this lock holder.
+            timeout: Lock expiration in seconds.
+
+        Returns:
+            True if lock acquired, False otherwise.
+        """
+        lock_path = self._lock_path(key)
+        expires_at = time.time() + timeout
+        lock_data = json.dumps({"lock_id": lock_id, "expires_at": expires_at})
+
+        try:
+            # Try atomic create (generation_match=0 = only if doesn't exist)
+            result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+            if result.ok:
+                return True
+
+            # Lock exists - check if expired
+            download_result = self.gcs.download_string(lock_path)
+            if download_result.status == Status.NOT_FOUND:
+                # Lock deleted between our attempts, retry create
+                retry_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+                return retry_result.ok
+
+            if not download_result.ok:
+                return False
+
+            existing = json.loads(download_result.content.decode("utf-8"))
+            if time.time() < existing.get("expires_at", 0):
+                return False  # Lock still valid
+
+            # Lock expired - delete it and try to create a new one
+            self.gcs.delete(lock_path)
+            takeover_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+            return takeover_result.ok
+
+        except Exception as e:
+            self.logger.error(f"Error acquiring lock for {key}: {e}")
+            return False
+
+    def _release_lock(self, key: str, lock_id: str) -> None:
+        """Release write lock if we own it."""
+        lock_path = self._lock_path(key)
+        try:
+            # Verify ownership before deleting
+            result = self.gcs.download_string(lock_path)
+            if result.ok:
+                data = json.loads(result.content.decode("utf-8"))
+                if data.get("lock_id") == lock_id:
+                    self.gcs.delete(lock_path)
+        except Exception:
+            pass  # Best effort
+
+    def _acquire_locks_batch(self, keys: List[str], timeout: int = 30) -> Dict[str, str | None]:
+        """Acquire write locks for multiple keys in parallel."""
+        if not keys:
+            return {}
+
+        def try_acquire(key: str) -> Tuple[str, str | None]:
+            lock_id = str(uuid.uuid4())
+            if self._acquire_lock(key, lock_id, timeout):
+                return (key, lock_id)
+            return (key, None)
+
+        results: Dict[str, str | None] = {}
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for key, lock_id in executor.map(try_acquire, keys):
+                results[key] = lock_id
+        return results
+
+    def _release_locks_batch(self, locks: Dict[str, str]) -> None:
+        """Release multiple locks in parallel."""
+        if not locks:
+            return
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            list(executor.map(lambda kv: self._release_lock(kv[0], kv[1]), locks.items()))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metadata Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _save_metadata_single(
+        self, name: str, version: str, metadata: dict, on_conflict: str = OnConflict.SKIP
+    ) -> StringResult:
+        """Save a single metadata file atomically.
+
+        Args:
+            name: Object name.
+            version: Object version.
+            metadata: Metadata dict to write.
+            on_conflict: "skip" or "overwrite".
+
+        Returns:
+            StringResult with status: ok, already_exists, overwritten, or error.
         """
         meta_path = self._object_metadata_path(name, version)
-        self.logger.debug(f"Deleting metadata file: {meta_path}")
-        self.gcs.delete(meta_path)
+        data = json.dumps(metadata)
+
+        if on_conflict == OnConflict.OVERWRITE:
+            # Check if exists first to determine status
+            existed = self.gcs.exists(meta_path)
+            result = self.gcs.upload_string(data, meta_path)
+            if result.ok:
+                return StringResult(
+                    remote_path=meta_path,
+                    status=Status.OVERWRITTEN if existed else Status.OK,
+                )
+            return result
+        else:
+            # "skip" - atomic insert with generation_match=0
+            result = self.gcs.upload_string(data, meta_path, if_generation_match=0)
+            return result
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Artifact + Metadata Operations (atomic)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _push_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        obj_path: Path,
+        obj_meta: dict,
+        on_conflict: str,
+        max_workers: int = 4,
+    ) -> OpResult:
+        """Push a single object's files and metadata using UUID-based MVCC.
+
+        Lock-free concurrency:
+        - Files are uploaded to a unique UUID folder: objects/{name}/{version}/{uuid}/
+        - Commit plan tracks the operation for janitor cleanup on failure
+        - Metadata write is the atomic "commit point"
+        - For immutable (skip): generation_match=0 ensures first-write-wins
+        - For mutable (overwrite): last metadata write wins
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            obj_path: Local path to upload from.
+            obj_meta: Metadata dict.
+            on_conflict: "skip" or "overwrite".
+            max_workers: Maximum parallel workers for file uploads.
+
+        Returns:
+            OpResult indicating success, skip, overwrite, or error.
+        """
+        request_id: str | None = None
+        uuid_str: str | None = None
+        old_uuid: str | None = None
+        is_overwrite = on_conflict == OnConflict.OVERWRITE
+
+        try:
+            # Step 1: Check existing metadata
+            # - For onconflict=skip: return if exists (avoid uploading files that will be discarded)
+            # - For onconflict=overwrite: get old_uuid(current) for cleanup after successful write
+            try:
+                existing_meta = self.fetch_metadata(obj_name, obj_version)
+                existing_result = existing_meta.get((obj_name, obj_version))
+                if existing_result and existing_result.ok and existing_result.metadata:
+                    if not is_overwrite:
+                        # Skip mode: object exists, return early (no upload needed)
+                        return OpResult.skipped(obj_name, obj_version)
+                    # Overwrite mode: get old_uuid for cleanup
+                    storage_info = existing_result.metadata.get("_storage", {})
+                    old_uuid = storage_info.get("uuid")
+            except Exception:
+                # No existing metadata or fetch failed, proceed with push
+                pass
+
+            # Step 2: Generate unique identifiers and create commit plan
+            request_id = str(uuid.uuid4())
+            uuid_str = str(uuid.uuid4())
+            if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, old_uuid):
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
+
+            # Step 3: Build file list for UUID folder
+            remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
+
+            files_manifest = obj_meta.get("_files") if obj_meta else None
+            if files_manifest is not None:
+                files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+            else:
+                # Fallback: collect files from directory
+                files = []
+                for file_path in obj_path.rglob("*"):
+                    if file_path.is_file():
+                        relative = file_path.relative_to(obj_path).as_posix()
+                        files.append((str(file_path), f"{remote_key}/{relative}"))
+
+            # Step 4: Upload files to UUID folder (no conflict possible - UUID is unique)
+            if files:
+                batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
+
+                # Check for failures
+                if batch_result.failed_results:
+                    # if any failed
+                    self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                    first_error = batch_result.failed_results[0]
+                    return OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        RuntimeError(
+                            f"Failed to upload {len(batch_result.failed_results)} file(s): {first_error.error_message}"
+                        ),
+                    )
+
+            # Step 5: Prepare metadata with _storage info
+            prepared_meta = dict(obj_meta) if obj_meta else {}
+            prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
+            prepared_meta["_storage"] = {
+                "uuid": uuid_str,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Step 6: Write metadata (the "commit point")
+            meta_result = self._save_metadata_single(obj_name, obj_version, prepared_meta, on_conflict)
+
+            # Handle conflict (immutable mode - another writer won the race)
+            if meta_result.status == Status.ALREADY_EXISTS:
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                return OpResult.skipped(obj_name, obj_version)
+
+            # Handle any error (.ok checks for OK or OVERWRITTEN)
+            if not meta_result.ok:
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RuntimeError(meta_result.error_message or f"Metadata write failed: {meta_result.status}"),
+                )
+
+            # Step 7: Success. Clean up old UUID folder and commit plan
+            cleanup_ok = True
+            if old_uuid:
+                cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid)
+
+            if cleanup_ok:
+                self._delete_commit_plan(request_id)
+
+            if meta_result.status == Status.OVERWRITTEN:
+                return OpResult.overwritten(obj_name, obj_version)
+            else:
+                return OpResult.success(obj_name, obj_version)
+
+        except Exception as e:
+            # Attempt cleanup if we created a commit plan
+            if request_id and uuid_str:
+                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+            return OpResult.failed(obj_name, obj_version, e)
+
+    def push(
+        self,
+        name: NameArg,
+        version: VersionArg,
+        local_path: PathArg,
+        metadata: MetadataArg = None,
+        on_conflict: str = OnConflict.SKIP,
+        acquire_lock: bool = False,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Push artifacts and metadata to the registry.
+
+        Objects are processed in parallel for maximum efficiency. Uses lock-free
+        UUID-based MVCC for concurrent safety.
+
+        Lock-free concurrency model:
+        - Each push writes files to a unique UUID folder
+        - Commit plans track operations for janitor cleanup on failure
+        - Metadata write is the atomic "commit point"
+        - For immutable (skip): generation_match=0 ensures first-write-wins
+        - For mutable (overwrite): last metadata write wins
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Object name(s). Single string or list.
+            version: Version string(s). Registry must resolve versions before calling.
+            local_path: Local source directory/directories to upload from.
+            metadata: Metadata dict(s) to store.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+            acquire_lock: Ignored. Kept for API compatibility. Lock-free model used.
+            max_workers: Maximum parallel workers. Defaults to instance setting.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+        """
+        # Normalize inputs
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+        paths = self._normalize_paths(local_path, len(names))
+        metadatas = self._normalize_metadata(metadata, len(names))
+
+        if not (len(names) == len(versions) == len(paths) == len(metadatas)):
+            raise ValueError("Input list lengths must match")
+
+        # Validate all names upfront
+        for obj_name in names:
+            self.validate_object_name(obj_name)
+
+        results = OpResults()
+
+        # Use provided max_workers or fall back to instance default
+        workers = max_workers or self._max_workers
+
+        # Limit file-level parallelism
+        file_workers = min(2, workers)
+
+        # Prepare all tasks
+        push_tasks = list(zip(names, versions, paths, metadatas))
+
+        def push_one(args: Tuple[str, str, Path, dict]) -> OpResult:
+            obj_name, obj_version, obj_path, obj_meta = args
+            return self._push_single_object(obj_name, obj_version, obj_path, obj_meta, on_conflict, file_workers)
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for result in executor.map(push_one, push_tasks):
+                results.add(result)
+
+        return results
+
+    def pull(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        local_path: PathArg,
+        acquire_lock: bool = False,
+        metadata: MetadataArg = None,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Download artifacts to local path(s).
+
+        Uses the `_files` manifest from metadata when available to avoid
+        expensive blob storage listing operations. All files across all objects
+        are downloaded in a single batch for maximum efficiency.
+
+        Note: The acquire_lock parameter is accepted for API compatibility but
+        ignored. Read locks are not implemented for GCS because:
+        1. Listing shared locks is slow (requires API call)
+        2. Metadata is written LAST, so if readable, files should exist
+        3. Worst case during concurrent write: download fails, caller retries
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+            local_path: Destination directory path(s) to copy to.
+            acquire_lock: Ignored. Kept for API compatibility with local backend.
+            metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
+                If provided, avoids re-fetching metadata. Single dict or list of dicts.
+            max_workers: Maximum parallel workers. Defaults to instance setting.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
+        """
+        workers = max_workers or self._max_workers
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+        paths = self._normalize_paths(local_path, len(names))
+
+        if len(names) != len(versions) or len(names) != len(paths):
+            raise ValueError("Input list lengths must match")
+
+        # Use pre-fetched metadata if provided, otherwise fetch it
+        if metadata is not None:
+            if isinstance(metadata, dict):
+                raise ValueError(
+                    "metadata must be a list of dicts (one per object), not a single dict. "
+                    "Use metadata=[meta_dict] for single objects."
+                )
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+            # Build OpResults from pre-fetched metadata
+            metadata_results = OpResults()
+            for n, v, m in zip(names, versions, metadatas):
+                metadata_results.add(OpResult.success(n, v, metadata=m))
+        else:
+            metadata_results = self.fetch_metadata(names, versions)
+
+        results = OpResults()
+        all_files_to_download: List[Tuple[str, str]] = []
+        file_to_object: Dict[str, Tuple[str, str]] = {}
+        objects_with_errors: set = set()
+
+        for obj_name, obj_version, dest_path in zip(names, versions, paths):
+            try:
+                meta_result = metadata_results.get((obj_name, obj_version))
+                if not meta_result or not meta_result.ok:
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+
+                obj_metadata = meta_result.metadata or {}
+
+                # Get remote key from _storage.uuid
+                storage_info = obj_metadata.get("_storage", {})
+                uuid_str = storage_info.get("uuid")
+                if not uuid_str:
+                    raise RegistryObjectNotFound(
+                        f"Object {obj_name}@{obj_version} has corrupted metadata (missing _storage.uuid)"
+                    )
+                remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
+
+                files_manifest = obj_metadata.get("_files")
+
+                if files_manifest:
+                    for relative_path in files_manifest:
+                        remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
+                        dest_file = dest_path / relative_path
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        all_files_to_download.append((remote_path, str(dest_file)))
+                        file_to_object[str(dest_file)] = (obj_name, obj_version)
+                else:
+                    # Fallback to listing (not preferred)
+                    objects_list = self.gcs.list_objects(prefix=remote_key)
+                    if not objects_list:
+                        raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
+                    for obj in objects_list:
+                        if not obj.endswith("/"):
+                            relative_path = obj[len(remote_key) :].lstrip("/")
+                            if relative_path:
+                                dest_file = dest_path / relative_path
+                                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                all_files_to_download.append((obj, str(dest_file)))
+                                file_to_object[str(dest_file)] = (obj_name, obj_version)
+
+            except Exception as e:
+                objects_with_errors.add((obj_name, obj_version))
+                results.add(OpResult.failed(obj_name, obj_version, e))
+
+        # Batch download all files
+        if all_files_to_download:
+            download_result = self.gcs.download_batch(all_files_to_download, max_workers=workers)
+
+            for file_result in download_result.failed_results:
+                dest_path_str = file_result.local_path
+                if dest_path_str in file_to_object:
+                    obj_key = file_to_object[dest_path_str]
+                    if obj_key not in objects_with_errors:
+                        objects_with_errors.add(obj_key)
+                        results.add(
+                            OpResult.failed(
+                                obj_key[0],
+                                obj_key[1],
+                                error_type=file_result.error_type or "DownloadError",
+                                message=file_result.error_message or "Unknown error",
+                            )
+                        )
+
+        # Mark successful objects
+        for obj_name, obj_version in zip(names, versions):
+            if (obj_name, obj_version) not in objects_with_errors and (obj_name, obj_version) not in results:
+                results.add(OpResult.success(obj_name, obj_version))
+
+        return results
+
+    def _delete_single_object(
+        self,
+        obj_name: str,
+        obj_version: str,
+        max_workers: int = 4,
+        metadata: dict | None = None,
+    ) -> OpResult:
+        """Delete a single object's files and metadata using MVCC pattern.
+
+        MVCC delete flow:
+        1. Get UUID from metadata (if available)
+        2. Create delete commit plan (for janitor cleanup if crash after step 3)
+        3. Delete metadata (the "commit point" - object becomes invisible)
+        4. Delete UUID folder (cleanup)
+        5. Delete commit plan on success
+
+        Args:
+            obj_name: Object name.
+            obj_version: Object version.
+            max_workers: Maximum parallel workers for batch delete.
+            metadata: Optional pre-fetched metadata containing "_files" manifest and "_storage.uuid".
+
+        Returns:
+            OpResult indicating success or error.
+        """
+        request_id: str | None = None
+        uuid_str: str | None = None
+
+        try:
+            # Step 1: Get UUID from metadata
+            if metadata:
+                storage_info = metadata.get("_storage", {})
+                uuid_str = storage_info.get("uuid")
+
+            # Step 2: Create delete commit plan (if we have UUID to clean up)
+            if uuid_str:
+                request_id = str(uuid.uuid4())
+                if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, operation="delete"):
+                    return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create delete commit plan"))
+
+            # Step 3: Delete metadata (the "commit point")
+            # After this, readers no longer see the object
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            meta_result = self.gcs.delete(meta_path)
+
+            if not meta_result.ok:
+                # Cleanup commit plan if we created one
+                if request_id:
+                    self._delete_commit_plan(request_id)
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RuntimeError(f"Failed to delete metadata: {meta_result.error_message}"),
+                )
+
+            # Step 4: Delete UUID folder (cleanup)
+            # If this fails, janitor will clean it up later using the commit plan
+            if uuid_str:
+                self._delete_uuid_folder(obj_name, obj_version, uuid_str)
+            # else: No UUID means metadata-only object, nothing to clean up
+
+            # Step 5: Delete commit plan on success
+            if request_id:
+                self._delete_commit_plan(request_id)
+
+            return OpResult.success(obj_name, obj_version)
+
+        except Exception as e:
+            # Best-effort cleanup of commit plan
+            if request_id:
+                self._delete_commit_plan(request_id)
+            return OpResult.failed(obj_name, obj_version, e)
+
+    def delete(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        acquire_lock: bool = False,
+        max_workers: int | None = None,
+    ) -> OpResults:
+        """Delete artifact(s) and metadata using lock-free MVCC.
+
+        Objects are processed in parallel for maximum efficiency. Uses MVCC
+        for concurrent safety - metadata deletion is the atomic "commit point"
+        that makes objects invisible to readers.
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Name of the object(s).
+            version: Version string(s).
+            acquire_lock: Ignored. Kept for API compatibility. Lock-free MVCC used.
+            max_workers: Maximum parallel workers. Defaults to instance setting.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and object doesn't exist.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        workers = max_workers or self._max_workers
+        results = OpResults()
+
+        # Limit file-level parallelism to avoid thread explosion with nested pools
+        file_workers = min(2, workers)
+
+        # Prepare all delete tasks
+        delete_tasks = list(zip(names, versions))
+
+        # Fetch metadata for all objects to get _storage.uuid (for MVCC cleanup)
+        metadata_results = self.fetch_metadata(
+            [n for n, _ in delete_tasks],
+            [v for _, v in delete_tasks],
+        )
+
+        def delete_one(args: Tuple[str, str]) -> OpResult:
+            obj_name, obj_version = args
+            # Get metadata for this object (may be None if not found)
+            meta_result = metadata_results.get((obj_name, obj_version))
+            obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
+            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for result in executor.map(delete_one, delete_tasks):
+                results.add(result)
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metadata-Only Operations
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def save_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+        metadata: Union[dict, List[dict]],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResults:
+        """Save metadata for object version(s).
+
+        Single item operations raise exceptions on error/conflict.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Object name(s).
+            version: Object version(s).
+            metadata: Metadata dict(s) to save.
+            on_conflict: Behavior when version exists.
+                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "overwrite": Replace existing version.
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.overwritten() when on_conflict="overwrite" and version existed
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            RuntimeError: Single item with unexpected error.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if isinstance(metadata, dict):
+            if len(names) != 1:
+                raise ValueError(
+                    "metadata must be a list of dicts when saving multiple objects. "
+                    "Use metadata=[meta_dict, ...] with one dict per object."
+                )
+            metadatas = [metadata]
+        else:
+            metadatas = list(metadata)
+            if len(metadatas) != len(names):
+                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+
+        for obj_name in names:
+            self.validate_object_name(obj_name)
+
+        results = OpResults()
+
+        def save_one(args: Tuple[str, str, dict]) -> OpResult:
+            obj_name, obj_version, obj_meta = args
+            result = self._save_metadata_single(obj_name, obj_version, obj_meta, on_conflict=on_conflict)
+
+            if result.status == Status.OK:
+                return OpResult.success(obj_name, obj_version)
+            elif result.status == Status.OVERWRITTEN:
+                return OpResult.overwritten(obj_name, obj_version)
+            elif result.status == Status.ALREADY_EXISTS:
+                # Return skipped result - conflict with on_conflict="skip"
+                return OpResult.skipped(obj_name, obj_version)
+            else:
+                return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for op_result in executor.map(save_one, zip(names, versions, metadatas)):
+                results.add(op_result)
+
+        return results
+
+    def fetch_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> OpResults:
+        """Fetch metadata for object version(s) using batch download.
+
+        Single item operations raise exceptions if not found.
+        Batch operations return OpResults without raising, letting caller inspect results.
+        Missing entries (not found) are omitted from the batch result.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success(metadata=...) on success
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RegistryObjectNotFound: Single item and metadata doesn't exist.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        results = OpResults()
+
+        # Prepare batch download - create temp files and mapping
+        temp_dir = tempfile.mkdtemp()
+        files_to_download: List[Tuple[str, str]] = []
+        temp_to_key: Dict[str, Tuple[str, str]] = {}  # Maps temp_path to (name, version)
+
+        try:
+            for obj_name, obj_version in zip(names, versions):
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                temp_path = os.path.join(temp_dir, f"{obj_name.replace(':', '_')}@{obj_version}.json")
+                files_to_download.append((meta_path, temp_path))
+                temp_to_key[temp_path] = (obj_name, obj_version)
+
+            # Batch download all metadata files
+            batch_result = self.gcs.download_batch(files_to_download)
+
+            # Process successful downloads
+            for file_result in batch_result.ok_results:
+                obj_name, obj_version = temp_to_key[file_result.local_path]
+                try:
+                    with open(file_result.local_path, "r") as f:
+                        meta = json.load(f)
+                    results.add(OpResult.success(obj_name, obj_version, metadata=meta))
+
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
+                    results.add(OpResult.failed(obj_name, obj_version, e))
+
+            # Process failures - add to results without raising
+            for file_result in batch_result.failed_results:
+                if file_result.local_path not in temp_to_key:
+                    continue
+                obj_name, obj_version = temp_to_key[file_result.local_path]
+                if file_result.status == Status.NOT_FOUND:
+                    # Record not found as failed result
+                    results.add(
+                        OpResult.failed(
+                            obj_name,
+                            obj_version,
+                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
+                        )
+                    )
+                    continue
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        error_type=file_result.error_type or "DownloadError",
+                        message=file_result.error_message or "Unknown error",
+                    )
+                )
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        return results
+
+    def delete_metadata(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> OpResults:
+        """Delete metadata for object version(s) using batch delete.
+
+        Single item operations raise exceptions on error.
+        Batch operations return OpResults without raising, letting caller inspect results.
+
+        Args:
+            name: Name of the object(s).
+            version: Version of the object(s).
+
+        Returns:
+            OpResults with OpResult for each (name, version):
+            - OpResult.success() on success
+            - OpResult.failed() on failure (batch only)
+
+        Raises:
+            RuntimeError: Single item and deletion fails.
+        """
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
+
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
+
+        # Build mapping from path to (name, version)
+        path_to_key: Dict[str, Tuple[str, str]] = {}
+        paths_to_delete: List[str] = []
+        for obj_name, obj_version in zip(names, versions):
+            meta_path = self._object_metadata_path(obj_name, obj_version)
+            paths_to_delete.append(meta_path)
+            path_to_key[meta_path] = (obj_name, obj_version)
+
+        # Batch delete all metadata files
+        batch_result = self.gcs.delete_batch(paths_to_delete)
+
+        results = OpResults()
+        for file_result in batch_result.results:
+            key = path_to_key.get(file_result.remote_path)
+            if not key:
+                continue
+            obj_name, obj_version = key
+            if file_result.status == Status.OK:
+                results.add(OpResult.success(obj_name, obj_version))
+            else:
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        error_type=file_result.error_type or "DeleteError",
+                        message=file_result.error_message or "Unknown error",
+                    )
+                )
+
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Registry-Level Metadata
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def save_registry_metadata(self, metadata: dict) -> None:
+        """Save registry-level metadata."""
+        data = json.dumps(metadata)
+        self.gcs.upload_string(data, self._metadata_path)
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata."""
+        result = self.gcs.download_string(self._metadata_path)
+        if result.ok:
+            return json.loads(result.content.decode("utf-8"))
+        self.logger.debug(f"Could not load registry metadata: {result.error_message}")
+        return {}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Discovery
+    # ─────────────────────────────────────────────────────────────────────────
 
     def list_objects(self) -> List[str]:
-        """List all objects in the registry.
-
-        Returns:
-            List of object names.
-        """
+        """List all objects in the registry."""
         objects = set()
-        for obj_name in self.gcs.list_objects(prefix="_meta_"):
-            if obj_name.endswith(".json"):
-                name_part = Path(obj_name).stem.split("@")[0].replace("_meta_", "")
+        meta_prefix = self._prefixed("_meta_")
+        for obj_path in self.gcs.list_objects(prefix=meta_prefix):
+            if obj_path.endswith(".json"):
+                # Extract just the filename part after prefix
+                filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
+                name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
                 objects.add(name)
         return sorted(list(objects))
 
-    def list_versions(self, name: str) -> List[str]:
-        """List available versions for a given object.
+    def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
+        """List available versions for object(s)."""
+        names = self._normalize_to_list(name)
+        results: Dict[str, List[str]] = {}
 
-        Args:
-            name: Name of the object.
+        for obj_name in names:
+            prefix = self._object_metadata_prefix(obj_name)
+            versions = []
 
-        Returns:
-            Sorted list of version strings available for the object.
+            for obj in self.gcs.list_objects(prefix=prefix):
+                if obj.endswith(".json"):
+                    version = obj[len(prefix) : -5]  # Remove prefix and .json
+                    versions.append(version)
+
+            def version_key(v):
+                try:
+                    return [int(x) for x in v.split(".")]
+                except ValueError:
+                    return [0]
+
+            results[obj_name] = sorted(versions, key=version_key)
+
+        return results
+
+    def has_object(
+        self,
+        name: NameArg,
+        version: ConcreteVersionArg,
+    ) -> Dict[Tuple[str, str], bool]:
+        """Check if object version(s) exist using batch metadata fetch.
+
+        Uses batch download to check existence in parallel rather than
+        sequential exists() calls.
         """
-        prefix = self._object_metadata_prefix(name)
-        versions = []
+        names = self._normalize_to_list(name)
+        versions = self._normalize_to_list(version)
 
-        for obj_name in self.gcs.list_objects(prefix=prefix):
-            if obj_name.endswith(".json"):
-                version = obj_name[len(prefix) : -5]  # Remove prefix and .json
-                versions.append(version)
-        return sorted(versions)
+        if len(names) != len(versions):
+            raise ValueError("name and version list lengths must match")
 
-    def has_object(self, name: str, version: str) -> bool:
-        """Check if a specific object version exists in the backend.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-
-        Returns:
-            True if the object version exists, False otherwise.
-        """
-        meta_path = self._object_metadata_path(name, version)
+        # Use fetch_metadata - wrap in try/except since single item raises on not found
         try:
-            return self.gcs.exists(meta_path)
-        except Exception:
-            # If existence check fails, fall back to checking if metadata can be fetched
-            try:
-                self.fetch_metadata(name, version)
-                return True
-            except Exception:
-                return False
+            metadata_results = self.fetch_metadata(names, versions)
+        except RegistryObjectNotFound:
+            # Single item not found - return False for that item
+            metadata_results = OpResults()
 
-    def register_materializer(self, object_class: str, materializer_class: str):
-        """Register a materializer for an object class.
+        results: Dict[Tuple[str, str], bool] = {}
+        for obj_name, obj_version in zip(names, versions):
+            meta_result = metadata_results.get((obj_name, obj_version))
+            results[(obj_name, obj_version)] = meta_result is not None and meta_result.ok
 
-        Args:
-            object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
-        """
-        try:
-            # Download current metadata
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
+        return results
 
-            try:
-                self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, "r") as f:
-                    metadata = json.load(f)
-            except Exception:
-                # If metadata doesn't exist, create new metadata
-                metadata = {"materializers": {}}
+    # ─────────────────────────────────────────────────────────────────────────
+    # Materializer Registry
+    # ─────────────────────────────────────────────────────────────────────────
 
-            # Update metadata with new materializer
-            metadata["materializers"][object_class] = materializer_class
+    def register_materializer(
+        self,
+        object_class: NameArg,
+        materializer_class: NameArg,
+    ) -> None:
+        """Register materializer(s) for object class(es)."""
+        obj_classes = self._normalize_to_list(object_class)
+        mat_classes = self._normalize_to_list(materializer_class)
 
-            # Upload updated metadata
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(metadata, f)
-                temp_path = f.name
+        if len(obj_classes) != len(mat_classes):
+            raise ValueError("object_class and materializer_class list lengths must match")
 
-            try:
-                self.gcs.upload(temp_path, self._metadata_path)
-            finally:
-                os.unlink(temp_path)
+        metadata = self.fetch_registry_metadata()
+        if "materializers" not in metadata:
+            metadata["materializers"] = {}
 
-        except Exception as e:
-            self.logger.error(f"Error registering materializer for {object_class}: {e}")
-            raise e
+        for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+            metadata["materializers"][obj_cls] = mat_cls
+
+        self.save_registry_metadata(metadata)
+
+    def registered_materializers(
+        self,
+        object_class: Union[str, None, List[str]] = None,
+    ) -> Dict[str, str]:
+        """Get registered materializers."""
+        metadata = self.fetch_registry_metadata()
+        all_materializers = metadata.get("materializers", {})
+
+        if object_class is None:
+            return all_materializers
+
+        if isinstance(object_class, str):
+            obj_classes = [object_class]
         else:
-            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+            obj_classes = object_class
 
-    def register_materializers_batch(self, materializers: Dict[str, str]):
-        """Register multiple materializers in a single operation for better performance.
+        return {k: v for k, v in all_materializers.items() if k in obj_classes}
 
-        Args:
-            materializers: Dictionary mapping object classes to materializer classes.
-        """
-        try:
-            # Download current metadata
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, "r") as f:
-                    metadata = json.load(f)
-            except Exception:
-                # If metadata doesn't exist, create new metadata
-                metadata = {"materializers": {}}
-
-            # Update metadata with all materializers
-            metadata["materializers"].update(materializers)
-
-            # Upload updated metadata
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(metadata, f)
-                temp_path = f.name
-
-            try:
-                self.gcs.upload(temp_path, self._metadata_path)
-            finally:
-                os.unlink(temp_path)
-
-        except Exception as e:
-            self.logger.error(f"Error registering materializers batch: {e}")
-            raise e
-        else:
-            self.logger.debug(f"Registered {len(materializers)} materializers in batch")
-
-    def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class.
-
-        Args:
-            object_class: Object class to get the registered materializer for.
-
-        Returns:
-            Materializer class string, or None if no materializer is registered for the object class.
-        """
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, "r") as f:
-                    metadata = json.load(f)
-                return metadata.get("materializers", {}).get(object_class)
-            except Exception as e:
-                self.logger.debug(f"Could not load materializer for {object_class}: {e}")
-                return None
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        except Exception as e:
-            self.logger.error(f"Error getting registered materializer for {object_class}: {e}")
-            return None
-
-    def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
-
-        Returns:
-            Dictionary mapping object classes to their registered materializer classes.
-        """
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, "r") as f:
-                    metadata = json.load(f)
-                return metadata.get("materializers", {})
-            except Exception as e:
-                self.logger.debug(f"Could not load materializers: {e}")
-                return {}
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        except Exception as e:
-            self.logger.error(f"Error loading materializers: {e}")
-            return {}
-
-    def save_registry_metadata(self, metadata: dict):
-        """Save registry-level metadata to the backend.
-
-        Args:
-            metadata: Dictionary containing registry metadata to save.
-        """
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(metadata, f)
-                temp_path = f.name
-
-            try:
-                self.gcs.upload(temp_path, self._metadata_path)
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        except Exception as e:
-            self.logger.error(f"Error saving registry metadata: {e}")
-            raise e
-
-    def fetch_registry_metadata(self) -> dict:
-        """Fetch registry-level metadata from the backend.
-
-        Returns:
-            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
-        """
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                self.logger.debug(f"Could not load registry metadata: {e}")
-                return {}
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        except Exception as e:
-            self.logger.debug(f"Could not load registry metadata: {e}")
-            return {}
-
-    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Acquire a lock using GCS object generation numbers.
-
-        This method uses atomic operations to prevent race conditions:
-        1. First, attempt to read the current lock state atomically
-        2. If lock exists and is valid, check compatibility and raise error if needed
-        3. If lock exists but is expired, use atomic conditional update with generation number
-        4. If lock doesn't exist, use atomic conditional create (if_generation_match=0)
-
-        Note: This method does not retry on failures. The Registry class handles retries
-        using its Timeout handler. Return False on PreconditionFailed to allow retry.
-
-        Args:
-            key: The key to acquire the lock for.
-            lock_id: The ID of the lock to acquire.
-            timeout: The timeout in seconds for the lock.
-            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
-
-        Returns:
-            True if the lock was acquired, False otherwise.
-        """
-        lock_key = self._lock_key(key)
-        blob = self.gcs._bucket().blob(lock_key)
-
-        try:
-            # Step 1: Atomically read current lock state
-            generation_match = None  # Will be set based on lock state
-            try:
-                # Reload blob to get current generation number
-                blob.reload()
-                current_generation = blob.generation
-
-                # Download current lock content
-                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                    temp_path = f.name
-
-                try:
-                    self.gcs.download(lock_key, temp_path)
-                    with open(temp_path, "r") as f:
-                        current_metadata = json.load(f)
-
-                    # Check if lock is still valid (not expired)
-                    if time.time() < current_metadata.get("expires_at", 0):
-                        # Lock is valid - check compatibility
-                        if shared and not current_metadata.get("shared", False):
-                            # Trying to acquire shared lock but exclusive lock exists
-                            raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        if not shared and current_metadata.get("shared", False):
-                            # Trying to acquire exclusive lock but shared lock exists
-                            raise LockAcquisitionError(f"Lock {key} is currently held as shared")
-                        # If there's already a shared lock and we want a shared lock, we can share it
-                        if shared and current_metadata.get("shared", False):
-                            return True
-                        # Otherwise, lock is held exclusively (and we want exclusive)
-                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                    else:
-                        # Lock is expired - we'll update it atomically using generation number
-                        generation_match = current_generation
-                finally:
-                    if os.path.exists(temp_path):
-                        os.unlink(temp_path)
-
-            except gexc.NotFound:
-                # Lock doesn't exist (either never existed or was deleted between reload and download)
-                # Use generation_match=0 to create atomically
-                generation_match = 0
-
-            # Step 2: Atomically create/update lock with generation check
-            # generation_match should be set by now (either from expired lock or NotFound)
-            if generation_match is None:
-                # This shouldn't happen, but handle it gracefully
-                self.logger.error(f"Unexpected state: generation_match is None for lock {key}")
-                return False
-
-            new_metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
-
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(new_metadata, f)
-                temp_path = f.name
-
-            try:
-                # Atomic operation: only succeeds if generation matches (or is 0 for new file)
-                blob.upload_from_filename(temp_path, if_generation_match=generation_match)
-                return True
-            except gexc.PreconditionFailed:
-                # Generation mismatch - another process modified the lock
-                # For shared locks, check if the existing lock is also shared - if so, we can share it
-                if shared:
-                    try:
-                        # Reload to get the current lock state
-                        blob.reload()
-                        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                            temp_check_path = f.name
-                        try:
-                            self.gcs.download(lock_key, temp_check_path)
-                            with open(temp_check_path, "r") as f:
-                                existing_metadata = json.load(f)
-                            # If the existing lock is shared and valid, we can share it
-                            if existing_metadata.get("shared", False) and time.time() < existing_metadata.get(
-                                "expires_at", 0
-                            ):
-                                return True
-                            # If the existing lock is exclusive, raise error
-                            if not existing_metadata.get("shared", False):
-                                raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        finally:
-                            if os.path.exists(temp_check_path):
-                                os.unlink(temp_check_path)
-                    except LockAcquisitionError:
-                        # Re-raise LockAcquisitionError
-                        raise
-                    except gexc.NotFound:
-                        # Lock was deleted between PreconditionFailed and check - return False to retry
-                        return False
-                    except Exception as e:
-                        # Log other exceptions but still return False to allow retry
-                        self.logger.debug(f"Error checking existing lock after PreconditionFailed: {e}")
-                        return False
-                # Return False to allow Registry class to retry
-                return False
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-
-        except LockAcquisitionError:
-            # Re-raise LockAcquisitionError (Registry will handle retries)
-            raise
-        except Exception as e:
-            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
-            return False
-
-    def release_lock(self, key: str, lock_id: str) -> bool:
-        """Release a lock by verifying ownership and removing the lock object.
-
-        Args:
-            key: The key to unlock.
-            lock_id: The lock ID that was used to acquire the lock.
-
-        Returns:
-            True if lock was released, False otherwise.
-        """
-        lock_key = self._lock_key(key)
-
-        try:
-            # Verify lock ownership
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(lock_key, temp_path)
-                with open(temp_path, "r") as f:
-                    lock_data = json.load(f)
-                if lock_data.get("lock_id") != lock_id:
-                    return False  # Not our lock
-            except Exception:
-                return True  # Lock doesn't exist
-
-            # Remove the lock
-            self.gcs.delete(lock_key)
-            return True
-        finally:
-            if "temp_path" in locals() and os.path.exists(temp_path):
-                os.unlink(temp_path)
-
-    def check_lock(self, key: str) -> tuple[bool, str | None]:
-        """Check if a key is currently locked.
-
-        Args:
-            key: The key to check.
-
-        Returns:
-            Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID.
-            If not locked, lock_id will be None.
-        """
-        lock_key = self._lock_key(key)
-
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(lock_key, temp_path)
-                with open(temp_path, "r") as f:
-                    lock_data = json.load(f)
-
-                # Check if lock is expired
-                if time.time() > lock_data.get("expires_at", 0):
-                    return False, None
-
-                return True, lock_data.get("lock_id")
-            finally:
-                os.unlink(temp_path)
-
-        except Exception:
-            return False, None
-
-    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
-        """Overwrite an object using compensating actions pattern for better atomicity.
-
-        This method implements a compensating actions pattern to improve atomicity:
-        1. Copy source objects to target (overwrites existing target atomically per object)
-        2. Copy metadata to target
-        3. Delete source objects
-        4. Delete source metadata
-
-        If any step fails, the method attempts to rollback by deleting what was created.
-
-        Args:
-            source_name: Name of the source object.
-            source_version: Version of the source object.
-            target_name: Name of the target object.
-            target_version: Version of the target object.
-        """
-        # Get the source and target object keys
-        source_key = self._object_key(source_name, source_version)
-        target_key = self._object_key(target_name, target_version)
-
-        # Get the source and target metadata keys
-        source_meta_key = self._object_metadata_path(source_name, source_version)
-        target_meta_key = self._object_metadata_path(target_name, target_version)
-
-        self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
-
-        # Track what we've done for rollback
-        copied_objects: List[str] = []
-        metadata_copied = False
-
-        try:
-            # Step 1: List source and existing target objects before any operations
-            source_objects = self.gcs.list_objects(prefix=source_key)
-            if not source_objects:
-                raise ValueError(f"No source objects found for {source_name}@{source_version}")
-
-            # Get list of target objects that will be created/overwritten
-            expected_target_objects = [
-                obj_name.replace(source_key, target_key) for obj_name in source_objects if not obj_name.endswith("/")
-            ]
-
-            # Step 2: Copy all objects from source to target using GCS rewrite operation
-            # This overwrites existing target objects atomically per object
-            for obj_name in source_objects:
-                # Skip directory markers
-                if not obj_name.endswith("/"):
-                    # Create target object name by replacing source prefix with target prefix
-                    target_obj_name = obj_name.replace(source_key, target_key)
-                    self.logger.debug(f"Copying {obj_name} to {target_obj_name}")
-
-                    # Copy the object using GCS rewrite operation (atomic per object)
-                    source_blob = self.gcs._bucket().blob(obj_name)
-                    target_blob = self.gcs._bucket().blob(target_obj_name)
-                    target_blob.rewrite(source_blob)
-                    copied_objects.append(target_obj_name)
-
-            # Step 3: Delete any existing target objects that weren't overwritten
-            # (objects that exist in target but not in source)
-            try:
-                existing_target_objects = self.gcs.list_objects(prefix=target_key)
-                for obj_name in existing_target_objects:
-                    if not obj_name.endswith("/") and obj_name not in expected_target_objects:
-                        self.logger.debug(f"Deleting old target object {obj_name} not in source")
-                        self.gcs.delete(obj_name)
-            except Exception:
-                self.logger.debug("No existing target objects to clean up")
-
-            # Step 4: Copy metadata file if it exists
-            try:
-                self.logger.debug(f"Copying metadata from {source_meta_key} to {target_meta_key}")
-
-                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                    temp_path = f.name
-
-                try:
-                    self.gcs.download(source_meta_key, temp_path)
-                    with open(temp_path, "r") as f:
-                        metadata = json.load(f)
-
-                    # Update the path in metadata
-                    metadata["path"] = f"gs://{self.gcs.bucket_name}/{target_key}"
-
-                    # Save updated metadata
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f2:
-                        json.dump(metadata, f2)
-                        temp_path2 = f2.name
-
-                    try:
-                        self.gcs.upload(temp_path2, target_meta_key)
-                        metadata_copied = True
-                    finally:
-                        os.unlink(temp_path2)
-                finally:
-                    os.unlink(temp_path)
-            except Exception as e:
-                if "not found" in str(e).lower():
-                    raise ValueError(f"No source metadata found for {source_name}@{source_version}")
-                raise
-
-            # Step 5: Verify target completeness before deletion
-            # This prevents deletion if target is incomplete (prevents worst case scenario)
-            # Note: Verification may fail in mocked test environments, so we make it best-effort
-            verification_passed = False
-            try:
-                target_objects_after_copy = self.gcs.list_objects(prefix=target_key)
-                target_object_names = {obj for obj in target_objects_after_copy if not obj.endswith("/")}
-                expected_target_set = set(expected_target_objects)
-
-                # Check that all expected objects exist (critical)
-                missing_objects = expected_target_set - target_object_names
-                if missing_objects:
-                    # Only fail if we're certain objects are missing (not just a mock/test issue)
-                    # In real scenarios, if we copied objects, they should exist
-                    # But in tests with mocks, list_objects might not reflect copied state
-                    self.logger.warning(
-                        f"Target verification: missing expected objects {missing_objects}. "
-                        f"Expected {len(expected_target_set)} objects, found {len(target_object_names)}. "
-                        f"This may be a test/mock issue. Proceeding with caution."
-                    )
-                    # Don't fail - allow operation to continue (objects were copied successfully)
-
-                # Warn about extra objects but don't fail (they may be old objects we couldn't delete)
-                extra_objects = target_object_names - expected_target_set
-                if extra_objects:
-                    self.logger.warning(
-                        f"Target has unexpected objects (non-critical): {extra_objects}. "
-                        f"These may be old objects that couldn't be deleted."
-                    )
-
-                # Verify target metadata exists (best effort)
-                try:
-                    with tempfile.NamedTemporaryFile(delete=True) as temp_file:
-                        self.gcs.download(target_meta_key, temp_file.name)
-                    verification_passed = True
-                except Exception as meta_error:
-                    # Metadata verification failed - but we uploaded it, so this might be a test issue
-                    self.logger.warning(f"Target metadata verification failed (may be test/mock issue): {meta_error}")
-            except Exception as e:
-                # Verification check itself failed (e.g., list_objects error, network issue)
-                # This is non-critical - we've already copied objects successfully
-                self.logger.warning(
-                    f"Target verification check failed (non-critical, may be test/mock): {e}. "
-                    f"Proceeding since objects were copied successfully."
-                )
-
-            if not verification_passed:
-                self.logger.debug(
-                    "Target verification did not fully pass, but proceeding since copy operations succeeded. "
-                    "This is acceptable in test/mock environments."
-                )
-
-            # Step 6: Delete source objects idempotently (only after successful copy and verification)
-            # Track deleted objects for recovery in case of failure
-            deleted_source_objects: List[str] = []
-            deletion_errors: List[str] = []
-
-            for obj_name in source_objects:
-                if not obj_name.endswith("/"):
-                    try:
-                        # Idempotent deletion: check if object exists before deleting
-                        # This makes the operation retry-safe
-                        try:
-                            # Try to get object metadata to check existence
-                            blob = self.gcs._bucket().blob(obj_name)
-                            blob.reload()
-                            # Object exists, delete it
-                            self.gcs.delete(obj_name)
-                            deleted_source_objects.append(obj_name)
-                        except Exception as check_error:
-                            # Object might not exist (already deleted) or error checking
-                            if "not found" in str(check_error).lower() or "404" in str(check_error).lower():
-                                # Object already deleted - this is fine (idempotent)
-                                deleted_source_objects.append(obj_name)
-                                self.logger.debug(f"Source object {obj_name} already deleted (idempotent)")
-                            else:
-                                # Real error during deletion
-                                raise
-                    except Exception as delete_error:
-                        deletion_errors.append(f"{obj_name}: {delete_error}")
-                        self.logger.error(f"Failed to delete source object {obj_name}: {delete_error}")
-
-            # Step 7: Delete source metadata idempotently
-            try:
-                try:
-                    # Check if metadata exists before deleting (idempotent)
-                    blob = self.gcs._bucket().blob(source_meta_key)
-                    blob.reload()
-                    self.gcs.delete(source_meta_key)
-                except Exception as meta_check_error:
-                    if "not found" in str(meta_check_error).lower() or "404" in str(meta_check_error).lower():
-                        # Metadata already deleted - this is fine (idempotent)
-                        self.logger.debug(f"Source metadata {source_meta_key} already deleted (idempotent)")
-                    else:
-                        raise
-            except Exception as meta_delete_error:
-                deletion_errors.append(f"{source_meta_key}: {meta_delete_error}")
-                self.logger.error(f"Failed to delete source metadata {source_meta_key}: {meta_delete_error}")
-
-            # If there were deletion errors, raise exception with helpful information
-            if deletion_errors:
-                remaining_source_objects = [
-                    obj for obj in source_objects if not obj.endswith("/") and obj not in deleted_source_objects
-                ]
-                error_msg = (
-                    f"Overwrite completed but source deletion partially failed. "
-                    f"Deleted {len(deleted_source_objects)}/{len([o for o in source_objects if not o.endswith('/')])} source objects. "
-                    f"Remaining source objects: {remaining_source_objects}. "
-                    f"Errors: {deletion_errors}. "
-                    f"Target is complete and functional. Use cleanup_partial_overwrite() to remove remaining source objects."
-                )
-                raise RuntimeError(error_msg)
-
-            self.logger.debug(f"Successfully completed overwrite operation for {target_name}@{target_version}")
-
-        except Exception as e:
-            # Compensating actions: rollback by deleting what we created
-            self.logger.warning(f"Error during overwrite operation, attempting rollback: {e}")
-            rollback_errors = []
-
-            # Rollback: Delete copied objects if operation failed before completion
-            # Only rollback if we haven't deleted source yet (source still exists to restore)
-            if copied_objects:
-                # Check if source objects still exist (if they do, we can rollback)
-                source_still_exists = False
-                try:
-                    remaining_source = self.gcs.list_objects(prefix=source_key)
-                    source_still_exists = len(remaining_source) > 0
-                except Exception:
-                    pass
-
-                # Only rollback copied objects if source still exists (operation failed early)
-                # If source was deleted, we can't rollback without losing data
-                if source_still_exists:
-                    for obj_name in copied_objects:
-                        try:
-                            self.gcs.delete(obj_name)
-                            self.logger.debug(f"Rollback: Deleted copied object {obj_name}")
-                        except Exception as rollback_error:
-                            rollback_errors.append(f"Failed to delete {obj_name}: {rollback_error}")
-
-            # Rollback: Delete copied metadata if it was created but operation failed
-            if metadata_copied:
-                try:
-                    self.gcs.delete(target_meta_key)
-                    self.logger.debug(f"Rollback: Deleted {target_meta_key}")
-                except Exception as rollback_error:
-                    rollback_errors.append(f"Failed to delete {target_meta_key}: {rollback_error}")
-
-            if rollback_errors:
-                self.logger.error(f"Rollback completed with errors: {rollback_errors}")
-
-            self.logger.error(f"Overwrite operation failed: {e}")
-            raise e
-
-    def cleanup_partial_overwrite(
-        self, source_name: str, source_version: str, target_name: str, target_version: str
-    ) -> Dict[str, int]:
-        """Clean up remaining source objects after a failed overwrite operation.
-
-        This method is useful when overwrite() fails during source deletion, leaving
-        duplicate objects (both source and target exist). It safely removes remaining
-        source objects and metadata.
-
-        Args:
-            source_name: Name of the source object.
-            source_version: Version of the source object.
-            target_name: Name of the target object.
-            target_version: Version of the target object.
-
-        Returns:
-            Dictionary with cleanup statistics:
-            - 'objects_deleted': Number of source objects deleted
-            - 'metadata_deleted': 1 if metadata deleted, 0 otherwise
-            - 'errors': Number of errors encountered
-
-        Example:
-            >>> backend.cleanup_partial_overwrite(
-            ...     source_name="model:temp", source_version="1.0.0",
-            ...     target_name="model:prod", target_version="2.0.0"
-            ... )
-            {'objects_deleted': 5, 'metadata_deleted': 1, 'errors': 0}
-        """
-        source_key = self._object_key(source_name, source_version)
-        source_meta_key = self._object_metadata_path(source_name, source_version)
-
-        stats = {"objects_deleted": 0, "metadata_deleted": 0, "errors": 0}
-
-        # Delete remaining source objects
-        try:
-            source_objects = self.gcs.list_objects(prefix=source_key)
-            for obj_name in source_objects:
-                if not obj_name.endswith("/"):
-                    try:
-                        # Idempotent deletion
-                        blob = self.gcs._bucket().blob(obj_name)
-                        try:
-                            blob.reload()
-                            self.gcs.delete(obj_name)
-                            stats["objects_deleted"] += 1
-                            self.logger.debug(f"Cleaned up source object: {obj_name}")
-                        except Exception as e:
-                            if "not found" in str(e).lower() or "404" in str(e).lower():
-                                # Already deleted
-                                stats["objects_deleted"] += 1
-                            else:
-                                raise
-                    except Exception as e:
-                        stats["errors"] += 1
-                        self.logger.warning(f"Error deleting source object {obj_name}: {e}")
-        except Exception as e:
-            stats["errors"] += 1
-            self.logger.warning(f"Error listing source objects for cleanup: {e}")
-
-        # Delete source metadata
-        try:
-            blob = self.gcs._bucket().blob(source_meta_key)
-            try:
-                blob.reload()
-                self.gcs.delete(source_meta_key)
-                stats["metadata_deleted"] = 1
-                self.logger.debug(f"Cleaned up source metadata: {source_meta_key}")
-            except Exception as e:
-                if "not found" in str(e).lower() or "404" in str(e).lower():
-                    # Already deleted
-                    stats["metadata_deleted"] = 1
-                else:
-                    raise
-        except Exception as e:
-            stats["errors"] += 1
-            self.logger.warning(f"Error deleting source metadata {source_meta_key}: {e}")
-
-        return stats
+    # ─────────────────────────────────────────────────────────────────────────
+    # Legacy Support
+    # ─────────────────────────────────────────────────────────────────────────

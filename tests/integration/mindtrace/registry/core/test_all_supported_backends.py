@@ -1,14 +1,15 @@
-"""Integration tests for all supported backends."""
+"""Integration tests for all supported backends.
+
+GCP fixtures (gcs_client, gcp_test_bucket, gcp_project_id, gcp_credentials_path, gcp_test_prefix)
+are inherited from tests/integration/conftest.py
+"""
 
 import os
-import shutil
-import tempfile
 import uuid
-from pathlib import Path
 
 import pytest
 
-from mindtrace.core import Config, CoreConfig
+from mindtrace.core import Config
 from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, MinioRegistryBackend, Registry
 
 # Backend configurations
@@ -47,68 +48,40 @@ def backend_type(request):
 
 
 @pytest.fixture
-def temp_dir():
-    """Create a temporary directory for testing."""
-    temp_dir = Path(tempfile.mkdtemp())
-    yield temp_dir
-    shutil.rmtree(temp_dir)
+def minio_test_bucket(backend_type):
+    """Create a test bucket name for MinIO backend."""
+    if backend_type != "minio":
+        return None
+    return f"mt-test-{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture
-def test_bucket(backend_type):
-    """Create a test bucket for cloud backends."""
-    if backend_type == "local":
-        return None
-
-    bucket_name = f"mt-test-{uuid.uuid4().hex[:8]}"
-    return bucket_name
-
-
-@pytest.fixture(scope="session")
-def gcp_backend_session():
-    """Create a session-scoped GCP backend for faster testing."""
-    config = CoreConfig()
-
-    # Check if GCP credentials are available
-    gcp_project_id = os.getenv("GCP_PROJECT_ID")
-    gcp_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-
-    # Try to get from config if not in environment
-    if not gcp_project_id:
-        try:
-            gcp_project_id = config["MINDTRACE_GCP"]["GCP_PROJECT_ID"]
-        except (KeyError, TypeError):
-            pass
-
-    if not gcp_credentials_path:
-        try:
-            gcp_credentials_path = config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-        except (KeyError, TypeError):
-            pass
-
-    # Skip GCP tests if credentials are not available
-    if not gcp_project_id or not gcp_credentials_path:
-        pytest.skip("GCP credentials not available - skipping GCP backend tests")
-
-    # Create a shared bucket for all GCP tests in this session
-    bucket_name = f"mt-test-session-{uuid.uuid4().hex[:8]}"
-
-    params = {
-        "project_id": gcp_project_id,
-        "bucket_name": bucket_name,
-        "credentials_path": gcp_credentials_path,
-        "uri": f"gs://{bucket_name}",
-    }
-
+def gcp_backend_instance(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path, gcs_client):
+    """Create a function-scoped GCP backend with unique prefix for test isolation."""
     try:
-        backend_instance = GCPRegistryBackend(**params)
+        backend_instance = GCPRegistryBackend(
+            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+            project_id=gcp_project_id,
+            bucket_name=gcp_test_bucket,
+            credentials_path=gcp_credentials_path,
+            prefix=gcp_test_prefix,
+        )
         yield backend_instance
+
+        # Cleanup: delete all objects with our test prefix
+        try:
+            bucket = gcs_client.bucket(gcp_test_bucket)
+            blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+            for blob in blobs:
+                blob.delete()
+        except Exception:
+            pass  # Best effort cleanup
     except Exception as e:
         pytest.skip(f"GCP backend creation failed: {e}")
 
 
 @pytest.fixture
-def backend(request, backend_type, temp_dir, test_bucket):
+def backend(request, backend_type, temp_dir, minio_test_bucket):
     """Create a backend instance for testing."""
     backend_config = BACKENDS[backend_type]
     backend_class = backend_config["class"]
@@ -118,28 +91,21 @@ def backend(request, backend_type, temp_dir, test_bucket):
         params["uri"] = str(temp_dir)
         return backend_class(**params)
     elif backend_type == "minio":
-        params["bucket"] = test_bucket
+        params["bucket"] = minio_test_bucket
         params["uri"] = str(temp_dir)
         return backend_class(**params)
     elif backend_type == "gcp":
-        # Use the session-scoped GCP backend for faster testing
-        gcp_backend_session = request.getfixturevalue("gcp_backend_session")
-        return gcp_backend_session
+        # Use function-scoped GCP backend for test isolation
+        gcp_backend = request.getfixturevalue("gcp_backend_instance")
+        return gcp_backend
 
 
 @pytest.fixture
 def registry(backend):
-    """Create a Registry instance with the backend."""
-    reg = Registry(backend=backend, version_objects=True)
-    # GCP operations are slower; increase lock timeout to avoid false timeouts
-    try:
-        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
-
-        if isinstance(backend, GCPRegistryBackend):
-            reg.config["MINDTRACE_LOCK_TIMEOUT"] = 30
-    except Exception:
-        pass
-    return reg
+    """Create a Registry instance with the backend (no cache for test isolation)."""
+    # Disable cache for test isolation - cache introduces complexity in version management
+    # Note: lock_timeout is configured directly on the backend via __init__, not registry config
+    return Registry(backend=backend, version_objects=True, use_cache=False)
 
 
 @pytest.fixture
@@ -219,12 +185,12 @@ def test_info(registry, test_config):
     # Save object with metadata
     registry.save("test:info", test_config, version="1.0.0", metadata={"description": "test object"})
 
-    # Get info for specific version
+    # Get info for specific version - returns metadata directly
     info = registry.info("test:info", version="1.0.0")
-    assert info["version"] == "1.0.0"
+    assert "metadata" in info
     assert info["metadata"]["description"] == "test object"
 
-    # Get info for all versions
+    # Get info for all versions - returns dict of {version: metadata}
     all_info = registry.info("test:info")
     assert "1.0.0" in all_info
     assert all_info["1.0.0"]["metadata"]["description"] == "test object"
@@ -736,13 +702,15 @@ def test_error_handling_invalid_names(registry):
 
 def test_error_handling_nonexistent_objects(registry):
     """Test error handling for nonexistent objects."""
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
     # Try to load nonexistent object
-    with pytest.raises(ValueError):
+    with pytest.raises(RegistryObjectNotFound):
         registry.load("nonexistent:object")
 
     # Try to load nonexistent version
     registry.save("test:exists", "data")
-    with pytest.raises(ValueError):
+    with pytest.raises(RegistryObjectNotFound):
         registry.load("test:exists", version="999.0.0")
 
 
@@ -752,24 +720,13 @@ def test_backend_specific_functionality(backend_type, registry):
         # Test GCP-specific functionality
         backend = registry.backend
 
-        # Test distributed locking with timeout
-        lock_key = "test:lock"
-        lock_id = "test-lock-id"
+        # Verify GCS handler is available
+        assert backend.gcs is not None
+        assert backend.gcs.bucket_name is not None
 
-        try:
-            success = backend.acquire_lock(lock_key, lock_id, 5, shared=False)
-            assert success
-
-            is_locked, current_lock_id = backend.check_lock(lock_key)
-            assert is_locked
-            assert current_lock_id == lock_id
-
-            backend.release_lock(lock_key, lock_id)
-
-            is_locked_after, _ = backend.check_lock(lock_key)
-            assert not is_locked_after
-        except Exception as e:
-            pytest.skip(f"GCP locking test failed (likely due to credentials): {e}")
+        # Test that we can list objects (verifies GCS connectivity)
+        objects = backend.list_objects()
+        assert isinstance(objects, list)
 
     elif backend_type == "minio":
         # Test MinIO-specific functionality
@@ -787,7 +744,168 @@ def test_backend_specific_functionality(backend_type, registry):
         assert backend.uri.is_dir()
 
 
-def test_cleanup_after_tests(registry, backend_type, test_bucket):
+# ─────────────────────────────────────────────────────────────────────────────
+# Mutable/Immutable Registry Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def mutable_registry(backend):
+    """Create a mutable Registry instance (allows overwrites)."""
+    return Registry(backend=backend, version_objects=True, mutable=True, use_cache=False)
+
+
+@pytest.fixture
+def immutable_registry(backend):
+    """Create an immutable Registry instance (raises on conflicts)."""
+    return Registry(backend=backend, version_objects=True, mutable=False, use_cache=False)
+
+
+@pytest.fixture
+def unversioned_registry(backend):
+    """Create a registry without version tracking."""
+    return Registry(backend=backend, version_objects=False, mutable=True, use_cache=False)
+
+
+def test_mutable_registry_allows_overwrite(mutable_registry):
+    """Test that mutable registry allows saving to same version."""
+
+    # First save
+    mutable_registry.save("test:mutable", "value1", version="1.0.0")
+    loaded1 = mutable_registry.load("test:mutable", version="1.0.0")
+    assert loaded1 == "value1"
+
+    # Overwrite same version - should work in mutable mode
+    mutable_registry.save("test:mutable", "value2", version="1.0.0")
+    loaded2 = mutable_registry.load("test:mutable", version="1.0.0")
+    assert loaded2 == "value2"
+
+
+def test_immutable_registry_raises_on_conflict(immutable_registry):
+    """Test that immutable registry raises RegistryVersionConflict on duplicate."""
+    from mindtrace.registry.core.exceptions import RegistryVersionConflict
+
+    # First save
+    immutable_registry.save("test:immutable", "value1", version="1.0.0")
+
+    # Second save to same version should raise
+    with pytest.raises(RegistryVersionConflict):
+        immutable_registry.save("test:immutable", "value2", version="1.0.0")
+
+
+def test_immutable_registry_allows_different_versions(immutable_registry):
+    """Test that immutable registry allows different versions of same object."""
+    # Save multiple versions - should all work
+    immutable_registry.save("test:multiversion", "v1", version="1.0.0")
+    immutable_registry.save("test:multiversion", "v2", version="2.0.0")
+    immutable_registry.save("test:multiversion", "v3", version="3.0.0")
+
+    # All versions should be accessible
+    assert immutable_registry.load("test:multiversion", version="1.0.0") == "v1"
+    assert immutable_registry.load("test:multiversion", version="2.0.0") == "v2"
+    assert immutable_registry.load("test:multiversion", version="3.0.0") == "v3"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Versioned/Unversioned Registry Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_unversioned_registry_single_version(unversioned_registry):
+    """Test that unversioned registry uses single version."""
+    # Save without explicit version
+    unversioned_registry.save("test:unversioned", "value1")
+    loaded1 = unversioned_registry.load("test:unversioned")
+    assert loaded1 == "value1"
+
+    # Overwrite (mutable=True allows this)
+    unversioned_registry.save("test:unversioned", "value2")
+    loaded2 = unversioned_registry.load("test:unversioned")
+    assert loaded2 == "value2"
+
+    # Only one version should exist
+    versions = unversioned_registry.list_versions("test:unversioned")
+    assert len(versions) == 1
+
+
+def test_versioned_registry_keeps_history(registry):
+    """Test that versioned registry keeps version history."""
+    # Save multiple versions
+    registry.save("test:history", "v1", version="1.0.0")
+    registry.save("test:history", "v2", version="2.0.0")
+    registry.save("test:history", "v3", version="3.0.0")
+
+    # All versions should be accessible
+    assert registry.load("test:history", version="1.0.0") == "v1"
+    assert registry.load("test:history", version="2.0.0") == "v2"
+    assert registry.load("test:history", version="3.0.0") == "v3"
+
+    # Latest should be highest version
+    assert registry.load("test:history") == "v3"
+
+    # List versions should show all
+    versions = registry.list_versions("test:history")
+    assert "1.0.0" in versions
+    assert "2.0.0" in versions
+    assert "3.0.0" in versions
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Delete Operations Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_delete_specific_version(registry):
+    """Test deleting a specific version."""
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
+    # Save multiple versions
+    registry.save("test:delver", "v1", version="1.0.0")
+    registry.save("test:delver", "v2", version="2.0.0")
+
+    # Delete v1
+    registry.delete("test:delver", version="1.0.0")
+
+    # v1 should be gone, v2 should still exist
+    with pytest.raises(RegistryObjectNotFound):
+        registry.load("test:delver", version="1.0.0")
+
+    assert registry.load("test:delver", version="2.0.0") == "v2"
+
+
+def test_delete_all_versions(registry):
+    """Test deleting all versions of an object."""
+    # Save multiple versions
+    registry.save("test:delall", "v1", version="1.0.0")
+    registry.save("test:delall", "v2", version="2.0.0")
+
+    # Delete all versions (no version specified)
+    registry.delete("test:delall")
+
+    # Object should not exist
+    assert "test:delall" not in registry.list_objects()
+
+
+def test_delete_nonexistent_raises(registry):
+    """Test that deleting nonexistent object raises error when version is None.
+    Note: Deleting with a specific version is idempotent (succeeds even if not found).
+    """
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
+    # Deleting with specific version is idempotent - no error
+    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
+
+    # Deleting with version=None raises because object has no versions
+    with pytest.raises(RegistryObjectNotFound):
+        registry.delete("test:nonexistent", version=None)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cleanup
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_cleanup_after_tests(registry):
     """Test that cleanup works properly after tests."""
     # This test ensures that cleanup works by verifying the backend is functional
     registry.save("test:cleanup", "cleanup_data")
