@@ -1070,9 +1070,7 @@ class BaslerCameraBackend(CameraBackend):
                         camera.TriggerSoftware.Execute()
 
                     # Retrieve result with timeout
-                    grab_result = camera.RetrieveResult(
-                        self.timeout_ms, pylon.TimeoutHandling_Return
-                    )
+                    grab_result = camera.RetrieveResult(self.timeout_ms, pylon.TimeoutHandling_Return)
 
                     if grab_result is None:
                         continue
@@ -1089,15 +1087,13 @@ class BaslerCameraBackend(CameraBackend):
                         if i == self.retrieve_retry_count - 1:
                             raise CameraCaptureError(f"Grab failed: {error_desc}")
 
-                except Exception as e:
+                except Exception:
                     if i == self.retrieve_retry_count - 1:
                         raise
                     # Small delay before retry
                     time.sleep(0.1)
 
-            raise CameraCaptureError(
-                f"Failed to capture after {self.retrieve_retry_count} attempts"
-            )
+            raise CameraCaptureError(f"Failed to capture after {self.retrieve_retry_count} attempts")
 
         try:
             # Run entire capture atomically on dedicated thread
@@ -1118,9 +1114,7 @@ class BaslerCameraBackend(CameraBackend):
             raise
         except Exception as e:
             if "timeout" in str(e).lower():
-                raise CameraTimeoutError(
-                    f"Capture timeout for camera '{self.camera_name}': {str(e)}"
-                ) from e
+                raise CameraTimeoutError(f"Capture timeout for camera '{self.camera_name}': {str(e)}") from e
             self.logger.error(f"Unexpected error during capture for camera '{self.camera_name}': {str(e)}")
             raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}") from e
 

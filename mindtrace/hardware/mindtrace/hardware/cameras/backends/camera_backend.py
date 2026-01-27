@@ -128,9 +128,7 @@ class CameraBackend(MindtraceABC):
 
         self.logger.propagate = False
 
-    async def _run_blocking(
-        self, func, *args, timeout: Optional[float] = None, **kwargs
-    ) -> Any:
+    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs) -> Any:
         """Execute a blocking SDK call without blocking the event loop.
 
         This method automatically selects the appropriate execution strategy based
@@ -166,9 +164,7 @@ class CameraBackend(MindtraceABC):
                         thread_name_prefix=f"{self.__class__.__name__}_{self.camera_name}",
                     )
                 return await asyncio.wait_for(
-                    loop.run_in_executor(
-                        self._sdk_executor, functools.partial(func, *args, **kwargs)
-                    ),
+                    loop.run_in_executor(self._sdk_executor, functools.partial(func, *args, **kwargs)),
                     timeout=effective_timeout,
                 )
             else:
@@ -178,13 +174,10 @@ class CameraBackend(MindtraceABC):
                 )
         except asyncio.TimeoutError as e:
             raise CameraTimeoutError(
-                f"SDK operation timed out after {effective_timeout:.2f}s "
-                f"for camera '{self.camera_name}'"
+                f"SDK operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
             ) from e
         except Exception as e:
-            raise HardwareOperationError(
-                f"SDK operation failed for camera '{self.camera_name}': {e}"
-            ) from e
+            raise HardwareOperationError(f"SDK operation failed for camera '{self.camera_name}': {e}") from e
 
     async def _cleanup_executor(self) -> None:
         """Shutdown the dedicated thread executor if one was created.
@@ -201,9 +194,7 @@ class CameraBackend(MindtraceABC):
             try:
                 self._sdk_executor.shutdown(wait=False, cancel_futures=True)
             except Exception as e:
-                self.logger.warning(
-                    f"Error shutting down executor for camera '{self.camera_name}': {e}"
-                )
+                self.logger.warning(f"Error shutting down executor for camera '{self.camera_name}': {e}")
             finally:
                 self._sdk_executor = None
 

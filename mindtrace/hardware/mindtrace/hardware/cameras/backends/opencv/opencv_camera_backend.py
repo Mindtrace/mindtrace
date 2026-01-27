@@ -179,6 +179,7 @@ class OpenCVCameraBackend(CameraBackend):
         Intended for use inside synchronous methods (e.g., __del__) where awaiting is not possible.
         Creates a temporary executor for the call since OpenCV doesn't require thread affinity.
         """
+
         def _call():
             return func(*args, **kwargs)
 
