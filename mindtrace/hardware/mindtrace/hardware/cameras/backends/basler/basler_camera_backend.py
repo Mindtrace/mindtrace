@@ -1,8 +1,10 @@
 """Basler Camera Backend Module"""
 
 import asyncio
+import functools
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -32,87 +34,55 @@ from mindtrace.hardware.core.exceptions import (
 
 
 class BaslerCameraBackend(CameraBackend):
-    """Basler Camera Backend Implementation
+    """Basler camera backend using the pypylon SDK.
 
-    This class provides a comprehensive implementation for Basler cameras using the pypylon SDK. It supports advanced
-    camera features including trigger modes, exposure control, ROI settings, and image quality enhancement.
+    This backend provides comprehensive support for Basler cameras including
+    hardware triggers, exposure control, ROI settings, and image enhancement.
+
+    Thread Model:
+        The pypylon SDK requires thread affinity - all SDK operations for a camera
+        must execute on the same OS thread that opened it. This backend uses a
+        dedicated single-thread executor per camera instance to satisfy this
+        requirement, enabling reliable multi-camera concurrent operations.
+
+        Capture operations are atomic: the entire capture sequence (trigger,
+        retrieve, convert) executes as a single blocking call on the dedicated
+        thread, preventing thread-switching issues.
 
     Features:
-        - Full Basler camera support via pypylon SDK
+        - Full pypylon SDK integration for USB3 and GigE cameras
         - Hardware trigger and continuous capture modes
-        - ROI (Region of Interest) control
-        - Automatic exposure and gain control
-        - Image quality enhancement with CLAHE
-        - Configuration import/export functionality
-        - Robust error handling and connection management
+        - Region of Interest (ROI) control
+        - Automatic and manual exposure/gain control
+        - CLAHE image quality enhancement
+        - Pylon Feature Stream (.pfs) configuration import/export
+        - Multicast streaming support for GigE cameras
 
     Requirements:
-        - pypylon SDK (Pylon SDK for Python)
-        - OpenCV for image processing
         - Basler Pylon SDK installed on system
+        - pypylon package (pip install pypylon)
+        - OpenCV for image processing
 
-    Installation:
-        1. Install Basler Pylon SDK from manufacturer
-        2. pip install pypylon
-        3. Configure camera permissions (Linux may require udev rules)
-
-    Usage::
+    Example::
 
         from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend
 
-        # Get available cameras
-        cameras = BaslerCameraBackend.get_available_cameras()
-
-        # Initialize camera
-        camera = BaslerCameraBackend("camera_name", img_quality_enhancement=True)
-        success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
-
-        if success:
-            # Configure and capture
+        async with BaslerCameraBackend("cam1") as camera:
             await camera.set_exposure(20000)
             await camera.set_triggermode("continuous")
             image = await camera.capture()
-            await camera.close()
-
-    Configuration:
-        All parameters are configurable via the hardware configuration system:
-        - MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-        - MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-        - MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-        - MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-        - MINDTRACE_CAMERA_BUFFER_COUNT: Number of frame buffers for streaming
-        - MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds
-
-    Supported Camera Models:
-        - All Basler USB3 cameras (acA, daA series)
-        - All Basler GigE cameras (acA, daA series)
-        - Both monochrome and color variants
-        - Various resolutions and frame rates
-
-    Error Handling:
-        The class uses a comprehensive exception hierarchy for precise error reporting:
-        - SDKNotAvailableError: pypylon SDK not installed
-        - CameraNotFoundError: Camera not detected or accessible
-        - CameraInitializationError: Failed to initialize camera
-        - CameraConfigurationError: Invalid configuration parameters
-        - CameraConnectionError: Connection issues
-        - CameraCaptureError: Image acquisition failures
-        - CameraTimeoutError: Operation timeout
-        - HardwareOperationError: General hardware operation failures
 
     Attributes:
-        initialized: Whether camera was successfully initialized
-        camera: Underlying pypylon camera object
+        camera: Underlying pypylon InstantCamera object
         triggermode: Current trigger mode ("continuous" or "trigger")
-        img_quality_enhancement: Current image enhancement setting
         timeout_ms: Capture timeout in milliseconds
-        buffer_count: Number of frame buffers
-        converter: Image format converter for pypylon
-        retrieve_retry_count: Number of capture retry attempts
-        default_pixel_format: Default pixel format for image conversion
-        camera_config_path: Path to camera configuration file
+        buffer_count: Number of frame buffers for streaming
+        converter: Pypylon image format converter
         grabbing_mode: Pylon grabbing strategy
+        multicast_enabled: Whether multicast streaming is enabled
     """
+
+    REQUIRES_THREAD_AFFINITY = True
 
     def __init__(
         self,
@@ -208,33 +178,40 @@ class BaslerCameraBackend(CameraBackend):
         # Derived operation timeout for non-capture SDK calls
         self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
 
-        # Thread executor and event loop for _sdk method
-        self._loop = None
-        self._sdk_executor = None
-
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
 
     async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking pypylon call in threadpool with timeout.
+        """Execute a blocking pypylon SDK call on the dedicated camera thread.
 
-        Uses asyncio.to_thread() for modern async/threading integration.
+        All pypylon operations for this camera execute on a single dedicated thread
+        to maintain SDK thread affinity. The executor is lazily created on first use.
 
         Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
+            func: The blocking callable to execute
+            *args: Positional arguments passed to the callable
+            timeout: Maximum wait time in seconds. Defaults to ``_op_timeout_s``.
+            **kwargs: Keyword arguments passed to the callable
 
         Returns:
-            Result of the callable
+            The result of the callable
 
         Raises:
-            CameraTimeoutError: If operation times out
-            HardwareOperationError: If operation fails
+            CameraTimeoutError: If the operation exceeds the timeout
+            HardwareOperationError: If the operation fails
         """
         effective_timeout = timeout or self._op_timeout_s
         try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
+            loop = asyncio.get_running_loop()
+            # Lazy-init dedicated single-thread executor for thread affinity
+            if self._sdk_executor is None:
+                self._sdk_executor = ThreadPoolExecutor(
+                    max_workers=1,
+                    thread_name_prefix=f"basler_{self.camera_name}",
+                )
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._sdk_executor, functools.partial(func, *args, **kwargs)),
+                timeout=effective_timeout,
+            )
         except asyncio.TimeoutError as e:
             raise CameraTimeoutError(
                 f"Pypylon operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
@@ -402,16 +379,6 @@ class BaslerCameraBackend(CameraBackend):
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
         try:
-            # Prepare dedicated single-thread executor for SDK calls
-            import concurrent.futures
-
-            self._loop = asyncio.get_running_loop()
-            # Create only once
-            if not hasattr(self, "_sdk_executor") or self._sdk_executor is None:
-                self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
-                )
-
             # Choose initialization method based on camera name format and configuration
             if self._is_ip_address(self.camera_name):
                 # If camera_name is an IP address, use direct IP connection
@@ -682,6 +649,20 @@ class BaslerCameraBackend(CameraBackend):
                     self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
 
             await self._run_blocking(_set_acquisition_mode, timeout=self._op_timeout_s)
+
+            # Set default trigger mode to "trigger" (software trigger)
+            # This ensures consistent behavior for multi-camera setups
+            def _set_trigger_mode():
+                try:
+                    self.camera.TriggerSelector.SetValue("FrameStart")
+                    self.camera.TriggerMode.SetValue("On")
+                    self.camera.TriggerSource.SetValue("Software")
+                    self.logger.debug(f"Set default trigger mode to 'trigger' for camera '{self.camera_name}'")
+                except Exception as trig_error:
+                    self.logger.warning(f"Could not set default trigger mode: {trig_error}")
+
+            await self._run_blocking(_set_trigger_mode, timeout=self._op_timeout_s)
+            self.triggermode = "trigger"
 
             # Configure multicast streaming BEFORE starting grabbing if enabled
             # This is critical for proper multicast setup
@@ -1051,6 +1032,10 @@ class BaslerCameraBackend(CameraBackend):
         In continuous mode, returns the latest available frame.
         In trigger mode, executes a software trigger and waits for the image.
 
+        This method runs the entire capture operation atomically on a dedicated
+        thread to ensure thread affinity for pypylon SDK calls. This is critical
+        for multi-camera concurrent operations.
+
         Returns:
             Image array in BGR format
 
@@ -1063,64 +1048,79 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         else:
             assert pylon is not None, "camera is initialized but pylon is not available"
-        try:
-            await self._ensure_open()
 
-            await self._ensure_grabbing()
+        def _capture_sync() -> np.ndarray:
+            """Synchronous capture - runs entirely on dedicated executor thread."""
+            camera = self.camera
+            converter = self.converter
 
+            # Ensure camera is open
+            if not camera.IsOpen():
+                camera.Open()
+
+            # Ensure grabbing is active
+            if not camera.IsGrabbing():
+                camera.StartGrabbing(self.grabbing_mode)
+
+            # Retry loop for capture
             for i in range(self.retrieve_retry_count):
-                if i > 0:
-                    self.logger.debug(
-                        f"Retrying capture {i + 1} of {self.retrieve_retry_count} for camera '{self.camera_name}'"
-                    )
-
                 try:
+                    # Trigger if in trigger mode
                     if self.triggermode == "trigger":
-                        await self._run_blocking(self.camera.TriggerSoftware.Execute, timeout=self._op_timeout_s)
+                        camera.TriggerSoftware.Execute()
 
-                    grab_result = await self._run_blocking(
-                        self.camera.RetrieveResult,
-                        self.timeout_ms,
-                        pylon.TimeoutHandling_ThrowException,
-                        timeout=self._op_timeout_s + (self.timeout_ms / 1000.0),
+                    # Retrieve result with timeout
+                    grab_result = camera.RetrieveResult(
+                        self.timeout_ms, pylon.TimeoutHandling_Return
                     )
 
-                    if await self._run_blocking(grab_result.GrabSucceeded, timeout=self._op_timeout_s):
-                        image_converted = await self._run_blocking(
-                            self.converter.Convert, grab_result, timeout=self._op_timeout_s
-                        )
-                        image = await self._run_blocking(image_converted.GetArray, timeout=self._op_timeout_s)
+                    if grab_result is None:
+                        continue
 
-                        if self.img_quality_enhancement and image is not None:
-                            image = await self._enhance_image(image)
-
-                        await self._run_blocking(grab_result.Release, timeout=self._op_timeout_s)
+                    if grab_result.GrabSucceeded():
+                        # Convert to BGR format
+                        image_converted = converter.Convert(grab_result)
+                        image = image_converted.GetArray()
+                        grab_result.Release()
                         return image
                     else:
-                        error_desc = await self._run_blocking(
-                            grab_result.GetErrorDescription, timeout=self._op_timeout_s
-                        )
-                        self.logger.warning(f"Grab failed for camera '{self.camera_name}': {error_desc}")
-                        await self._run_blocking(grab_result.Release, timeout=self._op_timeout_s)
+                        error_desc = grab_result.GetErrorDescription()
+                        grab_result.Release()
+                        if i == self.retrieve_retry_count - 1:
+                            raise CameraCaptureError(f"Grab failed: {error_desc}")
 
                 except Exception as e:
-                    if "timeout" in str(e).lower():
-                        if i == self.retrieve_retry_count - 1:
-                            raise CameraTimeoutError(
-                                f"Capture timeout after {self.retrieve_retry_count} attempts "
-                                f"for camera '{self.camera_name}': {str(e)}"
-                            ) from e
-                        continue
-                    else:
-                        raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}") from e
+                    if i == self.retrieve_retry_count - 1:
+                        raise
+                    # Small delay before retry
+                    time.sleep(0.1)
 
             raise CameraCaptureError(
-                f"Failed to capture image after {self.retrieve_retry_count} attempts for camera '{self.camera_name}'"
+                f"Failed to capture after {self.retrieve_retry_count} attempts"
             )
 
-        except (CameraConnectionError, CameraCaptureError, CameraTimeoutError):
+        try:
+            # Run entire capture atomically on dedicated thread
+            image = await self._run_blocking(
+                _capture_sync,
+                timeout=self._op_timeout_s + (self.timeout_ms / 1000.0) * self.retrieve_retry_count,
+            )
+
+            # Apply image enhancement if enabled (can run on any thread)
+            if self.img_quality_enhancement and image is not None:
+                image = await self._enhance_image(image)
+
+            return image
+
+        except CameraTimeoutError:
+            raise
+        except CameraCaptureError:
             raise
         except Exception as e:
+            if "timeout" in str(e).lower():
+                raise CameraTimeoutError(
+                    f"Capture timeout for camera '{self.camera_name}': {str(e)}"
+                ) from e
             self.logger.error(f"Unexpected error during capture for camera '{self.camera_name}': {str(e)}")
             raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}") from e
 
@@ -2318,14 +2318,8 @@ class BaslerCameraBackend(CameraBackend):
 
                 self.logger.info(f"Basler camera '{self.camera_name}' closed")
 
-                # Shutdown executor if present
-                try:
-                    if hasattr(self, "_sdk_executor") and self._sdk_executor is not None:
-                        self._sdk_executor.shutdown(wait=False, cancel_futures=True)
-                        self._sdk_executor = None
-                except Exception:
-                    pass
-
             except Exception as e:
                 self.logger.error(f"Error in camera cleanup for '{self.camera_name}': {str(e)}")
                 raise CameraConnectionError(f"Failed to close camera '{self.camera_name}': {str(e)}")
+            finally:
+                await self._cleanup_executor()
