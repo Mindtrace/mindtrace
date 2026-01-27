@@ -2,12 +2,6 @@
 
 Uses GCS for both artifact and metadata storage.
 
-Lock-free concurrency model:
-- Each push writes to a unique UUID folder: objects/{name}/{version}/{uuid}/
-- Commit plans in _staging/ track in-progress operations for janitor cleanup
-- Metadata write is the atomic "commit point"
-- For immutable: generation_match=0 ensures first-write-wins
-- For mutable: last metadata write wins, orphaned UUIDs cleaned by janitor
 """
 
 import json
@@ -29,10 +23,7 @@ from mindtrace.registry.backends.registry_backend import (
     RegistryBackend,
     VersionArg,
 )
-from mindtrace.registry.core.exceptions import (
-    LockAcquisitionError,
-    RegistryObjectNotFound,
-)
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
 from mindtrace.storage import GCSStorageHandler, Status, StringResult
 
@@ -491,13 +482,11 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Step 4: Upload files to UUID folder (no conflict possible - UUID is unique)
             if files:
-                batch_result = self.gcs.upload_batch(
-                    files, fail_if_exists=False, max_workers=max_workers
-                )
+                batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
 
                 # Check for failures
                 if batch_result.failed_results:
-                    #if any failed
+                    # if any failed
                     self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
                     first_error = batch_result.failed_results[0]
                     return OpResult.failed(
@@ -853,9 +842,11 @@ class GCPRegistryBackend(RegistryBackend):
         acquire_lock: bool = False,
         max_workers: int | None = None,
     ) -> OpResults:
-        """Delete artifact(s) and metadata.
+        """Delete artifact(s) and metadata using lock-free MVCC.
 
-        Objects are processed in parallel for maximum efficiency.
+        Objects are processed in parallel for maximum efficiency. Uses MVCC
+        for concurrent safety - metadata deletion is the atomic "commit point"
+        that makes objects invisible to readers.
 
         Single item operations raise exceptions on error.
         Batch operations return OpResults without raising, letting caller inspect results.
@@ -863,8 +854,7 @@ class GCPRegistryBackend(RegistryBackend):
         Args:
             name: Name of the object(s).
             version: Version string(s).
-            acquire_lock: If True, acquire locks before delete (for mutable registries).
-                Default is False (no locking, for immutable registries).
+            acquire_lock: Ignored. Kept for API compatibility. Lock-free MVCC used.
             max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
@@ -883,56 +873,29 @@ class GCPRegistryBackend(RegistryBackend):
 
         workers = max_workers or self._max_workers
         results = OpResults()
-        acquired_locks: Dict[str, str] = {}
-        failed_locks: set = set()
 
-        # Acquire locks if mutable registry
-        if acquire_lock:
-            lock_keys = [f"{n}@{v}" for n, v in zip(names, versions)]
-            lock_results = self._acquire_locks_batch(lock_keys, timeout=self._lock_timeout)
+        # Limit file-level parallelism to avoid thread explosion with nested pools
+        file_workers = min(2, workers)
 
-            for obj_name, obj_version in zip(names, versions):
-                lock_key = f"{obj_name}@{obj_version}"
-                lock_id = lock_results.get(lock_key)
-                if lock_id:
-                    acquired_locks[lock_key] = lock_id
-                else:
-                    failed_locks.add((obj_name, obj_version))
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            LockAcquisitionError(f"Failed to acquire lock for {lock_key}"),
-                        )
-                    )
+        # Prepare all delete tasks
+        delete_tasks = list(zip(names, versions))
 
-        try:
-            # Limit file-level parallelism to avoid thread explosion with nested pools
-            file_workers = min(2, workers)
+        # Fetch metadata for all objects to get _storage.uuid (for MVCC cleanup)
+        metadata_results = self.fetch_metadata(
+            [n for n, _ in delete_tasks],
+            [v for _, v in delete_tasks],
+        )
 
-            # Prepare tasks for objects that haven't already failed (e.g., lock acquisition)
-            delete_tasks = [(n, v) for n, v in zip(names, versions) if (n, v) not in failed_locks]
+        def delete_one(args: Tuple[str, str]) -> OpResult:
+            obj_name, obj_version = args
+            # Get metadata for this object (may be None if not found)
+            meta_result = metadata_results.get((obj_name, obj_version))
+            obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
+            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
 
-            # Fetch metadata for all objects to get _files manifests (avoids listing during delete)
-            metadata_results = self.fetch_metadata(
-                [n for n, _ in delete_tasks],
-                [v for _, v in delete_tasks],
-            )
-
-            def delete_one(args: Tuple[str, str]) -> OpResult:
-                obj_name, obj_version = args
-                # Get metadata for this object (may be None if not found)
-                meta_result = metadata_results.get((obj_name, obj_version))
-                obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
-                return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
-
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                for result in executor.map(delete_one, delete_tasks):
-                    results.add(result)
-
-        finally:
-            if acquired_locks:
-                self._release_locks_batch(acquired_locks)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for result in executor.map(delete_one, delete_tasks):
+                results.add(result)
 
         return results
 
