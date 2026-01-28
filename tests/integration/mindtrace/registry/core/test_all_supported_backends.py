@@ -9,8 +9,35 @@ import uuid
 
 import pytest
 
-from mindtrace.core import Config
-from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, MinioRegistryBackend, Registry
+from mindtrace.core import Config, CoreConfig
+from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, Registry, S3RegistryBackend
+
+
+def _get_minio_config():
+    """Get MinIO instance configuration from environment or config."""
+    endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT")
+    access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY")
+    secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY")
+
+    if not endpoint or not access_key or not secret_key:
+        try:
+            config = CoreConfig()
+            minio_config = config.get("MINDTRACE_MINIO", {})
+            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:9100")
+            access_key = access_key or minio_config.get("MINIO_ACCESS_KEY", "minioadmin")
+            secret_key = secret_key or config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or "minioadmin"
+        except Exception:
+            endpoint = endpoint or "localhost:9100"
+            access_key = access_key or "minioadmin"
+            secret_key = secret_key or "minioadmin"
+
+    return {
+        "endpoint": endpoint,
+        "access_key": access_key,
+        "secret_key": secret_key,
+        "secure": os.environ.get("MINIO_SECURE", "0") == "1",
+    }
+
 
 # Backend configurations
 BACKENDS = {
@@ -21,13 +48,10 @@ BACKENDS = {
         },
     },
     "minio": {
-        "class": MinioRegistryBackend,
-        "params": {
-            "endpoint": os.getenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9100"),
-            "access_key": os.getenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin"),
-            "secret_key": os.getenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin"),
+        "class": S3RegistryBackend,
+        "params_fn": _get_minio_config,  # Use function to get config with unmasked secret
+        "extra_params": {
             "bucket": None,  # Will be set in fixture
-            "secure": False,
         },
     },
     "gcp": {
@@ -85,12 +109,15 @@ def backend(request, backend_type, temp_dir, minio_test_bucket):
     """Create a backend instance for testing."""
     backend_config = BACKENDS[backend_type]
     backend_class = backend_config["class"]
-    params = backend_config["params"].copy()
 
     if backend_type == "local":
+        params = backend_config["params"].copy()
         params["uri"] = str(temp_dir)
         return backend_class(**params)
     elif backend_type == "minio":
+        # Use params_fn to get config with unmasked secrets
+        params = backend_config["params_fn"]()
+        params.update(backend_config.get("extra_params", {}))
         params["bucket"] = minio_test_bucket
         params["uri"] = str(temp_dir)
         return backend_class(**params)
@@ -729,11 +756,15 @@ def test_backend_specific_functionality(backend_type, registry):
         assert isinstance(objects, list)
 
     elif backend_type == "minio":
-        # Test MinIO-specific functionality
+        # Test S3/MinIO-specific functionality
         backend = registry.backend
 
-        # Test that bucket exists
-        assert backend.client.bucket_exists(backend.bucket)
+        # Verify storage handler is available
+        assert backend.storage is not None
+
+        # Test that we can list objects (verifies S3 connectivity)
+        objects = backend.list_objects()
+        assert isinstance(objects, list)
 
     elif backend_type == "local":
         # Test local-specific functionality

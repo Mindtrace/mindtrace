@@ -1,6 +1,6 @@
-"""Google Cloud Storage-based registry backend.
+"""S3-compatible registry backend.
 
-Uses GCS for both artifact and metadata storage.
+Uses S3-compatible storage (AWS S3, Minio, etc.) for both artifact and metadata storage.
 
 """
 
@@ -23,22 +23,24 @@ from mindtrace.registry.backends.registry_backend import (
     RegistryBackend,
     VersionArg,
 )
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import (
+    RegistryObjectNotFound,
+)
 from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
-from mindtrace.storage import GCSStorageHandler, Status, StringResult
+from mindtrace.storage import S3StorageHandler, Status, StringResult
 
 
-class GCPRegistryBackend(RegistryBackend):
-    """A Google Cloud Storage-based registry backend.
+class S3RegistryBackend(RegistryBackend):
+    """An S3-compatible registry backend.
 
-    This backend stores objects and metadata in a GCS bucket, providing distributed
-    storage capabilities with lock-free concurrency via UUID isolation.
+    Works with AWS S3, Minio, DigitalOcean Spaces, and other S3-compatible services.
+    Stores objects and metadata in an S3 bucket with lock-free concurrency via UUID isolation.
 
     Lock-free concurrency model:
     - Each push writes files to a unique UUID folder: objects/{name}/{version}/{uuid}/
     - Commit plans in _staging/ track in-progress operations for janitor cleanup
     - Metadata write is the atomic "commit point" (points to active UUID)
-    - For immutable: generation_match=0 on metadata ensures first-write-wins
+    - For immutable: IfNoneMatch='*' on metadata ensures first-write-wins
     - For mutable: last metadata write wins, orphaned UUIDs cleaned by janitor
 
     Storage structure:
@@ -52,55 +54,78 @@ class GCPRegistryBackend(RegistryBackend):
 
     Uses `_files` manifest from metadata to avoid expensive blob listing on pull.
 
+    Local Docker Example (Minio):
+        To run a local MinIO registry, first start a MinIO server using docker:
+
+        .. code-block:: bash
+
+            $ docker run --rm --name minio \\
+                -p 9000:9000 \\
+                -p 9001:9001 \\
+                -e MINIO_ROOT_USER=minioadmin \\
+                -e MINIO_ROOT_PASSWORD=minioadmin \\
+                -v ~/.cache/mindtrace/minio_data:/data \\
+                minio/minio server /data --console-address ":9001"
+
     Usage Example::
 
-        from mindtrace.registry import Registry, GCPRegistryBackend
+        from mindtrace.registry import Registry, S3RegistryBackend
 
-        gcp_backend = GCPRegistryBackend(
-            uri="gs://my-registry-bucket",
-            project_id="my-project",
-            bucket_name="my-registry-bucket",
-            credentials_path="/path/to/service-account.json"
+        s3_backend = S3RegistryBackend(
+            endpoint="localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="my-registry",
+            secure=False
         )
-        registry = Registry(backend=gcp_backend)
+        registry = Registry(backend=s3_backend)
     """
 
     def __init__(
         self,
         uri: str | Path | None = None,
         *,
-        project_id: str,
-        bucket_name: str,
-        credentials_path: str | None = None,
+        endpoint: str,
+        access_key: str,
+        secret_key: str,
+        bucket: str = "s3-registry",
+        secure: bool = True,
         prefix: str = "",
         max_workers: int = 4,
         lock_timeout: int = 30,
         **kwargs,
     ):
-        """Initialize the GCPRegistryBackend.
+        """Initialize the S3RegistryBackend.
 
         Args:
-            uri: The base URI for the registry (e.g., "gs://my-bucket/prefix").
-            project_id: GCP project ID.
-            bucket_name: GCS bucket name.
-            credentials_path: Optional path to service account JSON file.
+            uri: The base directory path where local cache will be stored.
+            endpoint: S3-compatible server endpoint (e.g., "localhost:9000", "s3.amazonaws.com").
+            access_key: Access key for authentication.
+            secret_key: Secret key for authentication.
+            bucket: S3 bucket name.
+            secure: Whether to use HTTPS.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
-            max_workers: Maximum number of parallel workers for batch operations. Default is 4.
-            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
+            max_workers: Maximum number of parallel workers for batch operations.
+            lock_timeout: Timeout in seconds for acquiring locks. Default 30.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
         self._prefix = prefix.strip("/") if prefix else ""
-        self._uri = Path(uri or f"gs://{bucket_name}/{self._prefix}".rstrip("/"))
+        # URI includes bucket and prefix for unique cache directory per backend
+        self._uri = Path(uri or f"s3://{bucket}/{self._prefix}".rstrip("/"))
+
         self._metadata_path = self._prefixed("registry_metadata.json")
         self._max_workers = max_workers
         self._lock_timeout = lock_timeout
-        self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}, prefix: {self._prefix}")
+        self._bucket = bucket
+        self.logger.debug(f"Initializing S3Backend with uri: {self._uri}, prefix: {self._prefix}")
 
-        self.gcs = GCSStorageHandler(
-            bucket_name=bucket_name,
-            project_id=project_id,
-            credentials_path=credentials_path,
+        self.storage = S3StorageHandler(
+            bucket_name=bucket,
+            endpoint=endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            secure=secure,
             ensure_bucket=True,
             create_if_missing=True,
         )
@@ -129,13 +154,25 @@ class GCPRegistryBackend(RegistryBackend):
 
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""
-        try:
-            exists = self.gcs.exists(self._metadata_path)
-        except Exception:
-            exists = False
-        if not exists:
+        if not self.storage.exists(self._metadata_path):
             data = json.dumps({"materializers": {}})
-            self.gcs.upload_string(data, self._metadata_path)
+            self.storage.upload_string(data, self._metadata_path)
+
+    def _object_key(self, name: str, version: str) -> str:
+        """Convert object name and version to a storage key.
+
+        .. deprecated::
+            Use :meth:`_object_key_with_uuid` instead. With MVCC, all object
+            storage uses UUID-based paths for isolation.
+        """
+        import warnings
+
+        warnings.warn(
+            "_object_key is deprecated. Use _object_key_with_uuid for MVCC-based storage.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._prefixed(f"objects/{name}/{version}")
 
     def _object_metadata_path(self, name: str, version: str) -> str:
         """Generate the metadata file path for an object version."""
@@ -206,7 +243,7 @@ class GCPRegistryBackend(RegistryBackend):
         data = json.dumps(plan)
 
         try:
-            result = self.gcs.upload_string(data, staging_path)
+            result = self.storage.upload_string(data, staging_path)
             return result.ok
         except Exception as e:
             self.logger.warning(f"Failed to create commit plan {request_id}: {e}")
@@ -222,7 +259,7 @@ class GCPRegistryBackend(RegistryBackend):
             True if deleted successfully, False otherwise.
         """
         staging_path = self._staging_path(request_id)
-        result = self.gcs.delete(staging_path)
+        result = self.storage.delete(staging_path)
         if not result.ok:
             self.logger.warning(f"Failed to delete commit plan {request_id}: {result.error_message}")
             return False
@@ -242,9 +279,9 @@ class GCPRegistryBackend(RegistryBackend):
         folder_prefix = self._object_key_with_uuid(name, version, uuid_str)
         try:
             # List all files in the UUID folder
-            files = self.gcs.list_objects(prefix=folder_prefix)
+            files = self.storage.list_objects(prefix=folder_prefix)
             if files:
-                batch_result = self.gcs.delete_batch(files)
+                batch_result = self.storage.delete_batch(files)
                 # Check if any deletes failed
                 if batch_result.failed_results:
                     failed_count = len(batch_result.failed_results)
@@ -288,7 +325,7 @@ class GCPRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _acquire_lock(self, key: str, lock_id: str, timeout: int = 30) -> bool:
-        """Acquire exclusive lock using atomic GCS operations.
+        """Acquire exclusive lock using atomic S3 operations.
 
         Args:
             key: The key to acquire the lock for.
@@ -303,16 +340,16 @@ class GCPRegistryBackend(RegistryBackend):
         lock_data = json.dumps({"lock_id": lock_id, "expires_at": expires_at})
 
         try:
-            # Try atomic create (generation_match=0 = only if doesn't exist)
-            result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+            # Try atomic create (if_generation_match=0 = only if doesn't exist)
+            result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
             if result.ok:
                 return True
 
             # Lock exists - check if expired
-            download_result = self.gcs.download_string(lock_path)
+            download_result = self.storage.download_string(lock_path)
             if download_result.status == Status.NOT_FOUND:
                 # Lock deleted between our attempts, retry create
-                retry_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+                retry_result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
                 return retry_result.ok
 
             if not download_result.ok:
@@ -323,8 +360,8 @@ class GCPRegistryBackend(RegistryBackend):
                 return False  # Lock still valid
 
             # Lock expired - delete it and try to create a new one
-            self.gcs.delete(lock_path)
-            takeover_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+            self.storage.delete(lock_path)
+            takeover_result = self.storage.upload_string(lock_data, lock_path, if_generation_match=0)
             return takeover_result.ok
 
         except Exception as e:
@@ -336,11 +373,11 @@ class GCPRegistryBackend(RegistryBackend):
         lock_path = self._lock_path(key)
         try:
             # Verify ownership before deleting
-            result = self.gcs.download_string(lock_path)
+            result = self.storage.download_string(lock_path)
             if result.ok:
                 data = json.loads(result.content.decode("utf-8"))
                 if data.get("lock_id") == lock_id:
-                    self.gcs.delete(lock_path)
+                    self.storage.delete(lock_path)
         except Exception:
             pass  # Best effort
 
@@ -381,7 +418,7 @@ class GCPRegistryBackend(RegistryBackend):
             name: Object name.
             version: Object version.
             metadata: Metadata dict to write.
-            on_conflict: "skip" or "overwrite".
+            on_conflict: "error", "skip", or "overwrite".
 
         Returns:
             StringResult with status: ok, already_exists, overwritten, or error.
@@ -391,8 +428,8 @@ class GCPRegistryBackend(RegistryBackend):
 
         if on_conflict == OnConflict.OVERWRITE:
             # Check if exists first to determine status
-            existed = self.gcs.exists(meta_path)
-            result = self.gcs.upload_string(data, meta_path)
+            existed = self.storage.exists(meta_path)
+            result = self.storage.upload_string(data, meta_path)
             if result.ok:
                 return StringResult(
                     remote_path=meta_path,
@@ -400,8 +437,15 @@ class GCPRegistryBackend(RegistryBackend):
                 )
             return result
         else:
-            # "skip" - atomic insert with generation_match=0
-            result = self.gcs.upload_string(data, meta_path, if_generation_match=0)
+            # "error" or "skip" - atomic insert with if_generation_match=0
+            result = self.storage.upload_string(data, meta_path, if_generation_match=0)
+            if result.status == Status.ALREADY_EXISTS:
+                return StringResult(
+                    remote_path=meta_path,
+                    status=Status.ALREADY_EXISTS,
+                    error_type="PreconditionFailed",
+                    error_message=f"Object {name}@{version} already exists",
+                )
             return result
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -423,7 +467,7 @@ class GCPRegistryBackend(RegistryBackend):
         - Files are uploaded to a unique UUID folder: objects/{name}/{version}/{uuid}/
         - Commit plan tracks the operation for janitor cleanup on failure
         - Metadata write is the atomic "commit point"
-        - For immutable (skip): generation_match=0 ensures first-write-wins
+        - For immutable (skip): if_generation_match=0 ensures first-write-wins
         - For mutable (overwrite): last metadata write wins
 
         Args:
@@ -444,8 +488,8 @@ class GCPRegistryBackend(RegistryBackend):
 
         try:
             # Step 1: Check existing metadata
-            # - For onconflict=skip: return if exists (avoid uploading files that will be discarded)
-            # - For onconflict=overwrite: get old_uuid(current) for cleanup after successful write
+            # - For on_conflict=skip: return if exists (avoid uploading files that will be discarded)
+            # - For on_conflict=overwrite: get old_uuid (current) for cleanup after successful write
             try:
                 existing_meta = self.fetch_metadata(obj_name, obj_version)
                 existing_result = existing_meta.get((obj_name, obj_version))
@@ -482,11 +526,10 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Step 4: Upload files to UUID folder (no conflict possible - UUID is unique)
             if files:
-                batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
+                batch_result = self.storage.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
 
                 # Check for failures
                 if batch_result.failed_results:
-                    # if any failed
                     self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
                     first_error = batch_result.failed_results[0]
                     return OpResult.failed(
@@ -499,7 +542,7 @@ class GCPRegistryBackend(RegistryBackend):
 
             # Step 5: Prepare metadata with _storage info
             prepared_meta = dict(obj_meta) if obj_meta else {}
-            prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
+            prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -560,7 +603,7 @@ class GCPRegistryBackend(RegistryBackend):
         - Each push writes files to a unique UUID folder
         - Commit plans track operations for janitor cleanup on failure
         - Metadata write is the atomic "commit point"
-        - For immutable (skip): generation_match=0 ensures first-write-wins
+        - For immutable (skip): if_generation_match=0 ensures first-write-wins
         - For mutable (overwrite): last metadata write wins
 
         Single item operations raise exceptions on error/conflict.
@@ -633,34 +676,30 @@ class GCPRegistryBackend(RegistryBackend):
         """Download artifacts to local path(s).
 
         Uses the `_files` manifest from metadata when available to avoid
-        expensive blob storage listing operations. All files across all objects
+        expensive object listing operations. All files across all objects
         are downloaded in a single batch for maximum efficiency.
 
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
+
         Note: The acquire_lock parameter is accepted for API compatibility but
-        ignored. Read locks are not implemented for GCS because:
-        1. Listing shared locks is slow (requires API call)
+        ignored. Read locks are not implemented because:
+        1. Listing shared locks is slow
         2. Metadata is written LAST, so if readable, files should exist
         3. Worst case during concurrent write: download fails, caller retries
-
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
 
         Args:
             name: Name of the object(s).
             version: Version string(s).
             local_path: Destination directory path(s) to copy to.
-            acquire_lock: Ignored. Kept for API compatibility with local backend.
+            acquire_lock: Ignored. Kept for API compatibility.
             metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
-                If provided, avoids re-fetching metadata. Single dict or list of dicts.
             max_workers: Maximum parallel workers. Defaults to instance setting.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         workers = max_workers or self._max_workers
         names = self._normalize_to_list(name)
@@ -680,7 +719,6 @@ class GCPRegistryBackend(RegistryBackend):
             metadatas = list(metadata)
             if len(metadatas) != len(names):
                 raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
-            # Build OpResults from pre-fetched metadata
             metadata_results = OpResults()
             for n, v, m in zip(names, versions, metadatas):
                 metadata_results.add(OpResult.success(n, v, metadata=m))
@@ -720,7 +758,7 @@ class GCPRegistryBackend(RegistryBackend):
                         file_to_object[str(dest_file)] = (obj_name, obj_version)
                 else:
                     # Fallback to listing (not preferred)
-                    objects_list = self.gcs.list_objects(prefix=remote_key)
+                    objects_list = self.storage.list_objects(prefix=remote_key)
                     if not objects_list:
                         raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
                     for obj in objects_list:
@@ -738,7 +776,7 @@ class GCPRegistryBackend(RegistryBackend):
 
         # Batch download all files
         if all_files_to_download:
-            download_result = self.gcs.download_batch(all_files_to_download, max_workers=workers)
+            download_result = self.storage.download_batch(all_files_to_download, max_workers=workers)
 
             for file_result in download_result.failed_results:
                 dest_path_str = file_result.local_path
@@ -750,7 +788,7 @@ class GCPRegistryBackend(RegistryBackend):
                             OpResult.failed(
                                 obj_key[0],
                                 obj_key[1],
-                                error_type=file_result.error_type or "DownloadError",
+                                error=file_result.error_type or "DownloadError",
                                 message=file_result.error_message or "Unknown error",
                             )
                         )
@@ -809,7 +847,7 @@ class GCPRegistryBackend(RegistryBackend):
             # Step 3: Delete metadata (the "commit point")
             # After this, readers no longer see the object
             meta_path = self._object_metadata_path(obj_name, obj_version)
-            meta_result = self.gcs.delete(meta_path)
+            meta_result = self.storage.delete(meta_path)
 
             if not meta_result.ok:
                 self._delete_commit_plan(request_id)
@@ -848,22 +886,21 @@ class GCPRegistryBackend(RegistryBackend):
         for concurrent safety - metadata deletion is the atomic "commit point"
         that makes objects invisible to readers.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
+
+        Delete is idempotent - succeeds even if object doesn't exist.
 
         Args:
             name: Name of the object(s).
             version: Version string(s).
             acquire_lock: Ignored. Kept for API compatibility. Lock-free MVCC used.
-            max_workers: Maximum parallel workers. Defaults to instance setting.
+            max_workers: Maximum parallel workers.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -912,27 +949,23 @@ class GCPRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Save metadata for object version(s).
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
         Args:
             name: Object name(s).
             version: Object version(s).
             metadata: Metadata dict(s) to save.
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip": Return skipped result.
                 "overwrite": Replace existing version.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            RuntimeError: Single item with unexpected error.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -963,11 +996,11 @@ class GCPRegistryBackend(RegistryBackend):
             elif result.status == Status.OVERWRITTEN:
                 return OpResult.overwritten(obj_name, obj_version)
             elif result.status == Status.ALREADY_EXISTS:
-                # Return skipped result - conflict with on_conflict="skip"
                 return OpResult.skipped(obj_name, obj_version)
             else:
                 return OpResult.failed(obj_name, obj_version, RuntimeError(result.error_message or "Unknown error"))
 
+        # Process all tasks in parallel
         with ThreadPoolExecutor(max_workers=4) as executor:
             for op_result in executor.map(save_one, zip(names, versions, metadatas)):
                 results.add(op_result)
@@ -981,9 +1014,9 @@ class GCPRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Fetch metadata for object version(s) using batch download.
 
-        Single item operations raise exceptions if not found.
-        Batch operations return OpResults without raising, letting caller inspect results.
-        Missing entries (not found) are omitted from the batch result.
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
+        Missing entries (not found) are omitted from the result.
 
         Args:
             name: Name of the object(s).
@@ -991,11 +1024,9 @@ class GCPRegistryBackend(RegistryBackend):
 
         Returns:
             OpResults with OpResult for each (name, version):
-            - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and metadata doesn't exist.
+            - OpResult.success() with metadata on success
+            - OpResult.failed() on failure (excluding not found)
+            Note: Not found objects are simply omitted from the result.
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -1004,11 +1035,9 @@ class GCPRegistryBackend(RegistryBackend):
             raise ValueError("name and version list lengths must match")
 
         results = OpResults()
-
-        # Prepare batch download - create temp files and mapping
         temp_dir = tempfile.mkdtemp()
         files_to_download: List[Tuple[str, str]] = []
-        temp_to_key: Dict[str, Tuple[str, str]] = {}  # Maps temp_path to (name, version)
+        temp_to_key: Dict[str, Tuple[str, str]] = {}
 
         try:
             for obj_name, obj_version in zip(names, versions):
@@ -1017,41 +1046,31 @@ class GCPRegistryBackend(RegistryBackend):
                 files_to_download.append((meta_path, temp_path))
                 temp_to_key[temp_path] = (obj_name, obj_version)
 
-            # Batch download all metadata files
-            batch_result = self.gcs.download_batch(files_to_download)
+            batch_result = self.storage.download_batch(files_to_download)
 
-            # Process successful downloads
             for file_result in batch_result.ok_results:
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 try:
                     with open(file_result.local_path, "r") as f:
                         meta = json.load(f)
+                    # Path is already in metadata from push (includes UUID folder)
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
 
                 except json.JSONDecodeError as e:
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
 
-            # Process failures - add to results without raising
             for file_result in batch_result.failed_results:
                 if file_result.local_path not in temp_to_key:
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 if file_result.status == Status.NOT_FOUND:
-                    # Record not found as failed result
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
-                        )
-                    )
-                    continue
+                    continue  # Skip missing entries - not an error
                 results.add(
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error_type=file_result.error_type or "DownloadError",
+                        error=file_result.error_type or "DownloadError",
                         message=file_result.error_message or "Unknown error",
                     )
                 )
@@ -1066,22 +1085,15 @@ class GCPRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
     ) -> OpResults:
-        """Delete metadata for object version(s) using batch delete.
+        """Delete metadata for object version(s).
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
-
-        Args:
-            name: Name of the object(s).
-            version: Version of the object(s).
+        This is a batch-only method - it never raises exceptions for individual
+        object failures. The caller (Registry) handles single vs batch semantics.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RuntimeError: Single item and deletion fails.
+            - OpResult.failed() on failure
         """
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
@@ -1089,7 +1101,6 @@ class GCPRegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        # Build mapping from path to (name, version)
         path_to_key: Dict[str, Tuple[str, str]] = {}
         paths_to_delete: List[str] = []
         for obj_name, obj_version in zip(names, versions):
@@ -1097,8 +1108,7 @@ class GCPRegistryBackend(RegistryBackend):
             paths_to_delete.append(meta_path)
             path_to_key[meta_path] = (obj_name, obj_version)
 
-        # Batch delete all metadata files
-        batch_result = self.gcs.delete_batch(paths_to_delete)
+        batch_result = self.storage.delete_batch(paths_to_delete)
 
         results = OpResults()
         for file_result in batch_result.results:
@@ -1113,7 +1123,7 @@ class GCPRegistryBackend(RegistryBackend):
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error_type=file_result.error_type or "DeleteError",
+                        error=file_result.error_type or "DeleteError",
                         message=file_result.error_message or "Unknown error",
                     )
                 )
@@ -1127,11 +1137,11 @@ class GCPRegistryBackend(RegistryBackend):
     def save_registry_metadata(self, metadata: dict) -> None:
         """Save registry-level metadata."""
         data = json.dumps(metadata)
-        self.gcs.upload_string(data, self._metadata_path)
+        self.storage.upload_string(data, self._metadata_path)
 
     def fetch_registry_metadata(self) -> dict:
         """Fetch registry-level metadata."""
-        result = self.gcs.download_string(self._metadata_path)
+        result = self.storage.download_string(self._metadata_path)
         if result.ok:
             return json.loads(result.content.decode("utf-8"))
         self.logger.debug(f"Could not load registry metadata: {result.error_message}")
@@ -1145,9 +1155,8 @@ class GCPRegistryBackend(RegistryBackend):
         """List all objects in the registry."""
         objects = set()
         meta_prefix = self._prefixed("_meta_")
-        for obj_path in self.gcs.list_objects(prefix=meta_prefix):
+        for obj_path in self.storage.list_objects(prefix=meta_prefix):
             if obj_path.endswith(".json"):
-                # Extract just the filename part after prefix
                 filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
                 name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
@@ -1163,9 +1172,9 @@ class GCPRegistryBackend(RegistryBackend):
             prefix = self._object_metadata_prefix(obj_name)
             versions = []
 
-            for obj in self.gcs.list_objects(prefix=prefix):
+            for obj in self.storage.list_objects(prefix=prefix):
                 if obj.endswith(".json"):
-                    version = obj[len(prefix) : -5]  # Remove prefix and .json
+                    version = obj[len(prefix) : -5]
                     versions.append(version)
 
             def version_key(v):
@@ -1183,11 +1192,7 @@ class GCPRegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
     ) -> Dict[Tuple[str, str], bool]:
-        """Check if object version(s) exist using batch metadata fetch.
-
-        Uses batch download to check existence in parallel rather than
-        sequential exists() calls.
-        """
+        """Check if object version(s) exist using batch metadata fetch."""
         names = self._normalize_to_list(name)
         versions = self._normalize_to_list(version)
 
@@ -1251,6 +1256,6 @@ class GCPRegistryBackend(RegistryBackend):
 
         return {k: v for k, v in all_materializers.items() if k in obj_classes}
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Legacy Support
-    # ─────────────────────────────────────────────────────────────────────────
+
+# Backwards compatibility alias
+MinioRegistryBackend = S3RegistryBackend

@@ -1,0 +1,444 @@
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, List, Optional
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+
+from .base import FileResult, Status, StorageHandler, StringResult
+
+
+class S3StorageHandler(StorageHandler):
+    """A thin wrapper around boto3 S3 APIs for S3-compatible storage.
+
+    Works with AWS S3, Minio, DigitalOcean Spaces, and other S3-compatible services.
+    Uses boto3 with IfNoneMatch='*' for atomic conditional writes.
+    """
+
+    def __init__(
+        self,
+        bucket_name: str,
+        *,
+        endpoint: str,
+        access_key: str,
+        secret_key: str,
+        secure: bool = True,
+        ensure_bucket: bool = True,
+        create_if_missing: bool = True,
+        region: Optional[str] = None,
+    ) -> None:
+        """Initialize an S3StorageHandler.
+
+        Args:
+            bucket_name: Name of the S3 bucket.
+            endpoint: S3-compatible server endpoint (e.g., "localhost:9000", "s3.amazonaws.com").
+            access_key: Access key for authentication.
+            secret_key: Secret key for authentication.
+            secure: Whether to use HTTPS (default True).
+            ensure_bucket: If True, check bucket exists on init.
+            create_if_missing: If True, create the bucket if it does not exist.
+            region: Optional region for bucket creation.
+        """
+        protocol = "https" if secure else "http"
+        endpoint_url = f"{protocol}://{endpoint}"
+
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=region or "us-east-1",
+            config=Config(signature_version="s3v4"),
+        )
+        self.bucket_name = bucket_name
+        self.endpoint = endpoint
+        self.secure = secure
+        self._region = region or "us-east-1"
+
+        if ensure_bucket:
+            self._ensure_bucket(create_if_missing)
+
+    def _ensure_bucket(self, create: bool) -> None:
+        """Ensure the bucket exists, creating it if necessary."""
+        try:
+            self.client.head_bucket(Bucket=self.bucket_name)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchBucket"):
+                if not create:
+                    raise FileNotFoundError(f"Bucket {self.bucket_name!r} not found")
+                self.client.create_bucket(Bucket=self.bucket_name)
+            else:
+                raise
+
+    def _full_path(self, remote_path: str) -> str:
+        """Return the full S3 URI for a remote path."""
+        return f"s3://{self.bucket_name}/{remote_path}"
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+    def upload(
+        self,
+        local_path: str,
+        remote_path: str,
+        metadata: Optional[Dict[str, str]] = None,
+        fail_if_exists: bool = False,
+    ) -> FileResult:
+        """Upload a file to S3.
+
+        Args:
+            local_path: Path to the local file to upload.
+            remote_path: Path in the bucket to upload to (key only, no s3:// prefix).
+            metadata: Optional metadata to associate with the object.
+            fail_if_exists: If True, return ALREADY_EXISTS status if object exists.
+                Uses S3 IfNoneMatch='*' for atomic create-only semantics.
+
+        Returns:
+            FileResult with status OK, ALREADY_EXISTS, or ERROR.
+            Note: remote_path in result is the key (not full s3:// URI) for use with delete().
+        """
+        full_path = self._full_path(remote_path)
+
+        try:
+            with open(local_path, "rb") as f:
+                data = f.read()
+
+            put_kwargs: Dict[str, Any] = {
+                "Bucket": self.bucket_name,
+                "Key": remote_path,
+                "Body": data,
+            }
+            if metadata:
+                put_kwargs["Metadata"] = metadata
+            if fail_if_exists:
+                put_kwargs["IfNoneMatch"] = "*"
+
+            self.client.put_object(**put_kwargs)
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,  # Key only, not full s3:// URI
+                status=Status.OK,
+            )
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                return FileResult(
+                    local_path=local_path,
+                    remote_path=remote_path,
+                    status=Status.ALREADY_EXISTS,
+                    error_type="PreconditionFailed",
+                    error_message=f"Object already exists: {full_path}",
+                )
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return FileResult(
+                local_path=local_path,
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> FileResult:
+        """Download a file from S3 to a local path.
+
+        Args:
+            remote_path: Path in the bucket to download from.
+            local_path: Local path to save the file.
+            skip_if_exists: If True, skip download if local_path exists.
+
+        Returns:
+            FileResult with status OK, SKIPPED, NOT_FOUND, or ERROR.
+        """
+        full_path = self._full_path(remote_path)
+
+        if skip_if_exists and os.path.exists(local_path):
+            return FileResult(
+                local_path=local_path,
+                remote_path=full_path,
+                status=Status.SKIPPED,
+            )
+
+        os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+
+        try:
+            self.client.download_file(self.bucket_name, remote_path, local_path)
+            return FileResult(
+                local_path=local_path,
+                remote_path=full_path,
+                status=Status.OK,
+            )
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
+                return FileResult(
+                    local_path=local_path,
+                    remote_path=full_path,
+                    status=Status.NOT_FOUND,
+                    error_type="NotFound",
+                    error_message=f"Object not found: {full_path}",
+                )
+            return FileResult(
+                local_path=local_path,
+                remote_path=full_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return FileResult(
+                local_path=local_path,
+                remote_path=full_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    def delete(self, remote_path: str) -> FileResult:
+        """Delete a file from S3.
+
+        Args:
+            remote_path: Path in the bucket to delete.
+
+        Returns:
+            FileResult with status OK or ERROR. S3 delete is idempotent - succeeds
+            even if object doesn't exist.
+        """
+        try:
+            self.client.delete_object(Bucket=self.bucket_name, Key=remote_path)
+            return FileResult(local_path="", remote_path=remote_path, status=Status.OK)
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    # ------------------------------------------------------------------
+    # String Operations (no temp files)
+    # ------------------------------------------------------------------
+    def upload_string(
+        self,
+        content: str | bytes,
+        remote_path: str,
+        content_type: str = "application/json",
+        fail_if_exists: bool = False,
+        if_generation_match: int | None = None,
+    ) -> StringResult:
+        """Upload string/bytes content directly to S3 without temp files.
+
+        Args:
+            content: String or bytes content to upload.
+            remote_path: Path in the bucket to upload to (key only, no s3:// prefix).
+            content_type: MIME type of the content.
+            fail_if_exists: If True, fail if the object already exists.
+            if_generation_match: If 0, uses IfNoneMatch='*' for atomic create-only.
+                This matches GCS semantics where generation=0 means "only if not exists".
+
+        Returns:
+            StringResult with status OK, ALREADY_EXISTS, or ERROR.
+            Note: remote_path in result is the key (not full s3:// URI) for use with delete().
+        """
+        full_path = self._full_path(remote_path)
+
+        # Convert string to bytes if needed
+        data = content.encode("utf-8") if isinstance(content, str) else content
+
+        # Use IfNoneMatch='*' for atomic create-only (matches GCS if_generation_match=0)
+        should_fail_if_exists = fail_if_exists or if_generation_match == 0
+
+        try:
+            put_kwargs: Dict[str, Any] = {
+                "Bucket": self.bucket_name,
+                "Key": remote_path,
+                "Body": data,
+                "ContentType": content_type,
+            }
+            if should_fail_if_exists:
+                put_kwargs["IfNoneMatch"] = "*"
+
+            self.client.put_object(**put_kwargs)
+            return StringResult(remote_path=remote_path, status=Status.OK)  # Key only
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                return StringResult(
+                    remote_path=remote_path,
+                    status=Status.ALREADY_EXISTS,
+                    error_type="PreconditionFailed",
+                    error_message=f"Object already exists: {full_path}",
+                )
+            return StringResult(
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return StringResult(
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    def download_string(self, remote_path: str) -> StringResult:
+        """Download object content as bytes without temp files.
+
+        Args:
+            remote_path: Path in the bucket to download from.
+
+        Returns:
+            StringResult with status OK, NOT_FOUND, or ERROR, and content if OK.
+        """
+        full_path = self._full_path(remote_path)
+
+        try:
+            response = self.client.get_object(Bucket=self.bucket_name, Key=remote_path)
+            content = response["Body"].read()
+            return StringResult(
+                remote_path=full_path,
+                status=Status.OK,
+                content=content,
+            )
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
+                return StringResult(
+                    remote_path=full_path,
+                    status=Status.NOT_FOUND,
+                    error_type="NotFound",
+                    error_message=f"Object not found: {full_path}",
+                )
+            return StringResult(
+                remote_path=full_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return StringResult(
+                remote_path=full_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+    def list_objects(
+        self,
+        *,
+        prefix: str = "",
+        max_results: Optional[int] = None,
+    ) -> List[str]:
+        """List objects in the bucket with an optional prefix and limit.
+
+        Args:
+            prefix: Only list objects with this prefix.
+            max_results: Maximum number of results to return.
+
+        Returns:
+            List of object names (paths) in the bucket.
+        """
+        objects = []
+        paginator = self.client.get_paginator("list_objects_v2")
+
+        page_config = {"Bucket": self.bucket_name, "Prefix": prefix}
+        if max_results:
+            page_config["PaginationConfig"] = {"MaxItems": max_results}
+
+        for page in paginator.paginate(**page_config):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith("/"):
+                    objects.append(key)
+                    if max_results and len(objects) >= max_results:
+                        return objects
+        return objects
+
+    def exists(self, remote_path: str) -> bool:
+        """Check if an object exists in the bucket.
+
+        Args:
+            remote_path: Path in the bucket to check.
+
+        Returns:
+            True if the object exists, False otherwise.
+        """
+        try:
+            self.client.head_object(Bucket=self.bucket_name, Key=remote_path)
+            return True
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey"):
+                return False
+            raise
+
+    def get_presigned_url(
+        self,
+        remote_path: str,
+        *,
+        expiration_minutes: int = 60,
+        method: str = "GET",
+    ) -> str:
+        """Get a presigned URL for an object in the bucket.
+
+        Args:
+            remote_path: Path in the bucket.
+            expiration_minutes: Minutes until the URL expires.
+            method: HTTP method for the URL (e.g., 'GET', 'PUT').
+
+        Returns:
+            A presigned URL string.
+        """
+        if method.upper() == "GET":
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                ExpiresIn=expiration_minutes * 60,
+            )
+        elif method.upper() == "PUT":
+            return self.client.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                ExpiresIn=expiration_minutes * 60,
+            )
+        else:
+            raise ValueError(f"Unsupported method: {method}. Use 'GET' or 'PUT'.")
+
+    def get_object_metadata(self, remote_path: str) -> Dict[str, Any]:
+        """Get metadata for an object in the bucket.
+
+        Args:
+            remote_path: Path in the bucket.
+
+        Returns:
+            Dictionary of metadata for the object.
+        """
+        response = self.client.head_object(Bucket=self.bucket_name, Key=remote_path)
+        return {
+            "name": remote_path,
+            "size": response.get("ContentLength"),
+            "content_type": response.get("ContentType"),
+            "created": response.get("LastModified").isoformat() if response.get("LastModified") else None,
+            "updated": response.get("LastModified").isoformat() if response.get("LastModified") else None,
+            "etag": response.get("ETag", "").strip('"'),
+            "metadata": response.get("Metadata", {}),
+        }
+
+
+# Backwards compatibility alias
+MinioStorageHandler = S3StorageHandler
