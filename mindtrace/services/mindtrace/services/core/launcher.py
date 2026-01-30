@@ -30,7 +30,7 @@ if not IS_WINDOWS:
             init_params = json.loads(options.init_params) if options.init_params else {}
 
             # Create server with initialization parameters
-            server = instantiate_target(options.server_class, **init_params)
+            server = instantiate_target(options.server_class, pid_file=options.pid, **init_params)
             server.logger = setup_logger(
                 name=server.unique_name,
                 stream_level=logging.INFO,
@@ -62,7 +62,7 @@ else:
             init_params = json.loads(options.init_params) if options.init_params else {}
 
             # Create server with initialization parameters
-            server = instantiate_target(options.server_class, **init_params)
+            server = instantiate_target(options.server_class, pid_file=options.pid, **init_params)
             server.logger = setup_logger(
                 name=server.unique_name,
                 stream_level=logging.INFO,
