@@ -56,10 +56,10 @@ def test_init(backend):
     assert backend.uri.is_dir()
 
 
-def test_push_and_download(backend, sample_object_dir):
+def test_push_and_download(backend, sample_object_dir, sample_metadata):
     """Test pushing and downloading objects."""
-    # Push the object
-    backend.push("test:object", "1.0.0", sample_object_dir)
+    # Push the object (metadata required for push)
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     # Verify the object was pushed
     object_path = backend.uri / "test:object" / "1.0.0"
@@ -67,10 +67,11 @@ def test_push_and_download(backend, sample_object_dir):
     assert (object_path / "file1.txt").exists()
     assert (object_path / "file2.txt").exists()
 
-    # Download to a new location
+    # Download to a new location - fetch metadata first (required by unified API)
     download_dir = backend.uri / "download"
     download_dir.mkdir()
-    backend.pull("test:object", "1.0.0", str(download_dir))
+    fetched_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+    backend.pull("test:object", "1.0.0", str(download_dir), metadata=fetched_meta)
 
     # Verify the download
     assert (download_dir / "file1.txt").exists()
@@ -198,13 +199,10 @@ def test_has_object(backend, sample_metadata):
     assert result[("test:object", "2.0.0")] is False
 
 
-def test_delete_object(backend, sample_object_dir):
+def test_delete_object(backend, sample_object_dir, sample_metadata):
     """Test deleting objects."""
-    # Push an object
-    backend.push("test:object", "1.0.0", sample_object_dir)
-
-    # Save metadata
-    backend.save_metadata("test:object", "1.0.0", {"name": "test:object"})
+    # Push an object (metadata required)
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     # Delete the object
     backend.delete("test:object", "1.0.0")
@@ -284,10 +282,10 @@ def test_registered_materializers_empty(backend):
     assert isinstance(materializers, dict)
 
 
-def test_delete_parent_directory_error(backend, sample_object_dir):
+def test_delete_parent_directory_error(backend, sample_object_dir, sample_metadata):
     """Test error handling when deleting parent directory fails."""
-    # Save an object first
-    backend.push("test:obj", "1.0.0", str(sample_object_dir))
+    # Save an object first (metadata required)
+    backend.push("test:obj", "1.0.0", str(sample_object_dir), sample_metadata)
 
     # Mock rmdir to raise an exception for parent directory cleanup
     original_rmdir = Path.rmdir
@@ -456,24 +454,6 @@ def test_push_default_skips_when_version_exists(backend, sample_object_dir):
     # Try to push again - returns skipped result with default on_conflict="skip"
     result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"updated": True}])
     assert result[("test:object", "1.0.0")].is_skipped
-
-
-def test_push_auto_increment_version(backend, sample_object_dir):
-    """Test push with version=None auto-increments version."""
-    # Push first version with metadata (metadata is required for version tracking)
-    result = backend.push("test:object", None, sample_object_dir, {"version": 1})
-    assert ("test:object", "1") in result
-    assert result[("test:object", "1")].ok
-
-    # Push second version with metadata
-    result = backend.push("test:object", None, sample_object_dir, {"version": 2})
-    assert ("test:object", "2") in result
-    assert result[("test:object", "2")].ok
-
-    # Verify both versions exist
-    versions = backend.list_versions("test:object")
-    assert "1" in versions["test:object"]
-    assert "2" in versions["test:object"]
 
 
 def test_internal_lock_context_manager(backend):
@@ -832,7 +812,9 @@ def test_delete_releases_lock_on_success(backend, sample_object_dir):
 
 def test_pull_object_not_found(backend):
     """Test pull returns failed result for missing objects."""
-    result = backend.pull(["nonexistent:object"], ["1.0.0"], ["/tmp/dest"])
+    # Pass fake metadata since pull now requires it (Registry always pre-fetches)
+    fake_meta = {"_files": ["file.txt"]}
+    result = backend.pull(["nonexistent:object"], ["1.0.0"], ["/tmp/dest"], metadata=[fake_meta])
 
     # Backend returns failed result (doesn't raise)
     assert ("nonexistent:object", "1.0.0") in result

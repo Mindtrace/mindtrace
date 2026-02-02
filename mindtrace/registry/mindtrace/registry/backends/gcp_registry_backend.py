@@ -21,7 +21,6 @@ from mindtrace.registry.backends.registry_backend import (
     NameArg,
     PathArg,
     RegistryBackend,
-    VersionArg,
 )
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
@@ -544,9 +543,9 @@ class GCPRegistryBackend(RegistryBackend):
     def push(
         self,
         name: NameArg,
-        version: VersionArg,
+        version: ConcreteVersionArg,
         local_path: PathArg,
-        metadata: MetadataArg = None,
+        metadata: MetadataArg,
         on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
         max_workers: int | None = None,
@@ -587,18 +586,7 @@ class GCPRegistryBackend(RegistryBackend):
         Raises:
             RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
         """
-        # Normalize inputs
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
-        paths = self._normalize_paths(local_path, len(names))
-        metadatas = self._normalize_metadata(metadata, len(names))
-
-        if not (len(names) == len(versions) == len(paths) == len(metadatas)):
-            raise ValueError("Input list lengths must match")
-
-        # Validate all names upfront
-        for obj_name in names:
-            self.validate_object_name(obj_name)
+        names, versions, paths, metadatas = self._prepare_inputs(name, version, local_path, metadata)
 
         results = OpResults()
 
@@ -613,6 +601,10 @@ class GCPRegistryBackend(RegistryBackend):
 
         def push_one(args: Tuple[str, str, Path, dict]) -> OpResult:
             obj_name, obj_version, obj_path, obj_meta = args
+            try:
+                self.validate_object_name(obj_name)
+            except ValueError as e:
+                return OpResult.failed(obj_name, obj_version, e)
             return self._push_single_object(obj_name, obj_version, obj_path, obj_meta, on_conflict, file_workers)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -663,42 +655,19 @@ class GCPRegistryBackend(RegistryBackend):
             RegistryObjectNotFound: Single item and object doesn't exist.
         """
         workers = max_workers or self._max_workers
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
-        paths = self._normalize_paths(local_path, len(names))
 
-        if len(names) != len(versions) or len(names) != len(paths):
-            raise ValueError("Input list lengths must match")
-
-        # Use pre-fetched metadata if provided, otherwise fetch it
-        if metadata is not None:
-            if isinstance(metadata, dict):
-                raise ValueError(
-                    "metadata must be a list of dicts (one per object), not a single dict. "
-                    "Use metadata=[meta_dict] for single objects."
-                )
-            metadatas = list(metadata)
-            if len(metadatas) != len(names):
-                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
-            # Build OpResults from pre-fetched metadata
-            metadata_results = OpResults()
-            for n, v, m in zip(names, versions, metadatas):
-                metadata_results.add(OpResult.success(n, v, metadata=m))
-        else:
-            metadata_results = self.fetch_metadata(names, versions)
+        # Validate inputs (metadata required - Registry must pre-fetch)
+        names, versions, paths, metadatas = self._prepare_inputs(name, version, local_path, metadata)
 
         results = OpResults()
         all_files_to_download: List[Tuple[str, str]] = []
         file_to_object: Dict[str, Tuple[str, str]] = {}
         objects_with_errors: set = set()
 
-        for obj_name, obj_version, dest_path in zip(names, versions, paths):
+        for obj_name, obj_version, dest_path, obj_metadata in zip(names, versions, paths, metadatas):
             try:
-                meta_result = metadata_results.get((obj_name, obj_version))
-                if not meta_result or not meta_result.ok:
-                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found.")
-
-                obj_metadata = meta_result.metadata or {}
+                # No name validation needed - Registry already fetched metadata,
+                # so the object exists with this name (name was validated at push time)
 
                 # Get remote key from _storage.uuid
                 storage_info = obj_metadata.get("_storage", {})
@@ -865,8 +834,8 @@ class GCPRegistryBackend(RegistryBackend):
         Raises:
             RegistryObjectNotFound: Single item and object doesn't exist.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -934,20 +903,15 @@ class GCPRegistryBackend(RegistryBackend):
             RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
             RuntimeError: Single item with unexpected error.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
+        metadatas = [metadata] if isinstance(metadata, dict) else list(metadata)
 
-        if isinstance(metadata, dict):
-            if len(names) != 1:
-                raise ValueError(
-                    "metadata must be a list of dicts when saving multiple objects. "
-                    "Use metadata=[meta_dict, ...] with one dict per object."
-                )
-            metadatas = [metadata]
-        else:
-            metadatas = list(metadata)
-            if len(metadatas) != len(names):
-                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+        n = len(names)
+        if not (len(versions) == len(metadatas) == n):
+            raise ValueError(
+                f"Input lengths must match: names={n}, versions={len(versions)}, metadata={len(metadatas)}"
+            )
 
         for obj_name in names:
             self.validate_object_name(obj_name)
@@ -997,8 +961,8 @@ class GCPRegistryBackend(RegistryBackend):
         Raises:
             RegistryObjectNotFound: Single item and metadata doesn't exist.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -1083,8 +1047,8 @@ class GCPRegistryBackend(RegistryBackend):
         Raises:
             RuntimeError: Single item and deletion fails.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -1156,7 +1120,7 @@ class GCPRegistryBackend(RegistryBackend):
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
         """List available versions for object(s)."""
-        names = self._normalize_to_list(name)
+        names = self._to_list(name)
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
@@ -1188,8 +1152,8 @@ class GCPRegistryBackend(RegistryBackend):
         Uses batch download to check existence in parallel rather than
         sequential exists() calls.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -1218,8 +1182,8 @@ class GCPRegistryBackend(RegistryBackend):
         materializer_class: NameArg,
     ) -> None:
         """Register materializer(s) for object class(es)."""
-        obj_classes = self._normalize_to_list(object_class)
-        mat_classes = self._normalize_to_list(materializer_class)
+        obj_classes = self._to_list(object_class)
+        mat_classes = self._to_list(materializer_class)
 
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")

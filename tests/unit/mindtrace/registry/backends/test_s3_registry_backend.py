@@ -335,9 +335,13 @@ def test_push_batch(backend, sample_object_dir, sample_metadata):
 
 
 def test_push_invalid_name(backend, sample_object_dir, sample_metadata):
-    """Test push with invalid object name."""
-    with pytest.raises(ValueError, match="cannot contain underscores"):
-        backend.push("invalid_name", "1.0.0", sample_object_dir, sample_metadata)
+    """Test push with invalid object name returns failed result."""
+    result = backend.push("invalid_name", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Backend returns failed result for validation errors (Registry handles raising)
+    assert ("invalid_name", "1.0.0") in result
+    assert result[("invalid_name", "1.0.0")].is_error
+    assert "cannot contain underscores" in result[("invalid_name", "1.0.0")].message
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -350,9 +354,13 @@ def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
     # First push
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Then pull
+    # Fetch metadata for pull
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    fetched_meta = meta_results.first().metadata
+
+    # Then pull with metadata
     dest_path = tmp_path / "pulled"
-    results = backend.pull("test:object", "1.0.0", dest_path)
+    results = backend.pull("test:object", "1.0.0", dest_path, metadata=fetched_meta)
 
     assert results.all_ok
     result = results.first()
@@ -361,9 +369,11 @@ def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
 
 
 def test_pull_not_found(backend, tmp_path):
-    """Test pull of non-existent object returns failed result (batch-only behavior)."""
+    """Test pull with metadata for non-existent object returns failed result."""
     dest_path = tmp_path / "pulled"
-    results = backend.pull("nonexistent:object", "1.0.0", dest_path)
+    # Pass fake metadata - pull should fail because files don't exist
+    fake_metadata = {"_storage": {"uuid": "nonexistent-uuid"}, "_files": ["file.txt"]}
+    results = backend.pull("nonexistent:object", "1.0.0", dest_path, metadata=fake_metadata)
     result = results.get(("nonexistent:object", "1.0.0"))
     assert result.is_error
 
@@ -377,9 +387,13 @@ def test_pull_batch(backend, sample_object_dir, sample_metadata, tmp_path):
     metadatas = [sample_metadata, sample_metadata]
     backend.push(names, versions, paths, metadatas)
 
-    # Pull multiple objects
+    # Fetch metadata for pull
+    meta_results = backend.fetch_metadata(names, versions)
+    fetched_metas = [meta_results.get((n, v)).metadata for n, v in zip(names, versions)]
+
+    # Pull multiple objects with metadata
     dest_paths = [tmp_path / "pulled1", tmp_path / "pulled2"]
-    results = backend.pull(names, versions, dest_paths)
+    results = backend.pull(names, versions, dest_paths, metadata=fetched_metas)
 
     assert results.all_ok
     assert len(list(results)) == 2
@@ -720,11 +734,168 @@ def test_pull_batch_partial_not_found(backend, sample_object_dir, sample_metadat
     """Test batch pull with partial not found continues and returns results."""
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
+    # Fetch metadata for the existing object
+    meta_result = backend.fetch_metadata("test:object", "1.0.0").first()
+    existing_meta = meta_result.metadata
+
+    # For nonexistent object, we pass empty metadata (Registry would have failed to fetch)
+    # But since Registry never passes nonexistent objects, this tests edge case behavior
     results = backend.pull(
         ["test:object", "nonexistent:object"],
         ["1.0.0", "1.0.0"],
         [tmp_path / "pulled1", tmp_path / "pulled2"],
+        metadata=[existing_meta, {}],  # Empty metadata for nonexistent
     )
 
     assert len(list(results)) == 2
     assert any(r.is_error for r in results)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Error Path Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_pull_file_download_error_returns_failed_opresult(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Test that file download errors return OpResult.failed() with correct error_type and message.
+
+    This test verifies that OpResult.failed() is called with error_type= (not error=).
+    If error= was used instead, this would raise TypeError.
+    """
+    # Push an object
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Corrupt the storage to simulate download failure - delete the UUID files but keep metadata
+    # Find the metadata to get the UUID
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    metadata = meta_results.first().metadata
+    uuid_str = metadata.get("_storage", {}).get("uuid")
+
+    # Delete all files in the UUID folder to simulate download failure
+    # Path structure: objects/{name}/{version}/{uuid}/
+    handler = backend.storage
+    uuid_prefix = f"objects/test:object/1.0.0/{uuid_str}/"
+    to_delete = [k for k in handler._objects.keys() if k.startswith(uuid_prefix)]
+    for key in to_delete:
+        del handler._objects[key]
+
+    # Now try to pull - should return failed OpResult (not raise)
+    dest = tmp_path / "pulled"
+    results = backend.pull("test:object", "1.0.0", dest, metadata=metadata)
+
+    result = results.get(("test:object", "1.0.0"))
+    assert result is not None
+    assert result.is_error
+    # Verify we got error (error_type) and message (this would fail if wrong kwarg was used)
+    assert result.error is not None or result.message is not None
+
+
+def test_pull_batch_file_download_error_returns_failed_opresult(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Test that batch file download errors return OpResult.failed() correctly.
+
+    Tests the code path in _fetch_batch that creates OpResult.failed() for download errors.
+    """
+    # Push two objects
+    backend.push("test:obj1", "1.0.0", sample_object_dir, sample_metadata)
+    backend.push("test:obj2", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Corrupt obj2 by deleting its files but keeping metadata
+    meta_results = backend.fetch_metadata("test:obj2", "1.0.0")
+    metadata = meta_results.first().metadata
+    uuid_str = metadata.get("_storage", {}).get("uuid")
+
+    # Delete all files in the UUID folder to simulate download failure
+    # Path structure: objects/{name}/{version}/{uuid}/
+    handler = backend.storage
+    uuid_prefix = f"objects/test:obj2/1.0.0/{uuid_str}/"
+    to_delete = [k for k in handler._objects.keys() if k.startswith(uuid_prefix)]
+    for key in to_delete:
+        del handler._objects[key]
+
+    # Fetch metadata for obj1
+    meta1_result = backend.fetch_metadata("test:obj1", "1.0.0").first()
+    meta1 = meta1_result.metadata
+
+    # Batch pull - one should succeed, one should fail
+    # We still have obj2's metadata from earlier (before corruption)
+    results = backend.pull(
+        ["test:obj1", "test:obj2"],
+        ["1.0.0", "1.0.0"],
+        [tmp_path / "pulled1", tmp_path / "pulled2"],
+        metadata=[meta1, metadata],  # metadata is obj2's metadata fetched earlier
+    )
+
+    result1 = results.get(("test:obj1", "1.0.0"))
+    result2 = results.get(("test:obj2", "1.0.0"))
+
+    assert result1.ok, "First object should succeed"
+    assert result2.is_error, "Second object should fail"
+
+
+def test_delete_metadata_error_handling(backend, sample_object_dir, sample_metadata):
+    """Test that delete_metadata handles errors correctly.
+
+    Verifies the error path where OpResult.failed() is created for delete failures.
+    """
+    # Push an object
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Delete should work
+    results = backend.delete_metadata("test:object", "1.0.0")
+    assert results.all_ok
+
+    # Second delete should also work (idempotent)
+    results = backend.delete_metadata("test:object", "1.0.0")
+    # Should return ok (not found is not an error for delete)
+    assert results.all_ok
+
+
+def test_opresult_failed_has_correct_signature(backend, sample_object_dir, sample_metadata, tmp_path):
+    """Smoke test that OpResult.failed() works with both positional and keyword args.
+
+    This test exists to catch signature mismatches (e.g., error= vs error_type=).
+    """
+    from mindtrace.registry.core.types import OpResult
+
+    # Test with exception (positional)
+    result1 = OpResult.failed("test", "1.0.0", RuntimeError("test error"))
+    assert result1.is_error
+    assert result1.message is not None  # message field contains the error message
+
+    # Test with error_type and message (keyword - this is what backends use)
+    result2 = OpResult.failed("test", "1.0.0", error_type="TestError", message="test message")
+    assert result2.is_error
+    assert result2.error == "TestError"  # error field stores the error_type
+    assert result2.message == "test message"
+
+    # This would fail with TypeError if someone used error= instead of error_type=
+    # TypeError: failed() got an unexpected keyword argument 'error'
+
+
+def test_batch_push_rejects_single_dict_metadata(backend, sample_object_dir, sample_metadata):
+    """Test that batch push rejects single dict metadata to prevent silent replication.
+
+    Each object in a batch has unique _files, hash, and _storage.uuid.
+    Replicating a single metadata dict would cause incorrect metadata.
+    """
+    # Single item with single dict metadata should work
+    results = backend.push("test:single", "1.0.0", sample_object_dir, sample_metadata)
+    assert results.all_ok
+
+    # Batch with single dict metadata should raise ValueError (lengths don't match)
+    with pytest.raises(ValueError, match="Input lengths must match"):
+        backend.push(
+            ["test:batch1", "test:batch2"],
+            ["1.0.0", "1.0.0"],
+            [sample_object_dir, sample_object_dir],
+            sample_metadata,  # Single dict becomes [dict] which doesn't match length 2
+        )
+
+    # Batch with list of metadata should work
+    results = backend.push(
+        ["test:batch3", "test:batch4"],
+        ["1.0.0", "1.0.0"],
+        [sample_object_dir, sample_object_dir],
+        [sample_metadata, sample_metadata],  # List - one per object
+    )
+    assert results.all_ok

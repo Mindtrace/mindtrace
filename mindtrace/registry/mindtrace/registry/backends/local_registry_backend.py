@@ -30,13 +30,12 @@ from mindtrace.registry.backends.registry_backend import (
     NameArg,
     PathArg,
     RegistryBackend,
-    VersionArg,
 )
 from mindtrace.registry.core.exceptions import (
     LockAcquisitionError,
     RegistryObjectNotFound,
 )
-from mindtrace.registry.core.types import VERSION_PENDING, OnConflict, OpResult, OpResults
+from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
 
 
 class LocalRegistryBackend(RegistryBackend):
@@ -381,9 +380,9 @@ class LocalRegistryBackend(RegistryBackend):
     def push(
         self,
         name: NameArg,
-        version: VersionArg,
+        version: ConcreteVersionArg,
         local_path: PathArg,
-        metadata: MetadataArg = None,
+        metadata: MetadataArg,
         on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
     ) -> OpResults:
@@ -410,21 +409,18 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
             - OpResult.failed() on failure
         """
-        entries = self._normalize_inputs(name, version, local_path, metadata)
+        names, versions, paths, metadatas = self._prepare_inputs(name, version, local_path, metadata)
         results = OpResults()
 
-        for obj_name, obj_version, obj_path, obj_meta in entries:
-            resolved_version = None
+        for obj_name, obj_version, obj_path, obj_meta in zip(names, versions, paths, metadatas):
             try:
                 self.validate_object_name(obj_name)
 
-                # Resolve version first (outside lock to avoid deadlock with list_versions)
-                resolved_version = self._resolve_version(obj_name, obj_version)
-
                 # Lock on the specific object@version for proper coordination with pull() and delete()
-                with self._internal_lock(f"{obj_name}@{resolved_version}"):
-                    artifact_dst = self._full_path(self._object_key(obj_name, resolved_version))
-                    meta_path = self._object_metadata_path(obj_name, resolved_version)
+                # Registry resolves versions before calling backend, so obj_version is always concrete
+                with self._internal_lock(f"{obj_name}@{obj_version}"):
+                    artifact_dst = self._full_path(self._object_key(obj_name, obj_version))
+                    meta_path = self._object_metadata_path(obj_name, obj_version)
 
                     # Check for existing version
                     is_overwrite = False
@@ -437,7 +433,7 @@ class LocalRegistryBackend(RegistryBackend):
                             is_overwrite = True
                         else:
                             # on_conflict == "skip" - return skipped result
-                            results.add(OpResult.skipped(obj_name, resolved_version))
+                            results.add(OpResult.skipped(obj_name, obj_version))
                             continue
 
                     try:
@@ -457,9 +453,9 @@ class LocalRegistryBackend(RegistryBackend):
                                 yaml.safe_dump(obj_meta, f)
 
                         if is_overwrite:
-                            results.add(OpResult.overwritten(obj_name, resolved_version))
+                            results.add(OpResult.overwritten(obj_name, obj_version))
                         else:
-                            results.add(OpResult.success(obj_name, resolved_version))
+                            results.add(OpResult.success(obj_name, obj_version))
 
                     except Exception as e:
                         # Rollback: remove artifacts and metadata
@@ -467,11 +463,10 @@ class LocalRegistryBackend(RegistryBackend):
                             shutil.rmtree(artifact_dst, ignore_errors=True)
                         if meta_path.exists():
                             meta_path.unlink(missing_ok=True)
-                        raise RuntimeError(f"Push failed for {obj_name}@{resolved_version}: {e}") from e
+                        raise RuntimeError(f"Push failed for {obj_name}@{obj_version}: {e}") from e
 
             except Exception as e:
-                ver = resolved_version or obj_version or VERSION_PENDING
-                results.add(OpResult.failed(obj_name, ver, e))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         return results
 
@@ -500,19 +495,16 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.failed() on failure
         """
-        # Note: metadata parameter is ignored for local backend since we copy
-        # the entire directory. Remote backends use it for _files manifest.
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
-        paths = self._normalize_paths(local_path, len(names))
-
-        if len(names) != len(versions) or len(names) != len(paths):
-            raise ValueError("Input list lengths must match")
+        # Validate inputs (metadata required for API consistency, but not used by local backend)
+        names, versions, paths, _ = self._prepare_inputs(name, version, local_path, metadata)
 
         results = OpResults()
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
+                # No name validation needed - Registry already fetched metadata,
+                # so the object exists with this name (name was validated at push time)
+
                 src = self._full_path(self._object_key(obj_name, obj_version))
 
                 if not src.exists():
@@ -558,8 +550,8 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.failed() on failure
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -623,21 +615,15 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
+        metadatas = [metadata] if isinstance(metadata, dict) else list(metadata)
 
-        # Validate metadata - must be list with matching length for multiple objects
-        if isinstance(metadata, dict):
-            if len(names) != 1:
-                raise ValueError(
-                    "metadata must be a list of dicts when saving multiple objects. "
-                    "Use metadata=[meta_dict, ...] with one dict per object."
-                )
-            metadatas = [metadata]
-        else:
-            metadatas = list(metadata)
-            if len(metadatas) != len(names):
-                raise ValueError(f"metadata list length ({len(metadatas)}) must match number of objects ({len(names)})")
+        n = len(names)
+        if not (len(versions) == len(metadatas) == n):
+            raise ValueError(
+                f"Input lengths must match: names={n}, versions={len(versions)}, metadata={len(metadatas)}"
+            )
 
         results = OpResults()
 
@@ -678,8 +664,8 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.success(metadata=...) on success
             - OpResult.failed() on failure (not found or error)
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -747,8 +733,8 @@ class LocalRegistryBackend(RegistryBackend):
             - OpResult.success() on success
             - OpResult.failed() on failure
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -830,7 +816,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Dict mapping object names to sorted lists of version strings.
         """
-        names = self._normalize_to_list(name)
+        names = self._to_list(name)
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
@@ -872,8 +858,8 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Dict mapping (name, version) tuples to existence booleans.
         """
-        names = self._normalize_to_list(name)
-        versions = self._normalize_to_list(version)
+        names = self._to_list(name)
+        versions = self._to_list(version)
 
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
@@ -902,8 +888,8 @@ class LocalRegistryBackend(RegistryBackend):
             object_class: Object class(es) to register the materializer for.
             materializer_class: Materializer class(es) to register.
         """
-        obj_classes = self._normalize_to_list(object_class)
-        mat_classes = self._normalize_to_list(materializer_class)
+        obj_classes = self._to_list(object_class)
+        mat_classes = self._to_list(materializer_class)
 
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")
