@@ -133,6 +133,12 @@ def s3_registry(s3_backend):
 
 
 @pytest.fixture
+def minio_registry(s3_registry):
+    """Alias for s3_registry (backwards compatibility)."""
+    return s3_registry
+
+
+@pytest.fixture
 def sample_object_dir():
     """Create a sample object directory with some files."""
     with tempfile.TemporaryDirectory() as temp_dir:

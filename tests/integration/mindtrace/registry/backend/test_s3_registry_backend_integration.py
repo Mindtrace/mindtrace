@@ -6,8 +6,6 @@ Uses MinIO as the S3-compatible backend for testing.
 import uuid
 from pathlib import Path
 
-import pytest
-
 from mindtrace.core import CoreConfig
 from mindtrace.registry import S3RegistryBackend
 
@@ -176,10 +174,18 @@ def test_delete_object(s3_backend, sample_object_dir, s3_client, s3_test_bucket)
     assert len(objects) == 0
 
 
-def test_invalid_object_name(s3_backend):
+def test_invalid_object_name(s3_backend, tmp_path):
     """Test handling of invalid object names."""
-    with pytest.raises(ValueError):
-        s3_backend.push("invalid_name", "1.0.0", "some_path")
+    # Create a dummy directory to push
+    test_dir = tmp_path / "test_obj"
+    test_dir.mkdir()
+    (test_dir / "file.txt").write_text("test")
+
+    # Backend returns failed OpResult for invalid names (doesn't raise)
+    results = s3_backend.push("invalid_name", "1.0.0", test_dir, metadata={"_files": ["file.txt"]})
+    result = results.first()
+    assert result.is_error
+    assert "underscore" in result.message.lower()
 
 
 def test_register_materializer(s3_backend, s3_client, s3_test_bucket):

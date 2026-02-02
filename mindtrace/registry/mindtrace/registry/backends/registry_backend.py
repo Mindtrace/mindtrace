@@ -7,8 +7,8 @@ from mindtrace.registry.core.types import OnConflict, OpResults
 
 # Type aliases for cleaner signatures
 NameArg = Union[str, List[str]]
-VersionArg = Union[str, None, List[Union[str, None]]]  # Allows None for auto-increment (push)
-ConcreteVersionArg = Union[str, List[str]]  # Requires specific version (pull/delete)
+ConcreteVersionArg = Union[str, List[str]]  # Registry resolves versions before calling backend
+VersionArg = ConcreteVersionArg  # Alias for backwards compatibility
 PathArg = Union[str, Path, List[Union[str, Path]]]
 MetadataArg = Union[dict, List[dict], None]
 
@@ -41,61 +41,37 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         super().__init__(**kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Input Normalization Helpers
+    # Input Preparation
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _normalize_to_list(self, value: Union[str, List[str]], name: str = "value") -> List[str]:
-        """Convert single value or list to list."""
-        if isinstance(value, str):
-            return [value]
-        return list(value)
+    def _to_list(self, val):
+        """Convert scalar string to single-item list. For name/version normalization."""
+        return [val] if isinstance(val, str) else list(val)
 
-    def _normalize_versions(self, version: VersionArg, length: int) -> List[Union[str, None]]:
-        """Normalize version argument to list matching expected length."""
-        if version is None or isinstance(version, str):
-            return [version] * length
-        return list(version)
+    def _prepare_inputs(self, name, version, paths, metadata):
+        """Convert scalars to lists, validate all lengths match.
 
-    def _normalize_paths(self, local_path: PathArg, length: int) -> List[Path]:
-        """Normalize path argument to list of Paths."""
-        if isinstance(local_path, (str, Path)):
-            return [Path(local_path)] * length
-        return [Path(p) for p in local_path]
-
-    def _normalize_metadata(self, metadata: MetadataArg, length: int) -> List[Union[dict, None]]:
-        """Normalize metadata argument to list."""
-        if metadata is None:
-            return [None] * length
-        if isinstance(metadata, dict):
-            return [metadata] * length
-        return list(metadata)
-
-    def _normalize_inputs(
-        self,
-        name: NameArg,
-        version: VersionArg,
-        local_path: PathArg | None = None,
-        metadata: MetadataArg = None,
-    ) -> List[Tuple[str, Union[str, None], Union[Path, None], Union[dict, None]]]:
-        """Normalize all inputs to list of tuples for processing.
-
-        Returns:
-            List of (name, version, path, metadata) tuples
+        Used by push/pull where all 4 inputs are required.
+        Registry resolves versions before calling backend, so version must be concrete (not None).
+        Scalar conversion is for test convenience.
         """
-        names = self._normalize_to_list(name, "name")
+        if metadata is None:
+            raise ValueError("metadata is required")
+        if version is None:
+            raise ValueError("version is required (Registry must resolve before calling backend)")
+        names = [name] if isinstance(name, str) else list(name)
+        versions = [version] if isinstance(version, str) else list(version)
+        paths_list = [Path(paths)] if isinstance(paths, (str, Path)) else [Path(p) for p in paths]
+        metadatas = [metadata] if isinstance(metadata, dict) else list(metadata)
+
         n = len(names)
-
-        versions = self._normalize_versions(version, n)
-        paths = self._normalize_paths(local_path, n) if local_path is not None else [None] * n
-        metadatas = self._normalize_metadata(metadata, n)
-
-        if not (len(names) == len(versions) == len(paths) == len(metadatas)):
+        if not (len(versions) == len(paths_list) == len(metadatas) == n):
             raise ValueError(
-                f"Input list lengths must match: names={len(names)}, "
-                f"versions={len(versions)}, paths={len(paths)}, metadata={len(metadatas)}"
+                f"Input lengths must match: names={n}, versions={len(versions)}, "
+                f"paths={len(paths_list)}, metadata={len(metadatas)}"
             )
 
-        return list(zip(names, versions, paths, metadatas))
+        return names, versions, paths_list, metadatas
 
     # ─────────────────────────────────────────────────────────────────────────
     # Artifact + Metadata Operations
@@ -105,9 +81,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     def push(
         self,
         name: NameArg,
-        version: VersionArg,
+        version: ConcreteVersionArg,
         local_path: PathArg,
-        metadata: MetadataArg = None,
+        metadata: MetadataArg,
         on_conflict: str = OnConflict.SKIP,
         acquire_lock: bool = False,
     ) -> OpResults:
@@ -410,7 +386,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Raises:
             ValueError: If any name is invalid.
         """
-        names = self._normalize_to_list(name, "name")
+        names = self._to_list(name)
         for n in names:
             if not n or not n.strip():
                 raise ValueError("Object names cannot be empty.")
@@ -456,45 +432,3 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             True if released, False otherwise.
         """
         return True  # Default: no-op
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Version Resolution (protected)
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _resolve_version(self, name: str, version: Union[str, None]) -> str:
-        """Resolve version, auto-incrementing if None.
-
-        Args:
-            name: Object name.
-            version: Version string or None for auto-increment.
-
-        Returns:
-            Resolved version string.
-        """
-        if version is not None:
-            return version
-
-        # find latest and increment
-        versions_dict = self.list_versions(name)
-        versions = versions_dict.get(name, [])
-
-        # if doesnt exists, it's the first version.
-        if not versions:
-            return "1"
-
-        # filter temporary versions
-        versions = [v for v in versions if not v.startswith("__temp__")]
-        if not versions:
-            return "1"
-
-        # semantic sort and increment
-        def version_key(v):
-            try:
-                return [int(x) for x in v.split(".")]
-            except ValueError:
-                return [0]
-
-        latest = max(versions, key=version_key)
-        components = latest.split(".")
-        components[-1] = str(int(components[-1]) + 1)
-        return ".".join(components)

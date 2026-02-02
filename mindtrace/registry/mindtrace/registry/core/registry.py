@@ -705,7 +705,11 @@ class Registry(Mindtrace):
                 zip(names, objs_list, versions_list, init_params_list, metadata_list)
             ):
                 try:
-                    validated_version = self._validate_version(version) if version is not None else None
+                    # Resolve version: None -> auto-increment, else validate
+                    if version is None:
+                        resolved_version = self._next_version(name)
+                    else:
+                        resolved_version = self._validate_version(version)
                     temp_dir = Path(base_temp_dir) / f"{idx}_{name.replace(':', '_')}"
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -723,7 +727,7 @@ class Registry(Mindtrace):
                         "hash": compute_dir_hash(str(temp_dir)),
                         "_files": self._build_file_manifest(temp_dir),
                     }
-                    push_items.append((name, validated_version, temp_dir, push_metadata))
+                    push_items.append((name, resolved_version, temp_dir, push_metadata))
                 except Exception as e:
                     prep_errors[(name, version or VERSION_PENDING)] = {"error": type(e).__name__, "message": str(e)}
 

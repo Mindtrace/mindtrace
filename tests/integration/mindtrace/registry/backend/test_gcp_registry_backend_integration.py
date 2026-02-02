@@ -96,20 +96,24 @@ def test_init(backend, test_bucket, gcs_client):
     assert backend.gcs.bucket_name == test_bucket
 
 
-def test_push_and_pull(backend, sample_object_dir, temp_dir):
+def test_push_and_pull(backend, sample_object_dir, sample_metadata, temp_dir):
     """Test pushing and pulling objects."""
-    # Push the object
-    results = backend.push("test:object", "1.0.0", sample_object_dir)
+    # Push the object with metadata
+    results = backend.push("test:object", "1.0.0", sample_object_dir, metadata=sample_metadata)
     assert results.all_ok
 
     # Verify via has_object
     exists = backend.has_object("test:object", "1.0.0")
     assert exists[("test:object", "1.0.0")]
 
+    # Fetch metadata for pull
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    fetched_meta = meta_results.first().metadata
+
     # Download to a new location
     download_dir = temp_dir / "download"
     download_dir.mkdir()
-    pull_results = backend.pull("test:object", "1.0.0", str(download_dir))
+    pull_results = backend.pull("test:object", "1.0.0", str(download_dir), metadata=fetched_meta)
     assert pull_results.all_ok
 
     # Verify the download
@@ -225,8 +229,11 @@ def test_delete_object(backend, sample_object_dir, sample_metadata):
 
 def test_invalid_object_name(backend, sample_object_dir):
     """Test handling of invalid object names."""
-    with pytest.raises(ValueError):
-        backend.push("invalid_name", "1.0.0", sample_object_dir)
+    # Backend returns failed OpResult for invalid names (doesn't raise)
+    results = backend.push("invalid_name", "1.0.0", sample_object_dir, metadata={"_files": []})
+    result = results.first()
+    assert result.is_error
+    assert "underscore" in result.message.lower()
 
 
 def test_register_materializer(backend):
@@ -355,7 +362,9 @@ def test_push_overwrite_with_lock(backend, sample_object_dir, sample_metadata, t
     # Verify the content was updated
     download_dir = temp_dir / "download"
     download_dir.mkdir()
-    backend.pull("test:object", "1.0.0", str(download_dir))
+    # Fetch metadata for pull
+    fetched_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+    backend.pull("test:object", "1.0.0", str(download_dir), metadata=fetched_meta)
     assert (download_dir / "file1.txt").read_text() == "modified content"
 
 
