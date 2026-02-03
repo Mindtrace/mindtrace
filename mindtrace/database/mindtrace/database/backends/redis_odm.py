@@ -6,7 +6,7 @@ from redis_om import JsonModel, Migrator, get_redis_connection
 from redis_om.model.model import ExpressionProxy, NotFoundError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 
 class MindtraceRedisDocument(JsonModel):
@@ -749,7 +749,6 @@ class RedisMindtraceODM(MindtraceODM):
             ModelType: The inserted document with generated fields populated.
 
         Raises:
-            DuplicateInsertError: If the document violates unique constraints.
             ValueError: If in multi-model mode (use db.model_name.insert() instead).
 
         Example:
@@ -770,30 +769,6 @@ class RedisMindtraceODM(MindtraceODM):
             obj_data = obj.copy()
         else:
             obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
-
-        # Check for duplicates by email if it exists and is unique
-        if "email" in obj_data and obj_data["email"] and hasattr(self.model_cls, "email"):
-            try:
-                # Try to find existing document with same email
-                existing = self.model_cls.find(self.model_cls.email == obj_data["email"]).all()
-                if existing:
-                    raise DuplicateInsertError(f"Document with email {obj_data['email']} already exists")
-            except DuplicateInsertError:
-                # Re-raise DuplicateInsertError
-                raise
-            except Exception:
-                # If query fails, try a different approach
-                try:
-                    all_docs = self.model_cls.find().all()
-                    for doc in all_docs:
-                        if hasattr(doc, "email") and doc.email == obj_data["email"]:
-                            raise DuplicateInsertError(f"Document with email {obj_data['email']} already exists")
-                except DuplicateInsertError:
-                    # Re-raise DuplicateInsertError
-                    raise
-                except Exception as e:
-                    # If all fails, continue without duplicate check but log warning
-                    self.logger.warning(f"Could not check for duplicates: {e}")
 
         doc = self.model_cls(**obj_data)
         doc.save()
