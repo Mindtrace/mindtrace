@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 from redis_om import JsonModel, Migrator, get_redis_connection
-from redis_om.model.model import NotFoundError
+from redis_om.model.model import ExpressionProxy, NotFoundError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
@@ -66,6 +66,34 @@ class MindtraceRedisDocument(JsonModel):
 
 
 ModelType = TypeVar("ModelType", bound=MindtraceRedisDocument)
+
+
+def _ensure_redis_model_indexed(model: Type[ModelType]) -> None:
+    """Ensure a Redis model has index=True for redis-om v1.0.6+.
+
+    Sets model_config['index'] = True and ExpressionProxy on each field so key(),
+    find(), create_index(), and expression queries (e.g. Model.age > 25) work.
+    Call this for any model_cls passed to RedisMindtraceODM.
+    """
+    if not isinstance(model, type) or not issubclass(model, MindtraceRedisDocument):
+        return
+    config = getattr(model, "model_config", None)
+    if isinstance(config, dict):
+        if config.get("index") is not True:
+            config["index"] = True
+    elif hasattr(model, "Config") and hasattr(model.Config, "index"):
+        if model.Config.index is not True:
+            model.Config.index = True
+
+    try:
+        model_fields = getattr(model, "model_fields", None) or getattr(model, "__fields__", None)
+        if model_fields:
+            for field_name, field in model_fields.items():
+                if getattr(field, "name", None) != field_name:
+                    setattr(field, "name", field_name)
+                setattr(model, field_name, ExpressionProxy(field, []))
+    except Exception:
+        pass
 
 
 class RedisMindtraceODM(MindtraceODM):
@@ -153,6 +181,7 @@ class RedisMindtraceODM(MindtraceODM):
             self.model_cls = None  # No single model in multi-model mode
             # Create ODM instances for each model (they share the same redis connection)
             for name, model in models.items():
+                _ensure_redis_model_indexed(model)
                 odm = RedisMindtraceODM(
                     model_cls=model,
                     redis_url=redis_url,
@@ -167,6 +196,7 @@ class RedisMindtraceODM(MindtraceODM):
                 self._model_odms[name] = odm
         elif model_cls is not None:
             # Single model mode (backward compatible)
+            _ensure_redis_model_indexed(model_cls)
             self.model_cls = model_cls
             self.model_cls.Meta.database = self.redis
             self._models = None
@@ -226,16 +256,24 @@ class RedisMindtraceODM(MindtraceODM):
                         key_patterns.append(f"{prefix}:{model_module}.{model_name}:*")
 
             key_pattern = key_patterns[0] if key_patterns else f"{prefix}:{model_name}:*"
-            indexed_fields = []
+            indexed_fields_set = set()
+            model_fields = getattr(model, "model_fields", None) or getattr(model, "__fields__", None)
+            if model_fields:
+                for field_name, field in model_fields.items():
+                    if field_name.startswith("_") or field_name in ("id", "pk", "Meta"):
+                        continue
+                    if getattr(field, "index", False):
+                        indexed_fields_set.add(field_name)
             for attr_name in dir(model):
                 if attr_name.startswith("_") or attr_name in ("id", "pk", "Meta"):
                     continue
                 try:
                     attr_value = getattr(model, attr_name)
                     if hasattr(attr_value, "index") and attr_value.index:
-                        indexed_fields.append(attr_name)
+                        indexed_fields_set.add(attr_name)
                 except Exception:
                     pass
+            indexed_fields = sorted(indexed_fields_set)
 
             if not indexed_fields:
                 return  # No indexed fields
@@ -271,19 +309,18 @@ class RedisMindtraceODM(MindtraceODM):
             if index_exists:
                 return  # Index exists and is valid
 
-            # Build schema with field types (TEXT or NUMERIC)
+            # Build schema with field types: TAG for exact match (redis-om equality), NUMERIC for numbers
             schema_parts = []
             for field_name in indexed_fields:
-                field_type = "TEXT"
+                field_type = "TAG"
                 try:
                     if hasattr(model, "__annotations__"):
                         field_annotation = model.__annotations__.get(field_name, None)
                         if field_annotation:
-                            # Check if it's a numeric type
                             if "int" in str(field_annotation) or "float" in str(field_annotation):
                                 field_type = "NUMERIC"
                             else:
-                                field_type = "TEXT"
+                                field_type = "TAG"
                 except Exception:
                     pass
                 schema_parts.extend([field_name, field_type])
@@ -322,10 +359,14 @@ class RedisMindtraceODM(MindtraceODM):
                         field_type = schema_parts[i + 1]
                         json_schema_parts.extend([f"$.{field_name}", "AS", field_name, field_type])
 
+                    def _prefix_for_ft(p: str) -> str:
+                        return p[:-1] if p.endswith("*") else p
+
                     # Try creating index with each key pattern
                     index_created = False
                     for pattern in key_patterns:
                         try:
+                            prefix_for_ft = _prefix_for_ft(pattern)
                             cmd = [
                                 "FT.CREATE",
                                 index_name,
@@ -333,7 +374,7 @@ class RedisMindtraceODM(MindtraceODM):
                                 "JSON",
                                 "PREFIX",
                                 "1",
-                                pattern,
+                                prefix_for_ft,
                                 "SCHEMA",
                             ] + json_schema_parts
                             model_redis.execute_command(*cmd)
@@ -348,6 +389,7 @@ class RedisMindtraceODM(MindtraceODM):
                             continue
 
                     if not index_created:
+                        prefix_for_ft = _prefix_for_ft(key_pattern)
                         cmd = [
                             "FT.CREATE",
                             index_name,
@@ -355,7 +397,7 @@ class RedisMindtraceODM(MindtraceODM):
                             "JSON",
                             "PREFIX",
                             "1",
-                            key_pattern,
+                            prefix_for_ft,
                             "SCHEMA",
                         ] + json_schema_parts
                         model_redis.execute_command(*cmd)
@@ -369,6 +411,7 @@ class RedisMindtraceODM(MindtraceODM):
                     else:
                         # Fallback to HASH format
                         try:
+                            prefix_for_ft = _prefix_for_ft(key_pattern)
                             cmd = [
                                 "FT.CREATE",
                                 index_name,
@@ -376,14 +419,14 @@ class RedisMindtraceODM(MindtraceODM):
                                 "HASH",
                                 "PREFIX",
                                 "1",
-                                key_pattern,
+                                prefix_for_ft,
                                 "SCHEMA",
                             ] + schema_parts
                             model_redis.execute_command(*cmd)
                             self.logger.debug(f"Created index {index_name} with pattern {key_pattern} (HASH format)")
                         except Exception:
                             # Try alternative pattern with JSON
-                            alt_pattern = f"{prefix}:*"
+                            alt_prefix_for_ft = f"{prefix}:"
                             try:
                                 json_schema_parts = []
                                 for i in range(0, len(schema_parts), 2):
@@ -397,12 +440,12 @@ class RedisMindtraceODM(MindtraceODM):
                                     "JSON",
                                     "PREFIX",
                                     "1",
-                                    alt_pattern,
+                                    alt_prefix_for_ft,
                                     "SCHEMA",
                                 ] + json_schema_parts
                                 model_redis.execute_command(*cmd)
                                 self.logger.debug(
-                                    f"Created index {index_name} with alternative pattern {alt_pattern} (JSON format)"
+                                    f"Created index {index_name} with alternative prefix {alt_prefix_for_ft} (JSON format)"
                                 )
                             except Exception as alt_error:
                                 self.logger.debug(f"Could not create index {index_name}: {alt_error}")
@@ -410,21 +453,26 @@ class RedisMindtraceODM(MindtraceODM):
             self.logger.debug(f"Could not create index for {model.__name__}: {e}")
 
     def _ensure_index_has_documents(self, model: Type[ModelType]):
-        """Ensure the index has documents indexed. If not, recreate it."""
+        """Ensure the index has documents indexed. If not, recreate it and wait for indexing."""
+        import time
+
         try:
             model_redis = model.Meta.database
             prefix = getattr(model.Meta, "global_key_prefix", "mindtrace")
             model_name = model.__name__
             model_module = getattr(model, "__module__", "")
 
-            # Construct index name
-            if model_module == "__main__":
-                full_model_name = f"__main__.{model_name}"
-            elif model_module:
-                full_model_name = f"{model_module}.{model_name}"
+            # Use same index_name as model / _create_index_for_model so find() uses the same index
+            if hasattr(model.Meta, "index_name") and model.Meta.index_name:
+                index_name = model.Meta.index_name
             else:
-                full_model_name = model_name
-            index_name = f"{prefix}:{full_model_name}:index"
+                if model_module == "__main__":
+                    full_model_name = f"__main__.{model_name}"
+                elif model_module:
+                    full_model_name = f"{model_module}.{model_name}"
+                else:
+                    full_model_name = model_name
+                index_name = f"{prefix}:{full_model_name}:index"
 
             # Build key patterns
             model_key_prefix = getattr(model.Meta, "model_key_prefix", None)
@@ -461,43 +509,34 @@ class RedisMindtraceODM(MindtraceODM):
                             model_redis.execute_command("FT.DROPINDEX", index_name)
                             self._create_index_for_model(model)
 
-                            # Wait for indexing to complete
-                            import time
-
-                            time.sleep(0.2)
-
-                            # Verify documents are indexed
-                            try:
-                                index_info_after = model_redis.execute_command("FT.INFO", index_name)
-                                if isinstance(index_info_after, list) and "num_docs" in index_info_after:
-                                    num_docs_idx_after = index_info_after.index("num_docs")
-                                    num_docs_after = (
-                                        index_info_after[num_docs_idx_after + 1]
-                                        if num_docs_idx_after + 1 < len(index_info_after)
-                                        else 0
-                                    )
-                                    self.logger.debug(f"After recreation, index has {num_docs_after} documents")
-
-                                    if num_docs_after == 0 and matching_keys:
-                                        sample_key = matching_keys[0]
-                                        try:
-                                            json_data = model_redis.json().get(sample_key)
+                            max_wait = 2.5
+                            step = 0.1
+                            waited = 0.0
+                            while waited < max_wait:
+                                time.sleep(step)
+                                waited += step
+                                try:
+                                    info = model_redis.execute_command("FT.INFO", index_name)
+                                    if isinstance(info, list) and "num_docs" in info:
+                                        idx = info.index("num_docs")
+                                        n = info[idx + 1] if idx + 1 < len(info) else 0
+                                        if n > 0:
                                             self.logger.debug(
-                                                f"Sample key {sample_key} has JSON data: {bool(json_data)}"
+                                                f"After recreation, index has {n} documents (waited {waited:.1f}s)"
                                             )
-                                            try:
-                                                search_result = model_redis.execute_command(
-                                                    "FT.SEARCH", index_name, "*", "LIMIT", "0", "10"
-                                                )
-                                                self.logger.debug(
-                                                    f"Direct FT.SEARCH returned {len(search_result) if isinstance(search_result, list) else 'error'}"
-                                                )
-                                            except Exception as se:
-                                                self.logger.debug(f"FT.SEARCH error: {se}")
-                                        except Exception as je:
-                                            self.logger.debug(f"Could not get JSON for key: {je}")
-                            except Exception:
-                                pass
+                                            break
+                                    search_res = model_redis.execute_command(
+                                        "FT.SEARCH", index_name, "*", "LIMIT", "0", "1"
+                                    )
+                                    if isinstance(search_res, list) and len(search_res) > 1:
+                                        self.logger.debug(
+                                            f"After recreation, FT.SEARCH returned hits (waited {waited:.1f}s)"
+                                        )
+                                        break
+                                except Exception:
+                                    pass
+                            else:
+                                self.logger.debug(f"Index {index_name} may still be indexing after {max_wait}s")
                         except Exception as e:
                             self.logger.debug(f"Could not recreate index: {e}")
             except Exception:
@@ -963,6 +1002,21 @@ class RedisMindtraceODM(MindtraceODM):
             else:
                 raise
 
+    def _dict_to_find_expressions(self, query_dict: dict):
+        """Convert a dict query to redis-om expression(s) so find(dict) works."""
+        if not query_dict:
+            return []
+        model = self.model_cls
+        expressions = []
+        for key, value in query_dict.items():
+            attr = getattr(model, key, None)
+            if attr is None:
+                continue
+            expr = attr == value
+            if getattr(expr, "op", None) is not None:
+                expressions.append(expr)
+        return expressions
+
     def find(self, *args, **kwargs) -> List[ModelType]:
         """
         Find documents matching the specified criteria.
@@ -985,9 +1039,14 @@ class RedisMindtraceODM(MindtraceODM):
 
                 # Find all users if no criteria specified
                 all_users = backend.find()
+
+                # Find with dict (converted to expressions internally)
+                users = backend.find({"name": "Charlie"})
         """
         if self._models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
+        if args and len(args) == 1 and isinstance(args[0], dict):
+            args = tuple(self._dict_to_find_expressions(args[0]))
         # Ensure initialization succeeded - retry if it failed due to connection issues
         if not self._is_initialized:
             self.initialize()
