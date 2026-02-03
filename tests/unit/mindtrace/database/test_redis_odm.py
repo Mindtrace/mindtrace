@@ -103,7 +103,7 @@ def test_ensure_redis_model_indexed_config_index_false():
 
 
 def test_ensure_redis_model_indexed_expression_proxy_raises():
-    """Test _ensure_redis_model_indexed handles Exception when setting ExpressionProxy (covers except at lines 95-96)."""
+    """Test _ensure_redis_model_indexed handles Exception when setting ExpressionProxy."""
     # Patch where redis_odm uses it so the except block runs
     with patch("mindtrace.database.backends.redis_odm.ExpressionProxy", side_effect=RuntimeError("mock")):
         _ensure_redis_model_indexed(RedisDocTest)
@@ -111,7 +111,7 @@ def test_ensure_redis_model_indexed_expression_proxy_raises():
 
 
 def test_ensure_redis_model_indexed_sets_expression_proxy_on_fields():
-    """Test _ensure_redis_model_indexed sets ExpressionProxy on each field (covers line 95)."""
+    """Test _ensure_redis_model_indexed sets ExpressionProxy on each field."""
     from redis_om.model.model import ExpressionProxy
 
     class FreshModel(MindtraceRedisDocument):
@@ -123,13 +123,12 @@ def test_ensure_redis_model_indexed_sets_expression_proxy_on_fields():
             collection_name = "test_docs"
 
     _ensure_redis_model_indexed(FreshModel)
-    # Line 95: setattr(model, field_name, ExpressionProxy(field, []))
     assert isinstance(getattr(FreshModel, "name"), ExpressionProxy)
     assert isinstance(getattr(FreshModel, "email"), ExpressionProxy)
 
 
 def test_ensure_redis_model_indexed_field_name_mismatch():
-    """Test _ensure_redis_model_indexed sets field.name when it differs from model_fields key (line 94)."""
+    """Test _ensure_redis_model_indexed sets field.name when it differs from model_fields key."""
     # Use a model and patch one field to have .name != key so setattr(field, "name", field_name) runs
     model_fields = getattr(RedisDocTest, "model_fields", None) or getattr(RedisDocTest, "__fields__", None)
     assert model_fields, "RedisDocTest should have model_fields"
@@ -637,7 +636,7 @@ def test_redis_do_initialize_non_connection_error():
 
 
 def test_redis_do_initialize_outer_exception_sets_initialized():
-    """Test _do_initialize outer except: non-connection error sets _is_initialized (line 688)."""
+    """Test _do_initialize outer except: non-connection error sets _is_initialized."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -664,7 +663,7 @@ def test_redis_do_initialize_outer_exception_sets_initialized():
 
 
 def test_redis_do_initialize_outer_exception_meta_assign_raises():
-    """Test _do_initialize outer except (line 688) when model.Meta.database assignment raises in outer try."""
+    """Test _do_initialize outer except when model.Meta.database assignment raises in outer try."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -704,7 +703,7 @@ def test_redis_do_initialize_outer_exception_meta_assign_raises():
 
 
 def test_redis_ensure_index_has_documents_no_index_name_empty_module():
-    """Test _ensure_index_has_documents with no Meta.index_name and __module__ == '' (lines 471-477)."""
+    """Test _ensure_index_has_documents with no Meta.index_name and __module__ == ''."""
 
     class ModelEmptyModule(MindtraceRedisDocument):
         name: str = Field(index=True)
@@ -732,7 +731,7 @@ def test_redis_ensure_index_has_documents_no_index_name_empty_module():
 
 
 def test_redis_ensure_index_has_documents_no_index_name_main_module():
-    """Test _ensure_index_has_documents with no index_name and __module__ == '__main__' (line 472)."""
+    """Test _ensure_index_has_documents with no index_name and __module__ == '__main__'."""
     if hasattr(RedisDocMainModuleTest.Meta, "index_name"):
         saved = getattr(RedisDocMainModuleTest.Meta, "index_name", None)
         delattr(RedisDocMainModuleTest.Meta, "index_name")
@@ -754,7 +753,7 @@ def test_redis_ensure_index_has_documents_no_index_name_main_module():
 
 
 def test_redis_ensure_index_has_documents_no_index_name_regular_module():
-    """Test _ensure_index_has_documents with no index_name and __module__ set (line 474)."""
+    """Test _ensure_index_has_documents with no index_name and __module__ set."""
     orig_module = getattr(RedisDocTest, "__module__", None)
     if hasattr(RedisDocTest.Meta, "index_name"):
         saved_index = getattr(RedisDocTest.Meta, "index_name", None)
@@ -780,14 +779,14 @@ def test_redis_ensure_index_has_documents_no_index_name_regular_module():
 
 
 def test_redis_create_index_for_model_field_index_attr():
-    """Test _create_index_for_model when field has .index True (line 267)."""
+    """Test _create_index_for_model when field has .index True."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
         mock_redis.execute_command.side_effect = Exception("Index not found")
         mock_redis.keys.return_value = []
 
-        # Patch one field to have .index = True so line 267 is hit (model_fields branch)
+        # Patch one field to have .index = True
         email_field = RedisDocTest.model_fields["email"]
         orig_index = getattr(email_field, "index", None)
         try:
@@ -5495,9 +5494,6 @@ def test_redis_do_initialize_exception_connection_in_type_name():
             # Check: "Connection" in str(type(e).__name__)
 
 
-# Final comprehensive tests to reach 100% coverage - ensuring exact line execution
-
-
 def test_redis_create_index_key_patterns_main_module_executes_all_lines():
     """Test _create_index_for_model to execute for __main__ module."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
@@ -5641,7 +5637,7 @@ def test_redis_create_index_early_return_executes():
             assert result is None  # Should return early
 
 
-def test_redis_create_index_ft_dropindex_exception_lines_264_265():
+def test_redis_create_index_ft_dropindex_exception():
     """Test _create_index_for_model to execute (FT.DROPINDEX exception).
 
     To hit:
@@ -5911,7 +5907,7 @@ def test_redis_create_index_hash_format_executes():
         assert hash_created[0], "HASH format should be created after JSON fails"
 
 
-def test_redis_ensure_index_key_patterns_main_module_lines_435_437():
+def test_redis_ensure_index_key_patterns_main_module():
     """Test _ensure_index_has_documents to execute for __main__ module.
 
     This test ensures:
@@ -5970,7 +5966,7 @@ def test_redis_ensure_index_key_patterns_main_module_lines_435_437():
         assert getattr(ModelMain, "__module__", "") == "__main__"
 
 
-def test_redis_ensure_index_key_patterns_regular_module_lines_439_441():
+def test_redis_ensure_index_key_patterns_regular_module():
     """Test _ensure_index_has_documents to execute for regular module."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
@@ -5993,48 +5989,6 @@ def test_redis_ensure_index_key_patterns_regular_module_lines_439_441():
 
         backend._ensure_index_has_documents(ModelReg)
         # Should execute (regular module with model_module set)
-
-
-def test_redis_do_initialize_env_var_deletion_lines_618_620():
-    """Test _do_initialize to execute (elif branch for REDIS_OM_URL deletion)."""
-    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        mock_redis.ping.return_value = True
-
-        backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
-        backend.logger = MagicMock()
-        backend.redis_url = "redis://localhost:6379"
-        RedisDocTest.Meta.database = mock_redis
-
-        import os
-
-        original_env = os.environ.get("REDIS_OM_URL", None)
-        # Ensure REDIS_OM_URL is not set initially (so original_redis_url will be None)
-        if "REDIS_OM_URL" in os.environ:
-            del os.environ["REDIS_OM_URL"]
-
-        # Track if deletion happens
-        deletion_happened = [False]
-        original_del = os.environ.__delitem__
-
-        def mock_del(key):
-            if key == "REDIS_OM_URL":
-                deletion_happened[0] = True
-            return original_del(key)
-
-        try:
-            with patch.object(os.environ, "__delitem__", mock_del):
-                with patch("mindtrace.database.backends.redis_odm.Migrator") as mock_migrator_class:
-                    mock_migrator = MagicMock()
-                    mock_migrator_class.return_value = mock_migrator
-
-                    backend._do_initialize()
-                    # The elif branch: original_redis_url is None AND REDIS_OM_URL in os.environ AND self.redis_url
-                    # Since REDIS_OM_URL is set during init, it should be deleted
-        finally:
-            if original_env is not None:
-                os.environ["REDIS_OM_URL"] = original_env
 
 
 def test_redis_do_initialize_exception_connection_type():
@@ -6270,7 +6224,7 @@ def test_redis_do_initialize_database_reassignment():
             pass
 
 
-def test_redis_ensure_index_lines_435_441_main_module():
+def test_redis_ensure_index():
     """Testkey patterns for __main__ module when model_key_prefix is None."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
@@ -6311,7 +6265,7 @@ def test_redis_ensure_index_lines_435_441_main_module():
         backend._ensure_index_has_documents(ModelMain)
 
 
-def test_redis_ensure_index_lines_439_441_regular_module():
+def test_redis_ensure_index_lines_regular_module():
     """Testkey patterns for regular module when model_key_prefix is None."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
@@ -6351,7 +6305,7 @@ def test_redis_ensure_index_lines_439_441_regular_module():
         backend._ensure_index_has_documents(ModelReg)
 
 
-def test_redis_do_initialize_lines_614_616_env_var_deletion():
+def test_redis_do_initialize_lines_env_var_deletion():
     """Testelif branch for REDIS_OM_URL deletion.
 
     This test ensures the elif branch executes when:
