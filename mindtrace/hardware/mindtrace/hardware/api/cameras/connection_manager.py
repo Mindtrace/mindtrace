@@ -39,18 +39,18 @@ class CameraManagerConnectionManager(ConnectionManager):
     making it easy to use the service programmatically from other applications.
     """
 
-    async def get(self, endpoint: str, timeout: float = 60.0) -> Dict[str, Any]:
+    async def get(self, endpoint: str, http_timeout: float = 60.0) -> Dict[str, Any]:
         """Make GET request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
             return response.json()
 
-    async def post(self, endpoint: str, data: Dict[str, Any] = None, timeout: float = 60.0) -> Dict[str, Any]:
+    async def post(self, endpoint: str, data: Dict[str, Any] = None, http_timeout: float = 60.0) -> Dict[str, Any]:
         """Make POST request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout) as client:
             response = await client.post(url, json=data or {})
             response.raise_for_status()
             return response.json()
@@ -275,45 +275,39 @@ class CameraManagerConnectionManager(ConnectionManager):
             Export operation result
         """
         request = ConfigFileExportRequest(camera=camera, config_path=config_path)
-        response = await self.post("/cameras/config/export", request.model_dump(), timeout=120.0)
+        response = await self.post("/cameras/config/export", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
     # Image Capture Operations
     async def capture_image(
-        self, camera: str, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy"
+        self, camera: str, save_path: Optional[str] = None, output_format: str = "pil"
     ) -> Dict[str, Any]:
         """Capture a single image.
 
         Args:
             camera: Camera name
             save_path: Optional path to save image
-            upload_to_gcs: Upload to Google Cloud Storage
             output_format: Output format for returned image ("numpy" or "pil")
 
         Returns:
             Capture result
         """
-        request = CaptureImageRequest(
-            camera=camera, save_path=save_path, upload_to_gcs=upload_to_gcs, output_format=output_format
-        )
-        response = await self.post("/cameras/capture", request.model_dump(), timeout=120.0)
+        request = CaptureImageRequest(camera=camera, save_path=save_path, output_format=output_format)
+        response = await self.post("/cameras/capture", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
-    async def capture_images_batch(
-        self, cameras: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
-    ) -> Dict[str, Any]:
+    async def capture_images_batch(self, cameras: List[str], output_format: str = "pil") -> Dict[str, Any]:
         """Capture images from multiple cameras.
 
         Args:
             cameras: List of camera names
-            upload_to_gcs: Upload to Google Cloud Storage
             output_format: Output format for returned images ("numpy" or "pil")
 
         Returns:
             Batch capture results
         """
-        request = CaptureBatchRequest(cameras=cameras, upload_to_gcs=upload_to_gcs, output_format=output_format)
-        response = await self.post("/cameras/capture/batch", request.model_dump(), timeout=120.0)
+        request = CaptureBatchRequest(cameras=cameras, output_format=output_format)
+        response = await self.post("/cameras/capture/batch", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
     async def capture_hdr_image(
@@ -323,8 +317,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture HDR image sequence.
 
@@ -334,7 +327,6 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels: Number of exposure levels
             exposure_multiplier: Multiplier between exposures
             return_images: Return captured images
-            upload_to_gcs: Upload to Google Cloud Storage
             output_format: Output format for returned images ("numpy" or "pil")
 
         Returns:
@@ -346,10 +338,9 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels=exposure_levels,
             exposure_multiplier=exposure_multiplier,
             return_images=return_images,
-            upload_to_gcs=upload_to_gcs,
             output_format=output_format,
         )
-        response = await self.post("/cameras/capture/hdr", request.model_dump(), timeout=180.0)
+        response = await self.post("/cameras/capture/hdr", request.model_dump(), http_timeout=180.0)
         return response["data"]
 
     async def capture_hdr_images_batch(
@@ -359,8 +350,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Any]:
         """Capture HDR images from multiple cameras.
 
@@ -370,7 +360,6 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels: Number of exposure levels
             exposure_multiplier: Multiplier between exposures
             return_images: Return captured images
-            upload_to_gcs: Upload to Google Cloud Storage
             output_format: Output format for returned images ("numpy" or "pil")
 
         Returns:
@@ -382,10 +371,9 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels=exposure_levels,
             exposure_multiplier=exposure_multiplier,
             return_images=return_images,
-            upload_to_gcs=upload_to_gcs,
             output_format=output_format,
         )
-        response = await self.post("/cameras/capture/hdr/batch", request.model_dump(), timeout=180.0)
+        response = await self.post("/cameras/capture/hdr/batch", request.model_dump(), http_timeout=180.0)
         return response["data"]
 
     # Network & Bandwidth Operations

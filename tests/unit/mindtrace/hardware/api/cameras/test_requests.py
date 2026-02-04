@@ -53,7 +53,7 @@ class TestCameraOpenRequest:
         """Test CameraOpenRequest with required fields."""
         request = CameraOpenRequest(camera="Basler:device1")
         assert request.camera == "Basler:device1"
-        assert request.test_connection is True  # Default value
+        assert request.test_connection is False  # Default value
 
     def test_camera_open_request_with_test_connection(self):
         """Test CameraOpenRequest with test_connection set."""
@@ -69,7 +69,7 @@ class TestCameraOpenBatchRequest:
         """Test CameraOpenBatchRequest with cameras list."""
         request = CameraOpenBatchRequest(cameras=["Basler:device1", "OpenCV:device2"])
         assert request.cameras == ["Basler:device1", "OpenCV:device2"]
-        assert request.test_connection is True  # Default value
+        assert request.test_connection is False  # Default value
 
 
 class TestCameraCloseRequest:
@@ -150,21 +150,18 @@ class TestCaptureImageRequest:
         request = CaptureImageRequest(camera="Basler:device1")
         assert request.camera == "Basler:device1"
         assert request.save_path is None
-        assert request.upload_to_gcs is False
-        assert request.output_format == "numpy"
+        assert request.output_format == "pil"
 
     def test_capture_image_request_all_fields(self):
         """Test CaptureImageRequest with all fields."""
         request = CaptureImageRequest(
             camera="Basler:device1",
             save_path="/path/to/image.jpg",
-            upload_to_gcs=True,
-            output_format="pil",
+            output_format="numpy",
         )
         assert request.camera == "Basler:device1"
         assert request.save_path == "/path/to/image.jpg"
-        assert request.upload_to_gcs is True
-        assert request.output_format == "pil"
+        assert request.output_format == "numpy"
 
     def test_capture_image_request_output_format_numpy(self):
         """Test CaptureImageRequest with numpy output format."""
@@ -202,19 +199,16 @@ class TestCaptureBatchRequest:
         """Test CaptureBatchRequest with minimal required fields."""
         request = CaptureBatchRequest(cameras=["Basler:device1", "OpenCV:device2"])
         assert request.cameras == ["Basler:device1", "OpenCV:device2"]
-        assert request.upload_to_gcs is False
-        assert request.output_format == "numpy"
+        assert request.output_format == "pil"
 
     def test_capture_batch_request_all_fields(self):
         """Test CaptureBatchRequest with all fields."""
         request = CaptureBatchRequest(
             cameras=["Basler:device1"],
-            upload_to_gcs=True,
-            output_format="pil",
+            output_format="numpy",
         )
         assert request.cameras == ["Basler:device1"]
-        assert request.upload_to_gcs is True
-        assert request.output_format == "pil"
+        assert request.output_format == "numpy"
 
     def test_capture_batch_request_invalid_output_format(self):
         """Test CaptureBatchRequest with invalid output format raises ValueError."""
@@ -238,8 +232,7 @@ class TestCaptureHDRRequest:
         assert request.exposure_levels == 3
         assert request.exposure_multiplier == 2.0
         assert request.return_images is True
-        assert request.upload_to_gcs is False
-        assert request.output_format == "numpy"
+        assert request.output_format == "pil"
 
     def test_capture_hdr_request_all_fields(self):
         """Test CaptureHDRRequest with all fields."""
@@ -249,16 +242,14 @@ class TestCaptureHDRRequest:
             exposure_levels=5,
             exposure_multiplier=2.5,
             return_images=False,
-            upload_to_gcs=True,
-            output_format="pil",
+            output_format="numpy",
         )
         assert request.camera == "Basler:device1"
         assert request.save_path_pattern == "/path/to/image_{exposure}.jpg"
         assert request.exposure_levels == 5
         assert request.exposure_multiplier == 2.5
         assert request.return_images is False
-        assert request.upload_to_gcs is True
-        assert request.output_format == "pil"
+        assert request.output_format == "numpy"
 
     def test_capture_hdr_request_exposure_levels_bounds(self):
         """Test CaptureHDRRequest with exposure_levels at bounds."""
@@ -302,8 +293,7 @@ class TestCaptureHDRBatchRequest:
         assert request.exposure_levels == 3
         assert request.exposure_multiplier == 2.0
         assert request.return_images is True
-        assert request.upload_to_gcs is False
-        assert request.output_format == "numpy"
+        assert request.output_format == "pil"
 
     def test_capture_hdr_batch_request_all_fields(self):
         """Test CaptureHDRBatchRequest with all fields."""
@@ -313,16 +303,14 @@ class TestCaptureHDRBatchRequest:
             exposure_levels=4,
             exposure_multiplier=3.0,
             return_images=False,
-            upload_to_gcs=True,
-            output_format="pil",
+            output_format="numpy",
         )
         assert request.cameras == ["Basler:device1"]
         assert request.save_path_pattern == "/path/to/{camera}_{exposure}.jpg"
         assert request.exposure_levels == 4
         assert request.exposure_multiplier == 3.0
         assert request.return_images is False
-        assert request.upload_to_gcs is True
-        assert request.output_format == "pil"
+        assert request.output_format == "numpy"
 
     def test_capture_hdr_batch_request_invalid_output_format(self):
         """Test CaptureHDRBatchRequest with invalid output format raises ValueError."""

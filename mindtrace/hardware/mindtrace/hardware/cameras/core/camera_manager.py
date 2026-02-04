@@ -102,13 +102,9 @@ class CameraManager(Mindtrace):
         """Configure multiple cameras simultaneously."""
         return self._submit_coro(self._manager.batch_configure(configurations))
 
-    def batch_capture(
-        self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
-    ) -> Dict[str, Any]:
+    def batch_capture(self, camera_names: List[str], output_format: str = "pil") -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management."""
-        return self._submit_coro(
-            self._manager.batch_capture(camera_names, upload_to_gcs=upload_to_gcs, output_format=output_format)
-        )
+        return self._submit_coro(self._manager.batch_capture(camera_names, output_format=output_format))
 
     def batch_capture_hdr(
         self,
@@ -117,8 +113,7 @@ class CameraManager(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-        upload_to_gcs: bool = False,
-        output_format: str = "numpy",
+        output_format: str = "pil",
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         return self._submit_coro(
@@ -128,7 +123,6 @@ class CameraManager(Mindtrace):
                 exposure_levels=exposure_levels,
                 exposure_multiplier=exposure_multiplier,
                 return_images=return_images,
-                upload_to_gcs=upload_to_gcs,
                 output_format=output_format,
             )
         )

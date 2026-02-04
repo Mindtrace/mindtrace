@@ -9,6 +9,7 @@ A powerful, flexible Object-Document Mapping (ODM) system that provides a **unif
 ## Key Features
 
 - **Unified Interface** - One API for multiple databases
+- **Multi-Model Support** - Manage multiple document types in a single ODM instance
 - **Dynamic Switching** - Switch between MongoDB and Redis at runtime
 - **Simplified Document Models** - Define once, use everywhere
 - **Full Async/Sync Support** - Both MongoDB and Redis support sync and async interfaces
@@ -58,12 +59,16 @@ user = User(name="Alice", age=30, email="alice@example.com", skills=["Python"])
 # Async operations (work with both MongoDB and Redis)
 inserted_user = await db.insert_async(user)
 retrieved_user = await db.get_async(inserted_user.id)
+retrieved_user.age = 31
+updated_user = await db.update_async(retrieved_user)
 python_users = await db.find_async({"skills": "Python"})
 all_users = await db.all_async()
 
 # Sync operations (also work with both MongoDB and Redis)
 inserted_user = db.insert(user)
 retrieved_user = db.get(inserted_user.id)
+retrieved_user.age = 31
+updated_user = db.update(retrieved_user)
 python_users = db.find({"skills": "Python"})
 all_users = db.all()
 
@@ -72,6 +77,22 @@ db.switch_backend(BackendType.REDIS)
 redis_user = db.insert(user)  # Now using Redis (sync)
 # or
 redis_user = await db.insert_async(user)  # Redis with async interface
+
+# Multi-model mode (works with all ODMs)
+db = UnifiedMindtraceODM(
+    unified_models={'user': User, 'address': Address},
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="myapp",
+    redis_url="redis://localhost:6379"
+)
+
+# Access models via attributes
+address = await db.address.insert_async(Address(street="123 Main St", city="NYC"))
+user = await db.user.insert_async(User(name="Alice", email="alice@example.com"))
+
+# All operations work per model
+users = await db.user.all_async()
+addresses = await db.address.all_async()
 ```
 
 ### Traditional Way: Database-Specific Models
@@ -120,6 +141,39 @@ redis_db = RedisMindtraceODM(
 )
 ```
 
+## Multi-Model Support
+
+All ODMs now support managing multiple document types in a single instance. This allows you to work with related models (e.g., `User` and `Address`) through a single ODM instance with attribute-based access.
+
+### Usage Pattern
+
+```python
+# Instead of creating separate ODMs for each model:
+user_db = MongoMindtraceODM(model_cls=User, ...)
+address_db = MongoMindtraceODM(model_cls=Address, ...)
+
+# Use multi-model mode:
+db = MongoMindtraceODM(
+    models={'user': User, 'address': Address},
+    db_uri="mongodb://localhost:27017",
+    db_name="myapp"
+)
+
+# Access models via attributes
+await db.user.insert(user)
+await db.address.insert(address)
+users = await db.user.all()
+addresses = await db.address.all()
+```
+
+**Benefits:**
+- **Shared Connection** - All models share the same database connection
+- **Unified Initialization** - All models initialize together
+- **Cleaner Code** - Single ODM instance instead of multiple
+- **Consistent API** - Same operations work across all models
+
+**Note:** In multi-model mode, you must use attribute-based access (`db.user.insert()`). Direct methods (`db.insert()`) will raise a `ValueError` to prevent ambiguity.
+
 ## Available ODMs
 
 ### 1. UnifiedMindtraceODM (Recommended)
@@ -134,7 +188,7 @@ The flagship ODM that provides a unified interface for multiple databases:
 
 **Configuration Options:**
 ```python
-# Option 1: Unified model (recommended)
+# Option 1: Single unified model
 db = UnifiedMindtraceODM(
     unified_model_cls=MyUnifiedDoc,
     mongo_db_uri="mongodb://localhost:27017",
@@ -143,7 +197,17 @@ db = UnifiedMindtraceODM(
     preferred_backend=BackendType.MONGO
 )
 
-# Option 2: Separate models
+# Option 2: Multiple unified models (multi-model mode)
+db = UnifiedMindtraceODM(
+    unified_models={'user': User, 'address': Address},
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="mydb",
+    redis_url="redis://localhost:6379",
+    preferred_backend=BackendType.MONGO
+)
+# Access via: db.user, db.address
+
+# Option 3: Separate models
 db = UnifiedMindtraceODM(
     mongo_model_cls=MyMongoDoc,
     redis_model_cls=MyRedisDoc,
@@ -153,7 +217,7 @@ db = UnifiedMindtraceODM(
     preferred_backend=BackendType.REDIS
 )
 
-# Option 3: Single database
+# Option 4: Single database
 db = UnifiedMindtraceODM(
     unified_model_cls=MyUnifiedDoc,
     mongo_db_uri="mongodb://localhost:27017",
@@ -165,6 +229,8 @@ db = UnifiedMindtraceODM(
 ### 2. MongoMindtraceODM
 
 Specialized MongoDB ODM using Beanie. **Natively async, but supports sync interface too**
+
+#### Single Model Mode
 
 ```python
 from mindtrace.database import MongoMindtraceODM, MindtraceDocument
@@ -185,10 +251,14 @@ db = MongoMindtraceODM(
 
 # Async operations (native)
 user = await db.insert(User(name="Alice", email="alice@example.com"))
+user.age = 31
+updated_user = await db.update(user)
 all_users = await db.all()
 
 # Sync operations (wrapper methods - use from sync code)
 user = db.insert_sync(User(name="Bob", email="bob@example.com"))
+user.age = 32
+updated_user = db.update_sync(user)
 all_users = db.all_sync()
 
 # Supports MongoDB-specific features
@@ -196,9 +266,98 @@ pipeline = [{"$match": {"age": {"$gte": 18}}}]
 results = await db.aggregate(pipeline)
 ```
 
+#### Multi-Model Mode
+
+```python
+from mindtrace.database import MongoMindtraceODM, MindtraceDocument
+
+class Address(MindtraceDocument):
+    street: str
+    city: str
+    
+    class Settings:
+        name = "addresses"
+        use_cache = False
+
+class User(MindtraceDocument):
+    name: str
+    email: str
+    
+    class Settings:
+        name = "users"
+        use_cache = False
+
+# Create ODM with multiple models
+db = MongoMindtraceODM(
+    models={'user': User, 'address': Address},
+    db_uri="mongodb://localhost:27017",
+    db_name="myapp"
+)
+
+# Access models via attribute-based access
+address = await db.address.insert(Address(street="123 Main St", city="NYC"))
+user = await db.user.insert(User(name="Alice", email="alice@example.com"))
+
+# All operations work per model
+users = await db.user.all()
+addresses = await db.address.all()
+```
+
+#### Working with Linked Documents (fetch_links)
+
+MongoDB supports linking documents using Beanie's `Link` type. Use `fetch_links=True` to automatically fetch linked documents:
+
+```python
+from mindtrace.database import Link, MongoMindtraceODM, MindtraceDocument
+from typing import Optional
+
+class Address(MindtraceDocument):
+    street: str
+    city: str
+    
+    class Settings:
+        name = "addresses"
+        use_cache = False
+
+class User(MindtraceDocument):
+    name: str
+    email: str
+    address: Optional[Link[Address]] = None
+    
+    class Settings:
+        name = "users"
+        use_cache = False
+
+db = MongoMindtraceODM(
+    models={'user': User, 'address': Address},
+    db_uri="mongodb://localhost:27017",
+    db_name="myapp"
+)
+
+# Create linked documents
+address = await db.address.insert(Address(street="123 Main St", city="NYC"))
+user = await db.user.insert(User(name="Alice", email="alice@example.com", address=address))
+
+# Fetch with linked documents using fetch_links=True
+user_with_address = await db.user.get(user.id, fetch_links=True)
+print(f"User: {user_with_address.name}, Address: {user_with_address.address.street}")
+
+# Find with linked documents
+users = await db.user.find(User.name == "Alice", fetch_links=True)
+for u in users:
+    if u.address:
+        print(f"{u.name} lives at {u.address.street}")
+
+# Without fetch_links, address will be a Link object (not fetched)
+user_without_links = await db.user.get(user.id)
+# user_without_links.address is a Link object, not the actual Address document
+```
+
 ### 3. RedisMindtraceODM
 
 High-performance Redis ODM with JSON support. **Natively sync, but supports async interface too**
+
+#### Single Model Mode
 
 ```python
 from mindtrace.database import RedisMindtraceODM, MindtraceRedisDocument
@@ -219,22 +378,64 @@ db = RedisMindtraceODM(
 
 # Sync operations (native)
 user = db.insert(User(name="Alice", email="alice@example.com"))
+user.age = 31
+updated_user = db.update(user)
 all_users = db.all()
 
 # Async operations (wrapper methods - use from async code)
 user = await db.insert_async(User(name="Bob", email="bob@example.com"))
+user.age = 32
+updated_user = await db.update_async(user)
 all_users = await db.all_async()
 
 # Supports Redis-specific queries
 users = db.find(User.age >= 18)
 ```
 
+#### Multi-Model Mode
+
+```python
+from mindtrace.database import RedisMindtraceODM, MindtraceRedisDocument
+from redis_om import Field
+
+class Address(MindtraceRedisDocument):
+    street: str = Field(index=True)
+    city: str = Field(index=True)
+    
+    class Meta:
+        global_key_prefix = "myapp"
+
+class User(MindtraceRedisDocument):
+    name: str = Field(index=True)
+    email: str = Field(index=True)
+    address_id: Optional[str] = None
+    
+    class Meta:
+        global_key_prefix = "myapp"
+
+# Create ODM with multiple models
+db = RedisMindtraceODM(
+    models={'user': User, 'address': Address},
+    redis_url="redis://localhost:6379"
+)
+
+# Access models via attribute-based access
+address = db.address.insert(Address(street="123 Main St", city="NYC"))
+user = db.user.insert(User(name="Alice", email="alice@example.com", address_id=address.id))
+
+# All operations work per model
+users = db.user.all()
+addresses = await db.address.all_async()
+```
+
 ### 4. RegistryMindtraceODM
 
 Flexible ODM using the Mindtrace Registry system, supporting local storage, GCP, and other storage options:
 
+#### Single Model Mode
+
 ```python
-from mindtrace.database import RegistryMindtraceODM
+from mindtrace.database import RegistryMindtraceODM, DocumentNotFoundError
 from mindtrace.registry import Registry, Archiver
 from typing import Any, Type
 from pydantic import BaseModel
@@ -258,9 +459,51 @@ Registry.register_default_materializer(User, UserArchiver)
 db = RegistryMindtraceODM(model_cls=User)
 
 user = User(name="John Doe", email="john.doe@example.com")
-user_id = db.insert(user)
+inserted_user = db.insert(user)
 
-user = db.get(user_id)
+# Update the user
+inserted_user.name = "John Smith"
+updated_user = db.update(inserted_user)
+
+# Retrieve by ID (raises DocumentNotFoundError if not found)
+try:
+    user = db.get(inserted_user.id)
+except DocumentNotFoundError:
+    print("User not found")
+```
+
+#### Multi-Model Mode
+
+```python
+from mindtrace.database import RegistryMindtraceODM
+from mindtrace.registry import Registry, Archiver
+from typing import Any, Type
+from pydantic import BaseModel
+
+class User(BaseModel):
+    name: str
+    email: str
+
+class Address(BaseModel):
+    street: str
+    city: str
+
+# Register materializers for both models
+Registry.register_default_materializer(User, UserArchiver)
+Registry.register_default_materializer(Address, AddressArchiver)
+
+# Create ODM with multiple models
+db = RegistryMindtraceODM(
+    models={'user': User, 'address': Address}
+)
+
+# Access models via attribute-based access
+address = db.address.insert(Address(street="123 Main St", city="NYC"))
+user = db.user.insert(User(name="John Doe", email="john@example.com"))
+
+# All operations work per model
+users = db.user.all()
+addresses = db.address.all()
 ```
 
 **With GCP Storage:**
@@ -296,9 +539,14 @@ gcp_registry_backend = GCPRegistryBackend(
 db = RegistryMindtraceODM(model_cls=User, backend=gcp_registry_backend)
 
 user = User(name="John Doe", email="john.doe@example.com")
-user_id = db.insert(user)
+inserted_user = db.insert(user)
 
-user = db.get(user_id)
+# Update the user
+inserted_user.name = "John Smith"
+updated_user = db.update(inserted_user)
+
+# Retrieve by ID
+user = db.get(inserted_user.id)
 ```
 
 ## API Reference
@@ -316,6 +564,13 @@ inserted_doc = await db.insert_async(doc)
 # Get document by ID
 doc = await db.get_async("doc_id")
 
+# Get document with linked documents (MongoDB only)
+doc_with_links = await db.get_async("doc_id", fetch_links=True)
+
+# Update document
+doc.name = "Updated Name"
+updated_doc = await db.update_async(doc)
+
 # Delete document
 await db.delete_async("doc_id")
 
@@ -324,6 +579,9 @@ all_docs = await db.all_async()
 
 # Find documents with filters
 results = await db.find_async({"name": "Alice"})
+
+# Find documents with linked documents (MongoDB only)
+results_with_links = await db.find_async({"name": "Alice"}, fetch_links=True)
 ```
 
 #### Sync Operations (Works with both MongoDB and Redis)
@@ -334,6 +592,10 @@ inserted_doc = db.insert(doc)
 
 # Get document by ID
 doc = db.get("doc_id")
+
+# Update document
+doc.name = "Updated Name"
+updated_doc = db.update(doc)
 
 # Delete document
 db.delete("doc_id")
@@ -349,6 +611,7 @@ results = db.find({"name": "Alice"})
 - **MongoDB**: Sync methods use wrapper functions that run async code in an event loop
 - **Redis**: Async methods run sync operations in a thread pool to avoid blocking the event loop
 - **Unified ODM**: Automatically routes to the appropriate method based on the active database
+- **Document IDs**: All backends provide a consistent `id` attribute on returned documents (MongoDB uses `id`, Redis uses `pk` internally but exposes it as `id`)
 
 ### Sync/Async Compatibility
 
@@ -391,9 +654,26 @@ unified_model = db.get_unified_model()
 
 #### MongoDB (through UnifiedMindtraceODM)
 ```python
+from mindtrace.database import Link
+
 # MongoDB-style queries
 users = await db.find_async({"age": {"$gte": 18}})
 users = await db.find_async({"skills": {"$in": ["Python", "JavaScript"]}})
+
+# Fetch linked documents using fetch_links=True
+user = await db.get_async(user_id, fetch_links=True)
+if user.address:
+    print(f"User lives at {user.address.street}")
+
+# Find with linked documents
+users = await db.find_async({"name": "Alice"}, fetch_links=True)
+for u in users:
+    if u.address:
+        print(f"{u.name} - {u.address.city}")
+
+# Using Beanie expressions with links (get raw model first)
+UserMongo = db.get_raw_model()
+users = await db.find_async(UserMongo.name == "Alice", fetch_links=True)
 
 # Aggregation pipelines (when using MongoDB)
 if db.get_current_backend_type() == BackendType.MONGO:
@@ -444,7 +724,34 @@ db = UnifiedMindtraceODM(
 
 ## Error Handling
 
-The module provides comprehensive error handling:
+The module provides comprehensive error handling with consistent exceptions across all backends:
+
+```python
+from mindtrace.database import DocumentNotFoundError, DuplicateInsertError
+
+try:
+    user = await db.get_async("non_existent_id")
+except DocumentNotFoundError as e:
+    print(f"User not found: {e}")
+
+try:
+    await db.insert_async(duplicate_user)
+except DuplicateInsertError as e:
+    print(f"User already exists: {e}")
+
+# All backends raise DocumentNotFoundError (not KeyError) for consistency
+try:
+    user = db.get("missing_id")
+except DocumentNotFoundError:
+    print("Document not found")
+
+# Multi-model mode errors
+try:
+    db.insert(user)  # In multi-model mode, this raises ValueError
+except ValueError as e:
+    print(f"Use db.model_name.insert() instead: {e}")
+```
+
 
 ```python
 from mindtrace.database import DocumentNotFoundError, DuplicateInsertError

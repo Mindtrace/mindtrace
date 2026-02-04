@@ -417,7 +417,7 @@ class TestHardwareManagerIntegration:
             assert camera.is_connected
 
             # Basic operations
-            image = camera.capture()
+            image = camera.capture(output_format="numpy")
             assert image is not None
             assert isinstance(image, np.ndarray)
 
@@ -440,7 +440,7 @@ class TestHardwareManagerIntegration:
             assert camera.is_connected
 
             # Basic operations
-            image = await camera.capture()
+            image = await camera.capture(output_format="numpy")
             assert image is not None
             assert isinstance(image, np.ndarray)
 

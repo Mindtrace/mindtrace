@@ -1,0 +1,194 @@
+# =============================================================================
+# Mindtrace Camera Service - Docker Compose
+# =============================================================================
+# Usage:
+#   docker-compose -f docker-compose.camera.yml up                    # OpenCV only
+#   docker-compose -f docker-compose.camera.yml up camera-basler      # With Basler
+#   docker-compose -f docker-compose.camera.yml --profile full up     # Full stack
+# =============================================================================
+
+networks:
+  camera-net:
+    driver: bridge
+
+volumes:
+  camera-data:
+  camera-logs:
+  camera-config:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Camera Service - OpenCV only (lightweight)
+  # ---------------------------------------------------------------------------
+  camera-opencv:
+    build:
+      context: ../../../..
+      dockerfile: mindtrace/hardware/docker/camera/Dockerfile
+      args:
+        INSTALL_BASLER: "false"
+        INSTALL_GENICAM: "false"
+    image: mindtrace-camera:opencv
+    container_name: mindtrace-camera-opencv
+    hostname: camera-opencv
+    restart: unless-stopped
+
+    # Privileged mode for USB camera access
+    privileged: true
+
+    # Device access for USB cameras
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+
+    # Port mappings
+    ports:
+      - "${CAMERA_API_PORT:-8002}:8002"
+
+    # Environment from .env file
+    env_file:
+      - .env
+
+    # Additional environment overrides
+    environment:
+      - CAMERA_API_HOST=0.0.0.0
+      - CAMERA_API_PORT=8002
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=false
+      - MINDTRACE_HW_CAMERA_GENICAM_ENABLED=false
+
+    # Volumes
+    volumes:
+      - camera-data:/app/data
+      - camera-logs:/app/logs
+      - camera-config:/app/config
+      - /dev/bus/usb:/dev/bus/usb:rw
+
+    networks:
+      - camera-net
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8002/health', timeout=5).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Camera Service - With Basler SDK (industrial GigE)
+  # ---------------------------------------------------------------------------
+  camera-basler:
+    profiles: ["basler"]
+    build:
+      context: ../../../..
+      dockerfile: mindtrace/hardware/docker/camera/Dockerfile
+      args:
+        INSTALL_BASLER: "true"
+        INSTALL_GENICAM: "false"
+    image: mindtrace-camera:basler
+    container_name: mindtrace-camera-basler
+    hostname: camera-basler
+    restart: unless-stopped
+
+    # Privileged for hardware access
+    privileged: true
+
+    # Host network mode for GigE camera discovery
+    network_mode: host
+
+    # Device access
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+    # Environment from .env file
+    env_file:
+      - .env
+
+    # Additional environment overrides
+    environment:
+      - CAMERA_API_HOST=0.0.0.0
+      - CAMERA_API_PORT=8002
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_GENICAM_ENABLED=false
+
+    # Volumes
+    volumes:
+      - camera-data:/app/data
+      - camera-logs:/app/logs
+      - camera-config:/app/config
+      - /dev/bus/usb:/dev/bus/usb:rw
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8002/health', timeout=5).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Camera Service - Full stack (Basler + GenICam)
+  # ---------------------------------------------------------------------------
+  camera-full:
+    profiles: ["full"]
+    build:
+      context: ../../../..
+      dockerfile: mindtrace/hardware/docker/camera/Dockerfile
+      args:
+        INSTALL_BASLER: "true"
+        INSTALL_GENICAM: "true"
+    image: mindtrace-camera:full
+    container_name: mindtrace-camera-full
+    hostname: camera-full
+    restart: unless-stopped
+
+    privileged: true
+    network_mode: host
+
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+    # Environment from .env file
+    env_file:
+      - .env
+
+    # Additional environment overrides
+    environment:
+      - CAMERA_API_HOST=0.0.0.0
+      - CAMERA_API_PORT=8002
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_GENICAM_ENABLED=true
+
+    # Volumes
+    volumes:
+      - camera-data:/app/data
+      - camera-logs:/app/logs
+      - camera-config:/app/config
+      - /dev/bus/usb:/dev/bus/usb:rw
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8002/health', timeout=5).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
