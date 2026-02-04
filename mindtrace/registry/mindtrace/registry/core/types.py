@@ -53,6 +53,15 @@ class VerifyLevel(str, Enum):
     FULL = "full"
 
 
+class CleanupState(str, Enum):
+    """Cleanup status for best-effort artifact cleanup in remote MVCC flows."""
+
+    OK = "ok"
+    ORPHANED = "orphaned"
+    UNKNOWN = "unknown"
+    NOT_APPLICABLE = "n/a"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Backend Operation Results
 # ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +86,7 @@ class OpResult:
     error: str | None = None
     message: str | None = None
     path: str | None = None
+    cleanup: CleanupState | None = None
     exception: Exception | None = None  # Original exception for re-raising in single-item ops
 
     @property
@@ -104,6 +114,7 @@ class OpResult:
         *,
         metadata: dict | None = None,
         path: str | None = None,
+        cleanup: CleanupState | None = None,
         status: str = "ok",
     ) -> "OpResult":
         """Create a successful result."""
@@ -114,6 +125,7 @@ class OpResult:
             status=status,
             metadata=metadata,
             path=path,
+            cleanup=cleanup,
         )
 
     @classmethod
@@ -125,6 +137,7 @@ class OpResult:
         *,
         error_type: str | None = None,
         message: str | None = None,
+        cleanup: CleanupState | None = None,
     ) -> "OpResult":
         """Create a failed result from an exception or explicit error_type/message.
 
@@ -141,28 +154,32 @@ class OpResult:
             status="error",
             error=error_type,
             message=message,
+            cleanup=cleanup,
             exception=exception,
         )
 
     @classmethod
-    def skipped(cls, name: str, version: str) -> "OpResult":
+    def skipped(cls, name: str, version: str, *, cleanup: CleanupState | None = None) -> "OpResult":
         """Create a skipped result (e.g., version already exists with on_conflict='skip')."""
-        return cls(name=name, version=version, ok=True, status="skipped")
+        return cls(name=name, version=version, ok=True, status="skipped", cleanup=cleanup)
 
     @classmethod
-    def overwritten(cls, name: str, version: str) -> "OpResult":
+    def overwritten(cls, name: str, version: str, *, cleanup: CleanupState | None = None) -> "OpResult":
         """Create an overwritten result."""
-        return cls(name=name, version=version, ok=True, status="overwritten")
+        return cls(name=name, version=version, ok=True, status="overwritten", cleanup=cleanup)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to legacy dict format for backwards compatibility."""
         if self.is_error:
-            return {"status": "error", "error": self.error, "message": self.message}
-        result: Dict[str, Any] = {"status": self.status}
-        if self.metadata is not None:
-            result["metadata"] = self.metadata
-        if self.path is not None:
-            result["path"] = self.path
+            result: Dict[str, Any] = {"status": "error", "error": self.error, "message": self.message}
+        else:
+            result = {"status": self.status}
+            if self.metadata is not None:
+                result["metadata"] = self.metadata
+            if self.path is not None:
+                result["path"] = self.path
+        if self.cleanup is not None:
+            result["cleanup"] = self.cleanup.value
         return result
 
 
