@@ -11,6 +11,7 @@ from poseidon.components_v2.core.button import button
 from poseidon.state.auth import AuthState
 from poseidon.state.organization_management import OrganizationManagementState
 from poseidon.state.user_management import UserManagementState
+from poseidon.backend.database.models.enums import OrgRole
 
 
 def user_management_table():
@@ -34,14 +35,23 @@ def user_management_table():
                 ),
                 rx.fragment(),
             ),
-            # Project assignments column
+            # Project assignments column - only show if user projects can be managed
             rx.table.cell(
-                button(
-                    text="Manage Projects",
-                    icon=rx.icon("folder-dot"),
-                    on_click=lambda: UserManagementState.open_project_management_dialog(user["id"]),
-                    variant="primary",
-                    size="sm",
+                rx.cond(
+                    user["org_role"] != OrgRole.ADMIN,
+                    button(
+                        text="Manage Projects",
+                        icon=rx.icon("folder-dot"),
+                        on_click=lambda: UserManagementState.open_project_management_dialog(user["id"]),
+                        variant="primary",
+                        size="sm",
+                    ),
+                    rx.text(
+                        "Auto-managed",
+                        font_size="12px",
+                        color=rx.color("gray", 11),
+                        style={"font-style": "italic"}
+                    )
                 ),
                 max_width="200px",
             ),
@@ -61,15 +71,6 @@ def user_management_table():
                             UserManagementState.can_edit_user(user["id"]),
                             edit_user_popup(user),
                             None,
-                        ),
-                        # Project assignment button
-                        rx.button(
-                            "Assign Project",
-                            size="1",
-                            color_scheme="blue",
-                            variant="surface",
-                            cursor="pointer",
-                            on_click=lambda: UserManagementState.open_assignment_dialog(user["id"]),
                         ),
                         rx.cond(
                             UserManagementState.can_deactivate_user(user["id"]),

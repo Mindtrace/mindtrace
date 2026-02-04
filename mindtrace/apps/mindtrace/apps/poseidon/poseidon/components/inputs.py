@@ -7,6 +7,7 @@ while keeping the exact styling patterns.
 import reflex as rx
 
 from .mindtrace_forms import input_mindtrace
+from poseidon.backend.database.models.enums import OrgRole
 
 # Removed: text_input_with_label - use mindtrace_forms.input_with_label_mindtrace instead
 
@@ -55,7 +56,7 @@ def textarea_with_label(
 def role_filter_select(value: str = "", on_change=None, roles: list = None):
     """Role filter select - keeps Buridan UI styling."""
     if roles is None:
-        roles = ["all_roles", "user", "admin", "super_admin"]
+        roles = ["all_roles", OrgRole.USER, OrgRole.ADMIN, OrgRole.SUPER_ADMIN]
 
     return rx.select(
         roles,

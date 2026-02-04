@@ -134,12 +134,13 @@ class UserManagementService:
             if str(user.organization.id) != admin_organization_id or str(project.organization.id) != admin_organization_id:
                 raise ValueError("Access denied: User and project must be in your organization.")
         
-        # Remove user from project
-        await user.fetch_all_links()
-        user.remove_project(project)
-        await user.save()
+        # Remove user from project using repository method
+        updated_user = await UserRepository.remove_from_project(user_id, project_id)
         
-        return {"success": True, "message": "User removed from project"}
+        if updated_user:
+            return {"success": True, "message": "User removed from project"}
+        else:
+            return {"success": False, "error": "Failed to remove user from project"}
     
     @staticmethod
     async def update_user_org_role(

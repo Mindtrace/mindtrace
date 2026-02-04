@@ -1,13 +1,15 @@
 from .user import User
 from .organization import Organization
 from .project import Project
+from .project_assignment import ProjectAssignment
 from .image import Image
 from .camera import Camera
 from .model import Model
 from .model_deployment import ModelDeployment
 from .enums import (
     SubscriptionPlan, 
-    OrgRole, 
+    OrgRole,
+    ProjectRole, 
     ProjectStatus, 
     ProjectType,
     ModelValidationStatus,
@@ -25,6 +27,7 @@ __all__ = [
     "User",
     "Organization", 
     "Project",
+    "ProjectAssignment",
     "Image",
     "Camera",
     "Model",
@@ -34,6 +37,7 @@ __all__ = [
     "ScanClassification",
     "SubscriptionPlan",
     "OrgRole",
+    "ProjectRole",
     "ProjectStatus", 
     "ProjectType",
     "ModelValidationStatus",

@@ -1,9 +1,10 @@
 import reflex as rx
 from typing import List, Dict, Optional
 from poseidon.backend.services.user_management_service import UserManagementService
-from poseidon.backend.database.models.enums import OrgRole
+from poseidon.backend.database.models.enums import OrgRole, ProjectRole
 from poseidon.state.base import BasePaginationState, RoleBasedAccessMixin
 from poseidon.state.models import UserRoles
+from poseidon.state.auth import AuthState
 
 
 class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
@@ -75,7 +76,7 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
     @rx.var
     def available_project_roles(self) -> List[str]:
         """Get available project roles"""
-        return ["viewer", "editor", "admin"]
+        return [ProjectRole.INSPECTOR, ProjectRole.VIEWER]
     
     @rx.var
     def total_users_count(self) -> int:
@@ -99,9 +100,17 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             auth_state = await self.get_auth_state()
             
             if auth_state.is_super_admin:
-                # Super admin sees all users across all organizations
+                # Super admin sees all users across all organizations (EXCEPT other super admins)
                 from poseidon.backend.database.repositories.user_repository import UserRepository
-                users = await UserRepository.get_all_users()
+                from poseidon.backend.database.models.enums import OrgRole
+                all_users = await UserRepository.get_all_users()
+                
+                # SECURITY: Filter out all super admins - they should not appear in user management
+                users = []
+                for user in all_users:
+                    if user.org_role == OrgRole.SUPER_ADMIN:
+                        continue  # Skip all super admins (including self)
+                    users.append(user)
                 
                 # Only fetch organization links for better performance
                 for user in users:
@@ -122,27 +131,36 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                     for user in users
                 ]
             else:
-                # Regular admin sees only their organization's users
+                # Regular admin sees only their organization's users (excluding super admins)
                 from poseidon.backend.database.repositories.user_repository import UserRepository
-                users = await UserRepository.get_by_organization(auth_state.user_organization_id)
+                from poseidon.backend.database.models.enums import OrgRole
+                # Get users in admin's organization, excluding super admins
+                all_users = await UserRepository.get_by_organization(auth_state.user_organization_id)
+                
+                # CRITICAL SECURITY: Filter out all super admins - they should NEVER be visible to regular admins
+                users = []
+                for user in all_users:
+                    if user.org_role == OrgRole.SUPER_ADMIN:
+                        continue  # Skip super admin completely
+                    users.append(user)
             
-            for user in users:
+                for user in users:
                     if user.organization:
                         await user.fetch_link("organization")
                 
-            self.organization_users = [
-                {
-                    "id": str(user.id),
-                    "username": user.username,
-                    "email": user.email,
-                    "organization_id": str(user.organization.id) if user.organization else "",
-                    "org_role": user.org_role,
-                    "is_active": user.is_active,
-                    "created_at": user.created_at,
-                    "updated_at": user.updated_at
-                }
-                for user in users
-            ]
+                self.organization_users = [
+                    {
+                        "id": str(user.id),
+                        "username": user.username,
+                        "email": user.email,
+                        "organization_id": str(user.organization.id) if user.organization else "",
+                        "org_role": user.org_role,
+                        "is_active": user.is_active,
+                        "created_at": user.created_at,
+                        "updated_at": user.updated_at
+                    }
+                    for user in users
+                ]
             
             self.filter_users()
             return True
@@ -173,6 +191,7 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                     await project.fetch_link("organization")
                     project._organization_loaded = True
                 
+            # Only include active projects for assignment
             self.available_projects = [
                 {
                     "id": str(project.id),
@@ -181,6 +200,7 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                     "organization_name": project.organization.name if project.organization else "Unknown"
                 }
                 for project in projects
+                if project.status == "active"  # Only active projects
             ]
             return True
             
@@ -313,24 +333,7 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             self.project_management_user_name = user.get("username", "")
             
             # Load user's project assignments
-            try:
-                from poseidon.backend.database.repositories.user_repository import UserRepository
-                user_obj = await UserRepository.get_by_id(user_id)
-                if user_obj:
-                    await user_obj.fetch_all_links()
-                    self.project_management_user_assignments = [
-                        {
-                            "project_id": str(project.id),
-                            "project_name": project.name,
-                            "roles": ["user"]  # Default role for now
-                        }
-                        for project in user_obj.projects
-                    ]
-                else:
-                    self.project_management_user_assignments = []
-            except Exception as e:
-                self.set_error(f"Failed to load user project assignments: {str(e)}")
-                self.project_management_user_assignments = []
+            await self._load_user_project_assignments(user_id)
             
             self.project_management_dialog_open = True
             self.clear_messages()
@@ -342,6 +345,34 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         self.project_management_user_id = ""
         self.project_management_user_name = ""
         self.project_management_user_assignments = []
+
+    async def _load_user_project_assignments(self, user_id: str):
+        """Helper method to load user project assignments"""
+        try:
+            from poseidon.backend.database.repositories.user_repository import UserRepository
+            from poseidon.backend.database.models.project_assignment import ProjectAssignment
+            
+            user_obj = await UserRepository.get_by_id(user_id)
+            if user_obj:
+                # Get project assignments with roles
+                assignments = await ProjectAssignment.find(
+                    ProjectAssignment.user.id == user_obj.id
+                ).to_list()
+                
+                self.project_management_user_assignments = []
+                for assignment in assignments:
+                    await assignment.fetch_all_links()
+                    self.project_management_user_assignments.append({
+                        "project_id": str(assignment.project.id),
+                        "project_name": assignment.project.name if assignment.project else "Unknown Project",
+                        "roles": [assignment.role.value],  # Keep as list for compatibility
+                        "role_display": f"Role: {assignment.role.value}"  # Add formatted display
+                    })
+            else:
+                self.project_management_user_assignments = []
+        except Exception as e:
+            self.set_error(f"Failed to load user project assignments: {str(e)}")
+            self.project_management_user_assignments = []
 
     # --- Form Management Methods ---
     def clear_add_user_form(self):
@@ -459,7 +490,8 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             result = await UserManagementService.update_user_org_role(
                 self.edit_user_id,
                 self.edit_user_role,
-                org_id
+                org_id,
+                auth_state.user_id
             )
             
             if result.get("success"):
@@ -480,11 +512,12 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         """Activate a user"""
         async def activate_user_data():
             org_id = await self.get_admin_organization_id()
-            if not org_id:
+            auth_state = await self.get_auth_state()
+            if not org_id or not auth_state.user_id:
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
-            result = await UserManagementService.activate_user(user_id, org_id)
+            result = await UserManagementService.activate_user(user_id, org_id, auth_state.user_id)
             
             if result.get("success"):
                 await self.load_organization_users()
@@ -502,11 +535,12 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         """Deactivate a user"""
         async def deactivate_user_data():
             org_id = await self.get_admin_organization_id()
-            if not org_id:
+            auth_state = await self.get_auth_state()
+            if not org_id or not auth_state.user_id:
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
-            result = await UserManagementService.deactivate_user(user_id, org_id)
+            result = await UserManagementService.deactivate_user(user_id, org_id, auth_state.user_id)
             
             if result.get("success"):
                 await self.load_organization_users()
@@ -524,11 +558,12 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         """Delete a user"""
         async def delete_user_data():
             org_id = await self.get_admin_organization_id()
-            if not org_id:
+            auth_state = await self.get_auth_state()
+            if not org_id or not auth_state.user_id:
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
-            result = await UserManagementService.delete_user(user_id, org_id)
+            result = await UserManagementService.delete_user(user_id, org_id, auth_state.user_id)
             
             if result.get("success"):
                 await self.load_organization_users()
@@ -560,12 +595,19 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
+            # Get current admin user ID
+            auth_state = await self.get_auth_state()
+            if not auth_state.user_id:
+                self.set_error("Access denied: Admin privileges required")
+                return False
+            
             # Call the user management service to assign user to project
             result = await UserManagementService.assign_user_to_project(
                 user_id=self.assignment_user_id,
                 project_id=project["id"],
-                roles=self.assignment_roles if self.assignment_roles else ["user"],
-                admin_organization_id=org_id
+                roles=self.assignment_roles if self.assignment_roles else ["viewer"],
+                admin_organization_id=org_id,
+                admin_user_id=auth_state.user_id
             )
             
             if result.get("success"):
@@ -584,9 +626,10 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
     async def remove_user_from_project(self, user_id: str, project_id: str):
         """Remove user from project"""
         async def remove_user():
-            # Get admin organization ID
+            # Get admin organization ID and user ID
             org_id = await self.get_admin_organization_id()
-            if not org_id:
+            auth_state = await self.get_auth_state()
+            if not org_id or not auth_state.user_id:
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
@@ -594,11 +637,15 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             result = await UserManagementService.remove_user_from_project(
                 user_id=user_id,
                 project_id=project_id,
-                admin_organization_id=org_id
+                admin_organization_id=org_id,
+                admin_user_id=auth_state.user_id
             )
             
             if result.get("success"):
                 await self.load_organization_users()
+                # Also reload the project assignments for the current dialog
+                if self.project_management_user_id:
+                    await self._load_user_project_assignments(self.project_management_user_id)
                 return True
             else:
                 self.set_error(result.get("error", "Failed to remove user from project"))
@@ -612,13 +659,79 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
     # --- Utility Methods ---
     def can_edit_user(self, user_id: str) -> bool:
         """Check if current user can edit the specified user"""
-        # TODO: Implement proper permission check
-        return True
+        try:
+            auth_state = self.get_state(AuthState, allow_missing=True)
+            if not auth_state or not (auth_state.is_admin or auth_state.is_super_admin):
+                return False
+            
+            # Find the target user to check their role
+            target_user = next((u for u in self.organization_users if u["id"] == user_id), None)
+            if not target_user:
+                return False
+            
+            # Regular admins cannot edit super admin users
+            if auth_state.is_admin and not auth_state.is_super_admin:
+                if OrgRole.is_super_admin(target_user.get("org_role")):
+                    return False
+            
+            return True
+        except:
+            return False
+    
+    def can_manage_user_projects(self, user_id: str) -> bool:
+        """Check if user's projects can be manually managed
+        
+        IMMUTABLE BUSINESS RULE: Organization admins are auto-assigned to all projects 
+        and cannot be manually managed by ANYONE (including super admins).
+        """
+        try:
+            # Get current auth state for context
+            auth_state = self.get_state(AuthState, allow_missing=True)
+            
+            target_user = next((u for u in self.organization_users if u["id"] == user_id), None)
+            if not target_user:
+                # Try in filtered_users as fallback
+                target_user = next((u for u in self.filtered_users if u["id"] == user_id), None)
+                if not target_user:
+                    return False
+            
+            # BUSINESS RULE: Org admins are auto-managed, even super admins cannot override this
+            if OrgRole.is_admin(target_user.get("org_role")):
+                return False
+            
+            # Additional security checks for self-management
+            if auth_state and auth_state.user_id == user_id:
+                # Regular admins cannot manage their own projects
+                if auth_state.is_admin and not auth_state.is_super_admin:
+                    return False
+                # Super admins cannot manage their own projects either (they're system-level users)
+                if auth_state.is_super_admin:
+                    return False
+            
+            return True
+        except Exception as e:
+            return False
 
     def can_deactivate_user(self, user_id: str) -> bool:
         """Check if current user can deactivate the specified user"""
-        # TODO: Implement proper permission check
-        return True
+        try:
+            auth_state = self.get_state(AuthState, allow_missing=True)
+            if not auth_state or not (auth_state.is_admin or auth_state.is_super_admin):
+                return False
+            
+            # Find the target user to check their role
+            target_user = next((u for u in self.organization_users if u["id"] == user_id), None)
+            if not target_user:
+                return False
+            
+            # Regular admins cannot deactivate super admin users
+            if auth_state.is_admin and not auth_state.is_super_admin:
+                if OrgRole.is_super_admin(target_user.get("org_role")):
+                    return False
+            
+            return True
+        except:
+            return False
 
     def get_user_role_display(self, user_id: str) -> str:
         """Get user role display name"""
@@ -634,5 +747,15 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         if user:
             return "Active" if user.get("is_active", False) else "Inactive"
         return "Unknown"
+
+    def can_remove_user_from_project(self, user_id: str, project_id: str) -> bool:
+        """Check if user can be removed from a project"""
+        # Org admins cannot be removed from projects (auto-managed)
+        return self.can_manage_user_projects(user_id)
+
+    def can_change_user_project_role(self, user_id: str, project_id: str) -> bool:
+        """Check if user's project role can be changed"""
+        # Org admins' roles cannot be changed (always viewer)
+        return self.can_manage_user_projects(user_id)
 
  

@@ -1,6 +1,8 @@
 from poseidon.backend.database.models.user import User
 from poseidon.backend.database.models.organization import Organization
 from poseidon.backend.database.models.project import Project
+from poseidon.backend.database.models.project_assignment import ProjectAssignment
+from poseidon.backend.database.models.enums import ProjectRole, OrgRole
 from poseidon.backend.database.init import initialize_database
 from typing import Optional, List
 
@@ -146,7 +148,7 @@ class UserRepository:
                 return []
             users = await User.find(
                 User.organization.id == organization.id,
-                User.org_role == "admin",
+                User.org_role == OrgRole.ADMIN,
                 User.is_active == True
             ).to_list()
             for user in users:
@@ -182,15 +184,48 @@ class UserRepository:
             if not user or not project:
                 return None
             
-            # Check if user is already assigned to this project
-            project_already_assigned = any(str(p.id) == project_id for p in user.projects)
+            # Fetch all links to access id properties
+            await user.fetch_all_links()
+            await project.fetch_all_links()
             
-            if not project_already_assigned:
-                user.projects.append(project)
-                await user.save()
+            # Determine the role - default to viewer if not specified
+            role = ProjectRole.VIEWER
+            if roles and len(roles) > 0:
+                role_str = roles[0].lower()
+                if role_str == "inspector":
+                    role = ProjectRole.INSPECTOR
+            
+            # BUSINESS RULE: Organization admins are always viewers in their org projects
+            # This cannot be changed, even by super admins
+            if (user.org_role == OrgRole.ADMIN and 
+                user.organization and project.organization and
+                str(user.organization.id) == str(project.organization.id)):
+                role = ProjectRole.VIEWER  # Force viewer role for org admins
+            
+            # Check if assignment already exists
+            existing_assignment = await ProjectAssignment.find_one(
+                ProjectAssignment.user.id == user.id,
+                ProjectAssignment.project.id == project.id
+            )
+            
+            if existing_assignment:
+                # Update existing assignment role
+                existing_assignment.role = role
+                await existing_assignment.save()
             else:
-                # User already assigned to project
-                pass
+                # Create new assignment
+                assignment = ProjectAssignment(
+                    user=user,
+                    project=project,
+                    role=role
+                )
+                await assignment.insert()
+                
+                # Also add to legacy projects list for backward compatibility
+                project_already_assigned = any(str(p.id) == project_id for p in user.projects)
+                if not project_already_assigned:
+                    user.projects.append(project)
+                    await user.save()
             
             return user
         except Exception as e:
@@ -210,7 +245,26 @@ class UserRepository:
             if not user or not project:
                 return None
             
-            # Remove project from user's projects list
+            # Fetch all links to access id properties
+            await user.fetch_all_links()
+            await project.fetch_all_links()
+            
+            # BUSINESS RULE: Organization admins cannot be removed from projects in their organization
+            # This ensures organizational oversight and is immutable by design
+            if (user.org_role == OrgRole.ADMIN and 
+                user.organization and project.organization and
+                str(user.organization.id) == str(project.organization.id)):
+                raise ValueError("Organization admins cannot be removed from projects in their organization")
+            
+            # Remove ProjectAssignment
+            assignment = await ProjectAssignment.find_one(
+                ProjectAssignment.user.id == user.id,
+                ProjectAssignment.project.id == project.id
+            )
+            if assignment:
+                await assignment.delete()
+            
+            # Remove from legacy projects list
             user.projects = [p for p in user.projects if str(p.id) != project_id]
             await user.save()
             
@@ -275,3 +329,22 @@ class UserRepository:
         except:
             pass
         return False 
+    
+    @staticmethod
+    async def find_by_role(role: str) -> List[User]:
+        """Find all users by organization role
+        
+        Args:
+            role: Organization role to search for
+            
+        Returns:
+            List of users with the specified role
+        """
+        await UserRepository._ensure_init()
+        try:
+            users = await User.find(User.org_role == role).to_list()
+            for user in users:
+                await user.fetch_all_links()
+            return users
+        except:
+            return []

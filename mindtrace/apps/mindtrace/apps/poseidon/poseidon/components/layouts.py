@@ -11,6 +11,7 @@ import reflex as rx
 
 from poseidon.state.auth import AuthState
 from poseidon.styles.global_styles import THEME
+from poseidon.backend.database.models.enums import OrgRole
 
 
 def page_container(*children, **props) -> rx.Component:
@@ -27,7 +28,7 @@ def authenticated_page_wrapper(content_func, required_role=None) -> rx.Component
     """Wrapper for pages that require authentication with optional role checking."""
     if required_role:
         # Map required roles to AuthState properties
-        if required_role == "admin":
+        if required_role == OrgRole.ADMIN:
             return rx.box(
                 rx.cond(
                     AuthState.is_authenticated & AuthState.is_admin,
@@ -35,7 +36,7 @@ def authenticated_page_wrapper(content_func, required_role=None) -> rx.Component
                     rx.box("Redirecting...", on_mount=AuthState.redirect_if_not_admin),
                 )
             )
-        elif required_role == "super_admin":
+        elif required_role == OrgRole.SUPER_ADMIN:
             return rx.box(
                 rx.cond(
                     AuthState.is_authenticated & AuthState.is_super_admin,

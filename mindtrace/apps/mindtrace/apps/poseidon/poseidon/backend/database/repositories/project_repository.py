@@ -1,5 +1,7 @@
 from poseidon.backend.database.models.project import Project
 from poseidon.backend.database.models.organization import Organization
+from poseidon.backend.database.models.project_assignment import ProjectAssignment
+from poseidon.backend.database.models.enums import OrgRole, ProjectRole
 from poseidon.backend.database.init import initialize_database
 from typing import Optional, List
 
@@ -28,7 +30,13 @@ class ProjectRepository:
             project_data["owner"] = user
         
         project = Project(**project_data)
-        return await project.insert()
+        saved_project = await project.insert()
+        
+        # Auto-assign all org admins as viewers to the new project
+        if saved_project and saved_project.organization:
+            await ProjectRepository._auto_assign_org_admins(saved_project)
+        
+        return saved_project
     
     @staticmethod
     async def get_by_id(project_id: str) -> Optional[Project]:
@@ -221,4 +229,36 @@ class ProjectRepository:
         """Helper method to get owner ID from project"""
         if project.owner:
             return str(project.owner.id)
-        return None 
+        return None
+    
+    @staticmethod
+    async def _auto_assign_org_admins(project: Project):
+        """Auto-assign all organization admins as viewers to a project.
+        
+        BUSINESS RULE: Organization admins are automatically assigned as viewers 
+        to all projects in their organization. This assignment is immutable and 
+        cannot be removed or changed, even by super admins, to ensure organizational oversight.
+        """
+        from poseidon.backend.database.models.user import User
+        
+        # Find all admins in the organization
+        org_admins = await User.find(
+            User.organization.id == project.organization.id,
+            User.org_role == OrgRole.ADMIN
+        ).to_list()
+        
+        # Create ProjectAssignment for each admin as viewer
+        for admin in org_admins:
+            # Check if assignment already exists
+            existing = await ProjectAssignment.find_one(
+                ProjectAssignment.user.id == admin.id,
+                ProjectAssignment.project.id == project.id
+            )
+            if not existing:
+                # Create immutable viewer assignment for org admin
+                assignment = ProjectAssignment(
+                    user=admin,
+                    project=project,
+                    role=ProjectRole.VIEWER  # Always viewer - immutable business rule
+                )
+                await assignment.insert() 

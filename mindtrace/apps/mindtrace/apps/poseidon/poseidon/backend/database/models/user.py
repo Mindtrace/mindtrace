@@ -1,13 +1,14 @@
 from mindtrace.database import MindtraceDocument
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 from datetime import datetime, UTC
-from .enums import OrgRole
+from .enums import OrgRole, ProjectRole
 from beanie import Link, before_event, Insert, Replace, SaveChanges, after_event, Delete
 from pydantic import Field
 
 if TYPE_CHECKING:
     from .organization import Organization
     from .project import Project
+    from .project_assignment import ProjectAssignment
 
 class User(MindtraceDocument):
     username: str
@@ -18,8 +19,11 @@ class User(MindtraceDocument):
     # Single organization role
     org_role: OrgRole = OrgRole.USER
 
-    # Reference to projects
+    # Reference to projects (kept for backward compatibility, will be migrated)
     projects: List[Link["Project"]] = Field(default_factory=list)
+    
+    # Project assignments with roles
+    project_assignments: List[Link["ProjectAssignment"]] = Field(default_factory=list)
 
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -59,6 +63,15 @@ class User(MindtraceDocument):
     def is_assigned_to_project(self, project: "Project") -> bool:
         """Check if user is assigned to a specific project"""
         return any(p.id == project.id for p in self.projects)
+    
+    async def get_project_role(self, project_id: str) -> Optional[ProjectRole]:
+        """Get user's role in a specific project"""
+        from .project_assignment import ProjectAssignment
+        assignment = await ProjectAssignment.find_one(
+            ProjectAssignment.user.id == self.id,
+            ProjectAssignment.project.id == project_id
+        )
+        return assignment.role if assignment else None
 
     @after_event(Insert)
     async def increment_org_user_count(self):
