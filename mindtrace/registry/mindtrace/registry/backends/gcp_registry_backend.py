@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
+from urllib.parse import quote
 
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
@@ -22,7 +23,7 @@ from mindtrace.registry.backends.registry_backend import (
     PathArg,
     RegistryBackend,
 )
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import LockAcquisitionError, RegistryObjectNotFound
 from mindtrace.registry.core.types import CleanupState, OnConflict, OpResult, OpResults
 from mindtrace.storage import GCSStorageHandler, Status, StringResult
 
@@ -46,7 +47,7 @@ class GCPRegistryBackend(RegistryBackend):
             file1.bin
             file2.json
           _meta_{name}@{version}.json         # Metadata pointing to active UUID
-          _staging/{uuid}.json                # Commit plans for janitor cleanup
+          _staging/{name}/{version}/{uuid}.json   # Commit plans for janitor cleanup
           registry_metadata.json              # Global registry config
 
     Uses `_files` manifest from metadata to avoid expensive blob listing on pull.
@@ -73,7 +74,7 @@ class GCPRegistryBackend(RegistryBackend):
         credentials_path: str | None = None,
         prefix: str = "",
         max_workers: int = 4,
-        lock_timeout: int = 30,
+        lock_timeout: int = 5,
         **kwargs,
     ):
         """Initialize the GCPRegistryBackend.
@@ -152,9 +153,11 @@ class GCPRegistryBackend(RegistryBackend):
         """Convert object name, version, and UUID to a storage key."""
         return self._prefixed(f"objects/{name}/{version}/{uuid_str}")
 
-    def _staging_path(self, uuid_str: str) -> str:
-        """Get the path for a commit plan in staging. Uses uuid as filename."""
-        return self._prefixed(f"_staging/{uuid_str}.json")
+    def _staging_path(self, name: str, version: str, uuid_str: str) -> str:
+        """Get the namespaced staging path for a commit plan."""
+        safe_name = quote(name, safe="")
+        safe_version = quote(str(version), safe="")
+        return self._prefixed(f"_staging/{safe_name}/{safe_version}/{uuid_str}.json")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Commit Plan Helpers (for lock-free MVCC)
@@ -195,7 +198,7 @@ class GCPRegistryBackend(RegistryBackend):
             "expires_at": expires_at.isoformat(),
         }
 
-        staging_path = self._staging_path(uuid_str)
+        staging_path = self._staging_path(name, version, uuid_str)
         data = json.dumps(plan)
 
         try:
@@ -205,25 +208,27 @@ class GCPRegistryBackend(RegistryBackend):
             self.logger.warning(f"Failed to create commit plan {uuid_str}: {e}")
             return False
 
-    def _delete_commit_plan(self, uuid_str: str) -> bool:
+    def _delete_commit_plan(self, name: str, version: str, uuid_str: str) -> bool:
         """Delete a commit plan after successful completion.
 
         Args:
+            name: Object name.
+            version: Object version.
             uuid_str: The UUID of the commit plan to delete (same as folder UUID).
 
         Returns:
             True if deleted successfully, False otherwise.
         """
-        staging_path = self._staging_path(uuid_str)
+        staging_path = self._staging_path(name, version, uuid_str)
         result = self.gcs.delete(staging_path)
+        if result.status == Status.NOT_FOUND:
+            return True
         if not result.ok:
             self.logger.warning(f"Failed to delete commit plan {uuid_str}: {result.error_message}")
             return False
         return True
 
-    def _delete_uuid_folder(
-        self, name: str, version: str, uuid_str: str, files_manifest: list | None = None
-    ) -> bool:
+    def _delete_uuid_folder(self, name: str, version: str, uuid_str: str, files_manifest: list | None = None) -> bool:
         """Delete all files in a UUID folder.
 
         Args:
@@ -241,10 +246,10 @@ class GCPRegistryBackend(RegistryBackend):
         folder_prefix = self._object_key_with_uuid(name, version, uuid_str)
         try:
             if files_manifest is not None:
-                # Use manifest - we know exactly what to delete
+                # Use manifest - backend delete status surfaces races (NOT_FOUND).
                 files = [f"{folder_prefix}/{f}" for f in files_manifest]
                 if not files:
-                    return False  # Empty manifest is unexpected
+                    return True  # Nothing to delete
             else:
                 # Fallback: list objects (for janitor or legacy data without _files)
                 files = self.gcs.list_objects(prefix=folder_prefix)
@@ -283,57 +288,64 @@ class GCPRegistryBackend(RegistryBackend):
         """
         cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
         if cleanup_ok:
-            self._delete_commit_plan(uuid_str)
+            self._delete_commit_plan(name, version, uuid_str)
         return cleanup_ok
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Internal Locking 
+    # Internal Locking
     # NOTE: Locks are being phased out in favor of UUID-based isolation.
     # ─────────────────────────────────────────────────────────────────────────
 
     def _acquire_lock(self, key: str, lock_id: str, timeout: int = 30) -> bool:
         """Acquire exclusive lock using atomic GCS operations.
 
+        Retries until *timeout* seconds elapse. The lock TTL is also set to
+        *timeout* so stale locks are automatically reclaimable.
+
         Args:
             key: The key to acquire the lock for.
             lock_id: Unique identifier for this lock holder.
-            timeout: Lock expiration in seconds.
+            timeout: Acquisition deadline **and** lock TTL in seconds.
 
         Returns:
-            True if lock acquired, False otherwise.
+            True if lock acquired, False if timed out.
         """
         lock_path = self._lock_path(key)
-        expires_at = time.time() + timeout
-        lock_data = json.dumps({"lock_id": lock_id, "expires_at": expires_at})
+        deadline = time.time() + timeout
 
-        try:
-            # Try atomic create (generation_match=0 = only if doesn't exist)
-            result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
-            if result.ok:
-                return True
+        while True:
+            expires_at = time.time() + timeout
+            lock_data = json.dumps({"lock_id": lock_id, "expires_at": expires_at})
 
-            # Lock exists - check if expired
-            download_result = self.gcs.download_string(lock_path)
-            if download_result.status == Status.NOT_FOUND:
-                # Lock deleted between our attempts, retry create
-                retry_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
-                return retry_result.ok
+            try:
+                # Try atomic create (generation_match=0 = only if doesn't exist)
+                result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+                if result.ok:
+                    return True
 
-            if not download_result.ok:
+                # Lock exists - check if expired
+                download_result = self.gcs.download_string(lock_path)
+                if download_result.status == Status.NOT_FOUND:
+                    # Lock deleted between our attempts, retry create
+                    retry_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+                    if retry_result.ok:
+                        return True
+
+                elif download_result.ok:
+                    existing = json.loads(download_result.content.decode("utf-8"))
+                    if time.time() >= existing.get("expires_at", 0):
+                        # Lock expired - delete it and try to create a new one
+                        self.gcs.delete(lock_path)
+                        takeover_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
+                        if takeover_result.ok:
+                            return True
+
+            except Exception as e:
+                self.logger.error(f"Error acquiring lock for {key}: {e}")
+
+            if time.time() >= deadline:
                 return False
-
-            existing = json.loads(download_result.content.decode("utf-8"))
-            if time.time() < existing.get("expires_at", 0):
-                return False  # Lock still valid
-
-            # Lock expired - delete it and try to create a new one
-            self.gcs.delete(lock_path)
-            takeover_result = self.gcs.upload_string(lock_data, lock_path, if_generation_match=0)
-            return takeover_result.ok
-
-        except Exception as e:
-            self.logger.error(f"Error acquiring lock for {key}: {e}")
-            return False
+            time.sleep(1)
 
     def _release_lock(self, key: str, lock_id: str) -> None:
         """Release write lock if we own it."""
@@ -551,29 +563,27 @@ class GCPRegistryBackend(RegistryBackend):
                     cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
                 )
 
-            # Step 8: Success - handle plan deletion based on mode
+            # Step 8: Success - handle orphan deletion & see if we raced
             if is_overwrite:
                 # OVERWRITE mode: clean up old UUID folder if exists
-                if old_uuid:
-                    # Use old_files manifest if available (avoids list_objects)
-                    # If any file deletion fails (including not found), cleanup_ok=False
+                if old_uuid:  # If any file deletion fails (including not found), cleanup_ok=False
                     # which means we keep plan for janitor (race detection)
                     cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid, old_files)
                     if cleanup_ok:
-                        plan_deleted = self._delete_commit_plan(uuid_str)
+                        plan_deleted = self._delete_commit_plan(obj_name, obj_version, uuid_str)
                         cleanup_state = CleanupState.OK if plan_deleted else CleanupState.UNKNOWN
                     else:
                         cleanup_state = CleanupState.ORPHANED
                     return OpResult.overwritten(obj_name, obj_version, cleanup=cleanup_state)
-                # else: no old_uuid - keep plan for janitor (possible race created orphan)
+                # else: no old_uuid -first object- keep plan for janitor (possible race created orphan)
                 return OpResult.success(obj_name, obj_version, cleanup=CleanupState.UNKNOWN)
             else:
                 # SKIP mode: we're guaranteed current (immutable), safe to delete plan
-                plan_deleted = self._delete_commit_plan(uuid_str)
+                self._delete_commit_plan(obj_name, obj_version, uuid_str)
                 return OpResult.success(
                     obj_name,
                     obj_version,
-                    cleanup=CleanupState.NOT_APPLICABLE if plan_deleted else CleanupState.UNKNOWN,
+                    cleanup=CleanupState.NOT_APPLICABLE,
                 )
 
         except Exception as e:
@@ -586,7 +596,7 @@ class GCPRegistryBackend(RegistryBackend):
                     e,
                     cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
                 )
-            return OpResult.failed(obj_name, obj_version, e, cleanup=CleanupState.UNKNOWN)
+            return OpResult.failed(obj_name, obj_version, e, cleanup=CleanupState.NOT_APPLICABLE)
 
     def push(
         self,
@@ -829,7 +839,7 @@ class GCPRegistryBackend(RegistryBackend):
             meta_result = self.gcs.delete(meta_path)
 
             if not meta_result.ok:
-                self._delete_commit_plan(uuid_str)
+                self._delete_commit_plan(obj_name, obj_version, uuid_str)
                 return OpResult.failed(
                     obj_name,
                     obj_version,
@@ -841,14 +851,14 @@ class GCPRegistryBackend(RegistryBackend):
             files_manifest = metadata.get("_files")
             cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, uuid_str, files_manifest)
             if cleanup_ok:
-                self._delete_commit_plan(uuid_str)
+                self._delete_commit_plan(obj_name, obj_version, uuid_str)
 
             return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
             # Best-effort cleanup of commit plan on failure
             if uuid_str:
-                self._delete_commit_plan(uuid_str)
+                self._delete_commit_plan(obj_name, obj_version, uuid_str)
             return OpResult.failed(obj_name, obj_version, e)
 
     def delete(
@@ -1116,7 +1126,7 @@ class GCPRegistryBackend(RegistryBackend):
             if not key:
                 continue
             obj_name, obj_version = key
-            if file_result.status == Status.OK:
+            if file_result.status in (Status.OK, Status.NOT_FOUND):
                 results.add(OpResult.success(obj_name, obj_version))
             else:
                 results.add(
@@ -1222,21 +1232,32 @@ class GCPRegistryBackend(RegistryBackend):
         object_class: NameArg,
         materializer_class: NameArg,
     ) -> None:
-        """Register materializer(s) for object class(es)."""
+        """Register materializer(s) for object class(es).
+
+        Uses a distributed lock to prevent concurrent read-modify-write races
+        on the shared registry metadata file.
+        """
         obj_classes = self._to_list(object_class)
         mat_classes = self._to_list(materializer_class)
 
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")
 
-        metadata = self.fetch_registry_metadata()
-        if "materializers" not in metadata:
-            metadata["materializers"] = {}
+        lock_key = "_materializer_registry"
+        lock_id = str(uuid.uuid4())
+        if not self._acquire_lock(lock_key, lock_id, timeout=self._lock_timeout):
+            raise LockAcquisitionError("Could not acquire lock for materializer registration")
+        try:
+            metadata = self.fetch_registry_metadata()
+            if "materializers" not in metadata:
+                metadata["materializers"] = {}
 
-        for obj_cls, mat_cls in zip(obj_classes, mat_classes):
-            metadata["materializers"][obj_cls] = mat_cls
+            for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+                metadata["materializers"][obj_cls] = mat_cls
 
-        self.save_registry_metadata(metadata)
+            self.save_registry_metadata(metadata)
+        finally:
+            self._release_lock(lock_key, lock_id)
 
     def registered_materializers(
         self,

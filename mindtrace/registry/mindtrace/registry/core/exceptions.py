@@ -23,3 +23,9 @@ class RegistryVersionConflict(Exception):
     """Exception raised when attempting to save an object with a version that already exists."""
 
     pass
+
+
+class RegistryCleanupRequired(Exception):
+    """Raised when an operation succeeds but follow-up cleanup is still required."""
+
+    pass

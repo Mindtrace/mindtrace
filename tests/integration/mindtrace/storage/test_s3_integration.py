@@ -13,6 +13,7 @@ import pytest
 from minio import Minio
 from minio.error import S3Error
 
+from mindtrace.storage.base import Status
 from mindtrace.storage.s3 import S3StorageHandler
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -642,18 +643,18 @@ def test_delete_batch_basic(s3_handler, sample_files):
 
 
 def test_delete_batch_idempotent(s3_handler):
-    """Test batch delete is idempotent (deleting non-existent files succeeds)."""
+    """Test batch delete of non-existent files returns NOT_FOUND (no hard errors)."""
     prefix = s3_handler._test_prefix
     remote_files = [
         f"{prefix}/batch/nonexistent1.txt",
         f"{prefix}/batch/nonexistent2.txt",
     ]
 
-    # Delete non-existent files should succeed (idempotent)
+    # Delete non-existent files should return NOT_FOUND (not ERROR)
     result = s3_handler.delete_batch(remote_files)
 
     assert len(result) == 2
-    assert len(result.ok_results) == 2
+    assert all(r.status == Status.NOT_FOUND for r in result.results)
 
 
 def test_upload_folder_basic(s3_handler, sample_files):

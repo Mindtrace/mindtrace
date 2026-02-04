@@ -12,8 +12,18 @@ from zenml.materializers.base_materializer import BaseMaterializer
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
-from mindtrace.registry.core.types import ERROR_UNKNOWN, VERSION_PENDING, BatchResult, OnConflict, VerifyLevel
+from mindtrace.registry.core.exceptions import (
+    RegistryCleanupRequired,
+    RegistryObjectNotFound,
+    RegistryVersionConflict,
+)
+from mindtrace.registry.core.types import (
+    ERROR_UNKNOWN,
+    VERSION_PENDING,
+    BatchResult,
+    OnConflict,
+    VerifyLevel,
+)
 
 
 class Registry(Mindtrace):
@@ -668,6 +678,12 @@ class Registry(Mindtrace):
                 raise RegistryVersionConflict(f"Object {name}@{validated_version} already exists.")
 
             self._invalidate_versions_cache(name)
+
+            if result.cleanup and result.cleanup.has_orphan:
+                raise RegistryCleanupRequired(
+                    f"Saved {name}@{result.version} but cleanup state is '{result.cleanup.value}'. "
+                    "Follow-up janitor cleanup is required."
+                )
             return result.version
 
     def _save_batch(
@@ -771,6 +787,9 @@ class Registry(Mindtrace):
                     else:
                         result.results.append(op.version)
                         result.succeeded.append((name, op.version))
+
+                    if op is not None and op.cleanup and op.cleanup.has_orphan:
+                        result.cleanup_needed[(name, op.version)] = op.cleanup
 
         for name in set(names):
             self._invalidate_versions_cache(name)
