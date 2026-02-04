@@ -1,101 +1,292 @@
 #!/usr/bin/env python3
 """Basler Pylon SDK Setup Script
 
-This script automates the download and installation of the Basler Pylon SDK
-for both Linux and Windows systems. The Pylon SDK is required to connect
-and use Basler cameras in the Mindtrace hardware system.
+This script provides a guided installation wizard for the Basler Pylon SDK
+for both Linux and Windows systems. The Pylon SDK provides tools like
+Pylon Viewer and IP Configurator for camera management.
+
+Note: pypylon (the Python package) is self-contained for camera operations.
+This SDK installation is only needed for the GUI tools.
 
 Features:
-- Automatic SDK download from GitHub releases
-- Platform-specific installation (Linux .deb packages, Windows .exe)
-- Dependency management for Linux systems
-- Administrative privilege handling for Windows
+- Interactive guided wizard with browser integration
+- Platform-specific installation instructions
+- Support for pre-downloaded packages (--package flag)
 - Comprehensive logging and error handling
 - Uninstallation support
 
 Usage:
-    python setup_basler.py                    # Install SDK
-    python setup_basler.py --uninstall        # Uninstall SDK
-    mindtrace-setup-basler                     # Console script (install)
-    mindtrace-uninstall-basler                 # Console script (uninstall)
+    python setup_basler.py                      # Interactive wizard
+    python setup_basler.py --package /path/to/file  # Use pre-downloaded file
+    python setup_basler.py --uninstall          # Uninstall SDK
+    mindtrace-camera-basler-install            # Console script (install)
+    mindtrace-camera-basler-uninstall          # Console script (uninstall)
 """
 
-import argparse
 import ctypes
-import glob
 import logging
 import os
 import platform
 import subprocess
-import sys
+import webbrowser
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+
+import typer
+from rich import print as rprint
+from rich.panel import Panel
+from rich.table import Table
 
 from mindtrace.core import Mindtrace
-from mindtrace.core.utils import download_and_extract_tarball, download_and_extract_zip
 from mindtrace.hardware.core.config import get_hardware_config
+
+# Typer app instance
+app = typer.Typer(
+    name="pylon-setup",
+    help="Install or uninstall the Basler Pylon SDK (guided wizard)",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
 
 
 class PylonSDKInstaller(Mindtrace):
-    """Basler Pylon SDK installer and manager.
+    """Basler Pylon SDK installer with guided wizard.
 
-    This class handles the download, installation, and uninstallation of the Basler Pylon SDK across different
-    platforms.
+    This class provides an interactive installation wizard that guides users
+    through downloading and installing the Basler Pylon SDK from the official
+    Basler website.
     """
 
-    # SDK URLs for different platforms
-    LINUX_SDK_URL = "https://github.com/Mindtrace/basler-sdk/releases/download/basler_sdk_linux/pylon-8.1.0_linux-x86_64_debs.tar.gz"
-    WINDOWS_SDK_URL = (
-        "https://github.com/Mindtrace/basler-sdk/releases/download/basler_sdk_windows/Basler.pylon.8.1.0.zip"
-    )
+    # Basler official download page
+    BASLER_DOWNLOAD_PAGE = "https://www.baslerweb.com/en/downloads/software-downloads/"
+
+    # Platform-specific download instructions
+    PLATFORM_INFO = {
+        "Linux": {
+            "search_term": "pylon Camera Software Suite Linux x86 (64 Bit)",
+            "file_pattern": "pylon*linux*x86_64*.tar.gz",
+            "file_description": "pylon_X.X.X_linux-x86_64_debs.tar.gz",
+            "min_size_mb": 100,
+        },
+        "Windows": {
+            "search_term": "pylon Camera Software Suite Windows",
+            "file_pattern": "Basler*pylon*.exe",
+            "file_description": "Basler_pylon_X.X.X.exe",
+            "min_size_mb": 200,
+        },
+    }
 
     # Linux dependencies required for Pylon SDK
     LINUX_DEPENDENCIES = ["libglx-mesa0", "libgl1", "libxcb-xinerama0", "libxcb-xinput0", "libxcb-cursor0"]
 
-    def __init__(self, release_version: str = "v1.0-stable"):
+    def __init__(self, package_path: Optional[str] = None):
         """Initialize the Pylon SDK installer.
 
         Args:
-            release_version: SDK release version to download
+            package_path: Optional path to pre-downloaded package file
         """
-        # Initialize base class first
         super().__init__()
 
-        # Get hardware configuration
         self.hardware_config = get_hardware_config()
-
-        self.release_version = release_version
         self.pylon_dir = Path(self.hardware_config.get_config().paths.lib_dir).expanduser() / "pylon"
         self.platform = platform.system()
+        self.package_path = Path(package_path) if package_path else None
 
         self.logger.info(f"Initializing Pylon SDK installer for {self.platform}")
-        self.logger.debug(f"Release version: {release_version}")
         self.logger.debug(f"Installation directory: {self.pylon_dir}")
 
     def install(self) -> bool:
-        """Install the Pylon SDK for the current platform.
+        """Install the Pylon SDK using interactive wizard or pre-downloaded package.
 
         Returns:
             True if installation successful, False otherwise
         """
-        self.logger.info("Starting Pylon SDK installation")
+        if self.platform not in self.PLATFORM_INFO:
+            rprint(f"[red]Unsupported platform: {self.platform}[/]")
+            rprint("The Pylon SDK is only available for Linux and Windows.")
+            return False
+
+        # If package path provided, skip wizard and install directly
+        if self.package_path:
+            return self._install_from_package(self.package_path)
+
+        # Run interactive wizard
+        return self._run_wizard()
+
+    def _run_wizard(self) -> bool:
+        """Run the interactive installation wizard.
+
+        Returns:
+            True if installation successful, False otherwise
+        """
+        platform_info = self.PLATFORM_INFO[self.platform]
+
+        # Step 1: Display info panel
+        self._display_intro()
+
+        # Step 2: Confirm user wants to proceed
+        if not typer.confirm("\nProceed with installation?", default=True):
+            rprint("[yellow]Installation cancelled.[/]")
+            return False
+
+        # Step 3: Open browser
+        self._open_download_page()
+
+        # Step 4: Show download instructions
+        self._show_download_instructions(platform_info)
+
+        # Step 5: Wait for user to download
+        rprint("\n[bold cyan]Step 3/5:[/] Download the SDK")
+        rprint("         Please download the file from the opened browser page.")
+        rprint("         Accept the EULA when prompted.\n")
+
+        input("         Press Enter when download is complete...")
+
+        # Step 6: Get file path from user
+        package_path = self._prompt_for_file(platform_info)
+        if not package_path:
+            return False
+
+        # Step 7: Install
+        return self._install_from_package(package_path)
+
+    def _display_intro(self) -> None:
+        """Display introductory information panel."""
+        intro_text = """[bold]Basler Pylon SDK Installation Wizard[/]
+
+This wizard will help you install the Basler Pylon SDK which provides:
+
+  [cyan]Pylon Viewer[/]      - GUI for live camera view and configuration
+  [cyan]IP Configurator[/]   - Tool to set GigE camera IP addresses
+
+[dim]Note: The pypylon Python package is self-contained for camera operations.
+This SDK installation is only needed for the GUI tools.[/]
+
+You will be guided to download the SDK from Basler's official website
+where you'll need to accept their End User License Agreement (EULA)."""
+
+        rprint(Panel(intro_text, title="Pylon SDK Setup", border_style="blue"))
+
+    def _open_download_page(self) -> None:
+        """Open Basler download page in default browser."""
+        rprint("\n[bold cyan]Step 1/5:[/] Opening Basler download page...")
+
+        try:
+            webbrowser.open(self.BASLER_DOWNLOAD_PAGE)
+            rprint(f"         Browser opened to: [link={self.BASLER_DOWNLOAD_PAGE}]{self.BASLER_DOWNLOAD_PAGE}[/]")
+        except Exception as e:
+            rprint(f"[yellow]         Could not open browser automatically: {e}[/]")
+            rprint(f"         Please open manually: {self.BASLER_DOWNLOAD_PAGE}")
+
+    def _show_download_instructions(self, platform_info: dict) -> None:
+        """Show platform-specific download instructions."""
+        rprint("\n[bold cyan]Step 2/5:[/] Find the correct download")
+
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Label", style="dim")
+        table.add_column("Value")
+
+        table.add_row("Platform:", f"[green]{self.platform}[/]")
+        table.add_row("Search for:", f"[cyan]{platform_info['search_term']}[/]")
+        table.add_row("File name:", f"[cyan]{platform_info['file_description']}[/]")
+        table.add_row("Expected size:", f">{platform_info['min_size_mb']} MB")
+
+        rprint(table)
+
+    def _prompt_for_file(self, platform_info: dict) -> Optional[Path]:
+        """Prompt user for downloaded file path.
+
+        Args:
+            platform_info: Platform-specific information dict
+
+        Returns:
+            Path to the downloaded file, or None if invalid/cancelled
+        """
+        rprint("\n[bold cyan]Step 4/5:[/] Locate the downloaded file")
+
+        while True:
+            path_str = typer.prompt("         Enter path to downloaded file (or 'q' to quit)")
+
+            if path_str.lower() == "q":
+                rprint("[yellow]Installation cancelled.[/]")
+                return None
+
+            # Handle drag & drop (removes quotes, escapes)
+            path_str = path_str.strip().strip("'\"").replace("\\ ", " ")
+
+            path = Path(path_str).expanduser()
+
+            if not path.exists():
+                rprint(f"[red]         File not found: {path}[/]")
+                continue
+
+            # Validate file
+            if not self._validate_package(path, platform_info):
+                if not typer.confirm("         Use this file anyway?", default=False):
+                    continue
+
+            rprint(f"[green]         File accepted: {path.name}[/]")
+            return path
+
+    def _validate_package(self, path: Path, platform_info: dict) -> bool:
+        """Validate the downloaded package file.
+
+        Args:
+            path: Path to the package file
+            platform_info: Platform-specific information dict
+
+        Returns:
+            True if file appears valid, False otherwise
+        """
+        # Check file size
+        size_mb = path.stat().st_size / (1024 * 1024)
+        min_size = platform_info["min_size_mb"]
+
+        if size_mb < min_size:
+            rprint(
+                f"[yellow]         Warning: File size ({size_mb:.1f} MB) is smaller than expected (>{min_size} MB)[/]"
+            )
+            return False
+
+        # Check file name pattern
+        name = path.name.lower()
+        if "pylon" not in name:
+            rprint("[yellow]         Warning: File name doesn't contain 'pylon'[/]")
+            return False
+
+        rprint(f"         File size: {size_mb:.1f} MB")
+        return True
+
+    def _install_from_package(self, package_path: Path) -> bool:
+        """Install from a local package file.
+
+        Args:
+            package_path: Path to the package file
+
+        Returns:
+            True if installation successful, False otherwise
+        """
+        rprint("\n[bold cyan]Step 5/5:[/] Installing...")
 
         try:
             if self.platform == "Linux":
-                return self._install_linux()
+                return self._install_linux(package_path)
             elif self.platform == "Windows":
-                return self._install_windows()
+                return self._install_windows(package_path)
             else:
-                self.logger.error(f"Unsupported operating system: {self.platform}")
-                self.logger.info("The Pylon SDK is only available for Linux and Windows")
+                rprint(f"[red]Unsupported platform: {self.platform}[/]")
                 return False
 
         except Exception as e:
-            self.logger.error(f"Installation failed with unexpected error: {e}")
+            self.logger.error(f"Installation failed: {e}")
+            rprint(f"[red]Installation failed: {e}[/]")
             return False
 
-    def _install_linux(self) -> bool:
-        """Install Pylon SDK on Linux using .deb packages.
+    def _install_linux(self, package_path: Path) -> bool:
+        """Install Pylon SDK on Linux from local package.
+
+        Args:
+            package_path: Path to the downloaded package
 
         Returns:
             True if installation successful, False otherwise
@@ -103,84 +294,65 @@ class PylonSDKInstaller(Mindtrace):
         self.logger.info("Installing Pylon SDK for Linux")
 
         try:
-            # Download and extract the SDK
-            self.logger.info(f"Downloading SDK from {self.LINUX_SDK_URL}")
-            extracted_dir = download_and_extract_tarball(url=self.LINUX_SDK_URL, extract_to=str(self.pylon_dir))
-            self.logger.info(f"Extracted SDK to {extracted_dir}")
+            # Create extraction directory
+            self.pylon_dir.mkdir(parents=True, exist_ok=True)
 
-            # Change to extracted directory
+            # Extract the package
+            rprint("         Extracting package...")
+
+            if package_path.suffix == ".gz" or ".tar" in package_path.name:
+                import tarfile
+
+                with tarfile.open(package_path, "r:gz") as tar:
+                    tar.extractall(path=self.pylon_dir)
+            else:
+                rprint(f"[red]Unsupported package format: {package_path.suffix}[/]")
+                return False
+
+            # Find extracted directory
+            extracted_items = list(self.pylon_dir.iterdir())
+            self.logger.debug(f"Extracted items: {extracted_items}")
+
+            # Change to extracted directory to find .deb files
             original_cwd = os.getcwd()
-            os.chdir(extracted_dir)
-            self.logger.debug(f"Changed working directory to {extracted_dir}")
 
-            try:
-                # Install the packages
-                self._install_linux_packages()
-                self.logger.info("Pylon SDK installation completed successfully")
-                self.logger.info("IMPORTANT: Please log out and log in again for changes to take effect")
-                self.logger.info("          Also, unplug and replug all USB cameras")
-                return True
+            # Look for .deb files in extraction
+            deb_files = list(self.pylon_dir.rglob("*.deb"))
 
-            finally:
-                # Always restore original working directory
-                os.chdir(original_cwd)
-                self.logger.debug(f"Restored working directory to {original_cwd}")
+            if deb_files:
+                # Install dependencies first
+                rprint("         Installing system dependencies...")
+                self._run_command(["sudo", "apt-get", "update"])
+                self._run_command(["sudo", "apt-get", "install", "-y"] + self.LINUX_DEPENDENCIES)
+
+                # Install all .deb packages
+                rprint(f"         Installing {len(deb_files)} packages...")
+                for deb in deb_files:
+                    self.logger.info(f"Installing {deb.name}")
+                    self._run_command(["sudo", "dpkg", "-i", str(deb)])
+
+                # Fix any missing dependencies
+                self._run_command(["sudo", "apt-get", "-f", "install", "-y"])
+
+            os.chdir(original_cwd)
+
+            self._show_success_message()
+            return True
 
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Installation failed: {e}")
-            return False
-        except FileNotFoundError as e:
-            self.logger.error(f"File not found: {e}")
+            rprint(f"[red]Package installation failed: {e}[/]")
             return False
         except Exception as e:
-            self.logger.error(f"Unexpected error during Linux installation: {e}")
+            self.logger.error(f"Unexpected error: {e}")
+            rprint(f"[red]Installation failed: {e}[/]")
             return False
 
-    def _install_linux_packages(self) -> None:
-        """Install the .deb packages and dependencies on Linux.
+    def _install_windows(self, package_path: Path) -> bool:
+        """Install Pylon SDK on Windows from local package.
 
-        Raises:
-            subprocess.CalledProcessError: If package installation fails
-            FileNotFoundError: If .deb packages not found
-        """
-        self.logger.info("Installing Pylon SDK using Debian packages")
-
-        # Log current directory contents for debugging
-        current_dir = os.getcwd()
-        self.logger.debug(f"Current working directory: {current_dir}")
-
-        contents = list(os.listdir("."))
-        self.logger.debug(f"Directory contents: {contents}")
-
-        # Find all pylon and codemeter deb packages
-        pylon_debs = glob.glob("pylon_*.deb")
-        codemeter_debs = glob.glob("codemeter*.deb")
-        all_debs = pylon_debs + codemeter_debs
-
-        self.logger.info(f"Found {len(all_debs)} .deb packages:")
-        for deb in all_debs:
-            self.logger.info(f"  - {deb}")
-
-        if not all_debs:
-            raise FileNotFoundError("No .deb packages found in the current directory")
-
-        # Install dependencies first
-        self.logger.info("Installing system dependencies")
-        self._run_command(["sudo", "apt-get", "update"])
-        self._run_command(["sudo", "apt-get", "install", "-y"] + self.LINUX_DEPENDENCIES)
-
-        # Install all found packages using dpkg
-        self.logger.info("Installing .deb packages")
-        for deb in all_debs:
-            self.logger.info(f"Installing {deb}")
-            self._run_command(["sudo", "dpkg", "-i", deb])
-
-        # Fix any missing dependencies
-        self.logger.info("Fixing dependencies")
-        self._run_command(["sudo", "apt-get", "-f", "install", "-y"])
-
-    def _install_windows(self) -> bool:
-        """Install Pylon SDK on Windows.
+        Args:
+            package_path: Path to the downloaded package
 
         Returns:
             True if installation successful, False otherwise
@@ -188,80 +360,72 @@ class PylonSDKInstaller(Mindtrace):
         self.logger.info("Installing Pylon SDK for Windows")
 
         # Check for administrative privileges
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-        self.logger.debug(f"Administrative privileges: {is_admin}")
+        try:
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except AttributeError:
+            is_admin = False
 
         if not is_admin:
-            self.logger.warning("Administrative privileges required for Windows installation")
-            return self._elevate_privileges()
+            rprint("[yellow]Administrative privileges may be required.[/]")
+            rprint("If installation fails, please run as Administrator.")
 
         try:
-            # Download and extract the SDK
-            self.logger.info(f"Downloading SDK from {self.WINDOWS_SDK_URL}")
-            extracted_dir = download_and_extract_zip(url=self.WINDOWS_SDK_URL, extract_to=str(self.pylon_dir))
+            # Run the installer
+            rprint("         Running installer...")
+            rprint("         [dim]Follow the on-screen prompts to complete installation.[/]")
 
-            # Find the SDK executable
-            sdk_exe = self._find_windows_executable(extracted_dir)
-            self.logger.info(f"Found SDK executable: {sdk_exe}")
+            if package_path.suffix == ".exe":
+                subprocess.run([str(package_path)], check=True)
+            elif package_path.suffix == ".zip":
+                # Extract and find .exe
+                import zipfile
 
-            # Run the installer silently
-            self.logger.info("Running Pylon SDK installer")
-            subprocess.run([sdk_exe, "/S"], check=True)
-            self.logger.info("Pylon SDK installation completed successfully")
+                extract_dir = self.pylon_dir / "temp_extract"
+                extract_dir.mkdir(parents=True, exist_ok=True)
+
+                with zipfile.ZipFile(package_path, "r") as zip_ref:
+                    zip_ref.extractall(extract_dir)
+
+                # Find .exe installer
+                exe_files = list(extract_dir.rglob("*.exe"))
+                if exe_files:
+                    subprocess.run([str(exe_files[0])], check=True)
+                else:
+                    rprint("[red]No executable found in zip file[/]")
+                    return False
+            else:
+                rprint(f"[red]Unsupported package format: {package_path.suffix}[/]")
+                return False
+
+            self._show_success_message()
             return True
 
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Installation failed: {e}")
-            return False
-        except Exception as e:
-            self.logger.error(f"Unexpected error during Windows installation: {e}")
+            rprint(f"[red]Installation failed: {e}[/]")
             return False
 
-    def _find_windows_executable(self, extracted_dir: str) -> str:
-        """Find the Windows SDK executable in the extracted directory.
+    def _show_success_message(self) -> None:
+        """Display installation success message."""
+        success_text = """[bold green]Installation Complete![/]
 
-        Args:
-            extracted_dir: Path to extracted SDK directory
+[bold]Installed Tools:[/]
+  Pylon Viewer      - For live camera view and configuration
+  IP Configurator   - For setting GigE camera IP addresses
 
-        Returns:
-            Path to the SDK executable
+[bold]Next Steps:[/]"""
 
-        Raises:
-            FileNotFoundError: If executable not found
-        """
-        if ".exe" in extracted_dir:
-            return extracted_dir
+        if self.platform == "Linux":
+            success_text += """
+  1. Log out and log back in for changes to take effect
+  2. Or run: [cyan]source /opt/pylon/bin/pylon-setup-env.sh[/]
+  3. Unplug and replug USB cameras if applicable"""
+        else:
+            success_text += """
+  1. Restart any applications that need to access cameras
+  2. The tools are available in the Start Menu under 'Basler'"""
 
-        # Look for .exe files in the directory
-        exe_files = list(Path(extracted_dir).glob("*.exe"))
-        if exe_files:
-            return str(exe_files[0])
-
-        # Fallback to first file in directory
-        contents = os.listdir(extracted_dir)
-        if contents:
-            return os.path.join(extracted_dir, contents[0])
-
-        raise FileNotFoundError(f"No executable found in {extracted_dir}")
-
-    def _elevate_privileges(self) -> bool:
-        """Attempt to elevate privileges on Windows.
-
-        Returns:
-            False (elevation requires restart)
-        """
-        self.logger.info("Attempting to elevate privileges")
-        self.logger.warning("Please restart VS Code with administrator privileges")
-
-        try:
-            ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, " ".join([sys.argv[0]] + sys.argv[1:]), None, 1
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to elevate process: {e}")
-            self.logger.error("Please run the script in Administrator mode")
-
-        return False
+        rprint(Panel(success_text, border_style="green"))
 
     def _run_command(self, cmd: List[str]) -> None:
         """Run a system command with logging.
@@ -289,11 +453,12 @@ class PylonSDKInstaller(Mindtrace):
             elif self.platform == "Windows":
                 return self._uninstall_windows()
             else:
-                self.logger.error(f"Unsupported operating system: {self.platform}")
+                rprint(f"[red]Unsupported platform: {self.platform}[/]")
                 return False
 
         except Exception as e:
-            self.logger.error(f"Uninstallation failed with unexpected error: {e}")
+            self.logger.error(f"Uninstallation failed: {e}")
+            rprint(f"[red]Uninstallation failed: {e}[/]")
             return False
 
     def _uninstall_linux(self) -> bool:
@@ -302,22 +467,22 @@ class PylonSDKInstaller(Mindtrace):
         Returns:
             True if uninstallation successful, False otherwise
         """
-        self.logger.info("Uninstalling Pylon SDK from Linux")
+        rprint("Uninstalling Pylon SDK from Linux...")
 
         try:
             # Remove pylon packages
-            self.logger.info("Removing pylon packages")
-            self._run_command(["sudo", "apt-get", "remove", "-y", "pylon*"])
+            rprint("Removing pylon packages...")
+            subprocess.run(["sudo", "apt-get", "remove", "-y", "pylon*"], check=False)
 
-            # Remove codemeter packages (ignore errors)
-            self.logger.info("Removing codemeter packages")
+            # Remove codemeter packages
+            rprint("Removing codemeter packages...")
             subprocess.run(["sudo", "apt-get", "remove", "-y", "codemeter*"], check=False)
 
             # Clean up
-            self.logger.info("Cleaning up unused packages")
+            rprint("Cleaning up unused packages...")
             self._run_command(["sudo", "apt-get", "autoremove", "-y"])
 
-            self.logger.info("Pylon SDK uninstalled successfully")
+            rprint("[green]Pylon SDK uninstalled successfully.[/]")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -330,71 +495,66 @@ class PylonSDKInstaller(Mindtrace):
         Returns:
             False (manual uninstallation required)
         """
-        self.logger.warning("Automatic uninstallation on Windows is not yet implemented")
-        self.logger.info("Please use the Windows Control Panel to uninstall the Pylon SDK")
+        rprint("[yellow]Automatic uninstallation on Windows is not supported.[/]")
+        rprint("Please use Windows Settings > Apps to uninstall the Pylon SDK.")
         return False
 
 
-def install_pylon_sdk(release_version: str = "v1.0-stable") -> bool:
-    """Install the Basler Pylon SDK.
+@app.command()
+def install(
+    package: Optional[Path] = typer.Option(
+        None,
+        "--package",
+        "-p",
+        help="Path to pre-downloaded Pylon SDK package file",
+        exists=True,
+        dir_okay=False,
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Install the Basler Pylon SDK using an interactive wizard.
 
-    Args:
-        release_version: SDK release version to install
+    The wizard will guide you through downloading and installing the SDK
+    from Basler's official website where you'll accept their EULA.
 
-    Returns:
-        True if installation successful, False otherwise
+    For CI/automation, use --package to provide a pre-downloaded file.
     """
-    installer = PylonSDKInstaller(release_version)
-    return installer.install()
+    installer = PylonSDKInstaller(package_path=str(package) if package else None)
+
+    if verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    success = installer.install()
+    raise typer.Exit(code=0 if success else 1)
 
 
-def uninstall_pylon_sdk() -> bool:
-    """Uninstall the Basler Pylon SDK.
-
-    Returns:
-        True if uninstallation successful, False otherwise
-    """
+@app.command()
+def uninstall(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+) -> None:
+    """Uninstall the Basler Pylon SDK."""
     installer = PylonSDKInstaller()
-    return installer.uninstall()
+
+    if verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    success = installer.uninstall()
+    raise typer.Exit(code=0 if success else 1)
 
 
 def main() -> None:
     """Main entry point for the script."""
-    parser = argparse.ArgumentParser(
-        description="Install or uninstall the Basler Pylon SDK",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    %(prog)s                    # Install Pylon SDK
-    %(prog)s --uninstall        # Uninstall Pylon SDK
-    
-For more information, visit: https://www.baslerweb.com/en/downloads/software-downloads/
-        """,
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Uninstall the Pylon SDK instead of installing")
-    parser.add_argument(
-        "--version", default="v1.0-stable", help="SDK release version to install (default: v1.0-stable)"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-
-    args = parser.parse_args()
-
-    # Create installer to access logger
-    installer = PylonSDKInstaller(args.version)
-
-    # Configure logging level
-    if args.verbose:
-        installer.logger.setLevel(logging.DEBUG)
-        installer.logger.debug("Verbose logging enabled")
-
-    # Perform the requested action
-    if args.uninstall:
-        success = installer.uninstall()
-    else:
-        success = installer.install()
-
-    # Exit with appropriate code
-    sys.exit(0 if success else 1)
+    app()
 
 
 if __name__ == "__main__":

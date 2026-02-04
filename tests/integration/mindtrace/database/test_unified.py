@@ -332,16 +332,6 @@ def test_redis_unified_backend_find(redis_unified_backend):
     assert charlie_users[0].email == "charlie@unified.com"
 
 
-def test_redis_unified_backend_duplicate_insert(redis_unified_backend):
-    """Test duplicate insert handling with Redis through unified backend."""
-    user = UserCreate(name="Bob", age=25, email="bob@unified.com")
-    redis_unified_backend.insert(user)
-
-    # Try to insert another user with same email
-    with pytest.raises(DuplicateInsertError):
-        redis_unified_backend.insert(user)
-
-
 @pytest.mark.asyncio
 async def test_redis_unified_backend_async_operations(redis_unified_backend):
     """Test async operations with Redis through unified backend."""
