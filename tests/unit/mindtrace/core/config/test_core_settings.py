@@ -235,6 +235,7 @@ GCP_BUCKET_NAME = test-bucket
 GCP_CREDENTIALS_PATH = /path/to/credentials.json
 GCP_LOCATION = us-central1
 GCP_STORAGE_CLASS = STANDARD
+GCP_TEST_BUCKET = test-bucket
 
 [MINDTRACE_TEST_PARAM]
 value = ini_value
