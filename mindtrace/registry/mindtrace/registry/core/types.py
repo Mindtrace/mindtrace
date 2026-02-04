@@ -61,6 +61,16 @@ class CleanupState(str, Enum):
     UNKNOWN = "unknown"
     NOT_APPLICABLE = "n/a"
 
+    @property
+    def has_orphan(self) -> bool:
+        """True when cleanup is incomplete/uncertain and follow-up is needed."""
+        return self in (CleanupState.ORPHANED)
+
+    @property
+    def has_unknown(self) -> bool:
+        """True when cleanup is incomplete/uncertain and follow-up is needed."""
+        return self in (CleanupState.UNKNOWN)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backend Operation Results
@@ -303,6 +313,8 @@ class BatchResult:
         succeeded: List of (name, version) tuples that succeeded (ok or overwritten).
         skipped: List of (name, version) tuples that were skipped (on_conflict="skip").
         failed: List of (name, version) tuples that failed (actual errors).
+        cleanup_needed: Dict mapping (name, version) to cleanup state for
+            items that require follow-up cleanup.
     """
 
     results: List[Any] = field(default_factory=list)
@@ -310,6 +322,7 @@ class BatchResult:
     succeeded: List[Tuple[str, str]] = field(default_factory=list)
     skipped: List[Tuple[str, str]] = field(default_factory=list)
     failed: List[Tuple[str, str]] = field(default_factory=list)
+    cleanup_needed: Dict[Tuple[str, str], CleanupState] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.results)
@@ -339,3 +352,8 @@ class BatchResult:
     def failure_count(self) -> int:
         """Number of failed items."""
         return len(self.failed)
+
+    @property
+    def cleanup_required_count(self) -> int:
+        """Number of items that require follow-up cleanup."""
+        return len(self.cleanup_needed)

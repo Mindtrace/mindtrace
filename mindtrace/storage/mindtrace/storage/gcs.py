@@ -219,16 +219,14 @@ class GCSStorageHandler(StorageHandler):
             remote_path: Path in the bucket to delete.
 
         Returns:
-            FileResult with status "ok" (including if blob didn't exist - idempotent)
-            or "error" on failure.
+            FileResult with status "ok", "not_found", or "error".
         """
         sanitized_path = self._sanitize_blob_path(remote_path)
         try:
             self._bucket().blob(sanitized_path).delete(if_generation_match=None)
             return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
         except gexc.NotFound:
-            # Idempotent delete - not found is success
-            return FileResult(local_path="", remote_path=sanitized_path, status=Status.OK)
+            return FileResult(local_path="", remote_path=sanitized_path, status=Status.NOT_FOUND)
         except Exception as e:
             return FileResult(
                 local_path="",

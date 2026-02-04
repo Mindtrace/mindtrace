@@ -210,12 +210,30 @@ class S3StorageHandler(StorageHandler):
             remote_path: Path in the bucket to delete.
 
         Returns:
-            FileResult with status OK or ERROR. S3 delete is idempotent - succeeds
-            even if object doesn't exist.
+            FileResult with status OK, NOT_FOUND, or ERROR.
         """
         try:
+            # Surface not-found explicitly so callers can detect delete races.
+            self.client.head_object(Bucket=self.bucket_name, Key=remote_path)
             self.client.delete_object(Bucket=self.bucket_name, Key=remote_path)
             return FileResult(local_path="", remote_path=remote_path, status=Status.OK)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey", "NotFound"):
+                return FileResult(
+                    local_path="",
+                    remote_path=remote_path,
+                    status=Status.NOT_FOUND,
+                    error_type="NotFound",
+                    error_message=f"Object not found: {self._full_path(remote_path)}",
+                )
+            return FileResult(
+                local_path="",
+                remote_path=remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
         except Exception as e:
             return FileResult(
                 local_path="",

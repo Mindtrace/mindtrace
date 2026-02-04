@@ -169,7 +169,9 @@ class RegistryWithCache(Registry):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            if remote_hash and cache_hash and remote_hash != cache_hash:
+            if cache_hash and not remote_hash:
+                stale.add(i)
+            elif remote_hash and cache_hash and remote_hash != cache_hash:
                 stale.add(i)
 
         return stale

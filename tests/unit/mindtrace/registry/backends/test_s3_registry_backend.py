@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import quote
 
 import pytest
 
@@ -89,7 +90,15 @@ class MockMinioHandler:
     def delete(self, remote_path: str) -> MockFileResult:
         if remote_path in self._objects:
             del self._objects[remote_path]
-        return MockFileResult(local_path="", remote_path=remote_path, status="ok", ok=True)
+            return MockFileResult(local_path="", remote_path=remote_path, status="ok", ok=True)
+        return MockFileResult(
+            local_path="",
+            remote_path=remote_path,
+            status="not_found",
+            ok=False,
+            error_type="NotFound",
+            error_message=f"Object {remote_path} not found",
+        )
 
     def list_objects(self, prefix: str = "", **kwargs) -> List[str]:
         return [name for name in self._objects.keys() if name.startswith(prefix)]
@@ -183,8 +192,8 @@ class MockMinioHandler:
         """Delete multiple files."""
         results = []
         for path in paths:
-            self.delete(path)
-            results.append(MockFileResult(remote_path=path, status="ok", ok=True))
+            result = self.delete(path)
+            results.append(result)
         return MockBatchResult(results=results)
 
 
@@ -352,7 +361,64 @@ def test_push_overwrite_cleanup_orphaned(backend, sample_object_dir, sample_meta
     result = results.first()
     assert result.is_overwritten
     assert result.cleanup == CleanupState.ORPHANED
-    assert len(backend.storage.list_objects(prefix="_staging/")) == 1
+    staging_objects = backend.storage.list_objects(prefix="_staging/")
+    assert len(staging_objects) == 1
+    expected_prefix = f"_staging/{quote('test:object', safe='')}/1.0.0/"
+    assert staging_objects[0].startswith(expected_prefix)
+
+
+def test_push_overwrite_reports_orphaned_when_old_file_missing(backend, sample_object_dir, sample_metadata):
+    """If an old UUID file is missing, overwrite cleanup must report orphaned."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    old_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+    old_uuid = old_meta["_storage"]["uuid"]
+    missing_rel = old_meta["_files"][0]
+    old_key = f"{backend._object_key_with_uuid('test:object', '1.0.0', old_uuid)}/{missing_rel}"
+    backend.storage.delete(old_key)
+
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+        on_conflict="overwrite",
+    )
+    result = results.first()
+    assert result.is_overwritten
+    assert result.cleanup == CleanupState.ORPHANED
+
+
+def test_push_skip_cleanup_not_applicable_when_plan_delete_fails(
+    backend, sample_object_dir, sample_metadata, monkeypatch
+):
+    """Skip mode cleanup should remain NOT_APPLICABLE even if plan deletion fails."""
+    monkeypatch.setattr(backend, "_delete_commit_plan", lambda *args, **kwargs: False)
+
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+        on_conflict="skip",
+    )
+    result = results.first()
+    assert result.ok
+    assert result.cleanup == CleanupState.NOT_APPLICABLE
+
+
+def test_push_uuid_error_cleanup_not_applicable(backend, sample_object_dir, sample_metadata, monkeypatch):
+    """If UUID generation fails before plan creation, cleanup should be NOT_APPLICABLE."""
+
+    def raise_uuid_error():
+        raise RuntimeError("uuid failure")
+
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.uuid.uuid4", raise_uuid_error)
+
+    results = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    result = results.first()
+    assert result.is_error
+    assert result.cleanup == CleanupState.NOT_APPLICABLE
 
 
 def test_push_invalid_name(backend, sample_object_dir, sample_metadata):

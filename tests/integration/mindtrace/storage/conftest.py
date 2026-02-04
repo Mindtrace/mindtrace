@@ -36,7 +36,11 @@ def gcp_project_id():
 
 @pytest.fixture(scope="session")
 def gcp_credentials_path():
-    """Get GCP credentials path from environment or config."""
+    """Get GCP credentials path from environment or config.
+
+    Returns None if no credentials file is configured, allowing
+    gcs_client to fall back to ADC (gcloud login).
+    """
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if not credentials_path:
         try:
@@ -46,21 +50,40 @@ def gcp_credentials_path():
             pass
     if credentials_path:
         credentials_path = os.path.expanduser(credentials_path)
-    if not credentials_path:
-        pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not set")
-    if not os.path.exists(credentials_path):
-        pytest.skip(f"GCP credentials file not found: {credentials_path}")
+        if not os.path.exists(credentials_path):
+            pytest.skip(f"GCP credentials file not found: {credentials_path}")
     return credentials_path
 
 
 @pytest.fixture(scope="session")
 def gcs_client(gcp_project_id, gcp_credentials_path):
-    """Create a GCS client for testing."""
+    """Create a GCS client for testing.
+
+    Tries ADC (gcloud login) first. If that fails, falls back to
+    service account file if gcp_credentials_path is available.
+    """
     try:
         from google.cloud import storage
 
-        client = storage.Client(project=gcp_project_id)
-        yield client
+        # 1. Try ADC (gcloud login)
+        try:
+            client = storage.Client(project=gcp_project_id)
+            list(client.list_buckets(max_results=1))  # force API call to verify credentials
+            yield client
+            return
+        except Exception:
+            pass
+
+        # 2. Fall back to service account file
+        if gcp_credentials_path:
+            from google.oauth2 import service_account
+
+            credentials = service_account.Credentials.from_service_account_file(gcp_credentials_path)
+            client = storage.Client(project=gcp_project_id, credentials=credentials)
+            yield client
+            return
+
+        pytest.skip("GCS auth failed: no valid ADC and no service account file configured")
     except ImportError:
         pytest.skip("google-cloud-storage not installed")
     except Exception as e:

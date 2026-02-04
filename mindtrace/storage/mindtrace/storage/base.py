@@ -172,8 +172,10 @@ class StorageHandler(MindtraceABC, ABC):
             remote_path: Path in the storage backend to delete.
 
         Returns:
-            FileResult with status "ok" (including if file didn't exist - idempotent)
-            or "error" on failure.
+            FileResult with status:
+            - "ok": Delete succeeded
+            - "not_found": Remote file didn't exist
+            - "error": Other error occurred
         """
         pass  # pragma: no cover
 
@@ -294,7 +296,8 @@ class StorageHandler(MindtraceABC, ABC):
 
         Returns:
             BatchResult with per-file status:
-            - "ok": Delete succeeded (or file didn't exist - idempotent)
+            - "ok": Delete succeeded
+            - "not_found": Remote file didn't exist
             - "error": Other error occurred
         """
         results: List[FileResult] = []

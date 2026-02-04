@@ -884,6 +884,9 @@ class LocalRegistryBackend(RegistryBackend):
     ) -> None:
         """Register a materializer for an object class.
 
+        Uses a file lock to prevent concurrent read-modify-write races
+        on the shared registry metadata file.
+
         Args:
             object_class: Object class(es) to register the materializer for.
             materializer_class: Materializer class(es) to register.
@@ -894,27 +897,28 @@ class LocalRegistryBackend(RegistryBackend):
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")
 
-        try:
-            if not self._metadata_path.exists():
-                metadata = {"materializers": {}}
+        with self._internal_lock("_materializer_registry"):
+            try:
+                if not self._metadata_path.exists():
+                    metadata = {"materializers": {}}
+                else:
+                    with open(self._metadata_path, "r") as f:
+                        metadata = json.load(f)
+
+                if "materializers" not in metadata:
+                    metadata["materializers"] = {}
+
+                for obj_cls, mat_cls in zip(obj_classes, mat_classes):
+                    metadata["materializers"][obj_cls] = mat_cls
+
+                with open(self._metadata_path, "w") as f:
+                    json.dump(metadata, f)
+
+            except Exception as e:
+                self.logger.error(f"Error registering materializers: {e}")
+                raise e
             else:
-                with open(self._metadata_path, "r") as f:
-                    metadata = json.load(f)
-
-            if "materializers" not in metadata:
-                metadata["materializers"] = {}
-
-            for obj_cls, mat_cls in zip(obj_classes, mat_classes):
-                metadata["materializers"][obj_cls] = mat_cls
-
-            with open(self._metadata_path, "w") as f:
-                json.dump(metadata, f)
-
-        except Exception as e:
-            self.logger.error(f"Error registering materializers: {e}")
-            raise e
-        else:
-            self.logger.debug(f"Registered {len(obj_classes)} materializer(s)")
+                self.logger.debug(f"Registered {len(obj_classes)} materializer(s)")
 
     def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.

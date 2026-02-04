@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from mindtrace.storage.base import Status
 from mindtrace.storage.gcs import GCSStorageHandler
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -591,18 +592,18 @@ def test_delete_batch_basic(gcs_handler, sample_files):
 
 
 def test_delete_batch_idempotent(gcs_handler):
-    """Test batch delete is idempotent (deleting non-existent files succeeds)."""
+    """Test batch delete of non-existent files returns NOT_FOUND (no hard errors)."""
     prefix = gcs_handler._test_prefix
     remote_files = [
         f"{prefix}/batch/nonexistent1.txt",
         f"{prefix}/batch/nonexistent2.txt",
     ]
 
-    # Delete non-existent files should succeed (idempotent)
+    # Delete non-existent files should return NOT_FOUND (not ERROR)
     result = gcs_handler.delete_batch(remote_files)
 
     assert len(result) == 2
-    assert len(result.ok_results) == 2
+    assert all(r.status == Status.NOT_FOUND for r in result.results)
 
 
 def test_upload_folder_basic(gcs_handler, sample_files):

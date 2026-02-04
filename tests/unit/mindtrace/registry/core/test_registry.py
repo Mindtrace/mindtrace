@@ -13,8 +13,12 @@ from pydantic import BaseModel
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound, RegistryVersionConflict
-from mindtrace.registry.core.types import OpResult, OpResults
+from mindtrace.registry.core.exceptions import (
+    RegistryCleanupRequired,
+    RegistryObjectNotFound,
+    RegistryVersionConflict,
+)
+from mindtrace.registry.core.types import CleanupState, OpResult, OpResults
 
 
 class SampleModel(BaseModel):
@@ -3008,6 +3012,35 @@ def test_load_cache_metadata_sync(temp_registry_dir):
     assert cached_info.get("metadata", {}) == {}
 
 
+def test_find_stale_indices_marks_missing_remote_as_stale(temp_registry_dir):
+    """Cache entries should be considered stale when remote metadata is missing."""
+    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True)
+    assert isinstance(registry, RegistryWithCache)
+
+    remote_results = OpResults()  # missing remotely
+    cache_results = OpResults()
+    cache_results.add(
+        OpResult.success(
+            "test:obj",
+            "1.0.0",
+            metadata={"hash": "cached_hash"},
+        )
+    )
+
+    registry._remote.backend.fetch_metadata = Mock(return_value=remote_results)
+    registry._cache.backend.fetch_metadata = Mock(return_value=cache_results)
+
+    stale = registry._find_stale_indices([("test:obj", "1.0.0")], [0])
+    assert 0 in stale
+
+
 def test_cache_deterministic_directory(temp_registry_dir):
     """Test that same backend URI produces same cache directory."""
 
@@ -3420,6 +3453,38 @@ def test_batch_save_single_items(registry):
     assert registry.has_object("test:single", "1.0.0")
 
 
+def test_save_single_raises_cleanup_required(registry, monkeypatch):
+    """Single save should raise when backend reports unresolved cleanup."""
+
+    def mock_push(*args, **kwargs):
+        names = args[0]
+        versions = args[1]
+        results = OpResults()
+        results.add(OpResult.success(names[0], versions[0], cleanup=CleanupState.ORPHANED))
+        return results
+
+    monkeypatch.setattr(registry.backend, "push", mock_push)
+
+    with pytest.raises(RegistryCleanupRequired, match="cleanup state is 'orphaned'"):
+        registry.save("test:cleanup", "value", version="1.0.0")
+
+
+def test_save_single_does_not_raise_when_cleanup_not_required(registry, monkeypatch):
+    """Single save should not raise when cleanup state does not require follow-up."""
+
+    def mock_push(*args, **kwargs):
+        names = args[0]
+        versions = args[1]
+        results = OpResults()
+        results.add(OpResult.success(names[0], versions[0], cleanup=CleanupState.OK))
+        return results
+
+    monkeypatch.setattr(registry.backend, "push", mock_push)
+
+    saved_version = registry.save("test:cleanup:ok", "value", version="1.0.0")
+    assert saved_version == "1.0.0"
+
+
 def test_batch_save_multiple_items(registry):
     """Test batch save with multiple items."""
     from mindtrace.registry.core.types import BatchResult
@@ -3439,6 +3504,28 @@ def test_batch_save_multiple_items(registry):
     # All objects should exist
     for name in names:
         assert registry.has_object(name, "1.0.0")
+
+
+def test_batch_save_surfaces_cleanup_needed_per_item(registry, monkeypatch):
+    """Batch save should expose per-item cleanup needs only when action is required."""
+
+    def mock_push(*args, **kwargs):
+        names = args[0]
+        versions = args[1]
+        results = OpResults()
+        results.add(OpResult.success(names[0], versions[0], cleanup=CleanupState.ORPHANED))
+        results.add(OpResult.success(names[1], versions[1], cleanup=CleanupState.OK))
+        return results
+
+    monkeypatch.setattr(registry.backend, "push", mock_push)
+
+    names = ["test:cleanup:a", "test:cleanup:b"]
+    values = ["value a", "value b"]
+    versions = ["1.0.0", "1.0.0"]
+    results = registry.save(names, values, version=versions)
+
+    assert results.cleanup_needed == {("test:cleanup:a", "1.0.0"): CleanupState.ORPHANED}
+    assert results.cleanup_required_count == 1
 
 
 def test_batch_save_auto_version(registry):
