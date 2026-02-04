@@ -270,13 +270,12 @@ class TestStandardWorkerLauncher:
             assert call_args[6] == "1"
             assert call_args[7] == "-b"
             assert call_args[8] == "git-worker:8080"  # URL without http://
-            assert call_args[9] == "-p"
-            assert call_args[11] == "-k"
-            assert call_args[12] == "uvicorn.workers.UvicornWorker"
-            assert call_args[13] == "--init-params"
+            assert call_args[9] == "-k"
+            assert call_args[10] == "uvicorn.workers.UvicornWorker"
+            assert call_args[11] == "--init-params"
 
             # Verify init params were passed correctly
-            init_params = json.loads(call_args[14])
+            init_params = json.loads(call_args[12])
             assert init_params["url"] == "http://git-worker:8080"
             assert init_params["param1"] == "value1"
             assert init_params["param2"] == 42
@@ -451,7 +450,7 @@ class TestStandardWorkerLauncher:
 
             # Verify init params were passed correctly
             call_args = mock_environment.execute.call_args[0][0]
-            init_params = json.loads(call_args[14])
+            init_params = json.loads(call_args[12])
             assert init_params["url"] == "http://complex-git-worker:8080"
             assert init_params["string_param"] == "test_string"
             assert init_params["int_param"] == 123
