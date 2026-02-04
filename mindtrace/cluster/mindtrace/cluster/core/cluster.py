@@ -1,7 +1,6 @@
 import json
 import threading
 import urllib.parse
-import uuid
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -1173,7 +1172,6 @@ class StandardWorkerLauncher(Archiver):
                 url_stripped = url
 
             # Create launch command
-            server_id = uuid.uuid1()
             launch_command = [
                 "python",
                 "-m",
@@ -1184,8 +1182,6 @@ class StandardWorkerLauncher(Archiver):
                 "1",
                 "-b",
                 url_stripped,
-                "-p",
-                str(server_id),
                 "-k",
                 "uvicorn.workers.UvicornWorker",
                 "--init-params",

@@ -48,6 +48,15 @@ def create_mock_mongo_user(name="John", age=30, email="john@example.com", pk="50
     return mock_user
 
 
+@pytest.fixture(autouse=True)
+def mock_mongo_connection():
+    """Mock AsyncIOMotorClient for all tests so no real MongoDB is used."""
+    with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        yield mock_client_cls
+
+
 @pytest.mark.asyncio
 async def test_mongo_backend_crud(mock_mongo_backend):
     """Test basic CRUD operations."""
