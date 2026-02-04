@@ -5,6 +5,7 @@ from typing import List, Tuple
 import pytest
 
 from mindtrace.registry import S3RegistryBackend
+from mindtrace.registry.core.types import CleanupState
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -334,6 +335,26 @@ def test_push_batch(backend, sample_object_dir, sample_metadata):
     assert len(list(results)) == 3
 
 
+def test_push_overwrite_cleanup_orphaned(backend, sample_object_dir, sample_metadata, monkeypatch):
+    """Test overwrite returns cleanup='orphaned' when old UUID cleanup fails."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: False)
+
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+        on_conflict="overwrite",
+    )
+
+    result = results.first()
+    assert result.is_overwritten
+    assert result.cleanup == CleanupState.ORPHANED
+    assert len(backend.storage.list_objects(prefix="_staging/")) == 1
+
+
 def test_push_invalid_name(backend, sample_object_dir, sample_metadata):
     """Test push with invalid object name returns failed result."""
     result = backend.push("invalid_name", "1.0.0", sample_object_dir, sample_metadata)
@@ -416,9 +437,26 @@ def test_delete(backend, sample_object_dir, sample_metadata):
     result = results.first()
     assert result.ok
 
+    # Verify UUID blobs were cleaned up inline
+    assert len(backend.storage.list_objects(prefix="objects/test:object/1.0.0/")) == 0
+    # And staging plan removed after successful cleanup
+    assert len(backend.storage.list_objects(prefix="_staging/")) == 0
+
     # Verify deleted
     has = backend.has_object("test:object", "1.0.0")
     assert not has[("test:object", "1.0.0")]
+
+
+def test_delete_cleanup_failure_keeps_plan(backend, sample_object_dir, sample_metadata, monkeypatch):
+    """Test delete keeps commit plan when blob cleanup fails (best-effort cleanup)."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: False)
+
+    results = backend.delete("test:object", "1.0.0")
+    result = results.first()
+    assert result.ok
+    assert len(backend.storage.list_objects(prefix="_staging/")) == 1
+    assert not backend.has_object("test:object", "1.0.0")[("test:object", "1.0.0")]
 
 
 def test_delete_batch(backend, sample_object_dir, sample_metadata):
@@ -456,14 +494,14 @@ def test_fetch_metadata(backend, sample_object_dir, sample_metadata):
 
 
 def test_fetch_metadata_not_found_single(backend):
-    """Test fetch_metadata for non-existent object returns empty (batch-only behavior)."""
+    """Test fetch_metadata for non-existent object returns failed OpResult."""
     results = backend.fetch_metadata("nonexistent:object", "1.0.0")
-    # Not found objects are omitted from results (same as batch behavior)
-    assert results.get(("nonexistent:object", "1.0.0")) is None
+    assert ("nonexistent:object", "1.0.0") in results
+    assert results[("nonexistent:object", "1.0.0")].is_error
 
 
 def test_fetch_metadata_not_found_batch(backend, sample_object_dir, sample_metadata):
-    """Test fetch_metadata for non-existent object (batch) returns empty for missing."""
+    """Test fetch_metadata for non-existent object (batch) returns failed OpResult."""
     # Push one object
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
@@ -473,9 +511,9 @@ def test_fetch_metadata_not_found_batch(backend, sample_object_dir, sample_metad
         ["1.0.0", "1.0.0"],
     )
 
-    # Existing one should be in results, missing one should be omitted
+    # Existing one should be in results, missing one should be a failed result
     assert results.get(("test:object", "1.0.0")).ok
-    assert results.get(("nonexistent:object", "1.0.0")) is None
+    assert results.get(("nonexistent:object", "1.0.0")).is_error
 
 
 def test_fetch_metadata_batch(backend, sample_object_dir, sample_metadata):

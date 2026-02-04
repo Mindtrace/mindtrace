@@ -5,6 +5,7 @@ from typing import List, Tuple
 import pytest
 
 from mindtrace.registry import GCPRegistryBackend
+from mindtrace.registry.core.types import CleanupState
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -313,6 +314,25 @@ def test_push_conflict_skip_batch(backend, sample_object_dir, sample_metadata, t
     assert result2.ok
 
 
+def test_push_overwrite_cleanup_orphaned(backend, sample_object_dir, sample_metadata, monkeypatch):
+    """Test overwrite returns cleanup='orphaned' when old UUID cleanup fails."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: False)
+
+    results = backend.push(
+        "test:object",
+        "1.0.0",
+        sample_object_dir,
+        sample_metadata,
+        on_conflict="overwrite",
+    )
+
+    result = results.first()
+    assert result.is_overwritten
+    assert result.cleanup == CleanupState.ORPHANED
+    assert len(backend.gcs.list_objects(prefix="_staging/")) == 1
+
+
 def test_pull(backend, sample_object_dir, sample_metadata, tmp_path):
     """Test pulling objects from GCS."""
     # First push some objects
@@ -358,6 +378,19 @@ def test_delete(backend, sample_object_dir, sample_metadata):
     # Verify objects were deleted
     objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0/")
     assert len(objects) == 0
+    assert len(backend.gcs.list_objects(prefix="_staging/")) == 0
+
+
+def test_delete_cleanup_failure_keeps_plan(backend, sample_object_dir, sample_metadata, monkeypatch):
+    """Test delete keeps commit plan when blob cleanup fails (best-effort cleanup)."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: False)
+
+    results = backend.delete("test:object", "1.0.0")
+    result = results.first()
+    assert result.ok
+    assert len(backend.gcs.list_objects(prefix="_staging/")) == 1
+    assert not backend.has_object("test:object", "1.0.0")[("test:object", "1.0.0")]
 
 
 def test_save_metadata(backend, sample_metadata):
@@ -653,6 +686,7 @@ def test_push_with_overwrite(backend, sample_object_dir, sample_metadata):
     result = results.first()
     assert result.ok
     assert result.is_overwritten
+    assert result.cleanup == CleanupState.OK
 
     # Verify UUID changed after overwrite
     meta_results = backend.fetch_metadata("test:object", "1.0.0")

@@ -25,7 +25,7 @@ from mindtrace.registry.backends.registry_backend import (
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
 )
-from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
+from mindtrace.registry.core.types import CleanupState, OnConflict, OpResult, OpResults
 from mindtrace.storage import S3StorageHandler, Status, StringResult
 
 
@@ -48,7 +48,7 @@ class S3RegistryBackend(RegistryBackend):
             file1.bin
             file2.json
           _meta_{name}@{version}.json         # Metadata pointing to active UUID
-          _staging/{request_id}.json          # Commit plans for janitor cleanup
+          _staging/{uuid}.json                # Commit plans for janitor cleanup
           registry_metadata.json              # Global registry config
 
     Uses `_files` manifest from metadata to avoid expensive blob listing on pull.
@@ -189,9 +189,9 @@ class S3RegistryBackend(RegistryBackend):
         """Convert object name, version, and UUID to a storage key."""
         return self._prefixed(f"objects/{name}/{version}/{uuid_str}")
 
-    def _staging_path(self, request_id: str) -> str:
-        """Get the path for a commit plan in staging."""
-        return self._prefixed(f"_staging/{request_id}.json")
+    def _staging_path(self, uuid_str: str) -> str:
+        """Get the path for a commit plan in staging. Uses uuid as filename."""
+        return self._prefixed(f"_staging/{uuid_str}.json")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Commit Plan Helpers (for lock-free MVCC)
@@ -199,93 +199,101 @@ class S3RegistryBackend(RegistryBackend):
 
     def _create_commit_plan(
         self,
-        request_id: str,
         name: str,
         version: str,
         uuid_str: str,
-        old_uuid: str | None = None,
-        operation: str = "push",
         expires_hours: int = 1,
     ) -> bool:
         """Create a commit plan to track an in-progress operation.
 
         Commit plans allow janitor to clean up failed/incomplete operations.
+        The uuid_str serves as both the artifact folder name and the plan filename.
 
         Args:
-            request_id: Unique identifier for this operation (used as filename).
             name: Object name.
             version: Object version.
-            uuid_str: UUID for the artifact folder (new for push, existing for delete).
-            old_uuid: For overwrites, the UUID of the previous version to clean up.
-            operation: Operation type - "push" or "delete".
+            uuid_str: UUID for the artifact folder (also used as plan filename).
             expires_hours: Hours until this plan expires (for janitor).
 
         Returns:
             True if commit plan was created successfully.
 
-        Janitor behavior by operation:
-            - push: Delete uuid folder (incomplete push), keep old_uuid (was current)
-            - delete: Delete uuid folder (delete committed but cleanup failed)
+        Janitor behavior:
+            - Aggregates expired plans by (name, version)
+            - Uses list_blobs to find all UUID folders for that object
+            - Deletes UUIDs not matching current metadata's _storage.uuid
         """
         expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
 
         plan = {
-            "operation": operation,
             "name": name,
             "version": version,
             "uuid": uuid_str,
-            "old_uuid": old_uuid,
             "expires_at": expires_at.isoformat(),
         }
 
-        staging_path = self._staging_path(request_id)
+        staging_path = self._staging_path(uuid_str)
         data = json.dumps(plan)
 
         try:
             result = self.storage.upload_string(data, staging_path)
             return result.ok
         except Exception as e:
-            self.logger.warning(f"Failed to create commit plan {request_id}: {e}")
+            self.logger.warning(f"Failed to create commit plan {uuid_str}: {e}")
             return False
 
-    def _delete_commit_plan(self, request_id: str) -> bool:
+    def _delete_commit_plan(self, uuid_str: str) -> bool:
         """Delete a commit plan after successful completion.
 
         Args:
-            request_id: The request ID of the commit plan to delete.
+            uuid_str: The UUID of the commit plan to delete (same as folder UUID).
 
         Returns:
             True if deleted successfully, False otherwise.
         """
-        staging_path = self._staging_path(request_id)
+        staging_path = self._staging_path(uuid_str)
         result = self.storage.delete(staging_path)
         if not result.ok:
-            self.logger.warning(f"Failed to delete commit plan {request_id}: {result.error_message}")
+            self.logger.warning(f"Failed to delete commit plan {uuid_str}: {result.error_message}")
             return False
         return True
 
-    def _delete_uuid_folder(self, name: str, version: str, uuid_str: str) -> bool:
+    def _delete_uuid_folder(
+        self, name: str, version: str, uuid_str: str, files_manifest: list | None = None
+    ) -> bool:
         """Delete all files in a UUID folder.
 
         Args:
             name: Object name.
             version: Object version.
             uuid_str: UUID of the folder to delete.
+            files_manifest: Optional list of relative file paths from metadata's _files.
+                If provided, deletes exactly these files (no list_objects needed).
+                If None, falls back to listing objects in the folder.
 
         Returns:
-            True if all files deleted successfully, False otherwise.
+            True if ALL files deleted successfully.
+            False if any file failed (including not found - indicates race condition).
         """
         folder_prefix = self._object_key_with_uuid(name, version, uuid_str)
         try:
-            # List all files in the UUID folder
-            files = self.storage.list_objects(prefix=folder_prefix)
-            if files:
-                batch_result = self.storage.delete_batch(files)
-                # Check if any deletes failed
-                if batch_result.failed_results:
-                    failed_count = len(batch_result.failed_results)
-                    self.logger.warning(f"Failed to delete {failed_count} files in UUID folder {folder_prefix}")
-                    return False
+            if files_manifest is not None:
+                # Use manifest - we know exactly what to delete (avoids list_objects)
+                files = [f"{folder_prefix}/{f}" for f in files_manifest]
+                if not files:
+                    return False  # Empty manifest is suspicious
+            else:
+                # Fallback: list objects (for janitor or legacy data without _files)
+                files = self.storage.list_objects(prefix=folder_prefix)
+                if not files:
+                    return False  # No files found - someone else deleted them (race)
+
+            batch_result = self.storage.delete_batch(files)
+            # Any failure (including not found) indicates potential race
+            if batch_result.failed_results:
+                failed_count = len(batch_result.failed_results)
+                self.logger.debug(f"Delete had {failed_count} failures in {folder_prefix} - possible race")
+                return False
             return True
         except Exception as e:
             self.logger.warning(f"Failed to delete UUID folder {folder_prefix}: {e}")
@@ -293,7 +301,6 @@ class S3RegistryBackend(RegistryBackend):
 
     def _attempt_rollback(
         self,
-        request_id: str,
         name: str,
         version: str,
         uuid_str: str,
@@ -304,17 +311,16 @@ class S3RegistryBackend(RegistryBackend):
         the commit plan remains for janitor to handle later.
 
         Args:
-            request_id: The request ID for the commit plan.
             name: Object name.
             version: Object version.
-            uuid_str: UUID of the folder to clean up.
+            uuid_str: UUID of the folder to clean up (also used as plan filename).
 
         Returns:
             True if cleanup succeeded, False otherwise.
         """
         cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
         if cleanup_ok:
-            self._delete_commit_plan(request_id)
+            self._delete_commit_plan(uuid_str)
         return cleanup_ok
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -409,7 +415,12 @@ class S3RegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _save_metadata_single(
-        self, name: str, version: str, metadata: dict, on_conflict: str = OnConflict.SKIP
+        self,
+        name: str,
+        version: str,
+        metadata: dict,
+        on_conflict: str = OnConflict.SKIP,
+        check_exists_for_overwrite: bool = True,
     ) -> StringResult:
         """Save a single metadata file atomically.
 
@@ -418,6 +429,9 @@ class S3RegistryBackend(RegistryBackend):
             version: Object version.
             metadata: Metadata dict to write.
             on_conflict: "error", "skip", or "overwrite".
+            check_exists_for_overwrite: If True, does a pre-check in overwrite mode
+                to report OVERWRITTEN vs OK. Set False when caller already resolved
+                overwrite semantics to avoid TOCTOU contradictions.
 
         Returns:
             StringResult with status: ok, already_exists, overwritten, or error.
@@ -426,8 +440,7 @@ class S3RegistryBackend(RegistryBackend):
         data = json.dumps(metadata)
 
         if on_conflict == OnConflict.OVERWRITE:
-            # Check if exists first to determine status
-            existed = self.storage.exists(meta_path)
+            existed = self.storage.exists(meta_path) if check_exists_for_overwrite else False
             result = self.storage.upload_string(data, meta_path)
             if result.ok:
                 return StringResult(
@@ -448,7 +461,7 @@ class S3RegistryBackend(RegistryBackend):
             return result
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Artifact + Metadata Operations (atomic)
+    # Artifact + Metadata Operations 
     # ─────────────────────────────────────────────────────────────────────────
 
     def _push_single_object(
@@ -480,34 +493,29 @@ class S3RegistryBackend(RegistryBackend):
         Returns:
             OpResult indicating success, skip, overwrite, or error.
         """
-        request_id: str | None = None
         uuid_str: str | None = None
-        old_uuid: str | None = None
         is_overwrite = on_conflict == OnConflict.OVERWRITE
 
         try:
-            # Step 1: Check existing metadata
-            # - For on_conflict=skip: return if exists (avoid uploading files that will be discarded)
-            # - For on_conflict=overwrite: get old_uuid (current) for cleanup after successful write
-            try:
-                existing_meta = self.fetch_metadata(obj_name, obj_version)
-                existing_result = existing_meta.get((obj_name, obj_version))
-                if existing_result and existing_result.ok and existing_result.metadata:
-                    if not is_overwrite:
-                        # Skip mode: object exists, return early (no upload needed)
-                        return OpResult.skipped(obj_name, obj_version)
-                    # Overwrite mode: get old_uuid for cleanup
-                    storage_info = existing_result.metadata.get("_storage", {})
-                    old_uuid = storage_info.get("uuid")
-            except Exception:
-                # No existing metadata or fetch failed, proceed with push
-                pass
+            # Step 1: For SKIP mode - check early, exit if exists (avoid wasted upload)
+            if not is_overwrite:
+                try:
+                    result = self.fetch_metadata(obj_name, obj_version).first()
+                    if result and result.ok:
+                        return OpResult.skipped(obj_name, obj_version, cleanup=CleanupState.NOT_APPLICABLE)
+                except Exception:
+                    pass
 
-            # Step 2: Generate unique identifiers and create commit plan
-            request_id = str(uuid.uuid4())
+            # Step 2: Generate UUID and create commit plan
+            # Single UUID serves as both folder name and plan filename
             uuid_str = str(uuid.uuid4())
-            if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str, old_uuid):
-                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
+            if not self._create_commit_plan(obj_name, obj_version, uuid_str):
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    RuntimeError("Failed to create commit plan"),
+                    cleanup=CleanupState.NOT_APPLICABLE,
+                )
 
             # Step 3: Build file list for UUID folder
             remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
@@ -529,7 +537,7 @@ class S3RegistryBackend(RegistryBackend):
 
                 # Check for failures
                 if batch_result.failed_results:
-                    self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                    rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
                     first_error = batch_result.failed_results[0]
                     return OpResult.failed(
                         obj_name,
@@ -537,9 +545,22 @@ class S3RegistryBackend(RegistryBackend):
                         RuntimeError(
                             f"Failed to upload {len(batch_result.failed_results)} file(s): {first_error.error_message}"
                         ),
+                        cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
                     )
 
-            # Step 5: Prepare metadata with _storage info
+            # Step 5: For OVERWRITE mode - check late for old_uuid and old_files (shorter race window)
+            old_uuid = None
+            old_files = None
+            if is_overwrite:
+                try:
+                    result = self.fetch_metadata(obj_name, obj_version).first()
+                    if result and result.ok and result.metadata:
+                        old_uuid = result.metadata.get("_storage", {}).get("uuid")
+                        old_files = result.metadata.get("_files")
+                except Exception:
+                    pass
+
+            # Step 6: Prepare metadata with _storage info
             prepared_meta = dict(obj_meta) if obj_meta else {}
             prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
             prepared_meta["_storage"] = {
@@ -547,41 +568,70 @@ class S3RegistryBackend(RegistryBackend):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
-            # Step 6: Write metadata (the "commit point")
-            meta_result = self._save_metadata_single(obj_name, obj_version, prepared_meta, on_conflict)
+            # Step 7: Write metadata (the "commit point")
+            meta_result = self._save_metadata_single(
+                obj_name,
+                obj_version,
+                prepared_meta,
+                on_conflict,
+                check_exists_for_overwrite=False,
+            )
 
             # Handle conflict (immutable mode - another writer won the race)
             if meta_result.status == Status.ALREADY_EXISTS:
-                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
-                return OpResult.skipped(obj_name, obj_version)
+                rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                return OpResult.skipped(
+                    obj_name,
+                    obj_version,
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                )
 
             # Handle any error (.ok checks for OK or OVERWRITTEN)
             if not meta_result.ok:
-                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
+                rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
                 return OpResult.failed(
                     obj_name,
                     obj_version,
                     RuntimeError(meta_result.error_message or f"Metadata write failed: {meta_result.status}"),
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
                 )
 
-            # Step 7: Success. Clean up old UUID folder and commit plan
-            cleanup_ok = True
-            if old_uuid:
-                cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid)
-
-            if cleanup_ok:
-                self._delete_commit_plan(request_id)
-
-            if meta_result.status == Status.OVERWRITTEN:
-                return OpResult.overwritten(obj_name, obj_version)
+            # Step 8: Success - handle plan deletion based on mode
+            if is_overwrite:
+                # OVERWRITE mode: clean up old UUID folder if exists
+                if old_uuid:
+                    # Use old_files manifest if available (avoids list_objects)
+                    # If any file deletion fails (including not found), cleanup_ok=False
+                    # which means we keep plan for janitor (race detection)
+                    cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid, old_files)
+                    if cleanup_ok:
+                        plan_deleted = self._delete_commit_plan(uuid_str)
+                        cleanup_state = CleanupState.OK if plan_deleted else CleanupState.UNKNOWN
+                    else:
+                        cleanup_state = CleanupState.ORPHANED
+                    return OpResult.overwritten(obj_name, obj_version, cleanup=cleanup_state)
+                # else: no old_uuid - keep plan for janitor (possible race created orphan)
+                return OpResult.success(obj_name, obj_version, cleanup=CleanupState.UNKNOWN)
             else:
-                return OpResult.success(obj_name, obj_version)
+                # SKIP mode: we're guaranteed current (immutable), safe to delete plan
+                plan_deleted = self._delete_commit_plan(uuid_str)
+                return OpResult.success(
+                    obj_name,
+                    obj_version,
+                    cleanup=CleanupState.NOT_APPLICABLE if plan_deleted else CleanupState.UNKNOWN,
+                )
 
         except Exception as e:
             # Attempt cleanup if we created a commit plan
-            if request_id and uuid_str:
-                self._attempt_rollback(request_id, obj_name, obj_version, uuid_str)
-            return OpResult.failed(obj_name, obj_version, e)
+            if uuid_str:
+                rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                return OpResult.failed(
+                    obj_name,
+                    obj_version,
+                    e,
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                )
+            return OpResult.failed(obj_name, obj_version, e, cleanup=CleanupState.UNKNOWN)
 
     def push(
         self,
@@ -781,10 +831,9 @@ class S3RegistryBackend(RegistryBackend):
 
         MVCC delete flow:
         1. Get UUID from metadata (if available)
-        2. Create delete commit plan (for janitor cleanup if crash after step 3)
+        2. Create commit plan (for janitor cleanup - uses uuid as plan filename)
         3. Delete metadata (the "commit point" - object becomes invisible)
-        4. Delete UUID folder (cleanup)
-        5. Delete commit plan on success
+        4. Keep commit plan for janitor to clean up UUID folder
 
         Args:
             obj_name: Object name.
@@ -795,7 +844,7 @@ class S3RegistryBackend(RegistryBackend):
         Returns:
             OpResult indicating success or error.
         """
-        request_id: str | None = None
+        uuid_str: str | None = None
 
         try:
             # Step 1: Extract UUID from metadata (caller fetches metadata in delete())
@@ -806,13 +855,14 @@ class S3RegistryBackend(RegistryBackend):
             uuid_str = metadata.get("_storage", {}).get("uuid")
             if not uuid_str:
                 self.logger.warning(f"Metadata for {obj_name}@{obj_version} missing _storage.uuid")
+                # Generate a UUID for the plan so janitor knows to check this object
+                uuid_str = str(uuid.uuid4())
 
-            # Step 2: Create delete commit plan
+            # Step 2: Create commit plan (uuid serves as both identifier and plan filename)
             # The plan marks this name/version as needing cleanup - janitor will
-            # list all UUID folders and delete non-current ones
-            request_id = str(uuid.uuid4())
-            if not self._create_commit_plan(request_id, obj_name, obj_version, uuid_str or "", operation="delete"):
-                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create delete commit plan"))
+            # list all UUID folders and delete them (since metadata will be gone)
+            if not self._create_commit_plan(obj_name, obj_version, uuid_str):
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
 
             # Step 3: Delete metadata (the "commit point")
             # After this, readers no longer see the object
@@ -820,27 +870,26 @@ class S3RegistryBackend(RegistryBackend):
             meta_result = self.storage.delete(meta_path)
 
             if not meta_result.ok:
-                self._delete_commit_plan(request_id)
+                self._delete_commit_plan(uuid_str)
                 return OpResult.failed(
                     obj_name,
                     obj_version,
                     RuntimeError(f"Failed to delete metadata: {meta_result.error_message}"),
                 )
 
-            # Step 4: Delete UUID folder (cleanup)
-            # If this fails, janitor will clean it up later using the commit plan
-            if uuid_str:
-                self._delete_uuid_folder(obj_name, obj_version, uuid_str)
-
-            # Step 5: Delete commit plan on success
-            self._delete_commit_plan(request_id)
+            # Step 4: Best-effort UUID folder cleanup.
+            # If cleanup fails, keep the plan for janitor.
+            files_manifest = metadata.get("_files")
+            cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, uuid_str, files_manifest)
+            if cleanup_ok:
+                self._delete_commit_plan(uuid_str)
 
             return OpResult.success(obj_name, obj_version)
 
         except Exception as e:
-            # Best-effort cleanup of commit plan
-            if request_id:
-                self._delete_commit_plan(request_id)
+            # Best-effort cleanup of commit plan on failure
+            if uuid_str:
+                self._delete_commit_plan(uuid_str)
             return OpResult.failed(obj_name, obj_version, e)
 
     def delete(
@@ -981,7 +1030,7 @@ class S3RegistryBackend(RegistryBackend):
 
         This is a batch-only method - it never raises exceptions for individual
         object failures. The caller (Registry) handles single vs batch semantics.
-        Missing entries (not found) are omitted from the result.
+        Not found entries are returned as failed OpResults.
 
         Args:
             name: Name of the object(s).
@@ -990,8 +1039,7 @@ class S3RegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() with metadata on success
-            - OpResult.failed() on failure (excluding not found)
-            Note: Not found objects are simply omitted from the result.
+            - OpResult.failed() on failure (including not found)
         """
         names = self._to_list(name)
         versions = self._to_list(version)
@@ -1030,7 +1078,14 @@ class S3RegistryBackend(RegistryBackend):
                     continue
                 obj_name, obj_version = temp_to_key[file_result.local_path]
                 if file_result.status == Status.NOT_FOUND:
-                    continue  # Skip missing entries - not an error
+                    results.add(
+                        OpResult.failed(
+                            obj_name,
+                            obj_version,
+                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
+                        )
+                    )
+                    continue
                 results.add(
                     OpResult.failed(
                         obj_name,
@@ -1164,12 +1219,7 @@ class S3RegistryBackend(RegistryBackend):
         if len(names) != len(versions):
             raise ValueError("name and version list lengths must match")
 
-        # Use fetch_metadata - wrap in try/except since single item raises on not found
-        try:
-            metadata_results = self.fetch_metadata(names, versions)
-        except RegistryObjectNotFound:
-            # Single item not found - return False for that item
-            metadata_results = OpResults()
+        metadata_results = self.fetch_metadata(names, versions)
 
         results: Dict[Tuple[str, str], bool] = {}
         for obj_name, obj_version in zip(names, versions):
