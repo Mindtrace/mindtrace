@@ -245,7 +245,7 @@ def test_sanitize_blob_path(gcs_handler):
         gcs_handler._sanitize_blob_path(wrong_bucket_path)
 
 
-def test_init_creates_bucket(gcs_client, gcp_project_id):
+def test_init_creates_bucket(gcs_client, gcp_project_id, gcp_credentials_path):
     """Test that handler creates bucket if it doesn't exist."""
     bucket_name = f"mindtrace-test-create-{uuid.uuid4().hex[:8]}"
 
@@ -258,6 +258,7 @@ def test_init_creates_bucket(gcs_client, gcp_project_id):
         _ = GCSStorageHandler(
             bucket_name=bucket_name,
             project_id=gcp_project_id,
+            credentials_path=gcp_credentials_path,
             ensure_bucket=True,
             create_if_missing=True,
         )
