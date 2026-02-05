@@ -19,15 +19,16 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
     Registry backends handle three concerns:
     1. Artifacts: raw files for each (name, version)
     2. Object metadata: recording what's stored, how to deserialize, and file manifest
-    3. Registry-level metadata: global settings like version_objects and materializers
+    3. Registry-level metadata: global settings like version_objects, mutable and materializers
 
     The canonical invariant: an object "exists" if and only if its metadata exists.
 
     Key Behaviors:
-    - Backend handles locking internally (not exposed to Registry)
-    - push() with metadata is atomic (artifacts + metadata succeed/fail together)
-    - Version auto-increment happens atomically in backend when version=None.
-    - Single/batch operations unified via str|list parameter types
+    - Backend handles read and write operations.
+    - Registry resolves versions before calling the backend (versions are concrete).
+    - Backends implement their own concurrency control/locking; Registry may request
+      locks via acquire_lock, backends decide how to handle them.
+
     """
 
     @property
@@ -92,14 +93,14 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         This is the primary write operation. Artifacts and metadata are committed
         together - either both succeed or both fail (with rollback).
 
-        If version is None, auto-increments to next version atomically.
+        Registry resolves versions before calling backends; version must be concrete.
 
         Backends are batch-only and always return OpResults. Single-item exception
         handling is done at the Registry API surface level.
 
         Args:
             name: Object name(s). Single string or list.
-            version: Version string(s), None for auto-increment, or list.
+            version: Version string(s) (concrete), or list.
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store. Should contain at minimum:
                 - "class": fully-qualified class name
@@ -147,8 +148,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             acquire_lock: If True, acquire a shared (read) lock before pulling.
                 This is needed for mutable registries to prevent read-write races.
                 Default is False (no locking, for immutable registries).
-            metadata: Optional pre-fetched metadata dict(s) containing "_files" manifest.
-                If provided, avoids re-fetching metadata. Single dict or list of dicts.
+            metadata: Pre-fetched metadata dict(s) containing "_files" manifest.
+                Required by Registry/backends; local backend accepts but doesn't use it.
 
         Returns:
             OpResults with OpResult for each (name, version):

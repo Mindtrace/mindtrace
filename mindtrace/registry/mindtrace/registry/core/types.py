@@ -44,8 +44,9 @@ class VerifyLevel(str, Enum):
     - FULL: Integrity check + staleness check (cache layer only).
         Ensures cached data matches current remote state.
 
-    The staleness check (FULL vs INTEGRITY) only applies when using
-    RegistryWithCache. For base Registry, FULL behaves like INTEGRITY.
+    The staleness check (FULL vs INTEGRITY) only applies when caching is
+    enabled (remote backend with ``use_cache=True``). For local backends,
+    FULL behaves like INTEGRITY.
     """
 
     NONE = "none"
@@ -63,12 +64,12 @@ class CleanupState(str, Enum):
 
     @property
     def has_orphan(self) -> bool:
-        """True when cleanup is incomplete/uncertain and follow-up is needed."""
+        """True when cleanup state is ORPHANED and follow-up is needed."""
         return self in (CleanupState.ORPHANED)
 
     @property
     def has_unknown(self) -> bool:
-        """True when cleanup is incomplete/uncertain and follow-up is needed."""
+        """True when cleanup state is UNKNOWN and follow-up is needed."""
         return self in (CleanupState.UNKNOWN)
 
 
