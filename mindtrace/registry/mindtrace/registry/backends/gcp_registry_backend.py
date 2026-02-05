@@ -1152,12 +1152,13 @@ class GCPRegistryBackend(RegistryBackend):
     def fetch_registry_metadata(self) -> dict:
         """Fetch registry-level metadata."""
         result = self.gcs.download_string(self._metadata_path)
-        if result.ok:
-            return json.loads(result.content.decode("utf-8"))
-        self.logger.debug(f"Could not load registry metadata: {result.error_message}")
-        return {}
+        if result.status == Status.NOT_FOUND:
+            return {}
+        if result.status == Status.ERROR:
+            raise RuntimeError(f"Failed to fetch registry metadata: {result.error_message}")
+        return json.loads(result.content.decode("utf-8"))
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # ───────────────────────────────────   ──────────────────────────────────────
     # Discovery
     # ─────────────────────────────────────────────────────────────────────────
 

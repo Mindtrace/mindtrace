@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
     RegistryObjectNotFound,
@@ -1901,8 +1902,8 @@ def test_class_level_materializer_registration():
         assert defaults["test.module.MyClass"] == "test.module.MyMaterializer"
     finally:
         # Restore original state
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_class_level_materializer_registration_with_type():
@@ -1920,8 +1921,8 @@ def test_class_level_materializer_registration_with_type():
         assert key in defaults
         assert defaults[key] == "test.module.DummyMaterializer"
     finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
@@ -1936,8 +1937,8 @@ def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
         assert "test.module.MyClass" in materializers
         assert materializers["test.module.MyClass"] == "test.module.MyMaterializer"
     finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_materializer_registration_thread_safety():
@@ -1959,8 +1960,8 @@ def test_materializer_registration_thread_safety():
             assert f"test.thread.Class{i}" in defaults
             assert defaults[f"test.thread.Class{i}"] == f"test.thread.Materializer{i}"
     finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_materializer_registration_idempotency():
@@ -1974,8 +1975,8 @@ def test_materializer_registration_idempotency():
         assert list(defaults.keys()).count("test.module.IdemClass") == 1
         assert defaults["test.module.IdemClass"] == "test.module.IdemMaterializer"
     finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_instance_materializer_override_class_level(temp_registry_dir):
@@ -1989,8 +1990,8 @@ def test_instance_materializer_override_class_level(temp_registry_dir):
         materializers = reg.registered_materializers()
         assert materializers["test.module.OverrideClass"] == "test.module.InstanceLevelMaterializer"
     finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
+        with _RegistryCore._materializer_lock:
+            _RegistryCore._default_materializers = orig
 
 
 def test_register_materializer_type_assigns_fully_qualified_name(registry):
@@ -2023,202 +2024,6 @@ def test_version_objects_conflict_error(registry):
     # Try to create another registry with version_objects=False in the same directory
     with pytest.raises(ValueError, match="Version objects conflict"):
         Registry(backend=str(registry.backend.uri), version_objects=False)
-
-
-def test_get_registry_metadata_gcp_backend(registry, monkeypatch):
-    """Test _get_registry_metadata with GCP backend."""
-    # Mock the backend to have gcs attribute
-    mock_gcs = type("MockGCS", (), {})()
-    mock_gcs.download = lambda remote_path, local_path: None
-
-    registry.backend.gcs = mock_gcs
-
-    # Mock the file operations
-    with patch("builtins.open", create=True) as mock_open:
-        mock_file = mock_open.return_value.__enter__.return_value
-        mock_file.read.return_value = '{"version_objects": true, "materializers": {}}'
-
-        with patch("os.path.exists", return_value=True):
-            with patch("os.unlink"):
-                result = registry._get_registry_metadata()
-                assert result == {"version_objects": True, "materializers": {}}
-
-
-def test_get_registry_metadata_minio_backend(registry, monkeypatch):
-    """Test _get_registry_metadata with MinIO backend."""
-    # Mock fetch_registry_metadata to return test data
-    registry.backend.fetch_registry_metadata = lambda: {"version_objects": True, "materializers": {}}
-
-    result = registry._get_registry_metadata()
-    assert result == {"version_objects": True, "materializers": {}}
-
-
-def test_get_registry_metadata_local_backend(registry, monkeypatch):
-    """Test _get_registry_metadata with local backend."""
-    # Mock fetch_registry_metadata to return test data
-    registry.backend.fetch_registry_metadata = lambda: {"version_objects": True, "materializers": {}}
-
-    result = registry._get_registry_metadata()
-    assert result == {"version_objects": True, "materializers": {}}
-
-
-def test_get_registry_metadata_fallback(registry, monkeypatch):
-    """Test _get_registry_metadata exception handling."""
-    # Mock fetch_registry_metadata to raise an exception
-    registry.backend.fetch_registry_metadata = lambda: (_ for _ in ()).throw(Exception("Test error"))
-
-    result = registry._get_registry_metadata()
-    assert result == {}
-
-
-def test_get_registry_metadata_exception_handling(registry, monkeypatch):
-    """Test _get_registry_metadata exception handling."""
-
-    # Mock fetch_registry_metadata to raise an exception
-    def raise_exception():
-        raise Exception("Test error")
-
-    registry.backend.fetch_registry_metadata = raise_exception
-    result = registry._get_registry_metadata()
-    assert result == {}
-
-
-def test_save_registry_metadata_gcp_backend(registry, monkeypatch):
-    """Test _save_registry_metadata with GCP backend."""
-    # Mock save_registry_metadata to track calls
-    saved_metadata = {}
-
-    def save_metadata(metadata):
-        saved_metadata.clear()
-        saved_metadata.update(metadata)
-
-    registry.backend.save_registry_metadata = save_metadata
-    registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
-
-    registry._save_registry_metadata({"version_objects": True})
-
-
-def test_save_registry_metadata_minio_backend(registry, monkeypatch):
-    """Test _save_registry_metadata with MinIO backend."""
-    # Mock save_registry_metadata to track calls
-    saved_metadata = {}
-
-    def save_metadata(metadata):
-        saved_metadata.clear()
-        saved_metadata.update(metadata)
-
-    registry.backend.save_registry_metadata = save_metadata
-    registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
-
-    registry._save_registry_metadata({"version_objects": True})
-
-
-def test_save_registry_metadata_local_backend(registry, monkeypatch):
-    """Test _save_registry_metadata with local backend."""
-    # Mock save_registry_metadata to track calls
-    saved_metadata = {}
-
-    def save_metadata(metadata):
-        saved_metadata.clear()
-        saved_metadata.update(metadata)
-
-    registry.backend.save_registry_metadata = save_metadata
-    registry.backend.fetch_registry_metadata = lambda: saved_metadata.copy()
-
-    registry._save_registry_metadata({"version_objects": True})
-
-
-def test_save_registry_metadata_fallback(registry, monkeypatch):
-    """Test _save_registry_metadata exception handling."""
-
-    # Mock save_registry_metadata to raise an exception (should be caught and logged)
-    def raise_exception(metadata):
-        raise Exception("Test error")
-
-    registry.backend.save_registry_metadata = raise_exception
-    registry.backend.fetch_registry_metadata = lambda: {}
-
-    # Should not raise, but log a warning
-    registry._save_registry_metadata({"materializers": {"test": "materializer"}})
-
-
-def test_save_registry_metadata_exception_handling(registry, monkeypatch):
-    """Test _save_registry_metadata exception handling."""
-
-    # Mock save_registry_metadata to raise an exception (should be caught and logged)
-    def raise_exception(metadata):
-        raise Exception("Test error")
-
-    registry.backend.save_registry_metadata = raise_exception
-    registry.backend.fetch_registry_metadata = lambda: {}
-
-    # Should not raise, but log a warning
-    registry._save_registry_metadata({"materializers": {"test": "materializer"}})
-
-
-def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
-    """Test _initialize_version_objects exception handler when metadata can't be read."""
-    # Create a fresh registry that hasn't been initialized yet
-    # We'll patch _get_registry_metadata to raise an exception during initialization
-    save_calls = []
-
-    def failing_get_metadata(self):
-        raise OSError("Cannot read metadata file")
-
-    def mock_save_metadata(self, metadata):
-        save_calls.append(metadata)
-        # Don't actually save to avoid side effects
-
-    # Patch before creating registry
-    monkeypatch.setattr(Registry, "_get_registry_metadata", failing_get_metadata)
-    monkeypatch.setattr(Registry, "_save_registry_metadata", mock_save_metadata)
-
-    # Create registry - should handle exception and save the provided value
-    registry = Registry(backend=temp_registry_dir, version_objects=False)
-
-    # Verify that save was called (exception handler saved the value)
-    assert len(save_calls) > 0
-    # Verify the registry uses the provided value
-    assert registry.version_objects is False
-
-
-def test_get_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
-    """Test _get_registry_metadata when backend returns empty dict."""
-
-    # Create a mock backend that returns empty metadata
-    class MockBackend:
-        def fetch_registry_metadata(self):
-            return {}
-
-    registry.backend = MockBackend()
-
-    # Should return empty dict
-    result = registry._get_registry_metadata()
-    assert result == {}
-
-
-def test_save_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
-    """Test _save_registry_metadata with mock backend."""
-
-    # Create a mock backend that tracks saved metadata
-    class MockBackend:
-        def __init__(self):
-            self._saved_metadata = {}
-
-        def fetch_registry_metadata(self):
-            return self._saved_metadata.copy()
-
-        def save_registry_metadata(self, metadata):
-            self._saved_metadata = metadata.copy()
-
-    mock_backend = MockBackend()
-    registry.backend = mock_backend
-
-    # Save metadata with materializers
-    registry._save_registry_metadata({"materializers": {"test.Object": "TestMaterializer"}})
-
-    # Verify metadata was saved
-    assert mock_backend._saved_metadata["materializers"]["test.Object"] == "TestMaterializer"
 
 
 def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
@@ -2458,14 +2263,13 @@ def test_hash_preserved_across_versions(registry, test_config):
 
 
 def test_get_cache_dir_from_backend_uri(registry):
-    """Test RegistryWithCache._get_cache_dir generates deterministic cache directory."""
-    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+    """Test Registry._get_cache_dir generates deterministic cache directory."""
 
     # Get cache directory using class method
-    cache_dir1 = RegistryWithCache._get_cache_dir(registry.backend.uri, registry.config)
+    cache_dir1 = Registry._get_cache_dir(registry.backend.uri, registry.config)
 
     # Get cache directory again
-    cache_dir2 = RegistryWithCache._get_cache_dir(registry.backend.uri, registry.config)
+    cache_dir2 = Registry._get_cache_dir(registry.backend.uri, registry.config)
 
     # Should be the same
     assert cache_dir1 == cache_dir2
@@ -2483,15 +2287,14 @@ def test_get_cache_dir_from_backend_uri(registry):
 
 def test_get_cache_dir_from_backend_uri_different_backends(temp_registry_dir):
     """Test that different backend URIs produce different cache directories."""
-    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
 
     # Create two registries with different backend URIs
     registry1 = Registry(backend=temp_registry_dir + "_1")
     registry2 = Registry(backend=temp_registry_dir + "_2")
 
     # Get cache directories using class method
-    cache_dir1 = RegistryWithCache._get_cache_dir(registry1.backend.uri, registry1.config)
-    cache_dir2 = RegistryWithCache._get_cache_dir(registry2.backend.uri, registry2.config)
+    cache_dir1 = Registry._get_cache_dir(registry1.backend.uri, registry1.config)
+    cache_dir2 = Registry._get_cache_dir(registry2.backend.uri, registry2.config)
 
     # Different backends should produce different cache directories
     assert cache_dir1 != cache_dir2
@@ -2568,15 +2371,13 @@ def test_list_versions_cache_expiration(temp_registry_dir):
 
 
 def test_cache_initialization_local_backend(temp_registry_dir):
-    """Test that base Registry doesn't have cache (caching is via RegistryWithCache)."""
+    """Test that Registry with local backend doesn't enable caching."""
     registry = Registry(backend=temp_registry_dir)
-    # Base Registry doesn't have _cache attribute - caching is handled by RegistryWithCache
-    assert not hasattr(registry, "_cache")
+    assert registry._cached is False
 
 
 def test_cache_initialization_remote_backend(temp_registry_dir):
-    """Test that Registry with remote backend returns RegistryWithCache with cache initialized."""
-    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
+    """Test that Registry with remote backend enables caching by default."""
 
     # Create a mock remote backend
     mock_backend = Mock(spec=RegistryBackend)
@@ -2584,9 +2385,10 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
 
-    # Registry(backend=remote_backend) returns RegistryWithCache when use_cache=True (default)
+    # Registry(backend=remote_backend) enables caching when use_cache=True (default)
     registry = Registry(backend=mock_backend)
-    assert isinstance(registry, RegistryWithCache)
+    assert isinstance(registry, Registry)
+    assert registry._cached is True
     assert registry._cache is not None
     assert isinstance(registry._cache.backend, LocalRegistryBackend)
     assert registry._cache.version_objects == registry.version_objects
@@ -3014,7 +2816,6 @@ def test_load_cache_metadata_sync(temp_registry_dir):
 
 def test_find_stale_indices_marks_missing_remote_as_stale(temp_registry_dir):
     """Cache entries should be considered stale when remote metadata is missing."""
-    from mindtrace.registry.core.registry_with_cache import RegistryWithCache
 
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -3022,7 +2823,7 @@ def test_find_stale_indices_marks_missing_remote_as_stale(temp_registry_dir):
     mock_backend.fetch_registry_metadata = Mock(return_value={})
 
     registry = Registry(backend=mock_backend, version_objects=True)
-    assert isinstance(registry, RegistryWithCache)
+    assert registry._cached is True
 
     remote_results = OpResults()  # missing remotely
     cache_results = OpResults()
@@ -3033,6 +2834,63 @@ def test_find_stale_indices_marks_missing_remote_as_stale(temp_registry_dir):
             metadata={"hash": "cached_hash"},
         )
     )
+
+    registry._remote.backend.fetch_metadata = Mock(return_value=remote_results)
+    registry._cache.backend.fetch_metadata = Mock(return_value=cache_results)
+
+    stale = registry._find_stale_indices([("test:obj", "1.0.0")], [0])
+    assert 0 in stale
+
+
+def test_find_stale_indices_marks_missing_cache_hash_as_stale(temp_registry_dir):
+    """Cache entries should be considered stale when cache metadata hash is missing."""
+
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True)
+    assert registry._cached is True
+
+    # Remote has a hash, but cache does not
+    remote_results = OpResults()
+    remote_results.add(
+        OpResult.success(
+            "test:obj",
+            "1.0.0",
+            metadata={"hash": "remote_hash"},
+        )
+    )
+    cache_results = OpResults()
+    cache_results.add(
+        OpResult.success(
+            "test:obj",
+            "1.0.0",
+            metadata={},  # no hash
+        )
+    )
+
+    registry._remote.backend.fetch_metadata = Mock(return_value=remote_results)
+    registry._cache.backend.fetch_metadata = Mock(return_value=cache_results)
+
+    stale = registry._find_stale_indices([("test:obj", "1.0.0")], [0])
+    assert 0 in stale
+
+
+def test_find_stale_indices_marks_both_missing_hashes_as_stale(temp_registry_dir):
+    """Cache entries should be considered stale when both remote and cache hashes are missing."""
+
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True)
+    assert registry._cached is True
+
+    remote_results = OpResults()  # missing remotely
+    cache_results = OpResults()  # missing in cache too
 
     registry._remote.backend.fetch_metadata = Mock(return_value=remote_results)
     registry._cache.backend.fetch_metadata = Mock(return_value=cache_results)
@@ -3191,7 +3049,7 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
 
         # Load should detect stale cache, try to refresh from remote, but remote also fails
         with pytest.raises(ValueError, match="Artifact hash verification failed"):
-            registry.load("test:obj", "1.0.0")
+            registry.load("test:obj", "1.0.0", verify="full")
 
 
 def test_delete_cache_delete_error(temp_registry_dir):
@@ -3353,6 +3211,72 @@ def test_load_verify_none_uses_cache(temp_registry_dir):
     assert not hasattr(mock_backend, "pull") or not mock_backend.pull.called
 
 
+def test_load_verify_integrity_cache_hit_skips_staleness(temp_registry_dir):
+    """Test that load(verify='integrity') serves from cache without staleness check.
+
+    With verify='integrity', the cache should be used as long as the local hash
+    is valid — no comparison with remote metadata should happen.
+    """
+
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
+    mock_backend.pull = Mock()  # should NOT be called
+
+    registry = Registry(backend=mock_backend, version_objects=True)
+
+    # Pre-populate cache
+    registry._cache.save("test:obj", "cached_value", version="1.0.0")
+
+    # Mock remote metadata with a DIFFERENT hash — if staleness were checked
+    # this would cause a re-download, but integrity mode should skip staleness.
+    mock_backend.fetch_metadata = Mock(
+        return_value=_make_op_results(
+            OpResult.success(
+                "test:obj",
+                "1.0.0",
+                metadata={
+                    "class": "builtins.str",
+                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "hash": "completely_different_remote_hash",
+                },
+            )
+        )
+    )
+
+    # Load with integrity — should serve from cache
+    result = registry.load("test:obj", "1.0.0", verify="integrity")
+    assert result == "cached_value"
+
+    # Remote pull should NOT have been called
+    mock_backend.pull.assert_not_called()
+
+
+def test_load_verify_full_degrades_to_integrity_on_local_backend(temp_registry_dir):
+    """Test that verify='full' behaves like 'integrity' for local (non-cached) registries.
+
+    Local registries have no remote to compare against, so FULL should degrade
+    to INTEGRITY automatically instead of erroring.
+    """
+
+    registry = Registry(backend=temp_registry_dir, version_objects=True)
+    assert registry._cached is False
+
+    # Save an object
+    registry.save("test:obj", "hello", version="1.0.0")
+
+    # Load with verify="full" — should succeed (degrades to integrity internally)
+    result = registry.load("test:obj", "1.0.0", verify="full")
+    assert result == "hello"
+
+    # Also verify that "integrity" works identically
+    result2 = registry.load("test:obj", "1.0.0", verify="integrity")
+    assert result2 == "hello"
+
+
 def test_clear_cache(temp_registry_dir):
     """Test that clear_cache() clears the cache."""
 
@@ -3377,11 +3301,10 @@ def test_clear_cache(temp_registry_dir):
 
 
 def test_clear_cache_no_cache(temp_registry_dir):
-    """Test that clear_cache() does nothing when there's no cache attribute."""
-    # Create registry with local backend (base Registry doesn't have cache)
+    """Test that clear_cache() does nothing when caching is not enabled."""
+    # Create registry with local backend (no caching)
     registry = Registry(backend=temp_registry_dir, version_objects=True)
-    # Base Registry doesn't have _cache attribute - caching is handled by RegistryWithCache
-    assert not hasattr(registry, "_cache")
+    assert registry._cached is False
 
     # clear_cache should not raise an error (it's a no-op on base Registry)
     registry.clear_cache()
