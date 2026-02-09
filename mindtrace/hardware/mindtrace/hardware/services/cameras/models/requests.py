@@ -510,6 +510,43 @@ class HomographyMeasureDistanceRequest(BaseModel):
     )
 
 
+# Focus / Liquid Lens Operations
+class OpticalPowerRequest(BaseModel):
+    """Request model for setting optical power."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    diopters: float = Field(..., description="Optical power in diopters")
+
+
+class TriggerAutofocusRequest(BaseModel):
+    """Request model for triggering one-shot autofocus."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    accuracy: str = Field("Normal", description="Autofocus accuracy: 'Fast', 'Normal', or 'Accurate'")
+
+    @field_validator("accuracy")
+    @classmethod
+    def validate_accuracy(cls, v: str) -> str:
+        if v not in ("Fast", "Normal", "Accurate"):
+            raise ValueError(f"accuracy must be 'Fast', 'Normal', or 'Accurate', got '{v}'")
+        return v
+
+
+class FocusConfigRequest(BaseModel):
+    """Request model for setting focus configuration."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    accuracy: Optional[str] = Field(None, description="Focus accuracy: Fast, Normal, Accurate")
+    stepper: Optional[float] = Field(None, ge=0.01, le=0.4, description="Autofocus step size")
+    stepper_lower_limit: Optional[float] = Field(None, description="Lower diopter limit for AF search")
+    stepper_upper_limit: Optional[float] = Field(None, description="Upper diopter limit for AF search")
+    roi_size: Optional[str] = Field(None, description="Focus ROI size: Size128, Size64, Size32")
+    focus_source: Optional[str] = Field(None, description="AF source: Auto, SourceL, SourceM, SourceS")
+    edge_detection: Optional[bool] = Field(None, description="Enable edge detection focusing")
+    roi_offset_x: Optional[int] = Field(None, description="Focus ROI X offset")
+    roi_offset_y: Optional[int] = Field(None, description="Focus ROI Y offset")
+
+
 class HomographyCalibrateMultiViewRequest(BaseModel):
     """Request model for multi-view checkerboard calibration.
 

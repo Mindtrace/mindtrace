@@ -121,6 +121,8 @@ class CameraCapabilities(BaseModel):
     supports_roi: bool = False
     supports_trigger: bool = False
     supports_hdr: bool = False
+    optical_power_range: Optional[Tuple[float, float]] = None
+    supports_liquid_lens: bool = False
 
 
 class CameraConfiguration(BaseModel):
@@ -136,6 +138,22 @@ class CameraConfiguration(BaseModel):
     bandwidth_limit: Optional[float] = None
     packet_size: Optional[int] = None
     inter_packet_delay: Optional[float] = None
+    optical_power: Optional[float] = None
+
+
+# Liquid Lens
+class LensStatus(BaseModel):
+    """Liquid lens hardware state."""
+
+    connected: bool
+    status: str
+    optical_power: Optional[float] = None
+
+
+class LensStatusResponse(BaseResponse):
+    """Response model for lens status."""
+
+    data: LensStatus
 
 
 # Response Models for Camera Operations
