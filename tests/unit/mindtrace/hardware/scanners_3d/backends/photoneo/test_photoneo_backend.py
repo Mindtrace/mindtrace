@@ -252,8 +252,12 @@ class TestPhotoneoBackendCreation:
                 PhotoneoBackend,
             )
 
-            backend = PhotoneoBackend(serial_number="DVJ-104")
-            assert backend.serial_number == "DVJ-104"
+            with (
+                patch("mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE", True),
+                patch("os.path.exists", return_value=True),
+            ):
+                backend = PhotoneoBackend(serial_number="DVJ-104", cti_path="/mock/producer.cti")
+                assert backend.serial_number == "DVJ-104"
 
     def test_create_without_serial_number(self):
         """Test creating backend without serial number."""
@@ -264,8 +268,12 @@ class TestPhotoneoBackendCreation:
                 PhotoneoBackend,
             )
 
-            backend = PhotoneoBackend()
-            assert backend.serial_number is None
+            with (
+                patch("mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE", True),
+                patch("os.path.exists", return_value=True),
+            ):
+                backend = PhotoneoBackend(cti_path="/mock/producer.cti")
+                assert backend.serial_number is None
 
 
 class TestPhotoneoBackendProperties:
@@ -280,8 +288,12 @@ class TestPhotoneoBackendProperties:
                 PhotoneoBackend,
             )
 
-            backend = PhotoneoBackend(serial_number="DVJ-104")
-            assert backend.name == "Photoneo:DVJ-104"
+            with (
+                patch("mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE", True),
+                patch("os.path.exists", return_value=True),
+            ):
+                backend = PhotoneoBackend(serial_number="DVJ-104", cti_path="/mock/producer.cti")
+                assert backend.name == "Photoneo:DVJ-104"
 
     def test_is_open_property_initially_false(self):
         """Test is_open property is initially False."""
@@ -292,8 +304,12 @@ class TestPhotoneoBackendProperties:
                 PhotoneoBackend,
             )
 
-            backend = PhotoneoBackend()
-            assert backend.is_open is False
+            with (
+                patch("mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE", True),
+                patch("os.path.exists", return_value=True),
+            ):
+                backend = PhotoneoBackend(cti_path="/mock/producer.cti")
+                assert backend.is_open is False
 
 
 class TestPhotoneoBackendDiscovery:
@@ -386,9 +402,16 @@ class TestPhotoneoBackendCTIPath:
                     PhotoneoBackend,
                 )
 
-                # The backend should be able to look for CTI files in env paths
-                backend = PhotoneoBackend()
-                assert backend is not None
+                with (
+                    patch(
+                        "mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE",
+                        True,
+                    ),
+                    patch("os.path.exists", return_value=True),
+                ):
+                    # The backend should be able to look for CTI files in env paths
+                    backend = PhotoneoBackend()
+                    assert backend is not None
 
     def test_cti_path_explicit(self):
         """Test explicit CTI path with mocked file existence."""
@@ -403,5 +426,9 @@ class TestPhotoneoBackendCTIPath:
                     PhotoneoBackend,
                 )
 
-                backend = PhotoneoBackend(cti_path="/custom/mvGenTLProducer.cti")
-                assert backend._cti_path == "/custom/mvGenTLProducer.cti"
+                with patch(
+                    "mindtrace.hardware.scanners_3d.backends.photoneo.photoneo_backend.HARVESTERS_AVAILABLE",
+                    True,
+                ):
+                    backend = PhotoneoBackend(cti_path="/custom/mvGenTLProducer.cti")
+                    assert backend._cti_path == "/custom/mvGenTLProducer.cti"
