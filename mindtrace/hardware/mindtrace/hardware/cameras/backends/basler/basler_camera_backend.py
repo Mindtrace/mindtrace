@@ -2359,18 +2359,14 @@ class BaslerCameraBackend(CameraBackend):
 
         try:
             await self._ensure_open()
-            connection = await self._run_blocking(
-                self.camera.LensConnection.GetValue, timeout=self._op_timeout_s
-            )
+            connection = await self._run_blocking(self.camera.LensConnection.GetValue, timeout=self._op_timeout_s)
             connected = connection == "Connect"
 
             status = "Not connected"
             optical_power = None
             if connected:
                 try:
-                    status = await self._run_blocking(
-                        self.camera.LensStatus.GetValue, timeout=self._op_timeout_s
-                    )
+                    status = await self._run_blocking(self.camera.LensStatus.GetValue, timeout=self._op_timeout_s)
                 except Exception:
                     status = "Unknown"
                 try:
@@ -2392,64 +2388,45 @@ class BaslerCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have a connected liquid lens"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
         try:
             await self._ensure_open()
-            return await self._run_blocking(
-                self.camera.LensOpticalPower.GetValue, timeout=self._op_timeout_s
-            )
+            return await self._run_blocking(self.camera.LensOpticalPower.GetValue, timeout=self._op_timeout_s)
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
-            raise HardwareOperationError(
-                f"Failed to get optical power for camera '{self.camera_name}': {e}"
-            ) from e
+            raise HardwareOperationError(f"Failed to get optical power for camera '{self.camera_name}': {e}") from e
 
     async def set_optical_power(self, diopters: float):
         """Set lens optical power in diopters (manual focus)."""
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have a connected liquid lens"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
         try:
             min_d, max_d = await self.get_optical_power_range()
             if diopters < min_d or diopters > max_d:
                 raise CameraConfigurationError(
-                    f"Optical power {diopters} outside valid range [{min_d}, {max_d}] "
-                    f"for camera '{self.camera_name}'"
+                    f"Optical power {diopters} outside valid range [{min_d}, {max_d}] for camera '{self.camera_name}'"
                 )
             await self._ensure_open()
-            await self._run_blocking(
-                self.camera.LensOpticalPower.SetValue, diopters, timeout=self._op_timeout_s
-            )
+            await self._run_blocking(self.camera.LensOpticalPower.SetValue, diopters, timeout=self._op_timeout_s)
             self.logger.debug(f"Optical power set to {diopters} diopters for camera '{self.camera_name}'")
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
-            raise HardwareOperationError(
-                f"Failed to set optical power for camera '{self.camera_name}': {e}"
-            ) from e
+            raise HardwareOperationError(f"Failed to set optical power for camera '{self.camera_name}': {e}") from e
 
     async def get_optical_power_range(self) -> List[float]:
         """Get optical power range [min, max] in diopters."""
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have liquid lens support"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have liquid lens support")
         try:
             await self._ensure_open()
-            min_val = await self._run_blocking(
-                self.camera.LensOpticalPower.GetMin, timeout=self._op_timeout_s
-            )
-            max_val = await self._run_blocking(
-                self.camera.LensOpticalPower.GetMax, timeout=self._op_timeout_s
-            )
+            min_val = await self._run_blocking(self.camera.LensOpticalPower.GetMin, timeout=self._op_timeout_s)
+            max_val = await self._run_blocking(self.camera.LensOpticalPower.GetMax, timeout=self._op_timeout_s)
             return [min_val, max_val]
         except CameraConfigurationError:
             raise
@@ -2470,15 +2447,11 @@ class BaslerCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have a connected liquid lens"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
 
         valid_accuracies = ("Fast", "Normal", "Accurate")
         if accuracy not in valid_accuracies:
-            raise CameraConfigurationError(
-                f"Invalid accuracy '{accuracy}'. Must be one of {valid_accuracies}"
-            )
+            raise CameraConfigurationError(f"Invalid accuracy '{accuracy}'. Must be one of {valid_accuracies}")
 
         try:
             await self._ensure_open()
@@ -2492,34 +2465,25 @@ class BaslerCameraBackend(CameraBackend):
             try:
                 # Set accuracy before triggering
                 if hasattr(self.camera, "FocusAccurate"):
-                    await self._run_blocking(
-                        self.camera.FocusAccurate.SetValue, accuracy, timeout=self._op_timeout_s
-                    )
+                    await self._run_blocking(self.camera.FocusAccurate.SetValue, accuracy, timeout=self._op_timeout_s)
 
                 # Trigger one-shot autofocus
-                await self._run_blocking(
-                    self.camera.FocusAuto.SetValue, "Once", timeout=self._op_timeout_s
-                )
+                await self._run_blocking(self.camera.FocusAuto.SetValue, "Once", timeout=self._op_timeout_s)
 
                 # Poll until FocusAuto returns to "Off" (autofocus complete)
                 af_timeout = 30.0
                 poll_interval = 0.2
                 start = time.monotonic()
                 while (time.monotonic() - start) < af_timeout:
-                    status = await self._run_blocking(
-                        self.camera.FocusAuto.GetValue, timeout=self._op_timeout_s
-                    )
+                    status = await self._run_blocking(self.camera.FocusAuto.GetValue, timeout=self._op_timeout_s)
                     if status == "Off":
                         self.logger.info(
-                            f"Autofocus completed for camera '{self.camera_name}' "
-                            f"in {time.monotonic() - start:.1f}s"
+                            f"Autofocus completed for camera '{self.camera_name}' in {time.monotonic() - start:.1f}s"
                         )
                         return True
                     await asyncio.sleep(poll_interval)
 
-                raise CameraTimeoutError(
-                    f"Autofocus timed out after {af_timeout}s for camera '{self.camera_name}'"
-                )
+                raise CameraTimeoutError(f"Autofocus timed out after {af_timeout}s for camera '{self.camera_name}'")
             finally:
                 if not was_grabbing:
                     await self._ensure_stopped_grabbing()
@@ -2527,9 +2491,7 @@ class BaslerCameraBackend(CameraBackend):
         except (CameraConnectionError, CameraConfigurationError, CameraTimeoutError):
             raise
         except Exception as e:
-            raise HardwareOperationError(
-                f"Autofocus failed for camera '{self.camera_name}': {e}"
-            ) from e
+            raise HardwareOperationError(f"Autofocus failed for camera '{self.camera_name}': {e}") from e
 
     _FOCUS_CONFIG_NODE_MAP: Dict[str, str] = {
         "accuracy": "FocusAccurate",
@@ -2548,9 +2510,7 @@ class BaslerCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have liquid lens support"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have liquid lens support")
 
         config: Dict[str, Any] = {}
         await self._ensure_open()
@@ -2571,9 +2531,7 @@ class BaslerCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
-            raise CameraConfigurationError(
-                f"Camera '{self.camera_name}' does not have a connected liquid lens"
-            )
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
 
         await self._ensure_open()
 
@@ -2583,19 +2541,13 @@ class BaslerCameraBackend(CameraBackend):
                 self.logger.warning(f"Unknown focus config key '{key}'")
                 continue
             if not hasattr(self.camera, node_name):
-                self.logger.warning(
-                    f"Focus node '{node_name}' not available on camera '{self.camera_name}'"
-                )
+                self.logger.warning(f"Focus node '{node_name}' not available on camera '{self.camera_name}'")
                 continue
             try:
-                await self._run_blocking(
-                    getattr(self.camera, node_name).SetValue, value, timeout=self._op_timeout_s
-                )
+                await self._run_blocking(getattr(self.camera, node_name).SetValue, value, timeout=self._op_timeout_s)
                 self.logger.debug(f"Set {node_name}={value} for camera '{self.camera_name}'")
             except Exception as e:
-                raise CameraConfigurationError(
-                    f"Failed to set {key}={value} for camera '{self.camera_name}': {e}"
-                )
+                raise CameraConfigurationError(f"Failed to set {key}={value} for camera '{self.camera_name}': {e}")
 
     async def close(self):
         """Close the camera and release resources.

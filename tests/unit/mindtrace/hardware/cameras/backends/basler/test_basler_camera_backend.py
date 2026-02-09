@@ -4718,35 +4718,17 @@ class MockPylonCameraWithLens(MockPylonCamera):
             ["Connect", "NotConnect"],
         )
         self._lens_status_param = _SimpleMockParam(self, "_lens_status")
-        self._lens_optical_power_param = MockParameter(
-            self._lens_optical_power, min_val=-3.408, max_val=5.092
-        )
+        self._lens_optical_power_param = MockParameter(self._lens_optical_power, min_val=-3.408, max_val=5.092)
         self._focus_auto_param = _AutofocusMockParam()
-        self._focus_accurate_param = MockEnumParameter(
-            self._focus_accurate, ["Fast", "Normal", "Accurate"]
-        )
-        self._focus_stepper_param = MockParameter(
-            self._focus_stepper, min_val=0.01, max_val=0.4
-        )
-        self._focus_stepper_lower_param = MockParameter(
-            self._focus_stepper_lower_limit, min_val=0.01, max_val=0.4
-        )
-        self._focus_stepper_upper_param = MockParameter(
-            self._focus_stepper_upper_limit, min_val=0.01, max_val=0.4
-        )
-        self._focus_roi_size_param = MockEnumParameter(
-            self._focus_roi_size, ["Small", "Medium", "Large"]
-        )
-        self._auto_focus_source_param = MockEnumParameter(
-            self._auto_focus_source, ["Contrast", "Phase"]
-        )
+        self._focus_accurate_param = MockEnumParameter(self._focus_accurate, ["Fast", "Normal", "Accurate"])
+        self._focus_stepper_param = MockParameter(self._focus_stepper, min_val=0.01, max_val=0.4)
+        self._focus_stepper_lower_param = MockParameter(self._focus_stepper_lower_limit, min_val=0.01, max_val=0.4)
+        self._focus_stepper_upper_param = MockParameter(self._focus_stepper_upper_limit, min_val=0.01, max_val=0.4)
+        self._focus_roi_size_param = MockEnumParameter(self._focus_roi_size, ["Small", "Medium", "Large"])
+        self._auto_focus_source_param = MockEnumParameter(self._auto_focus_source, ["Contrast", "Phase"])
         self._edge_detection_param = _SimpleMockParam(self, "_edge_detection_focusing")
-        self._bsl_focus_x_offset_param = MockParameter(
-            self._bsl_focus_x_offset, min_val=-960, max_val=960
-        )
-        self._bsl_focus_y_offset_param = MockParameter(
-            self._bsl_focus_y_offset, min_val=-540, max_val=540
-        )
+        self._bsl_focus_x_offset_param = MockParameter(self._bsl_focus_x_offset, min_val=-960, max_val=960)
+        self._bsl_focus_y_offset_param = MockParameter(self._bsl_focus_y_offset, min_val=-540, max_val=540)
 
     @property
     def LensConnection(self):

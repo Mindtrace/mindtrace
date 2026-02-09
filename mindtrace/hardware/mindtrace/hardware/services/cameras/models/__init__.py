@@ -26,11 +26,9 @@ from mindtrace.hardware.services.cameras.models.requests import (
     ConfigFileImportRequest,
     # Specific Parameters
     ExposureRequest,
-    GainRequest,
     # Focus / Liquid Lens
     FocusConfigRequest,
-    OpticalPowerRequest,
-    TriggerAutofocusRequest,
+    GainRequest,
     # Homography
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
@@ -40,6 +38,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     HomographyMeasureDistanceRequest,
     ImageEnhancementRequest,
     InterPacketDelayRequest,
+    OpticalPowerRequest,
     PacketSizeRequest,
     PixelFormatRequest,
     ROIRequest,
@@ -47,6 +46,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     StreamStartRequest,
     StreamStatusRequest,
     StreamStopRequest,
+    TriggerAutofocusRequest,
     TriggerModeRequest,
     WhiteBalanceRequest,
 )
@@ -93,9 +93,6 @@ from mindtrace.hardware.services.cameras.models.responses import (
     HDRCaptureResult,
     # Health Check
     HealthCheckResponse,
-    # Liquid Lens
-    LensStatus,
-    LensStatusResponse,
     # Homography
     HomographyBatchMeasurementData,
     HomographyBatchMeasurementResponse,
@@ -106,6 +103,9 @@ from mindtrace.hardware.services.cameras.models.responses import (
     HomographyMeasurementResponse,
     HomographyMeasurementResult,
     IntResponse,
+    # Liquid Lens
+    LensStatus,
+    LensStatusResponse,
     ListResponse,
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
