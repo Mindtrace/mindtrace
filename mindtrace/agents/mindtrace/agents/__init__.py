@@ -2,6 +2,7 @@
 
 
 from mindtrace.agents import tools
+from mindtrace.agents import prompts
 
-__all__ = ["tools"]
+__all__ = ["tools", "prompts"]
 

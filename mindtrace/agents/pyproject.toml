@@ -11,6 +11,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "openai>=1.0.0",
     "mindtrace-core>=0.7.1",
     "mindtrace-registry>=0.7.1",
     "mindtrace-database>=0.7.1",
