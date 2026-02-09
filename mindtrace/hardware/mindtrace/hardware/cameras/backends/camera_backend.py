@@ -310,6 +310,69 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"get_capture_timeout not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_capture_timeout not supported by {self.__class__.__name__}")
 
+    # Liquid lens / focus control (optional, requires compatible hardware)
+    async def get_lens_status(self) -> Dict[str, Any]:
+        """Get liquid lens hardware state.
+
+        Returns:
+            Dict with keys:
+            - connected (bool): Whether a lens is physically connected
+            - status (str): Lens status string (e.g., "Lens OK")
+            - optical_power (float | None): Current optical power in diopters
+        """
+        self.logger.error(f"get_lens_status not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_lens_status not supported by {self.__class__.__name__}")
+
+    async def get_optical_power(self) -> float:
+        """Get current lens optical power in diopters."""
+        self.logger.error(f"get_optical_power not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_optical_power not supported by {self.__class__.__name__}")
+
+    async def set_optical_power(self, diopters: float):
+        """Set lens optical power in diopters (manual focus).
+
+        Args:
+            diopters: Target optical power within the lens range.
+        """
+        self.logger.error(f"set_optical_power not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_optical_power not supported by {self.__class__.__name__}")
+
+    async def get_optical_power_range(self) -> List[float]:
+        """Get optical power range [min, max] in diopters."""
+        self.logger.error(f"get_optical_power_range not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_optical_power_range not supported by {self.__class__.__name__}")
+
+    async def trigger_autofocus(self, accuracy: str = "Normal") -> bool:
+        """Trigger one-shot autofocus.
+
+        Args:
+            accuracy: Autofocus accuracy mode — "Fast", "Normal", or "Accurate".
+
+        Returns:
+            True when autofocus completes successfully.
+        """
+        self.logger.error(f"trigger_autofocus not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"trigger_autofocus not supported by {self.__class__.__name__}")
+
+    async def get_focus_config(self) -> Dict[str, Any]:
+        """Get current focus/autofocus configuration.
+
+        Returns:
+            Dict with keys: accuracy, stepper, stepper_lower_limit, stepper_upper_limit,
+            roi_size, focus_source, edge_detection, roi_offset_x, roi_offset_y.
+        """
+        self.logger.error(f"get_focus_config not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_focus_config not supported by {self.__class__.__name__}")
+
+    async def set_focus_config(self, **settings):
+        """Set focus/autofocus parameters.
+
+        Args:
+            **settings: Keys matching get_focus_config() return values.
+        """
+        self.logger.error(f"set_focus_config not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_focus_config not supported by {self.__class__.__name__}")
+
     async def __aenter__(self):
         await self.setup_camera()
         return self
