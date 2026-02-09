@@ -12,6 +12,13 @@ from mindtrace.hardware.services.cameras.schemas.capture_schemas import (
     CaptureImagesBatchSchema,
     CaptureImageSchema,
 )
+from mindtrace.hardware.services.cameras.schemas.config_schemas import (
+    ConfigureCamerasBatchSchema,
+    ConfigureCameraSchema,
+    ExportCameraConfigSchema,
+    GetCameraConfigurationSchema,
+    ImportCameraConfigSchema,
+)
 from mindtrace.hardware.services.cameras.schemas.focus_schemas import (
     GetFocusConfigSchema,
     GetLensStatusSchema,
@@ -19,13 +26,6 @@ from mindtrace.hardware.services.cameras.schemas.focus_schemas import (
     SetFocusConfigSchema,
     SetOpticalPowerSchema,
     TriggerAutofocusSchema,
-)
-from mindtrace.hardware.services.cameras.schemas.config_schemas import (
-    ConfigureCamerasBatchSchema,
-    ConfigureCameraSchema,
-    ExportCameraConfigSchema,
-    GetCameraConfigurationSchema,
-    ImportCameraConfigSchema,
 )
 from mindtrace.hardware.services.cameras.schemas.health_schemas import (
     HealthSchema,

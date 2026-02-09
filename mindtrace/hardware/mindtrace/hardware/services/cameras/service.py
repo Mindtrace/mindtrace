@@ -288,9 +288,7 @@ class CameraManagerService(Service):
         )
 
         # Focus / Liquid Lens
-        self.add_endpoint(
-            "cameras/lens/status", self.get_lens_status, ALL_SCHEMAS["get_lens_status"], as_tool=True
-        )
+        self.add_endpoint("cameras/lens/status", self.get_lens_status, ALL_SCHEMAS["get_lens_status"], as_tool=True)
         self.add_endpoint(
             "cameras/focus/optical-power/get",
             self.get_optical_power,
