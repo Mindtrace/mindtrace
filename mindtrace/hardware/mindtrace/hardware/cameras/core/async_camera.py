@@ -292,7 +292,7 @@ class AsyncCamera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement, capture_timeout.
+                pixel_format, white_balance, image_enhancement, capture_timeout, optical_power.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
@@ -323,6 +323,8 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_capture_timeout(settings["capture_timeout"])
             elif "timeout_ms" in settings:
                 await self._backend.set_capture_timeout(settings["timeout_ms"])
+            if "optical_power" in settings:
+                await self._backend.set_optical_power(settings["optical_power"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
             return True
 
@@ -596,6 +598,58 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             await self._backend.set_bandwidth_limit(limit_mbps)
 
+    # Liquid Lens / Focus Control
+
+    async def get_lens_status(self) -> Dict[str, Any]:
+        """Get liquid lens hardware state.
+
+        Returns:
+            Dict with keys: connected (bool), status (str), optical_power (float | None).
+        """
+        return await self._backend.get_lens_status()
+
+    async def get_optical_power(self) -> float:
+        """Get current lens optical power in diopters."""
+        return await self._backend.get_optical_power()
+
+    async def set_optical_power(self, diopters: float):
+        """Set lens optical power in diopters (manual focus)."""
+        async with self._lock:
+            await self._backend.set_optical_power(diopters)
+
+    async def get_optical_power_range(self) -> Optional[Tuple[float, float]]:
+        """Get optical power range for liquid lens.
+
+        Returns:
+            Tuple of (min_diopters, max_diopters), or None if not supported.
+        """
+        try:
+            range_list = await self._backend.get_optical_power_range()
+            return (float(range_list[0]), float(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def trigger_autofocus(self, accuracy: str = "Normal") -> bool:
+        """Trigger one-shot autofocus.
+
+        Args:
+            accuracy: "Fast", "Normal", or "Accurate".
+
+        Returns:
+            True when autofocus completes successfully.
+        """
+        async with self._lock:
+            return await self._backend.trigger_autofocus(accuracy)
+
+    async def get_focus_config(self) -> Dict[str, Any]:
+        """Get current focus/autofocus configuration."""
+        return await self._backend.get_focus_config()
+
+    async def set_focus_config(self, **settings):
+        """Set focus/autofocus parameters."""
+        async with self._lock:
+            await self._backend.set_focus_config(**settings)
+
     # Camera Capability and Range Query Methods
 
     async def get_trigger_modes(self) -> List[str]:
@@ -712,6 +766,8 @@ class AsyncCamera(Mindtrace):
                 - 'trigger_modes': Trigger mode support
                 - 'width_range': Width range query
                 - 'height_range': Height range query
+                - 'liquid_lens': Liquid lens presence
+                - 'optical_power': Optical power control
 
         Returns:
             True if feature is supported and functional, False otherwise.
@@ -724,6 +780,8 @@ class AsyncCamera(Mindtrace):
             "height_range": self.get_height_range,
             "exposure_control": self.is_exposure_control_supported,
             "trigger_modes": self.get_trigger_modes,
+            "liquid_lens": self.get_lens_status,
+            "optical_power": self.get_optical_power_range,
         }
 
         check_method = feature_checks.get(feature)
