@@ -2330,7 +2330,15 @@ class BaslerCameraBackend(CameraBackend):
 
     def _has_liquid_lens(self) -> bool:
         """Check if camera has liquid lens nodes in its nodemap."""
-        return self.camera is not None and hasattr(self.camera, "LensConnection")
+        if self.camera is None:
+            return False
+        try:
+            # pypylon raises LogicalErrorException for missing nodes in __getattr__,
+            # so hasattr() alone is not reliable — wrap in try/except.
+            self.camera.LensConnection  # noqa: B018
+            return True
+        except Exception:
+            return False
 
     def _is_lens_connected(self) -> bool:
         """Check if a physical lens is connected."""
@@ -2475,36 +2483,47 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            # Set accuracy before triggering
-            if hasattr(self.camera, "FocusAccurate"):
-                await self._run_blocking(
-                    self.camera.FocusAccurate.SetValue, accuracy, timeout=self._op_timeout_s
-                )
+            # Autofocus needs live image frames for contrast analysis.
+            # Start grabbing if not already active, and stop afterwards.
+            was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+            if not was_grabbing:
+                await self._ensure_grabbing()
 
-            # Trigger one-shot autofocus
-            await self._run_blocking(
-                self.camera.FocusAuto.SetValue, "Once", timeout=self._op_timeout_s
-            )
-
-            # Poll until FocusAuto returns to "Off" (autofocus complete)
-            af_timeout = 30.0
-            poll_interval = 0.2
-            start = time.monotonic()
-            while (time.monotonic() - start) < af_timeout:
-                status = await self._run_blocking(
-                    self.camera.FocusAuto.GetValue, timeout=self._op_timeout_s
-                )
-                if status == "Off":
-                    self.logger.info(
-                        f"Autofocus completed for camera '{self.camera_name}' "
-                        f"in {time.monotonic() - start:.1f}s"
+            try:
+                # Set accuracy before triggering
+                if hasattr(self.camera, "FocusAccurate"):
+                    await self._run_blocking(
+                        self.camera.FocusAccurate.SetValue, accuracy, timeout=self._op_timeout_s
                     )
-                    return True
-                await asyncio.sleep(poll_interval)
 
-            raise CameraTimeoutError(
-                f"Autofocus timed out after {af_timeout}s for camera '{self.camera_name}'"
-            )
+                # Trigger one-shot autofocus
+                await self._run_blocking(
+                    self.camera.FocusAuto.SetValue, "Once", timeout=self._op_timeout_s
+                )
+
+                # Poll until FocusAuto returns to "Off" (autofocus complete)
+                af_timeout = 30.0
+                poll_interval = 0.2
+                start = time.monotonic()
+                while (time.monotonic() - start) < af_timeout:
+                    status = await self._run_blocking(
+                        self.camera.FocusAuto.GetValue, timeout=self._op_timeout_s
+                    )
+                    if status == "Off":
+                        self.logger.info(
+                            f"Autofocus completed for camera '{self.camera_name}' "
+                            f"in {time.monotonic() - start:.1f}s"
+                        )
+                        return True
+                    await asyncio.sleep(poll_interval)
+
+                raise CameraTimeoutError(
+                    f"Autofocus timed out after {af_timeout}s for camera '{self.camera_name}'"
+                )
+            finally:
+                if not was_grabbing:
+                    await self._ensure_stopped_grabbing()
+
         except (CameraConnectionError, CameraConfigurationError, CameraTimeoutError):
             raise
         except Exception as e:

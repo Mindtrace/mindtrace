@@ -626,7 +626,7 @@ class AsyncCamera(Mindtrace):
         try:
             range_list = await self._backend.get_optical_power_range()
             return (float(range_list[0]), float(range_list[1]))
-        except (NotImplementedError, AttributeError):
+        except (NotImplementedError, AttributeError, CameraConfigurationError):
             return None
 
     async def trigger_autofocus(self, accuracy: str = "Normal") -> bool:
