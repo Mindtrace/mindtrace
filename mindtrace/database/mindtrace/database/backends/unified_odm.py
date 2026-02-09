@@ -65,6 +65,9 @@ class UnifiedMindtraceDocument(BaseModel):
         indexed_fields: List[str] = []
         # Unique constraints (basic support)
         unique_fields: List[str] = []
+        # Compound indexes (MongoDB only, ignored by Redis)
+        # Example: [{"fields": ["field_a", "field_b"], "unique": True}]
+        compound_indexes: List[dict] = []
 
     @classmethod
     def _auto_generate_mongo_model(cls) -> Type[MindtraceDocument]:
@@ -230,6 +233,22 @@ class UnifiedMindtraceDocument(BaseModel):
             "name": getattr(meta, "collection_name", "unified_documents"),
             "use_cache": getattr(meta, "use_cache", False),
         }
+
+        # Add compound indexes if defined
+        compound_indexes_def = getattr(meta, "compound_indexes", [])
+        if compound_indexes_def:
+            from pymongo import IndexModel, ASCENDING
+
+            beanie_indexes = []
+            for idx_spec in compound_indexes_def:
+                fields = idx_spec.get("fields", [])
+                is_unique = idx_spec.get("unique", False)
+                if fields:
+                    keys = [(f, ASCENDING) for f in fields]
+                    beanie_indexes.append(IndexModel(keys, unique=is_unique))
+            if beanie_indexes:
+                settings_attrs["indexes"] = beanie_indexes
+
         SettingsClass = type("Settings", (), settings_attrs)
         setattr(DynamicMongoModel, "Settings", SettingsClass)
 
