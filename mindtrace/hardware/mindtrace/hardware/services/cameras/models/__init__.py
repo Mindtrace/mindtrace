@@ -27,6 +27,10 @@ from mindtrace.hardware.services.cameras.models.requests import (
     # Specific Parameters
     ExposureRequest,
     GainRequest,
+    # Focus / Liquid Lens
+    FocusConfigRequest,
+    OpticalPowerRequest,
+    TriggerAutofocusRequest,
     # Homography
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
@@ -89,6 +93,9 @@ from mindtrace.hardware.services.cameras.models.responses import (
     HDRCaptureResult,
     # Health Check
     HealthCheckResponse,
+    # Liquid Lens
+    LensStatus,
+    LensStatusResponse,
     # Homography
     HomographyBatchMeasurementData,
     HomographyBatchMeasurementResponse,
@@ -144,6 +151,9 @@ __all__ = [
     "BandwidthLimitCameraRequest",
     "PacketSizeRequest",
     "InterPacketDelayRequest",
+    "OpticalPowerRequest",
+    "TriggerAutofocusRequest",
+    "FocusConfigRequest",
     "StreamStartRequest",
     "StreamStopRequest",
     "StreamStatusRequest",
@@ -209,5 +219,7 @@ __all__ = [
     "HomographyDistanceResult",
     "HomographyDistanceResponse",
     "HealthCheckResponse",
+    "LensStatus",
+    "LensStatusResponse",
     "ServiceStatus",
 ]

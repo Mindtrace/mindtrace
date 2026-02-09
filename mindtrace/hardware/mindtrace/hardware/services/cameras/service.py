@@ -63,6 +63,8 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileImportRequest,
     ConfigFileOperationResult,
     ConfigFileResponse,
+    DictResponse,
+    FocusConfigRequest,
     HDRCaptureResponse,
     HDRCaptureResult,
     HealthCheckResponse,
@@ -80,9 +82,12 @@ from mindtrace.hardware.services.cameras.models import (
     HomographyMeasureDistanceRequest,
     HomographyMeasurementResponse,
     HomographyMeasurementResult,
+    LensStatus,
+    LensStatusResponse,
     ListResponse,
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
+    OpticalPowerRequest,
     StreamInfo,
     StreamInfoResponse,
     StreamStartRequest,
@@ -92,6 +97,7 @@ from mindtrace.hardware.services.cameras.models import (
     StreamStopRequest,
     SystemDiagnostics,
     SystemDiagnosticsResponse,
+    TriggerAutofocusRequest,
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
@@ -278,6 +284,39 @@ class CameraManagerService(Service):
             self.set_performance_settings,
             ALL_SCHEMAS["set_performance_settings"],
             methods=["POST"],
+            as_tool=True,
+        )
+
+        # Focus / Liquid Lens
+        self.add_endpoint(
+            "cameras/lens/status", self.get_lens_status, ALL_SCHEMAS["get_lens_status"], as_tool=True
+        )
+        self.add_endpoint(
+            "cameras/focus/optical-power/get",
+            self.get_optical_power,
+            ALL_SCHEMAS["get_optical_power"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/focus/optical-power/set",
+            self.set_optical_power,
+            ALL_SCHEMAS["set_optical_power"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/focus/autofocus", self.trigger_autofocus, ALL_SCHEMAS["trigger_autofocus"], as_tool=True
+        )
+        self.add_endpoint(
+            "cameras/focus/config/get",
+            self.get_focus_config,
+            ALL_SCHEMAS["get_focus_config"],
+            methods=["GET"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/focus/config/set",
+            self.set_focus_config,
+            ALL_SCHEMAS["set_focus_config"],
             as_tool=True,
         )
 
@@ -650,6 +689,19 @@ class CameraManagerService(Service):
             except Exception:
                 inter_packet_delay_range = None
 
+            # Liquid lens capabilities (graceful degradation)
+            optical_power_range = None
+            supports_liquid_lens = False
+            try:
+                optical_power_range = await camera_proxy.get_optical_power_range()
+            except Exception:
+                pass
+            try:
+                lens_status = await camera_proxy.get_lens_status()
+                supports_liquid_lens = lens_status.get("connected", False)
+            except Exception:
+                pass
+
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
                 gain_range=gain_range,
@@ -664,6 +716,8 @@ class CameraManagerService(Service):
                 supports_roi=True,  # Most cameras support ROI
                 supports_trigger=True,  # Most cameras support trigger
                 supports_hdr=True,  # Our implementation supports HDR
+                optical_power_range=optical_power_range,
+                supports_liquid_lens=supports_liquid_lens,
             )
 
             return CameraCapabilitiesResponse(
@@ -802,6 +856,11 @@ class CameraManagerService(Service):
             except Exception:
                 image_enhancement = None
 
+            try:
+                optical_power = await camera_proxy.get_optical_power()
+            except Exception:
+                optical_power = None
+
             config = CameraConfiguration(
                 exposure_time=exposure_time,
                 gain=gain,
@@ -810,6 +869,7 @@ class CameraManagerService(Service):
                 pixel_format=pixel_format,
                 white_balance=white_balance,
                 image_enhancement=image_enhancement,
+                optical_power=optical_power,
             )
 
             return CameraConfigurationResponse(
@@ -1533,6 +1593,161 @@ class CameraManagerService(Service):
             from fastapi import HTTPException
 
             raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
+
+    # Focus / Liquid Lens Operations
+    async def get_lens_status(self, request: CameraQueryRequest) -> LensStatusResponse:
+        """Get liquid lens hardware state for a camera."""
+        try:
+            manager = await self._get_camera_manager()
+
+            # Check if camera is active
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+            status_dict = await camera_proxy.get_lens_status()
+
+            lens_status = LensStatus(
+                connected=status_dict.get("connected", False),
+                status=status_dict.get("status", "Unknown"),
+                optical_power=status_dict.get("optical_power"),
+            )
+
+            return LensStatusResponse(
+                success=True,
+                message=f"Lens status retrieved for camera '{request.camera}'",
+                data=lens_status,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get lens status for '{request.camera}': {e}")
+            raise
+
+    async def get_optical_power(self, request: CameraQueryRequest) -> DictResponse:
+        """Get current optical power (diopters) for a camera's liquid lens."""
+        try:
+            manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+            power = await camera_proxy.get_optical_power()
+
+            return DictResponse(
+                success=True,
+                message=f"Optical power retrieved for camera '{request.camera}'",
+                data={"optical_power": power},
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get optical power for '{request.camera}': {e}")
+            raise
+
+    async def set_optical_power(self, request: OpticalPowerRequest) -> BoolResponse:
+        """Set optical power (diopters) for a camera's liquid lens."""
+        try:
+            manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+            await camera_proxy.set_optical_power(request.diopters)
+
+            return BoolResponse(
+                success=True,
+                message=f"Optical power set to {request.diopters} diopters for camera '{request.camera}'",
+                data=True,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to set optical power for '{request.camera}': {e}")
+            raise
+
+    async def trigger_autofocus(self, request: TriggerAutofocusRequest) -> BoolResponse:
+        """Trigger one-shot autofocus on a camera's liquid lens."""
+        try:
+            manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+            result = await camera_proxy.trigger_autofocus(request.accuracy)
+
+            return BoolResponse(
+                success=True,
+                message=f"Autofocus completed for camera '{request.camera}' (accuracy={request.accuracy})",
+                data=result,
+            )
+        except CameraTimeoutError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to trigger autofocus for '{request.camera}': {e}")
+            raise
+
+    async def get_focus_config(self, request: CameraQueryRequest) -> DictResponse:
+        """Get autofocus configuration for a camera's liquid lens."""
+        try:
+            manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+            config = await camera_proxy.get_focus_config()
+
+            return DictResponse(
+                success=True,
+                message=f"Focus configuration retrieved for camera '{request.camera}'",
+                data=config,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get focus config for '{request.camera}': {e}")
+            raise
+
+    async def set_focus_config(self, request: FocusConfigRequest) -> BoolResponse:
+        """Update autofocus configuration for a camera's liquid lens."""
+        try:
+            manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            camera_proxy = await manager.open(request.camera)
+
+            # Build settings dict from non-None request fields
+            settings = {}
+            for field_name in (
+                "accuracy",
+                "stepper",
+                "stepper_lower_limit",
+                "stepper_upper_limit",
+                "roi_size",
+                "focus_source",
+                "edge_detection",
+                "roi_offset_x",
+                "roi_offset_y",
+            ):
+                value = getattr(request, field_name, None)
+                if value is not None:
+                    settings[field_name] = value
+
+            if not settings:
+                return BoolResponse(
+                    success=True,
+                    message="No focus configuration changes requested",
+                    data=False,
+                )
+
+            await camera_proxy.set_focus_config(**settings)
+
+            return BoolResponse(
+                success=True,
+                message=f"Focus configuration updated for camera '{request.camera}': {', '.join(settings.keys())}",
+                data=True,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to set focus config for '{request.camera}': {e}")
+            raise
 
     # Homography Calibration & Measurement Operations
     async def calibrate_homography_checkerboard(
