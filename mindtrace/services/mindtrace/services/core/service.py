@@ -22,6 +22,8 @@ import requests
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastmcp import FastMCP
+from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_http_headers
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
@@ -843,7 +845,7 @@ class Service(Mindtrace):
         autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
         self._endpoints[path] = schema
         if as_tool:
-            self.add_tool(tool_name=path, func=func)
+            self.add_tool(tool_name=path, func=func, require_auth=(scope == Scope.AUTHENTICATED))
         wrapped = track_operation(
             name=func.__name__,
             service_name=self.name,
@@ -868,8 +870,11 @@ class Service(Mindtrace):
             **api_route_kwargs,
         )
 
-    def add_tool(self, tool_name, func):
-        """Add a tool to the MCP server, with an informative description including the tool and service name."""
+    def add_tool(self, tool_name, func, *, require_auth: bool = False):
+        """Add a tool to the MCP server, with an informative description including the tool and service name.
+
+        When require_auth is True, the tool handler verifies the Bearer token from the HTTP request
+        """
         service_name = getattr(self, "name", self.__class__.__name__)
         # Use the function's docstring if available, otherwise log and use a default description
         if doc := func.__doc__:
@@ -878,4 +883,42 @@ class Service(Mindtrace):
             base_desc = "No description provided."
             self.logger.warning(f"Function '{tool_name}' for service '{service_name}' has no docstring.")
         full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
+
+        if require_auth:
+            func = self._make_authenticated_tool_wrapper(func)
+
         self.mcp.tool(name=tool_name, description=full_desc)(func)
+
+    def _make_authenticated_tool_wrapper(self, func: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap a tool handler to require Bearer auth (same as HTTP scope=Scope.AUTHENTICATED)."""
+        service = self
+
+        async def _auth_tool_wrapper(ctx: Context, *args: Any, **kwargs: Any) -> Any:
+            headers = get_http_headers()
+            auth_header = headers.get("Authorization") or headers.get("authorization") or ""
+            if not auth_header.startswith("Bearer ") and not auth_header.startswith("bearer "):
+                raise RuntimeError("Not authenticated. Provide Authorization: Bearer <token>.")
+            token = auth_header[7:].strip()  # strip "Bearer "
+            if len(token) > service.MAX_BEARER_TOKEN_LENGTH:
+                raise RuntimeError("Invalid token.")
+            if service.user_authenticator is None:
+                raise RuntimeError("Authentication configuration error.")
+            try:
+                result = service.user_authenticator(token)
+                if inspect.isawaitable(result):
+                    result = await result
+            except HTTPException as e:
+                raise RuntimeError(e.detail or "Token verification failed.")
+            except Exception as e:
+                service.logger.error(
+                    "Token verification failed (MCP tool)",
+                    exc_info=True,
+                    extra={"error_type": type(e).__name__, "error_message": str(e)},
+                )
+                raise RuntimeError("Token verification failed.")
+            out = func(*args, **kwargs)
+            if inspect.isawaitable(out):
+                return await out
+            return out
+
+        return _auth_tool_wrapper

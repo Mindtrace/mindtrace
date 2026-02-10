@@ -379,9 +379,10 @@ class TestServiceMCP:
         # Patch add_tool to track calls
         called = {}
 
-        def fake_add_tool(tool_name, func):
+        def fake_add_tool(tool_name, func, *, require_auth=False):
             called["tool_name"] = tool_name
             called["func"] = func
+            called["require_auth"] = require_auth
 
         service.add_tool = fake_add_tool
 
@@ -392,6 +393,37 @@ class TestServiceMCP:
         service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
         assert called["tool_name"] == "dummy"
         assert called["func"] is dummy_func
+        assert called["require_auth"] is False
+
+    def test_add_endpoint_with_as_tool_and_authenticated_scope_passes_require_auth(self):
+        """When scope=Scope.AUTHENTICATED and as_tool=True, add_tool is called with require_auth=True."""
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+        service.set_user_authenticator(lambda token: {"user_id": "test"})
+        called = {}
+
+        def fake_add_tool(tool_name, func, *, require_auth=False):
+            called["tool_name"] = tool_name
+            called["func"] = func
+            called["require_auth"] = require_auth
+            return None
+
+        service.add_tool = fake_add_tool
+
+        def dummy_func():
+            return "ok"
+
+        test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
+        service.add_endpoint(
+            "dummy",
+            dummy_func,
+            schema=test_schema,
+            as_tool=True,
+            scope=Scope.AUTHENTICATED,
+        )
+        assert called["tool_name"] == "dummy"
+        assert called["require_auth"] is True
 
     def test_get_mcp_paths_normalizes_paths(self, monkeypatch):
         """Test get_mcp_paths normalizes paths that don't start with /."""

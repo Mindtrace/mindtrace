@@ -589,6 +589,114 @@ class TestServiceGetCurrentUserDependency:
         assert dep1 != dep2
 
 
+class TestMcpToolAuthWrapper:
+    """Tests for MCP tool auth wrapper (require_auth=True) via add_tool public API."""
+
+    def _registered_wrapper(self, service, inner_func):
+        """Register a tool with require_auth=True and return the wrapped callable that MCP would invoke."""
+        captured = {}
+
+        def fake_tool(name, **kwargs):
+            def decorator(func):
+                captured["func"] = func
+                return func
+
+            return decorator
+
+        service.mcp.tool = fake_tool
+        service.add_tool("test_tool", inner_func, require_auth=True)
+        return captured["func"]
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_wrapper_rejects_no_bearer_header(self):
+        """Tool wrapper raises when Authorization header is missing or not Bearer."""
+        service = Service()
+        service.set_user_authenticator(lambda token: {"user_id": "u1"})
+        wrapper = self._registered_wrapper(service, lambda: "ok")
+        mock_ctx = Mock()
+
+        with patch(
+            "mindtrace.services.core.service.get_http_headers",
+            return_value={},
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await wrapper(mock_ctx)
+        assert "Not authenticated" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_wrapper_rejects_token_over_max_length(self):
+        """Tool wrapper rejects token longer than MAX_BEARER_TOKEN_LENGTH."""
+        service = Service()
+        authenticator = Mock(return_value={"user_id": "u1"})
+        service.set_user_authenticator(authenticator)
+        wrapper = self._registered_wrapper(service, lambda: "ok")
+        mock_ctx = Mock()
+        over = "x" * (service.MAX_BEARER_TOKEN_LENGTH + 1)
+
+        with patch(
+            "mindtrace.services.core.service.get_http_headers",
+            return_value={"Authorization": f"Bearer {over}"},
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await wrapper(mock_ctx)
+        assert "Invalid token" in str(exc_info.value)
+        authenticator.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_wrapper_rejects_when_authenticator_raises(self):
+        """Tool wrapper raises when authenticator raises HTTPException."""
+        service = Service()
+
+        def bad_verifier(token):
+            raise HTTPException(status_code=401, detail="Bad token")
+
+        service.set_user_authenticator(bad_verifier)
+        wrapper = self._registered_wrapper(service, lambda: "ok")
+        mock_ctx = Mock()
+
+        with patch(
+            "mindtrace.services.core.service.get_http_headers",
+            return_value={"Authorization": "Bearer valid"},
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await wrapper(mock_ctx)
+        assert "Bad token" in str(exc_info.value) or "Token verification" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_wrapper_calls_inner_func_when_auth_succeeds(self):
+        """Tool wrapper calls inner func and returns result when token is valid."""
+        service = Service()
+        service.set_user_authenticator(lambda token: {"user_id": "u1"})
+        inner = Mock(return_value="inner_result")
+        wrapper = self._registered_wrapper(service, inner)
+        mock_ctx = Mock()
+
+        with patch(
+            "mindtrace.services.core.service.get_http_headers",
+            return_value={"Authorization": "Bearer valid_token"},
+        ):
+            result = await wrapper(mock_ctx)
+        assert result == "inner_result"
+        inner.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_wrapper_async_inner_func(self):
+        """Tool wrapper awaits async inner func."""
+        service = Service()
+        service.set_user_authenticator(lambda token: {"user_id": "u1"})
+        inner = AsyncMock(return_value="async_result")
+        wrapper = self._registered_wrapper(service, inner)
+        mock_ctx = Mock()
+
+        with patch(
+            "mindtrace.services.core.service.get_http_headers",
+            return_value={"Authorization": "Bearer valid_token"},
+        ):
+            result = await wrapper(mock_ctx)
+        assert result == "async_result"
+        inner.assert_called_once_with()
+
+
 class TestServiceAuthIntegration:
     """Integration tests for authentication in Service endpoints."""
 
