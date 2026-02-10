@@ -107,10 +107,10 @@ class TestServiceGetUserDependency:
             return {"user_id": "123"}
 
         service.set_user_authenticator(sync_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         with pytest.raises(HTTPException) as exc_info:
-            await verify_token_fn(credentials=None)
+            await inner(credentials=None)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert exc_info.value.detail == "Not authenticated"
@@ -128,12 +128,14 @@ class TestServiceGetUserDependency:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         service.set_user_authenticator(sync_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
+        get_user_fn = service.get_current_user_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_token"
 
-        result = await verify_token_fn(credentials=mock_credentials)
+        user_info = await inner(credentials=mock_credentials)
+        result = await get_user_fn(verified_result=user_info)
 
         assert result["user_id"] == "123"
         assert result["email"] == "test@example.com"
@@ -147,13 +149,13 @@ class TestServiceGetUserDependency:
             raise HTTPException(status_code=401, detail="Token expired")
 
         service.set_user_authenticator(sync_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "expired_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await verify_token_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Token expired"
@@ -167,13 +169,13 @@ class TestServiceGetUserDependency:
             raise ValueError("Unexpected error")
 
         service.set_user_authenticator(sync_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "bad_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await verify_token_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert exc_info.value.detail == "Token verification failed"
@@ -190,12 +192,14 @@ class TestServiceGetUserDependency:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         service.set_user_authenticator(async_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
+        get_user_fn = service.get_current_user_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_async_token"
 
-        result = await verify_token_fn(credentials=mock_credentials)
+        user_info = await inner(credentials=mock_credentials)
+        result = await get_user_fn(verified_result=user_info)
 
         assert result["user_id"] == "456"
         assert result["email"] == "async@example.com"
@@ -209,13 +213,13 @@ class TestServiceGetUserDependency:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         service.set_user_authenticator(async_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "forbidden_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await verify_token_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail == "Forbidden"
@@ -229,13 +233,13 @@ class TestServiceGetUserDependency:
             raise RuntimeError("Database connection failed")
 
         service.set_user_authenticator(async_verifier)
-        verify_token_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "error_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await verify_token_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert exc_info.value.detail == "Token verification failed"
@@ -243,7 +247,7 @@ class TestServiceGetUserDependency:
 
     @pytest.mark.asyncio
     async def test_get_user_defensive_check_authenticator_none(self):
-        """Test the defensive check in get_user when authenticator becomes None after dependency creation.
+        """Test the defensive check when authenticator becomes None after inner dependency is created.
 
         This tests the defensive check that should never happen in practice,
         but protects against edge cases where the authenticator is removed after dependency creation.
@@ -254,7 +258,7 @@ class TestServiceGetUserDependency:
             return {"user_id": "123"}
 
         service.set_user_authenticator(sync_authenticator)
-        get_user_fn = service.get_current_user_dependency()
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         # Simulate authenticator being removed after dependency creation (edge case)
         service.user_authenticator = None
@@ -263,10 +267,10 @@ class TestServiceGetUserDependency:
         mock_credentials.credentials = "test_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_user_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "User authenticator not configured" in exc_info.value.detail
+        assert "authenticator not configured" in exc_info.value.detail
         assert "WWW-Authenticate" in exc_info.value.headers
 
 
@@ -292,11 +296,10 @@ class TestServiceAuthOnlyDependency:
             return {"user_id": "123"}
 
         service.set_user_authenticator(sync_verifier)
-        auth_dep = service.get_auth_dependency(Scope.AUTHENTICATED)
-        auth_only_fn = auth_dep.dependency
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         with pytest.raises(HTTPException) as exc_info:
-            await auth_only_fn(credentials=None)
+            await inner(credentials=None)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert exc_info.value.detail == "Not authenticated"
@@ -313,14 +316,16 @@ class TestServiceAuthOnlyDependency:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         service.set_user_authenticator(sync_verifier)
+        inner = service._get_or_create_verified_token_inner_dependency()
         auth_dep = service.get_auth_dependency(Scope.AUTHENTICATED)
         auth_only_fn = auth_dep.dependency
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_token"
 
+        user_info = await inner(credentials=mock_credentials)
         # Auth-only dependency should return None (not user data)
-        result = await auth_only_fn(credentials=mock_credentials)
+        result = await auth_only_fn(_verified=user_info)
         assert result is None
 
     @pytest.mark.asyncio
@@ -334,14 +339,16 @@ class TestServiceAuthOnlyDependency:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         service.set_user_authenticator(async_verifier)
+        inner = service._get_or_create_verified_token_inner_dependency()
         auth_dep = service.get_auth_dependency(Scope.AUTHENTICATED)
         auth_only_fn = auth_dep.dependency
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_async_token"
 
+        user_info = await inner(credentials=mock_credentials)
         # Should return None (not user data)
-        result = await auth_only_fn(credentials=mock_credentials)
+        result = await auth_only_fn(_verified=user_info)
         assert result is None
 
     @pytest.mark.asyncio
@@ -353,14 +360,13 @@ class TestServiceAuthOnlyDependency:
             raise HTTPException(status_code=401, detail="Token expired")
 
         service.set_user_authenticator(sync_verifier)
-        auth_dep = service.get_auth_dependency(Scope.AUTHENTICATED)
-        auth_only_fn = auth_dep.dependency
+        inner = service._get_or_create_verified_token_inner_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "expired_token"
 
         with pytest.raises(HTTPException) as exc_info:
-            await auth_only_fn(credentials=mock_credentials)
+            await inner(credentials=mock_credentials)
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Token expired"
@@ -479,12 +485,14 @@ class TestServiceGetCurrentUserDependency:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         service.set_user_authenticator(sync_verifier)
+        inner = service._get_or_create_verified_token_inner_dependency()
         dependency_fn = service.get_current_user_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_token"
 
-        result = await dependency_fn(credentials=mock_credentials)
+        user_info = await inner(credentials=mock_credentials)
+        result = await dependency_fn(verified_result=user_info)
 
         assert result["user_id"] == "123"
         assert result["email"] == "test@example.com"
@@ -499,13 +507,15 @@ class TestServiceGetCurrentUserDependency:
             return None
 
         service.set_user_authenticator(lightweight_verifier)
+        inner = service._get_or_create_verified_token_inner_dependency()
         get_user_fn = service.get_current_user_dependency()
 
         mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
         mock_credentials.credentials = "valid_token"
 
+        user_info = await inner(credentials=mock_credentials)  # returns None
         with pytest.raises(HTTPException) as exc_info:
-            await get_user_fn(credentials=mock_credentials)
+            await get_user_fn(verified_result=user_info)
 
         assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "returned None" in exc_info.value.detail

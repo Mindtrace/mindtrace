@@ -19,7 +19,7 @@ from uuid import UUID
 import fastapi
 import psutil
 import requests
-from fastapi import FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
@@ -89,6 +89,7 @@ class Service(Mindtrace):
         self.id, self.pid_file = self._generate_id_and_pid_file()
 
         self.user_authenticator: Callable[[str], dict | None] | Callable[[str], Awaitable[dict | None]] | None = None
+        self._verified_token_dependency = None
 
         # Build URL with the following priority:
         # 1. Explicit URL parameter
@@ -597,9 +598,74 @@ class Service(Mindtrace):
             service.set_user_authenticator(authenticate_user)  # or authenticate_user_lightweight or authenticate_user_async
         """
         self.user_authenticator = authenticator
+        self._verified_token_dependency = None
+
+    def _get_or_create_verified_token_inner_dependency(self):
+        """Return a single shared dependency that runs the authenticator once per request.
+
+        Returns:
+            A FastAPI dependency function that extracts the Bearer token, calls the authenticator, and returns its result (dict or None)
+
+        Raises:
+            RuntimeError: If authenticator is not set
+        """
+        if self._verified_token_dependency is not None:
+            return self._verified_token_dependency
+        if self.user_authenticator is None:
+            raise RuntimeError(
+                "User authenticator not set. Call service.set_user_authenticator() before registering "
+                "endpoints with scope=Scope.AUTHENTICATED."
+            )
+        bearer_scheme = HTTPBearer(
+            auto_error=False,
+            scheme_name="Bearer",
+            description="JWT Bearer token authentication. Format: Bearer <token>",
+        )
+
+        async def verified_token_once(
+            credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+        ) -> dict | None:
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            token = credentials.credentials
+            authenticator = self.user_authenticator
+            if authenticator is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Token authenticator not configured.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            try:
+                result = authenticator(token)
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(
+                    "Token verification failed",
+                    exc_info=True,
+                    extra={"error_type": type(e).__name__, "error_message": str(e)},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token verification failed",
+                    headers={"WWW-Authenticate": "Bearer"},
+                ) from e
+
+        self._verified_token_dependency = verified_token_once
+        return self._verified_token_dependency
 
     def _create_verify_token_dependency(self):
         """Create a lightweight token verification dependency that only verifies tokens.
+
+        Uses a shared inner dependency with get_current_user_dependency(), so verification
+        runs once per request when both are used on an endpoint.
 
         Returns:
             A FastAPI dependency function that verifies tokens (returns None on success)
@@ -607,158 +673,76 @@ class Service(Mindtrace):
         Raises:
             RuntimeError: If token_verifier is not set
         """
-        if self.user_authenticator is None:
-            raise RuntimeError(
-                "User authenticator not set. Call service.set_user_authenticator() before registering "
-                "endpoints with scope=Scope.AUTHENTICATED."
-            )
-
-        bearer_scheme = HTTPBearer(
-            auto_error=False,
-            scheme_name="Bearer",
-            description="JWT Bearer token authentication. Format: Bearer <token>",
-        )
+        inner = self._get_or_create_verified_token_inner_dependency()
 
         async def verify_token(
-            credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+            _verified: dict | None = Depends(inner),
         ) -> None:
             """Verify OAuth2 Bearer token.
 
+            Shares the same underlying verification as get_current_user_dependency();
+            the inner dependency runs once per request.
+
             Args:
-                credentials: HTTPAuthorizationCredentials from FastAPI security
+                _verified: Verified result from shared inner dependency (injected by FastAPI)
 
             Returns:
                 None on successful verification
 
             Raises:
-                HTTPException: If token is missing or invalid
+                HTTPException: If token is missing or invalid (raised by inner dependency)
             """
-            if credentials is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Not authenticated",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            token = credentials.credentials
-            authenticator = self.user_authenticator
-
-            if authenticator is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="User authenticator not configured.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            try:
-                result = authenticator(token)
-                if inspect.isawaitable(result):
-                    result = await result
-                return None
-            except HTTPException:
-                raise
-            except Exception as e:
-                self.logger.error(
-                    "Token verification failed",
-                    exc_info=True,
-                    extra={"error_type": type(e).__name__, "error_message": str(e)},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token verification failed",
-                    headers={"WWW-Authenticate": "Bearer"},
-                ) from e
+            return None
 
         return verify_token
 
     def _create_get_user_dependency(self):
-        """Create a dependency that verifies tokens and returns user information.
+        """Create a dependency that verifies tokens and returns the authenticator result.
+
+        Uses a shared inner dependency with the scope=Scope.AUTHENTICATED dependency,
+        so verification runs once per request when both are used on an endpoint.
 
         Returns:
-            A FastAPI dependency function that uses this service's user_authenticator and returns user data
+            A FastAPI dependency function that uses this service's authenticator and returns its result (dict)
 
         Raises:
-            RuntimeError: If user_authenticator is not set
+            RuntimeError: If authenticator is not set
         """
-        if self.user_authenticator is None:
-            raise RuntimeError(
-                "User authenticator not set. Call service.set_user_authenticator() before registering "
-                "endpoints with scope=Scope.AUTHENTICATED."
-            )
-
-        bearer_scheme = HTTPBearer(
-            auto_error=False,
-            scheme_name="Bearer",
-            description="JWT Bearer token authentication. Format: Bearer <token>",
-        )
+        inner = self._get_or_create_verified_token_inner_dependency()
 
         async def get_user(
-            credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+            verified_result: dict | None = Depends(inner),
         ) -> dict:
-            """Verify OAuth2 Bearer token and return user information.
+            """Verify OAuth2 Bearer token and return the authenticator result.
 
-            This dependency uses this service instance's user_authenticator.
+            This dependency uses this service instance's authenticator via the shared
+            inner dependency (same as scope=Scope.AUTHENTICATED), so verification runs once per request.
 
             Args:
-                credentials: HTTPAuthorizationCredentials from FastAPI security
+                verified_result: Verified result from shared inner dependency (injected by FastAPI)
 
             Returns:
-                dict: User information from verified token
+                dict: Authenticator result from verified token (e.g. identity or claims)
 
             Raises:
-                HTTPException: If token is missing or invalid
+                HTTPException: If token is missing or invalid, or if authenticator returned None
             """
-            if credentials is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Not authenticated",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            token = credentials.credentials
-            authenticator = self.user_authenticator
-
-            # Additional safety check (should never happen due to check above, but defensive)
-            if authenticator is None:
+            if verified_result is None:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="User authenticator not configured.",
+                    detail="Authenticator returned None. get_current_user_dependency() requires an authenticator that returns a dict.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-
-            try:
-                user_info = authenticator(token)
-                if inspect.isawaitable(user_info):
-                    user_info = await user_info
-
-                if user_info is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="User authenticator returned None. get_current_user_dependency() requires an authenticator that returns user data (dict).",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-
-                return user_info
-            except HTTPException:
-                raise
-            except Exception as e:
-                # Log the actual error server-side for debugging
-                self.logger.error(
-                    "Token verification failed",
-                    exc_info=True,
-                    extra={"error_type": type(e).__name__, "error_message": str(e)},
-                )
-                # Return generic error message to client to avoid leaking implementation details
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token verification failed",
-                    headers={"WWW-Authenticate": "Bearer"},
-                ) from e
+            return verified_result
 
         return get_user
 
     def get_auth_dependency(self, scope: Scope):
         """Get authentication dependency based on scope for this service instance.
+
+        For Scope.AUTHENTICATED, returns a dependency that verifies the Bearer token; it shares
+        the same underlying verification as get_current_user_dependency(), so verification
+        runs once per request when both are used on an endpoint.
 
         Args:
             scope: The endpoint scope (PUBLIC or AUTHENTICATED)
@@ -771,11 +755,13 @@ class Service(Mindtrace):
         return None
 
     def get_current_user_dependency(self):
-        """Get a FastAPI dependency for accessing the current authenticated user.
+        """Get a FastAPI dependency for accessing the current authenticated identity.
 
+        The returned dependency shares the same underlying token verification as scope=Scope.AUTHENTICATED,
+        so verification runs once per request when both are used on an endpoint.
 
         Returns:
-            A FastAPI dependency function that returns the current user dict
+            A FastAPI dependency function that returns the authenticator result (e.g. current user dict)
 
         Example:
             get_current_user = service.get_current_user_dependency()

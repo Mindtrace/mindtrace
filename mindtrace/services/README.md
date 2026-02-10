@@ -177,6 +177,24 @@ async def get_profile(
 
 **Note:** `Depends(get_current_user)` already enforces authentication. Using `scope=Scope.AUTHENTICATED` is redundant but fine for clarity.
 
+### Authentication flow
+
+1. **Token extraction**  
+   The Bearer token is read from the `Authorization` header using FastAPI’s `HTTPBearer` security scheme (`Authorization: Bearer <token>`). If the header is missing or invalid, the request is rejected with 401.
+
+2. **Token verification and claims**  
+   Your authenticator (set via `set_user_authenticator`) is called with the raw token string. It should:
+   - Decode and verify the token (e.g. JWT signature and expiry).
+   - Optionally load extra data (e.g. from a DB) and return a user dict, or return `None` if you only need “valid token” and no user data.
+
+3. **Loading user details from claims**  
+   If your authenticator returns a `dict`, that value is the “current user” for the request. It is cached for that request; any use of `Depends(get_current_user)` in the same request receives this same dict without calling the authenticator again.
+
+4. **`scope=Scope.AUTHENTICATED` vs `Depends(get_current_user)`**
+   - **`scope=Scope.AUTHENTICATED`** on `add_endpoint()`: Adds a route-level dependency that requires a valid token. The handler runs only if the token is valid. No user dict is injected unless you also use `Depends(get_current_user)`.
+   - **`Depends(get_current_user)`** on the handler: Injects the current user dict (from the same single verification step). Use this when you need `user_id`, `email`, or other fields for authorization or response.
+   - **Using both**: You can use both on the same endpoint (e.g. `scope=Scope.AUTHENTICATED` and `current_user: Annotated[dict, Depends(get_current_user)]`). Verification and user loading run **once**; the result is reused.
+
 ### Using Authentication Headers with ConnectionManager
 
 When using ConnectionManager with authenticated endpoints, you can pass headers in two ways:
@@ -258,7 +276,8 @@ result = await cm.aget_profile(headers={"Authorization": f"Bearer {token}"})
   ```
   Authorization: Bearer <your-token>
   ```
-  
+  Token verification (and optional user loading) runs once per request and is shared by the scope dependency and `get_current_user_dependency()`.
+
 The ConnectionManager automatically forwards headers to authenticated endpoints.
 
 ## Testing and Coverage

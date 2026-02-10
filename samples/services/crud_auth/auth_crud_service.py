@@ -282,117 +282,6 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     return encoded_jwt
 
 
-# Module-level state for service instance
-class _ServiceInstanceState:
-    """State class to hold service instance for token verification."""
-
-    def __init__(self):
-        self.instance: Optional["AuthenticatedCRUDService"] = None
-
-    def set(self, service: "AuthenticatedCRUDService") -> None:
-        """Set the service instance."""
-        self.instance = service
-
-    def get(self) -> Optional["AuthenticatedCRUDService"]:
-        """Get the service instance."""
-        return self.instance
-
-
-_service_state = _ServiceInstanceState()
-
-
-def set_service_instance(service: "AuthenticatedCRUDService") -> None:
-    """Set the service instance for token verification.
-
-    This allows verify_token to access the database to validate users.
-    """
-    _service_state.set(service)
-
-
-async def verify_token_async(token: str) -> dict:
-    """Verify JWT token and return user information (async version).
-
-    This function validates:
-    1. Token signature and expiration
-    2. User still exists in database
-    3. User is not disabled
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        dict: User information from token payload
-
-    Raises:
-        HTTPException: If token is invalid or user is disabled/deleted
-    """
-    try:
-        # Decode and verify JWT token
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-
-        # Extract user information from token
-        # Token contains: user_id, email (and optionally username)
-        user_id = payload.get("user_id")
-        email = payload.get("email") or payload.get("sub")  # Support both formats
-
-        if not user_id and not email:
-            raise HTTPException(status_code=401, detail="Invalid token: missing user identifier")
-
-        # Validate user still exists and is not disabled
-        service_instance = _service_state.get()
-        if service_instance:
-            try:
-                # Try to find user by ID first, then by email
-                if user_id:
-                    user = await service_instance.db.user.get(user_id)
-                elif email:
-                    users = await service_instance.db.user.find({"email": email})
-                    if not users:
-                        raise HTTPException(status_code=401, detail="Invalid token: user not found")
-                    user = users[0]
-                else:
-                    raise HTTPException(
-                        status_code=401,
-                        detail="Invalid token: missing user identifier",
-                    )
-
-                # Check if user is disabled
-                if user.disabled:
-                    raise HTTPException(
-                        status_code=401,
-                        detail="Invalid token: user account is disabled",
-                    )
-
-                # Return validated user information
-                return {
-                    "user_id": str(user.id),
-                    "email": user.email,
-                    "username": user.email,  # Use email as username
-                }
-            except HTTPException:
-                raise
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid token: user validation failed",
-                ) from exc
-        else:
-            # Fallback if service instance not set (should not happen in production)
-            return {
-                "user_id": user_id,
-                "email": email,
-                "username": email or "unknown",
-            }
-    except jwt.ExpiredSignatureError as exc:
-        raise HTTPException(status_code=401, detail="Token has expired") from exc
-    except HTTPException:
-        raise
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(status_code=401, detail="Invalid token") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Token verification failed") from exc
-
-
 # ============================================================================
 # Authenticated CRUD Service
 # ============================================================================
@@ -435,11 +324,8 @@ class AuthenticatedCRUDService(Service):
             allow_index_dropping=True,
         )
 
-        # Set service instance for token verification
-        set_service_instance(self)
-
-        # Set up token verification (use async version)
-        self.set_user_authenticator(verify_token_async)
+        # Set up token verification (bound method; no global state)
+        self.set_user_authenticator(self.verify_token_async)
 
         # Allows endpoints to inject the current user via Depends()
         self._get_current_user = self.get_current_user_dependency()
@@ -513,6 +399,69 @@ class AuthenticatedCRUDService(Service):
             methods=["DELETE"],
             scope=Scope.AUTHENTICATED,
         )
+
+    async def verify_token_async(self, token: str) -> dict:
+        """Verify JWT token and return user information.
+
+        Validates: token signature/expiration, user exists in DB, user not disabled.
+
+        Args:
+            token: JWT token string.
+
+        Returns:
+            dict: User info (user_id, email, username).
+
+        Raises:
+            HTTPException: If token is invalid or user is disabled/deleted.
+        """
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("user_id")
+            email = payload.get("email") or payload.get("sub")
+
+            if not user_id and not email:
+                raise HTTPException(status_code=401, detail="Invalid token: missing user identifier")
+
+            try:
+                if user_id:
+                    user = await self.db.user.get(user_id)
+                elif email:
+                    users = await self.db.user.find({"email": email})
+                    if not users:
+                        raise HTTPException(status_code=401, detail="Invalid token: user not found")
+                    user = users[0]
+                else:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Invalid token: missing user identifier",
+                    )
+
+                if user.disabled:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Invalid token: user account is disabled",
+                    )
+
+                return {
+                    "user_id": str(user.id),
+                    "email": user.email,
+                    "username": user.email,
+                }
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid token: user validation failed",
+                ) from exc
+        except jwt.ExpiredSignatureError as exc:
+            raise HTTPException(status_code=401, detail="Token has expired") from exc
+        except HTTPException:
+            raise
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=401, detail="Invalid token") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail="Token verification failed") from exc
 
     async def login(self, form_data: LoginForm = Depends()) -> Token:
         """Login endpoint to authenticate user and get access token.
