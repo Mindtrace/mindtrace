@@ -813,11 +813,11 @@ class BaslerCameraBackend(CameraBackend):
 
         return struct.unpack("!I", socket.inet_aton(ip_address))[0]
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, value: bool):
+    def set_image_quality_enhancement(self, value: bool):
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
         self.logger.debug(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
