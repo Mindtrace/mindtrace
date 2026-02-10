@@ -53,6 +53,9 @@ class Service(Mindtrace):
     _active_servers: dict[UUID, psutil.Process] = {}
     mcp: MCPClientManager = None
 
+    # Max Bearer token length before passing to authenticator
+    MAX_BEARER_TOKEN_LENGTH = 16 * 1024  # 16 KiB
+
     def __init__(
         self,
         *,
@@ -603,13 +606,9 @@ class Service(Mindtrace):
             RuntimeError: If an authenticator was already set (one-time set only).
         """
         if authenticator is None:
-            raise ValueError(
-                "set_user_authenticator() does not allow disabling auth at runtime."
-            )
+            raise ValueError("set_user_authenticator() does not allow disabling auth at runtime.")
         if self.user_authenticator is not None:
-            raise RuntimeError(
-                "User authenticator can only be set once per service instance. "
-            )
+            raise RuntimeError("User authenticator can only be set once per service instance. ")
         self.user_authenticator = authenticator
         self._verified_token_dependency = None
 
@@ -645,6 +644,12 @@ class Service(Mindtrace):
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             token = credentials.credentials
+            if len(token) > self.MAX_BEARER_TOKEN_LENGTH:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             authenticator = self.user_authenticator
             if authenticator is None:
                 raise HTTPException(

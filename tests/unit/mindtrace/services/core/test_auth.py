@@ -96,6 +96,42 @@ class TestServiceUserAuthenticator:
         assert service2.user_authenticator == verifier2
         assert service1.user_authenticator != service2.user_authenticator
 
+    @pytest.mark.asyncio
+    async def test_bearer_token_over_max_length_rejected(self):
+        """Test that a Bearer token longer than MAX_BEARER_TOKEN_LENGTH is rejected before calling the authenticator."""
+        service = Service()
+        authenticator = Mock(return_value={"user_id": "123"})
+        service.set_user_authenticator(authenticator)
+
+        inner = service._get_or_create_verified_token_inner_dependency()
+        over_limit = "x" * (service.MAX_BEARER_TOKEN_LENGTH + 1)
+        mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
+        mock_credentials.credentials = over_limit
+
+        with pytest.raises(HTTPException) as exc_info:
+            await inner(credentials=mock_credentials)
+
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "Invalid token" in exc_info.value.detail
+        authenticator.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bearer_token_at_max_length_accepted(self):
+        """Test that a token at exactly MAX_BEARER_TOKEN_LENGTH is passed to the authenticator."""
+        service = Service()
+        authenticator = Mock(return_value={"user_id": "456"})
+        service.set_user_authenticator(authenticator)
+
+        inner = service._get_or_create_verified_token_inner_dependency()
+        at_limit = "y" * service.MAX_BEARER_TOKEN_LENGTH
+        mock_credentials = Mock(spec=HTTPAuthorizationCredentials)
+        mock_credentials.credentials = at_limit
+
+        result = await inner(credentials=mock_credentials)
+
+        assert result == {"user_id": "456"}
+        authenticator.assert_called_once_with(at_limit)
+
 
 class TestServiceGetUserDependency:
     """Test the get_user dependency function (returns user data)."""
