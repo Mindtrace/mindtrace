@@ -56,9 +56,8 @@ def mock_camera_manager():
         "MockBasler:TestCam3",
     ]
 
-    # Mock discovery
-    manager.discover = MagicMock(return_value=mock_cameras)
-    AsyncCameraManager.discover = MagicMock(return_value=mock_cameras)
+    # Mock discovery (service calls discover_async, not discover)
+    manager.discover_async = AsyncMock(return_value=mock_cameras)
 
     # Mock backends
     manager.backends.return_value = ["MockBasler", "OpenCV"]
@@ -138,8 +137,8 @@ class TestServiceDiscoveryOperations:
     @pytest.mark.asyncio
     async def test_discovery_with_backend_filter(self, camera_service, mock_camera_manager):
         """Test filtered discovery through service."""
-        # Mock filtered discovery
-        mock_camera_manager.discover = MagicMock(return_value=["MockBasler:TestCam1"])
+        # Mock filtered discovery (service calls discover_async)
+        mock_camera_manager.discover_async = AsyncMock(return_value=["MockBasler:TestCam1"])
 
         request = BackendFilterRequest(backend="MockBasler")
         result = await camera_service.discover_cameras(request)
@@ -677,8 +676,8 @@ class TestServicePerformance:
     @pytest.mark.asyncio
     async def test_concurrent_service_operations(self, camera_service, mock_camera_manager):
         """Test concurrent service operations."""
-        # Setup mock responses
-        mock_camera_manager.discover = MagicMock(return_value=["MockBasler:TestCam1", "MockBasler:TestCam2"])
+        # Setup mock responses (service calls discover_async)
+        mock_camera_manager.discover_async = AsyncMock(return_value=["MockBasler:TestCam1", "MockBasler:TestCam2"])
 
         # Run multiple discovery operations concurrently
         tasks = []
