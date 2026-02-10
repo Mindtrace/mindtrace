@@ -51,7 +51,9 @@ class TestLauncher:
         assert launcher.gunicorn_options == expected_options
 
         # Verify server instantiation
-        mock_instantiate.assert_called_once_with("test.server.TestServer", param1="value1", param2=42)
+        mock_instantiate.assert_called_once_with(
+            "test.server.TestServer", param1="value1", param2=42, pid_file="/tmp/test.pid"
+        )
 
         # Verify server configuration
         assert mock_server.url == "127.0.0.1:8080"
@@ -79,7 +81,7 @@ class TestLauncher:
         launcher = Launcher(options)
 
         # Verify server instantiation with no init params
-        mock_instantiate.assert_called_once_with("default.Server")
+        mock_instantiate.assert_called_once_with("default.Server", pid_file=None)
 
         # Verify gunicorn options
         expected_options = {
@@ -108,7 +110,7 @@ class TestLauncher:
         _ = Launcher(options)
 
         # Verify server instantiation with empty init params
-        mock_instantiate.assert_called_once_with("test.Server")
+        mock_instantiate.assert_called_once_with("test.Server", pid_file=None)
 
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
@@ -461,6 +463,7 @@ class TestLauncherIntegration:
             feature_flags=["flag1", "flag2"],
             timeout=30.5,
             debug=True,
+            pid_file=None,
         )
 
 

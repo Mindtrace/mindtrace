@@ -64,6 +64,7 @@ class Service(Mindtrace):
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
         live_service: bool = True,
+        pid_file: str | None = None,
         **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
@@ -86,7 +87,7 @@ class Service(Mindtrace):
         super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
-        self.id, self.pid_file = self._generate_id_and_pid_file()
+        self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
 
         self.user_authenticator: Callable[[str], dict | None] | Callable[[str], Awaitable[dict | None]] | None = None
         self._verified_token_dependency = None

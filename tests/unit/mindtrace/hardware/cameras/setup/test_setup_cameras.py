@@ -147,7 +147,8 @@ class TestCameraSystemSetup:
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
-    def test_uninstall_all_sdks_failure(self, mock_pylon_class, mock_config):
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.uninstall_genicam_cti")
+    def test_uninstall_all_sdks_failure(self, mock_uninstall_genicam, mock_pylon_class, mock_config):
         """Test failed uninstallation of all SDKs."""
         # Mock hardware config
         mock_hw_config = Mock()
@@ -163,12 +164,16 @@ class TestCameraSystemSetup:
         mock_installer.uninstall.return_value = False
         mock_pylon_class.return_value = mock_installer
 
+        # Mock failed GenICam CTI uninstallation
+        mock_uninstall_genicam.return_value = False
+
         setup = CameraSystemSetup()
         result = setup.uninstall_all_sdks()
 
         # Should create PylonSDKInstaller and call uninstall
         mock_pylon_class.assert_called_once()
         mock_installer.uninstall.assert_called_once()
+        mock_uninstall_genicam.assert_called_once()
         assert result is False
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
