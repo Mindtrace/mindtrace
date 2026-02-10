@@ -597,7 +597,19 @@ class Service(Mindtrace):
                 pass
 
             service.set_user_authenticator(authenticate_user)  # or authenticate_user_lightweight or authenticate_user_async
+
+        Raises:
+            ValueError: If authenticator is None (cannot disable auth at runtime).
+            RuntimeError: If an authenticator was already set (one-time set only).
         """
+        if authenticator is None:
+            raise ValueError(
+                "set_user_authenticator() does not allow disabling auth at runtime."
+            )
+        if self.user_authenticator is not None:
+            raise RuntimeError(
+                "User authenticator can only be set once per service instance. "
+            )
         self.user_authenticator = authenticator
         self._verified_token_dependency = None
 

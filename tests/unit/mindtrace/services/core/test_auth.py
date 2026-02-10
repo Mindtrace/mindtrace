@@ -49,8 +49,18 @@ class TestServiceUserAuthenticator:
         service = Service()
         assert service.user_authenticator is None
 
-    def test_set_user_authenticator_overwrites(self):
-        """Test that setting a new verifier overwrites the old one."""
+    def test_set_user_authenticator_rejects_none(self):
+        """Test that set_user_authenticator(None) raises ValueError."""
+        service = Service()
+
+        with pytest.raises(ValueError) as exc_info:
+            service.set_user_authenticator(None)
+
+        assert "disabling auth" in str(exc_info.value)
+        assert service.user_authenticator is None
+
+    def test_set_user_authenticator_one_time_only(self):
+        """Test that authenticator can only be set once; second set raises RuntimeError."""
         service = Service()
 
         def verifier1(token: str) -> dict:
@@ -62,9 +72,11 @@ class TestServiceUserAuthenticator:
         service.set_user_authenticator(verifier1)
         assert service.user_authenticator == verifier1
 
-        service.set_user_authenticator(verifier2)
-        assert service.user_authenticator == verifier2
-        assert service.user_authenticator != verifier1
+        with pytest.raises(RuntimeError) as exc_info:
+            service.set_user_authenticator(verifier2)
+
+        assert "only be set once" in str(exc_info.value)
+        assert service.user_authenticator == verifier1
 
     def test_user_authenticator_per_instance(self):
         """Test that each service instance has its own user authenticator."""
