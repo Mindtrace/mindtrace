@@ -12,6 +12,7 @@ from mindtrace.database import (
     UnifiedMindtraceDocument,
     UnifiedMindtraceODM,
 )
+from mindtrace.database.backends import unified_odm
 
 
 class AddressUnified(UnifiedMindtraceDocument):
@@ -65,6 +66,15 @@ async def test_unified_multi_model_mongo_models_path():
 
         assert db.mongo_backend is not None
         mock_mongo.assert_called_once()
+
+
+def test_unified_create_redis_model_registry_registration_fails():
+    """Test _auto_generate_redis_model when model_registry registration raises."""
+    with patch.object(unified_odm, "model_registry", MagicMock()) as mock_registry:
+        mock_registry.__setitem__ = MagicMock(side_effect=RuntimeError("registry full"))
+        result = UserUnified._auto_generate_redis_model()
+        assert result is not None
+        assert result.__name__ == "UserUnifiedRedis"
 
 
 @pytest.mark.asyncio
