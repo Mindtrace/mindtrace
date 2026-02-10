@@ -669,7 +669,7 @@ class Service(Mindtrace):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Token verification failed",
                     headers={"WWW-Authenticate": "Bearer"},
-                ) from e
+                ) from None
 
         self._verified_token_dependency = verified_token_once
         return self._verified_token_dependency
