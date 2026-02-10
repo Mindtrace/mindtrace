@@ -748,7 +748,7 @@ class Service(Mindtrace):
             if verified_result is None:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Authenticator returned None. get_current_user_dependency() requires an authenticator that returns a dict.",
+                    detail="Authentication configuration error.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             return verified_result

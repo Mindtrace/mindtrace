@@ -566,8 +566,7 @@ class TestServiceGetCurrentUserDependency:
             await get_user_fn(verified_result=user_info)
 
         assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "returned None" in exc_info.value.detail
-        assert "get_current_user_dependency" in exc_info.value.detail
+        assert exc_info.value.detail == "Authentication configuration error."
 
     def test_get_current_user_dependency_per_instance(self):
         """Test that each service instance returns its own dependency function."""
