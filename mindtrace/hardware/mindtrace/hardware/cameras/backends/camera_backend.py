@@ -220,7 +220,7 @@ class CameraBackend(MindtraceABC):
         raise NotImplementedError
 
     # Default implementations for optional methods
-    async def set_config(self, config: str):
+    def set_config(self, config: str):
         self.logger.error(f"set_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_config not supported by {self.__class__.__name__}")
 
@@ -252,10 +252,10 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"set_triggermode not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_triggermode not supported by {self.__class__.__name__}")
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
+    def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         self.img_quality_enhancement = img_quality_enhancement
         self.logger.debug(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
 
