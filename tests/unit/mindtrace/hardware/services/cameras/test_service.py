@@ -8,7 +8,7 @@ These tests focus on real business logic:
 """
 
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -18,25 +18,15 @@ from mindtrace.hardware.core.exceptions import (
     CameraInitializationError,
     CameraNotFoundError,
 )
-
-# Mock heavy dependencies before importing service
-with patch.dict(
-    "sys.modules",
-    {
-        "mindtrace.services.core.connection_manager": Mock(),
-        "mindtrace.core.utils.conversions": Mock(),
-        "cv2": Mock(),
-    },
-):
-    from mindtrace.hardware.services.cameras.models.requests import (
-        BackendFilterRequest,
-        CameraCloseRequest,
-        CameraConfigureRequest,
-        CameraOpenRequest,
-        CameraQueryRequest,
-        CaptureImageRequest,
-    )
-    from mindtrace.hardware.services.cameras.service import CameraManagerService
+from mindtrace.hardware.services.cameras.models.requests import (
+    BackendFilterRequest,
+    CameraCloseRequest,
+    CameraConfigureRequest,
+    CameraOpenRequest,
+    CameraQueryRequest,
+    CaptureImageRequest,
+)
+from mindtrace.hardware.services.cameras.service import CameraManagerService
 
 
 class TestCameraManagerServiceInitialization:
@@ -186,7 +176,7 @@ class TestCameraManagerServiceBusinessLogic:
             "MockBasler": {"available": True, "type": "mock", "sdk_required": False},
             "OpenCV": {"available": True, "type": "usb", "sdk_required": False},
         }
-        mock_manager.discover.return_value = ["MockBasler:Camera1", "OpenCV:Camera2"]
+        mock_manager.discover_async = AsyncMock(return_value=["MockBasler:Camera1", "OpenCV:Camera2"])
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.max_concurrent_captures = 4
 
@@ -257,7 +247,7 @@ class TestCameraManagerServiceBusinessLogic:
     async def test_discover_cameras_request_processing(self, service_with_mock_manager):
         """Test camera discovery processes requests correctly."""
         service, mock_manager = service_with_mock_manager
-        mock_manager.discover.return_value = ["MockBasler:Cam1", "OpenCV:Cam2"]
+        mock_manager.discover_async = AsyncMock(return_value=["MockBasler:Cam1", "OpenCV:Cam2"])
 
         # Test without backend filter
         request = BackendFilterRequest()
@@ -268,7 +258,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data == ["MockBasler:Cam1", "OpenCV:Cam2"]
 
         # Verify manager called with correct parameters
-        mock_manager.discover.assert_called_with(
+        mock_manager.discover_async.assert_called_with(
             backends=None,  # No backend filter
             include_mocks=True,  # Service was created with include_mocks=True
         )
@@ -277,7 +267,7 @@ class TestCameraManagerServiceBusinessLogic:
     async def test_discover_cameras_with_backend_filter(self, service_with_mock_manager):
         """Test camera discovery with backend filter processes request correctly."""
         service, mock_manager = service_with_mock_manager
-        mock_manager.discover.return_value = ["MockBasler:Camera1"]
+        mock_manager.discover_async = AsyncMock(return_value=["MockBasler:Camera1"])
 
         # Test with backend filter
         request = BackendFilterRequest(backend="MockBasler")
@@ -288,7 +278,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data == ["MockBasler:Camera1"]
 
         # Verify backend filter was passed correctly
-        mock_manager.discover.assert_called_with(backends="MockBasler", include_mocks=True)
+        mock_manager.discover_async.assert_called_with(backends="MockBasler", include_mocks=True)
 
     @pytest.mark.asyncio
     async def test_open_camera_request_validation(self, service_with_mock_manager):
