@@ -173,30 +173,6 @@ class OpenCVCameraBackend(CameraBackend):
             f"resolution={width}x{height}, fps={fps}, exposure={exposure}, timeout={timeout_ms}ms"
         )
 
-    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking OpenCV call in threadpool with timeout.
-
-        Uses asyncio.to_thread() for modern async/threading integration.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-        """
-        effective_timeout = timeout or self._op_timeout_s
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"OpenCV operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"OpenCV operation failed for camera '{self.camera_name}': {e}") from e
-
     def _sdk_sync(self, func, *args, timeout: Optional[float] = None, **kwargs):
         """Run a potentially blocking OpenCV call on a dedicated thread synchronously with timeout.
 

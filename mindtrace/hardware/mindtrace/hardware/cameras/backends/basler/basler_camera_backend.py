@@ -208,39 +208,7 @@ class BaslerCameraBackend(CameraBackend):
         # Derived operation timeout for non-capture SDK calls
         self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
 
-        # Thread executor and event loop for _sdk method
-        self._loop = None
-        self._sdk_executor = None
-
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
-
-    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking pypylon call in threadpool with timeout.
-
-        Uses asyncio.to_thread() for modern async/threading integration.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-
-        Raises:
-            CameraTimeoutError: If operation times out
-            HardwareOperationError: If operation fails
-        """
-        effective_timeout = timeout or self._op_timeout_s
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"Pypylon operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"Pypylon operation failed for camera '{self.camera_name}': {e}") from e
 
     @staticmethod
     def get_available_cameras(
