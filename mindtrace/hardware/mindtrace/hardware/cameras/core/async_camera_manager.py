@@ -275,16 +275,20 @@ class AsyncCameraManager(Mindtrace):
                         except Exception:
                             pass
                         if details:
-                            for cam in cameras:
+                            detailed_cameras = camera_class.get_available_cameras(include_details=True)
+                            for cam_id, cam_details in detailed_cameras.items():
                                 # Detailed discovery for Basler not available at this stage
                                 all_details.append(
                                     {
-                                        "name": f"{backend}:{cam}",
-                                        "backend": backend,
-                                        "index": None,
-                                        "width": 0,
-                                        "height": 0,
-                                        "fps": 0.0,
+                                        "serial_number": cam_details.get("serial_number", ""),
+                                        "model": cam_details.get("model", ""),
+                                        "vendor": cam_details.get("vendor", ""),
+                                        "device_class": cam_details.get("device_class", ""),
+                                        "interface": cam_details.get("interface", ""),
+                                        "friendly_name": cam_details.get("friendly_name", ""),
+                                        "user_defined_name": cam_details.get("user_defined_name", ""),
+                                        "name": cam_details.get("name", ""),
+                                        "ip_address": cam_details.get("ip_address", ""),
                                     }
                                 )
                         else:
@@ -749,6 +753,16 @@ class AsyncCameraManager(Mindtrace):
         """Async context manager entry."""
         self.logger.debug("Entering AsyncCameraManager context")
         return self
+
+    async def discover_camera_parameters(self, camera_name: str) -> Dict[str, Any]:
+        """Discover all available parameters for a camera."""
+        if camera_name not in self._cameras:
+            raise CameraNotFoundError(
+                f"Camera '{camera_name}' is not initialized. Use open() first before discovering parameters."
+            )
+
+        camera = self._cameras[camera_name]
+        return await camera.discover_camera_parameters()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit with proper cleanup."""

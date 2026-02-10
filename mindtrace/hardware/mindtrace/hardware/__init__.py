@@ -69,6 +69,10 @@ def __getattr__(name):
         from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         return CameraManager
+    elif name == "AsyncCameraManager":
+        from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+
+        return AsyncCameraManager
     elif name == "Camera":
         from mindtrace.hardware.cameras.core.camera import Camera
 
@@ -106,6 +110,7 @@ def __getattr__(name):
 
 __all__ = [
     "CameraManager",
+    "AsyncCameraManager",
     "PLCManager",
     "SensorManager",
     "HomographyCalibrator",

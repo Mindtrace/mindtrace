@@ -299,6 +299,8 @@ class BaslerCameraBackend(CameraBackend):
                         "device_class": device.GetDeviceClass(),
                         "interface": device.GetInterfaceID(),
                         "friendly_name": device.GetFriendlyName(),
+                        "name": user_defined_name,
+                        "ip_address": device.GetIpAddress(),
                         "user_defined_name": user_defined_name,
                     }
 
@@ -2240,6 +2242,439 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.warning(f"Failed to get inter-packet delay range for camera '{self.camera_name}': {e}")
             return [0, 65535]  # Default range
+
+    async def discover_camera_parameters(self) -> Dict[str, Any]:
+        """Discover all available parameters for this camera using GenICam node map.
+
+        Returns parameter names, types, ranges, and current values.
+
+        Returns:
+            Dictionary containing:
+            - success: bool - Whether discovery succeeded
+            - parameters: Dict[str, Dict] - Parameter information keyed by parameter name
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If parameter discovery fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        else:
+            assert genicam is not None, "camera is initialized but genicam is not available"
+
+        try:
+            await self._ensure_open()
+
+            def _discover_parameters():
+                import tempfile
+                import os
+                
+                nodemap = self.camera.GetNodeMap()
+                parameters = {}
+
+                # Strategy: Save config to temporary file, parse it to get parameter names,
+                # then query those specific parameters from the node map                
+                # Create temporary config file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.pfs', delete=False) as tmp_file:
+                    tmp_config_path = tmp_file.name
+                
+                try:
+                    # Save current camera configuration to temp file
+                    pylon.FeaturePersistence.Save(tmp_config_path, nodemap)
+                    
+                    # Parse the PFS file - it's a tab-separated text file, not XML
+                    # Format: ParameterName<TAB>Value
+                    parameter_names = set()
+                    with open(tmp_config_path, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            # Skip comments and empty lines
+                            if not line or line.startswith('#'):
+                                continue
+                            # Split by tab to get parameter name and value
+                            parts = line.split('\t')
+                            if len(parts) >= 1:
+                                param_name = parts[0].strip()
+                                if param_name:
+                                    parameter_names.add(param_name)
+                    
+                    
+                    # Now query each parameter from the node map
+                    processed_count = 0
+                    for name in parameter_names:
+                        try:
+                            # Get the node by name
+                            node = nodemap.GetNode(name)
+                            if node is None:
+                                continue
+
+                            # Skip invisible or unavailable nodes
+                            try:
+                                if not genicam.IsAvailable(node):
+                                    continue
+                            except Exception as e:
+                                continue
+
+                            # Skip internal/system nodes
+                            if (
+                                name.startswith("_")
+                                or name.startswith("Gev")
+                                or name.startswith("Chunk")
+                                or name.startswith("Event")
+                            ):
+                                continue
+
+                            # Check if node is writable
+                            try:
+                                is_writable = genicam.IsWritable(node)
+                            except Exception as e:
+                                is_writable = False
+
+                            # Check if node is readable
+                            is_readable = True
+                            try:
+                                access_mode = node.GetAccessMode()
+                                if access_mode == genicam.WO:
+                                    is_readable = False
+                            except Exception as e:
+                                pass
+
+                            param_info: Dict[str, Any] = {
+                                "writable": is_writable,
+                                "readable": is_readable,
+                            }
+
+                            # Get description if available
+                            try:
+                                param_info["description"] = node.GetDescription()
+                            except Exception as e:
+                                param_info["description"] = ""
+
+                            # Get unit if available
+                            try:
+                                param_info["unit"] = node.GetUnit()
+                            except Exception as e:
+                                param_info["unit"] = ""
+
+                            # Extract value and type information by node type
+                            if isinstance(node, genicam.IInteger):
+                                param_info["type"] = "integer"
+                                try:
+                                    param_info["current_value"] = node.GetValue()
+                                except Exception as e:
+                                    param_info["current_value"] = None
+                                try:
+                                    param_info["min"] = node.GetMin()
+                                except Exception:
+                                    param_info["min"] = None
+                                try:
+                                    param_info["max"] = node.GetMax()
+                                except Exception:
+                                    param_info["max"] = None
+                                try:
+                                    param_info["increment"] = node.GetInc()
+                                except Exception:
+                                    param_info["increment"] = None
+
+                            elif isinstance(node, genicam.IFloat):
+                                param_info["type"] = "float"
+                                try:
+                                    param_info["current_value"] = node.GetValue()
+                                except Exception as e:
+                                    print(f"Parameter {name}: IFloat.GetValue failed: {e}")
+                                    param_info["current_value"] = None
+                                try:
+                                    param_info["min"] = node.GetMin()
+                                except Exception:
+                                    param_info["min"] = None
+                                try:
+                                    param_info["max"] = node.GetMax()
+                                except Exception:
+                                    param_info["max"] = None
+                                try:
+                                    param_info["increment"] = node.GetInc()
+                                except Exception:
+                                    param_info["increment"] = None
+
+                            elif isinstance(node, genicam.IEnumeration):
+                                param_info["type"] = "enum"
+                                try:
+                                    current_entry = node.GetCurrentEntry()
+                                    if current_entry:
+                                        param_info["current_value"] = current_entry.GetSymbolic()
+                                    else:
+                                        param_info["current_value"] = None
+                                except Exception as e:
+                                    param_info["current_value"] = None
+                                try:
+                                    entries = node.GetEntries()
+                                    param_info["possible_values"] = [
+                                        e.GetSymbolic() for e in entries if genicam.IsAvailable(e)
+                                    ]
+                                except Exception as e:
+                                    param_info["possible_values"] = []
+
+                            elif isinstance(node, genicam.IBoolean):
+                                param_info["type"] = "boolean"
+                                try:
+                                    param_info["current_value"] = node.GetValue()
+                                except Exception as e:
+                                    param_info["current_value"] = None
+
+                            elif isinstance(node, genicam.IString):
+                                param_info["type"] = "string"
+                                try:
+                                    param_info["current_value"] = node.GetValue()
+                                except Exception as e:
+                                    param_info["current_value"] = None
+
+                            elif isinstance(node, genicam.ICommand):
+                                param_info["type"] = "command"
+                                param_info["current_value"] = "<command>"
+
+                            else:
+                                # Skip unknown types
+                                continue
+
+                            # Include all parameters that are readable or writable
+                            processed_count += 1
+                            parameters[name] = param_info
+
+                        except Exception as e:
+                            self.logger.debug(f"Failed to process parameter {name}: {e}")
+                            continue
+                    
+
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to parse config file: {e}")
+                    raise
+                finally:
+                    # Clean up temporary file
+                    try:
+                        if os.path.exists(tmp_config_path):
+                            os.unlink(tmp_config_path)
+                    except Exception:
+                        pass
+                
+                self.logger.info(f"Discovered {len(parameters)} parameters (processed {processed_count})")
+                
+                return {"parameters": parameters}
+
+            result = await self._sdk(_discover_parameters, timeout=self._op_timeout_s * 2)
+            result["success"] = True
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed to discover parameters for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to discover camera parameters: {str(e)}")
+
+    async def set_camera_parameter(self, parameter_name: str, value: Any) -> Dict[str, Any]:
+        """Set a camera parameter by name using GenICam node map.
+
+        This is a generic method that can set any writable camera parameter.
+        It automatically handles different parameter types (integer, float, enum, boolean, string).
+
+        Args:
+            parameter_name: Name of the parameter to set (e.g., "ExposureTime", "Gain", "TriggerMode")
+            value: Value to set. Type should match parameter type:
+                - integer/float for numeric parameters
+                - string for enum parameters (use symbolic value)
+                - bool for boolean parameters
+                - string for string parameters
+
+        Returns:
+            Dictionary containing:
+            - success: bool - Whether the operation succeeded
+            - parameter_name: str - Name of the parameter
+            - old_value: Any - Previous value before setting
+            - new_value: Any - Value that was set (may differ from requested if rounded/clamped)
+            - message: str - Status message
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If parameter doesn't exist, is not writable, or value is invalid
+            HardwareOperationError: If parameter setting fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        else:
+            assert genicam is not None, "camera is initialized but genicam is not available"
+
+        try:
+            await self._ensure_open()
+
+            def _set_parameter(param_name: str, param_value: Any):
+                nodemap = self.camera.GetNodeMap()
+                
+                # Get the node by name
+                node = nodemap.GetNode(param_name)
+                if node is None:
+                    raise CameraConfigurationError(
+                        f"Parameter '{param_name}' not found for camera '{self.camera_name}'"
+                    )
+
+                # Check if node is available
+                if not genicam.IsAvailable(node):
+                    raise CameraConfigurationError(
+                        f"Parameter '{param_name}' is not available for camera '{self.camera_name}'"
+                    )
+
+                # Check if node is writable
+                if not genicam.IsWritable(node):
+                    raise CameraConfigurationError(
+                        f"Parameter '{param_name}' is not writable for camera '{self.camera_name}'"
+                    )
+
+                # Get old value before setting
+                old_value = None
+                try:
+                    if isinstance(node, genicam.IInteger):
+                        old_value = node.GetValue()
+                    elif isinstance(node, genicam.IFloat):
+                        old_value = node.GetValue()
+                    elif isinstance(node, genicam.IEnumeration):
+                        current_entry = node.GetCurrentEntry()
+                        if current_entry:
+                            old_value = current_entry.GetSymbolic()
+                    elif isinstance(node, genicam.IBoolean):
+                        old_value = node.GetValue()
+                    elif isinstance(node, genicam.IString):
+                        old_value = node.GetValue()
+                except Exception as e:
+                    self.logger.warning(f"Could not read old value for parameter '{param_name}': {e}")
+
+                # Set value based on node type
+                new_value = None
+                if isinstance(node, genicam.IInteger):
+                    # Validate and set integer value
+                    try:
+                        int_value = int(param_value)
+                    except (ValueError, TypeError):
+                        raise CameraConfigurationError(
+                            f"Invalid value '{param_value}' for integer parameter '{param_name}'. Expected integer."
+                        )
+                    
+                    # Check range
+                    try:
+                        min_val = node.GetMin()
+                        max_val = node.GetMax()
+                        if int_value < min_val or int_value > max_val:
+                            raise CameraConfigurationError(
+                                f"Value {int_value} for parameter '{param_name}' is outside valid range [{min_val}, {max_val}]"
+                            )
+                    except Exception:
+                        pass  # Range check failed, but continue anyway
+                    
+                    # Apply increment if available
+                    try:
+                        increment = node.GetInc()
+                        if increment and increment > 0:
+                            # Round to nearest valid increment
+                            int_value = int(round(int_value / increment) * increment)
+                    except Exception:
+                        pass
+                    
+                    node.SetValue(int_value)
+                    new_value = node.GetValue()
+                    
+                elif isinstance(node, genicam.IFloat):
+                    # Validate and set float value
+                    try:
+                        float_value = float(param_value)
+                    except (ValueError, TypeError):
+                        raise CameraConfigurationError(
+                            f"Invalid value '{param_value}' for float parameter '{param_name}'. Expected number."
+                        )
+                    
+                    # Check range
+                    try:
+                        min_val = node.GetMin()
+                        max_val = node.GetMax()
+                        if float_value < min_val or float_value > max_val:
+                            raise CameraConfigurationError(
+                                f"Value {float_value} for parameter '{param_name}' is outside valid range [{min_val}, {max_val}]"
+                            )
+                    except Exception:
+                        pass  # Range check failed, but continue anyway
+                    
+                    node.SetValue(float_value)
+                    new_value = node.GetValue()
+                    
+                elif isinstance(node, genicam.IEnumeration):
+                    # Set enum value (must be symbolic string)
+                    if not isinstance(param_value, str):
+                        raise CameraConfigurationError(
+                            f"Invalid value '{param_value}' for enum parameter '{param_name}'. Expected string (symbolic value)."
+                        )
+                    
+                    # Get available entries
+                    entries = node.GetEntries()
+                    available_symbols = [e.GetSymbolic() for e in entries if genicam.IsAvailable(e)]
+                    
+                    if param_value not in available_symbols:
+                        raise CameraConfigurationError(
+                            f"Invalid enum value '{param_value}' for parameter '{param_name}'. "
+                            f"Available values: {available_symbols}"
+                        )
+                    
+                    # Find and set the entry
+                    for entry in entries:
+                        if entry.GetSymbolic() == param_value and genicam.IsAvailable(entry):
+                            node.SetIntValue(entry.GetValue())
+                            new_value = param_value
+                            break
+                    
+                    if new_value is None:
+                        raise CameraConfigurationError(
+                            f"Could not set enum value '{param_value}' for parameter '{param_name}'"
+                        )
+                    
+                elif isinstance(node, genicam.IBoolean):
+                    # Set boolean value
+                    if isinstance(param_value, bool):
+                        bool_value = param_value
+                    elif isinstance(param_value, str):
+                        bool_value = param_value.lower() in ('true', '1', 'on', 'yes')
+                    elif isinstance(param_value, (int, float)):
+                        bool_value = bool(param_value)
+                    else:
+                        raise CameraConfigurationError(
+                            f"Invalid value '{param_value}' for boolean parameter '{param_name}'. Expected bool, string, or number."
+                        )
+                    
+                    node.SetValue(bool_value)
+                    new_value = node.GetValue()
+                    
+                elif isinstance(node, genicam.IString):
+                    # Set string value
+                    str_value = str(param_value) if not isinstance(param_value, str) else param_value
+                    node.SetValue(str_value)
+                    new_value = node.GetValue()
+                    
+                else:
+                    raise CameraConfigurationError(
+                        f"Parameter '{param_name}' has unsupported type for setting. "
+                        f"Supported types: integer, float, enum, boolean, string."
+                    )
+
+                return {
+                    "parameter_name": param_name,
+                    "old_value": old_value,
+                    "new_value": new_value,
+                }
+
+            result = await self._sdk(_set_parameter, parameter_name, value, timeout=self._op_timeout_s)
+            result["success"] = True
+            result["message"] = f"Successfully set parameter '{parameter_name}' from {result['old_value']} to {result['new_value']}"
+            self.logger.info(f"Set parameter '{parameter_name}' on camera '{self.camera_name}': {result['old_value']} -> {result['new_value']}")
+            return result
+
+        except (CameraConnectionError, CameraConfigurationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set parameter '{parameter_name}' for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set camera parameter '{parameter_name}': {str(e)}")
 
     async def close(self):
         """Close the camera and release resources.
