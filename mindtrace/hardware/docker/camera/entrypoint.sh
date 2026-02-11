@@ -66,7 +66,7 @@ mkdir -p "${MINDTRACE_HW_PATHS_CACHE_DIR:-/app/data}"
 case "${1}" in
     camera|start)
         echo "==> Starting Camera Service..."
-        exec python3 -m mindtrace.hardware.api.cameras.launcher \
+        exec python3 -m mindtrace.hardware.services.cameras.launcher \
             --host "${CAMERA_API_HOST:-0.0.0.0}" \
             --port "${CAMERA_API_PORT:-8002}"
         ;;

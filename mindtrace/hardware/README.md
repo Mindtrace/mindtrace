@@ -268,7 +268,7 @@ The CameraManagerService provides enterprise-grade camera management with REST A
 
 ### Launch Service
 ```python
-from mindtrace.hardware.api import CameraManagerService
+from mindtrace.hardware.services import CameraManagerService
 
 # Launch with REST API + MCP
 CameraManagerService.launch(
@@ -280,7 +280,7 @@ CameraManagerService.launch(
 
 ### Programmatic Client
 ```python
-from mindtrace.hardware.api import CameraManagerConnectionManager
+from mindtrace.hardware.services import CameraManagerConnectionManager
 from urllib3.util.url import parse_url
 
 async def service_example():
@@ -570,7 +570,7 @@ The StereoCameraService provides REST API and MCP integration for stereo camera 
 mindtrace-hw stereo start
 
 # Programmatically
-from mindtrace.hardware.api.stereo_cameras import StereoCameraService
+from mindtrace.hardware.services.stereo_cameras import StereoCameraService
 
 StereoCameraService.launch(
     host="localhost",
@@ -581,7 +581,7 @@ StereoCameraService.launch(
 
 ### Programmatic Client
 ```python
-from mindtrace.hardware.api.stereo_cameras import StereoCameraConnectionManager
+from mindtrace.hardware.services.stereo_cameras import StereoCameraConnectionManager
 
 async def service_example():
     client = StereoCameraConnectionManager("http://localhost:8004")
@@ -788,7 +788,7 @@ The PLCManagerService provides enterprise-grade PLC management with REST API and
 
 ### Launch Service
 ```python
-from mindtrace.hardware.api import PLCManagerService
+from mindtrace.hardware.services import PLCManagerService
 
 # Launch with REST API + MCP
 PLCManagerService.launch(
@@ -799,7 +799,7 @@ PLCManagerService.launch(
 
 ### Programmatic Client
 ```python
-from mindtrace.hardware.api import PLCManagerConnectionManager
+from mindtrace.hardware.services import PLCManagerConnectionManager
 
 async def service_example():
     client = PLCManagerConnectionManager("http://localhost:8003")

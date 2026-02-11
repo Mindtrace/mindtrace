@@ -216,8 +216,8 @@ class AsyncCamera(Mindtrace):
                         if save_path:
                             dirname = os.path.dirname(save_path)
                             if dirname:
-                                os.makedirs(dirname, exist_ok=True)
-                            cv2.imwrite(save_path, image)
+                                await asyncio.to_thread(os.makedirs, dirname, exist_ok=True)
+                            await asyncio.to_thread(cv2.imwrite, save_path, image)
                             self.logger.debug(f"Saved captured image to '{save_path}'")
 
                         self.logger.debug(
@@ -317,7 +317,7 @@ class AsyncCamera(Mindtrace):
             if "white_balance" in settings:
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
-                await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+                self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
             if "capture_timeout" in settings:
                 await self._backend.set_capture_timeout(settings["capture_timeout"])
@@ -494,7 +494,7 @@ class AsyncCamera(Mindtrace):
         Args:
             enabled: True to enable, False to disable.
         """
-        await self._backend.set_image_quality_enhancement(enabled)
+        self._backend.set_image_quality_enhancement(enabled)
 
     async def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
@@ -502,7 +502,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True if enabled, otherwise False.
         """
-        return await self._backend.get_image_quality_enhancement()
+        return self._backend.get_image_quality_enhancement()
 
     async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
@@ -831,8 +831,8 @@ class AsyncCamera(Mindtrace):
                             if save_path and save_path.strip():
                                 save_dir = os.path.dirname(save_path)
                                 if save_dir:
-                                    os.makedirs(save_dir, exist_ok=True)
-                                cv2.imwrite(save_path, image)
+                                    await asyncio.to_thread(os.makedirs, save_dir, exist_ok=True)
+                                await asyncio.to_thread(cv2.imwrite, save_path, image)
                                 image_paths.append(save_path)
                             if return_images:
                                 # Convert image to requested format before adding to results
