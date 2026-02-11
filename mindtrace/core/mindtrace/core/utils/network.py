@@ -134,15 +134,12 @@ def wait_for_service(
     start_time = time.time()
 
     while time.time() - start_time < timeout:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-
         try:
-            result = sock.connect_ex((host, port))
-            sock.close()
-
-            if result == 0:
-                return  # Service is available
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex((host, port))
+                if result == 0:
+                    return  # Service is available
         except OSError:
             pass
 
@@ -168,11 +165,9 @@ def get_local_ip() -> str:
     try:
         # Create a UDP socket and connect to a public DNS server
         # This doesn't actually send any data, just determines the route
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        return ip
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
     except OSError as e:
         raise LocalIPError(f"Failed to determine local IP address: {e}") from e
 
