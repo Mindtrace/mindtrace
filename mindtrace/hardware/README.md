@@ -91,13 +91,14 @@ pip install mindtrace-hardware[plcs-all]            # PLC support
 | Basler 2D | `pypylon` | Optional (Viewer/IP Configurator only) |
 | GenICam | `harvesters` | Required (GenTL Producer) |
 | Stereo ace | `pypylon` | Required (Supplementary Package) |
-| Photoneo | `harvesters` | Required (Photoneo GenTL Producer) |
+| Photoneo | `harvesters` | Required (Matrix Vision mvGenTL Producer) |
 
 SDK setup commands:
 ```bash
-mindtrace-camera-basler install     # Basler Pylon tools (optional)
-mindtrace-camera-genicam install    # GenICam CTI files (required)
-mindtrace-stereo-basler install     # Stereo supplementary package (required)
+mindtrace-camera-basler install        # Basler Pylon tools (optional)
+mindtrace-camera-genicam install       # GenICam CTI files (required)
+mindtrace-stereo-basler install        # Stereo supplementary package (required)
+mindtrace-scanner-photoneo install     # Matrix Vision mvGenTL Producer (required)
 ```
 
 ## Camera System
@@ -289,14 +290,21 @@ from mindtrace.hardware.services.scanners_3d import Scanner3DService
 Scanner3DService.launch(port=8005, block=True)
 ```
 
+### Supported Backends
+
+| Backend | SDK | Hardware |
+|---------|-----|----------|
+| Photoneo | harvesters + mvGenTL | PhoXi 3D Scanner (S/M/L/XL), MotionCam-3D |
+| MockPhotoneo | Built-in | Testing and development (no hardware needed) |
+
 ### Capture Modalities
 
 | Modality | Description | Data Shape |
 |----------|-------------|------------|
-| Range | XYZ coordinates per pixel | (H, W, 3) float32 |
-| Intensity | Projector texture | (H, W, 3) uint8 |
-| Confidence | Depth quality map | (H, W) uint8 |
-| Normal | Surface normals | (H, W, 3) float32 |
+| Range | Depth/distance map | (H, W) float32 |
+| Intensity | Reflected light intensity | (H, W) float32 |
+| Confidence | Per-pixel confidence | (H, W) float32 |
+| Normal | Surface normal vectors | (H, W, 3) float32 |
 | Color | RGB color texture | (H, W, 3) uint8 |
 
 ### Configuration Parameters
@@ -368,7 +376,7 @@ async def high_accuracy_capture():
     await scanner.close()
 ```
 
-See [3D Scanner Documentation](mindtrace/hardware/services/scanners_3d/README.md) for details.
+See [3D Scanner Documentation](mindtrace/hardware/scanners_3d/README.md) for details.
 
 ## PLC System
 
@@ -465,6 +473,12 @@ mindtrace-camera-genicam install
 
 # Stereo supplementary package (required for stereo cameras)
 mindtrace-stereo-basler install
+
+# Matrix Vision mvGenTL Producer (required for Photoneo scanners)
+mindtrace-scanner-photoneo install
+
+# Verify Photoneo setup
+mindtrace-scanner-photoneo verify
 ```
 
 See [CLI Documentation](mindtrace/hardware/cli/README.md) for details.
@@ -648,7 +662,8 @@ The following hardware has been tested and validated with this module:
 ### 3D Scanners
 | Manufacturer | Model | Interface | Backend |
 |--------------|-------|-----------|---------|
-| Photoneo | MotionCam-3D Color | GigE (GenTL) | Photoneo |
+| Photoneo | PhoXi 3D Scanner (S, M, L, XL) | GigE (GenTL) | Photoneo |
+| Photoneo | MotionCam-3D / MotionCam-3D Color | GigE (GenTL) | Photoneo |
 
 ### PLCs
 | Manufacturer | Model | Protocol |
