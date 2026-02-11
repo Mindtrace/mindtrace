@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -8,7 +9,13 @@ import numpy as np
 
 from mindtrace.core import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
-from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
+from mindtrace.hardware.core.exceptions import (
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
+)
 
 
 class CameraBackend(MindtraceABC):
@@ -91,11 +98,49 @@ class CameraBackend(MindtraceABC):
         self.device_manager: Optional[Any] = None
         self.initialized: bool = False
 
+        # Default operation timeout for _run_blocking; backends may override.
+        self._op_timeout_s: float = 5.0
+
         self.logger.info(
             f"Camera base initialized: camera_name={self.camera_name}, "
             f"img_quality_enhancement={self.img_quality_enhancement}, "
             f"retrieve_retry_count={self.retrieve_retry_count}"
         )
+
+    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
+        """Run a blocking SDK call in a threadpool with timeout.
+
+        Dispatches ``func(*args, **kwargs)`` via ``asyncio.to_thread`` and
+        bounds the wait with ``asyncio.wait_for``.  Subclasses that need a
+        dedicated single-thread executor (thread-affinity SDKs) may override.
+
+        Args:
+            func: Callable to execute in a worker thread.
+            *args: Positional arguments forwarded to *func*.
+            timeout: Seconds to wait. Falls back to ``self._op_timeout_s``.
+            **kwargs: Keyword arguments forwarded to *func*.
+
+        Returns:
+            The return value of *func*.
+
+        Raises:
+            CameraTimeoutError: If the call exceeds *timeout*.
+            HardwareOperationError: On any other exception.
+        """
+        effective_timeout = timeout or self._op_timeout_s
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(func, *args, **kwargs),
+                timeout=effective_timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise CameraTimeoutError(
+                f"SDK operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
+            ) from e
+        except CameraTimeoutError:
+            raise
+        except Exception as e:
+            raise HardwareOperationError(f"SDK operation failed for camera '{self.camera_name}': {e}") from e
 
     def _setup_camera_logger_formatting(self):
         """Setup camera-specific logger formatting.
@@ -175,7 +220,7 @@ class CameraBackend(MindtraceABC):
         raise NotImplementedError
 
     # Default implementations for optional methods
-    async def set_config(self, config: str):
+    def set_config(self, config: str):
         self.logger.error(f"set_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_config not supported by {self.__class__.__name__}")
 
@@ -207,10 +252,10 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"set_triggermode not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_triggermode not supported by {self.__class__.__name__}")
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
+    def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         self.img_quality_enhancement = img_quality_enhancement
         self.logger.debug(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
 
