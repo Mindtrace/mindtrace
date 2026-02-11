@@ -1361,7 +1361,7 @@
 <h2 id="service-architecture">Service Architecture</h2>
 <p>The CameraManagerService provides enterprise-grade camera management with REST API and MCP integration.</p>
 <h3 id="launch-service">Launch Service</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">CameraManagerService</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">CameraManagerService</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Launch with REST API + MCP</span>
 </span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">CameraManagerService</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span>
@@ -1371,7 +1371,7 @@
 </span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="programmatic-client">Programmatic Client</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">CameraManagerConnectionManager</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">CameraManagerConnectionManager</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">urllib3.util.url</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_url</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">service_example</span><span class="p">():</span>
@@ -1699,7 +1699,7 @@ The GenICam backend automatically detects the CTI file location using this prior
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>start
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
 </span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Programmatically</span>
-</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>from<span class="w"> </span>mindtrace.hardware.api.stereo_cameras<span class="w"> </span>import<span class="w"> </span>StereoCameraService
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>from<span class="w"> </span>mindtrace.hardware.services.stereo_cameras<span class="w"> </span>import<span class="w"> </span>StereoCameraService
 </span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
 </span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>StereoCameraService.launch<span class="o">(</span>
 </span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">    </span><span class="nv">host</span><span class="o">=</span><span class="s2">&quot;localhost&quot;</span>,
@@ -1708,7 +1708,7 @@ The GenICam backend automatically detects the CTI file location using this prior
 </span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="o">)</span>
 </span></code></pre></div>
 <h3 id="programmatic-client_1">Programmatic Client</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.api.stereo_cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">StereoCameraConnectionManager</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services.stereo_cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">StereoCameraConnectionManager</span>
 </span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>
 </span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">service_example</span><span class="p">():</span>
 </span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">client</span> <span class="o">=</span> <span class="n">StereoCameraConnectionManager</span><span class="p">(</span><span class="s2">&quot;http://localhost:8004&quot;</span><span class="p">)</span>
@@ -1955,7 +1955,7 @@ The GenICam backend automatically detects the CTI file location using this prior
 <h2 id="service-architecture_2">Service Architecture</h2>
 <p>The PLCManagerService provides enterprise-grade PLC management with REST API and MCP integration.</p>
 <h3 id="launch-service_2">Launch Service</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerService</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerService</span>
 </span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>
 </span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="c1"># Launch with REST API + MCP</span>
 </span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="n">PLCManagerService</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span>
@@ -1964,7 +1964,7 @@ The GenICam backend automatically detects the CTI file location using this prior
 </span><span id="__span-28-7"><a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="programmatic-client_2">Programmatic Client</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerConnectionManager</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerConnectionManager</span>
 </span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>
 </span><span id="__span-29-3"><a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">service_example</span><span class="p">():</span>
 </span><span id="__span-29-4"><a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>    <span class="n">client</span> <span class="o">=</span> <span class="n">PLCManagerConnectionManager</span><span class="p">(</span><span class="s2">&quot;http://localhost:8003&quot;</span><span class="p">)</span>
