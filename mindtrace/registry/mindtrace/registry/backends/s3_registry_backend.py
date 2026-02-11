@@ -107,7 +107,7 @@ class S3RegistryBackend(RegistryBackend):
             secure: Whether to use HTTPS.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations.
-            lock_timeout: Timeout in seconds for acquiring locks. Default 30.
+            lock_timeout: Timeout in seconds for acquiring locks (used only for materializer registration). Default 30.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
