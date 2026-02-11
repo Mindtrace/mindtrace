@@ -336,7 +336,7 @@ class MockBaslerCameraBackend(CameraBackend):
         self._grabbing = False
         self.logger.debug("StopGrabbing called; grabbing stopped")
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting.
 
         Returns:
@@ -344,7 +344,7 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, value: bool):
+    def set_image_quality_enhancement(self, value: bool):
         """Set image quality enhancement setting.
 
         Args:
