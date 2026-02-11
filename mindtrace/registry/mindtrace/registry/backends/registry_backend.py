@@ -112,8 +112,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             on_conflict: Behavior when version exists.
                 "skip": Return skipped result.
                 "overwrite": Replace existing version.
-            acquire_lock: If True, acquire locks before push (for mutable registries).
-                If False, rely on atomic operations for immutability. Default is False.
+            acquire_lock: Ignored by cloud backends (lock-free MVCC used).
+                Kept for API compatibility. Default is False.
 
         Returns:
             OpResults with OpResult for each (name, version):
@@ -145,9 +145,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             name: Object name(s).
             version: Version string(s).
             local_path: Local target directory/directories to download into.
-            acquire_lock: If True, acquire a shared (read) lock before pulling.
-                This is needed for mutable registries to prevent read-write races.
-                Default is False (no locking, for immutable registries).
+            acquire_lock: Ignored by cloud backends (lock-free MVCC used).
+                Kept for API compatibility. Default is False.
             metadata: Pre-fetched metadata dict(s) containing "_files" manifest.
                 Required by Registry/backends; local backend accepts but doesn't use it.
 
@@ -173,8 +172,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Args:
             name: Object name(s).
             version: Version string(s).
-            acquire_lock: If True, acquire locks before delete (for mutable registries).
-                Default is False.
+            acquire_lock: Ignored by cloud backends (lock-free MVCC used).
+                Kept for API compatibility. Default is False.
 
         Returns:
             OpResults with OpResult for each (name, version):

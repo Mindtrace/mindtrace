@@ -56,8 +56,7 @@ class _RegistryCore(Mindtrace):
             mutable: Whether to allow overwriting existing versions. If None (default), uses the
                 stored setting from an existing registry, or False for a new registry.
                 If explicitly set, must match the stored setting (if any) or a ValueError is raised.
-                When mutable=True, reads acquire shared locks to prevent read-write races.
-                When mutable=False (default), reads are lock-free but overwrites are disallowed.
+                Object level concurrency is handled via lock-free MVCC for both mutable and immutable registries.
             versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
             **kwargs: Additional arguments to pass to the backend.
         """

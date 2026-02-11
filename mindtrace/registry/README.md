@@ -1,15 +1,16 @@
 # Registry Module
 
-The Registry module provides a distributed, versioned object storage system with support for multiple backends. It enables storing, versioning, and retrieving objects with automatic serialization and distributed concurrency control.
+The Registry module provides a distributed, versioned object storage system with support for multiple backends. It enables storing, versioning, and retrieving objects with automatic serialization and lock-free concurrency for objects. 
 
 ## Features
 
-- **Multi-Backend Support**: Local filesystem, MinIO (S3-compatible), and Google Cloud Storage
-- **Distributed Concurrency**: Atomic operations with distributed locking
+- **Multi-Backend Support**: Local filesystem, S3-compatible (MinIO, AWS S3) and Google Cloud Storage
+- **Lock-Free Concurrency**: UUID-based MVCC ensures safe concurrent reads and writes without distributed locks
 - **Versioning**: Automatic version management with semantic versioning support
+- **Caching**: Local cache for remote backends with configurable staleness checks
 - **Materializers**: Pluggable serialization system for different object types
-- **Thread-Safe**: Built-in thread safety for concurrent access
-- **Metadata**: Rich metadata storage and retrieval
+- **Batch Operations**: All backend operations support batch mode for efficient bulk access
+- **Dict-Like Interface**: `registry["name"] = obj`, `obj = registry["name"]`, `del registry["name"]`
 
 ## Quick Start
 
@@ -26,6 +27,16 @@ registry.save("my:data", dataset, version="1.0.0")
 # Load objects
 model = registry.load("my:model")
 data = registry.load("my:data", version="1.0.0")
+
+# Dict-like access
+registry["my:config"] = config_dict
+config = registry["my:config"]
+
+# Check existence
+exists = registry.has_object("my:model", "1.0.0")  # -> bool
+
+# Get metadata
+info = registry.info("my:model", "1.0.0")  # -> dict
 
 # List objects and versions
 print(registry.list_objects())
@@ -49,36 +60,23 @@ local_backend = LocalRegistryBackend(uri="/path/to/registry")
 registry = Registry(backend=local_backend)
 ```
 
-**Features:**
-- File-based storage with atomic operations
-- Cross-platform file locking (Windows/Unix)
-- Automatic directory cleanup
-- Local metadata storage
+### S3-Compatible Backend (MinIO, AWS S3)
 
-### MinIO Backend
-
-The MinIO backend provides S3-compatible distributed storage.
+The S3 backend provides distributed storage for any S3-compatible service.
 
 ```python
 from mindtrace.registry import Registry, MinioRegistryBackend
 
-# MinIO registry
-minio_backend = MinioRegistryBackend(
-    uri="gs://my-registry",
+# MinIO / S3-compatible registry
+s3_backend = S3RegistryBackend(
     endpoint="localhost:9000",
     access_key="minioadmin",
     secret_key="minioadmin",
     bucket="minio-registry",
-    secure=False
+    secure=False,
 )
 registry = Registry(backend=minio_backend)
 ```
-
-**Features:**
-- S3-compatible distributed storage
-- Atomic operations using S3 object creation
-- Distributed locking with S3 objects
-- Metadata stored as JSON objects
 
 ### GCP Backend
 
@@ -87,25 +85,80 @@ The GCP backend uses Google Cloud Storage for distributed object storage.
 ```python
 from mindtrace.registry import Registry, GCPRegistryBackend
 
-# GCP registry
 gcp_backend = GCPRegistryBackend(
     uri="gs://my-registry-bucket",
     project_id="my-project",
     bucket_name="my-registry-bucket",
-    credentials_path="/path/to/service-account.json"
+    credentials_path="/path/to/service-account.json",
 )
 registry = Registry(backend=gcp_backend)
 ```
 
-**Features:**
-- Google Cloud Storage integration
-- Distributed storage with global availability
-- Atomic operations using GCS object generation numbers
-- Automatic bucket creation and management
+## Concurrency Model
 
-## Advanced Usage
+Cloud backends (GCP, S3) use **lock-free MVCC** (Multi-Version Concurrency Control):
 
-### Custom Materializers
+- Each push writes artifacts to a unique UUID folder: `objects/{name}/{version}/{uuid}/`
+- Metadata write is the atomic "commit point" — it references the active UUID
+- For immutable registries: first-write-wins via conditional creation (`generation_match=0` on GCS, `IfNoneMatch='*'` on S3)
+- For mutable registries: last metadata write wins; orphaned UUID folders are cleaned up by the janitor
+- Reads are always lock-free — if metadata is readable, the referenced files are guaranteed to exist
+
+Locks are only used for `register_materializer`, which performs a read-modify-write on registry metadata.
+
+## Caching
+
+When using a remote backend, the `Registry` maintains a transparent local cache (enabled by default):
+
+```python
+# Caching is on by default for remote backends
+registry = Registry(backend=gcp_backend, use_cache=True)
+
+# Control verification level on load
+obj = registry.load("my:model", verify="none")       # Trust cache, fastest
+obj = registry.load("my:model", verify="integrity")   # Verify hash (default)
+obj = registry.load("my:model", verify="full")         # Hash + staleness check
+
+# Clear cache manually
+registry.clear_cache()
+```
+
+**Verification levels** (`VerifyLevel`):
+- `"none"`: Trust cache completely. Fastest.
+- `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
+- `"full"`: Integrity check + compare cache hash against remote. Detects stale cache entries.
+
+## Version Management
+
+```python
+# Versioned registry (auto-increments versions)
+registry = Registry(version_objects=True)
+registry.save("model", v1)                    # version = "1"
+registry.save("model", v2)                    # version = "2"
+registry.save("model", v3, version="2.1")     # version = "2.1"
+
+# Load specific or latest version
+model = registry.load("model", version="2.1")
+latest = registry.load("model", version="latest")
+
+# Unversioned registry (single version per name, default)
+registry = Registry(version_objects=False)
+```
+
+## Conflict Handling
+
+Control behavior when saving to an existing version (`OnConflict`):
+
+```python
+# Skip (default): raises RegistryVersionConflict for single ops
+registry.save("model", obj, version="1.0.0", on_conflict="skip")
+
+# Overwrite: replaces existing version (requires mutable=True)
+registry = Registry(mutable=True)
+registry.save("model", obj, version="1.0.0", on_conflict="overwrite")
+```
+
+## Custom Materializers
 
 Register custom serialization handlers for your object types:
 
@@ -117,106 +170,80 @@ registry = Registry()
 # Register a materializer for a custom class
 registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
 
-# Save with custom materializer
+# Save with explicit materializer
 registry.save("custom:obj", my_object, materializer=MyMaterializer)
 ```
 
-### Version Management
-
-Control versioning behavior:
+## Metadata and Information
 
 ```python
-# Disable versioning (overwrites existing objects)
-registry = Registry(version_objects=False)
+# Get info for a specific object version
+info = registry.info("my:model", "1.0.0")
 
-# Save with specific version
-registry.save("model", trained_model, version="2.1.0")
-
-# Load specific version
-model = registry.load("model", version="2.1.0")
-
-# Load latest version
-model = registry.load("model", version="latest")
-```
-
-### Metadata and Information
-
-```python
-# Get object information
+# Get info for all versions of an object
 info = registry.info("my:model")
-print(f"Class: {info['class']}")
-print(f"Materializer: {info['materializer']}")
-print(f"Path: {info['path']}")
 
-# List all objects
-objects = registry.list_objects()
-print(f"Objects: {objects}")
+# Get info for all objects
+info = registry.info()
 
-# List versions for an object
-versions = registry.list_versions("my:model")
-print(f"Versions: {versions}")
-
-# Check if object exists
-exists = registry.has_object("my:model", "1.0.0")
+# Check existence
+exists = registry.has_object("my:model", "1.0.0")  # -> bool
 ```
 
-### Distributed Operations
-
-The registry handles distributed concurrency automatically:
+## Error Handling
 
 ```python
-# These operations are automatically protected by distributed locks
-registry.save("shared:resource", data)  # Exclusive lock
-data = registry.load("shared:resource")  # Shared lock
+from mindtrace.registry.core.exceptions import (
+    RegistryObjectNotFound,
+    RegistryVersionConflict,
+)
+
+try:
+    model = registry.load("nonexistent:model")
+except RegistryObjectNotFound as e:
+    print(f"Object not found: {e}")
+
+try:
+    registry.save("model", obj, version="1.0.0")  # already exists
+except RegistryVersionConflict as e:
+    print(f"Version conflict: {e}")
+```
+
+## Batch Operations
+
+The `Registry` facade provides clean single-object methods. For batch operations, pass lists:
+
+```python
+# Batch save
+result = registry.save(
+    ["model:a", "model:b"],
+    [obj_a, obj_b],
+    version=["1.0.0", "1.0.0"],
+)
+# result is a BatchResult with .results, .errors, .succeeded, .failed
+
+# Batch load
+result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 ```
 
 ## Backend Comparison
 
-| Feature | Local | MinIO | GCP |
-|---------|-------|-------|-----|
+| Feature | Local | S3 / MinIO | GCP |
+|---------|-------|------------|-----|
 | **Storage** | Filesystem | S3-compatible | Google Cloud Storage |
-| **Distributed** | ✅ | ✅ | ✅ |
-| **Locking** | File locks | S3 objects | GCS generation numbers |
-
-## Error Handling
-
-The registry provides comprehensive error handling:
-
-```python
-try:
-    model = registry.load("nonexistent:model")
-except ValueError as e:
-    print(f"Object not found: {e}")
-
-try:
-    registry.save("invalid_name", data)
-except ValueError as e:
-    print(f"Invalid name: {e}")
-```
-
-## Performance Considerations
-
-- **Local Backend**: Fastest for single-machine use
-- **MinIO Backend**: Good for distributed teams, moderate latency
-- **GCP Backend**: Best for global distribution, higher latency but better availability
-
-## Security
-
-- **Local**: File system permissions
-- **MinIO**: Access keys and bucket policies
-- **GCP**: Service account authentication and IAM
+| **Concurrency** | File locks | Lock-free MVCC | Lock-free MVCC |
+| **Caching** | N/A | Local cache | Local cache |
+| **Batch Ops** | Sequential | Parallel (ThreadPoolExecutor) | Parallel (ThreadPoolExecutor) |
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Lock Acquisition Errors**: Increase timeout or check for stuck locks
-2. **Permission Errors**: Verify credentials and bucket access
-3. **Network Issues**: Check connectivity to remote backends
+1. **Permission Errors**: Verify credentials and bucket access
+2. **Network Issues**: Check connectivity to remote backends
+3. **Cache Staleness**: Use `verify="full"` or `registry.clear_cache()`
 
 ### Debug Logging
-
-Enable debug logging to troubleshoot issues:
 
 ```python
 import logging
@@ -225,43 +252,3 @@ logging.basicConfig(level=logging.DEBUG)
 registry = Registry()
 # Operations will now show detailed logs
 ```
-
-## Examples
-
-### Machine Learning Pipeline
-
-```python
-from mindtrace.registry import Registry
-
-registry = Registry()
-
-# Save training data
-registry.save("data:training", X_train, version="1.0.0")
-registry.save("data:testing", X_test, version="1.0.0")
-
-# Save trained model
-registry.save("model:classifier", trained_model, version="1.0.0")
-
-# Save preprocessing pipeline
-registry.save("pipeline:preprocessing", preprocessing_pipeline, version="1.0.0")
-
-# Load for inference
-model = registry.load("model:classifier")
-pipeline = registry.load("pipeline:preprocessing")
-```
-
-### Data Versioning
-
-```python
-# Save different versions of data
-registry.save("data:raw", raw_data, version="1.0.0")
-registry.save("data:processed", processed_data, version="1.1.0")
-registry.save("data:cleaned", cleaned_data, version="1.2.0")
-
-# Compare versions
-for version in registry.list_versions("data:raw"):
-    data = registry.load("data:raw", version=version)
-    print(f"Version {version}: {len(data)} records")
-```
-
-This registry system provides a robust foundation for object storage and versioning across different deployment scenarios.

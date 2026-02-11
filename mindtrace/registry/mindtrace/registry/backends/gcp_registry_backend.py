@@ -86,7 +86,7 @@ class GCPRegistryBackend(RegistryBackend):
             credentials_path: Optional path to service account JSON file.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations. Default is 4.
-            lock_timeout: Timeout in seconds for acquiring locks. Default 30. Use shorter values in tests.
+            lock_timeout: Timeout in seconds for acquiring locks (used only for materializer registration). Default 5.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
