@@ -594,7 +594,7 @@ class TestCameraBackendImageQualityEnhancement:
 
         backend = MinimalConcreteBackend()
 
-        result = await backend.get_image_quality_enhancement()
+        result = backend.get_image_quality_enhancement()
         assert result is True
 
     @pytest.mark.asyncio
@@ -612,9 +612,9 @@ class TestCameraBackendImageQualityEnhancement:
         original_levels, original_propagate = enable_log_capture(backend, logging.DEBUG)
 
         with caplog.at_level(logging.DEBUG):
-            await backend.set_image_quality_enhancement(False)
+            backend.set_image_quality_enhancement(False)
             assert backend.img_quality_enhancement is False
-            get_result = await backend.get_image_quality_enhancement()
+            get_result = backend.get_image_quality_enhancement()
             assert get_result is False
 
         # Restore original handler levels
