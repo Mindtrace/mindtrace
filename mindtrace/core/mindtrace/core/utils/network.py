@@ -56,34 +56,13 @@ def is_port_available(host: str, port: int) -> bool:
 
     Returns:
         True if port is available, False if port is in use.
-
-    Raises:
-        PortCheckError: If the port availability check fails due to system error.
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(1)
-
     try:
-        # Try to connect to the port
-        result = sock.connect_ex((host, port))
-        sock.close()
-
-        # If connection succeeded, port is in use
-        if result == 0:
-            return False
-
-        # Try to bind to ensure we can use it
-        test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            test_sock.bind((host, port))
-            test_sock.close()
-            return True
-        except OSError:
-            # Port exists but we can't bind (might be in TIME_WAIT or used by another process)
-            return False
-    except OSError as e:
-        raise PortCheckError(f"Failed to check port {port} on {host}: {e}") from e
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+        return True
+    except OSError:
+        return False
 
 
 def check_port_available(host: str, port: int) -> None:
