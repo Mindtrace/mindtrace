@@ -41,8 +41,9 @@ class AsyncScanner3D(Mindtrace):
         """Open and initialize a 3D scanner.
 
         Args:
-            name: Scanner identifier. Format: "Photoneo:serial_number"
-                 If None, opens first available scanner.
+            name: Scanner identifier. Format: "Backend:serial_number"
+                 Supported backends: "Photoneo", "MockPhotoneo".
+                 If None, opens first available Photoneo scanner.
 
         Returns:
             Initialized AsyncScanner3D instance
@@ -54,8 +55,10 @@ class AsyncScanner3D(Mindtrace):
         Examples:
             >>> scanner = await AsyncScanner3D.open()
             >>> scanner = await AsyncScanner3D.open("Photoneo:ABC123")
+            >>> scanner = await AsyncScanner3D.open("MockPhotoneo:MOCK-001")
         """
         # Parse name to extract backend type and serial number
+        _known_backends = {"photoneo", "mockphotoneo"}
         backend_type = "Photoneo"
         serial_number = None
 
@@ -64,6 +67,8 @@ class AsyncScanner3D(Mindtrace):
                 parts = name.split(":", 1)
                 backend_type = parts[0]
                 serial_number = parts[1] if len(parts) > 1 else None
+            elif name.lower() in _known_backends:
+                backend_type = name
             else:
                 serial_number = name
 
@@ -74,6 +79,12 @@ class AsyncScanner3D(Mindtrace):
             )
 
             backend = PhotoneoBackend(serial_number=serial_number)
+        elif backend_type.lower() == "mockphotoneo":
+            from mindtrace.hardware.scanners_3d.backends.photoneo.mock_photoneo_backend import (
+                MockPhotoneoBackend,
+            )
+
+            backend = MockPhotoneoBackend(serial_number=serial_number)
         else:
             raise ValueError(f"Unknown scanner backend type: {backend_type}")
 
