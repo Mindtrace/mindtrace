@@ -1,10 +1,9 @@
 import os
 from typing import Dict, List, Optional
 
+import docker
 import docker.types
 from docker.errors import DockerException
-
-import docker
 from mindtrace.core import Mindtrace
 
 
