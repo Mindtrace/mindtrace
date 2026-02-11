@@ -7,6 +7,8 @@ mvGenTL Producer for communication via Harvesters.
 
 Based on: https://github.com/photoneo-3d/photoneo-python-examples
 
+Supports: Linux (x86_64, aarch64), Windows (x64), macOS (ARM64, x86_64)
+
 Requirements:
 - Matrix Vision mvGenTL Producer (version 2.49.0 recommended)
 - Harvesters library: pip install harvesters
@@ -24,9 +26,11 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import typer
 
@@ -53,23 +57,43 @@ class PhotoneoSetup(Mindtrace):
     """
 
     # Matrix Vision mvGenTL Producer download URLs (version 2.49.0)
-    # From: https://www.balluff.com/en-de/products/BAL-BVS-SC-MVIMPACT
+    # Using assets-2.balluff.com directly (static.matrix-vision.com redirects here)
     MVGENTL_VERSION = "2.49.0"
-    MVGENTL_BASE_URL = "https://static.matrix-vision.com/mvIMPACT_Acquire/2.49.0/"
+    MVGENTL_BASE_URL = "https://assets-2.balluff.com/mvIMPACT_Acquire/2.49.0/"
 
     LINUX_INSTALLER_URL = f"{MVGENTL_BASE_URL}install_mvGenTL_Acquire.sh"
     LINUX_ARCHIVE_URL = f"{MVGENTL_BASE_URL}mvGenTL_Acquire-x86_64_ABI2-{MVGENTL_VERSION}.tgz"
     WINDOWS_INSTALLER_URL = f"{MVGENTL_BASE_URL}mvGenTL_Acquire-x86_64-{MVGENTL_VERSION}.exe"
+    MACOS_DMG_URL = f"{MVGENTL_BASE_URL}mvGenTL_Acquire-ARM64_macOS-{MVGENTL_VERSION}.dmg"
 
-    # Platform-specific paths
-    CTI_PATHS = {
-        "Linux": "/opt/mvIMPACT_Acquire/lib/x86_64/mvGenTLProducer.cti",
-        "Windows": r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\x64\mvGenTLProducer.cti",
+    # Platform-specific CTI file search paths (checked in order)
+    CTI_SEARCH_PATHS: Dict[str, List[str]] = {
+        "Linux": [
+            "/opt/mvIMPACT_Acquire/lib/x86_64/mvGenTLProducer.cti",
+            "/opt/mvIMPACT_Acquire/lib/x86_64/libmvGenTLProducer.cti",
+            "/opt/mvIMPACT_Acquire/lib/x86_64/libmvGenTLProducer.so",
+            "/opt/mvIMPACT_Acquire/lib/arm64/mvGenTLProducer.cti",
+            "/opt/mvIMPACT_Acquire/lib/arm64/libmvGenTLProducer.cti",
+            "/opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti",
+            "/opt/ImpactAcquire/lib/arm64/mvGenTLProducer.cti",
+            "/usr/lib/mvimpact-acquire/mvGenTLProducer.cti",
+        ],
+        "Windows": [
+            r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\x64\mvGenTLProducer.cti",
+        ],
+        "Darwin": [
+            "/Library/Frameworks/mvGenTLProducer.framework/Versions/Current/lib/mvGenTLProducer.cti",
+            "/Applications/mvIMPACT_Acquire.app/Contents/Libraries/arm64/mvGenTLProducer.cti",
+            "/Applications/mvIMPACT_Acquire.app/Contents/Libraries/x86_64/mvGenTLProducer.cti",
+            "/opt/mvIMPACT_Acquire/lib/arm64/mvGenTLProducer.cti",
+        ],
     }
 
-    GENTL_ENV_PATHS = {
+    # GenTL env path directories per platform (for post-install env setup)
+    GENTL_ENV_PATHS: Dict[str, str] = {
         "Linux": "/opt/mvIMPACT_Acquire/lib/x86_64",
         "Windows": r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\x64",
+        "Darwin": "/Library/Frameworks/mvGenTLProducer.framework/Versions/Current/lib",
     }
 
     def __init__(self):
@@ -77,47 +101,158 @@ class PhotoneoSetup(Mindtrace):
         super().__init__()
         self.hardware_config = get_hardware_config()
         self.platform = platform.system()
+        self.machine = platform.machine()
         self.download_dir = Path(self.hardware_config.get_config().paths.lib_dir).expanduser() / "mvgentl"
-        self.logger.info(f"Initializing Photoneo setup for {self.platform}")
+        self.logger.info(f"Initializing Photoneo setup for {self.platform} ({self.machine})")
 
-    def get_cti_path(self) -> str:
-        """Get the expected CTI file path for the current platform.
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+
+    def _run_command(self, cmd: List[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess:
+        """Run a system command with logging.
+
+        Args:
+            cmd: Command and arguments to run
+            check: Whether to raise on non-zero exit
+            **kwargs: Additional arguments for subprocess.run
 
         Returns:
-            Path to the CTI file for the current platform
+            CompletedProcess result
+
+        Raises:
+            subprocess.CalledProcessError: If command fails and check=True
         """
-        # Check environment variable first
+        self.logger.debug(f"Running: {' '.join(cmd)}")
+        return subprocess.run(cmd, check=check, **kwargs)
+
+    def _download_file(self, url: str, dest: Path, description: str = "file") -> bool:
+        """Download a file with redirect handling, progress logging, and retry.
+
+        Args:
+            url: URL to download from
+            dest: Destination file path
+            description: Human-readable description for logging
+
+        Returns:
+            True if download successful
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        max_retries = 3
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.logger.info(f"Downloading {description} (attempt {attempt}/{max_retries})")
+                self.logger.debug(f"URL: {url}")
+                self.logger.debug(f"Destination: {dest}")
+
+                request = urllib.request.Request(url, headers={"User-Agent": "mindtrace-setup/1.0"})
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    total_size = int(response.headers.get("Content-Length", 0))
+                    if total_size:
+                        self.logger.info(f"Download size: {total_size / (1024 * 1024):.1f} MB")
+
+                    with open(dest, "wb") as f:
+                        downloaded = 0
+                        chunk_size = 64 * 1024
+                        while True:
+                            chunk = response.read(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+
+                # Verify file was actually written
+                if dest.exists() and dest.stat().st_size > 0:
+                    self.logger.info(f"Downloaded {description}: {dest.stat().st_size / (1024 * 1024):.1f} MB")
+                    return True
+                else:
+                    self.logger.warning(f"Download produced empty file: {dest}")
+
+            except urllib.error.HTTPError as e:
+                self.logger.error(f"HTTP error downloading {description}: {e.code} {e.reason}")
+                self.logger.error(f"URL: {url}")
+                if attempt == max_retries:
+                    self.logger.error(f"Manual download: curl -L -o '{dest}' '{url}'")
+                    return False
+
+            except urllib.error.URLError as e:
+                self.logger.error(f"Network error downloading {description}: {e.reason}")
+                if attempt == max_retries:
+                    self.logger.error("Check your network connection and try again")
+                    self.logger.error(f"Manual download: curl -L -o '{dest}' '{url}'")
+                    return False
+
+            except Exception as e:
+                self.logger.error(f"Unexpected error downloading {description}: {e}")
+                if attempt == max_retries:
+                    return False
+
+        return False
+
+    # =========================================================================
+    # CTI Detection (unified)
+    # =========================================================================
+
+    def get_cti_path(self) -> str:
+        """Find the CTI file on this system.
+
+        Searches environment variable first, then platform-specific known paths.
+
+        Returns:
+            Path to CTI file if found, empty string otherwise
+        """
+        # 1. Check GENICAM_GENTL64_PATH environment variable
         env_path = os.getenv("GENICAM_GENTL64_PATH", "")
         if env_path:
-            # Check for CTI file in env path
-            for cti_name in ["mvGenTLProducer.cti", "libmvGenTLProducer.cti"]:
-                candidate = os.path.join(env_path.split(":")[0], cti_name)
-                if os.path.exists(candidate):
-                    return candidate
+            for directory in env_path.split(os.pathsep):
+                directory = directory.strip()
+                if not directory:
+                    continue
+                for cti_name in ["mvGenTLProducer.cti", "libmvGenTLProducer.cti", "libmvGenTLProducer.so"]:
+                    candidate = os.path.join(directory, cti_name)
+                    if os.path.exists(candidate):
+                        self.logger.debug(f"CTI found via env: {candidate}")
+                        return candidate
 
-        return self.CTI_PATHS.get(self.platform, "")
+        # 2. Check GENICAM_CTI_PATH (custom override)
+        custom_path = os.getenv("GENICAM_CTI_PATH", "")
+        if custom_path and os.path.exists(custom_path):
+            self.logger.debug(f"CTI found via GENICAM_CTI_PATH: {custom_path}")
+            return custom_path
+
+        # 3. Check platform-specific known paths
+        search_paths = self.CTI_SEARCH_PATHS.get(self.platform, [])
+        for path in search_paths:
+            if os.path.exists(path):
+                self.logger.debug(f"CTI found at known path: {path}")
+                return path
+
+        return ""
 
     def verify_cti_installation(self) -> bool:
         """Verify that the CTI file is properly installed.
 
         Returns:
-            True if CTI file exists and is accessible, False otherwise
+            True if CTI file exists and is accessible
         """
         cti_path = self.get_cti_path()
 
-        # Also check the .so file on Linux
-        if self.platform == "Linux":
-            so_path = "/opt/mvIMPACT_Acquire/lib/x86_64/libmvGenTLProducer.so"
-            if os.path.exists(so_path):
-                self.logger.info(f"GenTL Producer found: {so_path}")
-                return True
+        if not cti_path:
+            self.logger.error("Matrix Vision GenTL Producer not found")
+            self.logger.info("Searched locations:")
+            for path in self.CTI_SEARCH_PATHS.get(self.platform, []):
+                self.logger.info(f"  - {path}")
+            return False
 
-        if cti_path and os.path.exists(cti_path):
-            self.logger.info(f"CTI file found: {cti_path}")
-            return True
+        # Verify file size (CTI files should be > 100KB)
+        file_size = os.path.getsize(cti_path)
+        if file_size < 100 * 1024:
+            self.logger.warning(f"CTI file may be corrupted (only {file_size} bytes): {cti_path}")
+            return False
 
-        self.logger.error("Matrix Vision GenTL Producer not found")
-        return False
+        self.logger.info(f"GenTL Producer found: {cti_path} ({file_size / (1024 * 1024):.1f} MB)")
+        return True
 
     def verify_env_variable(self) -> bool:
         """Verify GENICAM_GENTL64_PATH is set correctly.
@@ -126,17 +261,13 @@ class PhotoneoSetup(Mindtrace):
             True if environment variable is properly configured
         """
         env_path = os.getenv("GENICAM_GENTL64_PATH", "")
-        expected_path = self.GENTL_ENV_PATHS.get(self.platform, "")
 
         if not env_path:
+            expected = self.GENTL_ENV_PATHS.get(self.platform, "")
             self.logger.error("GENICAM_GENTL64_PATH environment variable not set")
-            self.logger.info(f"Expected: export GENICAM_GENTL64_PATH={expected_path}")
+            if expected:
+                self.logger.info(f"Expected: export GENICAM_GENTL64_PATH={expected}")
             return False
-
-        if expected_path and expected_path not in env_path:
-            self.logger.warning("GENICAM_GENTL64_PATH may not include expected path")
-            self.logger.info(f"Current: {env_path}")
-            self.logger.info(f"Expected to contain: {expected_path}")
 
         self.logger.info(f"GENICAM_GENTL64_PATH is set: {env_path}")
         return True
@@ -145,7 +276,7 @@ class PhotoneoSetup(Mindtrace):
         """Verify that Harvesters library is available.
 
         Returns:
-            True if Harvesters is importable, False otherwise
+            True if Harvesters is importable
         """
         try:
             from harvesters.core import Harvester  # noqa: F401
@@ -156,6 +287,89 @@ class PhotoneoSetup(Mindtrace):
             self.logger.error("Harvesters library not installed")
             self.logger.info("Install with: pip install harvesters")
             return False
+
+    # =========================================================================
+    # Environment Setup
+    # =========================================================================
+
+    def _set_env_for_session(self, gentl_dir: str) -> None:
+        """Set GENICAM_GENTL64_PATH for the current process.
+
+        Args:
+            gentl_dir: Directory containing the GenTL producer
+        """
+        current = os.getenv("GENICAM_GENTL64_PATH", "")
+        if current and gentl_dir in current:
+            return
+
+        if current:
+            os.environ["GENICAM_GENTL64_PATH"] = f"{gentl_dir}{os.pathsep}{current}"
+        else:
+            os.environ["GENICAM_GENTL64_PATH"] = gentl_dir
+
+        self.logger.info(f"Set GENICAM_GENTL64_PATH={os.environ['GENICAM_GENTL64_PATH']}")
+
+    def _create_environment_script(self) -> Optional[Path]:
+        """Create shell environment setup script.
+
+        Returns:
+            Path to created script, or None on Windows
+        """
+        if self.platform == "Windows":
+            return None
+
+        script_path = self.download_dir / "setup_photoneo_env.sh"
+        gentl_dir = self.GENTL_ENV_PATHS.get(self.platform, "")
+
+        if not gentl_dir:
+            return None
+
+        script_content = f"""#!/bin/bash
+# Environment setup for Photoneo 3D scanners (Matrix Vision mvGenTL Producer)
+# Generated by mindtrace-scanner-photoneo install
+# Source this file: source {script_path}
+
+# Add GenTL producer path
+export GENICAM_GENTL64_PATH="{gentl_dir}:${{GENICAM_GENTL64_PATH}}"
+
+echo "Photoneo scanner environment configured:"
+echo "  GENICAM_GENTL64_PATH: ${{GENICAM_GENTL64_PATH}}"
+"""
+
+        self.download_dir.mkdir(parents=True, exist_ok=True)
+        with open(script_path, "w") as f:
+            f.write(script_content)
+
+        script_path.chmod(0o755)
+        self.logger.info(f"Created environment script: {script_path}")
+        return script_path
+
+    def _offer_bashrc_setup(self, script_path: Path) -> None:
+        """Offer to add environment setup to ~/.bashrc.
+
+        Args:
+            script_path: Path to the environment script
+        """
+        bashrc_path = Path.home() / ".bashrc"
+        source_line = f"source {script_path}"
+
+        # Check if already in bashrc
+        if bashrc_path.exists():
+            content = bashrc_path.read_text()
+            if str(script_path) in content:
+                self.logger.info("Environment script already in ~/.bashrc")
+                return
+
+        self.logger.info("")
+        self.logger.info("To make the environment permanent, add to ~/.bashrc:")
+        self.logger.info(f"  echo '{source_line}' >> ~/.bashrc")
+        self.logger.info("")
+        self.logger.info("Or source it manually in each session:")
+        self.logger.info(f"  {source_line}")
+
+    # =========================================================================
+    # Discovery
+    # =========================================================================
 
     def discover_devices(self) -> List[dict]:
         """Discover Photoneo devices on the network.
@@ -172,24 +386,8 @@ class PhotoneoSetup(Mindtrace):
         try:
             from harvesters.core import Harvester
 
-            # Get CTI path from environment or default
-            env_path = os.getenv("GENICAM_GENTL64_PATH", "")
-            cti_file = None
-
-            if env_path:
-                for path in env_path.split(":"):
-                    for cti_name in ["mvGenTLProducer.cti", "libmvGenTLProducer.cti"]:
-                        candidate = os.path.join(path, cti_name)
-                        if os.path.exists(candidate):
-                            cti_file = candidate
-                            break
-                    if cti_file:
-                        break
-
+            cti_file = self.get_cti_path()
             if not cti_file:
-                cti_file = self.get_cti_path()
-
-            if not cti_file or not os.path.exists(cti_file):
                 self.logger.error("CTI file not found")
                 return []
 
@@ -250,11 +448,15 @@ class PhotoneoSetup(Mindtrace):
             self.logger.error(f"Device discovery failed: {e}")
             return []
 
+    # =========================================================================
+    # Install
+    # =========================================================================
+
     def install(self) -> bool:
         """Install the Matrix Vision mvGenTL Producer.
 
         Returns:
-            True if installation successful, False otherwise
+            True if installation successful
         """
         self.logger.info(f"Installing Matrix Vision mvGenTL Producer v{self.MVGENTL_VERSION}")
         self.logger.info("This is required for Photoneo scanner communication via GigE Vision")
@@ -263,8 +465,11 @@ class PhotoneoSetup(Mindtrace):
             return self._install_linux()
         elif self.platform == "Windows":
             return self._install_windows()
+        elif self.platform == "Darwin":
+            return self._install_macos()
         else:
             self.logger.error(f"Unsupported platform: {self.platform}")
+            self.logger.info("The mvGenTL Producer is available for Linux, Windows, and macOS")
             return False
 
     def _install_linux(self) -> bool:
@@ -275,51 +480,77 @@ class PhotoneoSetup(Mindtrace):
         """
         self.logger.info("Installing Matrix Vision mvGenTL Producer for Linux")
 
+        # Download installer and archive
+        installer_path = self.download_dir / "install_mvGenTL_Acquire.sh"
+        archive_path = self.download_dir / f"mvGenTL_Acquire-x86_64_ABI2-{self.MVGENTL_VERSION}.tgz"
+
+        if not self._download_file(self.LINUX_INSTALLER_URL, installer_path, "installer script"):
+            return False
+
+        if not self._download_file(self.LINUX_ARCHIVE_URL, archive_path, "SDK archive"):
+            return False
+
+        # Make installer executable
+        installer_path.chmod(0o755)
+
+        # Run installer with sudo
+        self.logger.info("Running installer (requires sudo)...")
+        self.logger.info("NOTE: You may be prompted for your password")
+
+        installer_failed = False
         try:
-            # Create download directory
-            self.download_dir.mkdir(parents=True, exist_ok=True)
-
-            # Download installer script
-            installer_path = self.download_dir / "install_mvGenTL_Acquire.sh"
-            archive_path = self.download_dir / f"mvGenTL_Acquire-x86_64_ABI2-{self.MVGENTL_VERSION}.tgz"
-
-            self.logger.info(f"Downloading installer from {self.LINUX_INSTALLER_URL}")
-            urllib.request.urlretrieve(self.LINUX_INSTALLER_URL, installer_path)
-
-            self.logger.info(f"Downloading archive from {self.LINUX_ARCHIVE_URL}")
-            urllib.request.urlretrieve(self.LINUX_ARCHIVE_URL, archive_path)
-
-            # Make installer executable
-            os.chmod(installer_path, 0o755)
-
-            # Run installer with sudo
-            self.logger.info("Running installer (requires sudo)...")
-            self.logger.info("NOTE: You may be prompted for your password")
-
-            # The installer needs both files in the same directory
-            result = subprocess.run(
+            self._run_command(
                 ["sudo", "bash", str(installer_path)],
                 cwd=str(self.download_dir),
-                check=False,
             )
+        except subprocess.CalledProcessError as e:
+            # The installer may return non-zero for optional components (e.g.
+            # mvBlueNAOS kernel module) while the GenTL Producer itself installed
+            # fine. Don't bail out — fall through to verification.
+            self.logger.warning(
+                f"Installer exited with code {e.returncode} "
+                "(this may be caused by optional components like kernel modules)"
+            )
+            installer_failed = True
+        except FileNotFoundError:
+            self.logger.error("sudo not found — cannot install without root privileges")
+            return False
 
-            if result.returncode != 0:
-                self.logger.error("Installation failed")
-                return False
+        # Set environment for current session
+        gentl_dir = self.GENTL_ENV_PATHS.get("Linux", "")
+        if gentl_dir:
+            self._set_env_for_session(gentl_dir)
 
-            # Verify installation
-            if self.verify_cti_installation():
-                self.logger.info("Matrix Vision mvGenTL Producer installed successfully")
-                self.logger.info("")
-                self.logger.info("IMPORTANT: Please log out and log back in for environment changes to take effect")
-                self.logger.info("Or run: source /etc/profile.d/mvIMPACT_Acquire.sh")
-                return True
-            else:
-                self.logger.error("Installation completed but verification failed")
-                return False
+        # Source the profile scripts if they exist
+        for profile_name in ["genicam.sh", "acquire.sh"]:
+            profile_script = Path(f"/etc/profile.d/{profile_name}")
+            if profile_script.exists():
+                self.logger.info(f"Profile script installed: {profile_script}")
 
-        except Exception as e:
-            self.logger.error(f"Installation failed: {e}")
+        # Verify installation — the GenTL Producer may have installed even if
+        # the overall installer returned non-zero
+        if self.verify_cti_installation():
+            self.logger.info("Matrix Vision mvGenTL Producer installed successfully")
+            if installer_failed:
+                self.logger.info(
+                    "Note: The installer reported errors for optional components, "
+                    "but the GenTL Producer (required for Photoneo) is installed correctly"
+                )
+
+            # Create and offer environment script
+            env_script = self._create_environment_script()
+            if env_script:
+                self._offer_bashrc_setup(env_script)
+
+            return True
+        else:
+            self.logger.error("Installation completed but GenTL Producer verification failed")
+            if installer_failed:
+                self.logger.info("The installer also reported errors — try running manually:")
+                self.logger.info(f"  cd {self.download_dir} && sudo bash {installer_path.name}")
+            self.logger.info("Expected CTI file at one of:")
+            for path in self.CTI_SEARCH_PATHS.get("Linux", []):
+                self.logger.info(f"  - {path}")
             return False
 
     def _install_windows(self) -> bool:
@@ -330,36 +561,161 @@ class PhotoneoSetup(Mindtrace):
         """
         self.logger.info("Installing Matrix Vision mvGenTL Producer for Windows")
 
+        # Check for admin privileges
         try:
-            # Create download directory
-            self.download_dir.mkdir(parents=True, exist_ok=True)
+            import ctypes
 
-            # Download installer
-            installer_path = self.download_dir / f"mvGenTL_Acquire-x86_64-{self.MVGENTL_VERSION}.exe"
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except (AttributeError, OSError):
+            is_admin = False
 
-            self.logger.info(f"Downloading installer from {self.WINDOWS_INSTALLER_URL}")
-            urllib.request.urlretrieve(self.WINDOWS_INSTALLER_URL, installer_path)
+        if not is_admin:
+            self.logger.warning("Administrative privileges may be required for installation")
+            self.logger.info("Attempting to elevate privileges...")
+            return self._elevate_privileges()
 
-            # Run installer
-            self.logger.info("Running installer...")
-            self.logger.info("NOTE: Follow the installer prompts")
+        # Download installer
+        installer_path = self.download_dir / f"mvGenTL_Acquire-x86_64-{self.MVGENTL_VERSION}.exe"
 
-            subprocess.run([str(installer_path)], check=True)
+        if not self._download_file(self.WINDOWS_INSTALLER_URL, installer_path, "Windows installer"):
+            return False
 
-            # Verify installation
-            if self.verify_cti_installation():
-                self.logger.info("Matrix Vision mvGenTL Producer installed successfully")
-                self.logger.info("")
-                self.logger.info("IMPORTANT: Disable GigE Vision NDIS 6.x Filter Driver")
-                self.logger.info("Also configure firewall to allow UDP from device IP")
-                return True
-            else:
-                self.logger.error("Installation completed but verification failed")
+        # Run installer
+        self.logger.info("Running installer...")
+        self.logger.info("NOTE: Follow the installer prompts")
+
+        try:
+            self._run_command([str(installer_path)])
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Installer failed with exit code {e.returncode}")
+            return False
+
+        # Set environment for current session
+        gentl_dir = self.GENTL_ENV_PATHS.get("Windows", "")
+        if gentl_dir and os.path.isdir(gentl_dir):
+            self._set_env_for_session(gentl_dir)
+
+        # Verify installation
+        if self.verify_cti_installation():
+            self.logger.info("Matrix Vision mvGenTL Producer installed successfully")
+            return True
+        else:
+            self.logger.error("Installation completed but verification failed")
+            self.logger.info("Please ensure the installer completed without errors")
+            return False
+
+    def _install_macos(self) -> bool:
+        """Install mvGenTL Producer on macOS.
+
+        Returns:
+            True if installation successful
+        """
+        self.logger.info("Installing Matrix Vision mvGenTL Producer for macOS")
+
+        # Download DMG
+        dmg_path = self.download_dir / f"mvGenTL_Acquire-ARM64_macOS-{self.MVGENTL_VERSION}.dmg"
+
+        if not self._download_file(self.MACOS_DMG_URL, dmg_path, "macOS DMG"):
+            return False
+
+        # Mount DMG
+        self.logger.info("Mounting DMG file...")
+        mount_point = None
+        try:
+            result = self._run_command(
+                ["hdiutil", "attach", str(dmg_path), "-readonly", "-nobrowse"],
+                capture_output=True,
+                text=True,
+            )
+
+            # Extract mount point from hdiutil output
+            for line in result.stdout.split("\n"):
+                if "/Volumes/" in line:
+                    mount_point = line.split("\t")[-1].strip()
+                    break
+
+            if not mount_point:
+                self.logger.error("Failed to find mount point after mounting DMG")
+                self.logger.debug(f"hdiutil output: {result.stdout}")
                 return False
 
-        except Exception as e:
+            self.logger.info(f"DMG mounted at: {mount_point}")
+
+            # Find and install package
+            mount_path = Path(mount_point)
+            pkg_files = list(mount_path.glob("*.pkg"))
+            app_files = list(mount_path.glob("*.app"))
+
+            if pkg_files:
+                pkg_file = pkg_files[0]
+                self.logger.info(f"Installing package: {pkg_file.name}")
+                self._run_command(["sudo", "installer", "-pkg", str(pkg_file), "-target", "/"])
+            elif app_files:
+                app_file = app_files[0]
+                target_app = Path("/Applications") / app_file.name
+                self.logger.info(f"Copying {app_file.name} to /Applications")
+                if target_app.exists():
+                    shutil.rmtree(target_app)
+                shutil.copytree(app_file, target_app)
+            else:
+                self.logger.error("No .pkg or .app files found in DMG")
+                self.logger.info(f"DMG contents: {list(mount_path.iterdir())}")
+                return False
+
+        except subprocess.CalledProcessError as e:
             self.logger.error(f"Installation failed: {e}")
             return False
+        except FileNotFoundError:
+            self.logger.error("hdiutil not found — is this a macOS system?")
+            return False
+        finally:
+            # Always unmount DMG
+            if mount_point:
+                self.logger.debug(f"Unmounting: {mount_point}")
+                subprocess.run(["hdiutil", "detach", mount_point], check=False, capture_output=True)
+
+        # Set environment for current session
+        gentl_dir = self.GENTL_ENV_PATHS.get("Darwin", "")
+        if gentl_dir:
+            self._set_env_for_session(gentl_dir)
+
+        # Verify installation
+        if self.verify_cti_installation():
+            self.logger.info("Matrix Vision mvGenTL Producer installed successfully")
+
+            env_script = self._create_environment_script()
+            if env_script:
+                self._offer_bashrc_setup(env_script)
+
+            return True
+        else:
+            self.logger.error("Installation completed but verification failed")
+            return False
+
+    def _elevate_privileges(self) -> bool:
+        """Attempt to elevate privileges on Windows.
+
+        Returns:
+            False (elevation requires process restart)
+        """
+        self.logger.info("Attempting to elevate privileges...")
+
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, " ".join([sys.argv[0]] + sys.argv[1:]), None, 1
+            )
+            self.logger.info("Elevated process launched — check the new window")
+        except Exception as e:
+            self.logger.error(f"Failed to elevate: {e}")
+            self.logger.error("Please right-click your terminal and select 'Run as administrator'")
+
+        return False
+
+    # =========================================================================
+    # Uninstall
+    # =========================================================================
 
     def uninstall(self) -> bool:
         """Uninstall the Matrix Vision mvGenTL Producer.
@@ -372,8 +728,9 @@ class PhotoneoSetup(Mindtrace):
         if self.platform == "Linux":
             return self._uninstall_linux()
         elif self.platform == "Windows":
-            self.logger.warning("Please uninstall via Windows Control Panel")
-            return False
+            return self._uninstall_windows()
+        elif self.platform == "Darwin":
+            return self._uninstall_macos()
         else:
             self.logger.error(f"Unsupported platform: {self.platform}")
             return False
@@ -385,21 +742,151 @@ class PhotoneoSetup(Mindtrace):
             True if successful
         """
         try:
+            removed = False
+
             install_dir = Path("/opt/mvIMPACT_Acquire")
             if install_dir.exists():
                 self.logger.info(f"Removing {install_dir}")
-                subprocess.run(["sudo", "rm", "-rf", str(install_dir)], check=True)
+                self._run_command(["sudo", "rm", "-rf", str(install_dir)])
+                removed = True
+
+            # Also check newer SDK path
+            impact_dir = Path("/opt/ImpactAcquire")
+            if impact_dir.exists():
+                self.logger.info(f"Removing {impact_dir}")
+                self._run_command(["sudo", "rm", "-rf", str(impact_dir)])
+                removed = True
+
+            # Remove profile script
+            profile_script = Path("/etc/profile.d/mvIMPACT_Acquire.sh")
+            if profile_script.exists():
+                self.logger.info(f"Removing {profile_script}")
+                self._run_command(["sudo", "rm", "-f", str(profile_script)])
 
             # Clean up download directory
             if self.download_dir.exists():
+                self.logger.info(f"Removing download cache: {self.download_dir}")
                 shutil.rmtree(self.download_dir)
 
-            self.logger.info("Matrix Vision mvGenTL Producer uninstalled")
+            if removed:
+                self.logger.info("Matrix Vision mvGenTL Producer uninstalled")
+            else:
+                self.logger.info("No installation found to remove")
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Uninstallation failed: {e}")
+            self.logger.info("Try running with sudo manually:")
+            self.logger.info("  sudo rm -rf /opt/mvIMPACT_Acquire")
+            return False
+
+    def _uninstall_windows(self) -> bool:
+        """Uninstall on Windows.
+
+        Returns:
+            True if successful
+        """
+        self.logger.info("Attempting to uninstall Matrix Vision mvGenTL Producer on Windows")
+
+        # Try known uninstaller paths
+        uninstaller_paths = [
+            r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\uninstall.exe",
+            r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\Uninstall.exe",
+        ]
+
+        for uninstaller in uninstaller_paths:
+            if os.path.exists(uninstaller):
+                self.logger.info(f"Found uninstaller: {uninstaller}")
+                try:
+                    self._run_command([uninstaller])
+                    self.logger.info("Uninstaller completed")
+                    return True
+                except subprocess.CalledProcessError as e:
+                    self.logger.warning(f"Uninstaller returned exit code {e.returncode}")
+
+        # Try via Windows registry (wmic)
+        try:
+            result = subprocess.run(
+                [
+                    "wmic",
+                    "product",
+                    "where",
+                    "name like '%mvIMPACT%' or name like '%MATRIX VISION%'",
+                    "call",
+                    "uninstall",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                self.logger.info("Uninstalled via Windows package manager")
+                return True
+        except FileNotFoundError:
+            pass
+
+        # Fallback: guide user
+        self.logger.warning("Could not find automatic uninstaller")
+        self.logger.info("Please uninstall manually:")
+        self.logger.info("  1. Open Settings > Apps > Installed apps")
+        self.logger.info("  2. Search for 'MATRIX VISION' or 'mvIMPACT'")
+        self.logger.info("  3. Click Uninstall")
+
+        # Still clean up our download cache
+        if self.download_dir.exists():
+            shutil.rmtree(self.download_dir)
+
+        return False
+
+    def _uninstall_macos(self) -> bool:
+        """Uninstall on macOS.
+
+        Returns:
+            True if successful
+        """
+        try:
+            removed = False
+
+            # Remove application
+            app_paths = [
+                Path("/Applications/mvIMPACT_Acquire.app"),
+                Path("/Library/Frameworks/mvGenTLProducer.framework"),
+            ]
+            for app_path in app_paths:
+                if app_path.exists():
+                    self.logger.info(f"Removing {app_path}")
+                    if app_path.is_dir():
+                        shutil.rmtree(app_path)
+                    else:
+                        app_path.unlink()
+                    removed = True
+
+            # Remove other possible install directories
+            for dir_path in ["/opt/mvIMPACT_Acquire", "/usr/local/lib/mvIMPACT_Acquire"]:
+                if os.path.exists(dir_path):
+                    self.logger.info(f"Removing {dir_path}")
+                    self._run_command(["sudo", "rm", "-rf", dir_path], check=False)
+                    removed = True
+
+            # Clean up download cache
+            if self.download_dir.exists():
+                shutil.rmtree(self.download_dir)
+
+            if removed:
+                self.logger.info("Matrix Vision mvGenTL Producer uninstalled from macOS")
+            else:
+                self.logger.info("No installation found to remove")
+
             return True
 
         except Exception as e:
             self.logger.error(f"Uninstallation failed: {e}")
             return False
+
+    # =========================================================================
+    # Verify (aggregate)
+    # =========================================================================
 
     def verify(self) -> bool:
         """Verify complete Photoneo setup.
@@ -421,7 +908,7 @@ class PhotoneoSetup(Mindtrace):
 
         # Check CTI file
         if self.verify_cti_installation():
-            typer.echo("[green]GenTL Producer: OK[/green]")
+            typer.echo(f"[green]GenTL Producer: OK ({self.get_cti_path()})[/green]")
         else:
             typer.echo("[red]GenTL Producer: NOT FOUND[/red]")
             all_ok = False
@@ -431,9 +918,14 @@ class PhotoneoSetup(Mindtrace):
             typer.echo("[green]GENICAM_GENTL64_PATH: OK[/green]")
         else:
             typer.echo("[yellow]GENICAM_GENTL64_PATH: NOT SET[/yellow]")
-            # Don't fail completely, CTI might still work
+            # Don't fail completely, CTI might still work via known paths
 
         return all_ok
+
+
+# =========================================================================
+# Module-level convenience functions
+# =========================================================================
 
 
 def install_photoneo_sdk() -> bool:
@@ -452,6 +944,11 @@ def verify_photoneo_sdk() -> bool:
     """Verify Photoneo SDK installation."""
     setup = PhotoneoSetup()
     return setup.verify()
+
+
+# =========================================================================
+# CLI Commands
+# =========================================================================
 
 
 @app.command()
@@ -520,30 +1017,14 @@ def discover(
 
     typer.echo("Discovering Photoneo scanners...")
 
-    # Get all devices for debugging if --all flag is set
+    # Show all GigE devices if --all flag
     if all_devices:
         if not setup.verify_harvesters() or not setup.verify_cti_installation():
             raise typer.Exit(code=1)
 
-        import os
-
         from harvesters.core import Harvester
 
-        env_path = os.getenv("GENICAM_GENTL64_PATH", "")
-        cti_file = None
-        if env_path:
-            for path in env_path.split(":"):
-                for cti_name in ["mvGenTLProducer.cti", "libmvGenTLProducer.cti"]:
-                    candidate = os.path.join(path, cti_name)
-                    if os.path.exists(candidate):
-                        cti_file = candidate
-                        break
-                if cti_file:
-                    break
-
-        if not cti_file:
-            cti_file = setup.get_cti_path()
-
+        cti_file = setup.get_cti_path()
         h = Harvester()
         h.add_file(cti_file)
         h.update()
