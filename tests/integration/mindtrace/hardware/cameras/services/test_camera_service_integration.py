@@ -10,7 +10,7 @@ These tests validate the full API stack:
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
