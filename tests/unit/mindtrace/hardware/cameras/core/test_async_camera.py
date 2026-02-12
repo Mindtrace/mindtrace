@@ -80,7 +80,7 @@ async def test_async_camera_configure_all_settings(monkeypatch):
         async def _set_wb(v):
             return True
 
-        async def _set_ie(v):
+        def _set_ie(v):
             return True
 
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
