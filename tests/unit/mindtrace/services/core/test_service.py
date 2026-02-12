@@ -379,9 +379,10 @@ class TestServiceMCP:
         # Patch add_tool to track calls
         called = {}
 
-        def fake_add_tool(tool_name, func):
+        def fake_add_tool(tool_name, func, *, require_auth=False):
             called["tool_name"] = tool_name
             called["func"] = func
+            called["require_auth"] = require_auth
 
         service.add_tool = fake_add_tool
 
@@ -392,6 +393,37 @@ class TestServiceMCP:
         service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
         assert called["tool_name"] == "dummy"
         assert called["func"] is dummy_func
+        assert called["require_auth"] is False
+
+    def test_add_endpoint_with_as_tool_and_authenticated_scope_passes_require_auth(self):
+        """When scope=Scope.AUTHENTICATED and as_tool=True, add_tool is called with require_auth=True."""
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+        service.set_user_authenticator(lambda token: {"user_id": "test"})
+        called = {}
+
+        def fake_add_tool(tool_name, func, *, require_auth=False):
+            called["tool_name"] = tool_name
+            called["func"] = func
+            called["require_auth"] = require_auth
+            return None
+
+        service.add_tool = fake_add_tool
+
+        def dummy_func():
+            return "ok"
+
+        test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
+        service.add_endpoint(
+            "dummy",
+            dummy_func,
+            schema=test_schema,
+            as_tool=True,
+            scope=Scope.AUTHENTICATED,
+        )
+        assert called["tool_name"] == "dummy"
+        assert called["require_auth"] is True
 
     def test_get_mcp_paths_normalizes_paths(self, monkeypatch):
         """Test get_mcp_paths normalizes paths that don't start with /."""
@@ -574,6 +606,162 @@ class TestServiceMethods:
             call_args = mock_add_route.call_args
             assert call_args[1]["tags"] == ["test"]
             assert call_args[1]["summary"] == "Test endpoint"
+
+    def test_add_endpoint_with_invalid_scope_string(self):
+        """Test add_endpoint with invalid scope string raises ValueError."""
+        service = Service()
+
+        def test_handler():
+            return {"test": "response"}
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with pytest.raises(ValueError) as exc_info:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope="invalid_scope",  # Invalid scope string
+            )
+
+        assert "Invalid scope" in str(exc_info.value)
+        assert "invalid_scope" in str(exc_info.value)
+        assert "prevents accidentally exposing" in str(exc_info.value)
+
+    def test_add_endpoint_with_authenticated_scope_raises_without_verifier(self):
+        """Test add_endpoint with AUTHENTICATED scope raises RuntimeError when no authenticator is set."""
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+
+        def test_handler():
+            return {"test": "response"}
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope=Scope.AUTHENTICATED,
+            )
+
+        assert "User authenticator not set" in str(exc_info.value)
+
+    def test_add_endpoint_with_authenticated_scope_adds_auth_dependency(self):
+        """Test add_endpoint with AUTHENTICATED scope adds auth dependency."""
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_user_authenticator(test_verifier)
+
+        def test_handler():
+            return {"test": "response"}
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with patch.object(service.app, "add_api_route") as mock_add_route:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope=Scope.AUTHENTICATED,
+            )
+
+            # Verify the endpoint was added with auth dependency
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            dependencies = call_args[1].get("dependencies", [])
+
+            # Should have at least one dependency (the auth dependency)
+            assert len(dependencies) > 0
+            # Verify it's a Security dependency (from fastapi)
+
+            # Security returns a Security object, check it has the dependency attribute
+            assert any(hasattr(dep, "dependency") for dep in dependencies)
+
+    def test_add_endpoint_with_authenticated_scope_string_adds_auth_dependency(self):
+        """Test add_endpoint with 'authenticated' scope string adds auth dependency."""
+        service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_user_authenticator(test_verifier)
+
+        def test_handler():
+            return {"test": "response"}
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with patch.object(service.app, "add_api_route") as mock_add_route:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope="authenticated",  # String scope
+            )
+
+            # Verify the endpoint was added with auth dependency
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            dependencies = call_args[1].get("dependencies", [])
+
+            # Should have at least one dependency (the auth dependency)
+            assert len(dependencies) > 0
+            # Verify it's a Security dependency
+
+            # Security returns a Security object, check it has the dependency attribute
+            assert any(hasattr(dep, "dependency") for dep in dependencies)
+
+    def test_add_endpoint_with_authenticated_scope_and_existing_dependencies(self):
+        """Test add_endpoint with AUTHENTICATED scope adds auth to existing dependencies."""
+        from fastapi import Depends
+
+        from mindtrace.services.core.types import Scope
+
+        service = Service()
+
+        def test_verifier(token: str) -> dict:
+            return {"user_id": "123"}
+
+        service.set_user_authenticator(test_verifier)
+
+        def test_handler():
+            return {"test": "response"}
+
+        def existing_dependency():
+            return "existing"
+
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+
+        with patch.object(service.app, "add_api_route") as mock_add_route:
+            service.add_endpoint(
+                "test",
+                test_handler,
+                schema=test_schema,
+                scope=Scope.AUTHENTICATED,
+                api_route_kwargs={"dependencies": [Depends(existing_dependency)]},
+            )
+
+            # Verify the endpoint was added with both dependencies
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            dependencies = call_args[1].get("dependencies", [])
+
+            # Should have both the existing dependency and auth dependency
+            assert len(dependencies) == 2
+            # Verify both types are present
+
+            # Security returns a Security object, check it has the dependency attribute
+            assert any(hasattr(dep, "dependency") for dep in dependencies)
+            # Depends is also a function, check for it differently
+            assert any(hasattr(dep, "dependency") or hasattr(dep, "call") for dep in dependencies)
 
 
 class TestServiceShutdown:

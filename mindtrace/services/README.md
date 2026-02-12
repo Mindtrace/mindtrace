@@ -115,6 +115,171 @@ class EchoService(Service):
         return EchoOutput(echoed=payload.message)
 ```
 
+## Authentication
+
+The services module supports stateless authentication using OAuth2 Bearer tokens.
+
+### Setup
+
+Define a user authenticator function and set it on your service instance:
+
+```python
+from fastapi import HTTPException
+from mindtrace.services import Scope, Service
+from fastapi import Depends
+from typing import Annotated
+
+class MyService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_user_authenticator(self.authenticate_user)
+    
+    def authenticate_user(self, token: str) -> dict | None:
+        """Authenticate user from JWT token.
+        
+        Returns:
+            dict: User information (required for get_current_user_dependency())
+            None: Just authentication (works for scope=Scope.AUTHENTICATED)
+        """
+        # Your authentication logic - verify JWT, check DB, etc.
+        payload = decode_jwt_token(token)
+        return {"user_id": payload["user_id"], "email": payload.get("email")}
+```
+
+### Usage Patterns
+
+**Pattern 1: Authentication only (no user data needed)**
+```python
+# Lightweight - just verifies token, doesn't return user data
+self.add_endpoint("protected", self.get_data, schema=schema, scope=Scope.AUTHENTICATED)
+
+async def get_data(self) -> dict:
+    # Token verified, but no user data available
+    return {"message": "protected data"}
+```
+
+**Pattern 2: Authentication + user data (for authorization)**
+```python
+# Get dependency for user injection
+get_current_user = self.get_current_user_dependency()
+
+# Endpoint with user data injection
+self.add_endpoint("profile", self.get_profile, schema=schema, scope=Scope.PUBLIC)
+
+async def get_profile(
+    self,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> dict:
+    # Both authenticated AND have user data for authorization
+    user_id = current_user["user_id"]
+    return {"user_id": user_id, "email": current_user.get("email")}
+```
+
+**Note:** `Depends(get_current_user)` already enforces authentication. Using `scope=Scope.AUTHENTICATED` is redundant but fine for clarity.
+
+### Authentication flow
+
+1. **Token extraction**  
+   The Bearer token is read from the `Authorization` header using FastAPI’s `HTTPBearer` security scheme (`Authorization: Bearer <token>`). If the header is missing or invalid, the request is rejected with 401.
+
+2. **Token verification and claims**  
+   Your authenticator (set via `set_user_authenticator`) is called with the raw token string. It should:
+   - Decode and verify the token (e.g. JWT signature and expiry).
+   - Optionally load extra data (e.g. from a DB) and return a user dict, or return `None` if you only need “valid token” and no user data.
+
+3. **Loading user details from claims**  
+   If your authenticator returns a `dict`, that value is the “current user” for the request. It is cached for that request; any use of `Depends(get_current_user)` in the same request receives this same dict without calling the authenticator again.
+
+4. **`scope=Scope.AUTHENTICATED` vs `Depends(get_current_user)`**
+   - **`scope=Scope.AUTHENTICATED`** on `add_endpoint()`: Adds a route-level dependency that requires a valid token. The handler runs only if the token is valid. No user dict is injected unless you also use `Depends(get_current_user)`.
+   - **`Depends(get_current_user)`** on the handler: Injects the current user dict (from the same single verification step). Use this when you need `user_id`, `email`, or other fields for authorization or response.
+   - **Using both**: You can use both on the same endpoint (e.g. `scope=Scope.AUTHENTICATED` and `current_user: Annotated[dict, Depends(get_current_user)]`). Verification and user loading run **once**; the result is reused.
+
+### Using Authentication Headers with ConnectionManager
+
+When using ConnectionManager with authenticated endpoints, you can pass headers in two ways:
+
+**Option 1: Default Headers**
+Set headers once on the connection manager, and they'll be included in all requests:
+
+```python
+from mindtrace.services import Service, Scope
+
+# Launch service and get connection manager
+cm = MyService.launch(url="http://localhost:8080")
+
+# Login to get token
+login_response = cm.login(email="user@example.com", password="password123")
+token = login_response["access_token"]
+
+# Set default headers - all subsequent requests will use this token
+cm.set_default_headers({"Authorization": f"Bearer {token}"})
+
+# Now authenticated endpoints automatically use the token
+result = cm.get_profile()  # No need to pass headers each time
+```
+
+**Option 2: Per-Request Headers**
+Pass headers for individual requests (useful for dynamic tokens or different users):
+
+```python
+# Login to get token
+login_response = cm.login(email="user@example.com", password="password123")
+token = login_response["access_token"]
+
+# Pass headers per-request
+result = cm.get_profile(headers={"Authorization": f"Bearer {token}"})
+
+# Different token for another request
+result2 = cm.get_profile(headers={"Authorization": f"Bearer {different_token}"})
+```
+
+**Mixing Default and Per-Request Headers**
+Per-request headers merge with defaults, with per-request taking precedence:
+
+```python
+# Set default headers
+cm.set_default_headers({
+    "Authorization": f"Bearer {default_token}",
+    "X-Client-Version": "1.0.0"
+})
+
+# This request uses default headers
+result1 = cm.get_profile()
+
+# This request merges defaults with per-request (per-request overrides defaults)
+result2 = cm.get_profile(headers={"X-Custom-ID": "12345"})
+# Headers sent: Authorization (from defaults), X-Client-Version (from defaults), X-Custom-ID (from per-request)
+
+# This request overrides default Authorization
+result3 = cm.get_profile(headers={"Authorization": f"Bearer {different_token}"})
+```
+
+**Async Methods**
+Both sync and async methods support headers:
+
+```python
+# Set default headers
+cm.set_default_headers({"Authorization": f"Bearer {token}"})
+
+# Async with default headers
+result = await cm.aget_profile()
+
+# Async with per-request headers
+result = await cm.aget_profile(headers={"Authorization": f"Bearer {token}"})
+```
+
+### How It Works
+
+- **Public endpoints** (`Scope.PUBLIC`): No authentication required, accessible by anyone
+- **Authenticated endpoints** (`Scope.AUTHENTICATED`): Require a valid Bearer token in the `Authorization` header:
+  ```
+  Authorization: Bearer <your-token>
+  ```
+  Token verification (and optional user loading) runs once per request and is shared by the scope dependency and `get_current_user_dependency()`.
+
+The ConnectionManager automatically forwards headers to authenticated endpoints.
+
 ## Testing and Coverage
 
 The test runner supports unit, integration, and stress tests:

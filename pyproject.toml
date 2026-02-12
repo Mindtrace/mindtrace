@@ -182,6 +182,7 @@ exclude = [
     "site-packages",
     "venv",
     "applications",
+    "*.md",
 ]
 
 # Same as Black.

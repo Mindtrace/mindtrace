@@ -17,6 +17,13 @@ class ServerStatus(Enum):
     STOPPING = "Stopping"
 
 
+class Scope(Enum):
+    """Endpoint access scope."""
+
+    PUBLIC = "public"
+    AUTHENTICATED = "authenticated"
+
+
 @dataclass
 class Heartbeat:
     """Heartbeat status of a server.
