@@ -1,6 +1,7 @@
 """Tests for mindtrace.core.utils.network."""
 
 import socket
+from unittest import mock
 from unittest.mock import patch
 
 import pytest
@@ -106,6 +107,20 @@ class TestWaitForService:
         # Port is free, nothing listening — should timeout
         with pytest.raises(ServiceTimeoutError):
             wait_for_service("127.0.0.1", port, timeout=0.3, poll_interval=0.1)
+
+    def test_retries_on_os_error(self):
+        # Simulate OSError on socket operations (e.g. network unreachable),
+        # then service becomes available on retry
+        mock_sock = mock.MagicMock()
+        mock_sock.__enter__ = lambda self: self
+        mock_sock.__exit__ = lambda *args: False
+        # First call raises OSError, second call succeeds (connect_ex returns 0)
+        mock_sock.connect_ex.side_effect = [OSError("network unreachable"), 0]
+
+        with mock.patch("mindtrace.core.utils.network.socket.socket", return_value=mock_sock):
+            wait_for_service("127.0.0.1", 8080, timeout=2.0, poll_interval=0.1)
+
+        assert mock_sock.connect_ex.call_count == 2
 
 
 class TestGetLocalIP:
