@@ -410,10 +410,16 @@ def test_get_object_metadata_missing_timestamps(mock_client_cls):
 
 
 # --- invalid credentials path ---
-def test_ctor_invalid_credentials_path(tmp_path):
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_invalid_credentials_path_falls_back_to_adc(mock_client_cls, tmp_path):
+    """When credentials_path doesn't exist, fall back to ADC (creds=None)."""
+    _prepare_client(mock_client_cls)
     bad_path = tmp_path / "nope.json"
-    with pytest.raises(FileNotFoundError):
-        GCSStorageHandler("bucket", credentials_path=str(bad_path))
+
+    GCSStorageHandler("bucket", credentials_path=str(bad_path))
+
+    # Client created with credentials=None (ADC fallback)
+    mock_client_cls.assert_called_once_with(project=None, credentials=None)
 
 
 # --- bucket creation with custom location/storage_class ---
