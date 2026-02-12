@@ -1142,18 +1142,18 @@ class TestBaslerCameraBackendImageEnhancement:
         """Test enabling/disabling image enhancement."""
         basler_camera.initialized = True
 
-        await basler_camera.set_image_quality_enhancement(True)
-        assert await basler_camera.get_image_quality_enhancement() is True
+        basler_camera.set_image_quality_enhancement(True)
+        assert basler_camera.get_image_quality_enhancement() is True
 
-        await basler_camera.set_image_quality_enhancement(False)
-        assert await basler_camera.get_image_quality_enhancement() is False
+        basler_camera.set_image_quality_enhancement(False)
+        assert basler_camera.get_image_quality_enhancement() is False
 
     @pytest.mark.asyncio
     async def test_get_image_quality_enhancement(self, basler_camera):
         """Test getting image enhancement status."""
-        await basler_camera.set_image_quality_enhancement(True)
+        basler_camera.set_image_quality_enhancement(True)
 
-        result = await basler_camera.get_image_quality_enhancement()
+        result = basler_camera.get_image_quality_enhancement()
         assert result is True
 
     @pytest.mark.asyncio
@@ -1165,7 +1165,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
 
         # Enable enhancement
-        await basler_camera.set_image_quality_enhancement(True)
+        basler_camera.set_image_quality_enhancement(True)
 
         # Enhance image
         enhanced_image = await basler_camera._enhance_image(test_image)
@@ -1180,7 +1180,7 @@ class TestBaslerCameraBackendImageEnhancement:
         await basler_camera.initialize()
 
         # Disable enhancement
-        await basler_camera.set_image_quality_enhancement(False)
+        basler_camera.set_image_quality_enhancement(False)
 
         # Test that capture works when enhancement is disabled
         image = await basler_camera.capture()
@@ -1196,7 +1196,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
 
         # Enable enhancement
-        await basler_camera.set_image_quality_enhancement(True)
+        basler_camera.set_image_quality_enhancement(True)
 
         # Mock cv2.createCLAHE to raise error
         import cv2
@@ -1216,7 +1216,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100), dtype=np.uint8)
 
         # Enable enhancement
-        await basler_camera.set_image_quality_enhancement(True)
+        basler_camera.set_image_quality_enhancement(True)
 
         # Mock cv2.cvtColor to handle grayscale properly
         import cv2
@@ -1691,7 +1691,7 @@ class TestBaslerCameraBackendMissingCoverageLines:
         def failing_func():
             raise RuntimeError("Generic SDK error")
 
-        with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
+        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
             await basler_camera._run_blocking(failing_func)
 
     def test_discovery_error_handling_branches(self, mock_pypylon):
@@ -1800,7 +1800,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         monkeypatch.setattr(asyncio, "wait_for", failing_wait_for)
 
         # This should convert asyncio.TimeoutError to CameraTimeoutError
-        with pytest.raises(CameraTimeoutError, match="Pypylon operation timed out after .* for camera"):
+        with pytest.raises(CameraTimeoutError, match="SDK operation timed out after .* for camera"):
             await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
@@ -1815,7 +1815,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         monkeypatch.setattr(asyncio, "wait_for", failing_wait_for)
 
         # This should convert generic Exception to HardwareOperationError
-        with pytest.raises(HardwareOperationError, match="Pypylon operation failed for camera"):
+        with pytest.raises(HardwareOperationError, match="SDK operation failed for camera"):
             await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
@@ -1857,7 +1857,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         await basler_camera.initialize()
 
         # Should handle None function gracefully
-        with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
+        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
             await basler_camera._run_blocking(None)
 
     @pytest.mark.asyncio
@@ -1866,7 +1866,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         await basler_camera.initialize()
 
         # Should handle non-callable parameter
-        with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
+        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
             await basler_camera._run_blocking("not_callable")
 
     @pytest.mark.asyncio

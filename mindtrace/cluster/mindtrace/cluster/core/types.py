@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.database import UnifiedMindtraceDocument
+from mindtrace.jobs import Job
 
 
 class ProxyWorker(BaseModel):
@@ -16,14 +17,36 @@ class ProxyWorker(BaseModel):
     worker_params: dict
 
 
+class JobStatusEnum(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ERROR = "error"
+
+
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")
     worker_id: str = Field(description="Worker's id")
-    status: str = Field(description="Job's status")
+    status: JobStatusEnum = Field(description="Job's status")
     output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
 
     class Meta:
         collection_name = "job_status"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["job_id"]
+        unique_fields = ["job_id"]
+
+
+class DLQJobStatus(UnifiedMindtraceDocument):
+    job_id: str = Field(description="Job's id")
+    output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
+
+    class Meta:
+        collection_name = "dlq_job_status"
         global_key_prefix = "cluster"
         use_cache = False
         indexed_fields = ["job_id"]
@@ -193,6 +216,18 @@ class ClusterLaunchWorkerOutput(BaseModel):
 class ClusterRegisterJobToWorkerInput(BaseModel):
     job_type: str
     worker_url: str
+
+
+class RequeueFromDLQInput(BaseModel):
+    job_id: str
+
+
+class DiscardFromDLQInput(BaseModel):
+    job_id: str
+
+
+class GetDLQJobsOutput(BaseModel):
+    jobs: list[DLQJobStatus]
 
 
 class RegisterJobSchemaToWorkerTypeInput(BaseModel):
