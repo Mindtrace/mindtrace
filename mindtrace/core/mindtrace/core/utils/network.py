@@ -23,12 +23,6 @@ class PortInUseError(NetworkError):
     pass
 
 
-class PortCheckError(NetworkError):
-    """Raised when port availability check fails."""
-
-    pass
-
-
 class NoFreePortError(NetworkError):
     """Raised when no free port is found in the specified range."""
 
@@ -74,7 +68,6 @@ def check_port_available(host: str, port: int) -> None:
 
     Raises:
         PortInUseError: If the port is already in use.
-        PortCheckError: If the port availability check fails.
     """
     if not is_port_available(host, port):
         raise PortInUseError(f"Port {port} is already in use on {host}")
@@ -97,15 +90,10 @@ def get_free_port(
 
     Raises:
         NoFreePortError: If no free port is found in the range.
-        PortCheckError: If port checking fails due to system error.
     """
     for port in range(start_port, end_port + 1):
-        try:
-            if is_port_available(host, port):
-                return port
-        except PortCheckError:
-            # Skip ports that fail the check and continue searching
-            continue
+        if is_port_available(host, port):
+            return port
 
     raise NoFreePortError(f"No free port found in range {start_port}-{end_port} on {host}")
 
@@ -192,7 +180,6 @@ __all__ = [
     # Exceptions
     "NetworkError",
     "PortInUseError",
-    "PortCheckError",
     "NoFreePortError",
     "ServiceTimeoutError",
     "LocalIPError",
