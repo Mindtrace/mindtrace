@@ -5,9 +5,6 @@ Uses GCS for both artifact and metadata storage.
 """
 
 import json
-import os
-import shutil
-import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -69,8 +66,8 @@ class GCPRegistryBackend(RegistryBackend):
         self,
         uri: str | Path | None = None,
         *,
-        project_id: str,
-        bucket_name: str,
+        project_id: str | None = None,
+        bucket_name: str | None = None,
         credentials_path: str | None = None,
         prefix: str = "",
         max_workers: int = 4,
@@ -79,10 +76,11 @@ class GCPRegistryBackend(RegistryBackend):
     ):
         """Initialize the GCPRegistryBackend.
 
+
         Args:
             uri: The base URI for the registry (e.g., "gs://my-bucket/prefix").
-            project_id: GCP project ID.
-            bucket_name: GCS bucket name.
+            project_id: GCP project ID. If none, resolved from config.ini
+            bucket_name: GCS bucket name for registry storage. If none, resolved from config.ini
             credentials_path: Optional path to service account JSON file.
             prefix: Optional prefix (subfolder) within the bucket for all registry objects.
             max_workers: Maximum number of parallel workers for batch operations. Default is 4.
@@ -90,6 +88,8 @@ class GCPRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
+        project_id, bucket_name, credentials_path = self._resolve_config(project_id, bucket_name, credentials_path)
+
         self._prefix = prefix.strip("/") if prefix else ""
         self._uri = Path(uri or f"gs://{bucket_name}/{self._prefix}".rstrip("/"))
         self._metadata_path = self._prefixed("registry_metadata.json")
@@ -106,6 +106,43 @@ class GCPRegistryBackend(RegistryBackend):
         )
 
         self._ensure_metadata_file()
+
+    def _resolve_config(
+        self,
+        project_id: str | None,
+        bucket_name: str | None,
+        credentials_path: str | None,
+    ) -> tuple[str, str, str | None]:
+        """Resolve GCP config from explicit args or config.ini fallback.
+
+        Reads from ``MINDTRACE_GCP`` and ``MINDTRACE_GCP_REGISTRY`` sections.
+        If ``credentials_path`` resolves to a non-existent file it is treated
+        as ``None`` so that ``GCSStorageHandler`` can fall back to ADC.
+        """
+        import os
+
+        gcp_cfg = self.config.get("MINDTRACE_GCP", {})
+        reg_cfg = self.config.get("MINDTRACE_GCP_REGISTRY", {})
+
+        project_id = project_id or gcp_cfg.get("GCP_PROJECT_ID")
+        bucket_name = bucket_name or reg_cfg.get("GCP_BUCKET_NAME")
+        credentials_path = credentials_path or gcp_cfg.get("GCP_CREDENTIALS_PATH")
+
+        # Validate credentials file; fall back to ADC if missing
+        if credentials_path:
+            credentials_path = os.path.expanduser(credentials_path)
+            if not os.path.exists(credentials_path):
+                self.logger.warning(f"Credentials file not found: {credentials_path}, falling back to ADC")
+                credentials_path = None
+
+        if not project_id:
+            raise ValueError("project_id is required (pass explicitly or set MINDTRACE_GCP.GCP_PROJECT_ID in config)")
+        if not bucket_name:
+            raise ValueError(
+                "bucket_name is required (pass explicitly or set MINDTRACE_GCP_REGISTRY.GCP_BUCKET_NAME in config)"
+            )
+
+        return project_id, bucket_name, credentials_path
 
     def _prefixed(self, path: str) -> str:
         """Add prefix to a path if prefix is set."""
@@ -1026,58 +1063,41 @@ class GCPRegistryBackend(RegistryBackend):
 
         results = OpResults()
 
-        # Prepare batch download - create temp files and mapping
-        temp_dir = tempfile.mkdtemp()
-        files_to_download: List[Tuple[str, str]] = []
-        temp_to_key: Dict[str, Tuple[str, str]] = {}  # Maps temp_path to (name, version)
+        # Build remote paths and key mapping
+        remote_paths: List[str] = []
+        keys: List[Tuple[str, str]] = []
+        for obj_name, obj_version in zip(names, versions):
+            remote_paths.append(self._object_metadata_path(obj_name, obj_version))
+            keys.append((obj_name, obj_version))
 
-        try:
-            for obj_name, obj_version in zip(names, versions):
-                meta_path = self._object_metadata_path(obj_name, obj_version)
-                temp_path = os.path.join(temp_dir, f"{obj_name.replace(':', '_')}@{obj_version}.json")
-                files_to_download.append((meta_path, temp_path))
-                temp_to_key[temp_path] = (obj_name, obj_version)
+        # Batch download metadata as in-memory strings (no temp files)
+        string_results = self.gcs.download_string_batch(remote_paths, max_workers=self._max_workers)
 
-            # Batch download all metadata files
-            batch_result = self.gcs.download_batch(files_to_download)
-
-            # Process successful downloads
-            for file_result in batch_result.ok_results:
-                obj_name, obj_version = temp_to_key[file_result.local_path]
+        for (obj_name, obj_version), sr in zip(keys, string_results):
+            if sr.ok:
                 try:
-                    with open(file_result.local_path, "r") as f:
-                        meta = json.load(f)
+                    meta = json.loads(sr.content)
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
-
                 except json.JSONDecodeError as e:
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
-
-            # Process failures - add to results without raising
-            for file_result in batch_result.failed_results:
-                if file_result.local_path not in temp_to_key:
-                    continue
-                obj_name, obj_version = temp_to_key[file_result.local_path]
-                if file_result.status == Status.NOT_FOUND:
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
-                        )
-                    )
-                    continue
+            elif sr.status == Status.NOT_FOUND:
                 results.add(
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error_type=file_result.error_type or "DownloadError",
-                        message=file_result.error_message or "Unknown error",
+                        RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
                     )
                 )
-
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        error_type=sr.error_type or "DownloadError",
+                        message=sr.error_message or "Unknown error",
+                    )
+                )
 
         return results
 

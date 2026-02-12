@@ -35,15 +35,16 @@ class GCSStorageHandler(StorageHandler):
             location: Location for bucket creation (if needed).
             storage_class: Storage class for bucket creation (if needed).
         Raises:
-            FileNotFoundError: If credentials_path is provided but does not exist.
             google.api_core.exceptions.NotFound: If ensure_bucket is True and the bucket does not exist and create_if_missing is False.
         """
         # Credentials -------------------------------------------------------
         creds = None
         if credentials_path:
+            credentials_path = os.path.expanduser(credentials_path)
             if not os.path.exists(credentials_path):
-                raise FileNotFoundError(credentials_path)
-            creds = self._load_credentials(credentials_path)
+                print("Credentials file not found: %s, falling back to ADC", credentials_path)
+            else:
+                creds = self._load_credentials(credentials_path)
 
         # Client ------------------------------------------------------------
         self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
@@ -88,15 +89,44 @@ class GCSStorageHandler(StorageHandler):
             raise ValueError(f"Could not load credentials from {credentials_path}: {e}")
 
     def _ensure_bucket(self, create: bool, location: str, storage_class: str) -> None:
-        """Ensure the GCS bucket exists, creating it if necessary."""
+        """Ensure the GCS bucket exists, optionally creating it.
+
+        GCS returns 403 (not 404) on bucket.exists() when the caller lacks
+        project-level ``storage.buckets.get``.  This method handles that:
+
+        1. Try ``bucket.exists()``
+        2. If 403 and ``create=True``, attempt ``bucket.create()``
+        3. If create also 403 → raise with actionable message
+        4. If create returns 409 Conflict → bucket already existed, success
+        """
         bucket = self.client.bucket(self.bucket_name)
-        if bucket.exists(self.client):
-            return
-        if not create:
+        try:
+            if bucket.exists(self.client):
+                return
+        except gexc.Forbidden:
+            if not create:
+                raise gexc.Forbidden(
+                    f"Cannot verify bucket {self.bucket_name!r} — insufficient permissions. "
+                    f"Grant storage.buckets.get on the project, or use an existing bucket "
+                    f"the service account already has access to."
+                )
+
+        if not create:  # if doesnt exist and not create, raise error
             raise gexc.NotFound(f"Bucket {self.bucket_name!r} not found")
+
         bucket.location = location
         bucket.storage_class = storage_class
-        bucket.create()
+        try:
+            bucket.create()
+        except gexc.Conflict:
+            pass
+        except gexc.Forbidden:
+            raise gexc.Forbidden(
+                f"Cannot create bucket {self.bucket_name!r} — insufficient permissions. "
+                f"Either:\n"
+                f"  1. Create the bucket manually and grant the service account access, or\n"
+                f"  2. Grant the service account roles/storage.admin on the project."
+            )
 
     def _sanitize_blob_path(self, blob_path: str) -> str:
         """Sanitize and validate a blob path for this bucket.

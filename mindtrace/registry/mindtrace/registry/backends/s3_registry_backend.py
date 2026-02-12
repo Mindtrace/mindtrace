@@ -5,9 +5,6 @@ Uses S3-compatible storage (AWS S3, Minio, etc.) for both artifact and metadata 
 """
 
 import json
-import os
-import shutil
-import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -86,10 +83,10 @@ class S3RegistryBackend(RegistryBackend):
         self,
         uri: str | Path | None = None,
         *,
-        endpoint: str,
-        access_key: str,
-        secret_key: str,
-        bucket: str = "s3-registry",
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        bucket: str | None = None,
         secure: bool = True,
         prefix: str = "",
         max_workers: int = 4,
@@ -97,6 +94,8 @@ class S3RegistryBackend(RegistryBackend):
         **kwargs,
     ):
         """Initialize the S3RegistryBackend.
+
+        Args not provided are read from config.ini section ``MINDTRACE_MINIO``.
 
         Args:
             uri: The base directory path where local cache will be stored.
@@ -111,6 +110,8 @@ class S3RegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
+        endpoint, access_key, secret_key, bucket = self._resolve_config(endpoint, access_key, secret_key, bucket)
+
         self._prefix = prefix.strip("/") if prefix else ""
         # URI includes bucket and prefix for unique cache directory per backend
         self._uri = Path(uri or f"s3://{bucket}/{self._prefix}".rstrip("/"))
@@ -132,6 +133,37 @@ class S3RegistryBackend(RegistryBackend):
         )
 
         self._ensure_metadata_file()
+
+    def _resolve_config(
+        self,
+        endpoint: str | None,
+        access_key: str | None,
+        secret_key: str | None,
+        bucket: str | None,
+    ) -> tuple[str, str, str, str]:
+        """Resolve S3/MinIO config from explicit args or config.ini fallback.
+
+        Reads from ``MINDTRACE_MINIO`` section.
+        """
+        minio_cfg = self.config.get("MINDTRACE_MINIO", {})
+
+        endpoint = endpoint or minio_cfg.get("MINIO_ENDPOINT")
+        access_key = access_key or minio_cfg.get("MINIO_ACCESS_KEY")
+        secret_key = secret_key or minio_cfg.get("MINIO_SECRET_KEY")
+        bucket = bucket or minio_cfg.get("MINIO_BUCKET", "s3-registry")
+
+        if not endpoint:
+            raise ValueError("endpoint is required (pass explicitly or set MINDTRACE_MINIO.MINIO_ENDPOINT in config)")
+        if not access_key:
+            raise ValueError(
+                "access_key is required (pass explicitly or set MINDTRACE_MINIO.MINIO_ACCESS_KEY in config)"
+            )
+        if not secret_key:
+            raise ValueError(
+                "secret_key is required (pass explicitly or set MINDTRACE_MINIO.MINIO_SECRET_KEY in config)"
+            )
+
+        return endpoint, access_key, secret_key, bucket
 
     def _prefixed(self, path: str) -> str:
         """Add prefix to a path if prefix is set."""
@@ -1039,7 +1071,7 @@ class S3RegistryBackend(RegistryBackend):
         name: NameArg,
         version: ConcreteVersionArg,
     ) -> OpResults:
-        """Fetch metadata for object version(s) using batch download.
+        """Fetch metadata for object version(s) using in-memory batch download.
 
         This is a batch-only method - it never raises exceptions for individual
         object failures. The caller (Registry) handles single vs batch semantics.
@@ -1061,55 +1093,42 @@ class S3RegistryBackend(RegistryBackend):
             raise ValueError("name and version list lengths must match")
 
         results = OpResults()
-        temp_dir = tempfile.mkdtemp()
-        files_to_download: List[Tuple[str, str]] = []
-        temp_to_key: Dict[str, Tuple[str, str]] = {}
 
-        try:
-            for obj_name, obj_version in zip(names, versions):
-                meta_path = self._object_metadata_path(obj_name, obj_version)
-                temp_path = os.path.join(temp_dir, f"{obj_name.replace(':', '_')}@{obj_version}.json")
-                files_to_download.append((meta_path, temp_path))
-                temp_to_key[temp_path] = (obj_name, obj_version)
+        # Build remote paths and key mapping
+        remote_paths: List[str] = []
+        keys: List[Tuple[str, str]] = []
+        for obj_name, obj_version in zip(names, versions):
+            remote_paths.append(self._object_metadata_path(obj_name, obj_version))
+            keys.append((obj_name, obj_version))
 
-            batch_result = self.storage.download_batch(files_to_download)
+        # Batch download metadata as in-memory strings (no temp files)
+        string_results = self.storage.download_string_batch(remote_paths, max_workers=self._max_workers)
 
-            for file_result in batch_result.ok_results:
-                obj_name, obj_version = temp_to_key[file_result.local_path]
+        for (obj_name, obj_version), sr in zip(keys, string_results):
+            if sr.ok:
                 try:
-                    with open(file_result.local_path, "r") as f:
-                        meta = json.load(f)
-                    # Path is already in metadata from push (includes UUID folder)
+                    meta = json.loads(sr.content)
                     results.add(OpResult.success(obj_name, obj_version, metadata=meta))
-
                 except json.JSONDecodeError as e:
                     self.logger.warning(f"Error parsing metadata for {obj_name}@{obj_version}: {e}")
                     results.add(OpResult.failed(obj_name, obj_version, e))
-
-            for file_result in batch_result.failed_results:
-                if file_result.local_path not in temp_to_key:
-                    continue
-                obj_name, obj_version = temp_to_key[file_result.local_path]
-                if file_result.status == Status.NOT_FOUND:
-                    results.add(
-                        OpResult.failed(
-                            obj_name,
-                            obj_version,
-                            RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
-                        )
-                    )
-                    continue
+            elif sr.status == Status.NOT_FOUND:
                 results.add(
                     OpResult.failed(
                         obj_name,
                         obj_version,
-                        error_type=file_result.error_type or "DownloadError",
-                        message=file_result.error_message or "Unknown error",
+                        RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found"),
                     )
                 )
-
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                results.add(
+                    OpResult.failed(
+                        obj_name,
+                        obj_version,
+                        error_type=sr.error_type or "DownloadError",
+                        message=sr.error_message or "Unknown error",
+                    )
+                )
 
         return results
 

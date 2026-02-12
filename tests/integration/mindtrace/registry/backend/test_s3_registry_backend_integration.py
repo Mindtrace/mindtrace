@@ -224,18 +224,15 @@ def test_registered_materializers(s3_backend, s3_client, s3_test_bucket):
     assert materializers["test:object2"] == "TestMaterializer2"
 
 
-def test_init_with_default_uri(s3_client, s3_test_bucket):
+def test_init_with_default_uri(s3_client, s3_test_bucket, s3_config):
     """Test backend initialization with default URI (S3 path)."""
-    from tests.integration.mindtrace.registry.conftest import get_s3_config
-
-    config = get_s3_config()
     # Create backend without specifying URI - uses bucket as default
     backend = S3RegistryBackend(
-        endpoint=config["endpoint"],
-        access_key=config["access_key"],
-        secret_key=config["secret_key"],
+        endpoint=s3_config["endpoint"],
+        access_key=s3_config["access_key"],
+        secret_key=s3_config["secret_key"],
         bucket=s3_test_bucket,
-        secure=config["secure"],
+        secure=s3_config["secure"],
     )
 
     # Verify the URI is set to the S3 bucket path
@@ -244,11 +241,8 @@ def test_init_with_default_uri(s3_client, s3_test_bucket):
     assert s3_client.bucket_exists(s3_test_bucket)
 
 
-def test_init_creates_bucket(s3_client):
+def test_init_creates_bucket(s3_client, s3_config):
     """Test backend initialization creates a new bucket if it doesn't exist."""
-    from tests.integration.mindtrace.registry.conftest import get_s3_config
-
-    config = get_s3_config()
     # Create a unique bucket name that doesn't exist
     bucket_name = f"test-bucket-{uuid.uuid4()}"
 
@@ -258,11 +252,11 @@ def test_init_creates_bucket(s3_client):
     # Create backend with the new bucket name
     _ = S3RegistryBackend(
         uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
-        endpoint=config["endpoint"],
-        access_key=config["access_key"],
-        secret_key=config["secret_key"],
+        endpoint=s3_config["endpoint"],
+        access_key=s3_config["access_key"],
+        secret_key=s3_config["secret_key"],
         bucket=bucket_name,
-        secure=config["secure"],
+        secure=s3_config["secure"],
     )
 
     # Verify the bucket was created
