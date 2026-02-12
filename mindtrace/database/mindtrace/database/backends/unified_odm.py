@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
+from redis_om.model.model import model_registry
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
@@ -331,6 +332,16 @@ class UnifiedMindtraceDocument(BaseModel):
 
         # Create the dynamic class using type()
         DynamicRedisModel = type(f"{cls.__name__}Redis", (MindtraceRedisDocument,), class_dict)
+        DynamicRedisModel.model_config["index"] = True
+        for field_name, field_descriptor in fields.items():
+            setattr(DynamicRedisModel, field_name, field_descriptor)
+
+        if model_registry is not None:
+            try:
+                key = f"{DynamicRedisModel.__module__}.{DynamicRedisModel.__qualname__}"
+                model_registry[key] = DynamicRedisModel
+            except Exception:
+                pass
 
         return DynamicRedisModel
 
