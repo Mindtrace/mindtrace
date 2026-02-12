@@ -28,33 +28,33 @@ from mindtrace.hardware.services.stereo_cameras.schemas.lifecycle_schemas import
     OpenStereoCameraSchema,
 )
 
-# Collect all schemas for service registration
-ALL_SCHEMAS = [
+# All schemas for easy import - dict format for add_endpoint() compatibility
+ALL_SCHEMAS = {
     # Backend & Discovery
-    GetStereoCameraBackendsSchema,
-    GetStereoCameraBackendInfoSchema,
-    DiscoverStereoCamerasSchema,
+    "get_backends": GetStereoCameraBackendsSchema,
+    "get_backend_info": GetStereoCameraBackendInfoSchema,
+    "discover_cameras": DiscoverStereoCamerasSchema,
     # Lifecycle
-    OpenStereoCameraSchema,
-    OpenStereoCamerasBatchSchema,
-    CloseStereoCameraSchema,
-    CloseStereoCamerasBatchSchema,
-    CloseAllStereoCamerasSchema,
-    GetActiveStereoCamerasSchema,
+    "open_camera": OpenStereoCameraSchema,
+    "open_cameras_batch": OpenStereoCamerasBatchSchema,
+    "close_camera": CloseStereoCameraSchema,
+    "close_cameras_batch": CloseStereoCamerasBatchSchema,
+    "close_all_cameras": CloseAllStereoCamerasSchema,
+    "get_active_cameras": GetActiveStereoCamerasSchema,
     # Status & Information
-    GetStereoCameraStatusSchema,
-    GetStereoCameraInfoSchema,
-    GetSystemDiagnosticsSchema,
+    "get_camera_status": GetStereoCameraStatusSchema,
+    "get_camera_info": GetStereoCameraInfoSchema,
+    "get_system_diagnostics": GetSystemDiagnosticsSchema,
     # Configuration
-    ConfigureStereoCameraSchema,
-    ConfigureStereoCamerasBatchSchema,
-    GetStereoCameraConfigurationSchema,
+    "configure_camera": ConfigureStereoCameraSchema,
+    "configure_cameras_batch": ConfigureStereoCamerasBatchSchema,
+    "get_camera_configuration": GetStereoCameraConfigurationSchema,
     # Capture
-    CaptureStereoPairSchema,
-    CaptureStereoPairBatchSchema,
-    CapturePointCloudSchema,
-    CapturePointCloudBatchSchema,
-]
+    "capture_stereo": CaptureStereoPairSchema,
+    "capture_stereo_batch": CaptureStereoPairBatchSchema,
+    "capture_pointcloud": CapturePointCloudSchema,
+    "capture_pointcloud_batch": CapturePointCloudBatchSchema,
+}
 
 __all__ = [
     # Individual schemas

@@ -159,6 +159,9 @@ class PLCManagerService(Service):
             as_tool=True,
         )
 
+        # Health check endpoint (for container healthcheck - not an MCP tool)
+        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+
     # Backend & Discovery Operations
     def discover_backends(self) -> BackendsResponse:
         """Discover available PLC backends."""
