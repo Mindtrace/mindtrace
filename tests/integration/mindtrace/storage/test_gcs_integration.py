@@ -18,7 +18,7 @@ from mindtrace.storage.gcs import GCSStorageHandler
 
 
 @pytest.fixture
-def gcs_handler(temp_dir, gcp_test_bucket, gcs_client, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
+def gcs_handler(gcp_test_bucket, gcs_client, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
     """Create a GCSStorageHandler instance with a test bucket."""
     from mindtrace.core import CoreConfig
 
@@ -79,6 +79,7 @@ def sample_files(temp_dir):
 def test_init(gcs_handler, gcp_test_bucket, gcs_client):
     """Test GCS handler initialization."""
     assert gcs_handler.bucket_name == gcp_test_bucket
+
     assert gcs_client.bucket(gcp_test_bucket).exists()
 
 

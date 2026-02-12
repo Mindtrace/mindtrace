@@ -102,13 +102,12 @@ Cloud backends (GCP, S3) use **lock-free MVCC** (Multi-Version Concurrency Contr
 - Metadata write is the atomic "commit point" — it references the active UUID
 - For immutable registries: first-write-wins via conditional creation (`generation_match=0` on GCS, `IfNoneMatch='*'` on S3)
 - For mutable registries: last metadata write wins; orphaned UUID folders are cleaned up by the janitor
-- Reads are always lock-free — if metadata is readable, the referenced files are guaranteed to exist
 
 Locks are only used for `register_materializer`, which performs a read-modify-write on registry metadata.
 
 ## Caching
 
-When using a remote backend, the `Registry` maintains a transparent local cache (enabled by default):
+When using a remote backend, the `Registry` maintains a local cache (enabled by default):
 
 ```python
 # Caching is on by default for remote backends
@@ -241,7 +240,6 @@ result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 
 1. **Permission Errors**: Verify credentials and bucket access
 2. **Network Issues**: Check connectivity to remote backends
-3. **Cache Staleness**: Use `verify="full"` or `registry.clear_cache()`
 
 ### Debug Logging
 
