@@ -233,7 +233,9 @@ class HealthCheckResponse(BaseModel):
     status: ServiceStatus
     service: str
     version: str = "1.0.0"
+    backends: Optional[List[str]] = None
     active_cameras: int = 0
+    uptime_seconds: Optional[float] = None
     error: Optional[str] = None
 
 

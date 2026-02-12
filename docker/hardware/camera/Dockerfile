@@ -5,15 +5,15 @@
 #   INSTALL_BASLER: true|false (default: false)
 #   INSTALL_GENICAM: true|false (default: false)
 #
-# Examples (run from mindtrace/hardware/ directory):
+# Examples (run from mindtrace repository root):
 #   # Basic with OpenCV only
-#   docker build -f docker/camera/Dockerfile -t mindtrace-camera:latest .
+#   docker build -f docker/hardware/camera/Dockerfile -t mindtrace-camera:latest .
 #
 #   # With Basler SDK
-#   docker build -f docker/camera/Dockerfile --build-arg INSTALL_BASLER=true -t mindtrace-camera:basler .
+#   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_BASLER=true -t mindtrace-camera:basler .
 #
 #   # Full stack (Basler + GenICam)
-#   docker build -f docker/camera/Dockerfile --build-arg INSTALL_BASLER=true --build-arg INSTALL_GENICAM=true -t mindtrace-camera:full .
+#   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_BASLER=true --build-arg INSTALL_GENICAM=true -t mindtrace-camera:full .
 # =============================================================================
 
 # syntax=docker/dockerfile:1
@@ -130,9 +130,9 @@ FROM camera-sdk AS dependencies
 
 WORKDIR /workspace
 
-# Copy dependency files for caching (context is /home/yasser/mindtrace/)
-# Need root pyproject.toml for workspace definition and uv.lock
-COPY pyproject.toml uv.lock ./
+# Copy dependency files for caching (context is mindtrace repo root)
+# Need root pyproject.toml for workspace definition
+COPY pyproject.toml ./
 
 # Copy all workspace member pyproject.toml files for proper dependency resolution
 # (uv requires all workspace members listed in root pyproject.toml to be present)
@@ -154,7 +154,7 @@ COPY mindtrace/ui/pyproject.toml ./mindtrace/ui/
 # Note: Camera backend packages (pypylon, harvesters, genicam) will be installed
 # in the application stage via --extra flags based on build args
 RUN echo "==> Installing Python dependencies with uv..." && \
-    uv sync --no-install-project --no-dev --locked
+    uv sync --no-install-project --no-dev
 
 # =============================================================================
 # Stage 4: Application - Install mindtrace-hardware
@@ -263,7 +263,7 @@ RUN mkdir -p /app/config /app/logs /app/data && \
     chown -R mindtrace:mindtrace /app
 
 # Copy entrypoint script
-COPY mindtrace/hardware/docker/camera/entrypoint.sh /app/entrypoint.sh
+COPY docker/hardware/camera/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && \
     chown mindtrace:mindtrace /app/entrypoint.sh
 
