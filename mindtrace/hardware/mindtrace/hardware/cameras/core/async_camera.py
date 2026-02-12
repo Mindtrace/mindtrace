@@ -317,7 +317,7 @@ class AsyncCamera(Mindtrace):
             if "white_balance" in settings:
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
-                await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+                self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
             if "capture_timeout" in settings:
                 await self._backend.set_capture_timeout(settings["capture_timeout"])
@@ -494,7 +494,7 @@ class AsyncCamera(Mindtrace):
         Args:
             enabled: True to enable, False to disable.
         """
-        await self._backend.set_image_quality_enhancement(enabled)
+        self._backend.set_image_quality_enhancement(enabled)
 
     async def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
@@ -502,7 +502,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True if enabled, otherwise False.
         """
-        return await self._backend.get_image_quality_enhancement()
+        return self._backend.get_image_quality_enhancement()
 
     async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.

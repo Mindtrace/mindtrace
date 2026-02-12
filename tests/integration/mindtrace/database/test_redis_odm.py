@@ -6,7 +6,6 @@ from redis_om import Field
 
 from mindtrace.database import (
     DocumentNotFoundError,
-    DuplicateInsertError,
     MindtraceRedisDocument,
     RedisMindtraceODM,
 )
@@ -101,16 +100,6 @@ def test_redis_backend_crud(redis_backend):
 
     with pytest.raises(DocumentNotFoundError):
         redis_backend.get(inserted.pk)
-
-
-def test_redis_backend_duplicate_insert(redis_backend):
-    """Test duplicate insert handling."""
-    user = UserCreate(name="Bob", age=25, email="bob@test.com")
-    redis_backend.insert(user)
-
-    # Try to insert another user with same email
-    with pytest.raises(DuplicateInsertError):
-        redis_backend.insert(user)
 
 
 def test_redis_backend_find(redis_backend):

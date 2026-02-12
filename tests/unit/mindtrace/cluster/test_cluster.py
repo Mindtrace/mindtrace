@@ -40,6 +40,7 @@ def cluster_manager():
             create_mock_database(),
             create_mock_database(),
             create_mock_database(),
+            create_mock_database(),
         ]
 
         mock_rabbitmq_client = MockRabbitMQClient.return_value
@@ -156,9 +157,9 @@ def test_submit_job_success(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -170,9 +171,9 @@ def test_submit_job_registry_reload(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -181,7 +182,7 @@ def test_submit_job_failure(cluster_manager):
     job = make_job(schema_name="unknown_job")
     cluster_manager.job_schema_targeting_database.find.return_value = []
     result = cluster_manager.submit_job(job)
-    assert result.status == "error"
+    assert result.status == cluster_types.JobStatusEnum.ERROR
     assert result.output == {"error": "No job schema targeting found for job type unknown_job"}
 
 
@@ -198,7 +199,7 @@ def test_submit_job_to_orchestrator(cluster_manager):
         # Verify orchestrator was called
         mock_publish.assert_called_once_with("test_job", job)
         # Verify job status was created with queued status
-        assert result.status == "queued"
+        assert result.status == cluster_types.JobStatusEnum.QUEUED
         assert result.worker_id == ""
 
 
@@ -223,7 +224,7 @@ def test_submit_job_to_endpoint_json_error(cluster_manager):
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.side_effect = Exception("bad json")
         result = cluster_manager._submit_job_to_endpoint(job, "/test/test")
-        assert result.status == "completed"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {}  # fallback on JSON error
 
 
@@ -321,7 +322,11 @@ def test_get_job_status_success(cluster_manager):
     """Test get_job_status when job exists."""
     job_id = "test-job-123"
     expected_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={"result": "test"}, worker_id="worker-123"
+        job_id=job_id,
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={"result": "test"},
+        worker_id="worker-123",
+        job=make_job(),
     )
 
     cluster_manager.job_status_database.find.return_value = [expected_job_status]
@@ -352,7 +357,9 @@ def test_worker_alert_started_job(cluster_manager):
     worker_id = "worker-456"
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="")
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -369,7 +376,7 @@ def test_worker_alert_started_job(cluster_manager):
     cluster_manager.worker_alert_started_job(payload)
 
     # Verify job status was updated and saved
-    assert existing_job_status.status == "running"
+    assert existing_job_status.status == cluster_types.JobStatusEnum.RUNNING
     assert existing_job_status.worker_id == worker_id
     cluster_manager.job_status_database.insert.assert_called_with(existing_job_status)
 
@@ -394,7 +401,9 @@ def test_worker_alert_completed_job(cluster_manager):
     output = {"result": "success"}
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="running", output={}, worker_id="worker-123")
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -769,19 +778,25 @@ def test_clear_databases_empty_databases(cluster_manager):
     # Mock empty databases
     cluster_manager.job_schema_targeting_database.all.return_value = []
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was never called since databases are empty
     cluster_manager.job_schema_targeting_database.delete.assert_not_called()
     cluster_manager.job_status_database.delete.assert_not_called()
+    cluster_manager.dlq_database.delete.assert_not_called()
     cluster_manager.worker_auto_connect_database.delete.assert_not_called()
+    cluster_manager.worker_status_database.delete.assert_not_called()
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -796,17 +811,25 @@ def test_clear_databases_with_entries(cluster_manager):
     mock_entry2.pk = "pk2"
     mock_entry3 = MagicMock()
     mock_entry3.pk = "pk3"
+    mock_entry4 = MagicMock()
+    mock_entry4.pk = "pk4"
+    mock_entry5 = MagicMock()
+    mock_entry5.pk = "pk5"
 
     cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry1]
     cluster_manager.job_status_database.all.return_value = [mock_entry2]
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = [mock_entry3]
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called for each entry
     cluster_manager.job_schema_targeting_database.delete.assert_called_once_with("pk1")
@@ -823,26 +846,36 @@ def test_clear_databases_multiple_entries_per_database(cluster_manager):
     mock_entries1 = [MagicMock(pk=f"pk1_{i}") for i in range(3)]
     mock_entries2 = [MagicMock(pk=f"pk2_{i}") for i in range(2)]
     mock_entries3 = [MagicMock(pk=f"pk3_{i}") for i in range(4)]
+    mock_entries4 = [MagicMock(pk=f"pk4_{i}") for i in range(2)]
+    mock_entries5 = [MagicMock(pk=f"pk5_{i}") for i in range(1)]
 
     cluster_manager.job_schema_targeting_database.all.return_value = mock_entries1
     cluster_manager.job_status_database.all.return_value = mock_entries2
+    cluster_manager.dlq_database.all.return_value = mock_entries4
     cluster_manager.worker_auto_connect_database.all.return_value = mock_entries3
+    cluster_manager.worker_status_database.all.return_value = mock_entries5
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called for each entry
     expected_calls1 = [((f"pk1_{i}",),) for i in range(3)]
     expected_calls2 = [((f"pk2_{i}",),) for i in range(2)]
     expected_calls3 = [((f"pk3_{i}",),) for i in range(4)]
+    expected_calls4 = [((f"pk4_{i}",),) for i in range(2)]
+    expected_calls5 = [((f"pk5_{i}",),) for i in range(1)]
 
     assert cluster_manager.job_schema_targeting_database.delete.call_args_list == expected_calls1
     assert cluster_manager.job_status_database.delete.call_args_list == expected_calls2
+    assert cluster_manager.dlq_database.delete.call_args_list == expected_calls4
     assert cluster_manager.worker_auto_connect_database.delete.call_args_list == expected_calls3
+    assert cluster_manager.worker_status_database.delete.call_args_list == expected_calls5
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -855,14 +888,18 @@ def test_clear_databases_mixed_empty_and_populated(cluster_manager):
 
     cluster_manager.job_schema_targeting_database.all.return_value = mock_entries
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called only for entries in the first database
     cluster_manager.job_schema_targeting_database.delete.assert_any_call("pk1")
@@ -871,7 +908,9 @@ def test_clear_databases_mixed_empty_and_populated(cluster_manager):
 
     # Verify delete was not called for empty databases
     cluster_manager.job_status_database.delete.assert_not_called()
+    cluster_manager.dlq_database.delete.assert_not_called()
     cluster_manager.worker_auto_connect_database.delete.assert_not_called()
+    cluster_manager.worker_status_database.delete.assert_not_called()
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -882,7 +921,9 @@ def test_clear_databases_database_error_handling(cluster_manager):
     # Mock database that raises an exception during all() call
     cluster_manager.job_schema_targeting_database.all.side_effect = Exception("Database connection error")
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     # Should raise the exception
     with pytest.raises(Exception, match="Database connection error"):
@@ -890,7 +931,9 @@ def test_clear_databases_database_error_handling(cluster_manager):
 
     # Verify other databases were not processed due to the exception
     cluster_manager.job_status_database.all.assert_not_called()
+    cluster_manager.dlq_database.all.assert_not_called()
     cluster_manager.worker_auto_connect_database.all.assert_not_called()
+    cluster_manager.worker_status_database.all.assert_not_called()
 
 
 def test_clear_databases_delete_error_handling(cluster_manager):
@@ -900,7 +943,9 @@ def test_clear_databases_delete_error_handling(cluster_manager):
     cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry]
     cluster_manager.job_schema_targeting_database.delete.side_effect = Exception("Delete failed")
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     # Should raise the exception
     with pytest.raises(Exception, match="Delete failed"):
@@ -916,7 +961,9 @@ def test_clear_databases_logging_verification(cluster_manager):
     # Mock empty databases
     cluster_manager.job_schema_targeting_database.all.return_value = []
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
@@ -2134,7 +2181,7 @@ def test_submit_job_to_endpoint_with_partial_response(cluster_manager):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use provided status but default output
-        assert result.status == "running"
+        assert result.status == cluster_types.JobStatusEnum.RUNNING
         assert result.output == {}
 
 
@@ -2431,7 +2478,13 @@ def test_clear_databases_with_partial_failure(cluster_manager):
 def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
-    job_status = cluster_types.JobStatus(job_id="job-123", status="running", output={}, worker_id="different-worker")
+    job_status = cluster_types.JobStatus(
+        job_id="job-123",
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={},
+        worker_id="different-worker",
+        job=make_job(),
+    )
 
     # Mock database to return this job status for job lookup
     cluster_manager.job_status_database.find.return_value = [job_status]
@@ -2464,3 +2517,254 @@ def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
         "Worker actual-worker alerted cluster manager that job job-123 has completed, but the worker id does not match the stored worker id different-worker"
         in warning_message
     )
+
+
+def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
+    """Test worker_alert_completed_job adds failed jobs to DLQ."""
+    job_id = "failed-job-123"
+    job = make_job()
+
+    # Mock existing job status
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
+    )
+    cluster_manager.job_status_database.find.return_value = [existing_job_status]
+    cluster_manager.worker_status_database.find.return_value = [
+        cluster_types.WorkerStatus(
+            worker_id="worker-123",
+            worker_type="",
+            worker_url="",
+            status=cluster_types.WorkerStatusEnum.RUNNING,
+            last_heartbeat=None,
+            job_id=job_id,
+        )
+    ]
+
+    payload = {
+        "job_id": job_id,
+        "status": "failed",
+        "output": {"error": "Job failed"},
+        "worker_id": "worker-123",
+    }
+
+    cluster_manager.worker_alert_completed_job(payload)
+
+    # Verify job was added to DLQ
+    cluster_manager.dlq_database.insert.assert_called_once()
+    dlq_call_args = cluster_manager.dlq_database.insert.call_args[0][0]
+    assert dlq_call_args.job_id == job_id
+    assert dlq_call_args.output == {"error": "Job failed"}
+    assert dlq_call_args.job == job
+
+    # Verify warning was logged
+    cluster_manager.logger.error.assert_called_once()
+
+
+def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
+    """Test worker_alert_completed_job adds error jobs to DLQ."""
+    job_id = "error-job-123"
+    job = make_job()
+
+    # Mock existing job status
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
+    )
+    cluster_manager.job_status_database.find.return_value = [existing_job_status]
+    cluster_manager.worker_status_database.find.return_value = [
+        cluster_types.WorkerStatus(
+            worker_id="worker-123",
+            worker_type="",
+            worker_url="",
+            status=cluster_types.WorkerStatusEnum.RUNNING,
+            last_heartbeat=None,
+            job_id=job_id,
+        )
+    ]
+
+    payload = {
+        "job_id": job_id,
+        "status": "error",
+        "output": {"error": "Job error"},
+        "worker_id": "worker-123",
+    }
+
+    cluster_manager.worker_alert_completed_job(payload)
+
+    # Verify job was added to DLQ
+    cluster_manager.dlq_database.insert.assert_called_once()
+    dlq_call_args = cluster_manager.dlq_database.insert.call_args[0][0]
+    assert dlq_call_args.job_id == job_id
+    assert dlq_call_args.output == {"error": "Job error"}
+    assert dlq_call_args.job == job
+
+
+def test_get_dlq_jobs(cluster_manager):
+    """Test get_dlq_jobs method."""
+    # Mock DLQ database to return some jobs
+    dlq_job1 = cluster_types.DLQJobStatus(job_id="job-1", output={"error": "Error 1"}, job=make_job())
+    dlq_job2 = cluster_types.DLQJobStatus(job_id="job-2", output={"error": "Error 2"}, job=make_job())
+    cluster_manager.dlq_database.all.return_value = [dlq_job1, dlq_job2]
+
+    result = cluster_manager.get_dlq_jobs()
+
+    # Verify all() was called on DLQ database
+    cluster_manager.dlq_database.all.assert_called_once()
+    assert result["jobs"] == [dlq_job1, dlq_job2]
+
+
+def test_get_dlq_jobs_empty(cluster_manager):
+    """Test get_dlq_jobs when DLQ is empty."""
+    cluster_manager.dlq_database.all.return_value = []
+
+    result = cluster_manager.get_dlq_jobs()
+
+    assert result["jobs"] == []
+    cluster_manager.dlq_database.all.assert_called_once()
+
+
+def test_requeue_from_dlq(cluster_manager):
+    """Test requeue_from_dlq method."""
+    job_id = "job-123"
+    job = make_job()
+
+    # Mock DLQ database to return a job
+    dlq_job_status = MagicMock()
+    dlq_job_status.job_id = job_id
+    dlq_job_status.output = {"error": "Failed"}
+    dlq_job_status.job = job
+    dlq_job_status.pk = "dlq-pk-123"
+    cluster_manager.dlq_database.find.return_value = [dlq_job_status]
+
+    # Mock submit_job to return a new job status
+    new_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job
+    )
+    cluster_manager.submit_job = MagicMock(return_value=new_job_status)
+
+    payload = {"job_id": job_id}
+    result = cluster_manager.requeue_from_dlq(payload)
+
+    # Verify job was removed from DLQ
+    cluster_manager.dlq_database.find.assert_called_once()
+    cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
+
+    # Verify job was requeued
+    cluster_manager.submit_job.assert_called_once_with(job)
+    assert result == new_job_status
+
+    # Verify logging
+    cluster_manager.logger.info.assert_called_with(f"Requeued job {job_id} from DLQ")
+
+
+def test_requeue_from_dlq_job_not_found(cluster_manager):
+    """Test requeue_from_dlq when job is not in DLQ."""
+    job_id = "nonexistent-job"
+    cluster_manager.dlq_database.find.return_value = []
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.requeue_from_dlq(payload)
+
+
+def test_requeue_from_dlq_multiple_jobs(cluster_manager):
+    """Test requeue_from_dlq when multiple jobs with same ID exist (should raise error)."""
+    job_id = "job-123"
+    dlq_job1 = MagicMock()
+    dlq_job1.job_id = job_id
+    dlq_job2 = MagicMock()
+    dlq_job2.job_id = job_id
+    cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.requeue_from_dlq(payload)
+
+
+def test_discard_from_dlq(cluster_manager):
+    """Test discard_from_dlq method."""
+    job_id = "job-123"
+
+    # Mock DLQ database to return a job
+    dlq_job_status = MagicMock()
+    dlq_job_status.job_id = job_id
+    dlq_job_status.output = {"error": "Failed"}
+    dlq_job_status.job = make_job()
+    dlq_job_status.pk = "dlq-pk-123"
+    cluster_manager.dlq_database.find.return_value = [dlq_job_status]
+
+    payload = {"job_id": job_id}
+    cluster_manager.discard_from_dlq(payload)
+
+    # Verify job was removed from DLQ
+    cluster_manager.dlq_database.find.assert_called_once()
+    cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
+
+    # Verify logging
+    cluster_manager.logger.info.assert_called_with(f"Discarded job {job_id} from DLQ")
+
+
+def test_discard_from_dlq_job_not_found(cluster_manager):
+    """Test discard_from_dlq when job is not in DLQ."""
+    job_id = "nonexistent-job"
+    cluster_manager.dlq_database.find.return_value = []
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.discard_from_dlq(payload)
+
+
+def test_discard_from_dlq_multiple_jobs(cluster_manager):
+    """Test discard_from_dlq when multiple jobs with same ID exist (should raise error)."""
+    job_id = "job-123"
+    dlq_job1 = MagicMock()
+    dlq_job1.job_id = job_id
+    dlq_job2 = MagicMock()
+    dlq_job2.job_id = job_id
+    cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.discard_from_dlq(payload)
+
+
+def test_clear_databases_includes_dlq(cluster_manager):
+    """Test clear_databases includes dlq_database."""
+    # Mock entries in all databases including DLQ
+    mock_entry1 = MagicMock()
+    mock_entry1.pk = "pk1"
+    mock_entry2 = MagicMock()
+    mock_entry2.pk = "pk2"
+    mock_entry3 = MagicMock()
+    mock_entry3.pk = "pk3"
+    mock_entry4 = MagicMock()
+    mock_entry4.pk = "pk4"
+    mock_entry5 = MagicMock()
+    mock_entry5.pk = "pk5"
+    mock_entry6 = MagicMock()
+    mock_entry6.pk = "pk6"
+
+    cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry1]
+    cluster_manager.job_status_database.all.return_value = [mock_entry2]
+    cluster_manager.dlq_database.all.return_value = [mock_entry3]
+    cluster_manager.worker_auto_connect_database.all.return_value = [mock_entry4]
+    cluster_manager.worker_status_database.all.return_value = [mock_entry5, mock_entry6]
+
+    cluster_manager.clear_databases()
+
+    # Verify all() was called on each database including DLQ
+    cluster_manager.job_schema_targeting_database.all.assert_called_once()
+    cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
+    cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
+
+    # Verify delete was called for all entries including DLQ
+    assert cluster_manager.job_schema_targeting_database.delete.call_count == 1
+    assert cluster_manager.job_status_database.delete.call_count == 1
+    assert cluster_manager.dlq_database.delete.call_count == 1
+    assert cluster_manager.worker_auto_connect_database.delete.call_count == 1
+    assert cluster_manager.worker_status_database.delete.call_count == 2
