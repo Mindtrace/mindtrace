@@ -11,7 +11,10 @@ import mimetypes
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
+
+if TYPE_CHECKING:
+    from google.cloud import storage
 
 __all__ = [
     'BinaryContent',
@@ -25,7 +28,8 @@ __all__ = [
 class BinaryContent:
     """Binary content, e.g. an image or file.
 
-    Use `from_path()` to load from disk, or construct with bytes and media_type.
+    Use `from_path()` to load from disk, `from_gcs()` to load from Google Cloud Storage,
+    or construct with bytes and media_type.
     For images, use a media_type starting with `image/` (e.g. `image/png`, `image/jpeg`)
     so that `is_image` is True and the content can be sent to vision models.
     """
@@ -74,6 +78,64 @@ class BinaryContent:
         if media_type is None:
             media_type = 'application/octet-stream'
         return cls(data=path.read_bytes(), media_type=media_type)
+
+    @classmethod
+    def from_gcs(
+        cls,
+        bucket_name: str,
+        blob_name: str,
+        client: Any = None,
+        media_type: str | None = None,
+    ) -> BinaryContent:
+        """Load binary content from Google Cloud Storage.
+
+        Downloads the blob directly into memory as bytes (no disk write).
+        Infers `media_type` from:
+        1. The `media_type` parameter if provided
+        2. The blob's content_type metadata
+        3. The blob name file extension (e.g. `.jpg` -> `image/jpeg`)
+        4. Defaults to `application/octet-stream` if none can be determined
+
+        Args:
+            bucket_name: Name of the GCS bucket.
+            blob_name: Path/name of the blob in the bucket (e.g. `images/photo.jpg`).
+            client: Optional GCS client. If not provided, creates a new one.
+            media_type: Optional MIME type. If not provided, will be inferred from blob metadata or name.
+
+        Returns:
+            BinaryContent instance with downloaded bytes.
+
+        Raises:
+            ImportError: If `google-cloud-storage` is not installed.
+            google.cloud.exceptions.NotFound: If the bucket or blob does not exist.
+        """
+        try:
+            from google.cloud import storage
+        except ImportError as e:
+            raise ImportError(
+                'google-cloud-storage is required for from_gcs(). '
+                'Install it with: pip install google-cloud-storage'
+            ) from e
+
+        if client is None:
+            client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        # Download directly into memory as bytes
+        data = blob.download_as_bytes()
+
+        # Determine media type
+        if media_type:
+            inferred_type = media_type
+        elif blob.content_type:
+            inferred_type = blob.content_type
+        else:
+            inferred_type, _ = mimetypes.guess_type(blob_name)
+            if inferred_type is None:
+                inferred_type = 'application/octet-stream'
+
+        return cls(data=data, media_type=inferred_type)
 
 
 @dataclass(frozen=True)
