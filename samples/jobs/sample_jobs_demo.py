@@ -1,4 +1,5 @@
 import argparse
+import tempfile
 
 from pydantic import BaseModel
 
@@ -12,7 +13,6 @@ from mindtrace.jobs import (
     job_from_schema,
 )
 from mindtrace.registry import Registry
-import tempfile
 
 
 class MathsInput(BaseModel):
@@ -73,7 +73,7 @@ def setup_backend(backend_type: str):
     backend = None
     try:
         if backend_type == "local":
-            backend = LocalClient(backend=Registry(backend=str(tempfile.TemporaryDirectory()))
+            backend = LocalClient(backend=Registry(backend=str(tempfile.TemporaryDirectory())))
             print("Local backend ready")
         elif backend_type == "redis":
             backend = RedisClient(host="localhost", port=6379, db=0)
