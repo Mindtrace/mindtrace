@@ -188,6 +188,14 @@ class MockMinioHandler:
             results.append(result)
         return MockBatchResult(results=results)
 
+    def download_string_batch(
+        self,
+        remote_paths: List[str],
+        max_workers: int = 4,
+    ) -> List[MockStringResult]:
+        """Download multiple strings from storage."""
+        return [self.download_string(p) for p in remote_paths]
+
     def delete_batch(self, paths: List[str], max_workers: int = 4) -> MockBatchResult:
         """Delete multiple files."""
         results = []

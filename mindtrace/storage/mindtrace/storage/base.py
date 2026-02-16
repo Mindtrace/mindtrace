@@ -283,6 +283,27 @@ class StorageHandler(MindtraceABC, ABC):
 
         return BatchResult(results=results)
 
+    def download_string_batch(
+        self,
+        remote_paths: List[str],
+        max_workers: int = 4,
+    ) -> List[StringResult]:
+        """Download multiple objects as in-memory bytes concurrently.
+
+        Args:
+            remote_paths: List of remote paths to download.
+            max_workers: Number of parallel download workers.
+
+        Returns:
+            List of StringResult in the same order as remote_paths.
+        """
+        results: List[StringResult] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for result in executor.map(self.download_string, remote_paths):
+                results.append(result)
+
+        return results
+
     def delete_batch(
         self,
         paths: List[str],

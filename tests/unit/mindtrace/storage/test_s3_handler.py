@@ -654,6 +654,104 @@ def test_delete_batch_success(mock_boto3):
 
 
 # ---------------------------------------------------------------------------
+# Batch String Operations (download_string_batch)
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_batch_success(mock_boto3):
+    """Test batch download of multiple strings."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.get_object.side_effect = [
+        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
+        {"Body": MagicMock(read=MagicMock(return_value=b"content2"))},
+        {"Body": MagicMock(read=MagicMock(return_value=b"content3"))},
+    ]
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    results = handler.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"])
+
+    assert len(results) == 3
+    assert all(isinstance(r, StringResult) for r in results)
+    assert all(r.status == Status.OK for r in results)
+    assert results[0].content == b"content1"
+    assert results[1].content == b"content2"
+    assert results[2].content == b"content3"
+    assert mock_client.get_object.call_count == 3
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_batch_partial_not_found(mock_boto3):
+    """Test batch download where some objects don't exist."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.get_object.side_effect = [
+        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
+        _make_client_error("NoSuchKey", "not found"),
+        {"Body": MagicMock(read=MagicMock(return_value=b"content3"))},
+    ]
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    results = handler.download_string_batch(["remote/a.json", "remote/missing.json", "remote/c.json"])
+
+    assert len(results) == 3
+    assert results[0].status == Status.OK
+    assert results[0].content == b"content1"
+    assert results[1].status == Status.NOT_FOUND
+    assert results[1].content is None
+    assert results[2].status == Status.OK
+    assert results[2].content == b"content3"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_batch_partial_error(mock_boto3):
+    """Test batch download where some objects fail."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.get_object.side_effect = [
+        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
+        Exception("Network error"),
+    ]
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    results = handler.download_string_batch(["remote/a.json", "remote/b.json"])
+
+    assert len(results) == 2
+    assert results[0].status == Status.OK
+    assert results[1].status == Status.ERROR
+    assert "Network error" in results[1].error_message
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_download_string_batch_empty(mock_boto3):
+    """Test batch download with empty list."""
+    _prepare_client(mock_boto3)
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    results = handler.download_string_batch([])
+
+    assert results == []
+
+
+# ---------------------------------------------------------------------------
 # Folder Operations
 # ---------------------------------------------------------------------------
 

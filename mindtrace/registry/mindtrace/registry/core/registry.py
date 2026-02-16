@@ -7,7 +7,7 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Type, overload
 
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
@@ -106,7 +107,7 @@ class Registry(Mindtrace):
 
         if use_cache and is_remote:
             # Remote backend with local caching
-            self._remote = _RegistryCore(
+            self._remote: _RegistryCore = _RegistryCore(
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
@@ -114,7 +115,7 @@ class Registry(Mindtrace):
                 **kwargs,
             )
             cache_dir = self._get_cache_dir(self._remote.backend.uri)
-            self._cache = _RegistryCore(
+            self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
                 mutable=True,  # cache is always mutable for updates
@@ -125,15 +126,15 @@ class Registry(Mindtrace):
             self._cached = True
         else:
             # Local or uncached remote — direct access
-            self._core = _RegistryCore(
+            self._core: _RegistryCore = _RegistryCore(
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            self._remote = None
-            self._cache = None
+            self._remote = None  # type: ignore
+            self._cache = None  # type: ignore
             self._cached = False
 
         self.logger = self._core.logger
@@ -334,6 +335,26 @@ class Registry(Mindtrace):
             self.logger.warning(f"Error updating cache: {e}")
 
         return result
+
+    @overload
+    def load(
+        self,
+        name: str,
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any: ...
+
+    @overload
+    def load(
+        self,
+        name: List[str],
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> BatchResult: ...
 
     def load(
         self,
@@ -591,7 +612,7 @@ class Registry(Mindtrace):
         name, version = self._core._parse_key(key)
         try:
             return self.load(name, version if version else "latest")
-        except Exception as e:
+        except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str, value: Any) -> None:
@@ -603,19 +624,13 @@ class Registry(Mindtrace):
             name, version = self._core._parse_key(key)
             if version is None:
                 if not self._core.list_versions(name):
-                    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
             else:
                 exists = self._core.backend.has_object([name], [version])
                 if not exists.get((name, version), False):
-                    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
                     raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
             self.delete(name, version)
-        except (ValueError, Exception) as e:
-            if isinstance(e, KeyError):
-                raise
+        except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __contains__(self, key: str) -> bool:

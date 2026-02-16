@@ -52,7 +52,7 @@ def update_model_metadata(registry: Registry, model_id: int) -> None:
 def main():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create a registry in a temporary directory
-        registry = Registry(registry_dir=temp_dir)
+        registry = Registry(backend=temp_dir)
 
         print("Starting thread safety demonstration...")
 

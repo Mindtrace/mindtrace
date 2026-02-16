@@ -410,10 +410,16 @@ def test_get_object_metadata_missing_timestamps(mock_client_cls):
 
 
 # --- invalid credentials path ---
-def test_ctor_invalid_credentials_path(tmp_path):
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_invalid_credentials_path_falls_back_to_adc(mock_client_cls, tmp_path):
+    """When credentials_path doesn't exist, fall back to ADC (creds=None)."""
+    _prepare_client(mock_client_cls)
     bad_path = tmp_path / "nope.json"
-    with pytest.raises(FileNotFoundError):
-        GCSStorageHandler("bucket", credentials_path=str(bad_path))
+
+    GCSStorageHandler("bucket", credentials_path=str(bad_path))
+
+    # Client created with credentials=None (ADC fallback)
+    mock_client_cls.assert_called_once_with(project=None, credentials=None)
 
 
 # --- bucket creation with custom location/storage_class ---
@@ -845,6 +851,73 @@ def test_download_string_error(mock_client_cls):
     assert result.status == "error"
     assert result.error_type == "Exception"
     assert "Network error" in result.error_message
+
+
+# ---------------------------------------------------------------------------
+# Batch String Operations (download_string_batch)
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_batch_success(mock_client_cls):
+    """Test batch download of multiple strings."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.side_effect = [b"content1", b"content2", b"content3"]
+
+    h = GCSStorageHandler("bucket")
+    results = h.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"])
+
+    assert len(results) == 3
+    assert all(isinstance(r, StringResult) for r in results)
+    assert all(r.status == "ok" for r in results)
+    assert results[0].content == b"content1"
+    assert results[1].content == b"content2"
+    assert results[2].content == b"content3"
+    assert blob.download_as_bytes.call_count == 3
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_batch_partial_not_found(mock_client_cls):
+    """Test batch download where some blobs don't exist."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.side_effect = [b"content1", NotFound("not found"), b"content3"]
+
+    h = GCSStorageHandler("bucket")
+    results = h.download_string_batch(["remote/a.json", "remote/missing.json", "remote/c.json"])
+
+    assert len(results) == 3
+    assert results[0].status == "ok"
+    assert results[0].content == b"content1"
+    assert results[1].status == "not_found"
+    assert results[1].content is None
+    assert results[2].status == "ok"
+    assert results[2].content == b"content3"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_batch_partial_error(mock_client_cls):
+    """Test batch download where some blobs fail."""
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_as_bytes.side_effect = [b"content1", Exception("Network error")]
+
+    h = GCSStorageHandler("bucket")
+    results = h.download_string_batch(["remote/a.json", "remote/b.json"])
+
+    assert len(results) == 2
+    assert results[0].status == "ok"
+    assert results[1].status == "error"
+    assert "Network error" in results[1].error_message
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_string_batch_empty(mock_client_cls):
+    """Test batch download with empty list."""
+    _prepare_client(mock_client_cls)
+
+    h = GCSStorageHandler("bucket")
+    results = h.download_string_batch([])
+
+    assert results == []
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
