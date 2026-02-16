@@ -674,7 +674,7 @@ def test_download_string_batch_success(mock_boto3):
         access_key="access",
         secret_key="secret",
     )
-    results = handler.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"])
+    results = handler.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"], max_workers=1)
 
     assert len(results) == 3
     assert all(isinstance(r, StringResult) for r in results)
@@ -727,7 +727,7 @@ def test_download_string_batch_partial_error(mock_boto3):
         access_key="access",
         secret_key="secret",
     )
-    results = handler.download_string_batch(["remote/a.json", "remote/b.json"])
+    results = handler.download_string_batch(["remote/a.json", "remote/b.json"], max_workers=1)
 
     assert len(results) == 2
     assert results[0].status == Status.OK
