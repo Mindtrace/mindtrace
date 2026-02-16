@@ -13,6 +13,7 @@ from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.registry import Registry
+from mindtrace.registry.core.types import OnConflict
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
@@ -52,7 +53,7 @@ class LocalClient(OrchestratorBackend):
             if client_dir is None:
                 client_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
                 client_dir = Path(client_dir).expanduser().resolve()
-            backend = Registry(backend=client_dir)
+            backend = Registry(backend=client_dir, mutable=True)
 
         self.queues: Registry[str, LocalJobQueue] = backend
         self._lock = threading.Lock()
@@ -63,7 +64,7 @@ class LocalClient(OrchestratorBackend):
         else:
             results_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
             results_dir = Path(results_dir).expanduser().resolve() / "results"
-        self._job_results: Registry[str, Any] = Registry(backend=results_dir)
+        self._job_results: Registry[str, Any] = Registry(backend=results_dir, mutable=True)
 
     @property
     def consumer_backend_args(self):
