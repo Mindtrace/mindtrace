@@ -15,13 +15,13 @@ dependencies = [
     "mindtrace-registry>=0.7.1",
     "mindtrace-database>=0.7.1",
     "mindtrace-services>=0.7.1",
-    "mindtrace-datalake>=0.7.1",
-    "mindtrace-models>=0.7.1",
-    "mindtrace-cluster>=0.7.1",
-    "mindtrace-jobs>=0.7.1",
-    "mindtrace-hardware>=0.7.1",
-    "mindtrace-ui>=0.7.1",
-    "mindtrace-automation>=0.7.1",
+    # "mindtrace-datalake>=0.7.1",
+    # "mindtrace-models>=0.7.1",
+    # "mindtrace-cluster>=0.7.1",
+    # "mindtrace-jobs>=0.7.1",
+    # "mindtrace-hardware>=0.7.1",
+    # "mindtrace-ui>=0.7.1",
+    # "mindtrace-automation>=0.7.1",
     # "mindtrace-agents>=0.7.1"
 ]
 
