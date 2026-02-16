@@ -318,7 +318,7 @@ class TestLocalClient:
         """
         Expected behavior: storing/fetching job results should use a lock from the job-results registry,
         not the queues registry. Using the queues registry lock can cause unintended lock coupling.
-        
+
         Note: Registry no longer exposes get_lock method, so this test verifies that
         job results are stored in a separate registry (_job_results) from queues.
         """
@@ -329,7 +329,7 @@ class TestLocalClient:
 
             # Verify that job results use a separate registry from queues
             assert client._job_results is not client.queues, "Job results should use a separate registry"
-            
+
             # These should work without interfering with queue operations
             client.store_job_result("job-123", {"result": True})
             assert client.get_job_result("job-123") == {"result": True}

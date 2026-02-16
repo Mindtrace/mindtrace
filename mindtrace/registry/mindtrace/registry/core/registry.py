@@ -121,7 +121,7 @@ class Registry(Mindtrace):
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            self._core = self._remote 
+            self._core = self._remote
             self._cached = True
         else:
             # Local or uncached remote — direct access
@@ -132,8 +132,8 @@ class Registry(Mindtrace):
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            self._remote = None # type: ignore
-            self._cache = None # type: ignore
+            self._remote = None  # type: ignore
+            self._cache = None  # type: ignore
             self._cached = False
 
         self.logger = self._core.logger
@@ -343,8 +343,7 @@ class Registry(Mindtrace):
         output_dir: str | None = None,
         verify: str = VerifyLevel.INTEGRITY,
         **kwargs,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
     @overload
     def load(
@@ -354,8 +353,7 @@ class Registry(Mindtrace):
         output_dir: str | None = None,
         verify: str = VerifyLevel.INTEGRITY,
         **kwargs,
-    ) -> BatchResult:
-        ...
+    ) -> BatchResult: ...
 
     def load(
         self,
