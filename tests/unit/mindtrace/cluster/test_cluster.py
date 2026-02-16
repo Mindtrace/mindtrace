@@ -2451,9 +2451,10 @@ def test_register_worker_type_with_job_schema_registration_failure(cluster_manag
         "job_type": "test_job",
     }
 
-    # Mock the registry to avoid IndexError and test job schema registration failure
+    # Mock save to bypass push path (which returns Mock objects from the mock backend),
+    # and mock register_job_schema_to_worker_type to test its failure path
     with (
-        patch.object(cluster_manager.worker_registry, "list_versions", return_value=[]),
+        patch.object(cluster_manager.worker_registry, "save", return_value="1"),
         patch.object(
             cluster_manager,
             "register_job_schema_to_worker_type",

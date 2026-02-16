@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
@@ -611,7 +612,7 @@ class Registry(Mindtrace):
         name, version = self._core._parse_key(key)
         try:
             return self.load(name, version if version else "latest")
-        except Exception as e:
+        except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str, value: Any) -> None:
@@ -623,19 +624,13 @@ class Registry(Mindtrace):
             name, version = self._core._parse_key(key)
             if version is None:
                 if not self._core.list_versions(name):
-                    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
             else:
                 exists = self._core.backend.has_object([name], [version])
                 if not exists.get((name, version), False):
-                    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-
                     raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
             self.delete(name, version)
-        except (ValueError, Exception) as e:
-            if isinstance(e, KeyError):
-                raise
+        except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __contains__(self, key: str) -> bool:

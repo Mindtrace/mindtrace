@@ -65,12 +65,12 @@ class CleanupState(str, Enum):
     @property
     def has_orphan(self) -> bool:
         """True when cleanup state is ORPHANED and follow-up is needed."""
-        return self in (CleanupState.ORPHANED)
+        return self == CleanupState.ORPHANED
 
     @property
     def has_unknown(self) -> bool:
         """True when cleanup state is UNKNOWN and follow-up is needed."""
-        return self in (CleanupState.UNKNOWN)
+        return self == CleanupState.UNKNOWN
 
 
 # ─────────────────────────────────────────────────────────────────────────────
