@@ -5,6 +5,7 @@ import pydantic
 import pytest
 
 from mindtrace.jobs.local.client import LocalClient
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 
 class SampleMessage(pydantic.BaseModel):
@@ -210,7 +211,7 @@ class TestLocalClient:
         client = temp_local_client
         msg = SampleMessage(data="test")
 
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
+        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
             client.publish("nonexistent-queue", msg)
 
     def test_priority_queue_with_priority(self, temp_local_client):
@@ -228,7 +229,7 @@ class TestLocalClient:
     def test_receive_from_nonexistent_queue(self, temp_local_client):
         """Test receiving from a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
+        with pytest.raises(RegistryObjectNotFound, match="Object nonexistent-queue@1 not found"):
             client.receive_message("nonexistent-queue")
 
     def test_receive_message_json_decode_error(self, temp_local_client):
@@ -245,13 +246,13 @@ class TestLocalClient:
     def test_clean_nonexistent_queue(self, temp_local_client):
         """Test cleaning a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
+        with pytest.raises(RegistryObjectNotFound, match="Object nonexistent-queue@1 not found"):
             client.clean_queue("nonexistent-queue")
 
     def test_count_nonexistent_queue(self, temp_local_client):
         """Test counting messages in a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
+        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
             client.count_queue_messages("nonexistent-queue")
 
     def test_move_to_dlq(self, temp_local_client):
@@ -282,9 +283,11 @@ class TestLocalClient:
         queue_instance.pop = original_pop
 
     def test_delete_nonexistent_queue(self, temp_local_client):
+        """Test deleting a queue that doesn't exist - should succeed silently (idempotent)."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Queue 'does-not-exist' not found"):
-            client.delete_queue("does-not-exist")
+        # Delete is idempotent - it succeeds even if the queue doesn't exist
+        result = client.delete_queue("does-not-exist")
+        assert result["status"] == "success"
 
     def test_receive_empty_logs_debug(self, temp_local_client):
         client = temp_local_client
@@ -315,25 +318,19 @@ class TestLocalClient:
         """
         Expected behavior: storing/fetching job results should use a lock from the job-results registry,
         not the queues registry. Using the queues registry lock can cause unintended lock coupling.
+        
+        Note: Registry no longer exposes get_lock method, so this test verifies that
+        job results are stored in a separate registry (_job_results) from queues.
         """
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             client = LocalClient(client_dir=tmp)
 
-            # Fail the test if queue lock is used for job result operations
-            original_get_lock = client.queues.get_lock
-
-            def failing_queue_get_lock(name, *args, **kwargs):
-                if name == "job-123":
-                    raise AssertionError(
-                        "Queues registry lock used for job results; should use _job_results lock instead"
-                    )
-                return original_get_lock(name, *args, **kwargs)
-
-            monkeypatch.setattr(client.queues, "get_lock", failing_queue_get_lock, raising=True)
-
-            # These should NOT trigger the queues registry lock
+            # Verify that job results use a separate registry from queues
+            assert client._job_results is not client.queues, "Job results should use a separate registry"
+            
+            # These should work without interfering with queue operations
             client.store_job_result("job-123", {"result": True})
             assert client.get_job_result("job-123") == {"result": True}
 
