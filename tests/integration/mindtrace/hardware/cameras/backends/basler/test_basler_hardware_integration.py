@@ -345,16 +345,16 @@ class TestHardwareAdvancedFeatures:
     async def test_hardware_image_enhancement(self, basler_camera):
         """Test image quality enhancement."""
         # Test enabling enhancement
-        await basler_camera.set_image_quality_enhancement(True)
-        assert await basler_camera.get_image_quality_enhancement() is True
+        basler_camera.set_image_quality_enhancement(True)
+        assert basler_camera.get_image_quality_enhancement() is True
 
         # Capture with enhancement
         enhanced_image = await basler_camera.capture()
         assert enhanced_image is not None
 
         # Test disabling enhancement
-        await basler_camera.set_image_quality_enhancement(False)
-        assert await basler_camera.get_image_quality_enhancement() is False
+        basler_camera.set_image_quality_enhancement(False)
+        assert basler_camera.get_image_quality_enhancement() is False
 
         # Capture without enhancement
         normal_image = await basler_camera.capture()
@@ -417,7 +417,7 @@ class TestHardwareManagerIntegration:
             assert camera.is_connected
 
             # Basic operations
-            image = camera.capture()
+            image = camera.capture(output_format="numpy")
             assert image is not None
             assert isinstance(image, np.ndarray)
 
@@ -440,7 +440,7 @@ class TestHardwareManagerIntegration:
             assert camera.is_connected
 
             # Basic operations
-            image = await camera.capture()
+            image = await camera.capture(output_format="numpy")
             assert image is not None
             assert isinstance(image, np.ndarray)
 

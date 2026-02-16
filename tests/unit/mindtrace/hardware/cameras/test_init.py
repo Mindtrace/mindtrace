@@ -96,6 +96,7 @@ def test_all_exports():
         # Availability flags
         "BASLER_AVAILABLE",
         "OPENCV_AVAILABLE",
+        "GENICAM_AVAILABLE",
         "SETUP_AVAILABLE",
         # Setup utilities
         "install_pylon_sdk",

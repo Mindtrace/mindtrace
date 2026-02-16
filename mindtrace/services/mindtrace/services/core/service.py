@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
@@ -60,6 +61,7 @@ class Service(Mindtrace):
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
         live_service: bool = True,
+        pid_file: str | None = None,
         **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
@@ -82,7 +84,7 @@ class Service(Mindtrace):
         super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
-        self.id, self.pid_file = self._generate_id_and_pid_file()
+        self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
 
         # Build URL with the following priority:
         # 1. Explicit URL parameter
@@ -348,7 +350,7 @@ class Service(Mindtrace):
         # Create launch command
         server_id = uuid.uuid1()
         launch_command = [
-            "python",
+            sys.executable,
             "-m",
             "mindtrace.services.core.launcher",
             "-s",

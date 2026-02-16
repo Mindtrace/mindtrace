@@ -20,8 +20,8 @@ def test_open_single_and_batch_and_close():
         name = cameras[0]
 
         cam = mgr.open(name)
-        # basic capture path
-        img = cam.capture()
+        # basic capture path (request numpy for shape attribute check)
+        img = cam.capture(output_format="numpy")
         assert hasattr(img, "shape")
 
         # Idempotent at the async layer; sync wrapper may differ but backend must be the same
@@ -82,6 +82,18 @@ def test_open_default_no_cameras_raises(monkeypatch):
 
         monkeypatch.setattr(
             OpenCVCameraBackend,
+            "get_available_cameras",
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+
+    try:
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        monkeypatch.setattr(
+            GenICamCameraBackend,
             "get_available_cameras",
             staticmethod(lambda include_details=False: {} if include_details else []),
             raising=False,

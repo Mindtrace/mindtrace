@@ -138,7 +138,7 @@ async def test_common_format_export(mock_basler_camera):
     await camera.set_exposure(30000)
     await camera.set_gain(4.0)
     await camera.set_triggermode("trigger")
-    await camera.set_image_quality_enhancement(True)
+    camera.set_image_quality_enhancement(True)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         export_path = f.name
@@ -779,7 +779,7 @@ class TestMockBaslerWhiteBalance:
         # Test setting different white balance modes
         wb_modes = await camera.get_wb_range()
         assert isinstance(wb_modes, list)
-        assert "auto" in wb_modes
+        assert "off" in wb_modes
 
         for mode in wb_modes:
             await camera.set_auto_wb_once(mode)
@@ -831,16 +831,16 @@ class TestMockBaslerImageEnhancement:
         await camera.initialize()
 
         # Test getting initial state
-        initial_state = await camera.get_image_quality_enhancement()
+        initial_state = camera.get_image_quality_enhancement()
         assert isinstance(initial_state, bool)
 
         # Test setting enhancement
-        await camera.set_image_quality_enhancement(True)
-        assert await camera.get_image_quality_enhancement() is True
+        camera.set_image_quality_enhancement(True)
+        assert camera.get_image_quality_enhancement() is True
 
         # Test disabling enhancement
-        await camera.set_image_quality_enhancement(False)
-        assert await camera.get_image_quality_enhancement() is False
+        camera.set_image_quality_enhancement(False)
+        assert camera.get_image_quality_enhancement() is False
 
         await camera.close()
 
@@ -885,7 +885,7 @@ class TestMockBaslerImageEnhancement:
         assert not hasattr(camera, "_enhancement_initialized")
 
         # Enable enhancement should set marker
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
         assert hasattr(camera, "_enhancement_initialized")
         assert camera._enhancement_initialized is True
 
@@ -898,11 +898,11 @@ class TestMockBaslerImageEnhancement:
         await camera.initialize()
 
         # Capture without enhancement
-        await camera.set_image_quality_enhancement(False)
+        camera.set_image_quality_enhancement(False)
         image_no_enhancement = await camera.capture()
 
         # Capture with enhancement
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
         image_with_enhancement = await camera.capture()
 
         # Images should be the same size
@@ -922,7 +922,8 @@ class TestMockBaslerPerformanceAndTiming:
     @pytest.mark.asyncio
     async def test_capture_timing_simulation(self):
         """Test that capture timing is simulated based on exposure."""
-        camera = MockBaslerCameraBackend("test_cam")
+        # Explicitly disable fast_mode for this timing test
+        camera = MockBaslerCameraBackend("test_cam", fast_mode=False)
         await camera.initialize()
 
         # Set very short exposure
@@ -1189,7 +1190,7 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
         """Test image enhancement error handling."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
 
         # Mock cv2.cvtColor to raise an error during enhancement
         with patch("cv2.cvtColor", side_effect=RuntimeError("Enhancement error")):
@@ -1349,7 +1350,7 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling during image enhancement."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
 
         # Mock _enhance_image to raise an exception
         with patch.object(camera, "_enhance_image", side_effect=RuntimeError("Enhancement error")):
@@ -1366,7 +1367,7 @@ class TestMockBaslerExceptionHandling:
         await camera.initialize()
 
         # Simulate cancellation during capture
-        with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
+        with patch.object(camera, "_sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await camera.capture()
 
@@ -1490,8 +1491,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set ROI"):
                 await camera.set_ROI(0, 0, 640, 480)
 
@@ -1503,8 +1504,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             result = await camera.reset_ROI()
             assert result is False
 
@@ -1516,8 +1517,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set gain"):
                 await camera.set_gain(5.0)
 
@@ -1542,8 +1543,8 @@ class TestMockBaslerExceptionHandling:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Mock asyncio.sleep to raise an exception
-        with patch("asyncio.sleep", side_effect=RuntimeError("Sleep error")):
+        # Mock _sleep to raise an exception
+        with patch.object(camera, "_sleep", side_effect=RuntimeError("Sleep error")):
             with pytest.raises(CameraConfigurationError, match="Failed to set pixel format"):
                 await camera.set_pixel_format("BGR8")
 

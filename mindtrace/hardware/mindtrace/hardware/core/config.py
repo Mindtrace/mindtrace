@@ -2,8 +2,8 @@
 Hardware configuration management for Mindtrace project.
 
 Provides unified configuration for all hardware components including cameras,
-sensors, actuators, and other devices with support for environment variables,
-JSON file loading/saving, and default values.
+stereo cameras, sensors, actuators, and other devices with support for
+environment variables, JSON file loading/saving, and default values.
 
 Features:
     - Unified configuration for all hardware components
@@ -32,8 +32,33 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
     - MINDTRACE_HW_CAMERA_PIXEL_FORMAT: Default pixel format (BGR8, RGB8, etc.)
     - MINDTRACE_HW_CAMERA_BUFFER_COUNT: Number of frame buffers for cameras
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_ENABLED: Enable Basler multicast streaming
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP: Basler multicast group IP address
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT: Basler multicast port number
+    - MINDTRACE_HW_CAMERA_BASLER_TARGET_IPS: Comma-separated list of target IP addresses for Basler discovery
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
+    - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
+    - MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS: Stereo camera capture timeout in milliseconds
+    - MINDTRACE_HW_STEREO_CAMERA_EXPOSURE_TIME: Stereo camera exposure time in microseconds
+    - MINDTRACE_HW_STEREO_CAMERA_GAIN: Stereo camera gain value
+    - MINDTRACE_HW_STEREO_CAMERA_TRIGGER_MODE: Stereo camera trigger mode (continuous/trigger)
+    - MINDTRACE_HW_STEREO_CAMERA_PIXEL_FORMAT: Stereo camera pixel format
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MIN: Minimum depth in meters
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MAX: Maximum depth in meters
+    - MINDTRACE_HW_STEREO_CAMERA_ILLUMINATION_MODE: Illumination mode (AlwaysActive/AlternateActive)
+    - MINDTRACE_HW_STEREO_CAMERA_BINNING_HORIZONTAL: Horizontal binning factor
+    - MINDTRACE_HW_STEREO_CAMERA_BINNING_VERTICAL: Vertical binning factor
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_QUALITY: Depth quality (Full/High/Normal/Low)
+    - MINDTRACE_HW_STEREO_CAMERA_BUFFER_COUNT: Number of frame buffers
+    - MINDTRACE_HW_STEREO_CAMERA_RETRY_COUNT: Number of capture retry attempts
+    - MINDTRACE_HW_STEREO_CAMERA_MAX_CONCURRENT_CAPTURES: Maximum concurrent captures
+    - MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS: Include color information in point clouds
+    - MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS: Remove statistical outliers from point clouds
+    - MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR: Point cloud downsampling factor
+    - MINDTRACE_HW_STEREO_CAMERA_BASLER_STEREO_ACE_ENABLED: Enable Basler Stereo ace backend
+    - MINDTRACE_HW_STEREO_CAMERA_MOCK_ENABLED: Enable mock stereo camera backend
+    - MINDTRACE_HW_STEREO_CAMERA_DISCOVERY_TIMEOUT: Stereo camera discovery timeout in seconds
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
     - MINDTRACE_HW_PATHS_BIN_DIR: Directory for binary installations
     - MINDTRACE_HW_PATHS_INCLUDE_DIR: Directory for header files
@@ -43,12 +68,15 @@ Environment Variables:
     - MINDTRACE_HW_PATHS_CONFIG_DIR: Directory for configuration files
     - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE: IP range for camera network communication
     - MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME: Name for firewall rules
-    - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS: General network timeout in seconds
-    - MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT: Timeout for firewall operations in seconds
-    - MINDTRACE_HW_NETWORK_RETRY_COUNT: Number of retry attempts for network operations
     - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
     - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
+    - MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD: RANSAC reprojection error threshold in pixels
+    - MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS: Enable sub-pixel corner refinement for checkerboard calibration
+    - MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT: Default unit for world coordinates (mm, cm, m, in, ft)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS: Default checkerboard inner corners (width/columns)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS: Default checkerboard inner corners (height/rows)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE: Default size of one checkerboard square in mm
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -56,13 +84,15 @@ Usage:
     config = get_hardware_config()
     camera_settings = config.get_config().cameras
     backend_settings = config.get_config().backends
+    stereo_camera_settings = config.get_config().stereo_cameras
+    stereo_backend_settings = config.get_config().stereo_backends
 """
 
 import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from mindtrace.core import Mindtrace
 
@@ -72,79 +102,84 @@ class CameraSettings:
     """
     Configuration for camera settings.
 
-    Attributes:
-        # Core camera settings (actively used)
-        image_quality_enhancement: Enable image quality enhancement processing
-        retrieve_retry_count: Number of retry attempts for image capture
-        trigger_mode: Camera trigger mode (continuous, trigger)
-        exposure_time: Exposure time in microseconds
-        white_balance: White balance mode (auto, off, once)
-        gain: Camera gain value
-        max_concurrent_captures: Maximum number of concurrent captures across all cameras (network bandwidth management)
+    This configuration is divided into three categories based on when parameters can be changed:
 
-        # OpenCV-specific settings (actively used)
-        opencv_default_width: OpenCV default frame width
-        opencv_default_height: OpenCV default frame height
-        opencv_default_fps: OpenCV default frame rate
-        opencv_default_exposure: OpenCV default exposure value
-        opencv_exposure_range_min: OpenCV minimum exposure value
-        opencv_exposure_range_max: OpenCV maximum exposure value
-        opencv_width_range_min: OpenCV minimum frame width
-        opencv_width_range_max: OpenCV maximum frame width
-        opencv_height_range_min: OpenCV minimum frame height
-        opencv_height_range_max: OpenCV maximum frame height
+    1. RUNTIME-CONFIGURABLE PARAMETERS:
+       These parameters can be changed dynamically while the camera is running through the
+       configure_camera API endpoint without requiring camera reinitialization.
+       Example: POST /cameras/configure with {"camera": "...", "properties": {"exposure_time": 2000}}
 
-        # Timeout and discovery settings (actively used)
-        timeout_ms: Operation timeout in milliseconds
-        max_camera_index: Maximum camera index to test during discovery
+    2. STARTUP-ONLY PARAMETERS:
+       These parameters require camera reinitialization to change due to hardware limitations
+       (e.g., memory reallocation, network reconnection). They can only be set when the camera
+       is first initialized or after a full restart.
 
-        # Mock settings (for testing)
-        mock_camera_count: Number of mock cameras to simulate
+    3. SYSTEM CONFIGURATION:
+       General system settings that affect camera manager behavior but are not camera-specific
+       per-device settings.
 
-        # Image enhancement settings (for quality enhancement)
-        enhancement_gamma: Gamma correction value for image enhancement
-        enhancement_contrast: Contrast factor for image enhancement
-
-        # Basler-specific settings
-        pixel_format: Default pixel format (BGR8, RGB8, etc.)
-        buffer_count: Number of frame buffers for cameras
+    Configuration hierarchy: config.py → initial defaults → runtime changes via API
     """
 
-    # Core camera settings
-    image_quality_enhancement: bool = False
-    retrieve_retry_count: int = 3
-    trigger_mode: str = "continuous"
-    exposure_time: float = 1000.0
-    white_balance: str = "auto"
-    gain: float = 1.0
-    max_concurrent_captures: int = 2  # Network bandwidth management for GigE cameras
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RUNTIME-CONFIGURABLE PARAMETERS (changeable via configure_camera API)
+    # ═══════════════════════════════════════════════════════════════════════════════
 
-    # OpenCV-specific settings
-    opencv_default_width: int = 1280
-    opencv_default_height: int = 720
-    opencv_default_fps: int = 30
-    opencv_default_exposure: float = -1.0
+    # Capture timeout (runtime-configurable for dynamic adjustment)
+    timeout_ms: int = 2000  # Capture timeout in milliseconds
+
+    # Image quality parameters (all backends)
+    exposure_time: float = 6000.0  # Exposure time in microseconds
+    gain: float = 1.0  # Camera gain value
+    trigger_mode: str = "trigger"  # Trigger mode: "continuous" or "trigger"
+    white_balance: str = "auto"  # White balance: "auto", "off", "once"
+    image_quality_enhancement: bool = False  # Enable CLAHE image enhancement
+    pixel_format: str = "BGR8"  # Pixel format: BGR8, RGB8, Mono8, etc.
+
+    # OpenCV resolution and framerate (runtime-configurable for OpenCV backend)
+    opencv_default_width: int = 1280  # Frame width in pixels
+    opencv_default_height: int = 720  # Frame height in pixels
+    opencv_default_fps: int = 30  # Frames per second
+    opencv_default_exposure: float = -1.0  # OpenCV exposure (-1 = auto)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STARTUP-ONLY PARAMETERS (require camera reinitialization to change)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Frame buffer allocation (requires memory reallocation)
+    buffer_count: int = 25  # Number of frame buffers (memory allocation)
+
+    # Basler multicast streaming (requires network reconnection)
+    basler_multicast_enabled: bool = False  # Enable multicast streaming mode
+    basler_multicast_group: str = "239.192.1.1"  # Multicast group IP address
+    basler_multicast_port: int = 3956  # Multicast port number
+    basler_target_ips: List[str] = field(default_factory=list)  # Target IPs for discovery
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SYSTEM CONFIGURATION (manager-level settings, not per-camera)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture and retry settings
+    retrieve_retry_count: int = 3  # Number of retry attempts for failed captures
+    max_concurrent_captures: int = 1  # Max concurrent captures (bandwidth management)
+
+    # Discovery settings
+    max_camera_index: int = 1  # Maximum camera index for OpenCV discovery
+
+    # Mock/testing settings
+    mock_camera_count: int = 1  # Number of mock cameras to simulate
+
+    # Image enhancement algorithm settings
+    enhancement_gamma: float = 2.2  # Gamma correction value
+    enhancement_contrast: float = 1.2  # Contrast enhancement factor
+
+    # OpenCV capability ranges (defines hardware limits)
     opencv_exposure_range_min: float = -13.0
     opencv_exposure_range_max: float = -1.0
     opencv_width_range_min: int = 160
     opencv_width_range_max: int = 1920
     opencv_height_range_min: int = 120
     opencv_height_range_max: int = 1080
-
-    # Timeout and discovery settings
-    timeout_ms: int = 5000
-    max_camera_index: int = 1
-
-    # Mock settings
-    mock_camera_count: int = 10
-
-    # Image enhancement settings
-    enhancement_gamma: float = 2.2
-    enhancement_contrast: float = 1.2
-
-    # Basler-specific settings
-    pixel_format: str = "BGR8"
-    buffer_count: int = 25
 
 
 @dataclass
@@ -155,12 +190,96 @@ class CameraBackends:
     Attributes:
         basler_enabled: Enable Basler camera backend
         opencv_enabled: Enable OpenCV camera backend
+        genicam_enabled: Enable GenICam camera backend
         mock_enabled: Enable mock camera backend for testing
         discovery_timeout: Camera discovery timeout in seconds
     """
 
     basler_enabled: bool = True
-    opencv_enabled: bool = True
+    opencv_enabled: bool = False
+    genicam_enabled: bool = False
+    mock_enabled: bool = False
+    discovery_timeout: float = 10.0
+
+
+@dataclass
+class StereoCameraSettings:
+    """
+    Configuration for stereo camera settings.
+
+    This configuration is divided into three categories based on when parameters can be changed:
+
+    1. RUNTIME-CONFIGURABLE PARAMETERS:
+       These parameters can be changed dynamically while the stereo camera is running through the
+       configure_camera API endpoint without requiring camera reinitialization.
+       Example: POST /stereocameras/configure with {"camera": "...", "properties": {"exposure_time": 8000}}
+
+    2. STARTUP-ONLY PARAMETERS:
+       These parameters require camera reinitialization to change due to hardware limitations
+       (e.g., memory reallocation, network reconnection). They can only be set when the camera
+       is first initialized or after a full restart.
+
+    3. SYSTEM CONFIGURATION:
+       General system settings that affect stereo camera manager behavior but are not camera-specific
+       per-device settings.
+
+    Configuration hierarchy: config.py → initial defaults → runtime changes via API
+    """
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RUNTIME-CONFIGURABLE PARAMETERS (changeable via configure_camera API)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture timeout (runtime-configurable for dynamic adjustment)
+    timeout_ms: int = 20000  # Capture timeout in milliseconds
+
+    # Image quality parameters
+    exposure_time: float = 8000.0  # Exposure time in microseconds
+    gain: float = 2.0  # Camera gain value
+    trigger_mode: str = "continuous"  # Trigger mode: "continuous" or "trigger"
+    pixel_format: str = "Coord3D_C16"  # Pixel format for stereo ace
+
+    # Stereo-specific runtime parameters
+    depth_range_min: float = 0.5  # Minimum depth in meters
+    depth_range_max: float = 3.0  # Maximum depth in meters
+    illumination_mode: str = "AlwaysActive"  # "AlwaysActive" (low latency) or "AlternateActive" (clean intensity)
+    binning_horizontal: int = 1  # Horizontal binning factor
+    binning_vertical: int = 1  # Vertical binning factor
+    depth_quality: str = "Normal"  # Depth quality: "Full", "High", "Normal", "Low"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STARTUP-ONLY PARAMETERS (require camera reinitialization to change)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Frame buffer allocation (requires memory reallocation)
+    buffer_count: int = 25  # Number of frame buffers (memory allocation)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SYSTEM CONFIGURATION (manager-level settings, not per-camera)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture and retry settings
+    retrieve_retry_count: int = 3  # Number of retry attempts for failed captures
+    max_concurrent_captures: int = 1  # Max concurrent captures (bandwidth management)
+
+    # Point cloud generation settings
+    enable_colors: bool = True  # Include color information in point clouds
+    remove_outliers: bool = False  # Remove statistical outliers from point clouds
+    downsample_factor: int = 1  # Point cloud downsampling factor (1 = no downsampling)
+
+
+@dataclass
+class StereoCameraBackends:
+    """
+    Configuration for stereo camera backends.
+
+    Attributes:
+        basler_stereo_ace_enabled: Enable Basler Stereo ace backend (dual ace2 Pro cameras)
+        mock_enabled: Enable mock stereo camera backend for testing
+        discovery_timeout: Stereo camera discovery timeout in seconds
+    """
+
+    basler_stereo_ace_enabled: bool = True
     mock_enabled: bool = False
     discovery_timeout: float = 10.0
 
@@ -192,14 +311,11 @@ class PathSettings:
 @dataclass
 class NetworkSettings:
     """
-    Configuration for network settings and firewall management.
+    Network infrastructure configuration for GigE camera communication.
 
     Attributes:
         camera_ip_range: IP range for camera network communication (default: 192.168.50.0/24)
         firewall_rule_name: Name for firewall rules (default: "Allow Camera Network")
-        timeout_seconds: General network timeout in seconds
-        firewall_timeout: Timeout for firewall operations in seconds
-        retry_count: Number of retry attempts for network operations
         network_interface: Network interface to use for camera communication
         jumbo_frames_enabled: Enable jumbo frames for GigE camera optimization
         multicast_enabled: Enable multicast for camera discovery
@@ -207,9 +323,6 @@ class NetworkSettings:
 
     camera_ip_range: str = "192.168.50.0/24"
     firewall_rule_name: str = "Allow Camera Network"
-    timeout_seconds: float = 30.0
-    firewall_timeout: float = 30.0
-    retry_count: int = 3
     network_interface: str = "auto"  # "auto" for automatic detection
     jumbo_frames_enabled: bool = True
     multicast_enabled: bool = True
@@ -302,21 +415,54 @@ class PLCBackends:
 
 
 @dataclass
-class GCSSettings:
+class HomographySettings:
     """
-    Configuration for Google Cloud Storage integration.
+    Configuration for homography calibration and measurement.
 
     Attributes:
-        enabled: Enable GCS integration
-        bucket_name: GCS bucket name
-        credentials_path: Path to service account JSON
-        auto_upload: Auto-upload captured images
+        ransac_threshold: RANSAC reprojection error threshold in pixels for outlier rejection
+        refine_corners: Enable sub-pixel corner refinement for checkerboard calibration
+        corner_refinement_window: Window size for cornerSubPix refinement (half-width)
+        corner_refinement_iterations: Maximum iterations for corner refinement
+        corner_refinement_epsilon: Convergence epsilon for corner refinement
+        min_correspondences: Minimum number of point correspondences required for calibration
+        default_world_unit: Default unit for world coordinates (mm, cm, m, in, ft)
+        supported_units: List of supported measurement units
+        checkerboard_cols: Default checkerboard inner corners (width/columns)
+        checkerboard_rows: Default checkerboard inner corners (height/rows)
+        checkerboard_square: Size of one checkerboard square in default_world_unit
+        checkerboard_adaptive_thresh: Use adaptive threshold for checkerboard detection
+        checkerboard_normalize_image: Normalize image before checkerboard detection
+        checkerboard_filter_quads: Filter false checkerboard quads
     """
 
-    enabled: bool = False
-    bucket_name: str = "mindtrace-camera-data"
-    credentials_path: str = ""
-    auto_upload: bool = False
+    # RANSAC homography estimation
+    ransac_threshold: float = 3.0  # pixels
+
+    # Corner refinement for checkerboard calibration
+    refine_corners: bool = True
+    corner_refinement_window: int = 11  # pixels (half-width, so 11x11 window)
+    corner_refinement_iterations: int = 30
+    corner_refinement_epsilon: float = 0.001
+
+    # Calibration constraints
+    min_correspondences: int = 4  # Minimum points needed for homography
+
+    # Unit system
+    default_world_unit: str = "mm"
+    supported_units: List[str] = field(default_factory=lambda: ["mm", "cm", "m", "in", "ft"])
+
+    # Default checkerboard dimensions (standard calibration target)
+    # Board orientation: 9 squares wide × 7 squares tall = 8×6 inner corners
+    # Physical size: 23mm width × 18.3mm height
+    checkerboard_cols: int = 8  # Inner corners width (for 9x7 square board)
+    checkerboard_rows: int = 6  # Inner corners height (for 9x7 square board)
+    checkerboard_square: float = 23 / 8  # Square size 3mm
+
+    # Checkerboard detection flags
+    checkerboard_adaptive_thresh: bool = True
+    checkerboard_normalize_image: bool = False
+    checkerboard_filter_quads: bool = False
 
 
 @dataclass
@@ -327,24 +473,28 @@ class HardwareConfig:
     Attributes:
         cameras: Camera-specific settings and parameters
         backends: Camera backend availability and configuration
+        stereo_cameras: Stereo camera-specific settings and parameters
+        stereo_backends: Stereo camera backend availability and configuration
         paths: Installation and library paths
         network: Network settings and firewall configuration
         sensors: Sensor component configuration
         actuators: Actuator component configuration
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
-        gcs: Google Cloud Storage settings
+        homography: Homography calibration and measurement settings
     """
 
     cameras: CameraSettings = field(default_factory=CameraSettings)
     backends: CameraBackends = field(default_factory=CameraBackends)
+    stereo_cameras: StereoCameraSettings = field(default_factory=StereoCameraSettings)
+    stereo_backends: StereoCameraBackends = field(default_factory=StereoCameraBackends)
     paths: PathSettings = field(default_factory=PathSettings)
     network: NetworkSettings = field(default_factory=NetworkSettings)
     sensors: SensorSettings = field(default_factory=SensorSettings)
     actuators: ActuatorSettings = field(default_factory=ActuatorSettings)
     plcs: PLCSettings = field(default_factory=PLCSettings)
     plc_backends: PLCBackends = field(default_factory=PLCBackends)
-    gcs: GCSSettings = field(default_factory=GCSSettings)
+    homography: HomographySettings = field(default_factory=HomographySettings)
 
 
 class HardwareConfigManager(Mindtrace):
@@ -478,6 +628,23 @@ class HardwareConfigManager(Mindtrace):
             except ValueError:
                 pass  # Keep default value on invalid input
 
+        # Basler multicast settings
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_ENABLED"):
+            self._config.cameras.basler_multicast_enabled = env_val.lower() == "false"
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP"):
+            self._config.cameras.basler_multicast_group = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT"):
+            try:
+                self._config.cameras.basler_multicast_port = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_TARGET_IPS"):
+            # Parse comma-separated list of IPs
+            self._config.cameras.basler_target_ips = [ip.strip() for ip in env_val.split(",") if ip.strip()]
+
         # Network bandwidth management
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
             try:
@@ -491,6 +658,9 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_ENABLED"):
             self._config.backends.opencv_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_GENICAM_ENABLED"):
+            self._config.backends.genicam_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_ENABLED"):
             self._config.backends.mock_enabled = env_val.lower() == "true"
@@ -529,24 +699,6 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME"):
             self._config.network.firewall_rule_name = env_val
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
-            try:
-                self._config.network.timeout_seconds = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
-            try:
-                self._config.network.firewall_timeout = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
-            try:
-                self._config.network.retry_count = int(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
             self._config.network.network_interface = env_val
@@ -678,18 +830,150 @@ class HardwareConfigManager(Mindtrace):
             except ValueError:
                 pass  # Keep default value on invalid input
 
-        # GCS settings
-        if env_val := os.getenv("MINDTRACE_HW_GCS_ENABLED"):
-            self._config.gcs.enabled = env_val.lower() == "true"
+        # Stereo camera settings
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS"):
+            try:
+                self._config.stereo_cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
-        if env_val := os.getenv("MINDTRACE_HW_GCS_BUCKET_NAME"):
-            self._config.gcs.bucket_name = env_val
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_EXPOSURE_TIME"):
+            try:
+                self._config.stereo_cameras.exposure_time = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
-        if env_val := os.getenv("MINDTRACE_HW_GCS_CREDENTIALS_PATH"):
-            self._config.gcs.credentials_path = env_val
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_GAIN"):
+            try:
+                self._config.stereo_cameras.gain = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
-        if env_val := os.getenv("MINDTRACE_HW_GCS_AUTO_UPLOAD"):
-            self._config.gcs.auto_upload = env_val.lower() == "true"
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_TRIGGER_MODE"):
+            if env_val in ["continuous", "trigger"]:
+                self._config.stereo_cameras.trigger_mode = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_PIXEL_FORMAT"):
+            self._config.stereo_cameras.pixel_format = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MIN"):
+            try:
+                self._config.stereo_cameras.depth_range_min = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MAX"):
+            try:
+                self._config.stereo_cameras.depth_range_max = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_ILLUMINATION_MODE"):
+            if env_val in ["AlwaysActive", "AlternateActive"]:
+                self._config.stereo_cameras.illumination_mode = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BINNING_HORIZONTAL"):
+            try:
+                self._config.stereo_cameras.binning_horizontal = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BINNING_VERTICAL"):
+            try:
+                self._config.stereo_cameras.binning_vertical = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_QUALITY"):
+            if env_val in ["Full", "High", "Normal", "Low"]:
+                self._config.stereo_cameras.depth_quality = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BUFFER_COUNT"):
+            try:
+                self._config.stereo_cameras.buffer_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_RETRY_COUNT"):
+            try:
+                self._config.stereo_cameras.retrieve_retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_MAX_CONCURRENT_CAPTURES"):
+            try:
+                self._config.stereo_cameras.max_concurrent_captures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS"):
+            self._config.stereo_cameras.enable_colors = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS"):
+            self._config.stereo_cameras.remove_outliers = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR"):
+            try:
+                self._config.stereo_cameras.downsample_factor = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Stereo camera backends
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BASLER_STEREO_ACE_ENABLED"):
+            self._config.stereo_backends.basler_stereo_ace_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_MOCK_ENABLED"):
+            self._config.stereo_backends.mock_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DISCOVERY_TIMEOUT"):
+            try:
+                self._config.stereo_backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Homography settings
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD"):
+            try:
+                self._config.homography.ransac_threshold = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS"):
+            self._config.homography.refine_corners = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CORNER_REFINEMENT_WINDOW"):
+            try:
+                self._config.homography.corner_refinement_window = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_MIN_CORRESPONDENCES"):
+            try:
+                self._config.homography.min_correspondences = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT"):
+            if env_val in self._config.homography.supported_units:
+                self._config.homography.default_world_unit = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS"):
+            try:
+                self._config.homography.checkerboard_cols = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS"):
+            try:
+                self._config.homography.checkerboard_rows = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE"):
+            try:
+                self._config.homography.checkerboard_square = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
     def _load_from_file(self, config_file: str):
         """
@@ -706,13 +990,15 @@ class HardwareConfigManager(Mindtrace):
         sections = (
             ("cameras", self._config.cameras),
             ("backends", self._config.backends),
+            ("stereo_cameras", self._config.stereo_cameras),
+            ("stereo_backends", self._config.stereo_backends),
             ("paths", self._config.paths),
             ("network", self._config.network),
             ("sensors", self._config.sensors),
             ("actuators", self._config.actuators),
             ("plcs", self._config.plcs),
             ("plc_backends", self._config.plc_backends),
-            ("gcs", self._config.gcs),
+            ("homography", self._config.homography),
         )
 
         for section_name, target in sections:
@@ -757,7 +1043,7 @@ class HardwareConfigManager(Mindtrace):
         Allow dictionary-style access to configuration.
 
         Args:
-            key: Configuration section key ("cameras", "backends", "sensors", "actuators", "plcs", "plc_backends")
+            key: Configuration section key ("cameras", "backends", "stereo_cameras", "stereo_backends", "sensors", "actuators", "plcs", "plc_backends", "homography")
 
         Returns:
             Configuration section as dictionary
@@ -766,6 +1052,10 @@ class HardwareConfigManager(Mindtrace):
             return asdict(self._config.cameras)
         elif key == "backends":
             return asdict(self._config.backends)
+        elif key == "stereo_cameras":
+            return asdict(self._config.stereo_cameras)
+        elif key == "stereo_backends":
+            return asdict(self._config.stereo_backends)
         elif key == "paths":
             return asdict(self._config.paths)
         elif key == "network":
@@ -778,8 +1068,8 @@ class HardwareConfigManager(Mindtrace):
             return asdict(self._config.plcs)
         elif key == "plc_backends":
             return asdict(self._config.plc_backends)
-        elif key == "gcs":
-            return asdict(self._config.gcs)
+        elif key == "homography":
+            return asdict(self._config.homography)
         else:
             return getattr(self._config, key, None)
 

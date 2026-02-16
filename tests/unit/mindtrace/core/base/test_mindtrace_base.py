@@ -196,7 +196,8 @@ class TestMindtrace:
         assert hasattr(instance, "logger")
         assert instance.logger.level == logging.INFO
 
-    def test_config_with_environment_variables(self):
+    def test_config_with_environment_variables(self, monkeypatch):
+        monkeypatch.setenv("MINDTRACE_TEST_PARAM", "test_1234")
         instance = Mindtrace()
         assert instance.config["MINDTRACE_TEST_PARAM"] == "test_1234"
 

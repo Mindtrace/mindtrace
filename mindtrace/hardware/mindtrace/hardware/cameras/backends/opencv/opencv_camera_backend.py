@@ -173,38 +173,6 @@ class OpenCVCameraBackend(CameraBackend):
             f"resolution={width}x{height}, fps={fps}, exposure={exposure}, timeout={timeout_ms}ms"
         )
 
-    async def _sdk(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking OpenCV call on a dedicated thread with timeout.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-        """
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        if self._sdk_executor is None:
-            self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix=f"opencv-{self.camera_name}"
-            )
-
-        def _call():
-            return func(*args, **kwargs)
-
-        fut = self._loop.run_in_executor(self._sdk_executor, _call)
-        try:
-            return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"OpenCV operation timed out after {timeout or self._op_timeout_s:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"OpenCV operation failed for camera '{self.camera_name}': {e}") from e
-
     def _sdk_sync(self, func, *args, timeout: Optional[float] = None, **kwargs):
         """Run a potentially blocking OpenCV call on a dedicated thread synchronously with timeout.
 
@@ -235,7 +203,7 @@ class OpenCVCameraBackend(CameraBackend):
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         if self.cap is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-        is_open = await self._sdk(self.cap.isOpened)
+        is_open = await self._run_blocking(self.cap.isOpened)
         if not is_open:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not open")
 
@@ -305,7 +273,7 @@ class OpenCVCameraBackend(CameraBackend):
             # Create VideoCapture (constructor call is quick in practice)
             self.cap = cv2.VideoCapture(self.camera_index)
 
-            if not self.cap or not await self._sdk(self.cap.isOpened):
+            if not self.cap or not await self._run_blocking(self.cap.isOpened):
                 self.logger.error(f"Could not open camera {self.camera_index}")
                 raise CameraNotFoundError(f"Could not open camera {self.camera_index}")
 
@@ -316,7 +284,7 @@ class OpenCVCameraBackend(CameraBackend):
             # Test capture to verify camera is working (serialized)
             async with self._io_lock:
                 await self._ensure_open()
-                ret, frame = await self._sdk(self.cap.read, timeout=self._op_timeout_s)
+                ret, frame = await self._run_blocking(self.cap.read, timeout=self._op_timeout_s)
             if not ret or frame is None:
                 self.logger.error(f"Camera {self.camera_index} failed to capture test frame")
                 raise CameraInitializationError(f"Camera {self.camera_index} failed to capture test frame")
@@ -340,7 +308,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"OpenCV camera initialization failed: {e}")
             if self.cap:
                 try:
-                    await self._sdk(self.cap.release, timeout=self._op_timeout_s)
+                    await self._run_blocking(self.cap.release, timeout=self._op_timeout_s)
                 except Exception:
                     pass
                 self.cap = None
@@ -363,19 +331,19 @@ class OpenCVCameraBackend(CameraBackend):
         await self._ensure_open()
 
         try:
-            width_set = await self._sdk(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, self._width)
-            height_set = await self._sdk(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+            width_set = await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, self._width)
+            height_set = await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, self._height)
 
-            fps_set = await self._sdk(self.cap.set, cv2.CAP_PROP_FPS, self._fps)
+            fps_set = await self._run_blocking(self.cap.set, cv2.CAP_PROP_FPS, self._fps)
 
             exposure_set = True
             if self._exposure >= 0:
-                exposure_set = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, self._exposure)
+                exposure_set = await self._run_blocking(self.cap.set, cv2.CAP_PROP_EXPOSURE, self._exposure)
 
-            actual_width = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
-            actual_height = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
-            actual_fps = await self._sdk(self.cap.get, cv2.CAP_PROP_FPS)
-            actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+            actual_width = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
+            actual_height = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
+            actual_fps = await self._run_blocking(self.cap.get, cv2.CAP_PROP_FPS)
+            actual_exposure = await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE)
 
             self.logger.debug(
                 f"Camera '{self.camera_name}' configuration applied: "
@@ -552,6 +520,21 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception:
             return {} if include_details else []
 
+    @classmethod
+    async def discover_async(cls, include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
+        """Async wrapper for get_available_cameras() - runs discovery in threadpool.
+
+        Use this instead of get_available_cameras() when calling from async context
+        to avoid blocking the event loop during camera enumeration.
+
+        Args:
+            include_details: If True, return a dict of details per camera.
+
+        Returns:
+            Union[List[str], Dict[str, Dict[str, str]]]: List of camera names or dict of details.
+        """
+        return await asyncio.to_thread(cls.get_available_cameras, include_details)
+
     async def capture(self) -> np.ndarray:
         """Capture an image from the camera.
 
@@ -581,7 +564,7 @@ class OpenCVCameraBackend(CameraBackend):
                 read_timeout_s = max(0.1, float(self.timeout_ms) / 1000.0)
                 async with self._io_lock:
                     await self._ensure_open()
-                    ret, frame = await self._sdk(self.cap.read, timeout=read_timeout_s)
+                    ret, frame = await self._run_blocking(self.cap.read, timeout=read_timeout_s)
 
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -619,7 +602,7 @@ class OpenCVCameraBackend(CameraBackend):
                 )
 
                 if attempt == self.retrieve_retry_count - 1:
-                    raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}")
+                    raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}") from e
 
             if attempt < self.retrieve_retry_count - 1:
                 await asyncio.sleep(0.1)
@@ -689,11 +672,11 @@ class OpenCVCameraBackend(CameraBackend):
 
         try:
             async with self._io_lock:
-                is_open = await self._sdk(self.cap.isOpened)
+                is_open = await self._run_blocking(self.cap.isOpened)
 
             if is_open:
                 async with self._io_lock:
-                    width = await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)
+                    width = await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)
                 return width > 0
 
             return False
@@ -716,7 +699,7 @@ class OpenCVCameraBackend(CameraBackend):
             try:
                 # Release on executor to avoid blocking the event loop
                 async with self._io_lock:
-                    await self._sdk(self.cap.release)
+                    await self._run_blocking(self.cap.release)
                 self.logger.debug(f"VideoCapture released successfully for camera '{self.camera_name}'")
             except Exception as e:
                 self.logger.warning(f"Error releasing VideoCapture for camera '{self.camera_name}': {e}")
@@ -746,26 +729,38 @@ class OpenCVCameraBackend(CameraBackend):
                 self._sdk_executor = None
 
     async def is_exposure_control_supported(self) -> bool:
-        """Check if exposure control is supported for this camera.
-
-        Simplified version to avoid hanging operations.
-
+        """
+        Check if exposure control is actually supported for this camera.
+        Tests both reading and setting exposure to verify true support.
         Returns:
             True if exposure control is supported, False otherwise
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             return False
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            # Simple test - just check if we can read the current exposure
-            # Most cameras that support exposure will return a valid value
+            # First check if we can read the current exposure
             async with self._io_lock:
-                current_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE, timeout=2.0)
+                current_exposure = await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE, timeout=2.0)
 
-            # If we get a reasonable exposure value, assume control is supported
-            # OpenCV typically returns -1 or 0 for unsupported properties
-            return current_exposure is not None and current_exposure > -1
+            # If we can't get a valid exposure value, it's definitely not supported
+            if current_exposure is None or current_exposure <= -1:
+                return False
+
+            # Now test if we can actually set exposure (the real test)
+            # Try to set the same value we just read - this should always work if exposure control is supported
+            async with self._io_lock:
+                set_success = await self._run_blocking(
+                    self.cap.set, cv2.CAP_PROP_EXPOSURE, float(current_exposure), timeout=2.0
+                )
+
+            # If set operation failed, exposure control is not truly supported
+            if not set_success:
+                self.logger.debug(
+                    f"Camera '{self.camera_name}' can read exposure but cannot set it - exposure control not supported"
+                )
+                return False
         except Exception as e:
             self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
             return False
@@ -781,7 +776,7 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConfigurationError: If exposure value is invalid or unsupported
             HardwareOperationError: If exposure setting fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
@@ -796,15 +791,16 @@ class OpenCVCameraBackend(CameraBackend):
                     f"Exposure {exposure} outside valid range {exposure_range} for camera '{self.camera_name}'"
                 )
             async with self._io_lock:
-                success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
+                success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
             if not success:
                 raise HardwareOperationError(f"Failed to set exposure to {exposure} for camera '{self.camera_name}'")
             self._exposure = float(exposure)
             async with self._io_lock:
-                actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+                actual_exposure = await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE)
             self.logger.debug(
                 f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
             )
+
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
@@ -828,18 +824,23 @@ class OpenCVCameraBackend(CameraBackend):
         try:
             async with self._io_lock:
                 await self._ensure_open()
-                exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+                exposure = await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE)
             return float(exposure)
         except Exception as e:
             self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
             raise HardwareOperationError(f"Failed to get exposure for camera '{self.camera_name}': {str(e)}")
 
-    async def get_exposure_range(self) -> List[Union[int, float]]:
+    async def get_exposure_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera exposure time range.
 
         Returns:
-            List containing [min_exposure, max_exposure] in OpenCV log scale
+            List containing [min_exposure, max_exposure] in OpenCV log scale, or None if exposure control not supported
         """
+        # Check if this camera actually supports exposure control
+        # Many OpenCV cameras can read exposure but cannot set it
+        if not await self.is_exposure_control_supported():
+            return None
+
         return [
             getattr(self.camera_config.cameras, "opencv_exposure_range_min", -13.0),
             getattr(self.camera_config.cameras, "opencv_exposure_range_max", -1.0),
@@ -885,7 +886,7 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If gain value is out of range or setting fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for gain setting")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
@@ -895,10 +896,10 @@ class OpenCVCameraBackend(CameraBackend):
             if gain < gain_range[0] or gain > gain_range[1]:
                 raise CameraConfigurationError(f"Gain {gain} out of range {gain_range}")
 
-            success = await self._sdk(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
+            success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
             if not success:
                 raise CameraConfigurationError(f"Failed to set gain to {gain} for camera '{self.camera_name}'")
-            actual_gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
+            actual_gain = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAIN)
             self.logger.debug(f"Gain set to {gain} (actual: {actual_gain:.1f}) for camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
@@ -912,12 +913,12 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             Current gain value
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             return 0.0
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
+            gain = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAIN)
             return float(gain)
         except Exception as e:
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
@@ -945,13 +946,13 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             Dictionary with full frame dimensions (ROI not supported)
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             return {"x": 0, "y": 0, "width": 0, "height": 0}
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            width = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
+            width = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
             return {"x": 0, "y": 0, "width": width, "height": height}
         except Exception as e:
             self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
@@ -972,14 +973,14 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             Current white balance mode ("auto" or "manual")
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             return "unknown"
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             # OpenCV doesn't have a direct white balance mode query
             # Check if auto white balance is enabled
-            auto_wb = await self._sdk(self.cap.get, cv2.CAP_PROP_AUTO_WB)
+            auto_wb = await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_WB)
             return "auto" if auto_wb > 0 else "manual"
         except Exception as e:
             self.logger.debug(f"Could not get white balance mode for camera '{self.camera_name}': {str(e)}")
@@ -996,7 +997,7 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConfigurationError: If value is invalid
             HardwareOperationError: If the operation fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for white balance setting")
         else:
@@ -1012,7 +1013,7 @@ class OpenCVCameraBackend(CameraBackend):
 
             async with self._io_lock:
                 await self._ensure_open()
-                success = await self._sdk(self.cap.set, cv2.CAP_PROP_AUTO_WB, target)
+                success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_AUTO_WB, target)
 
             if not success:
                 raise HardwareOperationError(
@@ -1094,11 +1095,11 @@ class OpenCVCameraBackend(CameraBackend):
             "USB cameras only support 'continuous' mode."
         )
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement status."""
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
+    def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         """Set image quality enhancement.
 
         Args:
@@ -1153,19 +1154,21 @@ class OpenCVCameraBackend(CameraBackend):
                 "camera_name": self.camera_name,
                 "camera_index": self.camera_index,
                 "timestamp": time.time(),
-                "width": int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
-                "height": int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
-                "fps": await self._sdk(self.cap.get, cv2.CAP_PROP_FPS),
-                "exposure_time": await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE),
-                "brightness": await self._sdk(self.cap.get, cv2.CAP_PROP_BRIGHTNESS),
-                "contrast": await self._sdk(self.cap.get, cv2.CAP_PROP_CONTRAST),
-                "saturation": await self._sdk(self.cap.get, cv2.CAP_PROP_SATURATION),
-                "hue": await self._sdk(self.cap.get, cv2.CAP_PROP_HUE),
-                "gain": await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN),
-                "auto_exposure": await self._sdk(self.cap.get, cv2.CAP_PROP_AUTO_EXPOSURE),
-                "white_balance": "auto" if (await self._sdk(self.cap.get, cv2.CAP_PROP_AUTO_WB)) > 0 else "manual",
-                "white_balance_blue_u": await self._sdk(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-                "white_balance_red_v": await self._sdk(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_RED_V),
+                "width": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
+                "height": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
+                "fps": await self._run_blocking(self.cap.get, cv2.CAP_PROP_FPS),
+                "exposure_time": await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE),
+                "brightness": await self._run_blocking(self.cap.get, cv2.CAP_PROP_BRIGHTNESS),
+                "contrast": await self._run_blocking(self.cap.get, cv2.CAP_PROP_CONTRAST),
+                "saturation": await self._run_blocking(self.cap.get, cv2.CAP_PROP_SATURATION),
+                "hue": await self._run_blocking(self.cap.get, cv2.CAP_PROP_HUE),
+                "gain": await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAIN),
+                "auto_exposure": await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_EXPOSURE),
+                "white_balance": "auto"
+                if (await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_WB)) > 0
+                else "manual",
+                "white_balance_blue_u": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
+                "white_balance_red_v": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_RED_V),
                 "image_enhancement": self.img_quality_enhancement,
                 "retrieve_retry_count": self.retrieve_retry_count,
                 "timeout_ms": self.timeout_ms,
@@ -1174,13 +1177,17 @@ class OpenCVCameraBackend(CameraBackend):
                 "roi": {
                     "x": 0,
                     "y": 0,
-                    "width": int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
-                    "height": int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
+                    "width": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
+                    "height": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
                 },
             }
 
-            with open(config_path, "w") as f:
-                json.dump(config, f, indent=2)
+            # Write config to file (run in threadpool to avoid blocking event loop)
+            def _save_config():
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+            await asyncio.to_thread(_save_config)
 
             self.logger.debug(
                 f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
@@ -1210,8 +1217,12 @@ class OpenCVCameraBackend(CameraBackend):
         try:
             import json
 
-            with open(config_path, "r") as f:
-                config = json.load(f)
+            # Read config from file (run in threadpool to avoid blocking event loop)
+            def _load_config():
+                with open(config_path, "r") as f:
+                    return json.load(f)
+
+            config = await asyncio.to_thread(_load_config)
 
             if not isinstance(config, dict):
                 raise CameraConfigurationError("Invalid configuration file format")
@@ -1224,21 +1235,21 @@ class OpenCVCameraBackend(CameraBackend):
 
             if "width" in settings and "height" in settings:
                 total_settings += 2
-                if await self._sdk(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, settings["width"]):
+                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, settings["width"]):
                     success_count += 1
-                if await self._sdk(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, settings["height"]):
+                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, settings["height"]):
                     success_count += 1
 
             if "fps" in settings:
                 total_settings += 1
-                if await self._sdk(self.cap.set, cv2.CAP_PROP_FPS, settings["fps"]):
+                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FPS, settings["fps"]):
                     success_count += 1
 
             # Handle both exposure_time (common format) and exposure (legacy)
             exposure_key = "exposure_time" if "exposure_time" in settings else "exposure"
             if exposure_key in settings and settings[exposure_key] >= 0:
                 total_settings += 1
-                if await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, settings[exposure_key]):
+                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_EXPOSURE, settings[exposure_key]):
                     success_count += 1
 
             optional_props = [
@@ -1256,7 +1267,7 @@ class OpenCVCameraBackend(CameraBackend):
                 if setting_name in settings:
                     total_settings += 1
                     try:
-                        if await self._sdk(self.cap.set, cv_prop, settings[setting_name]):
+                        if await self._run_blocking(self.cap.set, cv_prop, settings[setting_name]):
                             success_count += 1
                         else:
                             self.logger.debug(
@@ -1271,10 +1282,10 @@ class OpenCVCameraBackend(CameraBackend):
                 try:
                     wb_mode = settings["white_balance"]
                     if wb_mode.lower() in ["auto", "continuous"]:
-                        if await self._sdk(self.cap.set, cv2.CAP_PROP_AUTO_WB, 1):
+                        if await self._run_blocking(self.cap.set, cv2.CAP_PROP_AUTO_WB, 1):
                             success_count += 1
                     elif wb_mode.lower() in ["manual", "off"]:
-                        if await self._sdk(self.cap.set, cv2.CAP_PROP_AUTO_WB, 0):
+                        if await self._run_blocking(self.cap.set, cv2.CAP_PROP_AUTO_WB, 0):
                             success_count += 1
                 except Exception as e:
                     self.logger.debug(f"Failed to set white_balance for camera '{self.camera_name}': {str(e)}")
@@ -1328,7 +1339,38 @@ class OpenCVCameraBackend(CameraBackend):
             f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
         )
 
-    def __del__(self):
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        if timeout_ms < 0:
+            raise ValueError(f"Timeout must be non-negative, got {timeout_ms}")
+
+        self.timeout_ms = timeout_ms
+        self.logger.debug(f"Set capture timeout to {timeout_ms}ms for camera '{self.camera_name}'")
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        return self.timeout_ms
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for OpenCV cameras.
+
+        Returns:
+            List of available trigger modes (OpenCV only supports continuous)
+        """
+        return ["continuous"]  # OpenCV cameras only support freerunning/continuous mode
+
+    def __del__(self) -> None:
         """Destructor to ensure proper cleanup."""
         try:
             if hasattr(self, "cap") and self.cap is not None:
