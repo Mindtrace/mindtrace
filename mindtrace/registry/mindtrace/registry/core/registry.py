@@ -7,7 +7,7 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Type, overload
 
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -106,7 +106,7 @@ class Registry(Mindtrace):
 
         if use_cache and is_remote:
             # Remote backend with local caching
-            self._remote = _RegistryCore(
+            self._remote: _RegistryCore = _RegistryCore(
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
@@ -114,26 +114,26 @@ class Registry(Mindtrace):
                 **kwargs,
             )
             cache_dir = self._get_cache_dir(self._remote.backend.uri)
-            self._cache = _RegistryCore(
+            self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
                 mutable=True,  # cache is always mutable for updates
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            self._core = self._remote
+            self._core = self._remote 
             self._cached = True
         else:
             # Local or uncached remote — direct access
-            self._core = _RegistryCore(
+            self._core: _RegistryCore = _RegistryCore(
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            self._remote = None
-            self._cache = None
+            self._remote = None # type: ignore
+            self._cache = None # type: ignore
             self._cached = False
 
         self.logger = self._core.logger
@@ -334,6 +334,28 @@ class Registry(Mindtrace):
             self.logger.warning(f"Error updating cache: {e}")
 
         return result
+
+    @overload
+    def load(
+        self,
+        name: str,
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any:
+        ...
+
+    @overload
+    def load(
+        self,
+        name: List[str],
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> BatchResult:
+        ...
 
     def load(
         self,
