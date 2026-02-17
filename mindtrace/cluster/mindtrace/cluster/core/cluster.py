@@ -17,6 +17,7 @@ from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+from mindtrace.registry.core.types import OnConflict
 from mindtrace.services import ConnectionManager, Gateway, ServerStatus, Service
 
 
@@ -99,7 +100,7 @@ class ClusterManager(Gateway):
                 bucket=self.worker_registry_bucket,
                 secure=False,
             )
-            self.worker_registry = Registry(backend=minio_backend)
+            self.worker_registry = Registry(backend=minio_backend, mutable=True)
             self.worker_registry.register_materializer(
                 cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
             )
@@ -435,7 +436,7 @@ class ClusterManager(Gateway):
             git_commit=git_commit,
             git_working_dir=git_working_dir,
         )
-        self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
+        self.worker_registry.save(f"worker:{worker_name}", proxy_worker, on_conflict=OnConflict.OVERWRITE)
         if job_schema_name:
             self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
 

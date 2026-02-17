@@ -14,6 +14,7 @@ from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.types import OnConflict
 from mindtrace.services import ServerStatus
 
 
@@ -464,7 +465,7 @@ def test_register_worker_type(cluster_manager):
             git_working_dir=None,
         )
         # Verify worker was saved
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
 
 def test_register_worker_type_with_default_materializer(cluster_manager):
@@ -495,7 +496,7 @@ def test_register_worker_type_with_default_materializer(cluster_manager):
             git_working_dir=None,
         )
         # Verify worker was saved
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
 
 def test_register_worker_type_with_job_schema_name(cluster_manager):
@@ -527,7 +528,7 @@ def test_register_worker_type_with_job_schema_name(cluster_manager):
             git_commit=None,
             git_working_dir=None,
         )
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
         # Verify job schema was registered to worker type
         mock_register_job_schema.assert_called_once_with({"job_schema_name": "test_job", "worker_type": "test_worker"})
