@@ -1268,10 +1268,9 @@ def test_unified_backend_auto_generate_redis_model_with_indexed_fields_and_defau
     assert hasattr(redis_model, "__annotations__")
     assert hasattr(redis_model, "Meta")
 
-    # Check that fields are properly created with Redis Field instances
-    assert hasattr(redis_model, "name")
-    assert hasattr(redis_model, "age")
-    assert hasattr(redis_model, "email")
+    assert "name" in redis_model.__annotations__
+    assert "age" in redis_model.__annotations__
+    assert "email" in redis_model.__annotations__
 
 
 def test_unified_backend_auto_generate_mongo_model_with_no_fields():
@@ -1896,7 +1895,10 @@ async def test_mongo_sync_methods_from_async_context_raises_error():
     """Test that MongoDB sync methods raise error when called from async context."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
-    backend = MongoMindtraceODM(model_cls=MongoUserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
+    with patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        backend = MongoMindtraceODM(model_cls=MongoUserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
 
     # All sync methods should raise RuntimeError when called from async context
     with pytest.raises(RuntimeError, match="called from async context"):

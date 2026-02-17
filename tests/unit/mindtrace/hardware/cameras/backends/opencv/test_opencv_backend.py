@@ -194,8 +194,8 @@ async def test_roi_and_pixel_format_and_enhancement(fake_cv):
         await cam.set_pixel_format("XYZ")
 
     # Enhancement toggle
-    await cam.set_image_quality_enhancement(True)
-    assert await cam.get_image_quality_enhancement() is True
+    cam.set_image_quality_enhancement(True)
+    assert cam.get_image_quality_enhancement() is True
 
 
 @pytest.mark.asyncio
@@ -1653,7 +1653,7 @@ class TestOpenCVCameraBackendImageEnhancement:
         monkeypatch.setattr(cam, "_initialize_image_enhancement", failing_init, raising=False)
 
         with pytest.raises(HardwareOperationError, match="Failed to set image quality enhancement"):
-            await cam.set_image_quality_enhancement(True)
+            cam.set_image_quality_enhancement(True)
 
     def test_initialize_image_enhancement_exception(self, fake_cv, monkeypatch):
         """Test _initialize_image_enhancement exception handling."""
