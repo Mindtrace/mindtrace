@@ -11,7 +11,7 @@
 # =============================================================================
 
 # syntax=docker/dockerfile:1
-ARG UBUNTU_VERSION=22.04
+ARG UBUNTU_VERSION=24.04
 
 # =============================================================================
 # Stage 1: Base System
@@ -23,16 +23,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl software-properties-common gnupg build-essential \
+    ca-certificates curl build-essential \
     iputils-ping net-tools udev \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends python3.12 python3.12-dev \
+    python3.12 python3.12-dev \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN curl -LsSf https://astral.sh/uv/0.7.19/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
 # =============================================================================
@@ -51,7 +49,8 @@ COPY mindtrace/storage/pyproject.toml ./mindtrace/storage/
 
 # Create stubs for other workspace members
 RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
-    mkdir -p mindtrace/$pkg && echo '[project]\nname = "mindtrace-'$pkg'"\nversion = "0.0.0"' > mindtrace/$pkg/pyproject.toml; \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
 
 RUN uv sync --no-install-project --no-dev
@@ -76,9 +75,10 @@ COPY mindtrace/hardware/mindtrace/hardware/sensors ./mindtrace/hardware/mindtrac
 COPY mindtrace/hardware/mindtrace/hardware/services/__init__.py ./mindtrace/hardware/mindtrace/hardware/services/
 COPY mindtrace/hardware/mindtrace/hardware/services/sensors ./mindtrace/hardware/mindtrace/hardware/services/sensors
 
-# Create empty stubs for other workspace members
+# Create stubs for other workspace members
 RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
-    mkdir -p mindtrace/$pkg && touch mindtrace/$pkg/__init__.py; \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
 
 RUN uv sync --no-dev
@@ -88,6 +88,10 @@ RUN uv sync --no-dev
 # =============================================================================
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
 
+LABEL org.opencontainers.image.source="https://github.com/Mindtrace/mindtrace" \
+      org.opencontainers.image.title="mindtrace-sensors" \
+      org.opencontainers.image.description="Mindtrace Sensors Service"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -95,11 +99,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/workspace/.venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common gnupg \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-    python3.12 iputils-ping net-tools udev \
+    python3.12 curl iputils-ping net-tools udev \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
@@ -124,7 +124,7 @@ USER mindtrace
 EXPOSE 8005
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8005/health', timeout=5).raise_for_status()" || exit 1
+    CMD curl -sf http://localhost:${SENSOR_API_PORT:-8005}/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["sensors"]
