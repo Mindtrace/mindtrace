@@ -91,34 +91,26 @@ def gcs_client(gcp_project_id, gcp_credentials_path):
         pytest.skip(f"GCS client creation failed: {e}")
 
 
-@pytest.fixture(scope="session")
-def gcp_test_bucket_name(core_config):
-    """Get storage test bucket: env vars → config.ini → skip.
-
-    Reads from MINDTRACE_GCP.GCP_BUCKET_NAME (storage-level bucket,
-    separate from the registry bucket in MINDTRACE_GCP_REGISTRY).
-    """
-    bucket_name = core_config.get("MINDTRACE_GCP", {}).get("GCP_BUCKET_NAME")
-    if not bucket_name:
-        pytest.skip("GCP storage test bucket not configured (set MINDTRACE_GCP.GCP_BUCKET_NAME or config.ini)")
-    return bucket_name
-
-
 @pytest.fixture
-def gcp_test_bucket(gcs_client, gcp_test_bucket_name) -> Generator[str, None, None]:
-    """Provide a GCP bucket for storage testing.
+def gcp_test_bucket(gcs_client) -> Generator[str, None, None]:
+    """Create a temporary GCP bucket for testing, tear it down after."""
+    from google.cloud.exceptions import NotFound
 
-    Uses existing bucket - verifies it exists.
-    Each test gets a unique prefix for isolation.
-    Handles 403 (SA lacks project-level permission to check existence).
-    """
+    bucket_name = f"mindtrace-test-{uuid.uuid4().hex[:8]}"
+    bucket = gcs_client.bucket(bucket_name)
     try:
-        bucket = gcs_client.bucket(gcp_test_bucket_name)
-        if not bucket.exists():
-            pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' does not exist")
+        bucket.create()
     except Exception as e:
-        pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' not accessible: {e}")
-    yield gcp_test_bucket_name
+        pytest.skip(f"GCP bucket creation failed: {e}")
+
+    yield bucket_name
+
+    try:
+        for blob in bucket.list_blobs():
+            blob.delete()
+        bucket.delete()
+    except NotFound:
+        pass
 
 
 @pytest.fixture
