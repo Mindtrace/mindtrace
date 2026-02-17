@@ -90,7 +90,9 @@ class TestRegistryMindtraceODM:
 
             backend = RegistryMindtraceODM(backend=mock_registry_backend)
 
-            mock_registry_cls.assert_called_once_with(backend=mock_registry_backend, version_objects=False, mutable=True)
+            mock_registry_cls.assert_called_once_with(
+                backend=mock_registry_backend, version_objects=False, mutable=True
+            )
             assert backend.registry == mock_registry
 
     def test_initialization_default(self):
