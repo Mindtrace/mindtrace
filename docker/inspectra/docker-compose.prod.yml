@@ -1,0 +1,30 @@
+services:
+  frontend:
+    build:
+      context: ../..
+      dockerfile: docker/inspectra/Dockerfile.frontend
+    container_name: inspectra_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - api
+    networks:
+      - inspectra_net
+
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/inspectra/Dockerfile.api
+    container_name: inspectra_api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - mongo
+    networks:
+      - inspectra_net

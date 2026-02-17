@@ -1,49 +1,135 @@
-// API client for communicating with FastAPI backend
-// This will use openapi-typescript generated types when backend is ready
+// Base API client with authentication and error handling
 
-import { z } from "zod";
-import type { ApiResponse } from "./types";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// API base URL - should come from environment variables
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Token storage keys
+const TOKEN_KEY = "inspectra_token";
 
-// Zod schema for API response validation
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const apiResponseSchema = z.object({
-  status: z.string(),
-  message: z.string(),
-  timestamp: z.string(),
-});
-
-// Mock data for development (backend not ready yet)
-const mockApiResponse: ApiResponse = {
-  status: "success",
-  message:
-    "Inspectra API is ready! This is mock data until backend is connected.",
-  timestamp: new Date().toISOString(),
-};
-
-/**
- * Example API function - this demonstrates how backend calls will be structured
- * When backend is ready, uncomment the fetch call and remove the mock return
- */
-export async function getHealthCheck(): Promise<ApiResponse> {
-  // TODO: Uncomment when backend is ready
-  // const response = await fetch(`${API_BASE_URL}/api/health`, {
-  //   method: "GET",
-  //   headers: {
-  //     "Content-Type": "application/json",
-  //   },
-  // });
-  //
-  // if (!response.ok) {
-  //   throw new Error(`API error: ${response.statusText}`);
-  // }
-  //
-  // const data = await response.json();
-  // return apiResponseSchema.parse(data);
-
-  // Mock response for now
-  return Promise.resolve(mockApiResponse);
+// Get stored token
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
 }
+
+// Store token
+export function setToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+// Clear token
+export function clearToken(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// Check if authenticated
+export function isAuthenticated(): boolean {
+  return !!getToken();
+}
+
+// API Error class
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public statusText: string,
+    public detail: string | Record<string, unknown>
+  ) {
+    super(typeof detail === "string" ? detail : JSON.stringify(detail));
+    this.name = "ApiError";
+  }
+}
+
+// Request options type
+interface RequestOptions extends Omit<RequestInit, "body"> {
+  body?: unknown;
+  auth?: boolean;
+}
+
+// Base fetch wrapper with auth and error handling
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestOptions = {}
+): Promise<T> {
+  const { body, auth = true, ...fetchOptions } = options;
+
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...(fetchOptions.headers || {}),
+  };
+
+  // Add auth header if authenticated and auth is required
+  if (auth) {
+    const token = getToken();
+    if (token) {
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  const config: RequestInit = {
+    ...fetchOptions,
+    headers,
+  };
+
+  if (body !== undefined) {
+    config.body = JSON.stringify(body);
+  }
+
+  const url = `${API_BASE_URL}${endpoint}`;
+
+  const response = await fetch(url, config);
+
+  // Handle 204 No Content
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  // Try to parse JSON response
+  let data: T | { detail: string | Record<string, unknown> };
+  try {
+    data = await response.json();
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText, response.statusText);
+    }
+    return undefined as T;
+  }
+
+  // Handle error responses
+  if (!response.ok) {
+    const errorDetail =
+      (data as { detail?: string | Record<string, unknown> }).detail ||
+      response.statusText;
+    throw new ApiError(response.status, response.statusText, errorDetail);
+  }
+
+  return data as T;
+}
+
+// Convenience methods
+export const api = {
+  get: <T>(endpoint: string, options?: Omit<RequestOptions, "method">) =>
+    apiRequest<T>(endpoint, { ...options, method: "GET" }),
+
+  post: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method" | "body">
+  ) => apiRequest<T>(endpoint, { ...options, method: "POST", body }),
+
+  put: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method" | "body">
+  ) => apiRequest<T>(endpoint, { ...options, method: "PUT", body }),
+
+  patch: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method" | "body">
+  ) => apiRequest<T>(endpoint, { ...options, method: "PATCH", body }),
+
+  delete: <T>(endpoint: string, options?: Omit<RequestOptions, "method">) =>
+    apiRequest<T>(endpoint, { ...options, method: "DELETE" }),
+};
