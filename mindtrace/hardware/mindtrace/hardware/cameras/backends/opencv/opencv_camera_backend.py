@@ -1067,11 +1067,11 @@ class OpenCVCameraBackend(CameraBackend):
             "USB cameras only support 'continuous' mode."
         )
 
-    async def get_image_quality_enhancement(self) -> bool:
+    def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement status."""
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
+    def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         """Set image quality enhancement.
 
         Args:
