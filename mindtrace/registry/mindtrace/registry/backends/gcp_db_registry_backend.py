@@ -189,7 +189,7 @@ class GCPDBRegistryBackend(RegistryBackend):
             try:
                 self._reg_meta.insert_sync({"registry_uri": self._registry_uri_key, "metadata": {"materializers": {}}})
             except DuplicateInsertError:
-                pass  # Race: another process created it
+                pass 
 
     def _query_filter(self, **extra) -> dict:
         """Build a query filter scoped to this registry."""
@@ -215,7 +215,7 @@ class GCPDBRegistryBackend(RegistryBackend):
 
     def _delete_commit_plan(self, name: str, version: str, uuid_str: str) -> bool:
         try:
-            self._commit_plan.find_one_and_delete_sync(
+            self._commit_plan.delete_where_sync(
                 self._query_filter(name=name, version=version, uuid=uuid_str)
             )
             return True
@@ -318,8 +318,8 @@ class GCPDBRegistryBackend(RegistryBackend):
 
             # Step 6: Write metadata to MongoDB (the "commit point")
             if is_overwrite:
-                # Atomic upsert — returns the old doc (before update) for cleanup
-                old_doc = self._obj_meta.find_one_and_update_sync(
+                # Atomic swap — returns the old doc (before update) for cleanup
+                old_doc = self._obj_meta.find_and_modify_sync(
                     {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
                     {"$set": {
                         "metadata": prepared_meta,
@@ -508,7 +508,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
 
             # Delete metadata from MongoDB (the "commit point")
-            self._obj_meta.delete_many_sync(self._query_filter(name=obj_name, version=obj_version))
+            self._obj_meta.delete_where_sync(self._query_filter(name=obj_name, version=obj_version))
 
             # Best-effort UUID folder cleanup
             files_manifest = metadata.get("_files")
@@ -607,7 +607,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 for doc in existing_docs:
                     existing_keys.add((doc.name, doc.version))
 
-            self._obj_meta.bulk_write_sync(operations)
+            self._obj_meta.batch_write_sync(operations)
 
             for obj_name, obj_version in zip(names, versions):
                 if (obj_name, obj_version) in existing_keys:
@@ -680,7 +680,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         or_clauses = [{"name": n, "version": v} for n, v in zip(names, versions)]
         if or_clauses:
             try:
-                self._obj_meta.delete_many_sync(
+                self._obj_meta.delete_where_sync(
                     {"registry_uri": self._registry_uri_key, "$or": or_clauses}
                 )
             except Exception as e:
@@ -697,7 +697,7 @@ class GCPDBRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def save_registry_metadata(self, metadata: dict) -> None:
-        self._reg_meta.update_one_sync(
+        self._reg_meta.update_where_sync(
             {"registry_uri": self._registry_uri_key},
             {"$set": {"metadata": metadata}},
             upsert=True,
@@ -731,16 +731,13 @@ class GCPDBRegistryBackend(RegistryBackend):
             except ValueError:
                 return [0]
 
-        # Single aggregation for all requested names — project only version field
-        pipeline = [
-            {"$match": {"registry_uri": self._registry_uri_key, "name": {"$in": names}}},
-            {"$project": {"name": 1, "version": 1, "_id": 0}},
-        ]
-        docs = self._obj_meta.aggregate_sync(pipeline)
+        docs = self._obj_meta.find_sync(
+            {"registry_uri": self._registry_uri_key, "name": {"$in": names}}
+        )
 
         result: Dict[str, List[str]] = {n: [] for n in names}
         for doc in docs:
-            result[doc["name"]].append(doc["version"])
+            result[doc.name].append(doc.version)
 
         for n in names:
             result[n].sort(key=version_key)

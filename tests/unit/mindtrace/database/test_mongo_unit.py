@@ -1063,13 +1063,13 @@ def test_mongo_backend_update_sync_from_async_context_raises_error():
 
 
 # ============================================================================
-# Tests for find_one_and_update / find_one_and_delete
+# Tests for find_and_modify (renamed from find_one_and_update)
 # ============================================================================
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_one_and_update():
-    """Test find_one_and_update returns doc after update by default."""
+async def test_mongo_backend_find_and_modify():
+    """Test find_and_modify returns doc after update by default."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1084,15 +1084,15 @@ async def test_mongo_backend_find_one_and_update():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_one_and_update(
+        result = await backend.find_and_modify(
             {"name": "obj"}, {"$set": {"value": "new"}}, upsert=True
         )
         assert result == updated_doc
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_one_and_update_return_old():
-    """Test find_one_and_update with return_old=True returns doc before update."""
+async def test_mongo_backend_find_and_modify_return_old():
+    """Test find_and_modify with return_old=True returns doc before update."""
     from pymongo import ReturnDocument
 
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
@@ -1111,7 +1111,7 @@ async def test_mongo_backend_find_one_and_update_return_old():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_one_and_update(
+        result = await backend.find_and_modify(
             {"name": "obj"}, {"$set": {"value": "new"}}, return_old=True
         )
         assert result == old_doc
@@ -1119,8 +1119,8 @@ async def test_mongo_backend_find_one_and_update_return_old():
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_one_and_update_no_match():
-    """Test find_one_and_update returns None when no match and no upsert."""
+async def test_mongo_backend_find_and_modify_no_match():
+    """Test find_and_modify returns None when no match and no upsert."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1134,55 +1134,14 @@ async def test_mongo_backend_find_one_and_update_no_match():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_one_and_update(
+        result = await backend.find_and_modify(
             {"name": "nonexistent"}, {"$set": {"value": "new"}}
         )
         assert result is None
 
 
-@pytest.mark.asyncio
-async def test_mongo_backend_find_one_and_delete():
-    """Test find_one_and_delete returns deleted doc."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-
-    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
-    backend._is_initialized = True
-
-    mock_collection = MagicMock()
-    deleted_doc = {"_id": "1", "name": "obj", "value": "data"}
-
-    async def mock_find_one_and_delete(*args, **kwargs):
-        return deleted_doc
-
-    mock_collection.find_one_and_delete = mock_find_one_and_delete
-
-    with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_one_and_delete({"name": "obj"})
-        assert result == deleted_doc
-
-
-@pytest.mark.asyncio
-async def test_mongo_backend_find_one_and_delete_no_match():
-    """Test find_one_and_delete returns None when no match."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-
-    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
-    backend._is_initialized = True
-
-    mock_collection = MagicMock()
-
-    async def mock_find_one_and_delete(*args, **kwargs):
-        return None
-
-    mock_collection.find_one_and_delete = mock_find_one_and_delete
-
-    with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_one_and_delete({"name": "nonexistent"})
-        assert result is None
-
-
-def test_mongo_backend_find_one_and_update_sync():
-    """Test find_one_and_update_sync delegates correctly."""
+def test_mongo_backend_find_and_modify_sync():
+    """Test find_and_modify_sync delegates correctly."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1190,22 +1149,8 @@ def test_mongo_backend_find_one_and_update_sync():
 
     updated_doc = {"_id": "1", "name": "obj", "value": "new"}
 
-    with patch.object(backend, "find_one_and_update", new_callable=AsyncMock, return_value=updated_doc):
-        result = backend.find_one_and_update_sync(
+    with patch.object(backend, "find_and_modify", new_callable=AsyncMock, return_value=updated_doc):
+        result = backend.find_and_modify_sync(
             {"name": "obj"}, {"$set": {"value": "new"}}, upsert=True, return_old=True
         )
         assert result == updated_doc
-
-
-def test_mongo_backend_find_one_and_delete_sync():
-    """Test find_one_and_delete_sync delegates correctly."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-
-    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
-    backend._is_initialized = True
-
-    deleted_doc = {"_id": "1", "name": "obj", "value": "data"}
-
-    with patch.object(backend, "find_one_and_delete", new_callable=AsyncMock, return_value=deleted_doc):
-        result = backend.find_one_and_delete_sync({"name": "obj"})
-        assert result == deleted_doc

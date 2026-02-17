@@ -200,7 +200,7 @@ class MockMongoODM:
         self._docs.append(doc)
         return MockDocument(**doc)
 
-    def find_one_and_update_sync(
+    def find_and_modify_sync(
         self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
     ) -> dict | None:
         matched = [d for d in self._docs if self._matches(d, filter)]
@@ -222,19 +222,13 @@ class MockMongoODM:
             return old_doc if return_old else dict(new_doc)
         return None
 
-    def find_one_and_delete_sync(self, filter: dict) -> dict | None:
-        for i, d in enumerate(self._docs):
-            if self._matches(d, filter):
-                return self._docs.pop(i)
-        return None
-
-    def delete_many_sync(self, filter: dict) -> int:
+    def delete_where_sync(self, filter: dict) -> int:
         before = len(self._docs)
         self._docs = [d for d in self._docs if not self._matches(d, filter)]
         return before - len(self._docs)
 
     def _do_upsert(self, filt: dict, update: dict, upsert: bool = False):
-        """Shared upsert logic for update_one and bulk_write."""
+        """Shared upsert logic for update_where and batch_write."""
         matched = [d for d in self._docs if self._matches(d, filt)]
         set_fields = update.get("$set", {})
         if matched:
@@ -250,7 +244,7 @@ class MockMongoODM:
             return "upserted"
         return "none"
 
-    def update_one_sync(self, filter: dict, update: dict, upsert: bool = False):
+    def update_where_sync(self, filter: dict, update: dict, upsert: bool = False):
         action = self._do_upsert(filter, update, upsert)
 
         class _UpdateResult:
@@ -260,7 +254,7 @@ class MockMongoODM:
         result.upserted_id = str(self._counter) if action == "upserted" else None
         return result
 
-    def bulk_write_sync(self, operations: list, ordered: bool = True):
+    def batch_write_sync(self, operations: list, ordered: bool = True):
         modified = 0
         upserted = 0
         for op in operations:

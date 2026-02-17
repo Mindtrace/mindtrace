@@ -581,7 +581,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
-    async def update_one(self, filter: dict, update: dict, upsert: bool = False) -> Any:
+    async def update_where(self, filter: dict, update: dict, upsert: bool = False) -> Any:
         """Update a single document matching the filter.
 
         Args:
@@ -593,7 +593,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             UpdateResult from pymongo.
         """
         if self._models is not None:
-            raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
+            raise ValueError("Cannot use update_where() in multi-model mode. Use db.model_name.update_where() instead.")
 
         if not self._is_initialized:
             await self.initialize()
@@ -601,7 +601,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         collection = self.model_cls.get_motor_collection()
         return await collection.update_one(filter, update, upsert=upsert)
 
-    async def find_one_and_update(
+    async def find_and_modify(
         self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
     ) -> dict | None:
         """Atomically find and update a single document.
@@ -618,7 +618,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """
         if self._models is not None:
             raise ValueError(
-                "Cannot use find_one_and_update() in multi-model mode. Use db.model_name.find_one_and_update() instead."
+                "Cannot use find_and_modify() in multi-model mode. Use db.model_name.find_and_modify() instead."
             )
 
         if not self._is_initialized:
@@ -630,28 +630,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             filter, update, upsert=upsert, return_document=return_doc
         )
 
-    async def find_one_and_delete(self, filter: dict) -> dict | None:
-        """Atomically find and delete a single document.
-
-        Args:
-            filter: Query filter to match the document.
-
-        Returns:
-            The deleted document as a raw dict, or None if no match.
-        """
-        if self._models is not None:
-            raise ValueError(
-                "Cannot use find_one_and_delete() in multi-model mode. Use db.model_name.find_one_and_delete() instead."
-            )
-
-        if not self._is_initialized:
-            await self.initialize()
-
-        collection = self.model_cls.get_motor_collection()
-        return await collection.find_one_and_delete(filter)
-
-    async def bulk_write(self, operations: List[Any], ordered: bool = True) -> Any:
-        """Execute bulk write operations on the underlying MongoDB collection.
+    async def batch_write(self, operations: List[Any], ordered: bool = True) -> Any:
+        """Execute batch write operations on the underlying MongoDB collection.
 
         Args:
             operations: List of pymongo write operations (e.g., UpdateOne, InsertOne).
@@ -661,7 +641,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             BulkWriteResult from pymongo.
         """
         if self._models is not None:
-            raise ValueError("Cannot use bulk_write() in multi-model mode. Use db.model_name.bulk_write() instead.")
+            raise ValueError("Cannot use batch_write() in multi-model mode. Use db.model_name.batch_write() instead.")
 
         if not self._is_initialized:
             await self.initialize()
@@ -669,8 +649,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         collection = self.model_cls.get_motor_collection()
         return await collection.bulk_write(operations, ordered=ordered)
 
-    async def delete_many(self, filter: dict) -> int:
-        """Delete multiple documents matching the filter.
+    async def delete_where(self, filter: dict) -> int:
+        """Delete all documents matching the filter.
 
         Args:
             filter: Query filter dict to match documents for deletion.
@@ -679,7 +659,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             Number of deleted documents.
         """
         if self._models is not None:
-            raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
+            raise ValueError("Cannot use delete_where() in multi-model mode. Use db.model_name.delete_where() instead.")
 
         if not self._is_initialized:
             await self.initialize()
@@ -923,24 +903,20 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """Execute aggregation pipeline synchronously (wrapper around async aggregate)."""
         return self._run_sync(self.aggregate(pipeline))
 
-    def update_one_sync(self, filter: dict, update: dict, upsert: bool = False) -> Any:
-        """Update a single document synchronously (wrapper around async update_one)."""
-        return self._run_sync(self.update_one(filter, update, upsert=upsert))
+    def update_where_sync(self, filter: dict, update: dict, upsert: bool = False) -> Any:
+        """Update a single document synchronously (wrapper around async update_where)."""
+        return self._run_sync(self.update_where(filter, update, upsert=upsert))
 
-    def find_one_and_update_sync(
+    def find_and_modify_sync(
         self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
     ) -> dict | None:
-        """Atomically find and update a single document synchronously (wrapper around async find_one_and_update)."""
-        return self._run_sync(self.find_one_and_update(filter, update, upsert=upsert, return_old=return_old))
+        """Atomically find and update a single document synchronously (wrapper around async find_and_modify)."""
+        return self._run_sync(self.find_and_modify(filter, update, upsert=upsert, return_old=return_old))
 
-    def find_one_and_delete_sync(self, filter: dict) -> dict | None:
-        """Atomically find and delete a single document synchronously (wrapper around async find_one_and_delete)."""
-        return self._run_sync(self.find_one_and_delete(filter))
+    def batch_write_sync(self, operations: list, ordered: bool = True) -> Any:
+        """Execute batch write operations synchronously (wrapper around async batch_write)."""
+        return self._run_sync(self.batch_write(operations, ordered=ordered))
 
-    def bulk_write_sync(self, operations: list, ordered: bool = True) -> Any:
-        """Execute bulk write operations synchronously (wrapper around async bulk_write)."""
-        return self._run_sync(self.bulk_write(operations, ordered=ordered))
-
-    def delete_many_sync(self, filter: dict) -> int:
-        """Delete multiple documents synchronously (wrapper around async delete_many)."""
-        return self._run_sync(self.delete_many(filter))
+    def delete_where_sync(self, filter: dict) -> int:
+        """Delete documents matching filter synchronously (wrapper around async delete_where)."""
+        return self._run_sync(self.delete_where(filter))
