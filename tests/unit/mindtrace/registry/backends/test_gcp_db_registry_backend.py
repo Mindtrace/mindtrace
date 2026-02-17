@@ -183,14 +183,19 @@ class MockMongoODM:
         doc.pop("id", None)
         doc.pop("_id", None)
 
-        # Check for unique compound index violation on (registry_uri, name, version)
+        # Check for unique compound index violation on (registry_uri, name, version[, uuid])
         if "name" in doc and "version" in doc and "registry_uri" in doc:
             for existing in self._docs:
-                if (
+                base_match = (
                     existing.get("registry_uri") == doc.get("registry_uri")
                     and existing.get("name") == doc.get("name")
                     and existing.get("version") == doc.get("version")
-                ):
+                )
+                if base_match:
+                    # If both docs have uuid, include it in uniqueness check
+                    if "uuid" in doc and "uuid" in existing:
+                        if existing.get("uuid") != doc.get("uuid"):
+                            continue
                     raise DuplicateInsertError(
                         f"Duplicate key: ({doc.get('registry_uri')}, {doc.get('name')}, {doc.get('version')})"
                     )
@@ -338,6 +343,7 @@ def mock_odms():
         "obj_meta": MockMongoODM(),
         "reg_meta": MockMongoODM(),
         "commit_plan": MockMongoODM(),
+        "obj_blob": MockMongoODM(),
     }
 
 
@@ -354,6 +360,7 @@ def backend(mock_gcs_handler, mock_odms, monkeypatch):
     mock_db_instance.obj_meta = mock_odms["obj_meta"]
     mock_db_instance.reg_meta = mock_odms["reg_meta"]
     mock_db_instance.commit_plan = mock_odms["commit_plan"]
+    mock_db_instance.obj_blob = mock_odms["obj_blob"]
     mock_db_instance.initialize_sync = MagicMock()
 
     mock_mongo_class.return_value = mock_db_instance
@@ -373,6 +380,10 @@ def backend(mock_gcs_handler, mock_odms, monkeypatch):
     )
     monkeypatch.setattr(
         "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
         lambda: MagicMock(),
     )
 
@@ -930,3 +941,367 @@ def test_no_registry_metadata_in_gcs(backend):
     # but after that, all operations should go to MongoDB)
     fetched = backend.fetch_registry_metadata()
     assert fetched.get("test") == "value"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Inline Storage Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def backend_inline(mock_gcs_handler, mock_odms, monkeypatch):
+    """Create a GCPDBRegistryBackend with inline storage enabled (1MB threshold)."""
+    from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
+
+    mock_mongo_class = MagicMock()
+    mock_db_instance = MagicMock()
+
+    mock_db_instance.obj_meta = mock_odms["obj_meta"]
+    mock_db_instance.reg_meta = mock_odms["reg_meta"]
+    mock_db_instance.commit_plan = mock_odms["commit_plan"]
+    mock_db_instance.obj_blob = mock_odms["obj_blob"]
+    mock_db_instance.initialize_sync = MagicMock()
+
+    mock_mongo_class.return_value = mock_db_instance
+
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.MongoMindtraceODM",
+        mock_mongo_class,
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectMeta._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryMeta._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+
+    b = GCPDBRegistryBackend(
+        uri="gs://test-bucket",
+        project_id="test-project",
+        bucket_name="test-bucket",
+        credentials_path="/path/to/creds.json",
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        inline_threshold_bytes=1024 * 1024,  # 1MB
+    )
+
+    return b
+
+
+def test_inline_push(backend_inline, sample_object_dir, sample_metadata, mock_odms):
+    """Small objects should be stored inline in blob collection, not GCS."""
+    results = backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    assert results.all_ok
+    result = results.first()
+    assert result.ok
+
+    # Verify NO blobs uploaded to GCS
+    objects = backend_inline.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(objects) == 0
+
+    # Verify blob doc exists in blob collection
+    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    assert len(blob_docs) == 1
+    assert blob_docs[0].name == "test:object"
+    assert blob_docs[0].version == "1.0.0"
+    assert "file1.txt" in blob_docs[0].blob_data
+    assert "file2.txt" in blob_docs[0].blob_data
+
+    # Verify metadata has inline flag
+    meta_docs = mock_odms["obj_meta"].find_sync({
+        "registry_uri": backend_inline._registry_uri_key,
+        "name": "test:object", "version": "1.0.0",
+    })
+    assert len(meta_docs) == 1
+    assert meta_docs[0].metadata["_storage"]["inline"] is True
+
+
+def test_inline_pull(backend_inline, sample_object_dir, sample_metadata, mock_odms, tmp_path):
+    """Pulling inline objects should reconstruct files from blob collection."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    fetched_metadata = meta_results[("test:object", "1.0.0")].metadata
+
+    download_dir = tmp_path / "download"
+    download_dir.mkdir()
+    results = backend_inline.pull("test:object", "1.0.0", str(download_dir), metadata=[fetched_metadata])
+
+    assert results.all_ok
+    assert (download_dir / "file1.txt").exists()
+    assert (download_dir / "file2.txt").exists()
+    assert (download_dir / "file1.txt").read_text() == "test content 1"
+    assert (download_dir / "file2.txt").read_text() == "test content 2"
+
+
+def test_inline_delete(backend_inline, sample_object_dir, sample_metadata, mock_odms):
+    """Deleting inline objects should remove both metadata and blob doc."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    results = backend_inline.delete("test:object", "1.0.0")
+    assert results.all_ok
+
+    # Metadata gone
+    meta_docs = mock_odms["obj_meta"].find_sync({
+        "registry_uri": backend_inline._registry_uri_key,
+        "name": "test:object", "version": "1.0.0",
+    })
+    assert len(meta_docs) == 0
+
+    # Blob doc gone
+    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    assert len(blob_docs) == 0
+
+
+def test_inline_overwrite_inline_to_inline(backend_inline, sample_object_dir, sample_metadata, mock_odms):
+    """Overwriting inline with inline should replace blob doc."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    initial_uuid = meta_results[("test:object", "1.0.0")].metadata["_storage"]["uuid"]
+
+    results = backend_inline.push(
+        "test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="overwrite"
+    )
+    result = results.first()
+    assert result.ok
+    assert result.is_overwritten
+
+    # UUID should change
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    new_uuid = meta_results[("test:object", "1.0.0")].metadata["_storage"]["uuid"]
+    assert new_uuid != initial_uuid
+
+    # Old blob doc should be cleaned up, only new one remains
+    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    assert len(blob_docs) == 1
+    assert blob_docs[0].uuid == new_uuid
+
+
+def test_inline_skip_existing(backend_inline, sample_object_dir, sample_metadata):
+    """Second inline push with skip should return skipped."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    results = backend_inline.push(
+        "test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="skip"
+    )
+    assert results[("test:object", "1.0.0")].is_skipped
+
+
+def test_inline_commit_plan_cleaned(backend_inline, sample_object_dir, sample_metadata, mock_odms):
+    """Commit plan should be created then deleted on inline push success."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    plans = mock_odms["commit_plan"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    assert len(plans) == 0
+
+
+def test_inline_threshold_zero_disables(backend, sample_object_dir, sample_metadata):
+    """With inline_threshold_bytes=0 (default), objects go to GCS."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Objects should be in GCS
+    objects = backend.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(objects) == 2
+
+    # Metadata should NOT have inline flag
+    meta_results = backend.fetch_metadata("test:object", "1.0.0")
+    metadata = meta_results[("test:object", "1.0.0")].metadata
+    assert metadata["_storage"].get("inline") is None
+
+
+def test_inline_large_object_goes_to_gcs(mock_gcs_handler, mock_odms, monkeypatch, tmp_path):
+    """Objects larger than threshold should go to GCS."""
+    from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
+
+    mock_mongo_class = MagicMock()
+    mock_db_instance = MagicMock()
+    mock_db_instance.obj_meta = mock_odms["obj_meta"]
+    mock_db_instance.reg_meta = mock_odms["reg_meta"]
+    mock_db_instance.commit_plan = mock_odms["commit_plan"]
+    mock_db_instance.obj_blob = mock_odms["obj_blob"]
+    mock_db_instance.initialize_sync = MagicMock()
+    mock_mongo_class.return_value = mock_db_instance
+
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.MongoMindtraceODM",
+        mock_mongo_class,
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectMeta._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryMeta._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
+        lambda: MagicMock(),
+    )
+
+    b = GCPDBRegistryBackend(
+        uri="gs://test-bucket",
+        project_id="test-project",
+        bucket_name="test-bucket",
+        credentials_path="/path/to/creds.json",
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db",
+        inline_threshold_bytes=10,  # 10 bytes — very small threshold
+    )
+
+    obj_dir = tmp_path / "big_object"
+    obj_dir.mkdir()
+    (obj_dir / "big.txt").write_text("This is a big file exceeding 10 bytes")
+    meta = {"_files": ["big.txt"]}
+
+    results = b.push("test:object", "1.0.0", str(obj_dir), meta)
+    assert results.all_ok
+
+    # Should be in GCS, not inline
+    objects = b.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(objects) == 1
+
+    meta_results = b.fetch_metadata("test:object", "1.0.0")
+    metadata = meta_results[("test:object", "1.0.0")].metadata
+    assert metadata["_storage"].get("inline") is None
+    assert "path" in metadata
+
+
+def test_inline_delete_metadata_cleans_blobs(backend_inline, sample_object_dir, sample_metadata, mock_odms):
+    """delete_metadata should also clean up blob collection."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Verify blob exists
+    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    assert len(blob_docs) == 1
+
+    results = backend_inline.delete_metadata("test:object", "1.0.0")
+    assert results.all_ok
+
+    # Both metadata and blob should be gone
+    meta_docs = mock_odms["obj_meta"].find_sync({
+        "registry_uri": backend_inline._registry_uri_key,
+        "name": "test:object", "version": "1.0.0",
+    })
+    assert len(meta_docs) == 0
+
+    blob_docs = mock_odms["obj_blob"].find_sync({
+        "registry_uri": backend_inline._registry_uri_key,
+        "name": "test:object", "version": "1.0.0",
+    })
+    assert len(blob_docs) == 0
+
+
+def test_inline_push_without_files_manifest(backend_inline, tmp_path, mock_odms):
+    """Inline push without _files manifest should discover files via rglob."""
+    obj_dir = tmp_path / "no_manifest_obj"
+    obj_dir.mkdir()
+    (obj_dir / "data.json").write_text('{"key": "value"}')
+    sub = obj_dir / "subdir"
+    sub.mkdir()
+    (sub / "nested.txt").write_text("nested content")
+    meta = {"description": "no manifest"}
+
+    results = backend_inline.push("test:nofiles", "1.0.0", str(obj_dir), meta)
+    assert results.all_ok
+
+    blob_docs = mock_odms["obj_blob"].find_sync({"name": "test:nofiles"})
+    assert len(blob_docs) == 1
+    assert "data.json" in blob_docs[0].blob_data
+    assert "subdir/nested.txt" in blob_docs[0].blob_data
+
+
+def test_inline_pull_missing_blob_raises(backend_inline, sample_object_dir, sample_metadata, mock_odms, tmp_path):
+    """Pulling inline object with missing blob doc should fail."""
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    fetched_metadata = meta_results[("test:object", "1.0.0")].metadata
+
+    # Delete the blob doc to simulate corruption
+    uuid_str = fetched_metadata["_storage"]["uuid"]
+    mock_odms["obj_blob"].delete_where_sync({"uuid": uuid_str})
+
+    download_dir = tmp_path / "download"
+    download_dir.mkdir()
+    results = backend_inline.pull("test:object", "1.0.0", str(download_dir), metadata=[fetched_metadata])
+    result = results.get(("test:object", "1.0.0"))
+    assert result.is_error
+
+
+def test_overwrite_gcs_to_inline(backend_inline, sample_object_dir, sample_metadata, mock_odms, tmp_path):
+    """Overwrite: push GCS object, then overwrite with inline object."""
+    # First push as GCS (make object large enough to exceed threshold temporarily)
+    backend_inline._inline_threshold = 0  # Force GCS path
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    # Verify it went to GCS
+    gcs_objects = backend_inline.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(gcs_objects) == 2
+
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    old_metadata = meta_results[("test:object", "1.0.0")].metadata
+    assert old_metadata["_storage"].get("inline") is None
+
+    # Now enable inline and overwrite
+    backend_inline._inline_threshold = 1024 * 1024
+    results = backend_inline.push(
+        "test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="overwrite"
+    )
+    assert results.first().is_overwritten
+
+    # Metadata should now have inline flag
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    new_metadata = meta_results[("test:object", "1.0.0")].metadata
+    assert new_metadata["_storage"]["inline"] is True
+
+    # Old GCS files should be cleaned up
+    gcs_objects = backend_inline.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(gcs_objects) == 0
+
+
+def test_overwrite_inline_to_gcs(backend_inline, sample_object_dir, sample_metadata, mock_odms, tmp_path):
+    """Overwrite: push inline object, then overwrite with GCS object."""
+    # First push as inline
+    backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    old_metadata = meta_results[("test:object", "1.0.0")].metadata
+    old_uuid = old_metadata["_storage"]["uuid"]
+    assert old_metadata["_storage"]["inline"] is True
+
+    # Now disable inline and overwrite (force GCS)
+    backend_inline._inline_threshold = 0
+    results = backend_inline.push(
+        "test:object", "1.0.0", sample_object_dir, sample_metadata, on_conflict="overwrite"
+    )
+    assert results.first().is_overwritten
+
+    # Metadata should NOT have inline flag
+    meta_results = backend_inline.fetch_metadata("test:object", "1.0.0")
+    new_metadata = meta_results[("test:object", "1.0.0")].metadata
+    assert new_metadata["_storage"].get("inline") is None
+
+    # Old blob doc should be cleaned up
+    blob_docs = mock_odms["obj_blob"].find_sync({"uuid": old_uuid})
+    assert len(blob_docs) == 0
+
+    # New GCS files should exist
+    gcs_objects = backend_inline.gcs.list_objects(prefix="objects/test:object/1.0.0/")
+    assert len(gcs_objects) == 2

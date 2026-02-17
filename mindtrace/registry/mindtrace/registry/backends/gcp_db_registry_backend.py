@@ -74,6 +74,21 @@ class RegistryCommitPlan(UnifiedMindtraceDocument):
         indexed_fields = ["registry_uri", "expires_at"]
 
 
+class RegistryObjectBlob(UnifiedMindtraceDocument):
+    """Stores inline blob data for small objects in a separate collection."""
+
+    registry_uri: str
+    name: str
+    version: str
+    uuid: str
+    blob_data: dict
+
+    class Meta:
+        collection_name = "registry_object_blobs"
+        indexed_fields = ["uuid"]
+        compound_indexes = [{"fields": ["registry_uri", "name", "version", "uuid"], "unique": True}]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Backend
 # ──────────────────────────────────────────────────────────────────────────────
@@ -114,6 +129,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         max_workers: int = 4,
         lock_timeout: int = 5,
         allow_index_dropping: bool = False,
+        inline_threshold_bytes: int = 0,
         **kwargs,
     ):
         super().__init__(uri=uri, **kwargs)
@@ -122,6 +138,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         self._max_workers = max_workers
         self._lock_timeout = lock_timeout
         self._registry_uri_key = str(self._uri)
+        self._inline_threshold = inline_threshold_bytes
 
         # ── GCS (blobs only) ────────────────────────────────────────────────
         self.gcs = GCSStorageHandler(
@@ -136,12 +153,14 @@ class GCPDBRegistryBackend(RegistryBackend):
         obj_meta_model = RegistryObjectMeta._auto_generate_mongo_model()
         reg_meta_model = RegistryMeta._auto_generate_mongo_model()
         commit_plan_model = RegistryCommitPlan._auto_generate_mongo_model()
+        blob_model = RegistryObjectBlob._auto_generate_mongo_model()
 
         self._db = MongoMindtraceODM(
             models={
                 "obj_meta": obj_meta_model,
                 "reg_meta": reg_meta_model,
                 "commit_plan": commit_plan_model,
+                "obj_blob": blob_model,
             },
             db_uri=db_uri,
             db_name=db_name,
@@ -154,6 +173,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         self._obj_meta: MongoMindtraceODM = self._db.obj_meta
         self._reg_meta: MongoMindtraceODM = self._db.reg_meta
         self._commit_plan: MongoMindtraceODM = self._db.commit_plan
+        self._obj_blob: MongoMindtraceODM = self._db.obj_blob
 
         # Ensure registry metadata doc exists
         self._ensure_registry_metadata()
@@ -194,6 +214,35 @@ class GCPDBRegistryBackend(RegistryBackend):
     def _query_filter(self, **extra) -> dict:
         """Build a query filter scoped to this registry."""
         return {"registry_uri": self._registry_uri_key, **extra}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Inline Storage Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _compute_dir_size(self, path: Path) -> int:
+        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+    def _encode_inline_data(self, obj_path: Path, files_manifest: list[str] | None) -> dict:
+        import base64
+
+        blob_data = {}
+        if files_manifest:
+            for f in files_manifest:
+                blob_data[f] = base64.b64encode((obj_path / f).read_bytes()).decode("ascii")
+        else:
+            for file_path in obj_path.rglob("*"):
+                if file_path.is_file():
+                    rel = file_path.relative_to(obj_path).as_posix()
+                    blob_data[rel] = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        return blob_data
+
+    def _decode_inline_data(self, blob_data: dict, dest_path: Path) -> None:
+        import base64
+
+        for rel_path, b64_content in blob_data.items():
+            dest_file = dest_path / rel_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            dest_file.write_bytes(base64.b64decode(b64_content))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Commit Plan Helpers
@@ -246,7 +295,9 @@ class GCPDBRegistryBackend(RegistryBackend):
             return False
 
     def _attempt_rollback(self, name: str, version: str, uuid_str: str) -> bool:
-        cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
+        blob_deleted = self._obj_blob.delete_where_sync({"uuid": uuid_str}) > 0
+        gcs_deleted = False if blob_deleted else self._delete_uuid_folder(name, version, uuid_str)
+        cleanup_ok = blob_deleted or gcs_deleted
         if cleanup_ok:
             self._delete_commit_plan(name, version, uuid_str)
         return cleanup_ok
@@ -254,6 +305,19 @@ class GCPDBRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
     # Push
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _cleanup_old_storage(
+        self, obj_name: str, obj_version: str, old_storage: dict, old_uuid: str, old_files: list | None,
+    ) -> bool:
+        """Delete old data (inline blob or GCS folder) after an overwrite commit.
+
+        Returns True if data was actually cleaned up, False if nothing was found.
+        delete_where_sync returns deleted count (0 = nothing found, never raises).
+        """
+        if old_storage.get("inline"):
+            return self._obj_blob.delete_where_sync({"uuid": old_uuid}) > 0
+        else:
+            return self._delete_uuid_folder(obj_name, obj_version, old_uuid, old_files)
 
     def _push_single_object(
         self,
@@ -268,13 +332,18 @@ class GCPDBRegistryBackend(RegistryBackend):
         is_overwrite = on_conflict == OnConflict.OVERWRITE
 
         try:
-            # Step 1: SKIP early-exit —
+            # Step 1: SKIP early-exit
             if not is_overwrite:
                 existing = self._obj_meta.find_sync(
                     self._query_filter(name=obj_name, version=obj_version)
                 )
                 if existing:
                     return OpResult.skipped(obj_name, obj_version, cleanup=CleanupState.NOT_APPLICABLE)
+
+            # Determine storage path
+            files_manifest = obj_meta.get("_files") if obj_meta else None
+            total_size = self._compute_dir_size(obj_path)
+            is_inline = self._inline_threshold > 0 and total_size <= self._inline_threshold
 
             # Step 2: Generate UUID and create commit plan
             uuid_str = str(_uuid.uuid4())
@@ -284,41 +353,52 @@ class GCPDBRegistryBackend(RegistryBackend):
                     cleanup=CleanupState.NOT_APPLICABLE,
                 )
 
-            # Step 3: Build file list
-            remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
-            files_manifest = obj_meta.get("_files") if obj_meta else None
-            if files_manifest is not None:
-                files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+            # Step 3-4: Write data (diverges by storage type)
+            if is_inline:
+                blob_data = self._encode_inline_data(obj_path, files_manifest)
+                self._obj_blob.insert_sync({
+                    "registry_uri": self._registry_uri_key,
+                    "name": obj_name, "version": obj_version,
+                    "uuid": uuid_str, "blob_data": blob_data,
+                })
             else:
-                files = []
-                for file_path in obj_path.rglob("*"):
-                    if file_path.is_file():
-                        relative = file_path.relative_to(obj_path).as_posix()
-                        files.append((str(file_path), f"{remote_key}/{relative}"))
+                remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
+                if files_manifest is not None:
+                    files = [(str(obj_path / f), f"{remote_key}/{f}".replace("\\", "/")) for f in files_manifest]
+                else:
+                    files = []
+                    for file_path in obj_path.rglob("*"):
+                        if file_path.is_file():
+                            relative = file_path.relative_to(obj_path).as_posix()
+                            files.append((str(file_path), f"{remote_key}/{relative}"))
 
-            # Step 4: Upload files to UUID folder
-            if files:
-                batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
-                if batch_result.failed_results:
-                    rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
-                    first_error = batch_result.failed_results[0]
-                    return OpResult.failed(
-                        obj_name, obj_version,
-                        RuntimeError(f"Failed to upload {len(batch_result.failed_results)} file(s): {first_error.error_message}"),
-                        cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
-                    )
+                if files:
+                    batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
+                    if batch_result.failed_results:
+                        rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                        first_error = batch_result.failed_results[0]
+                        return OpResult.failed(
+                            obj_name, obj_version,
+                            RuntimeError(f"Failed to upload {len(batch_result.failed_results)} file(s): {first_error.error_message}"),
+                            cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                        )
 
-            # Step 5: Prepare metadata with _storage info
+            # Step 5: Prepare metadata (diverges by storage type)
             prepared_meta = dict(obj_meta) if obj_meta else {}
-            prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
-            prepared_meta["_storage"] = {
-                "uuid": uuid_str,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
+            if is_inline:
+                prepared_meta["_storage"] = {
+                    "uuid": uuid_str, "inline": True,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
+                prepared_meta["_storage"] = {
+                    "uuid": uuid_str,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
 
             # Step 6: Write metadata to MongoDB (the "commit point")
             if is_overwrite:
-                # Atomic swap — returns the old doc (before update) for cleanup
                 old_doc = self._obj_meta.find_and_modify_sync(
                     {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
                     {"$set": {
@@ -329,17 +409,16 @@ class GCPDBRegistryBackend(RegistryBackend):
                     return_old=True,
                 )
 
-                # Extract old UUID for cleanup (old_doc is None on fresh insert)
+                # Cleanup old data (old_doc is None on fresh insert)
                 old_uuid = None
-                old_files = None
                 if old_doc:
                     old_meta = old_doc.get("metadata", {})
-                    old_uuid = old_meta.get("_storage", {}).get("uuid")
-                    old_files = old_meta.get("_files")
+                    old_storage = old_meta.get("_storage", {})
+                    old_uuid = old_storage.get("uuid")
 
-                # Cleanup old UUID folder
                 if old_uuid and old_uuid != uuid_str:
-                    cleanup_ok = self._delete_uuid_folder(obj_name, obj_version, old_uuid, old_files)
+                    cleanup_ok = self._cleanup_old_storage(
+                        obj_name, obj_version, old_storage, old_uuid, old_meta.get("_files"))
                     if cleanup_ok:
                         plan_deleted = self._delete_commit_plan(obj_name, obj_version, uuid_str)
                         cleanup_state = CleanupState.OK if plan_deleted else CleanupState.UNKNOWN
@@ -358,7 +437,6 @@ class GCPDBRegistryBackend(RegistryBackend):
                         "created_at": datetime.now(timezone.utc),
                     })
                 except DuplicateInsertError:
-                    # Race: another writer inserted between our early-exit check and here
                     rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
                     return OpResult.skipped(
                         obj_name, obj_version,
@@ -427,8 +505,10 @@ class GCPDBRegistryBackend(RegistryBackend):
         results = OpResults()
         all_files_to_download: List[Tuple[str, str]] = []
         file_to_object: Dict[str, Tuple[str, str]] = {}
+        inline_downloads: List[Tuple[str, str, str, Path]] = []  # (name, version, uuid, dest)
         objects_with_errors: set = set()
 
+        # ── Collection stage: gather what needs downloading ──
         for obj_name, obj_version, dest_path, obj_metadata in zip(names, versions, paths, metadatas):
             try:
                 storage_info = obj_metadata.get("_storage", {})
@@ -437,6 +517,11 @@ class GCPDBRegistryBackend(RegistryBackend):
                     raise RegistryObjectNotFound(
                         f"Object {obj_name}@{obj_version} has corrupted metadata (missing _storage.uuid)"
                     )
+
+                if storage_info.get("inline"):
+                    inline_downloads.append((obj_name, obj_version, uuid_str, dest_path))
+                    continue
+
                 remote_key = self._object_key_with_uuid(obj_name, obj_version, uuid_str)
                 files_manifest = obj_metadata.get("_files")
 
@@ -463,6 +548,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 objects_with_errors.add((obj_name, obj_version))
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
+        # ── Download stage: fetch data from GCS and MongoDB ──
         if all_files_to_download:
             download_result = self.gcs.download_batch(all_files_to_download, max_workers=workers)
             for file_result in download_result.failed_results:
@@ -476,6 +562,19 @@ class GCPDBRegistryBackend(RegistryBackend):
                             error_type=file_result.error_type or "DownloadError",
                             message=file_result.error_message or "Unknown error",
                         ))
+
+        for obj_name, obj_version, uuid_str, dest_path in inline_downloads:
+            try:
+                blob_docs = self._obj_blob.find_sync({"uuid": uuid_str})
+                if not blob_docs:
+                    raise RegistryObjectNotFound(
+                        f"Inline blob for {obj_name}@{obj_version} not found"
+                    )
+                self._decode_inline_data(blob_docs[0].blob_data, dest_path)
+                results.add(OpResult.success(obj_name, obj_version))
+            except Exception as e:
+                objects_with_errors.add((obj_name, obj_version))
+                results.add(OpResult.failed(obj_name, obj_version, e))
 
         for obj_name, obj_version in zip(names, versions):
             if (obj_name, obj_version) not in objects_with_errors and (obj_name, obj_version) not in results:
@@ -500,14 +599,27 @@ class GCPDBRegistryBackend(RegistryBackend):
             if not metadata:
                 return OpResult.success(obj_name, obj_version)
 
-            uuid_str = metadata.get("_storage", {}).get("uuid")
+            storage_info = metadata.get("_storage", {})
+            uuid_str = storage_info.get("uuid")
+            is_inline = storage_info.get("inline", False)
+
             if not uuid_str:
                 uuid_str = str(_uuid.uuid4())
 
             if not self._create_commit_plan(obj_name, obj_version, uuid_str):
                 return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
 
-            # Delete metadata from MongoDB (the "commit point")
+            if is_inline:
+                # Delete metadata (commit point)
+                self._obj_meta.delete_where_sync(
+                    self._query_filter(name=obj_name, version=obj_version))
+                # Cleanup blob (delete_where_sync returns count, 0 = not found)
+                blob_deleted = self._obj_blob.delete_where_sync({"uuid": uuid_str}) > 0
+                self._delete_commit_plan(obj_name, obj_version, uuid_str)
+                cleanup = CleanupState.OK if blob_deleted else CleanupState.ORPHANED
+                return OpResult.success(obj_name, obj_version, cleanup=cleanup)
+
+            # GCS path: Delete metadata from MongoDB (the "commit point")
             self._obj_meta.delete_where_sync(self._query_filter(name=obj_name, version=obj_version))
 
             # Best-effort UUID folder cleanup
@@ -681,6 +793,9 @@ class GCPDBRegistryBackend(RegistryBackend):
         if or_clauses:
             try:
                 self._obj_meta.delete_where_sync(
+                    {"registry_uri": self._registry_uri_key, "$or": or_clauses}
+                )
+                self._obj_blob.delete_where_sync(
                     {"registry_uri": self._registry_uri_key, "$or": or_clauses}
                 )
             except Exception as e:
