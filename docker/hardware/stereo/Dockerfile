@@ -12,7 +12,7 @@
 # =============================================================================
 
 # syntax=docker/dockerfile:1
-ARG UBUNTU_VERSION=22.04
+ARG UBUNTU_VERSION=24.04
 
 # =============================================================================
 # Stage 1: Base System
@@ -24,16 +24,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl wget tar software-properties-common gnupg build-essential gcc g++ \
+    ca-certificates curl wget tar build-essential gcc g++ \
     iputils-ping net-tools iproute2 ethtool usbutils udev \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends python3.12 python3.12-dev \
+    python3.12 python3.12-dev \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN curl -LsSf https://astral.sh/uv/0.7.19/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
 # =============================================================================
@@ -54,7 +52,9 @@ RUN if [ "$INSTALL_BASLER" = "true" ]; then \
     mkdir -p /opt/pylon && cd /opt/pylon && \
     wget -q -O pylon.tar.gz "$PYLON_URL" && \
     tar -xzf pylon.tar.gz && rm pylon.tar.gz && \
-    apt-get update && apt-get install -y ./pylon_*.deb ./codemeter*.deb || true && \
+    apt-get update && \
+    apt-get install -y ./pylon_*.deb && \
+    apt-get install -y ./codemeter*.deb || true && \
     apt-get -f install -y && rm -rf /var/lib/apt/lists/* && \
     find /opt/pylon -maxdepth 1 -type f -name "*.deb" -delete && ldconfig; \
     fi
@@ -75,7 +75,8 @@ COPY mindtrace/hardware/pyproject.toml ./mindtrace/hardware/
 COPY mindtrace/storage/pyproject.toml ./mindtrace/storage/
 
 RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
-    mkdir -p mindtrace/$pkg && echo '[project]\nname = "mindtrace-'$pkg'"\nversion = "0.0.0"' > mindtrace/$pkg/pyproject.toml; \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
 
 RUN uv sync --no-install-project --no-dev
@@ -100,7 +101,8 @@ COPY mindtrace/hardware/mindtrace/hardware/services/__init__.py ./mindtrace/hard
 COPY mindtrace/hardware/mindtrace/hardware/services/stereo_cameras ./mindtrace/hardware/mindtrace/hardware/services/stereo_cameras
 
 RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
-    mkdir -p mindtrace/$pkg && touch mindtrace/$pkg/__init__.py; \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
 
 ARG INSTALL_BASLER=true
@@ -113,6 +115,10 @@ RUN if [ "$INSTALL_BASLER" = "true" ]; then \
 # =============================================================================
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
 
+LABEL org.opencontainers.image.source="https://github.com/Mindtrace/mindtrace" \
+      org.opencontainers.image.title="mindtrace-stereo" \
+      org.opencontainers.image.description="Mindtrace Stereo Camera Service"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -120,16 +126,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/workspace/.venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common gnupg \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
     python3.12 \
-    libopencv-core4.5d libopencv-imgcodecs4.5d libopencv-imgproc4.5d \
     libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 \
     libusb-1.0-0 libudev1 libglx-mesa0 libgl1 \
     libxcb-xinerama0 libxcb-xinput0 libxcb-cursor0 \
-    iputils-ping net-tools iproute2 usbutils \
+    curl iputils-ping net-tools iproute2 usbutils \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
@@ -157,7 +158,7 @@ USER mindtrace
 EXPOSE 8004
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8004/health', timeout=5).raise_for_status()" || exit 1
+    CMD curl -sf http://localhost:${STEREO_CAMERA_API_PORT:-8004}/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["stereo"]
