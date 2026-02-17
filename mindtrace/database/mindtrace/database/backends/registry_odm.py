@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.registry import Registry, RegistryBackend
+from mindtrace.registry.core.types import OnConflict
 
 
 class RegistryMindtraceODM(MindtraceODM):
@@ -60,7 +61,7 @@ class RegistryMindtraceODM(MindtraceODM):
             init_mode = InitMode.SYNC
         # Store init_mode for consistency, though Registry doesn't use it
         self._init_mode = init_mode
-        self.registry = Registry(backend=backend, version_objects=False)
+        self.registry = Registry(backend=backend, version_objects=False, mutable=True)
         self._model_odms: Dict[str, "RegistryMindtraceODM"] = {}
 
         # Support both single model and multi-model modes
@@ -189,7 +190,7 @@ class RegistryMindtraceODM(MindtraceODM):
         if doc_id not in self.registry:
             raise DocumentNotFoundError(f"Object with id {doc_id} not found")
 
-        self.registry[doc_id] = obj
+        self.registry.save(doc_id, obj, on_conflict=OnConflict.OVERWRITE)
         return obj
 
     def get(self, id: str, fetch_links: bool = False) -> BaseModel:
