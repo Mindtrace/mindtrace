@@ -453,12 +453,20 @@ class Registry(Mindtrace):
         check_staleness = verify == VerifyLevel.FULL
 
         # Resolve versions from remote (authoritative source)
-        resolved, resolve_errors = self._remote._resolve_versions(names, versions_list, on_error="skip")
-
+        resolved: List[tuple[str, str] | None] = []
         objects: List[Any | None] = [None] * n
-        errors: Dict[tuple[str, str], dict] = dict(resolve_errors)
+        errors: Dict[tuple[str, str], dict] = {}
 
-        pending = [i for i in range(n) if resolved[i] not in errors]
+        for name, ver in zip(names, versions_list):
+            try:
+                rv = self._remote._resolve_load_version(name, ver)
+                resolved.append((name, rv))
+            except (RegistryObjectNotFound, ValueError) as e:
+                key = (name, ver or "latest")
+                errors[key] = {"error": type(e).__name__, "message": str(e)}
+                resolved.append(None)
+
+        pending = [i for i in range(n) if resolved[i] is not None]
 
         # Step 1: Batch cache load
         if pending:
@@ -475,7 +483,7 @@ class Registry(Mindtrace):
         if check_staleness:
             cached = [i for i in pending if objects[i] is not None]
             for i in self._find_stale_indices(resolved, cached):
-                objects[i] = None
+                objects[i] = None  # add to misses list
 
         # Step 3: Remote load for misses
         misses = [i for i in pending if objects[i] is None]
@@ -511,17 +519,21 @@ class Registry(Mindtrace):
         # Build result
         result = BatchResult()
         result.errors = errors
-        for i, (name, ver) in enumerate(resolved):
-            if (name, ver) in errors:
+        for i, item in enumerate(resolved):
+            if item is None:
+                key = (names[i], versions_list[i] or "latest")
                 result.results.append(None)
-                result.failed.append((name, ver))
+                result.failed.append(key)
+            elif item in errors:
+                result.results.append(None)
+                result.failed.append(item)
             elif objects[i] is not None:
                 result.results.append(objects[i])
-                result.succeeded.append((name, ver))
+                result.succeeded.append(item)
             else:
                 result.results.append(None)
-                result.failed.append((name, ver))
-                errors[(name, ver)] = {"error": "Unknown", "message": "Item not loaded"}
+                result.failed.append(item)
+                errors[item] = {"error": "Unknown", "message": "Item not loaded"}
 
         self.logger.debug(f"Loaded {result.success_count}/{n} object(s) ({result.failure_count} failed).")
         return result
@@ -609,31 +621,31 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
 
     def __getitem__(self, key: str | list[str]) -> Any:
-        if isinstance(key, list):
-            names, versions = self._core._parse_keys(key)
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
             versions = [v if v is not None else "latest" for v in versions]
             return self.load(name=names, version=versions)
-        name, version = self._core._parse_key(key)
+        name, version = names[0], versions[0]
         try:
             return self.load(name, version if version else "latest")
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
-        if isinstance(key, list):
-            names, versions = self._core._parse_keys(key)
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
             self.save(names, value, version=versions)
             return
-        name, version = self._core._parse_key(key)
+        name, version = names[0], versions[0]
         self.save(name, value, version=version)
 
     def __delitem__(self, key: str | list[str]) -> None:
-        if isinstance(key, list):
-            names, versions = self._core._parse_keys(key)
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
             self.delete(name=names, version=versions)
             return
         try:
-            name, version = self._core._parse_key(key)
+            name, version = names[0], versions[0]
             if version is None:
                 if not self._core.list_versions(name):
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
