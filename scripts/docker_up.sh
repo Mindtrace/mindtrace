@@ -41,4 +41,7 @@ export MINDTRACE_CLUSTER__WORKER_PORTS_RANGE=8200-8202
 
 export REDIS_OM_URL=redis://localhost:6380
 
-export GCP_PROJECT_ID=mindtrace-test
+
+export MINDTRACE_GCP__GCP_PROJECT_ID=mindtrace-test
+export MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME=registry-test-bucket
+
