@@ -14,7 +14,7 @@ import torch
 from torch import nn
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver
+from mindtrace.registry import Archiver, Registry
 
 try:
     import timm
@@ -86,13 +86,19 @@ class TimmModelArchiver(Archiver):
 
         # Get architecture name
         if hasattr(model, "pretrained_cfg") and model.pretrained_cfg:
-            config["architecture"] = model.pretrained_cfg.get("architecture", "unknown")
+            config["architecture"] = model.pretrained_cfg.get("architecture", "")
             # Store full pretrained_cfg for reference
             config["pretrained_cfg"] = {
                 k: v for k, v in model.pretrained_cfg.items() if isinstance(v, (str, int, float, bool, list, tuple))
             }
         elif hasattr(model, "default_cfg") and model.default_cfg:
-            config["architecture"] = model.default_cfg.get("architecture", "unknown")
+            config["architecture"] = model.default_cfg.get("architecture", "")
+
+        if not config.get("architecture"):
+            raise ValueError(
+                "Could not determine timm model architecture from pretrained_cfg or default_cfg. "
+                "Ensure the model was created via timm.create_model()."
+            )
 
         # Get num_classes
         if hasattr(model, "num_classes"):
@@ -142,7 +148,9 @@ class TimmModelArchiver(Archiver):
 
         architecture = config.get("architecture")
         if not architecture:
-            raise ValueError("No architecture found in config")
+            raise ValueError(
+                f"No architecture found in config at {config_path}. The model may not have been saved correctly."
+            )
 
         # Build model creation kwargs
         create_kwargs = {
@@ -173,10 +181,11 @@ def _register_timm_archiver():
     if not _TIMM_AVAILABLE:
         return
 
-    # We can't easily get a base class for all timm models,
-    # so we register a custom type checker
-    # For now, users need to import this module to enable timm archiving
-    # The archiver will be selected based on _is_timm_model check
+    # timm models are nn.Module subclasses with no common timm-specific base class.
+    # We register against nn.Module here. The registry dispatches by most-specific
+    # type first (e.g. PreTrainedModel for HF), so this acts as a fallback for
+    # nn.Module instances that aren't matched by a more specific archiver.
+    Registry.register_default_materializer(nn.Module, TimmModelArchiver)
 
 
 _register_timm_archiver()
