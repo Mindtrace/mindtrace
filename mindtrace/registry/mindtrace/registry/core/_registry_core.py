@@ -1419,18 +1419,6 @@ class _RegistryCore(Mindtrace):
             return key.split("@", 1)
         return key, None
 
-    def _parse_keys(self, keys: list[str]) -> tuple[list[str], list[str | None]]:
-        """Parse a list of registry keys into parallel lists of names and versions.
-
-        Args:
-            keys: List of registry keys in format "name" or "name@version"
-
-        Returns:
-            Tuple of (names, versions) lists
-        """
-        names, versions, _ = self._parse_key_input(keys)
-        return names, versions
-
     def _parse_key_input(self, key: str | list[str]) -> tuple[list[str], list[str | None], bool]:
         """Parse single or batch key input into normalized name/version lists.
 
