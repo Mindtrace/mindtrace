@@ -10,9 +10,9 @@ from mindtrace.registry import Registry
 
 
 @pytest.fixture
-def registry(minio_backend):
-    """Create a Registry instance with Minio backend."""
-    return Registry(backend=minio_backend, version_objects=True)
+def registry(s3_backend):
+    """Create a Registry instance with S3/Minio backend."""
+    return Registry(backend=s3_backend, version_objects=True)
 
 
 def test_concurrent_save_and_load(registry):
