@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver
+from mindtrace.registry import Archiver, Registry
 
 try:
     import onnx
@@ -139,3 +139,14 @@ class OnnxModelArchiver(Archiver):
         self.logger.debug(f"Loaded ONNX model from {self.uri}")
 
         return model
+
+
+def _register_onnx_archiver():
+    """Register the ONNX archiver if onnx is available."""
+    if not _ONNX_AVAILABLE:
+        return
+
+    Registry.register_default_materializer(ModelProto, OnnxModelArchiver)
+
+
+_register_onnx_archiver()

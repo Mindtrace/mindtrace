@@ -91,16 +91,16 @@ class HuggingFaceProcessorArchiver(Archiver):
             processor = AutoProcessor.from_pretrained(self.uri)
             self.logger.debug(f"Loaded HuggingFace processor from {self.uri}")
             return processor
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"AutoProcessor failed for {self.uri}: {e}")
 
         # Try tokenizer
         try:
             tokenizer = AutoTokenizer.from_pretrained(self.uri)
             self.logger.debug(f"Loaded HuggingFace tokenizer from {self.uri}")
             return tokenizer
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"AutoTokenizer failed for {self.uri}: {e}")
 
         # Try image processor
         try:

@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver
+from mindtrace.registry import Archiver, Registry
 
 try:
     import tensorrt as trt
@@ -185,3 +185,14 @@ class TensorRTEngineArchiver(Archiver):
         self.logger.debug(f"Loaded TensorRT engine from {self.uri}")
 
         return engine
+
+
+def _register_tensorrt_archiver():
+    """Register the TensorRT archiver if tensorrt is available."""
+    if not _TRT_AVAILABLE:
+        return
+
+    Registry.register_default_materializer(trt.ICudaEngine, TensorRTEngineArchiver)
+
+
+_register_tensorrt_archiver()
