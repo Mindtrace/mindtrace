@@ -17,18 +17,17 @@
 # =============================================================================
 
 # syntax=docker/dockerfile:1
-ARG UBUNTU_VERSION=22.04
+ARG UBUNTU_VERSION=24.04
 
 # =============================================================================
 # Stage 1: Base System with Python and uv
 # =============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS base-system
+FROM ubuntu:${UBUNTU_VERSION} AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Add deadsnakes PPA for Python 3.12 and install system essentials
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core tools
     ca-certificates \
@@ -36,8 +35,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     tar \
     xz-utils \
-    software-properties-common \
-    gnupg \
     # Build essentials
     build-essential \
     gcc \
@@ -50,33 +47,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # USB tools for camera detection
     usbutils \
     udev \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+    # Python
     python3.12 \
     python3.12-dev \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create python symlinks
 RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
     ln -sf /usr/bin/python3.12 /usr/bin/python
 
-# Install uv - modern Python package manager
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv - modern Python package manager (pinned version)
+RUN curl -LsSf https://astral.sh/uv/0.7.19/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
 # =============================================================================
 # Stage 2: Camera SDK Layer - Install camera SDKs
 # =============================================================================
-FROM base-system AS camera-sdk
+FROM base AS sdk
 
 ARG INSTALL_BASLER=false
 ARG INSTALL_GENICAM=false
 
 # Install camera system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # OpenCV dependencies (always needed)
+    # OpenCV build dependencies (needed for pypylon/harvesters compilation)
     libopencv-dev \
     libglib2.0-0 \
     libsm6 \
@@ -104,7 +98,8 @@ RUN if [ "$INSTALL_BASLER" = "true" ]; then \
         tar -xzf pylon.tar.gz && rm pylon.tar.gz && \
         echo "==> Installing Pylon .deb packages..." && \
         apt-get update && \
-        apt-get install -y ./pylon_*.deb ./codemeter*.deb || true && \
+        apt-get install -y ./pylon_*.deb && \
+        apt-get install -y ./codemeter*.deb || true && \
         apt-get -f install -y && \
         rm -rf /var/lib/apt/lists/* && \
         find /opt/pylon -maxdepth 1 -type f -name "*.deb" -delete && \
@@ -112,6 +107,7 @@ RUN if [ "$INSTALL_BASLER" = "true" ]; then \
         echo "==> Basler Pylon SDK installed successfully"; \
     else \
         echo "==> Skipping Basler Pylon SDK installation"; \
+        mkdir -p /opt/pylon; \
     fi
 
 # Set GenICam environment variables
@@ -126,29 +122,25 @@ RUN if [ "$INSTALL_GENICAM" = "true" ]; then \
 # =============================================================================
 # Stage 3: Python Dependencies - Install with uv
 # =============================================================================
-FROM camera-sdk AS dependencies
+FROM sdk AS dependencies
 
 WORKDIR /workspace
 
-# Copy dependency files for caching (context is mindtrace repo root)
+# Copy dependency files for caching (context is repo root)
 # Need root pyproject.toml for workspace definition
 COPY pyproject.toml ./
 
-# Copy all workspace member pyproject.toml files for proper dependency resolution
-# (uv requires all workspace members listed in root pyproject.toml to be present)
+# Copy workspace member pyproject.toml files needed for dependency resolution
 COPY mindtrace/core/pyproject.toml ./mindtrace/core/
 COPY mindtrace/services/pyproject.toml ./mindtrace/services/
 COPY mindtrace/hardware/pyproject.toml ./mindtrace/hardware/
-COPY mindtrace/apps/pyproject.toml ./mindtrace/apps/
-COPY mindtrace/automation/pyproject.toml ./mindtrace/automation/
-COPY mindtrace/cluster/pyproject.toml ./mindtrace/cluster/
-COPY mindtrace/database/pyproject.toml ./mindtrace/database/
-COPY mindtrace/datalake/pyproject.toml ./mindtrace/datalake/
-COPY mindtrace/jobs/pyproject.toml ./mindtrace/jobs/
-COPY mindtrace/models/pyproject.toml ./mindtrace/models/
-COPY mindtrace/registry/pyproject.toml ./mindtrace/registry/
 COPY mindtrace/storage/pyproject.toml ./mindtrace/storage/
-COPY mindtrace/ui/pyproject.toml ./mindtrace/ui/
+
+# Create stub pyproject.toml for unused workspace members
+RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
+    done
 
 # Sync dependencies with uv (creates .venv)
 # Note: Camera backend packages (pypylon, harvesters, genicam) will be installed
@@ -163,15 +155,18 @@ FROM dependencies AS application
 
 WORKDIR /workspace
 
-# Copy workspace source code (context is /home/yasser/mindtrace/)
-# Only copy the packages we actually need (core, services, hardware)
+# Copy workspace source code (context is repo root)
+# Only copy the packages we actually need (core, services, hardware, storage)
 COPY mindtrace/core ./mindtrace/core
 COPY mindtrace/services ./mindtrace/services
 COPY mindtrace/hardware ./mindtrace/hardware
+COPY mindtrace/storage ./mindtrace/storage
 
-# Create empty __init__.py files for other workspace members to satisfy workspace structure
-RUN mkdir -p mindtrace/apps mindtrace/automation mindtrace/cluster mindtrace/database mindtrace/datalake mindtrace/jobs mindtrace/models mindtrace/registry mindtrace/storage mindtrace/ui && \
-    touch mindtrace/apps/__init__.py mindtrace/automation/__init__.py mindtrace/cluster/__init__.py mindtrace/database/__init__.py mindtrace/datalake/__init__.py mindtrace/jobs/__init__.py mindtrace/models/__init__.py mindtrace/registry/__init__.py mindtrace/storage/__init__.py mindtrace/ui/__init__.py
+# Create stub pyproject.toml for other workspace members to satisfy workspace structure
+RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
+    mkdir -p mindtrace/$pkg && \
+    printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
+    done
 
 # Install the hardware package with uv, including camera extras based on build args
 ARG INSTALL_BASLER=false
@@ -196,6 +191,10 @@ RUN if [ "$INSTALL_BASLER" = "true" ] && [ "$INSTALL_GENICAM" = "true" ]; then \
 # =============================================================================
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
 
+LABEL org.opencontainers.image.source="https://github.com/Mindtrace/mindtrace" \
+      org.opencontainers.image.title="mindtrace-camera" \
+      org.opencontainers.image.description="Mindtrace Camera Service"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -205,17 +204,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    gnupg \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
     # Python runtime
     python3.12 \
-    # OpenCV runtime dependencies
-    libopencv-core4.5d \
-    libopencv-imgcodecs4.5d \
-    libopencv-imgproc4.5d \
+    # GUI/display dependencies (needed by opencv-python wheel at runtime)
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -230,7 +221,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-xinerama0 \
     libxcb-xinput0 \
     libxcb-cursor0 \
-    # Network tools
+    # Network and diagnostic tools
+    curl \
     iputils-ping \
     net-tools \
     iproute2 \
@@ -241,8 +233,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
     ln -sf /usr/bin/python3.12 /usr/bin/python
 
-# Copy Basler SDK from camera-sdk stage (empty if not installed)
-COPY --from=camera-sdk /opt/pylon /opt/pylon
+# Copy Basler SDK from sdk stage (empty if not installed)
+COPY --from=sdk /opt/pylon /opt/pylon
 RUN ldconfig
 
 # Copy virtual environment with all dependencies
@@ -293,7 +285,7 @@ EXPOSE 8002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8002/health', timeout=5).raise_for_status()" || exit 1
+    CMD curl -sf http://localhost:${CAMERA_API_PORT:-8002}/health || exit 1
 
 # Entrypoint handles camera service startup
 ENTRYPOINT ["/app/entrypoint.sh"]

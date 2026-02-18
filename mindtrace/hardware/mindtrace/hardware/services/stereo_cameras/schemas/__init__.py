@@ -11,6 +11,9 @@ from mindtrace.hardware.services.stereo_cameras.schemas.config_schemas import (
     ConfigureStereoCameraSchema,
     GetStereoCameraConfigurationSchema,
 )
+from mindtrace.hardware.services.stereo_cameras.schemas.health_schemas import (
+    HealthSchema,
+)
 from mindtrace.hardware.services.stereo_cameras.schemas.info_schemas import (
     DiscoverStereoCamerasSchema,
     GetStereoCameraBackendInfoSchema,
@@ -30,6 +33,8 @@ from mindtrace.hardware.services.stereo_cameras.schemas.lifecycle_schemas import
 
 # All schemas for easy import - dict format for add_endpoint() compatibility
 ALL_SCHEMAS = {
+    # Health
+    "health": HealthSchema,
     # Backend & Discovery
     "get_backends": GetStereoCameraBackendsSchema,
     "get_backend_info": GetStereoCameraBackendInfoSchema,
@@ -57,6 +62,8 @@ ALL_SCHEMAS = {
 }
 
 __all__ = [
+    # Health
+    "HealthSchema",
     # Individual schemas
     "GetStereoCameraBackendsSchema",
     "GetStereoCameraBackendInfoSchema",
