@@ -359,7 +359,7 @@ class CameraManagerService(Service):
         """Discover available cameras from all or specific backends."""
         try:
             manager = await self._get_camera_manager()
-            cameras = manager.discover(backends=request.backend, include_mocks=self.include_mocks)
+            cameras = await manager.discover_async(backends=request.backend, include_mocks=self.include_mocks)
 
             return ListResponse(
                 success=True,
