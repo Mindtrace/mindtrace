@@ -24,8 +24,8 @@ timm = ["timm>=1.0"]
 huggingface = ["transformers>=4.0", "peft>=0.5"]
 ultralytics = ["ultralytics>=8.0"]
 onnx = ["onnx>=1.14", "onnxruntime>=1.15"]
-tensorrt-cu11 = ["tensorrt-cu11>=8.6"]
-tensorrt-cu12 = ["tensorrt-cu12>=10.0"]
+tensorrt-cu11 = ["tensorrt-cu11>=8.6; sys_platform == 'linux' and platform_machine == 'x86_64'"]
+tensorrt-cu12 = ["tensorrt-cu12>=10.0; sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
 [project.urls]
 Homepage = "https://mindtrace.ai"
