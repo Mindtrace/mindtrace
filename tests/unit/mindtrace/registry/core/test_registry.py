@@ -2068,12 +2068,13 @@ def test_backend_internal_lock_contention(registry):
 
 
 def test_validate_version_none_or_latest(registry):
-    """Test that _validate_version returns None for None or 'latest' versions."""
-    # Test None version
-    assert registry._validate_version(None) is None
+    """Test that _validate_version raises on None or 'latest' (unresolved) versions."""
+    # None and "latest" should raise since they must be resolved before validation
+    with pytest.raises(ValueError, match="unresolved version"):
+        registry._validate_version(None)
 
-    # Test 'latest' version
-    assert registry._validate_version("latest") is None
+    with pytest.raises(ValueError, match="unresolved version"):
+        registry._validate_version("latest")
 
     # Test that other versions are validated
     assert registry._validate_version("1.0.0") == "1.0.0"
@@ -3819,3 +3820,51 @@ def test_batch_load_length_mismatch(registry):
 
     with pytest.raises(ValueError, match="name and version lists must have same length"):
         registry.load(names, version=versions)
+
+
+def test_save_single_rejects_latest(registry):
+    """Test that save with version='latest' raises ValueError."""
+    with pytest.raises(ValueError, match="Cannot save with version='latest'"):
+        registry.save("test:a", "hello", version="latest")
+
+
+def test_save_batch_rejects_latest(registry):
+    """Test that batch save with version='latest' records error in BatchResult."""
+    result = registry.save(["test:a"], ["hello"], version=["latest"])
+    assert result.failure_count == 1
+    assert any("Cannot save with version='latest'" in err["message"] for err in result.errors.values())
+
+
+def test_save_batch_scalar_version_broadcast(registry):
+    """Test that a scalar version is broadcast to all items in batch save."""
+    result = registry.save(["test:a", "test:b"], ["value_a", "value_b"], version="1.0.0")
+    assert result.success_count == 2
+    assert registry.load("test:a", version="1.0.0") == "value_a"
+    assert registry.load("test:b", version="1.0.0") == "value_b"
+
+
+def test_resolve_load_version_validates_explicit_format(registry):
+    """Test that _resolve_load_version validates explicit version format."""
+    with pytest.raises(ValueError, match="Invalid version string"):
+        registry._resolve_load_version("test:a", "1.0.0-alpha")
+
+
+def test_resolve_load_version_normalizes_v_prefix(registry):
+    """Test that _resolve_load_version strips 'v' prefix from explicit versions."""
+    registry.save("test:a", "hello", version="1.0.0")
+    resolved = registry._resolve_load_version("test:a", "v1.0.0")
+    assert resolved == "1.0.0"
+
+
+def test_resolve_load_version_latest(registry):
+    """Test that _resolve_load_version resolves 'latest' and None to concrete version."""
+    registry.save("test:a", "hello", version="1.0.0")
+    registry.save("test:a", "world", version="2.0.0")
+    assert registry._resolve_load_version("test:a", "latest") == "2.0.0"
+    assert registry._resolve_load_version("test:a", None) == "2.0.0"
+
+
+def test_resolve_load_version_not_found(registry):
+    """Test that _resolve_load_version raises RegistryObjectNotFound for missing objects."""
+    with pytest.raises(RegistryObjectNotFound):
+        registry._resolve_load_version("nonexistent", "latest")
