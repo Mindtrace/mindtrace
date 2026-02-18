@@ -1437,7 +1437,19 @@ class _RegistryCore(Mindtrace):
         return names, versions, is_batch
 
     def __getitem__(self, key: str | list[str]) -> Any:
-        """Load object(s). Raises KeyError for single missing keys."""
+        """Get object(s) from the registry using dictionary-like syntax.
+
+        Args:
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch loading.
+
+        Returns:
+            Single key: The loaded object.
+            List of keys: BatchResult containing results, errors, and status.
+
+        Raises:
+            KeyError: If the object doesn't exist (single key only).
+        """
         names, versions, is_batch = self._parse_key_input(key)
         versions = [v or "latest" for v in versions]
         if is_batch:
@@ -1448,7 +1460,17 @@ class _RegistryCore(Mindtrace):
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
-        """Save object(s). Version=None auto-increments."""
+        """Save object(s) to the registry using dictionary-like syntax.
+
+        Args:
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch saving.
+            value: The object(s) to save. When key is a list, value should be a
+                list of the same length.
+
+        Raises:
+            ValueError: If the version format is invalid.
+        """
         names, versions, is_batch = self._parse_key_input(key)
         self.save(
             name=names if is_batch else names[0],
@@ -1457,7 +1479,15 @@ class _RegistryCore(Mindtrace):
         )
 
     def __delitem__(self, key: str | list[str]) -> None:
-        """Delete object(s). Raises KeyError for single missing keys."""
+        """Delete object(s) from the registry using dictionary-like syntax.
+
+        Args:
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch deletion.
+
+        Raises:
+            KeyError: If the object doesn't exist (single key only).
+        """
         names, versions, is_batch = self._parse_key_input(key)
         if is_batch:
             self.delete(name=names, version=versions)
@@ -1468,7 +1498,14 @@ class _RegistryCore(Mindtrace):
             raise KeyError(f"Object not found: {key}") from e
 
     def __contains__(self, key: str) -> bool:
-        """Check if an object exists."""
+        """Check if an object exists in the registry using dictionary-like syntax.
+
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+
+        Returns:
+            True if the object exists, False otherwise.
+        """
         name, version = self._parse_key(key)
         return self.has_object(name=name, version=version or "latest")
 
