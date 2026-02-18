@@ -46,9 +46,10 @@ def test_hf_archiver_init(hf_archiver, temp_dir):
 
 def test_hf_archiver_save(hf_archiver):
     """Test save method."""
-    # Mock PreTrainedModel
+    # Mock PreTrainedModel (no PEFT adapter)
     mock_model = MagicMock()
     mock_model.save_pretrained = MagicMock()
+    mock_model.peft_config = None  # No adapter
 
     # Call save
     hf_archiver.save(mock_model)
@@ -64,6 +65,7 @@ def test_hf_archiver_save_creates_directory(temp_dir):
 
     mock_model = MagicMock()
     mock_model.save_pretrained = MagicMock()
+    mock_model.peft_config = None  # No adapter
 
     archiver.save(mock_model)
 
@@ -128,13 +130,25 @@ def test_hf_archiver_get_model_class_fallback_to_automodel(hf_archiver):
         assert result is not None
 
 
+def test_hf_archiver_save_peft_adapter_raises_without_peft(hf_archiver):
+    """Test that saving a model with PEFT adapter raises if peft is not installed."""
+    mock_model = MagicMock()
+    mock_model.save_pretrained = MagicMock()
+    mock_model.peft_config = {"default": MagicMock()}  # Has adapter
+
+    with patch.dict("sys.modules", {"peft": None}):
+        with pytest.raises(ImportError, match="peft"):
+            hf_archiver.save(mock_model)
+
+
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
 def test_hf_archiver_save_with_peft_adapter(hf_archiver):
-    """Test save method with PEFT adapter."""
-    from peft import PeftModel
-
-    mock_model = MagicMock(spec=PeftModel)
+    """Test save method with PEFT adapter on a plain PreTrainedModel (not PeftModel)."""
+    # This tests _save_peft_adapter for a regular model that happens to have peft_config
+    mock_model = MagicMock()
     mock_model.save_pretrained = MagicMock()
+    # Make _is_peft_model return False (not a peft module)
+    type(mock_model).__module__ = "transformers.models.bert"
 
     # Mock peft_config
     mock_peft_config = MagicMock()
@@ -159,12 +173,12 @@ def test_hf_archiver_save_with_peft_adapter(hf_archiver):
 
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
 def test_hf_archiver_load_with_peft_adapter(hf_archiver, temp_dir):
-    """Test load method with PEFT adapter."""
+    """Test load re-injects adapter when archiver_meta.json is absent (non-merged save)."""
     # Create config.json
     config_path = Path(temp_dir) / "config.json"
     config_path.write_text('{"architectures": ["BertModel"]}')
 
-    # Create adapter directory with files
+    # Create adapter directory with files but NO archiver_meta.json
     adapter_dir = Path(temp_dir) / "adapter"
     adapter_dir.mkdir()
     (adapter_dir / "adapter_config.json").write_text('{"peft_type": "LORA"}')
@@ -191,6 +205,206 @@ def test_hf_archiver_load_with_peft_adapter(hf_archiver, temp_dir):
 
                             hf_archiver.load(MagicMock)
 
-                            # Verify adapter was loaded
+                            # Verify adapter was loaded and injected
                             mock_peft_config.from_pretrained.assert_called_once()
                             mock_inject.assert_called_once()
+
+
+# ---------- PEFT model detection ----------
+
+
+def test_is_peft_model_true():
+    """Test _is_peft_model returns True for a PEFT-wrapped model."""
+    mock_model = MagicMock()
+    type(mock_model).__module__ = "peft.peft_model"
+    mock_model.merge_and_unload = MagicMock()
+
+    assert HuggingFaceModelArchiver._is_peft_model(mock_model) is True
+
+
+def test_is_peft_model_false_wrong_module():
+    """Test _is_peft_model returns False for a non-PEFT model."""
+    mock_model = MagicMock()
+    type(mock_model).__module__ = "transformers.models.bert"
+    mock_model.merge_and_unload = MagicMock()
+
+    assert HuggingFaceModelArchiver._is_peft_model(mock_model) is False
+
+
+def test_is_peft_model_false_no_merge():
+    """Test _is_peft_model returns False when merge_and_unload is absent."""
+    mock_model = MagicMock(spec=[])  # no attributes
+    type(mock_model).__module__ = "peft.peft_model"
+
+    assert HuggingFaceModelArchiver._is_peft_model(mock_model) is False
+
+
+# ---------- PeftModel save (merge_and_unload) ----------
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_save_peft_model_merges_and_saves(hf_archiver, temp_dir):
+    """Test _save_peft_model deep-copies, merges, saves base + adapter provenance."""
+    import json
+
+    mock_model = MagicMock()
+    type(mock_model).__module__ = "peft.peft_model"
+    mock_model.merge_and_unload = MagicMock()
+
+    # merge_and_unload on the deep copy returns a merged model
+    mock_merged = MagicMock()
+    mock_model.merge_and_unload.return_value = mock_merged
+
+    mock_peft_config = MagicMock()
+    mock_peft_config.peft_type = "LORA"
+    mock_model.peft_config = {"default": mock_peft_config}
+
+    with (
+        patch("copy.deepcopy", return_value=mock_model) as mock_deepcopy,
+        patch("peft.get_peft_model_state_dict") as mock_get_state,
+        patch("torch.save") as mock_torch_save,
+    ):
+        mock_get_state.return_value = {"lora_A": "weights"}
+
+        hf_archiver._save_peft_model(mock_model)
+
+        # Deep copy was called with the original model
+        mock_deepcopy.assert_called_once_with(mock_model)
+
+        # merge_and_unload called on the copy
+        mock_model.merge_and_unload.assert_called_once()
+
+        # Merged model saved
+        mock_merged.save_pretrained.assert_called_once_with(temp_dir)
+
+        # Adapter config saved for provenance
+        adapter_dir = os.path.join(temp_dir, "adapter")
+        mock_peft_config.save_pretrained.assert_called_once_with(adapter_dir)
+
+        # Adapter weights saved
+        mock_torch_save.assert_called_once()
+        saved_path = mock_torch_save.call_args[0][1]
+        assert saved_path == os.path.join(adapter_dir, "adapter.bin")
+
+        # archiver_meta.json written with merged=True
+        meta_path = os.path.join(adapter_dir, "archiver_meta.json")
+        assert os.path.exists(meta_path)
+        with open(meta_path) as f:
+            meta = json.load(f)
+        assert meta["merged"] is True
+        assert meta["peft_type"] == "LORA"
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_save_peft_model_no_default_config(hf_archiver, temp_dir):
+    """Test _save_peft_model handles missing 'default' peft_config gracefully."""
+    import json
+
+    mock_model = MagicMock()
+    type(mock_model).__module__ = "peft.peft_model"
+
+    mock_merged = MagicMock()
+    mock_model.merge_and_unload.return_value = mock_merged
+    mock_model.peft_config = {}  # No "default" key
+
+    with (
+        patch("copy.deepcopy", return_value=mock_model),
+        patch("peft.get_peft_model_state_dict", return_value={}),
+        patch("torch.save"),
+    ):
+        hf_archiver._save_peft_model(mock_model)
+
+        # Merged model still saved
+        mock_merged.save_pretrained.assert_called_once()
+
+        # archiver_meta.json has peft_type=None
+        meta_path = os.path.join(temp_dir, "adapter", "archiver_meta.json")
+        with open(meta_path) as f:
+            meta = json.load(f)
+        assert meta["merged"] is True
+        assert meta["peft_type"] is None
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_save_dispatches_to_save_peft_model(hf_archiver):
+    """Test save() delegates to _save_peft_model when model is a PeftModel."""
+    mock_model = MagicMock()
+    type(mock_model).__module__ = "peft.peft_model"
+    mock_model.merge_and_unload = MagicMock()
+
+    with patch.object(hf_archiver, "_save_peft_model") as mock_save_peft:
+        hf_archiver.save(mock_model)
+        mock_save_peft.assert_called_once_with(mock_model)
+
+
+# ---------- Load skips re-injection for merged saves ----------
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_load_peft_adapter_skips_merged(hf_archiver, temp_dir):
+    """Test _load_peft_adapter skips re-injection when archiver_meta.json has merged=True."""
+    import json
+
+    adapter_dir = Path(temp_dir) / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text('{"peft_type": "LORA"}')
+    (adapter_dir / "adapter.bin").write_bytes(b"dummy")
+    (adapter_dir / "archiver_meta.json").write_text(json.dumps({"merged": True, "peft_type": "LORA"}))
+
+    mock_model = MagicMock()
+
+    result = hf_archiver._load_peft_adapter(mock_model)
+
+    # Model returned unchanged — no injection
+    assert result is mock_model
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_load_peft_adapter_injects_when_not_merged(hf_archiver, temp_dir):
+    """Test _load_peft_adapter re-injects adapter when archiver_meta.json has merged=False."""
+    import json
+
+    adapter_dir = Path(temp_dir) / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text('{"peft_type": "LORA"}')
+    (adapter_dir / "adapter.bin").write_bytes(b"dummy")
+    (adapter_dir / "archiver_meta.json").write_text(json.dumps({"merged": False}))
+
+    mock_model = MagicMock()
+    mock_injected = MagicMock()
+
+    with (
+        patch("peft.PeftConfig") as mock_peft_config,
+        patch("peft.inject_adapter_in_model", return_value=mock_injected) as mock_inject,
+        patch("peft.set_peft_model_state_dict"),
+        patch("torch.load", return_value={}),
+    ):
+        result = hf_archiver._load_peft_adapter(mock_model)
+
+        # Adapter was injected
+        mock_peft_config.from_pretrained.assert_called_once()
+        mock_inject.assert_called_once()
+        assert result is mock_injected
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_load_peft_adapter_no_adapter_dir(hf_archiver):
+    """Test _load_peft_adapter returns model unchanged when no adapter directory exists."""
+    mock_model = MagicMock()
+    result = hf_archiver._load_peft_adapter(mock_model)
+    assert result is mock_model
+
+
+# ---------- PeftModel registration ----------
+
+
+@pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
+def test_register_hf_archiver_registers_peft_model():
+    """Test _register_hf_archiver registers PeftModel with the Registry."""
+    from peft import PeftModel
+
+    from mindtrace.registry import Registry
+
+    key = f"{PeftModel.__module__}.{PeftModel.__name__}"
+    assert key in Registry._default_materializers
+    assert Registry._default_materializers[key] == HuggingFaceModelArchiver
