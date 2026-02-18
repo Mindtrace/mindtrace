@@ -608,18 +608,30 @@ class Registry(Mindtrace):
     # instead of the facade's cache-aware versions)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str | list[str]) -> Any:
+        if isinstance(key, list):
+            names, versions = self._core._parse_keys(key)
+            versions = [v if v is not None else "latest" for v in versions]
+            return self.load(name=names, version=versions)
         name, version = self._core._parse_key(key)
         try:
             return self.load(name, version if version else "latest")
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: str | list[str], value: Any) -> None:
+        if isinstance(key, list):
+            names, versions = self._core._parse_keys(key)
+            self.save(names, value, version=versions)
+            return
         name, version = self._core._parse_key(key)
-        self.save(name, value, version=version, on_conflict=OnConflict.SKIP)
+        self.save(name, value, version=version)
 
-    def __delitem__(self, key: str) -> None:
+    def __delitem__(self, key: str | list[str]) -> None:
+        if isinstance(key, list):
+            names, versions = self._core._parse_keys(key)
+            self.delete(name=names, version=versions)
+            return
         try:
             name, version = self._core._parse_key(key)
             if version is None:
@@ -633,7 +645,9 @@ class Registry(Mindtrace):
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: str | list[str]) -> bool:
+        if isinstance(key, list):
+            return all(self._core.__contains__(k) for k in key)
         return self._core.__contains__(key)
 
     def __len__(self) -> int:

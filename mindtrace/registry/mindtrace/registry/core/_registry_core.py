@@ -1419,19 +1419,41 @@ class _RegistryCore(Mindtrace):
             return key.split("@", 1)
         return key, None
 
-    def __getitem__(self, key: str) -> Any:
-        """Get an object from the registry using dictionary-like syntax.
+    def _parse_keys(self, keys: list[str]) -> tuple[list[str], list[str | None]]:
+        """Parse a list of registry keys into parallel lists of names and versions.
 
         Args:
-            key: The object name, optionally including version (e.g. "name@version")
+            keys: List of registry keys in format "name" or "name@version"
 
         Returns:
-            The loaded object
+            Tuple of (names, versions) lists
+        """
+        names = []
+        versions = []
+        for key in keys:
+            name, version = self._parse_key(key)
+            names.append(name)
+            versions.append(version)
+        return names, versions
+
+    def __getitem__(self, key: str | list[str]) -> Any:
+        """Get object(s) from the registry using dictionary-like syntax.
+
+        Args:
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch loading.
+
+        Returns:
+            Single key: The loaded object.
+            List of keys: BatchResult containing results, errors, and status.
 
         Raises:
-            KeyError: If the object doesn't exist
-            ValueError: If the version format is invalid
+            KeyError: If the object doesn't exist (single key only).
         """
+        if isinstance(key, list):
+            names, versions = self._parse_keys(key)
+            versions = [v if v is not None else "latest" for v in versions]
+            return self.load(name=names, version=versions)
         try:
             name, version = self._parse_key(key)
             if version is None:
@@ -1440,31 +1462,39 @@ class _RegistryCore(Mindtrace):
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        """Save an object to the registry using dictionary-like syntax.
+    def __setitem__(self, key: str | list[str], value: Any) -> None:
+        """Save object(s) to the registry using dictionary-like syntax.
 
         Args:
-            key: The object name, optionally including version (e.g. "name@version")
-            value: The object to save
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch saving.
+            value: The object(s) to save. When key is a list, value should be a
+                list of the same length.
 
         Raises:
-            ValueError: If the version format is invalid
-            RegistryVersionConflict: If the object already exists (use explicit save with on_conflict to overwrite)
+            ValueError: If the version format is invalid.
         """
+        if isinstance(key, list):
+            names, versions = self._parse_keys(key)
+            self.save(name=names, obj=value, version=versions)
+            return
         name, version = self._parse_key(key)
-        # Dict interface always raises on conflict - use explicit save() with on_conflict="overwrite" to overwrite
-        self.save(name=name, obj=value, version=version, on_conflict=OnConflict.SKIP)
+        self.save(name=name, obj=value, version=version)
 
-    def __delitem__(self, key: str) -> None:
-        """Delete an object from the registry using dictionary-like syntax.
+    def __delitem__(self, key: str | list[str]) -> None:
+        """Delete object(s) from the registry using dictionary-like syntax.
 
         Args:
-            key: The object name, optionally including version (e.g. "name@version")
+            key: The object name(s), optionally including version (e.g. "name@version").
+                Can be a single string or a list of strings for batch deletion.
 
         Raises:
-            KeyError: If the object doesn't exist
-            ValueError: If the version format is invalid
+            KeyError: If the object doesn't exist (single key only).
         """
+        if isinstance(key, list):
+            names, versions = self._parse_keys(key)
+            self.delete(name=names, version=versions)
+            return
         try:
             name, version = self._parse_key(key)
             if version is None:

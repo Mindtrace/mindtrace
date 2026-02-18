@@ -1266,6 +1266,232 @@ def test_contains_value_error(registry):
         registry._latest = original_latest
 
 
+@pytest.fixture
+def mutable_registry():
+    """Create a registry with versioning enabled and mutable=True for overwrites."""
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(backend=temp_dir, version_objects=True, mutable=True)
+
+
+# ─── Batch dictionary interface tests ────────────────────────────────────────
+
+
+def test_dict_batch_setitem_and_getitem(mutable_registry):
+    """Test batch __setitem__ and __getitem__ with list keys."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Batch __getitem__ returns BatchResult
+    result = mutable_registry[["test:a", "test:b"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == [1, 2]
+    assert len(result.succeeded) == 2
+
+    # Single __getitem__ still works
+    assert mutable_registry["test:a"] == 1
+    assert mutable_registry["test:b"] == 2
+
+
+def test_dict_batch_setitem_overwrites_on_mutable(mutable_registry):
+    """Test that batch __setitem__ overwrites existing values on a mutable registry.
+
+    This is the primary bug described in the issue: previously, the second
+    assignment silently skipped because on_conflict was hardcoded to SKIP.
+    """
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Second assignment should overwrite
+    mutable_registry[["test:a", "test:b"]] = [10, 20]
+
+    assert mutable_registry["test:a"] == 10
+    assert mutable_registry["test:b"] == 20
+
+
+def test_dict_single_setitem_overwrites_on_mutable(mutable_registry):
+    """Test that single __setitem__ overwrites existing values on a mutable registry.
+
+    The same on_conflict bug affected single-key assignment too.
+    """
+    mutable_registry["test:a"] = 1
+    mutable_registry["test:a"] = 10
+
+    assert mutable_registry["test:a"] == 10
+
+
+def test_dict_batch_delitem(mutable_registry):
+    """Test batch __delitem__ with list keys.
+
+    Previously this raised TypeError: unhashable type: 'list'.
+    """
+    mutable_registry[["test:a", "test:b", "test:c"]] = [1, 2, 3]
+    assert mutable_registry["test:a"] == 1
+
+    del mutable_registry[["test:a", "test:b"]]
+
+    assert "test:a" not in mutable_registry
+    assert "test:b" not in mutable_registry
+    assert "test:c" in mutable_registry
+
+
+def test_dict_batch_contains(mutable_registry):
+    """Test batch __contains__ with list keys."""
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    assert ["test:a", "test:b"] in mutable_registry
+    assert ["test:a", "test:nonexistent"] not in mutable_registry
+    assert ["test:nonexistent"] not in mutable_registry
+
+
+def test_dict_batch_setitem_with_versioned_keys(mutable_registry):
+    """Test batch __setitem__ with version suffixes in keys."""
+    mutable_registry[["test:a@1.0.0", "test:b@2.0.0"]] = ["val_a", "val_b"]
+
+    assert mutable_registry["test:a@1.0.0"] == "val_a"
+    assert mutable_registry["test:b@2.0.0"] == "val_b"
+
+
+def test_dict_batch_getitem_with_versioned_keys(mutable_registry):
+    """Test batch __getitem__ with version suffixes in keys."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:a", "v2", version="2.0.0")
+
+    result = mutable_registry[["test:a@1.0.0", "test:a@2.0.0"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == ["v1", "v2"]
+
+
+def test_dict_batch_delitem_with_versioned_keys(mutable_registry):
+    """Test batch __delitem__ with version suffixes in keys."""
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:a", "v2", version="2.0.0")
+    mutable_registry.save("test:b", "v1", version="1.0.0")
+
+    del mutable_registry[["test:a@1.0.0", "test:b@1.0.0"]]
+
+    assert "test:a@1.0.0" not in mutable_registry
+    assert "test:a@2.0.0" in mutable_registry
+    assert "test:b@1.0.0" not in mutable_registry
+
+
+def test_dict_batch_contains_with_versioned_keys(mutable_registry):
+    """Test batch __contains__ with version suffixes in keys."""
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:b", "v1", version="1.0.0")
+
+    assert ["test:a@1.0.0", "test:b@1.0.0"] in mutable_registry
+    assert ["test:a@1.0.0", "test:b@9.9.9"] not in mutable_registry
+
+
+def test_dict_batch_getitem_partial_failure(mutable_registry):
+    """Test batch __getitem__ when some keys don't exist."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry["test:a"] = 1
+
+    result = mutable_registry[["test:a", "test:nonexistent"]]
+    assert isinstance(result, BatchResult)
+    assert len(result.failed) >= 1
+
+
+def test_dict_batch_setitem_empty_list(mutable_registry):
+    """Test batch __setitem__ with empty list is a no-op."""
+    from mindtrace.registry.core.types import BatchResult
+
+    result = mutable_registry.save([], [])
+    assert isinstance(result, BatchResult)
+    assert len(mutable_registry) == 0
+
+
+def test_dict_batch_delitem_empty_list(mutable_registry):
+    """Test batch __delitem__ with empty list is a no-op."""
+
+    mutable_registry["test:a"] = 1
+    del mutable_registry[[]]
+    assert mutable_registry["test:a"] == 1
+
+
+def test_dict_setitem_immutable_registry_skip(registry):
+    """Test that __setitem__ on an immutable registry raises on explicit version conflict.
+
+    With version_objects=True, auto-versioning creates new versions (1, 2, ...),
+    so no conflict occurs. A conflict only happens with an explicit same version.
+    """
+    registry["test:a@1.0.0"] = 1
+
+    # Same explicit version on immutable registry should raise
+    with pytest.raises(RegistryVersionConflict):
+        registry["test:a@1.0.0"] = 10
+
+    # Original value should be unchanged
+    assert registry["test:a@1.0.0"] == 1
+
+
+def test_dict_batch_overwrite_roundtrip(mutable_registry):
+    """Full roundtrip: batch save, batch overwrite, batch load, batch delete."""
+    from mindtrace.registry.core.types import BatchResult
+
+    # Save
+    mutable_registry[["test:x", "test:y", "test:z"]] = [100, 200, 300]
+
+    # Overwrite
+    mutable_registry[["test:x", "test:y", "test:z"]] = [111, 222, 333]
+
+    # Load
+    result = mutable_registry[["test:x", "test:y", "test:z"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == [111, 222, 333]
+
+    # Contains
+    assert ["test:x", "test:y", "test:z"] in mutable_registry
+
+    # Delete
+    del mutable_registry[["test:x", "test:y", "test:z"]]
+    assert ["test:x", "test:y", "test:z"] not in mutable_registry
+
+
+def test_dict_methods_api_parity(mutable_registry):
+    """Verify dict API and methods API produce identical results.
+
+    This test directly compares reg[keys] = values against reg.save(keys, values)
+    and del reg[keys] against reg.delete(keys).
+    """
+
+    # Methods API
+    mutable_registry.save(["test:m1", "test:m2"], [10, 20])
+    m_load = mutable_registry.load(["test:m1", "test:m2"])
+    assert m_load.results == [10, 20]
+
+    # Dict API
+    mutable_registry[["test:d1", "test:d2"]] = [10, 20]
+    d_load = mutable_registry[["test:d1", "test:d2"]]
+    assert d_load.results == [10, 20]
+
+    # Both should have the same values
+    assert m_load.results == d_load.results
+
+    # Methods API overwrite
+    mutable_registry.save(["test:m1", "test:m2"], [100, 200])
+    assert mutable_registry.load(["test:m1", "test:m2"]).results == [100, 200]
+
+    # Dict API overwrite
+    mutable_registry[["test:d1", "test:d2"]] = [100, 200]
+    assert mutable_registry[["test:d1", "test:d2"]].results == [100, 200]
+
+    # Methods API delete
+    mutable_registry.delete(["test:m1", "test:m2"])
+    assert "test:m1" not in mutable_registry
+
+    # Dict API delete
+    del mutable_registry[["test:d1", "test:d2"]]
+    assert "test:d1" not in mutable_registry
+
+
+# ─── End of batch dictionary interface tests ─────────────────────────────────
+
+
 def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     """Test saving and loading objects in non-versioned mode."""
     # Save object
@@ -1317,13 +1543,14 @@ def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     non_versioned_registry["test:config"] = test_config
     assert non_versioned_registry["test:config"] == test_config
 
-    # Test that re-saving with __setitem__ raises conflict (explicit overwrite needed)
-    with pytest.raises(RegistryVersionConflict):
-        non_versioned_registry["test:config"] = {"new": "value"}
+    # Test that re-saving with __setitem__ overwrites on mutable registry
+    new_value = {"new": "value"}
+    non_versioned_registry["test:config"] = new_value
+    assert non_versioned_registry["test:config"] == new_value
 
     # Test pop
     value = non_versioned_registry.pop("test:config")
-    assert value == test_config
+    assert value == new_value
     assert "test:config" not in non_versioned_registry
 
     # Test setdefault on non-existent key
