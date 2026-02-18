@@ -60,12 +60,13 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
                 "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
                 "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
                 "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
                 "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
                 "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
+                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "gs://test-bucket",
+                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "test-bucket",
                 "MINDTRACE_TEST_PARAM": "",
             },
         ):
@@ -104,12 +105,13 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
                 "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
                 "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
                 "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
                 "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
                 "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
+                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "https://storage.googleapis.com",
+                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "test-bucket",
                 "MINDTRACE_TEST_PARAM": "test_value",
             },
         ):
@@ -162,12 +164,13 @@ class TestCoreSettings:
                 "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
                 "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
                 "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_REGISTRY_URI": "https://storage.googleapis.com",
                 "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
                 "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
                 "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
                 "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
                 "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
+                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "gs://mindtrace-test-bucket",
+                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "mindtrace-test-bucket",
             },
         ):
             settings = CoreSettings()
@@ -229,12 +232,15 @@ HTTP_APP_PATH = /app
 DEFAULT_REDIS_URL = redis://localhost:6379
 
 [MINDTRACE_GCP]
-GCP_REGISTRY_URI = https://storage.googleapis.com
 GCP_PROJECT_ID = test-project
 GCP_BUCKET_NAME = test-bucket
 GCP_CREDENTIALS_PATH = /path/to/credentials.json
 GCP_LOCATION = us-central1
 GCP_STORAGE_CLASS = STANDARD
+
+[MINDTRACE_GCP_REGISTRY]
+GCP_REGISTRY_URI = https://storage.googleapis.com
+GCP_BUCKET_NAME = test-bucket
 
 [MINDTRACE_TEST_PARAM]
 value = ini_value

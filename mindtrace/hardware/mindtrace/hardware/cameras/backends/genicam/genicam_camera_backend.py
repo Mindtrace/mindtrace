@@ -308,34 +308,6 @@ class GenICamCameraBackend(CameraBackend):
             f"Please install Matrix Vision mvIMPACT Acquire SDK or set GENICAM_CTI_PATH environment variable."
         )
 
-    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking Harvesters call in threadpool with timeout.
-
-        Uses asyncio.to_thread() for modern async/threading integration.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-
-        Raises:
-            CameraTimeoutError: If operation times out
-            HardwareOperationError: If operation fails
-        """
-        effective_timeout = timeout or self._op_timeout_s
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"Harvesters operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"Harvesters operation failed for camera '{self.camera_name}': {e}") from e
-
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """Get available GenICam cameras.
