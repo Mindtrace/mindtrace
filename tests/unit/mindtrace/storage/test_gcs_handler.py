@@ -865,7 +865,7 @@ def test_download_string_batch_success(mock_client_cls):
     blob.download_as_bytes.side_effect = [b"content1", b"content2", b"content3"]
 
     h = GCSStorageHandler("bucket")
-    results = h.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"])
+    results = h.download_string_batch(["remote/a.json", "remote/b.json", "remote/c.json"], max_workers=1)
 
     assert len(results) == 3
     assert all(isinstance(r, StringResult) for r in results)
@@ -883,7 +883,7 @@ def test_download_string_batch_partial_not_found(mock_client_cls):
     blob.download_as_bytes.side_effect = [b"content1", NotFound("not found"), b"content3"]
 
     h = GCSStorageHandler("bucket")
-    results = h.download_string_batch(["remote/a.json", "remote/missing.json", "remote/c.json"])
+    results = h.download_string_batch(["remote/a.json", "remote/missing.json", "remote/c.json"], max_workers=1)
 
     assert len(results) == 3
     assert results[0].status == "ok"
@@ -901,7 +901,7 @@ def test_download_string_batch_partial_error(mock_client_cls):
     blob.download_as_bytes.side_effect = [b"content1", Exception("Network error")]
 
     h = GCSStorageHandler("bucket")
-    results = h.download_string_batch(["remote/a.json", "remote/b.json"])
+    results = h.download_string_batch(["remote/a.json", "remote/b.json"], max_workers=1)
 
     assert len(results) == 2
     assert results[0].status == "ok"

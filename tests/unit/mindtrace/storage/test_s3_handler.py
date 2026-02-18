@@ -662,11 +662,14 @@ def test_delete_batch_success(mock_boto3):
 def test_download_string_batch_success(mock_boto3):
     """Test batch download of multiple strings."""
     mock_client = _prepare_client(mock_boto3)
-    mock_client.get_object.side_effect = [
-        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
-        {"Body": MagicMock(read=MagicMock(return_value=b"content2"))},
-        {"Body": MagicMock(read=MagicMock(return_value=b"content3"))},
-    ]
+    contents = {
+        "remote/a.json": b"content1",
+        "remote/b.json": b"content2",
+        "remote/c.json": b"content3",
+    }
+    mock_client.get_object.side_effect = lambda Bucket, Key: {
+        "Body": MagicMock(read=MagicMock(return_value=contents[Key]))
+    }
 
     handler = S3StorageHandler(
         "bucket",
@@ -689,11 +692,14 @@ def test_download_string_batch_success(mock_boto3):
 def test_download_string_batch_partial_not_found(mock_boto3):
     """Test batch download where some objects don't exist."""
     mock_client = _prepare_client(mock_boto3)
-    mock_client.get_object.side_effect = [
-        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
-        _make_client_error("NoSuchKey", "not found"),
-        {"Body": MagicMock(read=MagicMock(return_value=b"content3"))},
-    ]
+
+    def _get_object_side_effect(Bucket, Key):
+        if Key == "remote/missing.json":
+            raise _make_client_error("NoSuchKey", "not found")
+        content = {"remote/a.json": b"content1", "remote/c.json": b"content3"}[Key]
+        return {"Body": MagicMock(read=MagicMock(return_value=content))}
+
+    mock_client.get_object.side_effect = _get_object_side_effect
 
     handler = S3StorageHandler(
         "bucket",
@@ -716,10 +722,13 @@ def test_download_string_batch_partial_not_found(mock_boto3):
 def test_download_string_batch_partial_error(mock_boto3):
     """Test batch download where some objects fail."""
     mock_client = _prepare_client(mock_boto3)
-    mock_client.get_object.side_effect = [
-        {"Body": MagicMock(read=MagicMock(return_value=b"content1"))},
-        Exception("Network error"),
-    ]
+
+    def _get_object_side_effect(Bucket, Key):
+        if Key == "remote/b.json":
+            raise Exception("Network error")
+        return {"Body": MagicMock(read=MagicMock(return_value=b"content1"))}
+
+    mock_client.get_object.side_effect = _get_object_side_effect
 
     handler = S3StorageHandler(
         "bucket",
