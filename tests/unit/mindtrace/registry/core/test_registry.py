@@ -1537,7 +1537,52 @@ def test_dict_methods_api_parity(mutable_registry):
     assert mutable_registry.list_versions("test:d3") == ["1.0.0"]
 
 
-# ─── End of batch dictionary interface tests ─────────────────────────────────
+@pytest.fixture
+def non_versioned_immutable_registry():
+    """Create a non-versioned immutable registry (write-once, raises on conflict)."""
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(backend=temp_dir, version_objects=False, mutable=False)
+
+
+def test_non_versioned_immutable_save_and_load(non_versioned_immutable_registry, test_config):
+    """Test saving and loading on a non-versioned immutable registry."""
+    non_versioned_immutable_registry.save("test:config", test_config)
+    loaded = non_versioned_immutable_registry.load("test:config")
+    assert loaded == test_config
+
+
+def test_non_versioned_immutable_rejects_duplicate(non_versioned_immutable_registry, test_config):
+    """Test that saving the same name twice raises on a non-versioned immutable registry."""
+    non_versioned_immutable_registry.save("test:config", test_config)
+
+    with pytest.raises(RegistryVersionConflict):
+        non_versioned_immutable_registry.save("test:config", test_config)
+
+    # Original is untouched
+    assert non_versioned_immutable_registry.load("test:config") == test_config
+
+
+def test_non_versioned_immutable_dict_rejects_duplicate(non_versioned_immutable_registry):
+    """Test dict interface rejects second assignment on non-versioned immutable registry."""
+    non_versioned_immutable_registry["test:str"] = "hello"
+    assert non_versioned_immutable_registry["test:str"] == "hello"
+
+    with pytest.raises(RegistryVersionConflict):
+        non_versioned_immutable_registry["test:str"] = "world"
+
+    assert non_versioned_immutable_registry["test:str"] == "hello"
+
+
+def test_non_versioned_immutable_batch_skips_duplicate(non_versioned_immutable_registry):
+    """Test batch save on non-versioned immutable silently skips existing objects."""
+    non_versioned_immutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Batch save skips duplicates (doesn't raise like single save)
+    non_versioned_immutable_registry[["test:a", "test:b"]] = [10, 20]
+
+    # Original values preserved
+    assert non_versioned_immutable_registry["test:a"] == 1
+    assert non_versioned_immutable_registry["test:b"] == 2
 
 
 def test_non_versioned_save_and_load(non_versioned_registry, test_config):
@@ -1624,9 +1669,9 @@ def test_dict_api_non_versioned_batch_overwrite(non_versioned_registry):
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
     """Test that version parameters are ignored in non-versioned mode."""
     # Save with explicit version
-    non_versioned_registry.save("test:config", test_config, version="v1")
+    non_versioned_registry.save("test:config", test_config, version="v2")
 
-    # Verify version is always "latest"
+    # Verify version is always "1"
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
     assert versions[0] == "1"
