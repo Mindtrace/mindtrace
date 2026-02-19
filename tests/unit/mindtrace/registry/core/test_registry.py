@@ -1268,12 +1268,12 @@ def test_contains_value_error(registry):
 
 @pytest.fixture
 def mutable_registry():
-    """Create a registry with versioning enabled and mutable=True for overwrites."""
+    """Create a versioned mutable registry (auto-increments on save, allows overwrites with explicit version)."""
     with TemporaryDirectory() as temp_dir:
         yield Registry(backend=temp_dir, version_objects=True, mutable=True)
 
 
-# ─── Batch dictionary interface tests ────────────────────────────────────────
+# ───  dictionary interface tests on versioned mutable registry ────────────────────────────────────────
 
 
 def test_dict_batch_setitem_and_getitem(mutable_registry):
@@ -1293,30 +1293,62 @@ def test_dict_batch_setitem_and_getitem(mutable_registry):
     assert mutable_registry["test:b"] == 2
 
 
-def test_dict_batch_setitem_overwrites_on_mutable(mutable_registry):
-    """Test that batch __setitem__ overwrites existing values on a mutable registry.
+def test_dict_batch_setitem_auto_increments_on_versioned_mutable(mutable_registry):
+    """Batch __setitem__ without explicit version auto-increments on versioned mutable registry.
 
-    This is the primary bug described in the issue: previously, the second
-    assignment silently skipped because on_conflict was hardcoded to SKIP.
+    Each assignment creates a new version. __getitem__ resolves "latest",
+    so the second value is returned even though v1 still exists.
     """
     mutable_registry[["test:a", "test:b"]] = [1, 2]
 
-    # Second assignment should overwrite
+    # Second assignment auto-increments to v2
     mutable_registry[["test:a", "test:b"]] = [10, 20]
 
+    # __getitem__ resolves "latest" (v2)
     assert mutable_registry["test:a"] == 10
     assert mutable_registry["test:b"] == 20
 
+    # v1 still exists with original values
+    assert mutable_registry["test:a@1"] == 1
+    assert mutable_registry["test:b@1"] == 2
 
-def test_dict_single_setitem_overwrites_on_mutable(mutable_registry):
-    """Test that single __setitem__ overwrites existing values on a mutable registry.
+    # v2 (auto-incremented from 1) has the new values
+    assert mutable_registry["test:a@2"] == 10
+    assert mutable_registry["test:b@2"] == 20
 
-    The same on_conflict bug affected single-key assignment too.
+
+def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_registry):
+    """Single __setitem__ without explicit version auto-increments on versioned mutable registry.
+
+    Each assignment creates a new version. __getitem__ resolves "latest".
     """
     mutable_registry["test:a"] = 1
     mutable_registry["test:a"] = 10
 
+    # __getitem__ resolves "latest" (v2)
     assert mutable_registry["test:a"] == 10
+
+
+def test_dict_single_setitem_overwrite_explicit_version(mutable_registry):
+    """Single __setitem__ with explicit version overwrites in-place on mutable registry."""
+    mutable_registry["testmutable:a"] = 1
+    mutable_registry["testmutable:a@1"] = 10
+
+    assert mutable_registry["testmutable:a@1"] == 10
+    assert mutable_registry.list_versions("testmutable:a") == ["1"]
+
+
+def test_dict_batch_setitem_overwrite_explicit_version(mutable_registry):
+    """Batch __setitem__ with explicit versions overwrites in-place on mutable registry."""
+    mutable_registry[["testbatch:a", "testbatch:b"]] = [1, 2]
+    mutable_registry[["testbatch:a@1", "testbatch:b@1"]] = [10, 20]
+
+    assert mutable_registry["testbatch:a"] == 10
+    assert mutable_registry["testbatch:b"] == 20
+    assert mutable_registry["testbatch:a@1"] == 10
+    assert mutable_registry["testbatch:b@1"] == 20
+    assert mutable_registry.list_versions("testbatch:a") == ["1"]
+    assert mutable_registry.list_versions("testbatch:b") == ["1"]
 
 
 def test_dict_batch_delitem(mutable_registry):
@@ -1429,17 +1461,17 @@ def test_dict_setitem_immutable_registry_skip(registry):
     assert registry["test:a@1.0.0"] == 1
 
 
-def test_dict_batch_overwrite_roundtrip(mutable_registry):
-    """Full roundtrip: batch save, batch overwrite, batch load, batch delete."""
+def test_dict_batch_auto_increment_roundtrip(mutable_registry):
+    """Full roundtrip: batch save, batch auto-increment, batch load (latest), batch delete."""
     from mindtrace.registry.core.types import BatchResult
 
-    # Save
+    # Save (creates v1 for each)
     mutable_registry[["test:x", "test:y", "test:z"]] = [100, 200, 300]
 
-    # Overwrite
+    # Auto-increment (creates v2 for each)
     mutable_registry[["test:x", "test:y", "test:z"]] = [111, 222, 333]
 
-    # Load
+    # Load resolves "latest" (v2)
     result = mutable_registry[["test:x", "test:y", "test:z"]]
     assert isinstance(result, BatchResult)
     assert result.results == [111, 222, 333]
@@ -1447,7 +1479,7 @@ def test_dict_batch_overwrite_roundtrip(mutable_registry):
     # Contains
     assert ["test:x", "test:y", "test:z"] in mutable_registry
 
-    # Delete
+    # Delete (removes all versions)
     del mutable_registry[["test:x", "test:y", "test:z"]]
     assert ["test:x", "test:y", "test:z"] not in mutable_registry
 
@@ -1472,11 +1504,11 @@ def test_dict_methods_api_parity(mutable_registry):
     # Both should have the same values
     assert m_load.results == d_load.results
 
-    # Methods API overwrite
+    # Methods API auto-increment (creates v2)
     mutable_registry.save(["test:m1", "test:m2"], [100, 200])
     assert mutable_registry.load(["test:m1", "test:m2"]).results == [100, 200]
 
-    # Dict API overwrite
+    # Dict API auto-increment (creates v2)
     mutable_registry[["test:d1", "test:d2"]] = [100, 200]
     assert mutable_registry[["test:d1", "test:d2"]].results == [100, 200]
 
@@ -1487,6 +1519,22 @@ def test_dict_methods_api_parity(mutable_registry):
     # Dict API delete
     del mutable_registry[["test:d1", "test:d2"]]
     assert "test:d1" not in mutable_registry
+
+    # --- Overwrite parity (explicit version) ---
+
+    # Methods API overwrite (scalar version broadcast)
+    mutable_registry.save(["test:m3", "test:m4"], [1, 2], version="1.0.0")
+    mutable_registry.save(["test:m3", "test:m4"], [10, 20], version="1.0.0")
+    assert mutable_registry.load(["test:m3", "test:m4"], version="1.0.0").results == [10, 20]
+
+    # Dict API overwrite
+    mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]] = [1, 2]
+    mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]] = [10, 20]
+    assert mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]].results == [10, 20]
+
+    # Still only one version each
+    assert mutable_registry.list_versions("test:m3") == ["1.0.0"]
+    assert mutable_registry.list_versions("test:d3") == ["1.0.0"]
 
 
 # ─── End of batch dictionary interface tests ─────────────────────────────────
@@ -1560,6 +1608,17 @@ def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     # Test setdefault on existing key (should not overwrite)
     non_versioned_registry.setdefault("test:config", {"different": "value"})
     assert non_versioned_registry["test:config"] == test_config  # Original value preserved
+
+
+def test_dict_api_non_versioned_batch_overwrite(non_versioned_registry):
+    """Batch __setitem__ on non-versioned mutable registry overwrites in-place."""
+    non_versioned_registry[["test:a", "test:b"]] = [1, 2]
+    non_versioned_registry[["test:a", "test:b"]] = [10, 20]
+
+    assert non_versioned_registry["test:a@1"] == 10
+    assert non_versioned_registry["test:b@1"] == 20
+    assert non_versioned_registry.list_versions("test:a") == ["1"]
+    assert non_versioned_registry.list_versions("test:b") == ["1"]
 
 
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
