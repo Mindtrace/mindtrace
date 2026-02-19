@@ -803,8 +803,6 @@ class _RegistryCore(Mindtrace):
         if version is None:
             # Delete all versions
             if not self.version_objects:
-                if not self.has_object(name, "1"):
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
                 versions_to_delete = ["1"]
             else:
                 versions_to_delete = self.list_versions(name)
