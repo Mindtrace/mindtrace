@@ -867,6 +867,17 @@ class _RegistryCore(Mindtrace):
                     for ver in all_versions:
                         items_to_delete.append((n, ver))
                         resolved_to_original[(n, ver)] = original_key
+            elif v == "latest":
+                # Delete latest version
+                latest = self._latest(n)
+                if latest is None:
+                    result.errors[original_key] = {
+                        "error": "RegistryObjectNotFound",
+                        "message": f"Object {n} does not exist",
+                    }
+                else:
+                    items_to_delete.append((n, latest))
+                    resolved_to_original[(n, latest)] = original_key
             else:
                 # Explicit version only — validate format, pass directly
                 try:
