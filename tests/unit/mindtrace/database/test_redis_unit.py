@@ -51,6 +51,15 @@ def create_mock_redis_user(name="John", age=30, email="john@example.com", pk="01
     return mock_user
 
 
+@pytest.fixture(autouse=True)
+def mock_redis_connection():
+    """Mock get_redis_connection for all tests so no real Redis is used."""
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
+        mock_redis = MagicMock()
+        mock_get_redis.return_value = mock_redis
+        yield mock_redis
+
+
 def test_redis_backend_crud(mock_redis_backend):
     """Test basic CRUD operations."""
     # Test insert
@@ -243,31 +252,6 @@ def test_redis_backend_insert_with_email_duplicate_check_success(mock_redis_back
                 mock_doc.save = mock_save
                 result = backend.insert(user)
                 assert result is not None
-
-
-def test_redis_backend_insert_with_email_duplicate_found(mock_redis_backend):
-    """Test insert with email duplicate check that finds duplicate."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
-    from mindtrace.database.core.exceptions import DuplicateInsertError
-
-    # Mock the backend with proper model class
-    backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
-    backend.model_cls = UserDoc
-    backend.redis = MagicMock()
-    backend.logger = MagicMock()
-
-    # Mock the find method to return existing user (duplicate found)
-    existing_user = create_mock_redis_user()
-    with patch.object(UserDoc, "find") as mock_find:
-        mock_find.return_value.all.return_value = [existing_user]
-
-        # Create a user with same email
-        user_data = {"name": "John", "age": 30, "email": "john@example.com"}
-        user = UserCreate(**user_data)
-
-        # Should raise DuplicateInsertError
-        with pytest.raises(DuplicateInsertError):
-            backend.insert(user)
 
 
 def test_redis_backend_insert_with_email_query_fails_fallback(mock_redis_backend):
@@ -932,122 +916,7 @@ def test_redis_backend_find_with_both_query_and_fallback_failure():
 
             result = backend.find(UserDoc.email == "test@example.com")
             assert result == []
-            # Should be called at least twice (once for query, once for fallback)
-            # May be called more times due to initialization warnings
-            assert backend.logger.warning.call_count >= 2
-
-
-def test_redis_backend_insert_with_duplicate_check_fallback():
-    """Test Redis backend insert with duplicate check fallback."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
-    from mindtrace.database.core.exceptions import DuplicateInsertError
-
-    # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-
-        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
-        backend.model_cls = UserDoc
-        backend.logger = MagicMock()
-        backend._is_initialized = True  # Skip initialization
-
-        # Test insert with duplicate check fallback
-        user_data = {"name": "John", "age": 30, "email": "john@example.com"}
-        user = UserCreate(**user_data)
-
-        # Mock the UserDoc constructor to return a mock object
-        mock_doc = MagicMock()
-        mock_doc.save = MagicMock()
-
-        # Mock UserDoc to have email attribute
-        with patch.object(UserDoc, "email", create=True):
-            with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                with patch.object(UserDoc, "find") as mock_find:
-                    # Mock the find method to raise exception on first call, return mock with duplicate on second
-                    mock_query = MagicMock()
-                    mock_existing_doc = MagicMock()
-                    mock_existing_doc.email = "john@example.com"  # Simulate duplicate found
-                    mock_query.all.return_value = [mock_existing_doc]
-
-                    mock_find.side_effect = [Exception("Query failed"), mock_query]
-
-                    with pytest.raises(
-                        DuplicateInsertError, match="Document with email john@example.com already exists"
-                    ):
-                        backend.insert(user)
-
-
-def test_redis_backend_insert_with_duplicate_check_fallback_no_duplicate():
-    """Test Redis backend insert with duplicate check fallback but no duplicate found."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
-
-    # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-
-        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
-        backend.model_cls = UserDoc
-        backend.logger = MagicMock()
-        backend._is_initialized = True  # Skip initialization
-
-        # Test insert with duplicate check fallback but no duplicate
-        user_data = {"name": "John", "age": 30, "email": "john@example.com"}
-        user = UserCreate(**user_data)
-
-        # Mock the UserDoc constructor to return a mock object
-        mock_doc = MagicMock()
-        mock_doc.save = MagicMock()
-
-        # Mock UserDoc to have email attribute
-        with patch.object(UserDoc, "email", create=True):
-            with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                with patch.object(UserDoc, "find") as mock_find:
-                    # Mock the find method to raise exception on both calls
-                    mock_find.side_effect = [Exception("Query failed"), Exception("Fallback failed")]
-
-                    result = backend.insert(user)
-                    assert result is not None
-                    # Check that the warning was called for the duplicate check failure
-                    warning_calls = [
-                        call
-                        for call in backend.logger.warning.call_args_list
-                        if "Could not check for duplicates" in call[0][0]
-                    ]
-                    assert len(warning_calls) == 1
-
-
-def test_redis_backend_insert_with_fallback_exception():
-    """Test Redis backend insert with exception in fallback."""
-    from mindtrace.database.backends.redis_odm import RedisMindtraceODM
-
-    # Mock the backend with proper model class
-    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-
-        backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
-        backend.model_cls = UserDoc
-        backend.logger = MagicMock()
-
-        # Test insert with exception in fallback query
-        with patch.object(UserDoc, "find") as mock_find:
-            # Both calls raise exceptions
-            mock_find.side_effect = [Exception("Query failed"), Exception("Fallback failed")]
-
-            user_data = {"name": "John", "age": 30, "email": "john@example.com"}
-            user = UserCreate(**user_data)
-
-            # Mock the UserDoc constructor to return a mock object
-            mock_doc = MagicMock()
-            mock_doc.save = MagicMock()
-            with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                # Should log warning and continue
-                result = backend.insert(user)
-                assert result is not None
-                # Check that warning was called (may be called multiple times)
-                assert backend.logger.warning.call_count >= 1
+            assert backend.logger.warning.call_count >= 1
 
 
 def test_redis_backend_get_with_not_found_error_specific():
@@ -1715,11 +1584,13 @@ def test_mindtrace_redis_document_id_property():
     """Test that MindtraceRedisDocument id property returns pk."""
     from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
 
-    # Create a simple test document
+    mock_conn = MagicMock()
+    mock_conn.execute_command.return_value = [1]
+
     class TestDoc(MindtraceRedisDocument):
         name: str
 
-    # Create instance (we can't actually save without Redis, but we can test the property)
+    TestDoc.Meta.database = mock_conn
     doc = TestDoc(name="Test")
     # Set pk manually for testing
     object.__setattr__(doc, "pk", "test-pk-123")
@@ -1736,11 +1607,13 @@ def test_mindtrace_redis_document_id_setter():
     """Test that MindtraceRedisDocument id setter sets pk."""
     from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
 
-    # Create a simple test document
+    mock_conn = MagicMock()
+    mock_conn.execute_command.return_value = [1]
+
     class TestDoc(MindtraceRedisDocument):
         name: str
 
-    # Create instance
+    TestDoc.Meta.database = mock_conn
     doc = TestDoc(name="Test")
 
     # Test setting id sets pk

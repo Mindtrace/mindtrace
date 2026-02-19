@@ -138,7 +138,7 @@ async def test_common_format_export(mock_basler_camera):
     await camera.set_exposure(30000)
     await camera.set_gain(4.0)
     await camera.set_triggermode("trigger")
-    await camera.set_image_quality_enhancement(True)
+    camera.set_image_quality_enhancement(True)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         export_path = f.name
@@ -831,16 +831,16 @@ class TestMockBaslerImageEnhancement:
         await camera.initialize()
 
         # Test getting initial state
-        initial_state = await camera.get_image_quality_enhancement()
+        initial_state = camera.get_image_quality_enhancement()
         assert isinstance(initial_state, bool)
 
         # Test setting enhancement
-        await camera.set_image_quality_enhancement(True)
-        assert await camera.get_image_quality_enhancement() is True
+        camera.set_image_quality_enhancement(True)
+        assert camera.get_image_quality_enhancement() is True
 
         # Test disabling enhancement
-        await camera.set_image_quality_enhancement(False)
-        assert await camera.get_image_quality_enhancement() is False
+        camera.set_image_quality_enhancement(False)
+        assert camera.get_image_quality_enhancement() is False
 
         await camera.close()
 
@@ -885,7 +885,7 @@ class TestMockBaslerImageEnhancement:
         assert not hasattr(camera, "_enhancement_initialized")
 
         # Enable enhancement should set marker
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
         assert hasattr(camera, "_enhancement_initialized")
         assert camera._enhancement_initialized is True
 
@@ -898,11 +898,11 @@ class TestMockBaslerImageEnhancement:
         await camera.initialize()
 
         # Capture without enhancement
-        await camera.set_image_quality_enhancement(False)
+        camera.set_image_quality_enhancement(False)
         image_no_enhancement = await camera.capture()
 
         # Capture with enhancement
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
         image_with_enhancement = await camera.capture()
 
         # Images should be the same size
@@ -1190,7 +1190,7 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
         """Test image enhancement error handling."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
 
         # Mock cv2.cvtColor to raise an error during enhancement
         with patch("cv2.cvtColor", side_effect=RuntimeError("Enhancement error")):
@@ -1350,7 +1350,7 @@ class TestMockBaslerExceptionHandling:
         """Test exception handling during image enhancement."""
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
-        await camera.set_image_quality_enhancement(True)
+        camera.set_image_quality_enhancement(True)
 
         # Mock _enhance_image to raise an exception
         with patch.object(camera, "_enhance_image", side_effect=RuntimeError("Enhancement error")):

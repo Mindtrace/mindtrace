@@ -6,7 +6,8 @@ cameras with a pattern projector into a unified stereo vision system.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import asyncio
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.core.exceptions import (
@@ -14,6 +15,8 @@ from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
     CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
     SDKNotAvailableError,
 )
 from mindtrace.hardware.stereo_cameras.core.models import StereoCalibrationData, StereoGrabResult
@@ -24,6 +27,8 @@ try:
     PYPYLON_AVAILABLE = True
 except ImportError:
     PYPYLON_AVAILABLE = False
+
+T = TypeVar("T")
 
 
 class BaslerStereoAceBackend(Mindtrace):
@@ -36,7 +41,7 @@ class BaslerStereoAceBackend(Mindtrace):
 
     DEVICE_CLASS = "BaslerGTC/Basler/basler_xw"
 
-    def __init__(self, serial_number: Optional[str] = None):
+    def __init__(self, serial_number: Optional[str] = None, op_timeout_s: float = 30.0):
         """Initialize Basler Stereo ace backend.
 
         Args:
@@ -44,6 +49,7 @@ class BaslerStereoAceBackend(Mindtrace):
                           If all digits, treated as serial number.
                           Otherwise, treated as user-defined name.
                           If None, opens first available Stereo ace camera.
+            op_timeout_s: Timeout in seconds for SDK operations (default 30s).
 
         Raises:
             SDKNotAvailableError: If pypylon is not available
@@ -58,6 +64,44 @@ class BaslerStereoAceBackend(Mindtrace):
         self._is_open = False
         self._grab_strategy = pylon.GrabStrategy_LatestImageOnly
         self._calibration: Optional[StereoCalibrationData] = None
+        self._op_timeout_s = op_timeout_s
+
+    async def _run_blocking(
+        self, func: Callable[..., T], *args: Any, timeout: Optional[float] = None, **kwargs: Any
+    ) -> T:
+        """Run a blocking Pylon SDK call in threadpool with timeout.
+
+        Args:
+            func: The blocking function to call
+            *args: Positional arguments for the function
+            timeout: Optional timeout override (uses self._op_timeout_s if not provided)
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            CameraTimeoutError: If operation times out
+            HardwareOperationError: If operation fails
+        """
+        effective_timeout = timeout if timeout is not None else self._op_timeout_s
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
+        except asyncio.TimeoutError as e:
+            raise CameraTimeoutError(f"Stereo camera operation timed out after {effective_timeout:.2f}s") from e
+        except Exception as e:
+            if isinstance(
+                e,
+                (
+                    CameraTimeoutError,
+                    CameraCaptureError,
+                    CameraConfigurationError,
+                    CameraConnectionError,
+                    CameraNotFoundError,
+                ),
+            ):
+                raise
+            raise HardwareOperationError(f"Stereo camera operation failed: {e}") from e
 
     @staticmethod
     def discover() -> List[str]:
@@ -81,6 +125,18 @@ class BaslerStereoAceBackend(Mindtrace):
         devices = tl_factory.EnumerateDevices([di])
 
         return [dev.GetSerialNumber() for dev in devices]
+
+    @classmethod
+    async def discover_async(cls) -> List[str]:
+        """Async wrapper for discover() - runs discovery in threadpool.
+
+        Use this instead of discover() when calling from async context
+        to avoid blocking the event loop during camera discovery.
+
+        Returns:
+            List of serial numbers for available Stereo ace cameras
+        """
+        return await asyncio.to_thread(cls.discover)
 
     @staticmethod
     def discover_detailed() -> List[Dict[str, str]]:
@@ -116,6 +172,15 @@ class BaslerStereoAceBackend(Mindtrace):
 
         return camera_list
 
+    @classmethod
+    async def discover_detailed_async(cls) -> List[Dict[str, str]]:
+        """Async wrapper for discover_detailed() - runs discovery in threadpool.
+
+        Returns:
+            List of dictionaries containing camera information
+        """
+        return await asyncio.to_thread(cls.discover_detailed)
+
     async def initialize(self) -> bool:
         """Initialize camera connection.
 
@@ -123,27 +188,33 @@ class BaslerStereoAceBackend(Mindtrace):
             True if initialization successful, False otherwise
         """
         try:
-            di = pylon.DeviceInfo()
-            di.SetDeviceClass(self.DEVICE_CLASS)
 
-            if self.serial_number:
-                # Check if it's a serial number (all digits) or user-defined name
-                if self.serial_number.isdigit():
-                    di.SetSerialNumber(self.serial_number)
-                else:
-                    di.SetUserDefinedName(self.serial_number)
+            def _create_and_open_camera():
+                """Blocking function to create and open camera."""
+                di = pylon.DeviceInfo()
+                di.SetDeviceClass(self.DEVICE_CLASS)
 
-            tl_factory = pylon.TlFactory.GetInstance()
-
-            try:
-                self._camera = pylon.InstantCamera(tl_factory.CreateFirstDevice(di))
-            except Exception as e:
                 if self.serial_number:
-                    raise CameraNotFoundError(f"Stereo ace camera '{self.serial_number}' not found") from e
-                else:
-                    raise CameraNotFoundError("No Stereo ace cameras found") from e
+                    # Check if it's a serial number (all digits) or user-defined name
+                    if self.serial_number.isdigit():
+                        di.SetSerialNumber(self.serial_number)
+                    else:
+                        di.SetUserDefinedName(self.serial_number)
 
-            self._camera.Open()
+                tl_factory = pylon.TlFactory.GetInstance()
+
+                try:
+                    camera = pylon.InstantCamera(tl_factory.CreateFirstDevice(di))
+                except Exception as e:
+                    if self.serial_number:
+                        raise CameraNotFoundError(f"Stereo ace camera '{self.serial_number}' not found") from e
+                    else:
+                        raise CameraNotFoundError("No Stereo ace cameras found") from e
+
+                camera.Open()
+                return camera
+
+            self._camera = await self._run_blocking(_create_and_open_camera)
             self._is_open = True
 
             # Set default configuration
@@ -152,10 +223,12 @@ class BaslerStereoAceBackend(Mindtrace):
             # Load calibration
             self._calibration = await self.get_calibration()
 
-            self.logger.info(
-                f"Opened Stereo ace: {self._camera.GetDeviceInfo().GetModelName()} "
-                f"(SN: {self._camera.GetDeviceInfo().GetSerialNumber()})"
-            )
+            # Get device info for logging
+            def _get_device_info():
+                return (self._camera.GetDeviceInfo().GetModelName(), self._camera.GetDeviceInfo().GetSerialNumber())
+
+            model_name, serial = await self._run_blocking(_get_device_info)
+            self.logger.info(f"Opened Stereo ace: {model_name} (SN: {serial})")
             return True
 
         except CameraNotFoundError:
@@ -173,18 +246,22 @@ class BaslerStereoAceBackend(Mindtrace):
             hw_config = get_hardware_config().get_config()
             stereo_config = hw_config.stereo_cameras
 
-            # Enable both components by default
-            self._camera.ComponentSelector.Value = "Intensity"
-            self._camera.ComponentEnable.Value = True
-            self._camera.ComponentSelector.Value = "Disparity"
-            self._camera.ComponentEnable.Value = True
+            def _apply_default_config():
+                """Apply default configuration (blocking SDK calls)."""
+                # Enable both components by default
+                self._camera.ComponentSelector.Value = "Intensity"
+                self._camera.ComponentEnable.Value = True
+                self._camera.ComponentSelector.Value = "Disparity"
+                self._camera.ComponentEnable.Value = True
 
-            # Set default depth range from config
-            self._camera.BslDepthMinDepth.Value = stereo_config.depth_range_min
-            self._camera.BslDepthMaxDepth.Value = stereo_config.depth_range_max
+                # Set default depth range from config
+                self._camera.BslDepthMinDepth.Value = stereo_config.depth_range_min
+                self._camera.BslDepthMaxDepth.Value = stereo_config.depth_range_max
 
-            # Set illumination mode from config
-            self._camera.BslIlluminationMode.Value = stereo_config.illumination_mode
+                # Set illumination mode from config
+                self._camera.BslIlluminationMode.Value = stereo_config.illumination_mode
+
+            await self._run_blocking(_apply_default_config)
 
             self.logger.debug(
                 f"Applied default stereo camera configuration: "
@@ -209,14 +286,19 @@ class BaslerStereoAceBackend(Mindtrace):
             raise CameraConnectionError("Camera not opened")
 
         try:
-            params = {
-                "Scan3dBaseline": self._camera.Scan3dBaseline.GetValue(),
-                "Scan3dFocalLength": self._camera.Scan3dFocalLength.GetValue(),
-                "Scan3dPrincipalPointU": self._camera.Scan3dPrincipalPointU.GetValue(),
-                "Scan3dPrincipalPointV": self._camera.Scan3dPrincipalPointV.GetValue(),
-                "Scan3dCoordinateScale": self._camera.Scan3dCoordinateScale.GetValue(),
-                "Scan3dCoordinateOffset": self._camera.Scan3dCoordinateOffset.GetValue(),
-            }
+
+            def _read_calibration():
+                """Read calibration parameters (blocking SDK calls)."""
+                return {
+                    "Scan3dBaseline": self._camera.Scan3dBaseline.GetValue(),
+                    "Scan3dFocalLength": self._camera.Scan3dFocalLength.GetValue(),
+                    "Scan3dPrincipalPointU": self._camera.Scan3dPrincipalPointU.GetValue(),
+                    "Scan3dPrincipalPointV": self._camera.Scan3dPrincipalPointV.GetValue(),
+                    "Scan3dCoordinateScale": self._camera.Scan3dCoordinateScale.GetValue(),
+                    "Scan3dCoordinateOffset": self._camera.Scan3dCoordinateOffset.GetValue(),
+                }
+
+            params = await self._run_blocking(_read_calibration)
 
             calibration = StereoCalibrationData.from_camera_params(params)
             self.logger.debug(f"Loaded calibration: {calibration}")
@@ -251,59 +333,90 @@ class BaslerStereoAceBackend(Mindtrace):
             raise CameraConnectionError("Camera not opened")
 
         try:
-            # Start grabbing if not already
-            if not self._camera.IsGrabbing():
-                self._camera.StartGrabbing(self._grab_strategy)
 
-            # Retrieve result
-            grab_result = self._camera.RetrieveResult(timeout_ms, pylon.TimeoutHandling_ThrowException)
+            def _capture_frame():
+                """Perform the actual capture (blocking SDK calls)."""
+                # Start grabbing if not already
+                if not self._camera.IsGrabbing():
+                    self._camera.StartGrabbing(self._grab_strategy)
 
-            try:
-                if not grab_result.GrabSucceeded():
-                    raise CameraCaptureError(f"Grab failed: {grab_result.ErrorCode} - {grab_result.ErrorDescription}")
+                # Retrieve result
+                grab_result = self._camera.RetrieveResult(timeout_ms, pylon.TimeoutHandling_ThrowException)
 
-                # Extract components
-                container = grab_result.GetDataContainer()
-                intensity_data = None
-                disparity_data = None
-                has_intensity = False
-                has_disparity = False
+                try:
+                    if not grab_result.GrabSucceeded():
+                        raise CameraCaptureError(
+                            f"Grab failed: {grab_result.ErrorCode} - {grab_result.ErrorDescription}"
+                        )
 
-                for i in range(container.DataComponentCount):
-                    component = container.GetDataComponent(i)
+                    # Extract components
+                    container = grab_result.GetDataContainer()
+                    intensity_data = None
+                    disparity_data = None
+                    has_intensity = False
+                    has_disparity = False
 
-                    if component.ComponentType == pylon.ComponentType_Intensity and enable_intensity:
-                        if component.GetPixelType() == pylon.PixelType_RGB8packed:
-                            # RGB8
-                            intensity_data = component.Array.reshape(component.Height, component.Width, 3)
-                        else:
-                            # Mono8
-                            intensity_data = component.Array.reshape(component.Height, component.Width)
-                        has_intensity = True
+                    for i in range(container.DataComponentCount):
+                        component = container.GetDataComponent(i)
 
-                    elif component.ComponentType == pylon.ComponentType_Disparity and enable_disparity:
-                        disparity_data = component.Array.reshape(component.Height, component.Width)
-                        has_disparity = True
+                        if component.ComponentType == pylon.ComponentType_Intensity and enable_intensity:
+                            if component.GetPixelType() == pylon.PixelType_RGB8packed:
+                                # RGB8
+                                intensity_data = component.Array.reshape(component.Height, component.Width, 3).copy()
+                            else:
+                                # Mono8
+                                intensity_data = component.Array.reshape(component.Height, component.Width).copy()
+                            has_intensity = True
 
-                # Apply calibration if requested
-                disparity_calibrated = None
-                if calibrate_disparity and has_disparity and disparity_data is not None and self._calibration:
-                    disparity_calibrated = self._calibration.calibrate_disparity(disparity_data)
+                        elif component.ComponentType == pylon.ComponentType_Disparity and enable_disparity:
+                            disparity_data = component.Array.reshape(component.Height, component.Width).copy()
+                            has_disparity = True
 
-                return StereoGrabResult(
-                    intensity=intensity_data,
-                    disparity=disparity_data,
-                    timestamp=grab_result.TimeStamp / 1e9,  # ns -> s
-                    frame_number=grab_result.ImageNumber,
-                    disparity_calibrated=disparity_calibrated,
-                    has_intensity=has_intensity,
-                    has_disparity=has_disparity,
+                    # Get metadata before releasing
+                    timestamp = grab_result.TimeStamp / 1e9  # ns -> s
+                    frame_number = grab_result.ImageNumber
+
+                    return {
+                        "intensity": intensity_data,
+                        "disparity": disparity_data,
+                        "timestamp": timestamp,
+                        "frame_number": frame_number,
+                        "has_intensity": has_intensity,
+                        "has_disparity": has_disparity,
+                    }
+
+                finally:
+                    grab_result.Release()
+
+            # Run capture in threadpool with appropriate timeout
+            capture_timeout = (timeout_ms / 1000.0) + self._op_timeout_s
+            result = await self._run_blocking(_capture_frame, timeout=capture_timeout)
+
+            # Apply calibration if requested (CPU-bound, can run in threadpool too)
+            disparity_calibrated = None
+            if (
+                calibrate_disparity
+                and result["has_disparity"]
+                and result["disparity"] is not None
+                and self._calibration
+            ):
+                disparity_calibrated = await asyncio.to_thread(
+                    self._calibration.calibrate_disparity, result["disparity"]
                 )
 
-            finally:
-                grab_result.Release()
+            return StereoGrabResult(
+                intensity=result["intensity"],
+                disparity=result["disparity"],
+                timestamp=result["timestamp"],
+                frame_number=result["frame_number"],
+                disparity_calibrated=disparity_calibrated,
+                has_intensity=result["has_intensity"],
+                has_disparity=result["has_disparity"],
+            )
 
         except CameraCaptureError:
+            raise
+        except CameraTimeoutError:
             raise
         except Exception as e:
             raise CameraCaptureError(f"Capture failed: {e}") from e
@@ -361,20 +474,31 @@ class BaslerStereoAceBackend(Mindtrace):
             except Exception as e:
                 failed.append((key, str(e)))
 
-        # Handle remaining parameters
-        for key, value in params.items():
-            try:
-                if hasattr(self._camera, key):
-                    param = getattr(self._camera, key)
-                    if hasattr(param, "Value"):
-                        param.Value = value
-                        configured.append(key)
-                    else:
-                        failed.append((key, "not writable"))
-                else:
-                    failed.append((key, "not found"))
-            except Exception as e:
-                failed.append((key, str(e)))
+        # Handle remaining parameters in threadpool
+        if params:
+
+            def _configure_params():
+                """Configure generic parameters (blocking SDK calls)."""
+                cfg = []
+                fail = []
+                for key, value in params.items():
+                    try:
+                        if hasattr(self._camera, key):
+                            param = getattr(self._camera, key)
+                            if hasattr(param, "Value"):
+                                param.Value = value
+                                cfg.append(key)
+                            else:
+                                fail.append((key, "not writable"))
+                        else:
+                            fail.append((key, "not found"))
+                    except Exception as e:
+                        fail.append((key, str(e)))
+                return cfg, fail
+
+            cfg, fail = await self._run_blocking(_configure_params)
+            configured.extend(cfg)
+            failed.extend(fail)
 
         if configured:
             self.logger.debug(f"Configured parameters: {', '.join(configured)}")
@@ -392,7 +516,12 @@ class BaslerStereoAceBackend(Mindtrace):
         Raises:
             CameraConfigurationError: If configuration fails
         """
-        await self.configure(BslDepthMinDepth=min_depth, BslDepthMaxDepth=max_depth)
+
+        def _set_depth():
+            self._camera.BslDepthMinDepth.Value = min_depth
+            self._camera.BslDepthMaxDepth.Value = max_depth
+
+        await self._run_blocking(_set_depth)
 
     async def set_illumination_mode(self, mode: str) -> None:
         """Set illumination mode.
@@ -405,7 +534,11 @@ class BaslerStereoAceBackend(Mindtrace):
         """
         if mode not in ["AlwaysActive", "AlternateActive"]:
             raise CameraConfigurationError(f"Invalid illumination mode: {mode}")
-        await self.configure(BslIlluminationMode=mode)
+
+        def _set_mode():
+            self._camera.BslIlluminationMode.Value = mode
+
+        await self._run_blocking(_set_mode)
 
     async def set_binning(self, horizontal: int = 2, vertical: int = 2) -> None:
         """Enable binning for latency reduction.
@@ -421,7 +554,12 @@ class BaslerStereoAceBackend(Mindtrace):
         Raises:
             CameraConfigurationError: If configuration fails
         """
-        await self.configure(BinningHorizontal=horizontal, BinningVertical=vertical)
+
+        def _set_binning():
+            self._camera.BinningHorizontal.Value = horizontal
+            self._camera.BinningVertical.Value = vertical
+
+        await self._run_blocking(_set_binning)
 
     async def set_depth_quality(self, quality: str) -> None:
         """Set depth quality level.
@@ -445,7 +583,11 @@ class BaslerStereoAceBackend(Mindtrace):
             await camera.set_binning(2, 2)
             await camera.set_depth_quality("Full")
         """
-        await self.configure(BslDepthQuality=quality)
+
+        def _set_quality():
+            self._camera.BslDepthQuality.Value = quality
+
+        await self._run_blocking(_set_quality)
 
     async def set_pixel_format(self, format: str) -> None:
         """Set pixel format for intensity component.
@@ -463,15 +605,17 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        try:
+        def _set_format():
             # Check if format is available
             available_formats = self._camera.PixelFormat.GetSymbolics()
             if format not in available_formats:
                 raise CameraConfigurationError(
                     f"Pixel format '{format}' not available. Available formats: {', '.join(available_formats)}"
                 )
-
             self._camera.PixelFormat.Value = format
+
+        try:
+            await self._run_blocking(_set_format)
         except CameraConfigurationError:
             raise
         except Exception as e:
@@ -489,7 +633,11 @@ class BaslerStereoAceBackend(Mindtrace):
         Example:
             await camera.set_exposure_time(5000)  # 5ms exposure
         """
-        await self.configure(ExposureTime=microseconds)
+
+        def _set_exposure():
+            self._camera.ExposureTime.Value = microseconds
+
+        await self._run_blocking(_set_exposure)
 
     async def set_gain(self, gain: float) -> None:
         """Set camera gain.
@@ -503,7 +651,11 @@ class BaslerStereoAceBackend(Mindtrace):
         Example:
             await camera.set_gain(2.0)
         """
-        await self.configure(Gain=gain)
+
+        def _set_gain():
+            self._camera.Gain.Value = gain
+
+        await self._run_blocking(_set_gain)
 
     async def get_exposure_time(self) -> float:
         """Get current exposure time in microseconds.
@@ -516,12 +668,15 @@ class BaslerStereoAceBackend(Mindtrace):
 
         Example:
             exposure = await camera.get_exposure_time()
-            print(f"Current exposure: {exposure}μs")
+            print(f"Current exposure: {exposure}us")
         """
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        return float(self._camera.ExposureTime.Value)
+        def _get_exposure():
+            return float(self._camera.ExposureTime.Value)
+
+        return await self._run_blocking(_get_exposure)
 
     async def get_gain(self) -> float:
         """Get current camera gain.
@@ -539,7 +694,10 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        return float(self._camera.Gain.Value)
+        def _get_gain():
+            return float(self._camera.Gain.Value)
+
+        return await self._run_blocking(_get_gain)
 
     async def get_depth_quality(self) -> str:
         """Get current depth quality setting.
@@ -557,7 +715,10 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        return str(self._camera.BslDepthQuality.Value)
+        def _get_quality():
+            return str(self._camera.BslDepthQuality.Value)
+
+        return await self._run_blocking(_get_quality)
 
     async def get_pixel_format(self) -> str:
         """Get current pixel format.
@@ -575,7 +736,10 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        return str(self._camera.PixelFormat.Value)
+        def _get_format():
+            return str(self._camera.PixelFormat.Value)
+
+        return await self._run_blocking(_get_format)
 
     async def get_binning(self) -> tuple[int, int]:
         """Get current binning settings.
@@ -593,9 +757,12 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        h_bin = int(self._camera.BinningHorizontal.Value)
-        v_bin = int(self._camera.BinningVertical.Value)
-        return (h_bin, v_bin)
+        def _get_binning():
+            h_bin = int(self._camera.BinningHorizontal.Value)
+            v_bin = int(self._camera.BinningVertical.Value)
+            return (h_bin, v_bin)
+
+        return await self._run_blocking(_get_binning)
 
     async def get_illumination_mode(self) -> str:
         """Get current illumination mode.
@@ -613,7 +780,10 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        return str(self._camera.BslIlluminationMode.Value)
+        def _get_mode():
+            return str(self._camera.BslIlluminationMode.Value)
+
+        return await self._run_blocking(_get_mode)
 
     async def get_depth_range(self) -> tuple[float, float]:
         """Get current depth measurement range in meters.
@@ -631,9 +801,12 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        min_depth = float(self._camera.BslDepthMinDepth.Value)
-        max_depth = float(self._camera.BslDepthMaxDepth.Value)
-        return (min_depth, max_depth)
+        def _get_range():
+            min_depth = float(self._camera.BslDepthMinDepth.Value)
+            max_depth = float(self._camera.BslDepthMaxDepth.Value)
+            return (min_depth, max_depth)
+
+        return await self._run_blocking(_get_range)
 
     async def set_trigger_mode(self, mode: str) -> None:
         """Set trigger mode (simplified interface).
@@ -657,12 +830,17 @@ class BaslerStereoAceBackend(Mindtrace):
         if mode not in ["continuous", "trigger"]:
             raise CameraConfigurationError(f"Invalid trigger mode '{mode}'. Must be 'continuous' or 'trigger'")
 
-        if mode == "continuous":
-            # Disable triggering - free running mode
-            await self.configure(TriggerMode="Off")
-        else:
-            # Enable software triggering
-            await self.configure(TriggerSelector="FrameStart", TriggerMode="On", TriggerSource="Software")
+        def _set_trigger():
+            if mode == "continuous":
+                # Disable triggering - free running mode
+                self._camera.TriggerMode.Value = "Off"
+            else:
+                # Enable software triggering
+                self._camera.TriggerSelector.Value = "FrameStart"
+                self._camera.TriggerMode.Value = "On"
+                self._camera.TriggerSource.Value = "Software"
+
+        await self._run_blocking(_set_trigger)
 
     async def get_trigger_mode(self) -> str:
         """Get current trigger mode (simplified interface).
@@ -680,11 +858,13 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        try:
+        def _get_trigger():
             trigger_enabled = self._camera.TriggerMode.Value == "On"
             trigger_source = self._camera.TriggerSource.Value == "Software"
-
             return "trigger" if (trigger_enabled and trigger_source) else "continuous"
+
+        try:
+            return await self._run_blocking(_get_trigger)
         except Exception as e:
             raise CameraConfigurationError(f"Failed to get trigger mode: {e}") from e
 
@@ -712,8 +892,11 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        if not self._camera.IsGrabbing():
-            self._camera.StartGrabbing(self._grab_strategy)
+        def _start_grab():
+            if not self._camera.IsGrabbing():
+                self._camera.StartGrabbing(self._grab_strategy)
+
+        await self._run_blocking(_start_grab)
 
     async def execute_trigger(self) -> None:
         """Execute software trigger.
@@ -728,18 +911,25 @@ class BaslerStereoAceBackend(Mindtrace):
         if not self._is_open or self._camera is None:
             raise CameraConnectionError("Camera not opened")
 
-        try:
+        def _execute():
             self._camera.TriggerSoftware.Execute()
+
+        try:
+            await self._run_blocking(_execute)
         except Exception as e:
             raise CameraConfigurationError(f"Failed to execute trigger: {e}") from e
 
     async def close(self) -> None:
         """Close camera and release resources."""
         if self._camera and self._is_open:
-            try:
+
+            def _close_camera():
                 if self._camera.IsGrabbing():
                     self._camera.StopGrabbing()
                 self._camera.Close()
+
+            try:
+                await self._run_blocking(_close_camera)
                 self._is_open = False
                 self.logger.info("Closed Stereo ace camera")
             except Exception as e:
@@ -749,7 +939,11 @@ class BaslerStereoAceBackend(Mindtrace):
     def name(self) -> str:
         """Get camera name."""
         if self._camera and self._is_open:
-            return f"BaslerStereoAce:{self._camera.GetDeviceInfo().GetSerialNumber()}"
+            try:
+                # Access synchronously for property - this is acceptable for simple property access
+                return f"BaslerStereoAce:{self._camera.GetDeviceInfo().GetSerialNumber()}"
+            except Exception:
+                pass
         return f"BaslerStereoAce:{self.serial_number or 'unknown'}"
 
     @property
