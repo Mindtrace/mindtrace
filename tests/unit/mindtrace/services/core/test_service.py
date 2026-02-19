@@ -724,21 +724,38 @@ class TestServiceLaunchExceptionHandling:
             Service._active_servers = original_servers
 
     @patch.object(Service, "status_at_host")
-    def test_launch_connect_raises(self, mock_status_at_host):
-        """Test that Service.launch() times out if it takes too long to launch"""
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    @patch("mindtrace.core.utils.timers.time.sleep")
+    def test_launch_connect_raises(
+        self, mock_sleep, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test that Service.launch() times out if server never becomes available."""
+        # Mock status_at_host to return DOWN so the initial "already running" check passes
         mock_status_at_host.return_value = ServerStatus.DOWN
-        from time import sleep
 
-        from mindtrace.services.core.launcher import Launcher
+        # Mock UUID for server tracking
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
 
-        def fake_run(*args, **kwargs):
-            sleep(30)
-            Launcher.run(*args, *kwargs)
+        # Mock Popen to avoid spawning a real subprocess
+        mock_process = Mock()
+        mock_process.poll.return_value = None  # Process appears to be running
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
-        with patch("mindtrace.services.core.launcher.Launcher.run", side_effect=fake_run):
-            # Use shorter timeout (0.01s) to speed up test while still testing timeout behavior
+        # Save original state and ensure cleanup
+        original_servers = Service._active_servers.copy()
+        try:
+            # The server will never become available (no real server started),
+            # so the Timeout handler should eventually raise TimeoutError
             with pytest.raises(TimeoutError):
                 Service.launch(timeout=0.01)
+        finally:
+            # Restore original state to avoid affecting other tests
+            Service._active_servers = original_servers
 
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
