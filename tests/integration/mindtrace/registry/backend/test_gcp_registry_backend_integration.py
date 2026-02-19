@@ -651,9 +651,9 @@ def test_version_objects_keeps_history(gcp_registry):
 
     # List versions should show all
     versions = gcp_registry.list_versions("test:history")
-    assert "1.0.0" in versions
-    assert "2.0.0" in versions
-    assert "3.0.0" in versions
+    assert "1" in versions
+    assert "2" in versions
+    assert "3" in versions
 
 
 def test_unversioned_registry_single_version(unversioned_registry):
@@ -747,8 +747,8 @@ def test_registry_version_listing(gcp_registry):
     gcp_registry.save("test:versioned", "v2", version="2.0.0")
 
     versions = gcp_registry.list_versions("test:versioned")
-    assert "1.0.0" in versions
-    assert "2.0.0" in versions
+    assert "1" in versions
+    assert "2" in versions
 
 
 def test_concurrent_save_load(gcp_registry):

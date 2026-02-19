@@ -196,7 +196,11 @@ class Registry(Mindtrace):
     def _is_cache_stale(self, name: str, version: str | None) -> bool:
         """Check if a cached item is stale by comparing hashes with remote."""
         try:
-            resolved_version = version if version and version != "latest" else self._remote._latest(name)
+            resolved_version = (
+                self._remote._latest(name)
+                if not version or version == "latest"
+                else self._remote._validate_version(version)
+            )
             if not resolved_version:
                 return True
 
@@ -404,7 +408,11 @@ class Registry(Mindtrace):
         **kwargs,
     ) -> Any:
         """Load a single object with cache-first pattern."""
-        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+        resolved_v = (
+            self._remote._latest(name)
+            if not version or version == "latest"
+            else self._remote._validate_version(version)
+        )
         check_staleness = verify == VerifyLevel.FULL
 
         # Try cache first
@@ -645,15 +653,7 @@ class Registry(Mindtrace):
             self.delete(name=names, version=versions)
             return
         try:
-            name, version = names[0], versions[0]
-            if version is None:
-                if not self._core.list_versions(name):
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-            else:
-                exists = self._core.backend.has_object([name], [version])
-                if not exists.get((name, version), False):
-                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
-            self.delete(name, version)
+            self.delete(names[0], versions[0])
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 

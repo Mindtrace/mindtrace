@@ -808,6 +808,12 @@ class _RegistryCore(Mindtrace):
                 versions_to_delete = self.list_versions(name)
                 if not versions_to_delete:
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
+        elif version == "latest":
+            # Resolve "latest" to concrete version
+            latest = self._latest(name)
+            if latest is None:
+                raise RegistryObjectNotFound(f"Object {name} does not exist")
+            versions_to_delete = [latest]
         else:
             # Explicit version only — validate format, pass directly
             validated = self._validate_version(version)
@@ -934,7 +940,7 @@ class _RegistryCore(Mindtrace):
             items = [(n, v) for n in self.list_objects() for v in self.list_versions(n)]
         elif version is not None:
             # Specific version (resolve "latest")
-            resolved_version = self._latest(name) if version == "latest" else version
+            resolved_version = self._latest(name) if version == "latest" else self._validate_version(version)
             items = [(name, resolved_version)] if resolved_version else []
         else:
             # All versions for one object
@@ -1186,13 +1192,20 @@ class _RegistryCore(Mindtrace):
         # Remove any 'v' prefix
         if version.startswith("v"):
             version = version[1:]
+        # if more than 3 components, raise error
+        if len(version.split(".")) > 3:
+            raise ValueError(
+                f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
+            )
 
         # Split into components and validate
         try:
             components = version.split(".")
-            # Convert each component to int to validate
-            [int(c) for c in components]
-            return version
+            int_components = [int(c) for c in components]
+            # Strip trailing zeros: "1.0.0" → "1", "1.1.0" → "1.1"
+            while len(int_components) > 1 and int_components[-1] == 0:
+                int_components.pop()
+            return ".".join(str(c) for c in int_components)
         except ValueError:
             raise ValueError(
                 f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"

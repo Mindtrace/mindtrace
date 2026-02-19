@@ -239,9 +239,9 @@ def test_cache_load_with_verify_none(gcp_registry):
     # Verify cache was populated
     assert gcp_registry._cache.has_object("test:cache:modified", "1.0.0")
 
-    # Get cache directory path
+    # Get cache directory path (version "1.0.0" normalizes to "1" in storage)
     cache_dir = gcp_registry._cache.backend._full_path(
-        gcp_registry._cache.backend._object_key("test:cache:modified", "1.0.0")
+        gcp_registry._cache.backend._object_key("test:cache:modified", "1")
     )
     assert cache_dir.exists(), "Cache directory should exist"
 
@@ -334,9 +334,9 @@ def test_cache_verify_levels_comparison(gcp_registry):
     gcp_registry.load("test:verify:levels", version="1.0.0")
     assert gcp_registry._cache.has_object("test:verify:levels", "1.0.0")
 
-    # Get cache directory path
+    # Get cache directory path (version "1.0.0" normalizes to "1" in storage)
     cache_dir = gcp_registry._cache.backend._full_path(
-        gcp_registry._cache.backend._object_key("test:verify:levels", "1.0.0")
+        gcp_registry._cache.backend._object_key("test:verify:levels", "1")
     )
     data_json_path = cache_dir / "data.json"
 
