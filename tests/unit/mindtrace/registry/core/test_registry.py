@@ -1266,6 +1266,325 @@ def test_contains_value_error(registry):
         registry._latest = original_latest
 
 
+@pytest.fixture
+def mutable_registry():
+    """Create a versioned mutable registry (auto-increments on save, allows overwrites with explicit version)."""
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(backend=temp_dir, version_objects=True, mutable=True)
+
+
+# ───  dictionary interface tests on versioned mutable registry ────────────────────────────────────────
+
+
+def test_dict_batch_setitem_and_getitem(mutable_registry):
+    """Test batch __setitem__ and __getitem__ with list keys."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Batch __getitem__ returns BatchResult
+    result = mutable_registry[["test:a", "test:b"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == [1, 2]
+    assert len(result.succeeded) == 2
+
+    # Single __getitem__ still works
+    assert mutable_registry["test:a"] == 1
+    assert mutable_registry["test:b"] == 2
+
+
+def test_dict_batch_setitem_auto_increments_on_versioned_mutable(mutable_registry):
+    """Batch __setitem__ without explicit version auto-increments on versioned mutable registry.
+
+    Each assignment creates a new version. __getitem__ resolves "latest",
+    so the second value is returned even though v1 still exists.
+    """
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Second assignment auto-increments to v2
+    mutable_registry[["test:a", "test:b"]] = [10, 20]
+
+    # __getitem__ resolves "latest" (v2)
+    assert mutable_registry["test:a"] == 10
+    assert mutable_registry["test:b"] == 20
+
+    # v1 still exists with original values
+    assert mutable_registry["test:a@1"] == 1
+    assert mutable_registry["test:b@1"] == 2
+
+    # v2 (auto-incremented from 1) has the new values
+    assert mutable_registry["test:a@2"] == 10
+    assert mutable_registry["test:b@2"] == 20
+
+
+def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_registry):
+    """Single __setitem__ without explicit version auto-increments on versioned mutable registry.
+
+    Each assignment creates a new version. __getitem__ resolves "latest".
+    """
+    mutable_registry["test:a"] = 1
+    mutable_registry["test:a"] = 10
+
+    # __getitem__ resolves "latest" (v2)
+    assert mutable_registry["test:a"] == 10
+
+
+def test_dict_single_setitem_overwrite_explicit_version(mutable_registry):
+    """Single __setitem__ with explicit version overwrites in-place on mutable registry."""
+    mutable_registry["testmutable:a"] = 1
+    mutable_registry["testmutable:a@1"] = 10
+
+    assert mutable_registry["testmutable:a@1"] == 10
+    assert mutable_registry.list_versions("testmutable:a") == ["1"]
+
+
+def test_dict_batch_setitem_overwrite_explicit_version(mutable_registry):
+    """Batch __setitem__ with explicit versions overwrites in-place on mutable registry."""
+    mutable_registry[["testbatch:a", "testbatch:b"]] = [1, 2]
+    mutable_registry[["testbatch:a@1", "testbatch:b@1"]] = [10, 20]
+
+    assert mutable_registry["testbatch:a"] == 10
+    assert mutable_registry["testbatch:b"] == 20
+    assert mutable_registry["testbatch:a@1"] == 10
+    assert mutable_registry["testbatch:b@1"] == 20
+    assert mutable_registry.list_versions("testbatch:a") == ["1"]
+    assert mutable_registry.list_versions("testbatch:b") == ["1"]
+
+
+def test_dict_batch_delitem(mutable_registry):
+    """Test batch __delitem__ with list keys.
+
+    Previously this raised TypeError: unhashable type: 'list'.
+    """
+    mutable_registry[["test:a", "test:b", "test:c"]] = [1, 2, 3]
+    assert mutable_registry["test:a"] == 1
+
+    del mutable_registry[["test:a", "test:b"]]
+
+    assert "test:a" not in mutable_registry
+    assert "test:b" not in mutable_registry
+    assert "test:c" in mutable_registry
+
+
+def test_dict_batch_contains(mutable_registry):
+    """Test batch __contains__ with list keys."""
+    mutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    assert ["test:a", "test:b"] in mutable_registry
+    assert ["test:a", "test:nonexistent"] not in mutable_registry
+    assert ["test:nonexistent"] not in mutable_registry
+
+
+def test_dict_batch_setitem_with_versioned_keys(mutable_registry):
+    """Test batch __setitem__ with version suffixes in keys."""
+    mutable_registry[["test:a@1.0.0", "test:b@2.0.0"]] = ["val_a", "val_b"]
+
+    assert mutable_registry["test:a@1.0.0"] == "val_a"
+    assert mutable_registry["test:b@2.0.0"] == "val_b"
+
+
+def test_dict_batch_getitem_with_versioned_keys(mutable_registry):
+    """Test batch __getitem__ with version suffixes in keys."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:a", "v2", version="2.0.0")
+
+    result = mutable_registry[["test:a@1.0.0", "test:a@2.0.0"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == ["v1", "v2"]
+
+
+def test_dict_batch_delitem_with_versioned_keys(mutable_registry):
+    """Test batch __delitem__ with version suffixes in keys."""
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:a", "v2", version="2.0.0")
+    mutable_registry.save("test:b", "v1", version="1.0.0")
+
+    del mutable_registry[["test:a@1.0.0", "test:b@1.0.0"]]
+
+    assert "test:a@1.0.0" not in mutable_registry
+    assert "test:a@2.0.0" in mutable_registry
+    assert "test:b@1.0.0" not in mutable_registry
+
+
+def test_dict_batch_contains_with_versioned_keys(mutable_registry):
+    """Test batch __contains__ with version suffixes in keys."""
+    mutable_registry.save("test:a", "v1", version="1.0.0")
+    mutable_registry.save("test:b", "v1", version="1.0.0")
+
+    assert ["test:a@1.0.0", "test:b@1.0.0"] in mutable_registry
+    assert ["test:a@1.0.0", "test:b@9.9.9"] not in mutable_registry
+
+
+def test_dict_batch_getitem_partial_failure(mutable_registry):
+    """Test batch __getitem__ when some keys don't exist."""
+    from mindtrace.registry.core.types import BatchResult
+
+    mutable_registry["test:a"] = 1
+
+    result = mutable_registry[["test:a", "test:nonexistent"]]
+    assert isinstance(result, BatchResult)
+    assert len(result.failed) >= 1
+
+
+def test_dict_batch_setitem_empty_list(mutable_registry):
+    """Test batch __setitem__ with empty list is a no-op."""
+    from mindtrace.registry.core.types import BatchResult
+
+    result = mutable_registry.save([], [])
+    assert isinstance(result, BatchResult)
+    assert len(mutable_registry) == 0
+
+
+def test_dict_batch_delitem_empty_list(mutable_registry):
+    """Test batch __delitem__ with empty list is a no-op."""
+
+    mutable_registry["test:a"] = 1
+    del mutable_registry[[]]
+    assert mutable_registry["test:a"] == 1
+
+
+def test_dict_setitem_immutable_registry_skip(registry):
+    """Test that __setitem__ on an immutable registry raises on explicit version conflict.
+
+    With version_objects=True, auto-versioning creates new versions (1, 2, ...),
+    so no conflict occurs. A conflict only happens with an explicit same version.
+    """
+    registry["test:a@1.0.0"] = 1
+
+    # Same explicit version on immutable registry should raise
+    with pytest.raises(RegistryVersionConflict):
+        registry["test:a@1.0.0"] = 10
+
+    # Original value should be unchanged
+    assert registry["test:a@1.0.0"] == 1
+
+
+def test_dict_batch_auto_increment_roundtrip(mutable_registry):
+    """Full roundtrip: batch save, batch auto-increment, batch load (latest), batch delete."""
+    from mindtrace.registry.core.types import BatchResult
+
+    # Save (creates v1 for each)
+    mutable_registry[["test:x", "test:y", "test:z"]] = [100, 200, 300]
+
+    # Auto-increment (creates v2 for each)
+    mutable_registry[["test:x", "test:y", "test:z"]] = [111, 222, 333]
+
+    # Load resolves "latest" (v2)
+    result = mutable_registry[["test:x", "test:y", "test:z"]]
+    assert isinstance(result, BatchResult)
+    assert result.results == [111, 222, 333]
+
+    # Contains
+    assert ["test:x", "test:y", "test:z"] in mutable_registry
+
+    # Delete (removes all versions)
+    del mutable_registry[["test:x", "test:y", "test:z"]]
+    assert ["test:x", "test:y", "test:z"] not in mutable_registry
+
+
+def test_dict_methods_api_parity(mutable_registry):
+    """Verify dict API and methods API produce identical results.
+
+    This test directly compares reg[keys] = values against reg.save(keys, values)
+    and del reg[keys] against reg.delete(keys).
+    """
+
+    # Methods API
+    mutable_registry.save(["test:m1", "test:m2"], [10, 20])
+    m_load = mutable_registry.load(["test:m1", "test:m2"])
+    assert m_load.results == [10, 20]
+
+    # Dict API
+    mutable_registry[["test:d1", "test:d2"]] = [10, 20]
+    d_load = mutable_registry[["test:d1", "test:d2"]]
+    assert d_load.results == [10, 20]
+
+    # Both should have the same values
+    assert m_load.results == d_load.results
+
+    # Methods API auto-increment (creates v2)
+    mutable_registry.save(["test:m1", "test:m2"], [100, 200])
+    assert mutable_registry.load(["test:m1", "test:m2"]).results == [100, 200]
+
+    # Dict API auto-increment (creates v2)
+    mutable_registry[["test:d1", "test:d2"]] = [100, 200]
+    assert mutable_registry[["test:d1", "test:d2"]].results == [100, 200]
+
+    # Methods API delete
+    mutable_registry.delete(["test:m1", "test:m2"])
+    assert "test:m1" not in mutable_registry
+
+    # Dict API delete
+    del mutable_registry[["test:d1", "test:d2"]]
+    assert "test:d1" not in mutable_registry
+
+    # --- Overwrite parity (explicit version) ---
+
+    # Methods API overwrite (scalar version broadcast)
+    mutable_registry.save(["test:m3", "test:m4"], [1, 2], version="1.0.0")
+    mutable_registry.save(["test:m3", "test:m4"], [10, 20], version="1.0.0")
+    assert mutable_registry.load(["test:m3", "test:m4"], version="1.0.0").results == [10, 20]
+
+    # Dict API overwrite
+    mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]] = [1, 2]
+    mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]] = [10, 20]
+    assert mutable_registry[["test:d3@1.0.0", "test:d4@1.0.0"]].results == [10, 20]
+
+    # Still only one version each
+    assert mutable_registry.list_versions("test:m3") == ["1.0.0"]
+    assert mutable_registry.list_versions("test:d3") == ["1.0.0"]
+
+
+@pytest.fixture
+def non_versioned_immutable_registry():
+    """Create a non-versioned immutable registry (write-once, raises on conflict)."""
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(backend=temp_dir, version_objects=False, mutable=False)
+
+
+def test_non_versioned_immutable_save_and_load(non_versioned_immutable_registry, test_config):
+    """Test saving and loading on a non-versioned immutable registry."""
+    non_versioned_immutable_registry.save("test:config", test_config)
+    loaded = non_versioned_immutable_registry.load("test:config")
+    assert loaded == test_config
+
+
+def test_non_versioned_immutable_rejects_duplicate(non_versioned_immutable_registry, test_config):
+    """Test that saving the same name twice raises on a non-versioned immutable registry."""
+    non_versioned_immutable_registry.save("test:config", test_config)
+
+    with pytest.raises(RegistryVersionConflict):
+        non_versioned_immutable_registry.save("test:config", test_config)
+
+    # Original is untouched
+    assert non_versioned_immutable_registry.load("test:config") == test_config
+
+
+def test_non_versioned_immutable_dict_rejects_duplicate(non_versioned_immutable_registry):
+    """Test dict interface rejects second assignment on non-versioned immutable registry."""
+    non_versioned_immutable_registry["test:str"] = "hello"
+    assert non_versioned_immutable_registry["test:str"] == "hello"
+
+    with pytest.raises(RegistryVersionConflict):
+        non_versioned_immutable_registry["test:str"] = "world"
+
+    assert non_versioned_immutable_registry["test:str"] == "hello"
+
+
+def test_non_versioned_immutable_batch_skips_duplicate(non_versioned_immutable_registry):
+    """Test batch save on non-versioned immutable silently skips existing objects."""
+    non_versioned_immutable_registry[["test:a", "test:b"]] = [1, 2]
+
+    # Batch save skips duplicates (doesn't raise like single save)
+    non_versioned_immutable_registry[["test:a", "test:b"]] = [10, 20]
+
+    # Original values preserved
+    assert non_versioned_immutable_registry["test:a"] == 1
+    assert non_versioned_immutable_registry["test:b"] == 2
+
+
 def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     """Test saving and loading objects in non-versioned mode."""
     # Save object
@@ -1317,13 +1636,14 @@ def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     non_versioned_registry["test:config"] = test_config
     assert non_versioned_registry["test:config"] == test_config
 
-    # Test that re-saving with __setitem__ raises conflict (explicit overwrite needed)
-    with pytest.raises(RegistryVersionConflict):
-        non_versioned_registry["test:config"] = {"new": "value"}
+    # Test that re-saving with __setitem__ overwrites on mutable registry
+    new_value = {"new": "value"}
+    non_versioned_registry["test:config"] = new_value
+    assert non_versioned_registry["test:config"] == new_value
 
     # Test pop
     value = non_versioned_registry.pop("test:config")
-    assert value == test_config
+    assert value == new_value
     assert "test:config" not in non_versioned_registry
 
     # Test setdefault on non-existent key
@@ -1335,12 +1655,23 @@ def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     assert non_versioned_registry["test:config"] == test_config  # Original value preserved
 
 
+def test_dict_api_non_versioned_batch_overwrite(non_versioned_registry):
+    """Batch __setitem__ on non-versioned mutable registry overwrites in-place."""
+    non_versioned_registry[["test:a", "test:b"]] = [1, 2]
+    non_versioned_registry[["test:a", "test:b"]] = [10, 20]
+
+    assert non_versioned_registry["test:a@1"] == 10
+    assert non_versioned_registry["test:b@1"] == 20
+    assert non_versioned_registry.list_versions("test:a") == ["1"]
+    assert non_versioned_registry.list_versions("test:b") == ["1"]
+
+
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
     """Test that version parameters are ignored in non-versioned mode."""
     # Save with explicit version
-    non_versioned_registry.save("test:config", test_config, version="v1")
+    non_versioned_registry.save("test:config", test_config, version="v2")
 
-    # Verify version is always "latest"
+    # Verify version is always "1"
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
     assert versions[0] == "1"
@@ -1841,12 +2172,13 @@ def test_backend_internal_lock_contention(registry):
 
 
 def test_validate_version_none_or_latest(registry):
-    """Test that _validate_version returns None for None or 'latest' versions."""
-    # Test None version
-    assert registry._validate_version(None) is None
+    """Test that _validate_version raises on None or 'latest' (unresolved) versions."""
+    # None and "latest" should raise since they must be resolved before validation
+    with pytest.raises(ValueError, match="unresolved version"):
+        registry._validate_version(None)
 
-    # Test 'latest' version
-    assert registry._validate_version("latest") is None
+    with pytest.raises(ValueError, match="unresolved version"):
+        registry._validate_version("latest")
 
     # Test that other versions are validated
     assert registry._validate_version("1.0.0") == "1.0.0"
@@ -3592,3 +3924,51 @@ def test_batch_load_length_mismatch(registry):
 
     with pytest.raises(ValueError, match="name and version lists must have same length"):
         registry.load(names, version=versions)
+
+
+def test_save_single_rejects_latest(registry):
+    """Test that save with version='latest' raises ValueError."""
+    with pytest.raises(ValueError, match="Cannot save with version='latest'"):
+        registry.save("test:a", "hello", version="latest")
+
+
+def test_save_batch_rejects_latest(registry):
+    """Test that batch save with version='latest' records error in BatchResult."""
+    result = registry.save(["test:a"], ["hello"], version=["latest"])
+    assert result.failure_count == 1
+    assert any("Cannot save with version='latest'" in err["message"] for err in result.errors.values())
+
+
+def test_save_batch_scalar_version_broadcast(registry):
+    """Test that a scalar version is broadcast to all items in batch save."""
+    result = registry.save(["test:a", "test:b"], ["value_a", "value_b"], version="1.0.0")
+    assert result.success_count == 2
+    assert registry.load("test:a", version="1.0.0") == "value_a"
+    assert registry.load("test:b", version="1.0.0") == "value_b"
+
+
+def test_resolve_load_version_validates_explicit_format(registry):
+    """Test that _resolve_load_version validates explicit version format."""
+    with pytest.raises(ValueError, match="Invalid version string"):
+        registry._resolve_load_version("test:a", "1.0.0-alpha")
+
+
+def test_resolve_load_version_normalizes_v_prefix(registry):
+    """Test that _resolve_load_version strips 'v' prefix from explicit versions."""
+    registry.save("test:a", "hello", version="1.0.0")
+    resolved = registry._resolve_load_version("test:a", "v1.0.0")
+    assert resolved == "1.0.0"
+
+
+def test_resolve_load_version_latest(registry):
+    """Test that _resolve_load_version resolves 'latest' and None to concrete version."""
+    registry.save("test:a", "hello", version="1.0.0")
+    registry.save("test:a", "world", version="2.0.0")
+    assert registry._resolve_load_version("test:a", "latest") == "2.0.0"
+    assert registry._resolve_load_version("test:a", None) == "2.0.0"
+
+
+def test_resolve_load_version_not_found(registry):
+    """Test that _resolve_load_version raises RegistryObjectNotFound for missing objects."""
+    with pytest.raises(RegistryObjectNotFound):
+        registry._resolve_load_version("nonexistent", "latest")
