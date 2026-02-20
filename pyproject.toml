@@ -27,7 +27,7 @@ dependencies = [
   "mindtrace-datalake>=0.7.1",
   "mindtrace-storage>=0.7.1",
   "pypylon>=4.2.0",
-#   "mindtrace-agents>=0.7.1",
+  "mindtrace-agents>=0.7.1",
 ]
 
 [project.optional-dependencies]
