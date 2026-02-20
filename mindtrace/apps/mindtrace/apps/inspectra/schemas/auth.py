@@ -1,25 +1,47 @@
-"""Auth TaskSchemas for Inspectra."""
+"""Auth request/response schemas and TaskSchemas for Inspectra."""
 
-from mindtrace.apps.inspectra.models import (
-    LoginPayload,
-    RegisterPayload,
-    TokenResponse,
-)
+from pydantic import BaseModel, EmailStr, Field
+
 from mindtrace.core import TaskSchema
+
+
+class LoginRequest(BaseModel):
+    """Login request body."""
+
+    email: EmailStr = Field(..., description="User email")
+    password: str = Field(..., min_length=1, description="Password")
+
+
+class TokenResponse(BaseModel):
+    """JWT token response."""
+
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    refresh_token: str = Field(..., description="Refresh token for obtaining new access tokens")
+
+
+class RefreshRequest(BaseModel):
+    """Refresh token request body."""
+
+    refresh_token: str = Field(..., min_length=1, description="Refresh token")
+
 
 LoginSchema = TaskSchema(
     name="inspectra_login",
-    input_schema=LoginPayload,
+    input_schema=LoginRequest,
     output_schema=TokenResponse,
 )
 
-RegisterSchema = TaskSchema(
-    name="inspectra_register",
-    input_schema=RegisterPayload,
+RefreshSchema = TaskSchema(
+    name="inspectra_refresh",
+    input_schema=RefreshRequest,
     output_schema=TokenResponse,
 )
 
 __all__ = [
+    "LoginRequest",
     "LoginSchema",
-    "RegisterSchema",
+    "RefreshRequest",
+    "RefreshSchema",
+    "TokenResponse",
 ]
