@@ -379,16 +379,16 @@ All error responses include detailed error messages and context.
 
 ## Features
 
-- ✅ REST API with OpenAPI/Swagger documentation
-- ✅ Async operations for non-blocking I/O
-- ✅ Strongly-typed request/response models
-- ✅ Batch operations for efficiency
-- ✅ Connection management with retry logic
-- ✅ Health check endpoint
-- ✅ System diagnostics
-- ✅ MCP tool integration
-- ✅ CORS enabled for web frontends
-- ✅ Follows camera service pattern
+- REST API with OpenAPI/Swagger documentation
+- Async operations for non-blocking I/O
+- Strongly-typed request/response models
+- Batch operations for efficiency
+- Connection management with retry logic
+- Health check endpoint
+- System diagnostics
+- MCP tool integration
+- CORS enabled for web frontends
+- Follows camera service pattern
 
 ## Related Documentation
 

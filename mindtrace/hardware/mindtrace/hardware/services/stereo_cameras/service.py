@@ -60,7 +60,7 @@ from mindtrace.hardware.services.stereo_cameras.models import (
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
-from mindtrace.hardware.services.stereo_cameras.schemas import ALL_SCHEMAS
+from mindtrace.hardware.services.stereo_cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.hardware.stereo_cameras import AsyncStereoCamera, BaslerStereoAceBackend
 from mindtrace.services import Service
 
@@ -121,7 +121,7 @@ class StereoCameraService(Service):
         """Register all REST API endpoints using add_endpoint pattern."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
 
         # Backend & Discovery
         self.add_endpoint(

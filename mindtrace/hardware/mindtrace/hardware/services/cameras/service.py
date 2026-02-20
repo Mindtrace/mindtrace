@@ -93,7 +93,7 @@ from mindtrace.hardware.services.cameras.models import (
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
-from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS
+from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
 
 
@@ -165,7 +165,7 @@ class CameraManagerService(Service):
     def _register_endpoints(self):
         """Register all service endpoints."""
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
 
         # Backend & Discovery
         self.add_endpoint(

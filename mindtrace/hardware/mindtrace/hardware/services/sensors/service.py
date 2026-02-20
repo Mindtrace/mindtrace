@@ -22,7 +22,7 @@ from .models import (
     SensorStatusRequest,
     SensorStatusResponse,
 )
-from .schemas import SensorDataSchemas, SensorLifecycleSchemas
+from .schemas import HealthSchema, SensorDataSchemas, SensorLifecycleSchemas
 
 
 class SensorManagerService(Service):
@@ -61,7 +61,7 @@ class SensorManagerService(Service):
         """Register all sensor management endpoints as MCP tools."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
+        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
 
         # Lifecycle management endpoints
         self.add_endpoint(
