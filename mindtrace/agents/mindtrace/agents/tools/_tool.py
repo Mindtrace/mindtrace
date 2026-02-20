@@ -58,12 +58,6 @@ ToolAgentDepsT = TypeVar('ToolAgentDepsT')
 class Tool(Generic[ToolAgentDepsT]):
     """A tool function wrapper for mindtrace agents.
     
-    This follows the pattern from Pydantic AI's Tool class:
-    - Wraps a function with FunctionSchema
-    - FunctionSchema handles RunContext injection
-    - Provides tool_def() for model API
-    
-    Reference: `pydantic_ai_slim/pydantic_ai/tools.py:266-461`
     
     Example:
         ```python
@@ -103,12 +97,6 @@ class Tool(Generic[ToolAgentDepsT]):
     ):
         """Create a new tool.
         
-        This follows the pattern from Pydantic AI's Tool.__init__:
-        - Creates FunctionSchema to handle RunContext injection
-        - Extracts name and description
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/tools.py:290-386`
-        
         Args:
             function: The function to wrap
             takes_ctx: Whether function takes RunContext. If None, auto-detect.
@@ -119,8 +107,6 @@ class Tool(Generic[ToolAgentDepsT]):
         """
         self.function = function
         
-        # Build FunctionSchema (handles RunContext injection)
-        # Reference: `pydantic_ai_slim/pydantic_ai/tools.py:368-374`
         self.function_schema = function_schema_obj or function_schema(
             function,
             takes_ctx=takes_ctx,
@@ -137,13 +123,9 @@ class Tool(Generic[ToolAgentDepsT]):
     def tool_def(self) -> 'ToolDefinition':
         """Convert this Tool to a ToolDefinition for sending to models.
         
-        Reference: `pydantic_ai_slim/pydantic_ai/tools.py:433-444`
-        
         Returns:
             A ToolDefinition with basic information.
         """
-        # In full implementation, function_schema would have json_schema
-        # For minimal version, use placeholder
         return ToolDefinition(
             name=self.name,
             description=self.description,

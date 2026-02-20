@@ -1,7 +1,4 @@
 """Minimal multi-modal content types for user prompts.
-
-Mirrors Pydantic AI's messages: UserPromptPart (content: str | Sequence[UserContent]),
-BinaryContent, ImageUrl, UserContent. Supports text plus images for vision models (e.g. Ollama).
 """
 
 from __future__ import annotations
@@ -156,12 +153,7 @@ UserContent: TypeAlias = str | BinaryContent | ImageUrl
 
 @dataclass
 class UserPromptPart:
-    """A user prompt part; content comes from the user_prompt parameter of Agent.run.
-
-    Mirrors Pydantic AI's UserPromptPart: content is str or a sequence of UserContent
-    (text, ImageUrl, BinaryContent). The model's _map_user_prompt(part) converts this
-    to the provider's API format (e.g. OpenAI chat content parts).
-    """
+    """A user prompt part; content comes from the user_prompt parameter of Agent.run."""
 
     content: str | Sequence[UserContent]
     """The content of the prompt (string or sequence of text and images)."""

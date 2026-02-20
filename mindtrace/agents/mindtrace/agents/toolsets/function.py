@@ -1,8 +1,7 @@
-"""Function toolset implementation following Pydantic AI's pattern.
+"""Function toolset implementation.
 
 This module implements a toolset that wraps Python functions.
 
-Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py`
 """
 
 from __future__ import annotations
@@ -20,8 +19,6 @@ from .._run_context import RunContext
 class FunctionToolsetTool(ToolsetTool):
     """A tool in a FunctionToolset.
     
-    This extends ToolsetTool with function-specific information.
-    Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:28-35`
     """
     
     call_func: Callable[[dict[str, Any], RunContext[Any]], Any] = field(repr=False)
@@ -35,12 +32,6 @@ class FunctionToolsetTool(ToolsetTool):
 class FunctionToolset(AbstractToolset[ToolAgentDepsT]):
     """Toolset that wraps Python functions.
     
-    This follows the pattern from Pydantic AI's FunctionToolset:
-    - Stores Tool instances
-    - Converts them to ToolsetTool with prepared call_func
-    - Executes tools via call_func
-    
-    Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:37-383`
     """
     
     tools: dict[str, Tool[ToolAgentDepsT]] = field(default_factory=dict)
@@ -51,8 +42,6 @@ class FunctionToolset(AbstractToolset[ToolAgentDepsT]):
     
     def add_tool(self, tool: Tool[ToolAgentDepsT]) -> None:
         """Add a tool to the toolset.
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:323-335`
         
         Args:
             tool: The tool to add
@@ -67,11 +56,6 @@ class FunctionToolset(AbstractToolset[ToolAgentDepsT]):
     
     async def get_tools(self, ctx: RunContext[ToolAgentDepsT]) -> dict[str, ToolsetTool]:
         """Get all available tools for this run step.
-        
-        This converts Tool instances to FunctionToolsetTool instances
-        with prepared call_func.
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:337-367`
         
         Args:
             ctx: The run context
@@ -89,7 +73,6 @@ class FunctionToolset(AbstractToolset[ToolAgentDepsT]):
             
             # Create FunctionToolsetTool with prepared call_func
             # The call_func is tool.function_schema.call which handles RunContext injection
-            # Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:358-366`
             tools[name] = FunctionToolsetTool(
                 tool_def=tool_def,
                 max_retries=max_retries,
@@ -107,10 +90,6 @@ class FunctionToolset(AbstractToolset[ToolAgentDepsT]):
         tool: ToolsetTool,
     ) -> Any:
         """Execute a tool.
-        
-        This calls the prepared call_func which handles RunContext injection.
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/toolsets/function.py:369-383`
         
         Args:
             name: The tool name

@@ -1,8 +1,10 @@
 """Mindtrace Agents - Tools and MCP Server System."""
 
+from mindtrace.agents import prompts, tools
 
-from mindtrace.agents import tools
-from mindtrace.agents import prompts
+# Message and event types for conversation and streaming (Phase 1)
+# Import via: from mindtrace.agents.messages import ModelMessage, ...
+#             from mindtrace.agents.events import NativeEvent, ...
 
-__all__ = ["tools", "prompts"]
+__all__ = ["prompts", "tools"]
 

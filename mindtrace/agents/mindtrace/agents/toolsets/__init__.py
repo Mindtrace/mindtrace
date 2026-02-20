@@ -1,8 +1,7 @@
-"""Toolset abstraction following Pydantic AI's pattern.
+"""Toolset abstraction.
 
 This module defines the abstract Toolset interface and related types.
 
-Reference: `pydantic_ai_slim/pydantic_ai/toolsets/abstract.py`
 """
 
 from __future__ import annotations
@@ -19,8 +18,6 @@ from .._run_context import RunContext
 class ToolsetTool:
     """Information about a tool in a toolset.
     
-    This is similar to Pydantic AI's ToolsetTool.
-    Reference: `pydantic_ai_slim/pydantic_ai/toolsets/abstract.py`
     """
     
     tool_def: ToolDefinition
@@ -37,7 +34,6 @@ class AbstractToolset(ABC, Generic[ToolAgentDepsT]):
     - Getting available tools for a run
     - Executing tool calls
     
-    Reference: `pydantic_ai_slim/pydantic_ai/toolsets/abstract.py`
     """
     
     @abstractmethod

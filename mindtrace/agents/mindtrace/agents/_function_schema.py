@@ -1,13 +1,10 @@
 """Function schema builder following Pydantic AI's pattern.
 
-This module follows the pattern from `pydantic_ai_slim/pydantic_ai/_function_schema.py`.
-
 Key responsibilities:
 - Detect if a function takes RunContext as first argument
 - Create a `call()` method that handles RunContext injection automatically
 - Handle both sync and async functions
 
-Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py`
 """
 
 from __future__ import annotations
@@ -23,9 +20,6 @@ from ._run_context import RunContext
 @dataclass(kw_only=True)
 class FunctionSchema:
     """Schema information about a function and how to call it.
-    
-    This follows the pattern from Pydantic AI's FunctionSchema.
-    Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:34-72`
     """
     
     function: Callable[..., Any]
@@ -42,12 +36,7 @@ class FunctionSchema:
     
     async def call(self, args_dict: dict[str, Any], ctx: RunContext[Any]) -> Any:
         """Call the function with proper RunContext injection.
-        
-        This follows the pattern from FunctionSchema.call() in Pydantic AI:
-        1. Prepare args via _call_args() - inject ctx if needed
-        2. Call function (await if async)
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:49-56`
+    
         
         Args:
             args_dict: Validated arguments for the function
@@ -63,7 +52,6 @@ class FunctionSchema:
             return await function(*args, **kwargs)
         else:
             function = cast(Callable[[Any], Any], self.function)
-            # For sync functions, call directly (could use run_in_executor like Pydantic AI)
             return function(*args, **kwargs)
     
     def _call_args(
@@ -72,12 +60,6 @@ class FunctionSchema:
         ctx: RunContext[Any],
     ) -> tuple[list[Any], dict[str, Any]]:
         """Prepare args for function call, injecting RunContext if needed.
-        
-        This follows the pattern from FunctionSchema._call_args():
-        - If function takes context, prepend ctx to args
-        - Otherwise, just use kwargs
-        
-        Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:58-72`
         
         Args:
             args_dict: The validated arguments
@@ -99,13 +81,6 @@ def function_schema(
 ) -> FunctionSchema:
     """Build a FunctionSchema from a function.
     
-    This follows the pattern from Pydantic AI's function_schema():
-    - Inspect function signature
-    - Detect if first parameter is RunContext
-    - Determine if function is async
-    
-    Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:75-224`
-    
     Args:
         function: The function to analyze
         takes_ctx: Whether function takes RunContext. If None, auto-detect.
@@ -120,7 +95,6 @@ def function_schema(
         sig = inspect.signature(lambda: None)
     
     # Auto-detect if function takes RunContext
-    # Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:118-120`
     if takes_ctx is None:
         params = list(sig.parameters.values())
         if params:
@@ -148,8 +122,6 @@ def function_schema(
 
 def _is_call_ctx(annotation: Any) -> bool:
     """Check if annotation is RunContext.
-    
-    Reference: `pydantic_ai_slim/pydantic_ai/_function_schema.py:300-302`
     
     Args:
         annotation: The type annotation to check

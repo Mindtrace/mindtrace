@@ -9,11 +9,14 @@ MINIMAL STARTER VERSION - This is the bare minimum to get started.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
 from typing import Any
 
+from ..events import NativeEvent
+from ..messages import ModelMessage
 from ..profiles import DEFAULT_PROFILE, ModelProfile, ModelProfileSpec
 from ..tools import ToolDefinition
 
@@ -178,34 +181,44 @@ class Model(ABC):
     @abstractmethod
     async def request(
         self,
-        messages: list[dict[str, Any]],
+        messages: Sequence[ModelMessage],
         model_settings: dict[str, Any] | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
         """Make a request to the model.
         
         This is the core method that all model implementations must provide.
-        It takes messages and tool definitions, makes an API call to the LLM,
-        and returns a structured response.
+        It takes messages (our ModelMessage type) and tool definitions,
+        makes an API call to the LLM, and returns a structured response.
         
         Args:
-            messages: List of messages in the conversation.
-                Format: [{'role': 'user', 'content': 'Hello'}]
+            messages: Conversation history as list of ModelMessage (from mindtrace.agents.messages).
             model_settings: Optional settings for this request (temperature, etc.).
             model_request_parameters: Tool definitions and other request parameters.
         
         Returns:
             ModelResponse with text content and any tool calls.
-        
-        Example:
-            ```python
-            response = await model.request(
-                messages=[{'role': 'user', 'content': 'Hello'}],
-                model_settings={'temperature': 0.7},
-                model_request_parameters=ModelRequestParameters(
-                    function_tools=[tool_def]
-                )
-            )
-            ```
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def request_stream(
+        self,
+        messages: Sequence[ModelMessage],
+        model_settings: dict[str, Any] | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> AsyncIterator[NativeEvent]:
+        """Stream a request to the model, yielding events.
+
+        Yields PartStartEvent, PartDeltaEvent, PartEndEvent for text and tool
+        call parts. Callers can use these to drive run_stream_events() or UI.
+
+        Args:
+            messages: Conversation history as list of ModelMessage.
+            model_settings: Optional settings for this request.
+            model_request_parameters: Tool definitions and other parameters.
+
+        Yields:
+            NativeEvent (PartStartEvent, PartDeltaEvent, PartEndEvent, etc.).
         """
         raise NotImplementedError()
