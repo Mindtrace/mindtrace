@@ -1,8 +1,20 @@
 # MindTrace Unified Sensor System
 
-A **minimal, unified sensor system** that provides both sensor data reading and publishing capabilities through a consistent async interface. The system abstracts different communication backends (MQTT, HTTP, Serial) for seamless integration with various sensor ecosystems.
+A minimal, unified sensor system that provides both sensor data reading and publishing capabilities through a consistent async interface. The system abstracts different communication backends (MQTT, HTTP, Serial) for seamless integration with various sensor ecosystems.
 
-## 🚀 Quick Start
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [System Architecture](#system-architecture)
+- [Usage](#usage)
+- [Backend Configuration](#backend-configuration)
+- [Service Layer](#service-layer--mcp-integration)
+- [Testing](#testing--examples)
+- [API Reference](#api-reference)
+- [Extending](#extending)
+- [Implementation Status](#implementation-status)
+
+## Quick Start
 
 ```python
 from mindtrace.hardware.sensors import AsyncSensor, MQTTSensorBackend
@@ -14,7 +26,7 @@ async with AsyncSensor("temp001", backend, "sensors/temperature") as sensor:
     print(f"Temperature: {data}")
 ```
 
-## 🏗️ System Architecture
+## System Architecture
 
 The system provides three layers for complete sensor ecosystem management:
 
@@ -22,21 +34,21 @@ The system provides three layers for complete sensor ecosystem management:
 ```mermaid
 graph TD
     A[AsyncSensor] --> B[SensorBackend]
-    B --> C[MQTTSensorBackend ✅]
-    B --> D[HTTPSensorBackend 🔄]
-    B --> E[SerialSensorBackend 🔄]
+    B --> C[MQTTSensorBackend - Implemented]
+    B --> D[HTTPSensorBackend - Planned]
+    B --> E[SerialSensorBackend - Planned]
     C --> F[MQTT Broker]
     D --> G[REST API]
     E --> H[Serial Device]
 ```
 
-### Data Publishing (SensorSimulator) 
+### Data Publishing (SensorSimulator)
 ```mermaid
 graph TD
     A[SensorSimulator] --> B[SensorSimulatorBackend]
-    B --> C[MQTTSensorSimulator ✅]
-    B --> D[HTTPSensorSimulator 🔄]
-    B --> E[SerialSensorSimulator 🔄]
+    B --> C[MQTTSensorSimulator - Implemented]
+    B --> D[HTTPSensorSimulator - Planned]
+    B --> E[SerialSensorSimulator - Planned]
     C --> F[MQTT Broker]
     D --> G[REST API]
     E --> H[Serial Device]
@@ -63,7 +75,7 @@ sequenceDiagram
     participant Sim as SensorSimulator
     participant Broker as MQTT Broker
     participant Sensor as AsyncSensor
-    
+
     Sim->>Broker: publish(topic, data)
     Note over Broker: Store & forward message
     Sensor->>Broker: subscribe(topic)
@@ -76,7 +88,7 @@ sequenceDiagram
     participant Sim as SensorSimulator
     participant API as REST API
     participant Sensor as AsyncSensor
-    
+
     Sim->>API: POST /sensors/data
     Note over API: Store in database
     Sensor->>API: GET /sensors/latest
@@ -89,7 +101,7 @@ sequenceDiagram
     participant Sim as SensorSimulator
     participant Device as Serial Device
     participant Sensor as AsyncSensor
-    
+
     Note over Sim,Device: Simulates device output
     Sim->>Device: write(sensor_data)
     Note over Device: Process & store
@@ -97,7 +109,7 @@ sequenceDiagram
     Device-->>Sensor: sensor_response
 ```
 
-## 📖 Usage
+## Usage
 
 ### Data Reading with AsyncSensor
 
@@ -113,7 +125,7 @@ sensor = AsyncSensor("sensor_id", backend, "topic/path")
 # Use with context manager (recommended)
 async with sensor:
     data = await sensor.read()
-    
+
 # Or manual connection
 await sensor.connect()
 data = await sensor.read()
@@ -134,7 +146,7 @@ simulator = SensorSimulator("sim_id", backend, "topic/path")
 # Publish data
 async with simulator:
     await simulator.publish({"temperature": 23.5, "unit": "C"})
-    
+
 # Or manual connection
 await simulator.connect()
 await simulator.publish({"temperature": 23.5, "unit": "C"})
@@ -158,7 +170,7 @@ manager.register_sensor(
 )
 
 manager.register_sensor(
-    sensor_id="lab_humidity", 
+    sensor_id="lab_humidity",
     backend_type="mqtt",
     connection_params={"broker_url": "mqtt://localhost:1883"},
     address="sensors/lab/humidity"
@@ -188,7 +200,7 @@ simulator = SensorSimulator("temp_sim", sim_backend, "sensors/temperature")
 # Supported types: "mqtt", "http", "serial"
 ```
 
-## 🔧 Backend Configuration
+## Backend Configuration
 
 ### MQTT Backend (Readers)
 
@@ -198,7 +210,7 @@ from mindtrace.hardware.sensors import MQTTSensorBackend
 backend = MQTTSensorBackend(
     broker_url="mqtt://localhost:1883",
     identifier="client_id",          # Optional
-    username="user",                 # Optional  
+    username="user",                 # Optional
     password="pass",                 # Optional
     keepalive=60                     # Optional
 )
@@ -212,7 +224,7 @@ from mindtrace.hardware.sensors import MQTTSensorSimulator
 simulator_backend = MQTTSensorSimulator(
     broker_url="mqtt://localhost:1883",
     identifier="simulator_id",       # Optional
-    username="user",                 # Optional  
+    username="user",                 # Optional
     password="pass",                 # Optional
     keepalive=60                     # Optional
 )
@@ -229,7 +241,7 @@ backend = HTTPSensorBackend(
     timeout=30.0                     # Optional
 )
 
-# Publisher  
+# Publisher
 from mindtrace.hardware.sensors import HTTPSensorSimulator
 simulator_backend = HTTPSensorSimulator(
     base_url="http://api.sensors.com",
@@ -254,13 +266,13 @@ backend = SerialSensorBackend(
 from mindtrace.hardware.sensors import SerialSensorSimulator
 simulator_backend = SerialSensorSimulator(
     port="/dev/ttyUSB0",
-    baudrate=9600,                   # Optional  
+    baudrate=9600,                   # Optional
     timeout=5.0                      # Optional
 )
 # Note: Both raise NotImplementedError until implemented
 ```
 
-## 📊 Real-World Example
+## Real-World Example
 
 ```python
 import asyncio
@@ -268,34 +280,34 @@ from mindtrace.hardware.sensors import SensorManager
 
 async def smart_building_monitor():
     manager = SensorManager()
-    
+
     # Register building sensors
     sensors = [
         ("hvac_temp", "mqtt", {"broker_url": "mqtt://building.local"}, "hvac/temperature"),
         ("outdoor_weather", "http", {"base_url": "http://api.weather.com"}, "/current"),
         ("arduino_co2", "serial", {"port": "/dev/ttyUSB0"}, "READ_CO2"),
     ]
-    
+
     for sensor_id, backend_type, params, address in sensors:
         manager.register_sensor(sensor_id, backend_type, params, address)
-    
+
     # Monitor loop
     await manager.connect_all()
-    
+
     while True:
         readings = await manager.read_all()
-        
+
         for sensor_id, data in readings.items():
             if "error" not in data:
                 print(f"{sensor_id}: {data}")
-        
+
         await asyncio.sleep(30)  # Read every 30 seconds
 
 # Run monitoring
 asyncio.run(smart_building_monitor())
 ```
 
-## 🎮 Service Layer & MCP Integration
+## Service Layer & MCP Integration
 
 The sensor system includes a service layer that exposes sensor management capabilities as MCP (Model Context Protocol) tools, enabling LLMs and external systems to interact with sensors programmatically.
 
@@ -396,7 +408,7 @@ When the service is running, LLMs with MCP support can:
 
 The MCP tools are automatically registered when the service starts, making them available to any MCP-compatible client.
 
-## 🧪 Testing & Examples
+## Testing & Examples
 
 ### Live Integration Example
 
@@ -437,7 +449,7 @@ async with AsyncSensor("test", backend, "test/topic") as sensor:
     print(data)  # {"temperature": 23.5, "unit": "C"}
 ```
 
-## 🔍 API Reference
+## API Reference
 
 ### AsyncSensor (Data Reader)
 
@@ -504,7 +516,7 @@ async with AsyncSensor("test", backend, "test/topic") as sensor:
 | `get_available_backends()` | List available sensor backend types |
 | `get_available_simulator_backends()` | List available simulator backend types |
 
-## ⚠️ Error Handling
+## Error Handling
 
 ```python
 from mindtrace.hardware.sensors import AsyncSensor, MQTTSensorBackend
@@ -523,7 +535,7 @@ except ConnectionError as e:
     print(f"Not connected: {e}")
 ```
 
-## 📁 File Structure
+## File Structure
 
 ```
 sensors/
@@ -531,23 +543,23 @@ sensors/
 ├── core/
 │   ├── sensor.py               # AsyncSensor class
 │   ├── simulator.py            # SensorSimulator class
-│   ├── manager.py              # SensorManager class  
+│   ├── manager.py              # SensorManager class
 │   └── factory.py              # Backend & simulator factories
 ├── backends/                   # Sensor data readers
 │   ├── base.py                 # SensorBackend interface
-│   ├── mqtt.py                 # MQTT implementation ✅
-│   ├── http.py                 # HTTP placeholder 🔄
-│   └── serial.py               # Serial placeholder 🔄
+│   ├── mqtt.py                 # MQTT implementation (implemented)
+│   ├── http.py                 # HTTP placeholder (planned)
+│   └── serial.py               # Serial placeholder (planned)
 ├── simulators/                 # Sensor data publishers
 │   ├── base.py                 # SensorSimulatorBackend interface
-│   ├── mqtt.py                 # MQTT implementation ✅
-│   ├── http.py                 # HTTP placeholder 🔄
-│   └── serial.py               # Serial placeholder 🔄
+│   ├── mqtt.py                 # MQTT implementation (implemented)
+│   ├── http.py                 # HTTP placeholder (planned)
+│   └── serial.py               # Serial placeholder (planned)
 └── samples/                    # Usage examples
     └── hardware/sensors/       # Live integration tests
 ```
 
-## 🔮 Extending
+## Extending
 
 ### Add Custom Sensor Backend (Reader)
 
@@ -558,15 +570,15 @@ class CustomSensorBackend(SensorBackend):
     async def connect(self):
         # Your connection logic
         pass
-    
+
     async def disconnect(self):
-        # Your disconnection logic  
+        # Your disconnection logic
         pass
-    
+
     async def read_data(self, address):
         # Your data reading logic
         return {"custom": "data"}
-    
+
     def is_connected(self):
         return True
 
@@ -585,15 +597,15 @@ class CustomSensorSimulator(SensorSimulatorBackend):
     async def connect(self):
         # Your connection logic
         pass
-    
+
     async def disconnect(self):
-        # Your disconnection logic  
+        # Your disconnection logic
         pass
-    
+
     async def publish_data(self, address, data):
         # Your data publishing logic
         print(f"Publishing {data} to {address}")
-    
+
     def is_connected(self):
         return True
 
@@ -603,21 +615,21 @@ register_simulator_backend("custom", CustomSensorSimulator)
 sim_backend = create_simulator_backend("custom", param1="value")
 ```
 
-## 🚀 Implementation Status
+## Implementation Status
 
 | Protocol | Reader | Publisher | Status |
 |----------|--------|-----------|---------|
-| **MQTT** | AsyncSensor + MQTTSensorBackend | SensorSimulator + MQTTSensorSimulator | ✅ **Fully Implemented** |
-| **HTTP** | AsyncSensor + HTTPSensorBackend | SensorSimulator + HTTPSensorSimulator | 🔄 **Future Work** |
-| **Serial** | AsyncSensor + SerialSensorBackend | SensorSimulator + SerialSensorSimulator | 🔄 **Future Work** |
+| **MQTT** | AsyncSensor + MQTTSensorBackend | SensorSimulator + MQTTSensorSimulator | Fully Implemented |
+| **HTTP** | AsyncSensor + HTTPSensorBackend | SensorSimulator + HTTPSensorSimulator | Planned |
+| **Serial** | AsyncSensor + SerialSensorBackend | SensorSimulator + SerialSensorSimulator | Planned |
 
-## 🚀 Roadmap
+## Roadmap
 
 **Immediate Goals:**
-- **HTTP Backend**: REST API sensor support for both reading and publishing
-- **Serial Backend**: Arduino/device communication for both directions
-- **Enhanced Testing**: More integration test scenarios
+- HTTP Backend: REST API sensor support for both reading and publishing
+- Serial Backend: Arduino/device communication for both directions
+- Enhanced Testing: More integration test scenarios
 
 **Future Enhancements:**
-- **Modbus Backend**: Industrial sensor protocols
-- **Advanced Features**: Data caching, filtering, alerting
+- Modbus Backend: Industrial sensor protocols
+- Advanced Features: Data caching, filtering, alerting

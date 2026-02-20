@@ -16,7 +16,7 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
+from mindtrace.registry.core.types import _POP_MISSING, BatchResult, OnConflict, VerifyLevel
 
 
 class Registry(Mindtrace):
@@ -193,13 +193,16 @@ class Registry(Mindtrace):
         temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
         return temp_dir / f"registry_cache_{uri_hash}"
 
-    def _is_cache_stale(self, name: str, version: str | None) -> bool:
-        """Check if a cached item is stale by comparing hashes with remote."""
-        try:
-            resolved_version = version if version and version != "latest" else self._remote._latest(name)
-            if not resolved_version:
-                return True
+    @staticmethod
+    def _hashes_indicate_stale(remote_hash: str | None, cache_hash: str | None) -> bool:
+        """Return True when cache entry should be treated as stale."""
+        if not remote_hash or not cache_hash:
+            return True
+        return remote_hash != cache_hash
 
+    def _is_cache_stale(self, name: str, resolved_version: str) -> bool:
+        """Check if a cached item is stale for a resolved version."""
+        try:
             try:
                 remote_meta = self._remote.backend.fetch_metadata(name, resolved_version).first()
             except Exception:
@@ -213,14 +216,9 @@ class Registry(Mindtrace):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            if not remote_hash:
-                return True
-            if not cache_hash:
-                return True
-
-            return remote_hash != cache_hash
+            return self._hashes_indicate_stale(remote_hash, cache_hash)
         except Exception as e:
-            self.logger.debug(f"Error checking cache staleness for {name}@{version}: {e}")
+            self.logger.debug(f"Error checking cache staleness for {name}@{resolved_version}: {e}")
             return True
 
     def _find_stale_indices(self, resolved: List[tuple[str, str]], indices: List[int]) -> set[int]:
@@ -242,10 +240,7 @@ class Registry(Mindtrace):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            # If we can't verify either side, treat cache as stale (consistent with _is_cache_stale).
-            if not remote_hash or not cache_hash:
-                stale.add(i)
-            elif remote_hash != cache_hash:
+            if self._hashes_indicate_stale(remote_hash, cache_hash):
                 stale.add(i)
 
         return stale
@@ -404,7 +399,7 @@ class Registry(Mindtrace):
         **kwargs,
     ) -> Any:
         """Load a single object with cache-first pattern."""
-        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+        resolved_v = self._remote._resolve_load_version(name, version)
         check_staleness = verify == VerifyLevel.FULL
 
         # Try cache first
@@ -453,12 +448,20 @@ class Registry(Mindtrace):
         check_staleness = verify == VerifyLevel.FULL
 
         # Resolve versions from remote (authoritative source)
-        resolved, resolve_errors = self._remote._resolve_versions(names, versions_list, on_error="skip")
-
+        resolved: List[tuple[str, str] | None] = []
         objects: List[Any | None] = [None] * n
-        errors: Dict[tuple[str, str], dict] = dict(resolve_errors)
+        errors: Dict[tuple[str, str], dict] = {}
 
-        pending = [i for i in range(n) if resolved[i] not in errors]
+        for name, ver in zip(names, versions_list):
+            try:
+                rv = self._remote._resolve_load_version(name, ver)
+                resolved.append((name, rv))
+            except (RegistryObjectNotFound, ValueError) as e:
+                key = (name, ver or "latest")
+                errors[key] = {"error": type(e).__name__, "message": str(e)}
+                resolved.append(None)
+
+        pending = [i for i in range(n) if resolved[i] is not None]
 
         # Step 1: Batch cache load
         if pending:
@@ -475,7 +478,7 @@ class Registry(Mindtrace):
         if check_staleness:
             cached = [i for i in pending if objects[i] is not None]
             for i in self._find_stale_indices(resolved, cached):
-                objects[i] = None
+                objects[i] = None  # add to misses list
 
         # Step 3: Remote load for misses
         misses = [i for i in pending if objects[i] is None]
@@ -511,17 +514,21 @@ class Registry(Mindtrace):
         # Build result
         result = BatchResult()
         result.errors = errors
-        for i, (name, ver) in enumerate(resolved):
-            if (name, ver) in errors:
+        for i, item in enumerate(resolved):
+            if item is None:
+                key = (names[i], versions_list[i] or "latest")
                 result.results.append(None)
-                result.failed.append((name, ver))
+                result.failed.append(key)
+            elif item in errors:
+                result.results.append(None)
+                result.failed.append(item)
             elif objects[i] is not None:
                 result.results.append(objects[i])
-                result.succeeded.append((name, ver))
+                result.succeeded.append(item)
             else:
                 result.results.append(None)
-                result.failed.append((name, ver))
-                errors[(name, ver)] = {"error": "Unknown", "message": "Item not loaded"}
+                result.failed.append(item)
+                errors[item] = {"error": "Unknown", "message": "Item not loaded"}
 
         self.logger.debug(f"Loaded {result.success_count}/{n} object(s) ({result.failure_count} failed).")
         return result
@@ -551,23 +558,7 @@ class Registry(Mindtrace):
 
         # Delete from cache (best effort)
         try:
-            names_list = name if isinstance(name, list) else [name]
-            versions_list = version if isinstance(version, list) else [version] * len(names_list)
-
-            for n, v in zip(names_list, versions_list):
-                try:
-                    if v is None:
-                        for ver in self._cache.list_versions(n):
-                            try:
-                                self._cache.delete(n, ver)
-                            except Exception:
-                                pass
-                    else:
-                        resolved_v = v if v != "latest" else self._cache._latest(n)
-                        if resolved_v and self._cache.has_object(n, resolved_v):
-                            self._cache.delete(n, resolved_v)
-                except Exception:
-                    pass
+            self._cache.delete(name, version)
         except Exception as e:
             self.logger.warning(f"Error deleting from cache: {e}")
 
@@ -608,32 +599,38 @@ class Registry(Mindtrace):
     # instead of the facade's cache-aware versions)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def __getitem__(self, key: str) -> Any:
-        name, version = self._core._parse_key(key)
+    def __getitem__(self, key: str | list[str]) -> Any:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            versions = [v if v is not None else "latest" for v in versions]
+            return self.load(name=names, version=versions)
+        name, version = names[0], versions[0]
         try:
             return self.load(name, version if version else "latest")
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        name, version = self._core._parse_key(key)
-        self.save(name, value, version=version, on_conflict=OnConflict.SKIP)
+    def __setitem__(self, key: str | list[str], value: Any) -> None:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            self.save(names, value, version=versions)
+            return
+        name, version = names[0], versions[0]
+        self.save(name, value, version=version)
 
-    def __delitem__(self, key: str) -> None:
+    def __delitem__(self, key: str | list[str]) -> None:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            self.delete(name=names, version=versions)
+            return
         try:
-            name, version = self._core._parse_key(key)
-            if version is None:
-                if not self._core.list_versions(name):
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-            else:
-                exists = self._core.backend.has_object([name], [version])
-                if not exists.get((name, version), False):
-                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
-            self.delete(name, version)
+            self.delete(names[0], versions[0])
         except (ValueError, RegistryObjectNotFound) as e:
             raise KeyError(f"Object not found: {key}") from e
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: str | list[str]) -> bool:
+        if isinstance(key, list):
+            return all(self._core.__contains__(k) for k in key)
         return self._core.__contains__(key)
 
     def __len__(self) -> int:
@@ -657,28 +654,19 @@ class Registry(Mindtrace):
     def items(self) -> List[tuple[str, Any]]:
         return [(name, self[name]) for name in self.keys()]
 
-    def pop(self, key: str, default: Any = None) -> Any:
+    def pop(self, key: str, default: Any = _POP_MISSING) -> Any:
+        if not self._cached:
+            return self._core.pop(key, default)
+
+        value = self._remote.pop(key, default)
+
         try:
             name, version = self._core._parse_key(key)
-            if version is None:
-                version = self._core._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
+            self._cache.delete(name=name, version=version)
+        except Exception:
+            pass
 
-            if not self._core.has_object(name, version):
-                if default is not None:
-                    return default
-                raise KeyError(f"Object {name} version {version} does not exist")
-
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
-            if default is not None:
-                return default
-            raise
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         try:

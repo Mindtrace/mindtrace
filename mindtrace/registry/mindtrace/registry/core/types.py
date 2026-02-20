@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 VERSION_PENDING = "pending"  # Placeholder for version not yet assigned
 ERROR_UNKNOWN = "UnknownError"  # Fallback error type when error info unavailable
-
+_POP_MISSING = object()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Enums
