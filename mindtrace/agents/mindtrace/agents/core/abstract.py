@@ -1,7 +1,6 @@
 """Abstract base class for mindtrace agents.
 
 This module provides the abstract interface that all agent implementations must follow.
-Inspired by Pydantic AI's AbstractAgent pattern.
 """
 from __future__ import annotations
 

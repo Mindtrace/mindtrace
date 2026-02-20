@@ -1,4 +1,4 @@
-"""Function schema builder following Pydantic AI's pattern.
+"""Function schema builder for mindtrace agents.
 
 Key responsibilities:
 - Detect if a function takes RunContext as first argument

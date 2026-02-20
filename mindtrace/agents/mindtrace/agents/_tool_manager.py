@@ -1,10 +1,9 @@
-"""Tool manager for validation and execution following Pydantic AI's pattern.
+"""Tool manager for validation and execution.
 
 This module implements the ToolManager that:
 - Validates tool arguments
 - Handles retries
 - Orchestrates tool execution via toolset
-
 """
 
 from __future__ import annotations
