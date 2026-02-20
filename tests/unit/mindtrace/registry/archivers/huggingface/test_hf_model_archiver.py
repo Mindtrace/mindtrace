@@ -406,5 +406,6 @@ def test_register_hf_archiver_registers_peft_model():
     from mindtrace.registry import Registry
 
     key = f"{PeftModel.__module__}.{PeftModel.__name__}"
-    assert key in Registry._default_materializers
-    assert Registry._default_materializers[key] == HuggingFaceModelArchiver
+    materializers = Registry.get_default_materializers()
+    assert key in materializers
+    assert materializers[key] == HuggingFaceModelArchiver
