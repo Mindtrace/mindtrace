@@ -6,20 +6,19 @@ from typing import Any, Dict, List, Optional
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import (
-    Camera,
-    CameraSet,
-    Inference,
-    Line,
-    Organization,
-    Part,
-    PartGroup,
-    Plant,
-    Scan,
-    Stage,
-)
 from mindtrace.apps.inspectra.models.enums import MediaKind
 from mindtrace.database import Link, MindtraceDocument
+
+from .camera import Camera
+from .camera_set import CameraSet
+from .inference import Inference
+from .line import Line
+from .organization import Organization
+from .part import Part
+from .part_group import PartGroup
+from .plant import Plant
+from .scan import Scan
+from .stage import Stage
 
 
 class Media(MindtraceDocument):

@@ -7,6 +7,13 @@ from enum import Enum
 # ───────────────────────────────────────────────
 
 
+class UserStatus(str, Enum):
+    """User account status enumeration."""
+
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
 class UserRole(str, Enum):
     """User role enumeration for access control."""
 
@@ -75,3 +82,10 @@ class LineStatus(str, Enum):
     ACTIVE = "active"
     DISABLED = "disabled"
     DEVELOPMENT = "development"
+
+
+class OrganizationStatus(str, Enum):
+    """Organization status enumeration."""
+
+    ACTIVE = "active"
+    DISABLED = "disabled"

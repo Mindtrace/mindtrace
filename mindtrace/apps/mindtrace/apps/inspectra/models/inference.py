@@ -1,27 +1,30 @@
 """Inference model for the Inspectra application."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from beanie import Insert, Link, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import (
-    Camera,
-    CameraSet,
-    Line,
-    Media,
-    ModelDeployment,
-    ModelVersion,
-    Organization,
-    Part,
-    PartGroup,
-    Plant,
-    Roi,
-    Scan,
-    Stage,
-)
 from mindtrace.database import MindtraceDocument
+
+from .camera import Camera
+from .camera_set import CameraSet
+from .line import Line
+from .model_deployment import ModelDeployment
+from .model_version import ModelVersion
+from .organization import Organization
+from .part import Part
+from .part_group import PartGroup
+from .plant import Plant
+from .roi import Roi
+from .scan import Scan
+from .stage import Stage
+
+if TYPE_CHECKING:
+    from .media import Media
 
 
 class Inference(MindtraceDocument):
@@ -61,8 +64,8 @@ class Inference(MindtraceDocument):
     extras: Dict[str, Any] = Field(default_factory=dict)
     extras_ver: int = 1
 
-    media: Link[Media]
-    artifacts: List[Link[Media]] = Field(default_factory=list)
+    media: Link[Media]  # noqa: F821
+    artifacts: List[Link[Media]] = Field(default_factory=list)  # noqa: F821
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)

@@ -6,9 +6,14 @@ from typing import Any, Dict, Optional
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import Line, Model, ModelVersion, Organization, Plant
 from mindtrace.apps.inspectra.models.enums import DeploymentStatus, HealthStatus
 from mindtrace.database import Link, MindtraceDocument
+
+from .line import Line
+from .model import Model
+from .model_version import ModelVersion
+from .organization import Organization
+from .plant import Plant
 
 
 class ModelDeployment(MindtraceDocument):

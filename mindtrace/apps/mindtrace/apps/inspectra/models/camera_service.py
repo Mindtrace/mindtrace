@@ -6,9 +6,10 @@ from typing import Any, Dict, Optional
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import Line
 from mindtrace.apps.inspectra.models.enums import CameraBackend, DeploymentStatus, HealthStatus
 from mindtrace.database import Link, MindtraceDocument
+
+from .line import Line
 
 
 class CameraService(MindtraceDocument):

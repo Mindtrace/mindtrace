@@ -1,14 +1,18 @@
 """Line model for the Inspectra application."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 
 from beanie import Insert, Link, Replace, before_event
 from pydantic import Field
 from typing_extensions import Any, Dict
 
-from mindtrace.apps.inspectra.models import CameraService, Organization, Plant
 from mindtrace.apps.inspectra.models.enums import LineStatus
 from mindtrace.database import MindtraceDocument
+
+from .organization import Organization
+from .plant import Plant
 
 
 class Line(MindtraceDocument):
@@ -22,7 +26,7 @@ class Line(MindtraceDocument):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
 
-    camera_service: Link[CameraService] = None
+    camera_service: Link["CameraService"] | None = None  # noqa: F821
 
     @before_event(Insert)
     async def before_insert(self):

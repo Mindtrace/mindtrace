@@ -6,9 +6,14 @@ from typing import Any, Dict, List
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import Camera, CameraSet, Line, ModelDeployment, Stage
 from mindtrace.apps.inspectra.models.enums import RoiType
 from mindtrace.database import Link, MindtraceDocument
+
+from .camera import Camera
+from .camera_set import CameraSet
+from .line import Line
+from .model_deployment import ModelDeployment
+from .stage import Stage
 
 
 class Roi(MindtraceDocument):

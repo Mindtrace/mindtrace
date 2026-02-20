@@ -1,12 +1,13 @@
 """Model model for the Inspectra application."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, Dict
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import ModelVersion
 from mindtrace.database import Link, MindtraceDocument
 
 
@@ -14,7 +15,7 @@ class Model(MindtraceDocument):
     """Model model representing a machine learning model."""
 
     name: str
-    version: Link[ModelVersion]
+    version: Link["ModelVersion"]  # noqa: F821
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)

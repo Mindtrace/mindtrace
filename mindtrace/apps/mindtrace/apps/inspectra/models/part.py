@@ -6,8 +6,11 @@ from beanie import Insert, Link, Replace, before_event
 from pydantic import Field
 from typing_extensions import Any, Dict, Optional
 
-from mindtrace.apps.inspectra.models import Line, Organization, PartGroup
 from mindtrace.database import MindtraceDocument
+
+from .line import Line
+from .organization import Organization
+from .part_group import PartGroup
 
 
 class Part(MindtraceDocument):

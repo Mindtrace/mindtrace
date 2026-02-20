@@ -1,14 +1,21 @@
 """Scan model for the Inspectra application."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from beanie import Insert, Link, Replace, before_event
+from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import Line, Media, Organization, Part, PartGroup, Plant
 from mindtrace.apps.inspectra.models.enums import ScanResult
-from mindtrace.database import MindtraceDocument
+from mindtrace.database import Link, MindtraceDocument
+
+from .line import Line
+from .organization import Organization
+from .part import Part
+from .part_group import PartGroup
+from .plant import Plant
 
 
 class Scan(MindtraceDocument):
@@ -31,7 +38,7 @@ class Scan(MindtraceDocument):
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    media: List[Link[Media]] = Field(default_factory=list)
+    media: List[Link["Media"]] = Field(default_factory=list)  # noqa: F821
 
     meta: Dict[str, Any] = Field(default_factory=dict)
 

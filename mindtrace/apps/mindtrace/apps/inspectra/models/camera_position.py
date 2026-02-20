@@ -6,8 +6,11 @@ from typing import Any, Dict
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
-from mindtrace.apps.inspectra.models import CameraService, CameraSet, Line
 from mindtrace.database import Link, MindtraceDocument
+
+from .camera_service import CameraService
+from .camera_set import CameraSet
+from .line import Line
 
 
 class CameraPosition(MindtraceDocument):

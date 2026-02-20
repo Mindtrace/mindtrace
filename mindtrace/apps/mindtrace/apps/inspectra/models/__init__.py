@@ -2,7 +2,8 @@
 
 This package contains all Beanie ODM models for the Inspectra application,
 including models for organizations, plants, lines, parts, scans, inferences,
-and related entities.
+and related entities. Import order avoids circular deps (Organization, Plant,
+Line, User before CameraService/Camera, etc.).
 """
 
 from .camera import Camera

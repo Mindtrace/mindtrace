@@ -7,8 +7,9 @@ from beanie import Insert, Link, Replace, before_event
 from pydantic import Field
 from typing_extensions import Any
 
-from mindtrace.apps.inspectra.models import Organization
 from mindtrace.database import MindtraceDocument
+
+from .organization import Organization
 
 
 class Plant(MindtraceDocument):
