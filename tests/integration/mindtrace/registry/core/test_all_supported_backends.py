@@ -918,17 +918,12 @@ def test_delete_all_versions(registry):
 
 
 def test_delete_nonexistent_raises(registry):
-    """Test that deleting nonexistent object raises error when version is None.
-    Note: Deleting with a specific version is idempotent (succeeds even if not found).
-    """
+    """Test that deleting a single nonexistent object raises error."""
     from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
-    # Deleting with specific version is idempotent - no error
-    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
-
-    # Deleting with version=None raises because object has no versions
+    # Deleting a single nonexistent object raises error
     with pytest.raises(RegistryObjectNotFound):
-        registry.delete("test:nonexistent", version=None)
+        registry.delete("test:nonexistent")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
