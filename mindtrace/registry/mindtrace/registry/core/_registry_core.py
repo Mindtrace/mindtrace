@@ -1444,7 +1444,6 @@ class _RegistryCore(Mindtrace):
         Returns:
             Tuple of (name, version) where version is None if not specified
         """
-        # check if key is str and not list
         if "@" in key:
             return key.split("@", 1)
         return key, None

@@ -193,17 +193,16 @@ class Registry(Mindtrace):
         temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
         return temp_dir / f"registry_cache_{uri_hash}"
 
-    def _is_cache_stale(self, name: str, version: str | None) -> bool:
-        """Check if a cached item is stale by comparing hashes with remote."""
-        try:
-            resolved_version = (
-                self._remote._latest(name)
-                if not version or version == "latest"
-                else self._remote._validate_version(version)
-            )
-            if not resolved_version:
-                return True
+    @staticmethod
+    def _hashes_indicate_stale(remote_hash: str | None, cache_hash: str | None) -> bool:
+        """Return True when cache entry should be treated as stale."""
+        if not remote_hash or not cache_hash:
+            return True
+        return remote_hash != cache_hash
 
+    def _is_cache_stale(self, name: str, resolved_version: str) -> bool:
+        """Check if a cached item is stale for a resolved version."""
+        try:
             try:
                 remote_meta = self._remote.backend.fetch_metadata(name, resolved_version).first()
             except Exception:
@@ -217,14 +216,9 @@ class Registry(Mindtrace):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            if not remote_hash:
-                return True
-            if not cache_hash:
-                return True
-
-            return remote_hash != cache_hash
+            return self._hashes_indicate_stale(remote_hash, cache_hash)
         except Exception as e:
-            self.logger.debug(f"Error checking cache staleness for {name}@{version}: {e}")
+            self.logger.debug(f"Error checking cache staleness for {name}@{resolved_version}: {e}")
             return True
 
     def _find_stale_indices(self, resolved: List[tuple[str, str]], indices: List[int]) -> set[int]:
@@ -246,10 +240,7 @@ class Registry(Mindtrace):
             remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
             cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
 
-            # If we can't verify either side, treat cache as stale (consistent with _is_cache_stale).
-            if not remote_hash or not cache_hash:
-                stale.add(i)
-            elif remote_hash != cache_hash:
+            if self._hashes_indicate_stale(remote_hash, cache_hash):
                 stale.add(i)
 
         return stale
@@ -408,11 +399,7 @@ class Registry(Mindtrace):
         **kwargs,
     ) -> Any:
         """Load a single object with cache-first pattern."""
-        resolved_v = (
-            self._remote._latest(name)
-            if not version or version == "latest"
-            else self._remote._validate_version(version)
-        )
+        resolved_v = self._remote._resolve_load_version(name, version)
         check_staleness = verify == VerifyLevel.FULL
 
         # Try cache first
