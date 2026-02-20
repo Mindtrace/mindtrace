@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
+from ..events import NativeEvent
 from .abstract import AbstractMindtraceAgent, AgentDepsT, OutputDataT
 
 
@@ -75,7 +76,31 @@ class WrapperAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
     ) -> Any:
         """Run the wrapped agent."""
         return await self.wrapped.run(input_data, deps=deps, **kwargs)
-    
+
+    async def run_stream_events(
+        self,
+        input_data: Any,
+        *,
+        deps: AgentDepsT = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[NativeEvent]:
+        """Stream events from the wrapped agent.
+
+        Delegates to the wrapped agent's run_stream_events() method.
+
+        Raises:
+            NotImplementedError: If the wrapped agent does not support streaming.
+        """
+        if not hasattr(self.wrapped, 'run_stream_events'):
+            raise NotImplementedError(
+                f"Wrapped agent {type(self.wrapped).__name__!r} does not implement "
+                "run_stream_events(). Override this method or wrap an agent that supports it."
+            )
+        async for event in self.wrapped.run_stream_events(  # type: ignore[attr-defined]
+            input_data, deps=deps, **kwargs
+        ):
+            yield event
+
     @asynccontextmanager
     async def iter(
         self,

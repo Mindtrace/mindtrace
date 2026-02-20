@@ -122,18 +122,17 @@ class Tool(Generic[ToolAgentDepsT]):
 
     def tool_def(self) -> 'ToolDefinition':
         """Convert this Tool to a ToolDefinition for sending to models.
-        
+
+        The JSON schema for parameters is derived from the function's type
+        annotations via FunctionSchema.parameters_json_schema().
+
         Returns:
-            A ToolDefinition with basic information.
+            A ToolDefinition with name, description, and a real parameter schema.
         """
         return ToolDefinition(
             name=self.name,
             description=self.description,
-            parameters_json_schema={
-                'type': 'object',
-                'properties': {},
-                'required': [],
-            },
+            parameters_json_schema=self.function_schema.parameters_json_schema(),
         )
 
 

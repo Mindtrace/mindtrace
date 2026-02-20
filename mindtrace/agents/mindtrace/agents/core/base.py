@@ -335,22 +335,124 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
         deps: AgentDepsT = None,
         **kwargs: Any,
     ) -> AsyncIterator[Any]:
-        """Iterate over agent execution steps.
-        
-        This is a simplified version that yields steps during execution.
-        
+        """Iterate over agent execution steps one at a time.
+
+        Yields one dict per step so callers can observe intermediate state:
+
+        - ``{'step': 'model_response', 'iteration': int, 'text': str, 'tool_calls': list}``
+          — emitted after each LLM response.
+        - ``{'step': 'tool_result', 'tool_name': str, 'tool_call_id': str, 'result': str}``
+          — emitted after each tool execution (one per tool call).
+        - ``{'step': 'complete', 'result': str}``
+          — emitted once when the agent reaches a final answer or hits the
+          iteration limit.
+
+        Usage::
+
+            async with agent.iter("What's the weather?") as steps:
+                async for step in steps:
+                    print(step)
+
         Args:
-            input_data: The user's input (string or sequence of text and images).
-            deps: Optional dependencies
-            **kwargs: Additional arguments
-        
-        Yields:
-            Execution steps
+            input_data: The user's input.
+            deps: Optional dependencies to inject into tools.
+            **kwargs: Additional arguments (e.g. model_settings).
         """
-        # For minimal version, just yield the final result
-        # In a full implementation, you'd yield intermediate steps
-        result = await self.run(input_data, deps=deps, **kwargs)
-        yield {'step': 'complete', 'result': result}
+        async def _run_steps() -> AsyncIterator[dict[str, Any]]:
+            _input: str | Sequence[UserContent] = input_data if input_data is not None else ''
+            user_part = UserPromptPart(content=_input)
+            messages: list[ModelMessage] = [
+                ModelMessage(role='user', parts=[user_part]),
+            ]
+
+            max_iterations = 10
+            last_text = ''
+
+            for iteration in range(max_iterations):
+                ctx = RunContext(deps=deps, step=iteration)
+                if self._tool_manager:
+                    await self._tool_manager.for_run_step(ctx)
+                    tool_definitions = [
+                        tool.tool_def
+                        for tool in (self._tool_manager.tools or {}).values()
+                    ]
+                else:
+                    tool_definitions = []
+
+                request_params = ModelRequestParameters(
+                    function_tools=tool_definitions if tool_definitions else []
+                )
+
+                response: ModelResponse = await self.model.request(
+                    messages=messages,
+                    model_settings=kwargs.get('model_settings'),
+                    model_request_parameters=request_params,
+                )
+                last_text = response.text or ''
+
+                yield {
+                    'step': 'model_response',
+                    'iteration': iteration,
+                    'text': last_text,
+                    'tool_calls': response.tool_calls or [],
+                }
+
+                # Build and append assistant message
+                assistant_parts: list[TextPart | ToolCallPart] = []
+                if response.text:
+                    assistant_parts.append(TextPart(content=response.text))
+                for tc in response.tool_calls or []:
+                    assistant_parts.append(
+                        ToolCallPart(
+                            tool_call_id=tc.get('id', ''),
+                            tool_name=tc['name'],
+                            args=tc.get('arguments', '{}'),
+                        )
+                    )
+                if not assistant_parts:
+                    assistant_parts.append(TextPart(content=''))
+                messages.append(ModelMessage(role='assistant', parts=assistant_parts))
+
+                if response.tool_calls and self._tool_manager:
+                    for tc in response.tool_calls:
+                        try:
+                            tool_result = await self._tool_manager.handle_call(
+                                tool_name=tc['name'],
+                                tool_args_json=tc.get('arguments', '{}'),
+                            )
+                            content = str(tool_result)
+                        except Exception as exc:
+                            content = f'Error: {exc}'
+
+                        yield {
+                            'step': 'tool_result',
+                            'tool_name': tc['name'],
+                            'tool_call_id': tc.get('id', ''),
+                            'result': content,
+                        }
+
+                        messages.append(
+                            ModelMessage(
+                                role='tool',
+                                parts=[
+                                    ToolReturnPart(
+                                        tool_call_id=tc.get('id', ''),
+                                        content=content,
+                                    )
+                                ],
+                            )
+                        )
+                    # Continue loop with tool results fed back
+                    continue
+
+                # No tool calls — final answer reached
+                yield {'step': 'complete', 'result': last_text}
+                return
+
+            # Hit the iteration limit
+            yield {'step': 'complete', 'result': last_text}
+
+        yield _run_steps()
     
     async def __aenter__(self) -> MindtraceAgent[AgentDepsT, OutputDataT]:
         """Enter the agent context."""
