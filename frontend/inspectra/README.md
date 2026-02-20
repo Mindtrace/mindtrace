@@ -1,6 +1,6 @@
 # Inspectra Frontend
 
-A modern Next.js application skeleton with TypeScript, Tailwind CSS, TanStack Query, Zod, and shadcn UI components.
+Auth UI for Inspectra: login, app shell (sidebar), and role-based management of organizations and users. Built with Next.js, TypeScript, Tailwind CSS, TanStack Query, and shadcn UI.
 
 ## Tech Stack
 
@@ -37,7 +37,9 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000). The app redirects to `/login` if not authenticated, then to `/organizations` or `/users` (by role) after sign-in.
+
+**Backend**: Ensure the Inspectra API is running (default `http://localhost:8080`). Set `NEXT_PUBLIC_API_URL` if your API is elsewhere (e.g. in `.env.local`).
 
 ### Building for Production
 
@@ -62,19 +64,11 @@ npm start
 - `npm run cypress:run` - Run Cypress tests headlessly
 - `npm run type-check` - Run TypeScript type checking
 
-## Backend Integration
+## Backend integration
 
-The backend FastAPI server is not ready yet. When it's available:
-
-1. Generate TypeScript types from OpenAPI schema:
-
-   ```bash
-   npx openapi-typescript http://localhost:8000/openapi.json -o ./lib/api/types.ts
-   ```
-
-2. Uncomment the fetch call in `lib/api/client.ts` and remove the mock return.
-
-3. Set the `NEXT_PUBLIC_API_URL` environment variable to your backend URL.
+- The app talks to the Inspectra API (auth, organizations, users). Default base URL: `http://localhost:8080`.
+- Set `NEXT_PUBLIC_API_URL` in `.env.local` if the API runs on another host/port (e.g. `NEXT_PUBLIC_API_URL=http://localhost:8080`).
+- **Routes**: `/` → redirect to `/login` or (by role) `/organizations` / `/users`; `/login` → sign-in; `/organizations` (SUPER_ADMIN); `/users` (ADMIN + SUPER_ADMIN).
 
 ## Docker
 
