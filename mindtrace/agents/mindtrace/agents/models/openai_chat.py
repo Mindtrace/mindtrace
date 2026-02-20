@@ -170,11 +170,15 @@ class OpenAIChatModel(Model):
                         }
                         for p in tool_parts
                     ]
-                    openai_messages.append({
+                    # Omit 'content' entirely when empty — some providers
+                    # (e.g. Gemini) reject null/empty content on tool-call turns.
+                    assistant_msg: dict[str, Any] = {
                         'role': 'assistant',
-                        'content': content or None,
                         'tool_calls': tool_calls,
-                    })
+                    }
+                    if content:
+                        assistant_msg['content'] = content
+                    openai_messages.append(assistant_msg)
                 else:
                     openai_messages.append({'role': 'assistant', 'content': content})
             elif msg.role == 'tool':
@@ -290,9 +294,14 @@ class OpenAIChatModel(Model):
         text_ended = False
         text_content: list[str] = []
         part_index = 0
-        # tool_calls by OpenAI index -> {id, name, args}
-        tool_calls: dict[int, dict[str, str]] = {}
-        tool_index_to_part_index: dict[int, int] = {}
+        # Keyed by a unique identifier per tool call.
+        # We prefer tc.id (unique per call) over tc.index because some providers
+        # (e.g. Gemini) send multiple tool calls in one chunk without setting
+        # tc.index, which would cause all args to be merged under idx=0.
+        tool_calls: dict[str, dict[str, str]] = {}
+        # ordered list of keys so we emit PartEndEvents in arrival order
+        tool_call_order: list[str] = []
+        tool_key_to_part_index: dict[str, int] = {}
 
         async for chunk in stream:
             choice = chunk.choices[0] if chunk.choices else None
@@ -325,20 +334,22 @@ class OpenAIChatModel(Model):
                     )
                     part_index = 1
                 for tc in delta.tool_calls:
-                    idx = tc.index if tc.index is not None else 0
-                    if idx not in tool_calls:
-                        tool_calls[idx] = {
+                    # Build a stable key: prefer tc.id, fall back to tc.index
+                    tc_key = tc.id if tc.id else str(tc.index if tc.index is not None else 0)
+                    if tc_key not in tool_calls:
+                        tool_calls[tc_key] = {
                             'id': tc.id or '',
                             'name': tc.function.name if tc.function else '',
                             'args': tc.function.arguments or '',
                         }
-                        tool_index_to_part_index[idx] = part_index
+                        tool_call_order.append(tc_key)
+                        tool_key_to_part_index[tc_key] = part_index
                         yield PartStartEvent(
                             index=part_index,
                             part=ToolCallPart(
-                                tool_name=tool_calls[idx]['name'],
-                                tool_call_id=tool_calls[idx]['id'],
-                                args=tool_calls[idx]['args'],
+                                tool_name=tool_calls[tc_key]['name'],
+                                tool_call_id=tool_calls[tc_key]['id'],
+                                args=tool_calls[tc_key]['args'],
                             ),
                             part_kind='tool_call',
                         )
@@ -346,14 +357,14 @@ class OpenAIChatModel(Model):
                     else:
                         args_delta = (tc.function.arguments or '') if tc.function else ''
                         if args_delta:
-                            tool_calls[idx]['args'] += args_delta
+                            tool_calls[tc_key]['args'] += args_delta
                             yield PartDeltaEvent(
                                 delta=ToolCallArgsDelta(
-                                    tool_call_id=tool_calls[idx]['id'],
+                                    tool_call_id=tool_calls[tc_key]['id'],
                                     args_delta=args_delta,
                                 ),
-                                index=tool_index_to_part_index[idx],
-                                tool_call_id=tool_calls[idx]['id'],
+                                index=tool_key_to_part_index[tc_key],
+                                tool_call_id=tool_calls[tc_key]['id'],
                             )
 
         # End stream: close text part and each tool call part
@@ -363,9 +374,9 @@ class OpenAIChatModel(Model):
                 part=TextPart(content=''.join(text_content)),
                 part_kind='text',
             )
-        for idx in sorted(tool_calls.keys()):
-            pi = tool_index_to_part_index[idx]
-            t = tool_calls[idx]
+        for tc_key in tool_call_order:
+            pi = tool_key_to_part_index[tc_key]
+            t = tool_calls[tc_key]
             yield PartEndEvent(
                 index=pi,
                 part=ToolCallPart(

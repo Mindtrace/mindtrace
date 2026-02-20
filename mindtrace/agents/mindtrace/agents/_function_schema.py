@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+import typing
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Union, cast, get_args, get_origin
@@ -130,10 +131,19 @@ class FunctionSchema:
     description: str | None = None
     """Description extracted from the function's docstring."""
 
+    # Resolved type hints — populated in __post_init__ via get_type_hints().
+    # This handles `from __future__ import annotations` which stores annotations
+    # as strings; get_type_hints() evaluates them back to actual type objects.
+    _hints: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+
     # Cached Pydantic model; built once in __post_init__
     _validator: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        try:
+            self._hints = typing.get_type_hints(self.function)
+        except Exception:
+            self._hints = {}
         self._validator = self._build_validator()
 
     # ------------------------------------------------------------------
@@ -164,7 +174,8 @@ class FunctionSchema:
                 inspect.Parameter.VAR_KEYWORD,
             ):
                 continue
-            properties[param.name] = _type_to_json_schema(param.annotation)
+            annotation = self._hints.get(param.name, param.annotation)
+            properties[param.name] = _type_to_json_schema(annotation)
             if param.default is inspect.Parameter.empty:
                 required.append(param.name)
 
@@ -224,10 +235,9 @@ class FunctionSchema:
                 inspect.Parameter.VAR_KEYWORD,
             ):
                 continue
-            annotation = (
-                param.annotation
-                if param.annotation is not inspect.Parameter.empty
-                else Any
+            annotation = self._hints.get(
+                param.name,
+                param.annotation if param.annotation is not inspect.Parameter.empty else Any,
             )
             if param.default is inspect.Parameter.empty:
                 fields[param.name] = (annotation, ...)
@@ -296,8 +306,15 @@ def function_schema(
         params = list(sig.parameters.values())
         if params:
             first_param = params[0]
-            if first_param.annotation != inspect.Parameter.empty:
-                takes_ctx = _is_call_ctx(first_param.annotation)
+            # Use get_type_hints() so string annotations from
+            # `from __future__ import annotations` are resolved to real types.
+            try:
+                hints = typing.get_type_hints(function)
+                annotation = hints.get(first_param.name, first_param.annotation)
+            except Exception:
+                annotation = first_param.annotation
+            if annotation != inspect.Parameter.empty:
+                takes_ctx = _is_call_ctx(annotation)
             else:
                 takes_ctx = False
         else:

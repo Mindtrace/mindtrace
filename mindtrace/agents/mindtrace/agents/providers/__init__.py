@@ -63,12 +63,14 @@ class Provider(ABC, Generic[InterfaceClient]):
 
 
 # Re-export concrete providers so that `from mindtrace.agents.providers import OllamaProvider` works
+from .gemini import GeminiProvider
 from .ollama import OllamaProvider
 from .openai import OpenAIProvider
 
 __all__ = [
     'Provider',
     'InterfaceClient',
+    'GeminiProvider',
     'OllamaProvider',
     'OpenAIProvider',
 ]
