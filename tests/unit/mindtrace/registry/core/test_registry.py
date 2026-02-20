@@ -948,7 +948,7 @@ def test_save_version_conflict_error(registry, test_config):
 
 
 def test_pop_nonexistent_object(registry):
-    """Test that pop raises KeyError when object doesn't exist and no default is provided."""
+    """Test pop follows dict semantics for missing keys."""
     # Test with non-existent object name
     with pytest.raises(KeyError, match="Object nonexistent does not exist"):
         registry.pop("nonexistent")
@@ -964,18 +964,17 @@ def test_pop_nonexistent_object(registry):
 
 
 def test_pop_keyerror_handling(registry, test_config):
-    """Test that KeyError is properly handled in pop method."""
+    """Test KeyError from pop path is propagated."""
     # Save an object first
     registry.save("test:config", test_config, version="1.0.0")
 
-    # Mock load to raise KeyError
-    with patch.object(registry, "load", side_effect=KeyError("Object not found")):
-        # Without default, KeyError should be propagated
+    # Mock core pop to raise KeyError
+    with patch.object(registry._core, "pop", side_effect=KeyError("Object not found")):
         with pytest.raises(KeyError, match="Object not found"):
             registry.pop("test:config@1.0.0")
 
-        # With default, KeyError should be caught and default returned
-        assert registry.pop("test:config@1.0.0", "default") == "default"
+        with pytest.raises(KeyError, match="Object not found"):
+            registry.pop("test:config@1.0.0", "default")
 
 
 def test_dict_like_interface_basic(registry):
@@ -2970,8 +2969,13 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
 
         # Load should detect stale cache, fetch from remote, and return new value
         # verify="full" is needed for staleness check (integrity only checks hash, not staleness)
+
+        stale_result = registry.load("test:obj", "1.0.0", verify="integrity")
+
         result = registry.load("test:obj", "1.0.0", verify="full")
         assert result == "new_value"
+
+        assert stale_result == "old_value"
 
         # Verify remote pull was called (to refresh stale cache)
         mock_backend.pull.assert_called()
@@ -3085,13 +3089,13 @@ def test_delete_cache_error_handling(temp_registry_dir):
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
-    # has_object returns Dict[Tuple[str, str], bool]
-    mock_backend.has_object = Mock(return_value={("test:obj", "1.0.0"): True})
-    # list_versions returns Dict[str, List[str]]
-    mock_backend.list_versions = Mock(return_value={"test:obj": ["1.0.0"]})
-    # delete returns OpResults
+    # has_object returns Dict[Tuple[str, str], bool] - use normalized version "1"
+    mock_backend.has_object = Mock(return_value={("test:obj", "1"): True})
+    # list_versions returns Dict[str, List[str]] - use normalized version
+    mock_backend.list_versions = Mock(return_value={"test:obj": ["1"]})
+    # delete returns OpResults - use normalized version
     delete_results = OpResults()
-    delete_results.add(OpResult.success("test:obj", "1.0.0"))
+    delete_results.add(OpResult.success("test:obj", "1"))
     mock_backend.delete = Mock(return_value=delete_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
@@ -3925,6 +3929,14 @@ def test_batch_delete_single_items(registry):
     registry.save("test:single", "value", version="1.0.0")
     registry.delete("test:single", version="1.0.0")
     assert not registry.has_object("test:single", "1.0.0")
+
+
+def test_single_delete_is_non_idempotent(registry):
+    """Test that deleting the same single object twice raises on second delete."""
+    registry.save("test:single", "value", version="1.0.0")
+    registry.delete("test:single", version="1.0.0")
+    with pytest.raises(RegistryObjectNotFound):
+        registry.delete("test:single", version="1.0.0")
 
 
 def test_batch_delete_multiple_items(registry):

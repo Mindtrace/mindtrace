@@ -247,9 +247,10 @@ class RegistryMindtraceODM(MindtraceODM):
         """
         if self._models is not None:
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
-        if id not in self.registry:
+        try:
+            del self.registry[id]
+        except KeyError:
             raise DocumentNotFoundError(f"Object with id {id} not found")
-        del self.registry[id]
 
     def all(self) -> list[BaseModel]:
         """Retrieve all documents from the collection.

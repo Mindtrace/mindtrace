@@ -16,7 +16,7 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
-from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
+from mindtrace.registry.core.types import _POP_MISSING, BatchResult, OnConflict, VerifyLevel
 
 
 class Registry(Mindtrace):
@@ -571,23 +571,7 @@ class Registry(Mindtrace):
 
         # Delete from cache (best effort)
         try:
-            names_list = name if isinstance(name, list) else [name]
-            versions_list = version if isinstance(version, list) else [version] * len(names_list)
-
-            for n, v in zip(names_list, versions_list):
-                try:
-                    if v is None:
-                        for ver in self._cache.list_versions(n):
-                            try:
-                                self._cache.delete(n, ver)
-                            except Exception:
-                                pass
-                    else:
-                        resolved_v = v if v != "latest" else self._cache._latest(n)
-                        if resolved_v and self._cache.has_object(n, resolved_v):
-                            self._cache.delete(n, resolved_v)
-                except Exception:
-                    pass
+            self._cache.delete(name, version)
         except Exception as e:
             self.logger.warning(f"Error deleting from cache: {e}")
 
@@ -683,28 +667,19 @@ class Registry(Mindtrace):
     def items(self) -> List[tuple[str, Any]]:
         return [(name, self[name]) for name in self.keys()]
 
-    def pop(self, key: str, default: Any = None) -> Any:
+    def pop(self, key: str, default: Any = _POP_MISSING) -> Any:
+        if not self._cached:
+            return self._core.pop(key, default)
+
+        value = self._remote.pop(key, default)
+
         try:
             name, version = self._core._parse_key(key)
-            if version is None:
-                version = self._core._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
+            self._cache.delete(name=name, version=version)
+        except Exception:
+            pass
 
-            if not self._core.has_object(name, version):
-                if default is not None:
-                    return default
-                raise KeyError(f"Object {name} version {version} does not exist")
-
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
-            if default is not None:
-                return default
-            raise
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         try:
