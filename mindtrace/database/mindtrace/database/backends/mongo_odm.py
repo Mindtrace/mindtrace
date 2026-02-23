@@ -674,24 +674,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return_document=return_doc,
         )
 
-    async def batch_write(self, operations: List[Any], ordered: bool = True) -> Any:
-        """Execute batch write operations on the underlying MongoDB collection.
-
-        Args:
-            operations: List of pymongo write operations (e.g., UpdateOne, InsertOne).
-            ordered: If True, stop on first error. Defaults to True.
-
-        Returns:
-            BulkWriteResult from pymongo.
-        """
-        if self._models is not None:
-            raise ValueError("Cannot use batch_write() in multi-model mode. Use db.model_name.batch_write() instead.")
-
-        if not self._is_initialized:
-            await self.initialize()
-
-        collection = self.model_cls.get_motor_collection()
-        return await collection.bulk_write(operations, ordered=ordered)
 
     async def delete_one(self, where: dict) -> int:
         """Delete one document matching where filter."""
@@ -986,9 +968,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             self.update_one(where, set_fields, upsert=upsert, return_document=return_document)
         )
 
-    def batch_write_sync(self, operations: list, ordered: bool = True) -> Any:
-        """Execute batch write operations synchronously (wrapper around async batch_write)."""
-        return self._run_sync(self.batch_write(operations, ordered=ordered))
+
 
     def delete_one_sync(self, where: dict) -> int:
         """Delete one document synchronously."""
