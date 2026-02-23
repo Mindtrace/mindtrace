@@ -63,7 +63,7 @@ def get_retry_info(_ctx: RunContext[AppDeps]) -> str:
 model = GeminiModel(
     model_id="gemini-2.5-flash",
     client_args={
-        "api_key": os.getenv("GEMINI_API_KEY", "AIzaSyDLKxku5eysYGYbJ4sHIYvCpcB8hFNrOLQ"),
+        "api_key": os.getenv("GEMINI_API_KEY", ""),
     },
 )
 
