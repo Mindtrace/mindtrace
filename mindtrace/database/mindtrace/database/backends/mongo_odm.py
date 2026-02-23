@@ -515,12 +515,50 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         return await self.model_cls.find_all().to_list()
 
-    async def find(self, *args, fetch_links: bool = False, **kwargs) -> List[T]:
+    def _translate_filter(self, filter_dict: dict | None) -> dict:
+        """Translate portable filters to Mongo syntax.
+
+        Portable convention: list/tuple values represent IN queries.
+        Existing explicit operator dicts (e.g. {"$in": ...}) are preserved.
+        """
+        translated: dict[str, Any] = {}
+        if not filter_dict:
+            return translated
+        for key, value in filter_dict.items():
+            if str(key).startswith("$"):
+                if key in {"$or", "$and", "$nor"} and isinstance(value, list):
+                    translated[key] = [
+                        self._translate_filter(clause) if isinstance(clause, dict) else clause for clause in value
+                    ]
+                else:
+                    translated[key] = value
+            elif isinstance(value, (list, tuple)):
+                translated[key] = {"$in": list(value)}
+            else:
+                translated[key] = value
+        return translated
+
+    def _to_set_update(self, set_fields: dict) -> dict:
+        """Accept either portable set_fields or Mongo update docs."""
+        if any(str(k).startswith("$") for k in set_fields.keys()):
+            return set_fields
+        return {"$set": set_fields}
+
+    async def find(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        fetch_links: bool = False,
+        **kwargs,
+    ) -> List[T]:
         """
         Find documents matching the specified criteria.
 
         Args:
-            *args: Query conditions and filters.
+            where: Portable filter document.
+            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
+            limit: Optional max number of returned docs.
             fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
             **kwargs: Additional query parameters.
 
@@ -549,12 +587,18 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not self._is_initialized:
             await self.initialize()
 
-        # Remove fetch_links from kwargs if present (it's a parameter, not a query field)
-        kwargs_without_fetch_links = {k: v for k, v in kwargs.items() if k != "fetch_links"}
-
-        # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
-        query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
-        return await query.to_list()
+        mongo_filter = self._translate_filter(where or {})
+        query = self.model_cls.find(mongo_filter, fetch_links=fetch_links, **kwargs)
+        docs = await query.to_list()
+        if sort:
+            for field_name, direction in reversed(sort):
+                docs.sort(
+                    key=lambda d: (getattr(d, field_name, None) is None, getattr(d, field_name, None)),
+                    reverse=direction < 0,
+                )
+        if limit is not None:
+            docs = docs[: max(0, limit)]
+        return docs
 
     async def aggregate(self, pipeline: list) -> List[T]:
         """
@@ -581,53 +625,53 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
-    async def update_where(self, filter: dict, update: dict, upsert: bool = False) -> Any:
-        """Update a single document matching the filter.
+    async def insert_one(self, doc: BaseModel | dict) -> T:
+        """Insert one document (canonical alias for insert)."""
+        return await self.insert(doc)
 
-        Args:
-            filter: Query filter to match the document.
-            update: Update operations (e.g., {"$set": {...}}).
-            upsert: If True, insert a new document when no match is found.
+    async def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:
+        """Find one document matching where filter."""
+        if self._models is not None:
+            raise ValueError("Cannot use find_one() in multi-model mode. Use db.model_name.find_one() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        return await collection.find_one(self._translate_filter(where), sort=sort)
 
-        Returns:
-            UpdateResult from pymongo.
+    async def update_one(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Update one matching document.
+
+        return_document:
+            - "none": return pymongo UpdateResult
+            - "before": return document before update (or None)
+            - "after": return document after update (or None)
         """
         if self._models is not None:
-            raise ValueError("Cannot use update_where() in multi-model mode. Use db.model_name.update_where() instead.")
-
+            raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
+        if return_document not in {"none", "before", "after"}:
+            raise ValueError("return_document must be one of: 'none', 'before', 'after'")
         if not self._is_initialized:
             await self.initialize()
 
         collection = self.model_cls.get_motor_collection()
-        return await collection.update_one(filter, update, upsert=upsert)
+        mongo_filter = self._translate_filter(where)
+        mongo_update = self._to_set_update(set_fields)
 
-    async def find_and_modify(
-        self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
-    ) -> dict | None:
-        """Atomically find and update a single document.
+        if return_document == "none":
+            return await collection.update_one(mongo_filter, mongo_update, upsert=upsert)
 
-        Args:
-            filter: Query filter to match the document.
-            update: Update operations (e.g., {"$set": {...}}).
-            upsert: If True, insert a new document when no match is found.
-            return_old: If True, return the document *before* the update.
-                If False (default), return the document *after* the update.
-
-        Returns:
-            The document as a raw dict, or None if no match and upsert is False.
-        """
-        if self._models is not None:
-            raise ValueError(
-                "Cannot use find_and_modify() in multi-model mode. Use db.model_name.find_and_modify() instead."
-            )
-
-        if not self._is_initialized:
-            await self.initialize()
-
-        return_doc = ReturnDocument.BEFORE if return_old else ReturnDocument.AFTER
-        collection = self.model_cls.get_motor_collection()
+        return_doc = ReturnDocument.BEFORE if return_document == "before" else ReturnDocument.AFTER
         return await collection.find_one_and_update(
-            filter, update, upsert=upsert, return_document=return_doc
+            mongo_filter,
+            mongo_update,
+            upsert=upsert,
+            return_document=return_doc,
         )
 
     async def batch_write(self, operations: List[Any], ordered: bool = True) -> Any:
@@ -649,24 +693,35 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         collection = self.model_cls.get_motor_collection()
         return await collection.bulk_write(operations, ordered=ordered)
 
-    async def delete_where(self, filter: dict) -> int:
-        """Delete all documents matching the filter.
-
-        Args:
-            filter: Query filter dict to match documents for deletion.
-
-        Returns:
-            Number of deleted documents.
-        """
+    async def delete_one(self, where: dict) -> int:
+        """Delete one document matching where filter."""
         if self._models is not None:
-            raise ValueError("Cannot use delete_where() in multi-model mode. Use db.model_name.delete_where() instead.")
-
+            raise ValueError("Cannot use delete_one() in multi-model mode. Use db.model_name.delete_one() instead.")
         if not self._is_initialized:
             await self.initialize()
-
         collection = self.model_cls.get_motor_collection()
-        result = await collection.delete_many(filter)
+        result = await collection.delete_one(self._translate_filter(where))
         return result.deleted_count if result else 0
+
+    async def delete_many(self, where: dict) -> int:
+        """Delete documents matching where filter."""
+        if self._models is not None:
+            raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        result = await collection.delete_many(self._translate_filter(where))
+        return result.deleted_count if result else 0
+
+    async def distinct(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct values for field matching filter."""
+        if self._models is not None:
+            raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        values = await collection.distinct(field, self._translate_filter(where or {}))
+        return sorted(values)
 
     def get_raw_model(self) -> Type[T]:
         """
@@ -824,12 +879,20 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """
         return self._run_sync(self.all())
 
-    def find_sync(self, *args, **kwargs) -> List[T]:
+    def find_sync(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        **kwargs,
+    ) -> List[T]:
         """
         Find documents synchronously (wrapper around async find).
 
         Args:
-            *args: Query conditions and filters.
+            where: Portable filter document.
+            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
+            limit: Optional max number of returned docs.
             **kwargs: Additional query parameters.
 
         Returns:
@@ -839,12 +902,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 # Find users with specific email
-                users = backend.find_sync(User.email == "john@example.com")
+                users = backend.find_sync(where={"email": "john@example.com"})
 
                 # Find users with name containing "John"
-                users = backend.find_sync({"name": {"$regex": "John"}})
+                users = backend.find_sync(where={"name": {"$regex": "John"}})
         """
-        return self._run_sync(self.find(*args, **kwargs))
+        return self._run_sync(self.find(where=where, sort=sort, limit=limit, **kwargs))
 
     def _get_sync_loop(self) -> asyncio.AbstractEventLoop:
         """Return a long-lived event loop running in a dedicated daemon thread.
@@ -903,20 +966,38 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """Execute aggregation pipeline synchronously (wrapper around async aggregate)."""
         return self._run_sync(self.aggregate(pipeline))
 
-    def update_where_sync(self, filter: dict, update: dict, upsert: bool = False) -> Any:
-        """Update a single document synchronously (wrapper around async update_where)."""
-        return self._run_sync(self.update_where(filter, update, upsert=upsert))
+    def insert_one_sync(self, doc: BaseModel | dict) -> T:
+        """Insert one document synchronously."""
+        return self._run_sync(self.insert_one(doc))
 
-    def find_and_modify_sync(
-        self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
-    ) -> dict | None:
-        """Atomically find and update a single document synchronously (wrapper around async find_and_modify)."""
-        return self._run_sync(self.find_and_modify(filter, update, upsert=upsert, return_old=return_old))
+    def find_one_sync(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:
+        """Find one document synchronously."""
+        return self._run_sync(self.find_one(where, sort=sort))
+
+    def update_one_sync(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Update one matching document synchronously."""
+        return self._run_sync(
+            self.update_one(where, set_fields, upsert=upsert, return_document=return_document)
+        )
 
     def batch_write_sync(self, operations: list, ordered: bool = True) -> Any:
         """Execute batch write operations synchronously (wrapper around async batch_write)."""
         return self._run_sync(self.batch_write(operations, ordered=ordered))
 
-    def delete_where_sync(self, filter: dict) -> int:
-        """Delete documents matching filter synchronously (wrapper around async delete_where)."""
-        return self._run_sync(self.delete_where(filter))
+    def delete_one_sync(self, where: dict) -> int:
+        """Delete one document synchronously."""
+        return self._run_sync(self.delete_one(where))
+
+    def delete_many_sync(self, where: dict) -> int:
+        """Delete documents synchronously."""
+        return self._run_sync(self.delete_many(where=where))
+
+    def distinct_sync(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct values for field matching filter synchronously."""
+        return self._run_sync(self.distinct(field, where))

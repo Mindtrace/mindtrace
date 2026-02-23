@@ -1,6 +1,6 @@
 """Unit tests for GCPDBRegistryBackend (DB+GCP hybrid backend).
 
-Tests use a mock GCS handler for blobs and a mock MongoDB backend for metadata,
+Tests use a mock GCS handler for blobs and a mock ODM backend for metadata,
 verifying correct delegation of each operation.
 """
 
@@ -146,12 +146,12 @@ class MockGCSHandler:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mock MongoDB Document
+# Mock Document
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class MockDocument:
-    """Simulates a Beanie document returned from find_sync."""
+    """Simulates a document returned from ODM find()."""
 
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
@@ -159,151 +159,122 @@ class MockDocument:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mock MongoDB ODM
+# Mock ODM (matches UnifiedMindtraceODM sub-ODM API)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class MockMongoODM:
-    """In-memory mock of MongoMindtraceODM that implements the methods used by GCPDBRegistryBackend."""
+class MockODM:
+    """In-memory mock of a UnifiedMindtraceODM sub-ODM (per-collection)."""
 
     def __init__(self):
         self._docs: List[Dict] = []
         self._counter = 0
 
-    def find_sync(self, query: dict) -> List[MockDocument]:
-        return [MockDocument(**d) for d in self._docs if self._matches(d, query)]
+    def find(self, where: dict | None = None, sort=None, limit=None, **kwargs) -> List[MockDocument]:
+        if where is None:
+            docs = list(self._docs)
+        else:
+            docs = [d for d in self._docs if self._matches(d, where)]
+        if sort:
+            for field_name, direction in reversed(sort):
+                docs.sort(key=lambda d: d.get(field_name, ""), reverse=(direction == -1))
+        if limit:
+            docs = docs[:limit]
+        return [MockDocument(**d) for d in docs]
 
-    def insert_sync(self, data: Any) -> MockDocument:
+    def insert_one(self, doc) -> MockDocument:
         from mindtrace.database.core.exceptions import DuplicateInsertError
 
-        if isinstance(data, dict):
-            doc = data.copy()
+        if isinstance(doc, dict):
+            data = doc.copy()
         else:
-            doc = data.model_dump() if hasattr(data, "model_dump") else dict(data)
-        doc.pop("id", None)
-        doc.pop("_id", None)
+            data = doc.model_dump() if hasattr(doc, "model_dump") else dict(doc)
+        data.pop("id", None)
+        data.pop("_id", None)
 
         # Check for unique compound index violation on (registry_uri, name, version[, uuid])
-        if "name" in doc and "version" in doc and "registry_uri" in doc:
+        if "name" in data and "version" in data and "registry_uri" in data:
             for existing in self._docs:
                 base_match = (
-                    existing.get("registry_uri") == doc.get("registry_uri")
-                    and existing.get("name") == doc.get("name")
-                    and existing.get("version") == doc.get("version")
+                    existing.get("registry_uri") == data.get("registry_uri")
+                    and existing.get("name") == data.get("name")
+                    and existing.get("version") == data.get("version")
                 )
                 if base_match:
-                    # If both docs have uuid, include it in uniqueness check
-                    if "uuid" in doc and "uuid" in existing:
-                        if existing.get("uuid") != doc.get("uuid"):
+                    if "uuid" in data and "uuid" in existing:
+                        if existing.get("uuid") != data.get("uuid"):
                             continue
                     raise DuplicateInsertError(
-                        f"Duplicate key: ({doc.get('registry_uri')}, {doc.get('name')}, {doc.get('version')})"
+                        f"Duplicate key: ({data.get('registry_uri')}, {data.get('name')}, {data.get('version')})"
+                    )
+
+        # Check for unique constraint on (registry_uri, object_class) for materializer
+        if "object_class" in data and "registry_uri" in data and "name" not in data:
+            for existing in self._docs:
+                if (
+                    existing.get("registry_uri") == data.get("registry_uri")
+                    and existing.get("object_class") == data.get("object_class")
+                ):
+                    raise DuplicateInsertError(
+                        f"Duplicate key: ({data.get('registry_uri')}, {data.get('object_class')})"
                     )
 
         self._counter += 1
-        doc["_id"] = str(self._counter)
-        self._docs.append(doc)
-        return MockDocument(**doc)
+        data["_id"] = str(self._counter)
+        self._docs.append(data)
+        return MockDocument(**data)
 
-    def find_and_modify_sync(
-        self, filter: dict, update: dict, upsert: bool = False, return_old: bool = False
-    ) -> dict | None:
-        matched = [d for d in self._docs if self._matches(d, filter)]
-        set_fields = update.get("$set", {})
+    def update_one(self, where, set_fields, upsert=False, return_document="none"):
+        matched = [d for d in self._docs if self._matches(d, where)]
 
-        if return_old:
-            old_doc = dict(matched[0]) if matched else None
+        old_doc = dict(matched[0]) if matched else None
 
         if matched:
             for key, val in set_fields.items():
                 matched[0][key] = val
-            return old_doc if return_old else dict(matched[0])
+            if return_document == "before":
+                return old_doc
+            elif return_document == "after":
+                return dict(matched[0])
+            return None
         elif upsert:
-            new_doc = dict(filter)
+            new_doc = dict(where)
             new_doc.update(set_fields)
             self._counter += 1
             new_doc["_id"] = str(self._counter)
             self._docs.append(new_doc)
-            return old_doc if return_old else dict(new_doc)
+            if return_document == "before":
+                return None
+            elif return_document == "after":
+                return dict(new_doc)
+            return None
         return None
 
-    def delete_where_sync(self, filter: dict) -> int:
+    def delete_many(self, where: dict) -> int:
         before = len(self._docs)
-        self._docs = [d for d in self._docs if not self._matches(d, filter)]
+        self._docs = [d for d in self._docs if not self._matches(d, where)]
         return before - len(self._docs)
 
-    def _do_upsert(self, filt: dict, update: dict, upsert: bool = False):
-        """Shared upsert logic for update_where and batch_write."""
-        matched = [d for d in self._docs if self._matches(d, filt)]
-        set_fields = update.get("$set", {})
-        if matched:
-            for key, val in set_fields.items():
-                matched[0][key] = val
-            return "modified"
-        elif upsert:
-            new_doc = dict(filt)
-            new_doc.update(set_fields)
-            self._counter += 1
-            new_doc["_id"] = str(self._counter)
-            self._docs.append(new_doc)
-            return "upserted"
-        return "none"
+    def delete_one(self, where: dict) -> int:
+        for i, d in enumerate(self._docs):
+            if self._matches(d, where):
+                self._docs.pop(i)
+                return 1
+        return 0
 
-    def update_where_sync(self, filter: dict, update: dict, upsert: bool = False):
-        action = self._do_upsert(filter, update, upsert)
+    def distinct(self, field: str, where: dict | None = None) -> list:
+        if where:
+            docs = [d for d in self._docs if self._matches(d, where)]
+        else:
+            docs = list(self._docs)
+        values = set()
+        for d in docs:
+            if field in d:
+                values.add(d[field])
+        return sorted(values)
 
-        class _UpdateResult:
-            pass
-        result = _UpdateResult()
-        result.modified_count = 1 if action == "modified" else 0
-        result.upserted_id = str(self._counter) if action == "upserted" else None
-        return result
-
-    def batch_write_sync(self, operations: list, ordered: bool = True):
-        modified = 0
-        upserted = 0
-        for op in operations:
-            if hasattr(op, "_filter") and hasattr(op, "_doc"):
-                action = self._do_upsert(op._filter, op._doc, getattr(op, "_upsert", False))
-                if action == "modified":
-                    modified += 1
-                elif action == "upserted":
-                    upserted += 1
-
-        class _BulkWriteResult:
-            pass
-        result = _BulkWriteResult()
-        result.modified_count = modified
-        result.upserted_count = upserted
-        return result
-
-    def aggregate_sync(self, pipeline: list) -> list:
-        """Simple aggregation support for $match + $group + $sort."""
-        docs = list(self._docs)
-        for stage in pipeline:
-            if "$match" in stage:
-                docs = [d for d in docs if self._matches(d, stage["$match"])]
-            elif "$group" in stage:
-                group_spec = stage["$group"]
-                group_field = group_spec["_id"]
-                if isinstance(group_field, str) and group_field.startswith("$"):
-                    field_name = group_field[1:]
-                    groups = {}
-                    for d in docs:
-                        key = d.get(field_name)
-                        if key not in groups:
-                            groups[key] = {"_id": key}
-                    docs = list(groups.values())
-            elif "$project" in stage:
-                project_spec = stage["$project"]
-                include_fields = [k for k, v in project_spec.items() if v]
-                docs = [{k: d.get(k) for k in include_fields if k in d} for d in docs]
-            elif "$sort" in stage:
-                sort_spec = stage["$sort"]
-                for field_name, direction in reversed(list(sort_spec.items())):
-                    docs.sort(key=lambda d: d.get(field_name, ""), reverse=(direction == -1))
-        return docs
-
+    def initialize_sync(self, **kwargs):
+        pass
 
     def _matches(self, doc: dict, query: dict) -> bool:
         for key, val in query.items():
@@ -317,9 +288,36 @@ class MockMongoODM:
                 if isinstance(val, dict) and "$in" in val:
                     if doc.get(key) not in val["$in"]:
                         return False
+                elif isinstance(val, list):
+                    # List values act as implicit $in
+                    if doc.get(key) not in val:
+                        return False
                 elif doc.get(key) != val:
                     return False
         return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mock UnifiedMindtraceODM factory
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def make_mock_unified_odm_class(mock_odms):
+    """Return a class that replaces UnifiedMindtraceODM in tests."""
+
+    class MockUnifiedODM:
+        def __init__(self, **kwargs):
+            pass
+
+        def __getattr__(self, name):
+            if name in mock_odms:
+                return mock_odms[name]
+            raise AttributeError(f"MockUnifiedODM has no attribute '{name}'")
+
+        def initialize_sync(self, **kwargs):
+            pass
+
+    return MockUnifiedODM
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -340,51 +338,22 @@ def mock_gcs_handler(monkeypatch):
 def mock_odms():
     """Create mock ODM instances for each collection."""
     return {
-        "obj_meta": MockMongoODM(),
-        "reg_meta": MockMongoODM(),
-        "commit_plan": MockMongoODM(),
-        "obj_blob": MockMongoODM(),
+        "obj_meta": MockODM(),
+        "reg_meta": MockODM(),
+        "commit_plan": MockODM(),
+        "obj_blob": MockODM(),
+        "materializer_meta": MockODM(),
     }
 
 
 @pytest.fixture
 def backend(mock_gcs_handler, mock_odms, monkeypatch):
-    """Create a GCPDBRegistryBackend with mocked GCS and MongoDB."""
+    """Create a GCPDBRegistryBackend with mocked GCS and UnifiedODM."""
     from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
 
-    # Patch MongoMindtraceODM to avoid real MongoDB connection
-    mock_mongo_class = MagicMock()
-    mock_db_instance = MagicMock()
-
-    # Wire up model access
-    mock_db_instance.obj_meta = mock_odms["obj_meta"]
-    mock_db_instance.reg_meta = mock_odms["reg_meta"]
-    mock_db_instance.commit_plan = mock_odms["commit_plan"]
-    mock_db_instance.obj_blob = mock_odms["obj_blob"]
-    mock_db_instance.initialize_sync = MagicMock()
-
-    mock_mongo_class.return_value = mock_db_instance
-
     monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.MongoMindtraceODM",
-        mock_mongo_class,
-    )
-    # Also patch the model generation (not needed with mocked ODM)
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
-        lambda: MagicMock(),
+        "mindtrace.registry.backends.gcp_db_registry_backend.UnifiedMindtraceODM",
+        make_mock_unified_odm_class(mock_odms),
     )
 
     b = GCPDBRegistryBackend(
@@ -431,7 +400,7 @@ def test_init(backend):
 
 def test_init_ensures_registry_metadata(backend, mock_odms):
     """Registry metadata doc should be created on init."""
-    docs = mock_odms["reg_meta"].find_sync({"registry_uri": str(backend._registry_uri_key)})
+    docs = mock_odms["reg_meta"].find(where={"registry_uri": str(backend._registry_uri_key)})
     assert len(docs) == 1
     assert docs[0].metadata == {"materializers": {}}
 
@@ -459,11 +428,11 @@ def test_push(backend, sample_object_dir, sample_metadata):
 
 
 def test_push_metadata_written_to_db(backend, sample_object_dir, sample_metadata, mock_odms):
-    """Verify metadata was stored in MongoDB, not GCS."""
+    """Verify metadata was stored in DB, not GCS."""
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    # Check MongoDB has the metadata
-    docs = mock_odms["obj_meta"].find_sync({
+    # Check DB has the metadata
+    docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend._registry_uri_key,
         "name": "test:object",
         "version": "1.0.0",
@@ -554,7 +523,7 @@ def test_push_commit_plan_created_and_cleaned(backend, sample_object_dir, sample
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     # Commit plan should have been deleted after success
-    plans = mock_odms["commit_plan"].find_sync({"registry_uri": backend._registry_uri_key})
+    plans = mock_odms["commit_plan"].find(where={"registry_uri": backend._registry_uri_key})
     assert len(plans) == 0
 
 
@@ -619,7 +588,7 @@ def test_delete(backend, sample_object_dir, sample_metadata, mock_odms):
     assert len(objects) == 0
 
     # Metadata deleted from DB
-    docs = mock_odms["obj_meta"].find_sync({
+    docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend._registry_uri_key,
         "name": "test:object",
         "version": "1.0.0",
@@ -656,7 +625,7 @@ def test_batch_delete(backend, sample_object_dir, sample_metadata, tmp_path):
 def test_save_metadata(backend, sample_metadata, mock_odms):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
-    docs = mock_odms["obj_meta"].find_sync({
+    docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend._registry_uri_key,
         "name": "test:object",
         "version": "1.0.0",
@@ -730,7 +699,7 @@ def test_delete_metadata(backend, sample_metadata, mock_odms):
     results = backend.delete_metadata("test:object", "1.0.0")
     assert results.all_ok
 
-    docs = mock_odms["obj_meta"].find_sync({
+    docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend._registry_uri_key,
         "name": "test:object",
         "version": "1.0.0",
@@ -934,11 +903,9 @@ def test_no_metadata_in_gcs(backend, sample_object_dir, sample_metadata):
 
 
 def test_no_registry_metadata_in_gcs(backend):
-    """Registry metadata should only be in MongoDB, not GCS."""
+    """Registry metadata should only be in DB, not GCS."""
     backend.save_registry_metadata({"test": "value"})
 
-    # No registry_metadata.json should exist in GCS (the mock creates one during init
-    # but after that, all operations should go to MongoDB)
     fetched = backend.fetch_registry_metadata()
     assert fetched.get("test") == "value"
 
@@ -953,36 +920,9 @@ def backend_inline(mock_gcs_handler, mock_odms, monkeypatch):
     """Create a GCPDBRegistryBackend with inline storage enabled (1MB threshold)."""
     from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
 
-    mock_mongo_class = MagicMock()
-    mock_db_instance = MagicMock()
-
-    mock_db_instance.obj_meta = mock_odms["obj_meta"]
-    mock_db_instance.reg_meta = mock_odms["reg_meta"]
-    mock_db_instance.commit_plan = mock_odms["commit_plan"]
-    mock_db_instance.obj_blob = mock_odms["obj_blob"]
-    mock_db_instance.initialize_sync = MagicMock()
-
-    mock_mongo_class.return_value = mock_db_instance
-
     monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.MongoMindtraceODM",
-        mock_mongo_class,
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
-        lambda: MagicMock(),
+        "mindtrace.registry.backends.gcp_db_registry_backend.UnifiedMindtraceODM",
+        make_mock_unified_odm_class(mock_odms),
     )
 
     b = GCPDBRegistryBackend(
@@ -1011,7 +951,7 @@ def test_inline_push(backend_inline, sample_object_dir, sample_metadata, mock_od
     assert len(objects) == 0
 
     # Verify blob doc exists in blob collection
-    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    blob_docs = mock_odms["obj_blob"].find(where={"registry_uri": backend_inline._registry_uri_key})
     assert len(blob_docs) == 1
     assert blob_docs[0].name == "test:object"
     assert blob_docs[0].version == "1.0.0"
@@ -1019,7 +959,7 @@ def test_inline_push(backend_inline, sample_object_dir, sample_metadata, mock_od
     assert "file2.txt" in blob_docs[0].blob_data
 
     # Verify metadata has inline flag
-    meta_docs = mock_odms["obj_meta"].find_sync({
+    meta_docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend_inline._registry_uri_key,
         "name": "test:object", "version": "1.0.0",
     })
@@ -1053,14 +993,14 @@ def test_inline_delete(backend_inline, sample_object_dir, sample_metadata, mock_
     assert results.all_ok
 
     # Metadata gone
-    meta_docs = mock_odms["obj_meta"].find_sync({
+    meta_docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend_inline._registry_uri_key,
         "name": "test:object", "version": "1.0.0",
     })
     assert len(meta_docs) == 0
 
     # Blob doc gone
-    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    blob_docs = mock_odms["obj_blob"].find(where={"registry_uri": backend_inline._registry_uri_key})
     assert len(blob_docs) == 0
 
 
@@ -1084,7 +1024,7 @@ def test_inline_overwrite_inline_to_inline(backend_inline, sample_object_dir, sa
     assert new_uuid != initial_uuid
 
     # Old blob doc should be cleaned up, only new one remains
-    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    blob_docs = mock_odms["obj_blob"].find(where={"registry_uri": backend_inline._registry_uri_key})
     assert len(blob_docs) == 1
     assert blob_docs[0].uuid == new_uuid
 
@@ -1103,7 +1043,7 @@ def test_inline_commit_plan_cleaned(backend_inline, sample_object_dir, sample_me
     """Commit plan should be created then deleted on inline push success."""
     backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
-    plans = mock_odms["commit_plan"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    plans = mock_odms["commit_plan"].find(where={"registry_uri": backend_inline._registry_uri_key})
     assert len(plans) == 0
 
 
@@ -1125,34 +1065,9 @@ def test_inline_large_object_goes_to_gcs(mock_gcs_handler, mock_odms, monkeypatc
     """Objects larger than threshold should go to GCS."""
     from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
 
-    mock_mongo_class = MagicMock()
-    mock_db_instance = MagicMock()
-    mock_db_instance.obj_meta = mock_odms["obj_meta"]
-    mock_db_instance.reg_meta = mock_odms["reg_meta"]
-    mock_db_instance.commit_plan = mock_odms["commit_plan"]
-    mock_db_instance.obj_blob = mock_odms["obj_blob"]
-    mock_db_instance.initialize_sync = MagicMock()
-    mock_mongo_class.return_value = mock_db_instance
-
     monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.MongoMindtraceODM",
-        mock_mongo_class,
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryMeta._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryCommitPlan._auto_generate_mongo_model",
-        lambda: MagicMock(),
-    )
-    monkeypatch.setattr(
-        "mindtrace.registry.backends.gcp_db_registry_backend.RegistryObjectBlob._auto_generate_mongo_model",
-        lambda: MagicMock(),
+        "mindtrace.registry.backends.gcp_db_registry_backend.UnifiedMindtraceODM",
+        make_mock_unified_odm_class(mock_odms),
     )
 
     b = GCPDBRegistryBackend(
@@ -1184,28 +1099,29 @@ def test_inline_large_object_goes_to_gcs(mock_gcs_handler, mock_odms, monkeypatc
 
 
 def test_inline_delete_metadata_cleans_blobs(backend_inline, sample_object_dir, sample_metadata, mock_odms):
-    """delete_metadata should also clean up blob collection."""
+    """delete_metadata only removes obj_meta docs — blob collection is untouched."""
     backend_inline.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
 
     # Verify blob exists
-    blob_docs = mock_odms["obj_blob"].find_sync({"registry_uri": backend_inline._registry_uri_key})
+    blob_docs = mock_odms["obj_blob"].find(where={"registry_uri": backend_inline._registry_uri_key})
     assert len(blob_docs) == 1
 
     results = backend_inline.delete_metadata("test:object", "1.0.0")
     assert results.all_ok
 
-    # Both metadata and blob should be gone
-    meta_docs = mock_odms["obj_meta"].find_sync({
+    # Metadata should be gone
+    meta_docs = mock_odms["obj_meta"].find(where={
         "registry_uri": backend_inline._registry_uri_key,
         "name": "test:object", "version": "1.0.0",
     })
     assert len(meta_docs) == 0
 
-    blob_docs = mock_odms["obj_blob"].find_sync({
+    # Blob doc should still exist (delete_metadata does NOT clean blobs)
+    blob_docs = mock_odms["obj_blob"].find(where={
         "registry_uri": backend_inline._registry_uri_key,
         "name": "test:object", "version": "1.0.0",
     })
-    assert len(blob_docs) == 0
+    assert len(blob_docs) == 1
 
 
 def test_inline_push_without_files_manifest(backend_inline, tmp_path, mock_odms):
@@ -1221,7 +1137,7 @@ def test_inline_push_without_files_manifest(backend_inline, tmp_path, mock_odms)
     results = backend_inline.push("test:nofiles", "1.0.0", str(obj_dir), meta)
     assert results.all_ok
 
-    blob_docs = mock_odms["obj_blob"].find_sync({"name": "test:nofiles"})
+    blob_docs = mock_odms["obj_blob"].find(where={"name": "test:nofiles"})
     assert len(blob_docs) == 1
     assert "data.json" in blob_docs[0].blob_data
     assert "subdir/nested.txt" in blob_docs[0].blob_data
@@ -1236,7 +1152,7 @@ def test_inline_pull_missing_blob_raises(backend_inline, sample_object_dir, samp
 
     # Delete the blob doc to simulate corruption
     uuid_str = fetched_metadata["_storage"]["uuid"]
-    mock_odms["obj_blob"].delete_where_sync({"uuid": uuid_str})
+    mock_odms["obj_blob"].delete_many(where={"uuid": uuid_str})
 
     download_dir = tmp_path / "download"
     download_dir.mkdir()
@@ -1299,7 +1215,7 @@ def test_overwrite_inline_to_gcs(backend_inline, sample_object_dir, sample_metad
     assert new_metadata["_storage"].get("inline") is None
 
     # Old blob doc should be cleaned up
-    blob_docs = mock_odms["obj_blob"].find_sync({"uuid": old_uuid})
+    blob_docs = mock_odms["obj_blob"].find(where={"uuid": old_uuid})
     assert len(blob_docs) == 0
 
     # New GCS files should exist

@@ -1,6 +1,6 @@
 import asyncio
 from enum import Enum
-from typing import Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
 from redis_om.model.model import model_registry
@@ -337,6 +337,9 @@ class UnifiedMindtraceDocument(BaseModel):
             "index_name": f"{getattr(meta, 'global_key_prefix', 'mindtrace')}:{class_name}:index",
             "model_key_prefix": class_name,  # Set the model key prefix to match the class name
         }
+        natural_keys = getattr(meta, "natural_key_fields", None)
+        if natural_keys:
+            meta_attrs["natural_key_fields"] = list(natural_keys)
         MetaClass = type("Meta", (parent_meta,), meta_attrs)
 
         # Create the class attributes dictionary
@@ -1108,12 +1111,21 @@ class UnifiedMindtraceODM(MindtraceODM):
             raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
         return self._handle_async_call("all")
 
-    def find(self, *args, fetch_links: bool = False, **kwargs) -> List[ModelType]:
+    def find(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        fetch_links: bool = False,
+        **kwargs,
+    ) -> List[ModelType]:
         """
         Find documents matching the specified criteria.
 
         Args:
-            *args: Query conditions and filters.
+            where: Portable filter document.
+            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
+            limit: Optional max number of returned docs.
             fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
             **kwargs: Additional query parameters.
 
@@ -1127,7 +1139,7 @@ class UnifiedMindtraceODM(MindtraceODM):
             .. code-block:: python
 
                 # Find users with specific criteria
-                users = unified_backend.find(User.email == "john@example.com")
+                users = unified_backend.find(where={"email": "john@example.com"})
 
                 # Find all users if no criteria specified
                 all_users = unified_backend.find()
@@ -1137,7 +1149,52 @@ class UnifiedMindtraceODM(MindtraceODM):
         """
         if self._unified_models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
-        return self._handle_async_call("find", *args, fetch_links=fetch_links, **kwargs)
+        return self._handle_async_call(
+            "find", where=where, sort=sort, limit=limit, fetch_links=fetch_links, **kwargs
+        )
+
+    def insert_one(self, doc: BaseModel | dict):
+        """Insert one document."""
+        converted_obj = self._convert_unified_to_backend_data(doc)
+        return self._handle_async_call("insert_one", converted_obj)
+
+    def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None):
+        """Find one document matching filter."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use find_one() in multi-model mode. Use db.model_name.find_one() instead.")
+        return self._handle_async_call("find_one", where, sort=sort)
+
+    def update_one(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ):
+        """Update one matching document."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
+        return self._handle_async_call(
+            "update_one", where, set_fields, upsert=upsert, return_document=return_document
+        )
+
+    def delete_many(self, where: dict) -> int:
+        """Delete documents matching where filter."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
+        return self._handle_async_call("delete_many", where=where)
+
+    def delete_one(self, where: dict) -> int:
+        """Delete exactly one matching document."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use delete_one() in multi-model mode. Use db.model_name.delete_one() instead.")
+        return self._handle_async_call("delete_one", where=where)
+
+    def distinct(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct field values matching filter."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
+        return self._handle_async_call("distinct", field, where)
 
     # Asynchronous interface methods
     async def insert_async(self, obj: BaseModel) -> ModelType:
@@ -1323,12 +1380,21 @@ class UnifiedMindtraceODM(MindtraceODM):
                 # Fallback to sync method
                 return backend.all()
 
-    async def find_async(self, *args, fetch_links: bool = False, **kwargs) -> List[ModelType]:
+    async def find_async(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        fetch_links: bool = False,
+        **kwargs,
+    ) -> List[ModelType]:
         """
         Find documents matching the specified criteria (async version).
 
         Args:
-            *args: Query conditions and filters.
+            where: Portable filter document.
+            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
+            limit: Optional max number of returned docs.
             fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
             **kwargs: Additional query parameters.
 
@@ -1342,27 +1408,98 @@ class UnifiedMindtraceODM(MindtraceODM):
             .. code-block:: python
 
                 # Find users with specific criteria
-                users = await unified_backend.find_async(User.email == "john@example.com")
+                users = await unified_backend.find_async(where={"email": "john@example.com"})
 
                 # Find all users if no criteria specified
                 all_users = await unified_backend.find_async()
 
                 # Find users with linked documents (MongoDB only)
-                users = await unified_backend.find_async({"name": "Alice"}, fetch_links=True)
+                users = await unified_backend.find_async(where={"name": "Alice"}, fetch_links=True)
         """
         if self._unified_models is not None:
             raise ValueError("Cannot use find_async() in multi-model mode. Use db.model_name.find_async() instead.")
         backend = self._get_active_backend()
         if backend.is_async():
             # For async backends (MongoDB), call async method directly
-            return await backend.find(*args, fetch_links=fetch_links, **kwargs)
+            return await backend.find(where=where, sort=sort, limit=limit, fetch_links=fetch_links, **kwargs)
         else:
             # For sync backends (Redis), use async wrapper method
             if hasattr(backend, "find_async"):
-                return await backend.find_async(*args, **kwargs)
+                return await backend.find_async(where=where, sort=sort, limit=limit, **kwargs)
             else:
                 # Fallback to sync method
-                return backend.find(*args, **kwargs)
+                return backend.find(where=where, sort=sort, limit=limit, **kwargs)
+
+    async def insert_one_async(self, doc: BaseModel | dict):
+        """Async version of insert_one."""
+        converted_obj = self._convert_unified_to_backend_data(doc)
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.insert_one(converted_obj)
+        if hasattr(backend, "insert_one_async"):
+            return await backend.insert_one_async(converted_obj)
+        return backend.insert_one(converted_obj)
+
+    async def find_one_async(self, where: dict, sort: list[tuple[str, int]] | None = None):
+        """Async version of find_one."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use find_one_async() in multi-model mode. Use db.model_name.find_one_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.find_one(where, sort=sort)
+        if hasattr(backend, "find_one_async"):
+            return await backend.find_one_async(where, sort=sort)
+        return backend.find_one(where, sort=sort)
+
+    async def update_one_async(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ):
+        """Async version of update_one."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use update_one_async() in multi-model mode. Use db.model_name.update_one_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.update_one(where, set_fields, upsert=upsert, return_document=return_document)
+        if hasattr(backend, "update_one_async"):
+            return await backend.update_one_async(where, set_fields, upsert=upsert, return_document=return_document)
+        return backend.update_one(where, set_fields, upsert=upsert, return_document=return_document)
+
+    async def delete_many_async(self, where: dict) -> int:
+        """Async version of delete_many."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use delete_many_async() in multi-model mode. Use db.model_name.delete_many_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.delete_many(where=where)
+        if hasattr(backend, "delete_many_async"):
+            return await backend.delete_many_async(where=where)
+        return backend.delete_many(where=where)
+
+    async def delete_one_async(self, where: dict) -> int:
+        """Async version of delete_one."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use delete_one_async() in multi-model mode. Use db.model_name.delete_one_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.delete_one(where=where)
+        if hasattr(backend, "delete_one_async"):
+            return await backend.delete_one_async(where=where)
+        return backend.delete_one(where=where)
+
+    async def distinct_async(self, field: str, where: dict | None = None) -> list[Any]:
+        """Async version of distinct."""
+        if self._unified_models is not None:
+            raise ValueError("Cannot use distinct_async() in multi-model mode. Use db.model_name.distinct_async() instead.")
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await backend.distinct(field, where)
+        if hasattr(backend, "distinct_async"):
+            return await backend.distinct_async(field, where)
+        return backend.distinct(field, where)
 
     def get_raw_model(self) -> Type[ModelType]:
         """

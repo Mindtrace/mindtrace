@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from enum import Enum
-from typing import Type
+from typing import Any, Literal, Type
 
 from pydantic import BaseModel
 
@@ -173,7 +173,13 @@ class MindtraceODM(MindtraceABC):
         """
 
     @abstractmethod
-    def find(self, *args, **kwargs) -> list[BaseModel]:
+    def find(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        **kwargs,
+    ) -> list[BaseModel]:
         """
         Find documents matching the specified criteria.
 
@@ -193,6 +199,48 @@ class MindtraceODM(MindtraceABC):
                 # Find all users if no criteria specified
                 all_users = backend.find()
         """
+
+    def insert_one(self, doc: BaseModel | dict):
+        """Insert one document (canonical alias for insert)."""
+        return self.insert(doc)
+
+    def find_one(self, where: dict, **kwargs) -> BaseModel | None:
+        """Find first document matching where.
+
+        Backends should override with native single-doc query.
+        """
+        results = self.find(where=where, limit=1, **kwargs)
+        return results[0] if results else None
+
+    @abstractmethod
+    def update_one(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: Literal["none", "before", "after"] = "none",
+    ) -> Any:
+        """Update exactly one matching document."""
+
+    @abstractmethod
+    def delete_many(self, where: dict) -> int:
+        """Delete all documents matching the filter.
+
+        Returns:
+            int: Number of documents deleted.
+        """
+
+    @abstractmethod
+    def delete_one(self, where: dict) -> int:
+        """Delete exactly one document matching the filter.
+
+        Returns:
+            int: Number of documents deleted (0 or 1).
+        """
+
+    @abstractmethod
+    def distinct(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct values for a field among matching documents."""
 
     @abstractmethod
     def get_raw_model(self) -> Type[BaseModel]:

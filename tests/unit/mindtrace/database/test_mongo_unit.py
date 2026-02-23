@@ -593,7 +593,7 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
                 # Test find_sync from sync context
                 result = backend.find_sync({"name": "John"})
                 assert len(result) == 1
-                mock_find.assert_called_once_with({"name": "John"})
+                mock_find.assert_called_once_with(where={"name": "John"}, sort=None, limit=None)
 
         with patch.object(backend, "initialize", new_callable=AsyncMock) as mock_init:
             # Test initialize_sync from sync context
@@ -1063,13 +1063,13 @@ def test_mongo_backend_update_sync_from_async_context_raises_error():
 
 
 # ============================================================================
-# Tests for find_and_modify (renamed from find_one_and_update)
+# Tests for update_one (replaced find_and_modify)
 # ============================================================================
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_and_modify():
-    """Test find_and_modify returns doc after update by default."""
+async def test_mongo_backend_update_one_return_after():
+    """Test update_one with return_document='after' returns doc after update."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1084,15 +1084,15 @@ async def test_mongo_backend_find_and_modify():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_and_modify(
-            {"name": "obj"}, {"$set": {"value": "new"}}, upsert=True
+        result = await backend.update_one(
+            {"name": "obj"}, {"value": "new"}, upsert=True, return_document="after"
         )
         assert result == updated_doc
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_and_modify_return_old():
-    """Test find_and_modify with return_old=True returns doc before update."""
+async def test_mongo_backend_update_one_return_before():
+    """Test update_one with return_document='before' returns doc before update."""
     from pymongo import ReturnDocument
 
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
@@ -1111,16 +1111,16 @@ async def test_mongo_backend_find_and_modify_return_old():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_and_modify(
-            {"name": "obj"}, {"$set": {"value": "new"}}, return_old=True
+        result = await backend.update_one(
+            {"name": "obj"}, {"value": "new"}, return_document="before"
         )
         assert result == old_doc
         assert captured_kwargs["return_document"] == ReturnDocument.BEFORE
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_find_and_modify_no_match():
-    """Test find_and_modify returns None when no match and no upsert."""
+async def test_mongo_backend_update_one_no_match():
+    """Test update_one returns None when no match and no upsert."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1134,14 +1134,14 @@ async def test_mongo_backend_find_and_modify_no_match():
     mock_collection.find_one_and_update = mock_find_one_and_update
 
     with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
-        result = await backend.find_and_modify(
-            {"name": "nonexistent"}, {"$set": {"value": "new"}}
+        result = await backend.update_one(
+            {"name": "nonexistent"}, {"value": "new"}, return_document="after"
         )
         assert result is None
 
 
-def test_mongo_backend_find_and_modify_sync():
-    """Test find_and_modify_sync delegates correctly."""
+def test_mongo_backend_update_one_sync():
+    """Test update_one_sync delegates correctly."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1149,8 +1149,8 @@ def test_mongo_backend_find_and_modify_sync():
 
     updated_doc = {"_id": "1", "name": "obj", "value": "new"}
 
-    with patch.object(backend, "find_and_modify", new_callable=AsyncMock, return_value=updated_doc):
-        result = backend.find_and_modify_sync(
-            {"name": "obj"}, {"$set": {"value": "new"}}, upsert=True, return_old=True
+    with patch.object(backend, "update_one", new_callable=AsyncMock, return_value=updated_doc):
+        result = backend.update_one_sync(
+            {"name": "obj"}, {"value": "new"}, upsert=True, return_document="before"
         )
         assert result == updated_doc

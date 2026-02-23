@@ -2326,7 +2326,7 @@ async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_o
 
         result = await unified_backend_redis_only.find_async({"name": "John"})
         assert len(result) == 1
-        mock_redis_backend.find.assert_called_once_with({"name": "John"})
+        mock_redis_backend.find.assert_called_once_with(where={"name": "John"}, sort=None, limit=None)
 
 
 @pytest.mark.asyncio

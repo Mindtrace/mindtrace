@@ -1,22 +1,18 @@
 """DB+GCP hybrid registry backend.
 
-Delegates metadata/catalogue operations to MongoDB (via mindtrace-database)
-and artifact (blob) operations to GCS (via mindtrace-storage).
+Delegates metadata/catalogue operations to a DB backend (MongoDB/Redis via
+mindtrace-database) and artifact (blob) operations to GCS.
 
 Requires the ``db`` extra: ``pip install mindtrace-registry[db]``
 """
 
-import json
 import uuid as _uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pymongo import ASCENDING, IndexModel, UpdateOne
-
-from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
-from mindtrace.database.backends.unified_odm import UnifiedMindtraceDocument
+from mindtrace.database.backends.unified_odm import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
 from mindtrace.database.core.exceptions import DuplicateInsertError
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
@@ -27,7 +23,7 @@ from mindtrace.registry.backends.registry_backend import (
 )
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import CleanupState, OnConflict, OpResult, OpResults
-from mindtrace.storage import GCSStorageHandler, Status
+from mindtrace.storage import GCSStorageHandler
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Document Models
@@ -47,6 +43,7 @@ class RegistryObjectMeta(UnifiedMindtraceDocument):
         collection_name = "registry_object_metadata"
         indexed_fields = ["registry_uri", "name"]
         compound_indexes = [{"fields": ["registry_uri", "name", "version"], "unique": True}]
+        natural_key_fields = ["registry_uri", "name", "version"]
 
 
 class RegistryMeta(UnifiedMindtraceDocument):
@@ -58,6 +55,7 @@ class RegistryMeta(UnifiedMindtraceDocument):
     class Meta:
         collection_name = "registry_metadata"
         unique_fields = ["registry_uri"]
+        natural_key_fields = ["registry_uri"]
 
 
 class RegistryCommitPlan(UnifiedMindtraceDocument):
@@ -71,7 +69,8 @@ class RegistryCommitPlan(UnifiedMindtraceDocument):
 
     class Meta:
         collection_name = "registry_commit_plans"
-        indexed_fields = ["registry_uri", "expires_at"]
+        indexed_fields = ["registry_uri", "expires_at"] # mongo
+        natural_key_fields = ["registry_uri", "name", "version", "uuid"] # redis
 
 
 class RegistryObjectBlob(UnifiedMindtraceDocument):
@@ -87,6 +86,22 @@ class RegistryObjectBlob(UnifiedMindtraceDocument):
         collection_name = "registry_object_blobs"
         indexed_fields = ["uuid"]
         compound_indexes = [{"fields": ["registry_uri", "name", "version", "uuid"], "unique": True}]
+        natural_key_fields = ["registry_uri", "name", "version", "uuid"]
+
+
+class RegistryMaterializer(UnifiedMindtraceDocument):
+    """Stores materializer mappings in a DB-atomic, concurrency-safe form."""
+
+    registry_uri: str
+    object_class: str
+    materializer_class: str
+    updated_at: Optional[datetime] = None
+
+    class Meta:
+        collection_name = "registry_materializers"
+        indexed_fields = ["registry_uri"]
+        compound_indexes = [{"fields": ["registry_uri", "object_class"], "unique": True}]
+        natural_key_fields = ["registry_uri", "object_class"]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -95,25 +110,8 @@ class RegistryObjectBlob(UnifiedMindtraceDocument):
 
 
 class GCPDBRegistryBackend(RegistryBackend):
-    """Hybrid backend: MongoDB for metadata, GCS for blobs.
-
-    Constructor mirrors ``GCPRegistryBackend`` with additional ``db_uri``
-    and ``db_name`` parameters for the MongoDB connection.
-
-    Usage::
-
-        from mindtrace.registry import Registry
-        from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
-
-        backend = GCPDBRegistryBackend(
-            uri="gs://my-bucket/prefix",
-            project_id="my-project",
-            bucket_name="my-bucket",
-            credentials_path="/path/to/creds.json",
-            db_uri="mongodb://localhost:27017",
-            db_name="mindtrace",
-        )
-        registry = Registry(backend=backend)
+    """Hybrid backend: DB for catalogue ops, GCS for blob ops.
+    optional : inline storage for small blobs (metadata + blobs in DB, no GCS for object data)
     """
 
     def __init__(
@@ -124,8 +122,10 @@ class GCPDBRegistryBackend(RegistryBackend):
         bucket_name: str,
         credentials_path: str | None = None,
         prefix: str = "",
-        db_uri: str,
-        db_name: str,
+        db_uri: str | None = None,
+        db_name: str | None = None,
+        redis_url: str | None = None,
+        preferred_db_backend: BackendType | str = BackendType.MONGO,
         max_workers: int = 4,
         lock_timeout: int = 5,
         allow_index_dropping: bool = False,
@@ -140,6 +140,13 @@ class GCPDBRegistryBackend(RegistryBackend):
         self._registry_uri_key = str(self._uri)
         self._inline_threshold = inline_threshold_bytes
 
+        if isinstance(preferred_db_backend, str):
+            preferred_db_backend = BackendType(preferred_db_backend.lower())
+        if (db_uri is None) ^ (db_name is None):
+            raise ValueError("db_uri and db_name must be provided together")
+        if db_uri is None and redis_url is None:
+            raise ValueError("At least one database backend must be configured (MongoDB or Redis)")
+
         # ── GCS (blobs only) ────────────────────────────────────────────────
         self.gcs = GCSStorageHandler(
             bucket_name=bucket_name,
@@ -149,31 +156,30 @@ class GCPDBRegistryBackend(RegistryBackend):
             create_if_missing=True,
         )
 
-        # ── MongoDB (metadata) ──────────────────────────────────────────────
-        obj_meta_model = RegistryObjectMeta._auto_generate_mongo_model()
-        reg_meta_model = RegistryMeta._auto_generate_mongo_model()
-        commit_plan_model = RegistryCommitPlan._auto_generate_mongo_model()
-        blob_model = RegistryObjectBlob._auto_generate_mongo_model()
-
-        self._db = MongoMindtraceODM(
-            models={
-                "obj_meta": obj_meta_model,
-                "reg_meta": reg_meta_model,
-                "commit_plan": commit_plan_model,
-                "obj_blob": blob_model,
+        # ── Unified ODM (Mongo and/or Redis) ────────────────────────────────
+        self._db = UnifiedMindtraceODM(
+            unified_models={
+                "obj_meta": RegistryObjectMeta,
+                "reg_meta": RegistryMeta,
+                "commit_plan": RegistryCommitPlan,
+                "obj_blob": RegistryObjectBlob,
+                "materializer_meta": RegistryMaterializer,
             },
-            db_uri=db_uri,
-            db_name=db_name,
+            mongo_db_uri=db_uri,
+            mongo_db_name=db_name,
+            redis_url=redis_url,
+            preferred_backend=preferred_db_backend,
             allow_index_dropping=allow_index_dropping,
             auto_init=False,
         )
         self._db.initialize_sync(allow_index_dropping=allow_index_dropping)
 
         # Expose sub-ODMs for convenience
-        self._obj_meta: MongoMindtraceODM = self._db.obj_meta
-        self._reg_meta: MongoMindtraceODM = self._db.reg_meta
-        self._commit_plan: MongoMindtraceODM = self._db.commit_plan
-        self._obj_blob: MongoMindtraceODM = self._db.obj_blob
+        self._obj_meta: UnifiedMindtraceODM = self._db.obj_meta
+        self._reg_meta: UnifiedMindtraceODM = self._db.reg_meta
+        self._commit_plan: UnifiedMindtraceODM = self._db.commit_plan
+        self._obj_blob: UnifiedMindtraceODM = self._db.obj_blob
+        self._materializer_meta: UnifiedMindtraceODM = self._db.materializer_meta
 
         # Ensure registry metadata doc exists
         self._ensure_registry_metadata()
@@ -199,17 +205,19 @@ class GCPDBRegistryBackend(RegistryBackend):
         return self._prefixed(f"objects/{name}/{version}/{uuid_str}")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # MongoDB Helpers
+    # DB Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
     def _ensure_registry_metadata(self):
-        """Ensure a registry metadata doc exists in MongoDB."""
-        docs = self._reg_meta.find_sync({"registry_uri": self._registry_uri_key})
+        """Ensure a registry metadata doc exists in the active DB."""
+        docs = self._reg_meta.find(where={"registry_uri": self._registry_uri_key}, limit=1)
         if not docs:
             try:
-                self._reg_meta.insert_sync({"registry_uri": self._registry_uri_key, "metadata": {"materializers": {}}})
+                self._reg_meta.insert_one(
+                    {"registry_uri": self._registry_uri_key, "metadata": {"materializers": {}}}
+                )
             except DuplicateInsertError:
-                pass 
+                pass
 
     def _query_filter(self, **extra) -> dict:
         """Build a query filter scoped to this registry."""
@@ -250,7 +258,7 @@ class GCPDBRegistryBackend(RegistryBackend):
 
     def _create_commit_plan(self, name: str, version: str, uuid_str: str) -> bool:
         try:
-            self._commit_plan.insert_sync({
+            self._commit_plan.insert_one({
                 "registry_uri": self._registry_uri_key,
                 "name": name,
                 "version": version,
@@ -264,9 +272,7 @@ class GCPDBRegistryBackend(RegistryBackend):
 
     def _delete_commit_plan(self, name: str, version: str, uuid_str: str) -> bool:
         try:
-            self._commit_plan.delete_where_sync(
-                self._query_filter(name=name, version=version, uuid=uuid_str)
-            )
+            self._commit_plan.delete_one(where=self._query_filter(name=name, version=version, uuid=uuid_str))
             return True
         except Exception:
             return False
@@ -294,10 +300,15 @@ class GCPDBRegistryBackend(RegistryBackend):
             self.logger.warning(f"Failed to delete UUID folder {folder_prefix}: {e}")
             return False
 
-    def _attempt_rollback(self, name: str, version: str, uuid_str: str) -> bool:
-        blob_deleted = self._obj_blob.delete_where_sync({"uuid": uuid_str}) > 0
-        gcs_deleted = False if blob_deleted else self._delete_uuid_folder(name, version, uuid_str)
-        cleanup_ok = blob_deleted or gcs_deleted
+    def _attempt_rollback(self, name: str, version: str, uuid_str: str, is_inline: bool | None = None) -> bool:
+        if is_inline is True:
+            cleanup_ok = self._obj_blob.delete_one(where=self._query_filter(name=name, version=version, uuid=uuid_str)) > 0
+        elif is_inline is False:
+            cleanup_ok = self._delete_uuid_folder(name, version, uuid_str)
+        else:
+            # Unknown storage type — try both
+            blob_deleted = self._obj_blob.delete_one(where=self._query_filter(name=name, version=version, uuid=uuid_str)) > 0
+            cleanup_ok = blob_deleted or self._delete_uuid_folder(name, version, uuid_str)
         if cleanup_ok:
             self._delete_commit_plan(name, version, uuid_str)
         return cleanup_ok
@@ -312,10 +323,12 @@ class GCPDBRegistryBackend(RegistryBackend):
         """Delete old data (inline blob or GCS folder) after an overwrite commit.
 
         Returns True if data was actually cleaned up, False if nothing was found.
-        delete_where_sync returns deleted count (0 = nothing found, never raises).
+        delete_one returns deleted count (0 = not found, never raises).
         """
         if old_storage.get("inline"):
-            return self._obj_blob.delete_where_sync({"uuid": old_uuid}) > 0
+            return self._obj_blob.delete_one(
+                where=self._query_filter(name=obj_name, version=obj_version, uuid=old_uuid)
+            ) > 0
         else:
             return self._delete_uuid_folder(obj_name, obj_version, old_uuid, old_files)
 
@@ -334,9 +347,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         try:
             # Step 1: SKIP early-exit
             if not is_overwrite:
-                existing = self._obj_meta.find_sync(
-                    self._query_filter(name=obj_name, version=obj_version)
-                )
+                existing = self._obj_meta.find(where=self._query_filter(name=obj_name, version=obj_version), limit=1)
                 if existing:
                     return OpResult.skipped(obj_name, obj_version, cleanup=CleanupState.NOT_APPLICABLE)
 
@@ -356,7 +367,7 @@ class GCPDBRegistryBackend(RegistryBackend):
             # Step 3-4: Write data (diverges by storage type)
             if is_inline:
                 blob_data = self._encode_inline_data(obj_path, files_manifest)
-                self._obj_blob.insert_sync({
+                self._obj_blob.insert_one({
                     "registry_uri": self._registry_uri_key,
                     "name": obj_name, "version": obj_version,
                     "uuid": uuid_str, "blob_data": blob_data,
@@ -375,7 +386,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 if files:
                     batch_result = self.gcs.upload_batch(files, fail_if_exists=False, max_workers=max_workers)
                     if batch_result.failed_results:
-                        rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                        rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str, is_inline=False)
                         first_error = batch_result.failed_results[0]
                         return OpResult.failed(
                             obj_name, obj_version,
@@ -399,14 +410,14 @@ class GCPDBRegistryBackend(RegistryBackend):
 
             # Step 6: Write metadata to MongoDB (the "commit point")
             if is_overwrite:
-                old_doc = self._obj_meta.find_and_modify_sync(
+                old_doc = self._obj_meta.update_one(
                     {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
-                    {"$set": {
+                    {
                         "metadata": prepared_meta,
                         "created_at": datetime.now(timezone.utc),
-                    }},
+                    },
                     upsert=True,
-                    return_old=True,
+                    return_document="before",
                 )
 
                 # Cleanup old data (old_doc is None on fresh insert)
@@ -425,11 +436,15 @@ class GCPDBRegistryBackend(RegistryBackend):
                     else:
                         cleanup_state = CleanupState.ORPHANED
                     return OpResult.overwritten(obj_name, obj_version, cleanup=cleanup_state)
-                return OpResult.success(obj_name, obj_version, cleanup=CleanupState.UNKNOWN)
+                plan_deleted = self._delete_commit_plan(obj_name, obj_version, uuid_str)
+                cleanup_state = CleanupState.NOT_APPLICABLE if plan_deleted else CleanupState.UNKNOWN
+                if old_doc:
+                    return OpResult.overwritten(obj_name, obj_version, cleanup=cleanup_state)
+                return OpResult.success(obj_name, obj_version, cleanup=cleanup_state)
             else:
                 # SKIP mode: insert — compound unique index rejects duplicates
                 try:
-                    self._obj_meta.insert_sync({
+                    self._obj_meta.insert_one({
                         "registry_uri": self._registry_uri_key,
                         "name": obj_name,
                         "version": obj_version,
@@ -437,7 +452,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                         "created_at": datetime.now(timezone.utc),
                     })
                 except DuplicateInsertError:
-                    rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                    rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str, is_inline=is_inline)
                     return OpResult.skipped(
                         obj_name, obj_version,
                         cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
@@ -449,7 +464,7 @@ class GCPDBRegistryBackend(RegistryBackend):
 
         except Exception as e:
             if uuid_str:
-                rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str)
+                rollback_ok = self._attempt_rollback(obj_name, obj_version, uuid_str, is_inline=is_inline)
                 return OpResult.failed(
                     obj_name, obj_version, e,
                     cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
@@ -565,7 +580,10 @@ class GCPDBRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, uuid_str, dest_path in inline_downloads:
             try:
-                blob_docs = self._obj_blob.find_sync({"uuid": uuid_str})
+                blob_docs = self._obj_blob.find(
+                    where=self._query_filter(name=obj_name, version=obj_version, uuid=uuid_str),
+                    limit=1,
+                )
                 if not blob_docs:
                     raise RegistryObjectNotFound(
                         f"Inline blob for {obj_name}@{obj_version} not found"
@@ -611,16 +629,17 @@ class GCPDBRegistryBackend(RegistryBackend):
 
             if is_inline:
                 # Delete metadata (commit point)
-                self._obj_meta.delete_where_sync(
-                    self._query_filter(name=obj_name, version=obj_version))
-                # Cleanup blob (delete_where_sync returns count, 0 = not found)
-                blob_deleted = self._obj_blob.delete_where_sync({"uuid": uuid_str}) > 0
+                self._obj_meta.delete_one(where=self._query_filter(name=obj_name, version=obj_version))
+                # Cleanup blob (delete_one returns count, 0 = not found)
+                blob_deleted = self._obj_blob.delete_one(
+                    where=self._query_filter(name=obj_name, version=obj_version, uuid=uuid_str)
+                ) > 0
                 self._delete_commit_plan(obj_name, obj_version, uuid_str)
                 cleanup = CleanupState.OK if blob_deleted else CleanupState.ORPHANED
                 return OpResult.success(obj_name, obj_version, cleanup=cleanup)
 
             # GCS path: Delete metadata from MongoDB (the "commit point")
-            self._obj_meta.delete_where_sync(self._query_filter(name=obj_name, version=obj_version))
+            self._obj_meta.delete_one(where=self._query_filter(name=obj_name, version=obj_version))
 
             # Best-effort UUID folder cleanup
             files_manifest = metadata.get("_files")
@@ -698,28 +717,20 @@ class GCPDBRegistryBackend(RegistryBackend):
         results = OpResults()
 
         if on_conflict == OnConflict.OVERWRITE:
-            operations = []
-            for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
-                operations.append(UpdateOne(
-                    {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
-                    {"$set": {
-                        "metadata": obj_meta,
-                        "created_at": datetime.now(timezone.utc),
-                    }},
-                    upsert=True,
-                ))
-
             # Check which ones exist beforehand for overwrite status
             existing_keys = set()
             or_clauses = [{"name": n, "version": v} for n, v in zip(names, versions)]
             if or_clauses:
-                existing_docs = self._obj_meta.find_sync(
-                    {"registry_uri": self._registry_uri_key, "$or": or_clauses}
-                )
+                existing_docs = self._obj_meta.find(where={"registry_uri": self._registry_uri_key, "$or": or_clauses})
                 for doc in existing_docs:
                     existing_keys.add((doc.name, doc.version))
 
-            self._obj_meta.batch_write_sync(operations)
+            for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
+                self._obj_meta.update_one(
+                    {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
+                    {"metadata": obj_meta, "created_at": datetime.now(timezone.utc)},
+                    upsert=True,
+                )
 
             for obj_name, obj_version in zip(names, versions):
                 if (obj_name, obj_version) in existing_keys:
@@ -731,7 +742,7 @@ class GCPDBRegistryBackend(RegistryBackend):
             # index rejects duplicates atomically — no pre-check needed.
             for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
                 try:
-                    self._obj_meta.insert_sync({
+                    self._obj_meta.insert_one({
                         "registry_uri": self._registry_uri_key,
                         "name": obj_name,
                         "version": obj_version,
@@ -762,7 +773,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         if not or_clauses:
             return results
 
-        docs = self._obj_meta.find_sync({"registry_uri": self._registry_uri_key, "$or": or_clauses})
+        docs = self._obj_meta.find(where={"registry_uri": self._registry_uri_key, "$or": or_clauses})
 
         found = set()
         for doc in docs:
@@ -792,12 +803,8 @@ class GCPDBRegistryBackend(RegistryBackend):
         or_clauses = [{"name": n, "version": v} for n, v in zip(names, versions)]
         if or_clauses:
             try:
-                self._obj_meta.delete_where_sync(
-                    {"registry_uri": self._registry_uri_key, "$or": or_clauses}
-                )
-                self._obj_blob.delete_where_sync(
-                    {"registry_uri": self._registry_uri_key, "$or": or_clauses}
-                )
+                where = {"registry_uri": self._registry_uri_key, "$or": or_clauses}
+                self._obj_meta.delete_many(where=where)
             except Exception as e:
                 for n, v in zip(names, versions):
                     results.add(OpResult.failed(n, v, e))
@@ -812,30 +819,47 @@ class GCPDBRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def save_registry_metadata(self, metadata: dict) -> None:
-        self._reg_meta.update_where_sync(
+        metadata_doc = dict(metadata) if metadata else {}
+        materializers = metadata_doc.pop("materializers", None)
+
+        self._reg_meta.update_one(
             {"registry_uri": self._registry_uri_key},
-            {"$set": {"metadata": metadata}},
+            {"metadata": metadata_doc},
             upsert=True,
         )
 
+        if materializers is not None:
+            self._materializer_meta.delete_many(where={"registry_uri": self._registry_uri_key})
+            for obj_cls, mat_cls in materializers.items():
+                self._materializer_meta.update_one(
+                    {"registry_uri": self._registry_uri_key, "object_class": obj_cls},
+                    {"materializer_class": mat_cls, "updated_at": datetime.now(timezone.utc)},
+                    upsert=True,
+                )
+
     def fetch_registry_metadata(self) -> dict:
-        docs = self._reg_meta.find_sync({"registry_uri": self._registry_uri_key})
+        docs = self._reg_meta.find(where={"registry_uri": self._registry_uri_key}, limit=1)
+        metadata: dict = {}
         if docs:
-            return docs[0].metadata
-        return {}
+            metadata = dict(docs[0].metadata or {})
+
+        merged_materializers = metadata.get("materializers", {})
+        if not isinstance(merged_materializers, dict):
+            merged_materializers = {}
+        merged_materializers = dict(merged_materializers)
+
+        for doc in self._materializer_meta.find(where={"registry_uri": self._registry_uri_key}):
+            merged_materializers[doc.object_class] = doc.materializer_class
+
+        metadata["materializers"] = merged_materializers
+        return metadata
 
     # ─────────────────────────────────────────────────────────────────────────
     # Discovery
     # ─────────────────────────────────────────────────────────────────────────
 
     def list_objects(self) -> List[str]:
-        pipeline = [
-            {"$match": {"registry_uri": self._registry_uri_key}},
-            {"$group": {"_id": "$name"}},
-            {"$sort": {"_id": 1}},
-        ]
-        results = self._obj_meta.aggregate_sync(pipeline)
-        return [r["_id"] for r in results]
+        return self._obj_meta.distinct("name", {"registry_uri": self._registry_uri_key})
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
         names = self._to_list(name)
@@ -846,13 +870,12 @@ class GCPDBRegistryBackend(RegistryBackend):
             except ValueError:
                 return [0]
 
-        docs = self._obj_meta.find_sync(
-            {"registry_uri": self._registry_uri_key, "name": {"$in": names}}
-        )
+        docs = self._obj_meta.find(where={"registry_uri": self._registry_uri_key, "name": names})
 
         result: Dict[str, List[str]] = {n: [] for n in names}
         for doc in docs:
-            result[doc.name].append(doc.version)
+            if doc.name in result:
+                result[doc.name].append(doc.version)
 
         for n in names:
             result[n].sort(key=version_key)
@@ -875,7 +898,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         if not or_clauses:
             return results
 
-        docs = self._obj_meta.find_sync({"registry_uri": self._registry_uri_key, "$or": or_clauses})
+        docs = self._obj_meta.find(where={"registry_uri": self._registry_uri_key, "$or": or_clauses})
         found = {(doc.name, doc.version) for doc in docs}
 
         for n, v in zip(names, versions):
@@ -897,21 +920,24 @@ class GCPDBRegistryBackend(RegistryBackend):
         if len(obj_classes) != len(mat_classes):
             raise ValueError("object_class and materializer_class list lengths must match")
 
-        metadata = self.fetch_registry_metadata()
-        if "materializers" not in metadata:
-            metadata["materializers"] = {}
-
         for obj_cls, mat_cls in zip(obj_classes, mat_classes):
-            metadata["materializers"][obj_cls] = mat_cls
-
-        self.save_registry_metadata(metadata)
+            self._materializer_meta.update_one(
+                {"registry_uri": self._registry_uri_key, "object_class": obj_cls},
+                {"materializer_class": mat_cls, "updated_at": datetime.now(timezone.utc)},
+                upsert=True,
+            )
 
     def registered_materializers(
         self,
         object_class: Union[str, None, List[str]] = None,
     ) -> Dict[str, str]:
-        metadata = self.fetch_registry_metadata()
-        all_materializers = metadata.get("materializers", {})
+        all_materializers = {
+            doc.object_class: doc.materializer_class
+            for doc in self._materializer_meta.find(where={"registry_uri": self._registry_uri_key})
+        }
+        if not all_materializers:
+            metadata = self.fetch_registry_metadata()
+            all_materializers = metadata.get("materializers", {})
 
         if object_class is None:
             return all_materializers
