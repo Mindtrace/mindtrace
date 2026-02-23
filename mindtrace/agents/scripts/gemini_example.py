@@ -40,7 +40,7 @@ def add(_ctx: RunContext[None], a: float, b: float) -> float:
 model = GeminiModel(
     model_id="gemini-2.5-flash",
     client_args={
-        "api_key": os.getenv("GEMINI_API_KEY", "AIzaSyDLKxku5eysYGYbJ4sHIYvCpcB8hFNrOLQ"),
+        "api_key": os.getenv("GEMINI_API_KEY", ""),
     },
 )
 
