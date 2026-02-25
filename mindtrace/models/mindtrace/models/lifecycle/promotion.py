@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from mindtrace.models.lifecycle.card import ModelCard
@@ -54,7 +54,7 @@ class PromotionResult:
     model_name: str
     model_version: str
     failed_requirements: dict[str, tuple[float, float]] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
