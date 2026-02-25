@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ class EvalResult:
     value: float
     dataset: str = ""
     split: str = "val"
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe plain dict.
@@ -68,7 +68,7 @@ class EvalResult:
             split=data.get("split", "val"),
             timestamp=datetime.fromisoformat(data["timestamp"])
             if "timestamp" in data
-            else datetime.utcnow(),
+            else datetime.now(timezone.utc),
         )
 
 
@@ -110,7 +110,7 @@ class ModelCard:
     eval_results: list[EvalResult] = field(default_factory=list)
     known_limitations: list[str] = field(default_factory=list)
     description: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -244,7 +244,7 @@ class ModelCard:
         created_at = (
             datetime.fromisoformat(created_at_raw)
             if created_at_raw
-            else datetime.utcnow()
+            else datetime.now(timezone.utc)
         )
         return cls(
             name=data["name"],

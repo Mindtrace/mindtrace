@@ -11,7 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -80,9 +80,9 @@ class TestEvalResult:
         assert result.split == "val"
 
     def test_timestamp_set_on_creation(self):
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         result = EvalResult(metric="acc", value=0.9)
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
         assert before <= result.timestamp <= after
 
     def test_to_dict_roundtrip(self):
