@@ -159,7 +159,7 @@ def test_hf_from_config(tmp_dir: str, verbose: bool):
     t0 = time.time()
     registry = make_registry(tmp_dir)
 
-    config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+    config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
     model = AutoModel.from_config(config)
     model.eval()
 
@@ -255,7 +255,7 @@ def test_peft_lora_bert(tmp_dir: str, verbose: bool):
     registry = make_registry(tmp_dir)
 
     # Create a small base model with random weights
-    config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+    config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
     config.num_labels = 3
     base_model = AutoModelForSequenceClassification.from_config(config)
 
@@ -274,7 +274,7 @@ def test_peft_lora_bert(tmp_dir: str, verbose: bool):
     assert hasattr(model, "peft_config") and model.peft_config, "LoRA adapter not attached"
 
     # Get reference output
-    tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
+    tokenizer = AutoTokenizer.from_pretrained("lyeonii/bert-tiny")
     inputs = tokenizer("mindtrace peft test", return_tensors="pt")
     with torch.no_grad():
         out_orig = model(**inputs).logits
@@ -345,7 +345,7 @@ def test_peft_ia3_bert(tmp_dir: str, verbose: bool):
     t0 = time.time()
     registry = make_registry(tmp_dir)
 
-    config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+    config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
     config.num_labels = 2
     base_model = AutoModelForSequenceClassification.from_config(config)
 
@@ -357,7 +357,7 @@ def test_peft_ia3_bert(tmp_dir: str, verbose: bool):
     model = get_peft_model(base_model, ia3_config)
     model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
+    tokenizer = AutoTokenizer.from_pretrained("lyeonii/bert-tiny")
     inputs = tokenizer("IA3 adapter test", return_tensors="pt")
     with torch.no_grad():
         out_orig = model(**inputs).logits
@@ -422,7 +422,7 @@ def test_peft_no_adapter_passthrough(tmp_dir: str, verbose: bool):
     t0 = time.time()
     registry = make_registry(tmp_dir)
 
-    config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+    config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
     model = AutoModel.from_config(config)
     model.eval()
 
