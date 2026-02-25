@@ -52,7 +52,9 @@ Mindtrace is organized into a layered workspace to support ML components as Pyth
 - `hardware`: Interfaces for cameras, PLCs, scanners, etc.
 - `cluster`: Runtime cluster management, nodes, and workers.
 - `datalake`: Dataset interfaces for HuggingFace and Mindtrace datasets.
-- `models`: Core model definitions and leaderboard utilities.
+- `models`: Full ML lifecycle — serving, tracking (MLflow/WandB), training loop,
+  loss library, backbone/head architectures, evaluation metrics, and model lifecycle
+  management (stages, ModelCard, promotion).
 
 ### **Level 4: Automation**
 - `automation`: Integration of pipelines and orchestration using level 2–3 modules.
