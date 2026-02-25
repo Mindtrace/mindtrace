@@ -44,7 +44,7 @@ class TestArchiverDispatch:
         """A PreTrainedModel should be handled by HuggingFaceModelArchiver."""
         from transformers import AutoConfig, AutoModel
 
-        config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
         model = AutoModel.from_config(config)
 
         materializer = registry._find_materializer(model)
@@ -85,7 +85,7 @@ class TestArchiverDispatch:
         """PreTrainedModel (more specific) should NOT fall through to timm's nn.Module."""
         from transformers import AutoConfig, AutoModel
 
-        config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
         model = AutoModel.from_config(config)
 
         materializer = registry._find_materializer(model)
@@ -142,7 +142,7 @@ class TestArchiverRoundtrip:
         from mindtrace.registry.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
 
         archiver = HuggingFaceModelArchiver(uri=temp_dir)
-        config = AutoConfig.from_pretrained("prajjwal1/bert-tiny")
+        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
         model = AutoModel.from_config(config)
         model.eval()
 
