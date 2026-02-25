@@ -15,7 +15,7 @@ from typing import Any
 from mindtrace.core import TaskSchema
 from mindtrace.services import Service
 
-from mindtrace.models.schemas import (
+from mindtrace.models.serving.schemas import (
     ModelInfo,
     PredictRequest,
     PredictResponse,

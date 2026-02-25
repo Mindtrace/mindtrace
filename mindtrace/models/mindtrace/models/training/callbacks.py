@@ -1,0 +1,380 @@
+"""Training callbacks for the MindTrace ML platform.
+
+This module defines the abstract ``Callback`` base class and a set of concrete
+callback implementations that integrate with the ``Trainer`` training loop.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mindtrace.models.training.trainer import Trainer
+
+logger = logging.getLogger(__name__)
+
+
+class Callback(ABC):
+    """Abstract base class for all training callbacks.
+
+    Subclasses override the hook methods they care about. All hooks receive
+    a reference to the active ``Trainer`` instance so they can inspect or
+    mutate training state (e.g. set ``trainer.stop_training = True``).
+    """
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        """Called once before the first epoch starts.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+        """
+
+    def on_train_end(self, trainer: Trainer) -> None:
+        """Called once after the last epoch finishes (or early stopping).
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+        """
+
+    def on_epoch_begin(self, trainer: Trainer, epoch: int) -> None:
+        """Called at the start of each epoch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index.
+        """
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Called at the end of each epoch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index.
+            logs: Mapping of metric names to their epoch-averaged values.
+        """
+
+    def on_batch_begin(self, trainer: Trainer, batch: int) -> None:
+        """Called at the start of each training batch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            batch: Zero-based batch index within the current epoch.
+        """
+
+    def on_batch_end(self, trainer: Trainer, batch: int, loss: float) -> None:
+        """Called at the end of each training batch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            batch: Zero-based batch index within the current epoch.
+            loss: The scalar loss value for this batch.
+        """
+
+
+class ModelCheckpoint(Callback):
+    """Saves the model to a registry whenever a monitored metric improves.
+
+    The checkpoint key written to the registry is formatted as
+    ``"{model_name}:{version_prefix}{epoch}"``.
+
+    Attributes:
+        best_value: Best observed value of the monitored metric so far.
+        last_saved_key: The registry key of the most recently saved checkpoint.
+
+    Example::
+
+        checkpoint = ModelCheckpoint(
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
+            save_best_only=True,
+            model_name="resnet50",
+            version_prefix="v",
+        )
+        trainer.fit(train_loader, val_loader, epochs=10, callbacks=[checkpoint])
+    """
+
+    def __init__(
+        self,
+        registry: Any,
+        monitor: str = "val/loss",
+        mode: str = "min",
+        save_best_only: bool = True,
+        model_name: str = "checkpoint",
+        version_prefix: str = "v",
+    ) -> None:
+        """Initialise the checkpoint callback.
+
+        Args:
+            registry: A ``Registry`` instance exposing a ``save(name, obj)``
+                method.
+            monitor: Name of the metric to monitor (must appear in the
+                ``logs`` dict passed to ``on_epoch_end``).
+            mode: ``"min"`` if lower is better (e.g. loss), ``"max"`` if
+                higher is better (e.g. accuracy, IoU).
+            save_best_only: When ``True`` only saves when the metric improves.
+                When ``False`` saves every epoch regardless.
+            model_name: Base name used when constructing the registry key.
+            version_prefix: String prepended to the epoch number in the
+                registry key (e.g. ``"v"`` → ``"resnet50:v3"``).
+
+        Raises:
+            ValueError: If *mode* is not ``"min"`` or ``"max"``.
+        """
+        if mode not in ("min", "max"):
+            raise ValueError(f"mode must be 'min' or 'max', got '{mode}'")
+
+        self.registry = registry
+        self.monitor = monitor
+        self.mode = mode
+        self.save_best_only = save_best_only
+        self.model_name = model_name
+        self.version_prefix = version_prefix
+
+        self.best_value: float = math.inf if mode == "min" else -math.inf
+        self.last_saved_key: str | None = None
+
+    def _is_improvement(self, current: float) -> bool:
+        """Return ``True`` if *current* is better than ``self.best_value``."""
+        if self.mode == "min":
+            return current < self.best_value
+        return current > self.best_value
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Conditionally save the model based on the monitored metric.
+
+        Args:
+            trainer: The active ``Trainer`` instance; ``trainer.model`` is
+                the object passed to ``registry.save``.
+            epoch: Zero-based epoch index used to construct the registry key.
+            logs: Metric dict from the completed epoch.
+        """
+        current = logs.get(self.monitor)
+        if current is None:
+            logger.warning(
+                "ModelCheckpoint: monitored metric '%s' not found in logs %s. "
+                "Skipping checkpoint.",
+                self.monitor,
+                list(logs.keys()),
+            )
+            return
+
+        improved = self._is_improvement(current)
+
+        if self.save_best_only and not improved:
+            return
+
+        if improved:
+            self.best_value = current
+
+        key = f"{self.model_name}:{self.version_prefix}{epoch}"
+        try:
+            self.registry.save(key, trainer.model)
+            self.last_saved_key = key
+            logger.info(
+                "ModelCheckpoint: saved '%s' (epoch=%d, %s=%.6f).",
+                key,
+                epoch,
+                self.monitor,
+                current,
+            )
+        except Exception as exc:
+            logger.error(
+                "ModelCheckpoint: failed to save '%s': %s",
+                key,
+                exc,
+                exc_info=True,
+            )
+
+
+class EarlyStopping(Callback):
+    """Stops training when a monitored metric stops improving.
+
+    After ``patience`` epochs without improvement the callback sets
+    ``trainer.stop_training = True``, which causes the ``Trainer.fit`` loop
+    to exit after completing the current epoch.
+
+    Attributes:
+        best_value: Best observed value of the monitored metric so far.
+        wait: Number of consecutive epochs without improvement.
+        stopped_epoch: The epoch at which training was stopped, or ``-1`` if
+            training completed normally.
+
+    Example::
+
+        early_stop = EarlyStopping(monitor="val/loss", patience=5, mode="min")
+        trainer.fit(train_loader, val_loader, epochs=100, callbacks=[early_stop])
+    """
+
+    def __init__(
+        self,
+        monitor: str = "val/loss",
+        patience: int = 10,
+        mode: str = "min",
+        min_delta: float = 1e-4,
+    ) -> None:
+        """Initialise early stopping.
+
+        Args:
+            monitor: Metric name to monitor (must appear in epoch logs).
+            patience: Number of epochs with no improvement before stopping.
+            mode: ``"min"`` if lower is better, ``"max"`` if higher is better.
+            min_delta: Minimum change in the monitored quantity to qualify as
+                an improvement.
+
+        Raises:
+            ValueError: If *mode* is not ``"min"`` or ``"max"``.
+        """
+        if mode not in ("min", "max"):
+            raise ValueError(f"mode must be 'min' or 'max', got '{mode}'")
+
+        self.monitor = monitor
+        self.patience = patience
+        self.mode = mode
+        self.min_delta = min_delta
+
+        self.best_value: float = math.inf if mode == "min" else -math.inf
+        self.wait: int = 0
+        self.stopped_epoch: int = -1
+
+    def _is_improvement(self, current: float) -> bool:
+        """Return ``True`` if *current* exceeds the threshold for improvement."""
+        if self.mode == "min":
+            return current < self.best_value - self.min_delta
+        return current > self.best_value + self.min_delta
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        """Reset internal state at the start of a training run.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+        """
+        self.best_value = math.inf if self.mode == "min" else -math.inf
+        self.wait = 0
+        self.stopped_epoch = -1
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Check for improvement and potentially stop training.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index.
+            logs: Metric dict from the completed epoch.
+        """
+        current = logs.get(self.monitor)
+        if current is None:
+            logger.warning(
+                "EarlyStopping: monitored metric '%s' not found in logs %s.",
+                self.monitor,
+                list(logs.keys()),
+            )
+            return
+
+        if self._is_improvement(current):
+            self.best_value = current
+            self.wait = 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.stopped_epoch = epoch
+                trainer.stop_training = True
+                logger.info(
+                    "EarlyStopping: stopping at epoch %d. "
+                    "No improvement in '%s' for %d epochs (best=%.6f).",
+                    epoch,
+                    self.monitor,
+                    self.patience,
+                    self.best_value,
+                )
+
+
+class LRMonitor(Callback):
+    """Logs the current learning rate each epoch.
+
+    When a tracker is supplied the LR is also forwarded via
+    ``tracker.log({"train/lr": lr}, step=epoch)``.
+
+    Example::
+
+        lr_monitor = LRMonitor(tracker=wandb_tracker)
+        trainer.fit(train_loader, epochs=50, callbacks=[lr_monitor])
+    """
+
+    def __init__(self, tracker: Any | None = None) -> None:
+        """Initialise the LR monitor.
+
+        Args:
+            tracker: An optional tracker instance (e.g. a
+                ``mindtrace.models.tracking.Tracker``) with a
+                ``log(metrics, step)`` method.  If ``None`` only Python
+                logging is used.
+        """
+        self.tracker = tracker
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Read and log the learning rate for the completed epoch.
+
+        Args:
+            trainer: The active ``Trainer`` instance; ``trainer.optimizer``
+                must expose ``param_groups``.
+            epoch: Zero-based epoch index used as the step value when logging
+                to the tracker.
+            logs: Metric dict (not modified by this callback).
+        """
+        try:
+            lr: float = trainer.optimizer.param_groups[0]["lr"]
+        except (AttributeError, IndexError, KeyError) as exc:
+            logger.warning("LRMonitor: could not read learning rate: %s", exc)
+            return
+
+        logger.debug("LRMonitor: epoch=%d lr=%.2e", epoch, lr)
+
+        if self.tracker is not None:
+            try:
+                self.tracker.log({"train/lr": lr}, step=epoch)
+            except Exception as exc:
+                logger.warning("LRMonitor: tracker.log failed: %s", exc)
+
+
+class ProgressLogger(Callback):
+    """Logs a human-readable epoch summary at INFO level.
+
+    Example output::
+
+        Epoch 3/20 — train/loss=0.4321  val/loss=0.5678  val/acc=0.8901
+
+    Example::
+
+        progress = ProgressLogger()
+        trainer.fit(train_loader, val_loader, epochs=20, callbacks=[progress])
+    """
+
+    def __init__(self) -> None:
+        """Initialise the progress logger, storing total epochs once known."""
+        self._total_epochs: int = 0
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        """Cache the total number of epochs for display purposes.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+        """
+        self._total_epochs = getattr(trainer, "_total_epochs", 0)
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Emit an INFO-level summary of the completed epoch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index.
+            logs: Metric dict from the completed epoch.
+        """
+        total = self._total_epochs or "?"
+        # Build a sorted metric string for consistent, readable output.
+        metrics_str = "  ".join(
+            f"{k}={v:.4f}" for k, v in sorted(logs.items())
+        )
+        logger.info("Epoch %d/%s — %s", epoch + 1, total, metrics_str)
