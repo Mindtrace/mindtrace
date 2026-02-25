@@ -36,9 +36,9 @@ class Version:
     """
 
     parts: Tuple[int, ...]
-    digits: int = field(compare=False)
+    digits: int = field(default=3, compare=False)
 
-    def __init__(self, value: str, digits: int):
+    def __init__(self, value: str, digits: int = 3):
         if digits < 1:
             raise ValueError(f"digits must be >= 1, got {digits}")
         object.__setattr__(self, "digits", digits)

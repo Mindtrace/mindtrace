@@ -230,7 +230,7 @@ class _RegistryCore(Mindtrace):
             ValueError: If explicit version format is invalid.
         """
         if not self.version_objects:
-            return "1"
+            return str(Version("1", digits=self.version_digits))
 
         if version is None or version == "latest":
             resolved = self._latest(name)
@@ -824,7 +824,7 @@ class _RegistryCore(Mindtrace):
         if version is None:
             # Delete all versions
             if not self.version_objects:
-                versions_to_delete = ["1"]
+                versions_to_delete = [str(Version("1", digits=self.version_digits))]
             else:
                 versions_to_delete = self.list_versions(name)
                 if not versions_to_delete:
@@ -872,7 +872,7 @@ class _RegistryCore(Mindtrace):
 
             if v is None:
                 # Delete all versions
-                all_versions = ["1"] if not self.version_objects else self.list_versions(n)
+                all_versions = [str(Version("1", digits=self.version_digits))] if not self.version_objects else self.list_versions(n)
                 if not all_versions:
                     result.errors[original_key] = {
                         "error": "RegistryObjectNotFound",
@@ -1342,7 +1342,7 @@ class _RegistryCore(Mindtrace):
             Next version string
         """
         if not self.version_objects:
-            return "1"
+            return str(Version("1", digits=self.version_digits))
 
         most_recent = self._latest(name)
         if most_recent is None:
