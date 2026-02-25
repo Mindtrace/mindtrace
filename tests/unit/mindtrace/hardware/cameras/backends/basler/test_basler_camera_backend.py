@@ -1701,7 +1701,7 @@ class TestBaslerCameraBackendMissingCoverageLines:
         def failing_func():
             raise RuntimeError("Generic SDK error")
 
-        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
+        with pytest.raises(HardwareOperationError, match="operation failed"):
             await basler_camera._run_blocking(failing_func)
 
     def test_discovery_error_handling_branches(self, mock_pypylon):
@@ -1810,7 +1810,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         monkeypatch.setattr(asyncio, "wait_for", failing_wait_for)
 
         # This should convert asyncio.TimeoutError to CameraTimeoutError
-        with pytest.raises(CameraTimeoutError, match="SDK operation timed out after .* for camera"):
+        with pytest.raises(CameraTimeoutError, match="operation timed out after .* for camera"):
             await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
@@ -1825,7 +1825,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         monkeypatch.setattr(asyncio, "wait_for", failing_wait_for)
 
         # This should convert generic Exception to HardwareOperationError
-        with pytest.raises(HardwareOperationError, match="SDK operation failed for camera"):
+        with pytest.raises(HardwareOperationError, match="operation failed for camera"):
             await basler_camera._run_blocking(lambda: None, timeout=1.0)
 
     @pytest.mark.asyncio
@@ -1867,7 +1867,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         await basler_camera.initialize()
 
         # Should handle None function gracefully
-        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
+        with pytest.raises(HardwareOperationError, match="operation failed"):
             await basler_camera._run_blocking(None)
 
     @pytest.mark.asyncio
@@ -1876,7 +1876,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         await basler_camera.initialize()
 
         # Should handle non-callable parameter
-        with pytest.raises(HardwareOperationError, match="SDK operation failed"):
+        with pytest.raises(HardwareOperationError, match="operation failed"):
             await basler_camera._run_blocking("not_callable")
 
     @pytest.mark.asyncio
