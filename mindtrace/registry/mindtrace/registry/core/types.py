@@ -17,6 +17,79 @@ VERSION_PENDING = "pending"  # Placeholder for version not yet assigned
 ERROR_UNKNOWN = "UnknownError"  # Fallback error type when error info unavailable
 
 
+@dataclass(frozen=True, order=True)
+class Version:
+    """Canonical numeric version with fixed-width digits.
+
+    A ``Version`` is initialized from a version string (e.g. ``"1"`` or ``"1.2"``)
+    and a fixed ``digits`` width for its registry context.
+
+    Examples:
+        Version("1", digits=3) == Version("1.0", digits=3) == Version("1.0.0", digits=3)
+        str(Version("1.0", digits=3)) == "1.0.0"
+
+    Notes:
+        - Optional ``v`` prefix is accepted (e.g. ``"v1.2"``).
+        - Number of components must be between 1 and ``digits`` (inclusive).
+        - All components must be non-negative integers.
+        - Versions with more than ``digits`` components are rejected.
+    """
+
+    parts: Tuple[int, ...]
+    digits: int = field(compare=False)
+
+    def __init__(self, value: str, digits: int):
+        if digits < 1:
+            raise ValueError(f"digits must be >= 1, got {digits}")
+        object.__setattr__(self, "digits", digits)
+        object.__setattr__(self, "parts", self._parse(value, digits))
+
+    @classmethod
+    def _parse(cls, value: str, digits: int) -> Tuple[int, ...]:
+        if value is None:
+            raise ValueError("Version cannot be None")
+
+        raw = value.strip()
+        if not raw:
+            raise ValueError("Version cannot be empty")
+
+        if raw.startswith("v"):
+            raw = raw[1:]
+
+        components = raw.split(".")
+        if len(components) < 1 or len(components) > digits:
+            raise ValueError(
+                f"Invalid version string '{value}'. Expected between 1 and {digits} numeric components."
+            )
+
+        try:
+            parsed = tuple(int(component) for component in components)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid version string '{value}'. Expected numeric components like '1.0.0'."
+            ) from exc
+
+        if any(component < 0 for component in parsed):
+            raise ValueError(f"Invalid version string '{value}'. Components must be non-negative integers.")
+
+        if len(parsed) < digits:
+            parsed = parsed + (0,) * (digits - len(parsed))
+
+        return parsed
+
+    @property
+    def normalized(self) -> str:
+        return ".".join(str(component) for component in self.parts)
+
+    def bump(self) -> "Version":
+        components = list(self.parts)
+        components[-1] += 1
+        return Version(".".join(str(component) for component in components), digits=self.digits)
+
+    def __str__(self) -> str:
+        return self.normalized
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Enums
 # ─────────────────────────────────────────────────────────────────────────────
