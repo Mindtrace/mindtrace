@@ -33,3 +33,15 @@ __all__ = [
 ]
 
 register_default_materializers()
+
+# ML framework archivers — imported AFTER register_default_materializers() so that
+# our custom archivers take precedence over ZenML defaults during MRO-based dispatch.
+# Each module guards its optional dependency with try/except, so importing is safe
+# even when the ML library is not installed; the registration simply becomes a no-op.
+import mindtrace.registry.archivers.huggingface.hf_model_archiver  # noqa: E402, F401
+import mindtrace.registry.archivers.onnx.onnx_model_archiver  # noqa: E402, F401
+import mindtrace.registry.archivers.tensorrt.tensorrt_engine_archiver  # noqa: E402, F401
+
+if check_libs(["torch"]) == []:
+    # timm archiver has an unguarded `import torch` at module level
+    import mindtrace.registry.archivers.timm.timm_model_archiver  # noqa: F401
