@@ -9214,9 +9214,37 @@ error management.</p>
 
         <p>Abstract base class for all camera implementations.</p>
 <p>This class defines the async interface that all camera backends must implement
-to ensure consistent behavior across different camera types and manufacturers.
-Uses async-first design consistent with PLC backends.</p>
+to ensure consistent behavior across different camera types and manufacturers.</p>
 
+
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>Backends declare their threading requirements via the <code>REQUIRES_THREAD_AFFINITY</code>
+class attribute:</p>
+<ul>
+<li>
+<p>When <code>True</code>, a dedicated single-thread executor is created per camera instance
+  to ensure all SDK calls for that camera execute on the same OS thread. This is
+  required by SDKs like Pypylon and Harvesters that bind camera objects to the
+  thread that opened them.</p>
+</li>
+<li>
+<p>When <code>False</code>, blocking calls are dispatched via <code>asyncio.to_thread()</code> using
+  the default shared thread pool. This is suitable for thread-safe SDKs like OpenCV.</p>
+</li>
+</ul>
+<p>All blocking SDK calls should use the <code>_run_blocking()</code> method, which automatically
+selects the appropriate execution strategy based on <code>REQUIRES_THREAD_AFFINITY</code>.</p>
+</details>
+
+<details class="subclass-requirements" open>
+  <summary>Subclass Requirements</summary>
+  <ul>
+<li>Set <code>REQUIRES_THREAD_AFFINITY = True</code> if the SDK requires thread affinity</li>
+<li>Use <code>_run_blocking()</code> for all SDK calls that may block</li>
+<li>Call <code>await self._cleanup_executor()</code> in <code>close()</code> to release thread resources</li>
+</ul>
+</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -9228,6 +9256,17 @@ Uses async-first design consistent with PLC backends.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.hardware.cameras.CameraBackend.REQUIRES_THREAD_AFFINITY">REQUIRES_THREAD_AFFINITY</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Class attribute indicating thread affinity requirement</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.CameraBackend.camera_name">camera_name</span></code></td>
             <td>
@@ -9304,35 +9343,6 @@ Uses async-first design consistent with PLC backends.</p>
       </tbody>
     </table>
 
-
-<details class="implementation-guide" open>
-  <summary>Implementation Guide</summary>
-  <ul>
-<li>Offload blocking SDK calls from async methods:
-  Use <code>asyncio.to_thread</code> for simple cases or <code>loop.run_in_executor</code> with a per-instance single-thread
-  executor when the SDK requires thread affinity.</li>
-<li>Thread affinity:
-  Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread
-  executor created during <code>initialize()</code> and shut down in <code>close()</code> to serialize SDK access without
-  blocking the event loop.</li>
-<li>Timeouts and cancellation:
-  Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with <code>asyncio.wait_for</code> to
-  bound runtime. Note that cancelling an await does not stop the underlying thread function; design
-  idempotent/short tasks when possible.</li>
-<li>Event loop hygiene:
-  Never call blocking functions (e.g., long SDK calls, <code>time.sleep</code>) directly in async methods. Replace
-  sleeps with <code>await asyncio.sleep</code> or run blocking work in the executor.</li>
-<li>Sync helpers:
-  Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the
-  SDK, route it through the executor to avoid blocking.</li>
-<li>Errors:
-  Map SDK-specific exceptions to the domain exceptions in <code>mindtrace.hardware.core.exceptions</code> with clear,
-  contextual messages.</li>
-<li>Cleanup:
-  Ensure resources (device handles, executors, buffers) are released in <code>close()</code>. <code>__aenter__/__aexit__</code>
-  already call <code>setup_camera</code>/<code>close</code> for async contexts.</li>
-</ul>
-</details>
         <p>Initialize base camera with configuration integration.</p>
 
 
@@ -9846,9 +9856,37 @@ to provide consistent default values and settings across all camera types.</p>
 
         <p>Abstract base class for all camera implementations.</p>
 <p>This class defines the async interface that all camera backends must implement
-to ensure consistent behavior across different camera types and manufacturers.
-Uses async-first design consistent with PLC backends.</p>
+to ensure consistent behavior across different camera types and manufacturers.</p>
 
+
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>Backends declare their threading requirements via the <code>REQUIRES_THREAD_AFFINITY</code>
+class attribute:</p>
+<ul>
+<li>
+<p>When <code>True</code>, a dedicated single-thread executor is created per camera instance
+  to ensure all SDK calls for that camera execute on the same OS thread. This is
+  required by SDKs like Pypylon and Harvesters that bind camera objects to the
+  thread that opened them.</p>
+</li>
+<li>
+<p>When <code>False</code>, blocking calls are dispatched via <code>asyncio.to_thread()</code> using
+  the default shared thread pool. This is suitable for thread-safe SDKs like OpenCV.</p>
+</li>
+</ul>
+<p>All blocking SDK calls should use the <code>_run_blocking()</code> method, which automatically
+selects the appropriate execution strategy based on <code>REQUIRES_THREAD_AFFINITY</code>.</p>
+</details>
+
+<details class="subclass-requirements" open>
+  <summary>Subclass Requirements</summary>
+  <ul>
+<li>Set <code>REQUIRES_THREAD_AFFINITY = True</code> if the SDK requires thread affinity</li>
+<li>Use <code>_run_blocking()</code> for all SDK calls that may block</li>
+<li>Call <code>await self._cleanup_executor()</code> in <code>close()</code> to release thread resources</li>
+</ul>
+</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -9860,6 +9898,17 @@ Uses async-first design consistent with PLC backends.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.hardware.cameras.backends.CameraBackend.REQUIRES_THREAD_AFFINITY">REQUIRES_THREAD_AFFINITY</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Class attribute indicating thread affinity requirement</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.CameraBackend.camera_name">camera_name</span></code></td>
             <td>
@@ -9936,35 +9985,6 @@ Uses async-first design consistent with PLC backends.</p>
       </tbody>
     </table>
 
-
-<details class="implementation-guide" open>
-  <summary>Implementation Guide</summary>
-  <ul>
-<li>Offload blocking SDK calls from async methods:
-  Use <code>asyncio.to_thread</code> for simple cases or <code>loop.run_in_executor</code> with a per-instance single-thread
-  executor when the SDK requires thread affinity.</li>
-<li>Thread affinity:
-  Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread
-  executor created during <code>initialize()</code> and shut down in <code>close()</code> to serialize SDK access without
-  blocking the event loop.</li>
-<li>Timeouts and cancellation:
-  Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with <code>asyncio.wait_for</code> to
-  bound runtime. Note that cancelling an await does not stop the underlying thread function; design
-  idempotent/short tasks when possible.</li>
-<li>Event loop hygiene:
-  Never call blocking functions (e.g., long SDK calls, <code>time.sleep</code>) directly in async methods. Replace
-  sleeps with <code>await asyncio.sleep</code> or run blocking work in the executor.</li>
-<li>Sync helpers:
-  Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the
-  SDK, route it through the executor to avoid blocking.</li>
-<li>Errors:
-  Map SDK-specific exceptions to the domain exceptions in <code>mindtrace.hardware.core.exceptions</code> with clear,
-  contextual messages.</li>
-<li>Cleanup:
-  Ensure resources (device handles, executors, buffers) are released in <code>close()</code>. <code>__aenter__/__aexit__</code>
-  already call <code>setup_camera</code>/<code>close</code> for async contexts.</li>
-</ul>
-</details>
         <p>Initialize base camera with configuration integration.</p>
 
 
@@ -10502,92 +10522,51 @@ if success:
 
 
 
-        <p>Basler Camera Backend Implementation</p>
-<p>This class provides a comprehensive implementation for Basler cameras using the pypylon SDK. It supports advanced
-camera features including trigger modes, exposure control, ROI settings, and image quality enhancement.</p>
+        <p>Basler camera backend using the pypylon SDK.</p>
+<p>This backend provides comprehensive support for Basler cameras including
+hardware triggers, exposure control, ROI settings, and image enhancement.</p>
 
+
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>The pypylon SDK requires thread affinity - all SDK operations for a camera
+must execute on the same OS thread that opened it. This backend uses a
+dedicated single-thread executor per camera instance to satisfy this
+requirement, enabling reliable multi-camera concurrent operations.</p>
+<p>Capture operations are atomic: the entire capture sequence (trigger,
+retrieve, convert) executes as a single blocking call on the dedicated
+thread, preventing thread-switching issues.</p>
+</details>
 
 <details class="features" open>
   <summary>Features</summary>
   <ul>
-<li>Full Basler camera support via pypylon SDK</li>
+<li>Full pypylon SDK integration for USB3 and GigE cameras</li>
 <li>Hardware trigger and continuous capture modes</li>
-<li>ROI (Region of Interest) control</li>
-<li>Automatic exposure and gain control</li>
-<li>Image quality enhancement with CLAHE</li>
-<li>Configuration import/export functionality</li>
-<li>Robust error handling and connection management</li>
+<li>Region of Interest (ROI) control</li>
+<li>Automatic and manual exposure/gain control</li>
+<li>CLAHE image quality enhancement</li>
+<li>Pylon Feature Stream (.pfs) configuration import/export</li>
+<li>Multicast streaming support for GigE cameras</li>
 </ul>
 </details>
 
 <details class="requirements" open>
   <summary>Requirements</summary>
   <ul>
-<li>pypylon SDK (Pylon SDK for Python)</li>
-<li>OpenCV for image processing</li>
 <li>Basler Pylon SDK installed on system</li>
+<li>pypylon package (pip install pypylon)</li>
+<li>OpenCV for image processing</li>
 </ul>
-</details>
-
-<details class="installation" open>
-  <summary>Installation</summary>
-  <ol>
-<li>Install Basler Pylon SDK from manufacturer</li>
-<li>pip install pypylon</li>
-<li>Configure camera permissions (Linux may require udev rules)</li>
-</ol>
-</details>        <p>Usage::</p>
+</details>        <p>Example::</p>
 <div class="language-text highlight"><pre><span></span><code>from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend
 
-# Get available cameras
-cameras = BaslerCameraBackend.get_available_cameras()
-
-# Initialize camera
-camera = BaslerCameraBackend(&quot;camera_name&quot;, img_quality_enhancement=True)
-success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
-
-if success:
-    # Configure and capture
+async with BaslerCameraBackend(&quot;cam1&quot;) as camera:
     await camera.set_exposure(20000)
     await camera.set_triggermode(&quot;continuous&quot;)
     image = await camera.capture()
-    await camera.close()
 </code></pre></div>
 
-
-<details class="configuration" open>
-  <summary>Configuration</summary>
-  <p>All parameters are configurable via the hardware configuration system:
-- MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-- MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-- MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-- MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-- MINDTRACE_CAMERA_BUFFER_COUNT: Number of frame buffers for streaming
-- MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds</p>
-</details>
-
-<details class="supported-camera-models" open>
-  <summary>Supported Camera Models</summary>
-  <ul>
-<li>All Basler USB3 cameras (acA, daA series)</li>
-<li>All Basler GigE cameras (acA, daA series)</li>
-<li>Both monochrome and color variants</li>
-<li>Various resolutions and frame rates</li>
-</ul>
-</details>
-
-<details class="error-handling" open>
-  <summary>Error Handling</summary>
-  <p>The class uses a comprehensive exception hierarchy for precise error reporting:
-- SDKNotAvailableError: pypylon SDK not installed
-- CameraNotFoundError: Camera not detected or accessible
-- CameraInitializationError: Failed to initialize camera
-- CameraConfigurationError: Invalid configuration parameters
-- CameraConnectionError: Connection issues
-- CameraCaptureError: Image acquisition failures
-- CameraTimeoutError: Operation timeout
-- HardwareOperationError: General hardware operation failures</p>
-</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -10600,24 +10579,13 @@ if success:
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.initialized">initialized</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Whether camera was successfully initialized</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.camera">camera</span></code></td>
             <td>
                   <code><span title="typing.Optional">Optional</span>[<span title="typing.Any">Any</span>]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Underlying pypylon camera object</p>
+                <p>Underlying pypylon InstantCamera object</p>
               </div>
             </td>
           </tr>
@@ -10628,16 +10596,6 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Current trigger mode ("continuous" or "trigger")</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.img_quality_enhancement">img_quality_enhancement</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Current image enhancement setting</p>
               </div>
             </td>
           </tr>
@@ -10657,7 +10615,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of frame buffers</p>
+                <p>Number of frame buffers for streaming</p>
               </div>
             </td>
           </tr>
@@ -10667,37 +10625,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Image format converter for pypylon</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.retrieve_retry_count">retrieve_retry_count</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Number of capture retry attempts</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.default_pixel_format">default_pixel_format</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Default pixel format for image conversion</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.camera_config_path">camera_config_path</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Path to camera configuration file</p>
+                <p>Pypylon image format converter</p>
               </div>
             </td>
           </tr>
@@ -10708,6 +10636,16 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Pylon grabbing strategy</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.hardware.cameras.backends.basler.BaslerCameraBackend.multicast_enabled">multicast_enabled</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether multicast streaming is enabled</p>
               </div>
             </td>
           </tr>
@@ -11825,6 +11763,9 @@ It configures the camera using the StreamGrabber interface for multicast streami
         <p>Capture a single image from the camera.</p>
 <p>In continuous mode, returns the latest available frame.
 In trigger mode, executes a software trigger and waits for the image.</p>
+<p>This method runs the entire capture operation atomically on a dedicated
+thread to ensure thread affinity for pypylon SDK calls. This is critical
+for multi-camera concurrent operations.</p>
 
 
     <p><span class="doc-section-title">Returns:</span></p>
@@ -16355,92 +16296,51 @@ await camera.close()
 
 
 
-        <p>Basler Camera Backend Implementation</p>
-<p>This class provides a comprehensive implementation for Basler cameras using the pypylon SDK. It supports advanced
-camera features including trigger modes, exposure control, ROI settings, and image quality enhancement.</p>
+        <p>Basler camera backend using the pypylon SDK.</p>
+<p>This backend provides comprehensive support for Basler cameras including
+hardware triggers, exposure control, ROI settings, and image enhancement.</p>
 
+
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>The pypylon SDK requires thread affinity - all SDK operations for a camera
+must execute on the same OS thread that opened it. This backend uses a
+dedicated single-thread executor per camera instance to satisfy this
+requirement, enabling reliable multi-camera concurrent operations.</p>
+<p>Capture operations are atomic: the entire capture sequence (trigger,
+retrieve, convert) executes as a single blocking call on the dedicated
+thread, preventing thread-switching issues.</p>
+</details>
 
 <details class="features" open>
   <summary>Features</summary>
   <ul>
-<li>Full Basler camera support via pypylon SDK</li>
+<li>Full pypylon SDK integration for USB3 and GigE cameras</li>
 <li>Hardware trigger and continuous capture modes</li>
-<li>ROI (Region of Interest) control</li>
-<li>Automatic exposure and gain control</li>
-<li>Image quality enhancement with CLAHE</li>
-<li>Configuration import/export functionality</li>
-<li>Robust error handling and connection management</li>
+<li>Region of Interest (ROI) control</li>
+<li>Automatic and manual exposure/gain control</li>
+<li>CLAHE image quality enhancement</li>
+<li>Pylon Feature Stream (.pfs) configuration import/export</li>
+<li>Multicast streaming support for GigE cameras</li>
 </ul>
 </details>
 
 <details class="requirements" open>
   <summary>Requirements</summary>
   <ul>
-<li>pypylon SDK (Pylon SDK for Python)</li>
-<li>OpenCV for image processing</li>
 <li>Basler Pylon SDK installed on system</li>
+<li>pypylon package (pip install pypylon)</li>
+<li>OpenCV for image processing</li>
 </ul>
-</details>
-
-<details class="installation" open>
-  <summary>Installation</summary>
-  <ol>
-<li>Install Basler Pylon SDK from manufacturer</li>
-<li>pip install pypylon</li>
-<li>Configure camera permissions (Linux may require udev rules)</li>
-</ol>
-</details>        <p>Usage::</p>
+</details>        <p>Example::</p>
 <div class="language-text highlight"><pre><span></span><code>from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend
 
-# Get available cameras
-cameras = BaslerCameraBackend.get_available_cameras()
-
-# Initialize camera
-camera = BaslerCameraBackend(&quot;camera_name&quot;, img_quality_enhancement=True)
-success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
-
-if success:
-    # Configure and capture
+async with BaslerCameraBackend(&quot;cam1&quot;) as camera:
     await camera.set_exposure(20000)
     await camera.set_triggermode(&quot;continuous&quot;)
     image = await camera.capture()
-    await camera.close()
 </code></pre></div>
 
-
-<details class="configuration" open>
-  <summary>Configuration</summary>
-  <p>All parameters are configurable via the hardware configuration system:
-- MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-- MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-- MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-- MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-- MINDTRACE_CAMERA_BUFFER_COUNT: Number of frame buffers for streaming
-- MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds</p>
-</details>
-
-<details class="supported-camera-models" open>
-  <summary>Supported Camera Models</summary>
-  <ul>
-<li>All Basler USB3 cameras (acA, daA series)</li>
-<li>All Basler GigE cameras (acA, daA series)</li>
-<li>Both monochrome and color variants</li>
-<li>Various resolutions and frame rates</li>
-</ul>
-</details>
-
-<details class="error-handling" open>
-  <summary>Error Handling</summary>
-  <p>The class uses a comprehensive exception hierarchy for precise error reporting:
-- SDKNotAvailableError: pypylon SDK not installed
-- CameraNotFoundError: Camera not detected or accessible
-- CameraInitializationError: Failed to initialize camera
-- CameraConfigurationError: Invalid configuration parameters
-- CameraConnectionError: Connection issues
-- CameraCaptureError: Image acquisition failures
-- CameraTimeoutError: Operation timeout
-- HardwareOperationError: General hardware operation failures</p>
-</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -16453,24 +16353,13 @@ if success:
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.initialized">initialized</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Whether camera was successfully initialized</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.camera">camera</span></code></td>
             <td>
                   <code><span title="typing.Optional">Optional</span>[<span title="typing.Any">Any</span>]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Underlying pypylon camera object</p>
+                <p>Underlying pypylon InstantCamera object</p>
               </div>
             </td>
           </tr>
@@ -16481,16 +16370,6 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Current trigger mode ("continuous" or "trigger")</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.img_quality_enhancement">img_quality_enhancement</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Current image enhancement setting</p>
               </div>
             </td>
           </tr>
@@ -16510,7 +16389,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of frame buffers</p>
+                <p>Number of frame buffers for streaming</p>
               </div>
             </td>
           </tr>
@@ -16520,37 +16399,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Image format converter for pypylon</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.retrieve_retry_count">retrieve_retry_count</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Number of capture retry attempts</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.default_pixel_format">default_pixel_format</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Default pixel format for image conversion</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.camera_config_path">camera_config_path</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Path to camera configuration file</p>
+                <p>Pypylon image format converter</p>
               </div>
             </td>
           </tr>
@@ -16561,6 +16410,16 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Pylon grabbing strategy</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.hardware.cameras.backends.basler.basler_camera_backend.BaslerCameraBackend.multicast_enabled">multicast_enabled</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether multicast streaming is enabled</p>
               </div>
             </td>
           </tr>
@@ -17678,6 +17537,9 @@ It configures the camera using the StreamGrabber interface for multicast streami
         <p>Capture a single image from the camera.</p>
 <p>In continuous mode, returns the latest available frame.
 In trigger mode, executes a software trigger and waits for the image.</p>
+<p>This method runs the entire capture operation atomically on a dedicated
+thread to ensure thread affinity for pypylon SDK calls. This is critical
+for multi-camera concurrent operations.</p>
 
 
     <p><span class="doc-section-title">Returns:</span></p>
@@ -22259,9 +22121,37 @@ await camera.close()
 
         <p>Abstract base class for all camera implementations.</p>
 <p>This class defines the async interface that all camera backends must implement
-to ensure consistent behavior across different camera types and manufacturers.
-Uses async-first design consistent with PLC backends.</p>
+to ensure consistent behavior across different camera types and manufacturers.</p>
 
+
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>Backends declare their threading requirements via the <code>REQUIRES_THREAD_AFFINITY</code>
+class attribute:</p>
+<ul>
+<li>
+<p>When <code>True</code>, a dedicated single-thread executor is created per camera instance
+  to ensure all SDK calls for that camera execute on the same OS thread. This is
+  required by SDKs like Pypylon and Harvesters that bind camera objects to the
+  thread that opened them.</p>
+</li>
+<li>
+<p>When <code>False</code>, blocking calls are dispatched via <code>asyncio.to_thread()</code> using
+  the default shared thread pool. This is suitable for thread-safe SDKs like OpenCV.</p>
+</li>
+</ul>
+<p>All blocking SDK calls should use the <code>_run_blocking()</code> method, which automatically
+selects the appropriate execution strategy based on <code>REQUIRES_THREAD_AFFINITY</code>.</p>
+</details>
+
+<details class="subclass-requirements" open>
+  <summary>Subclass Requirements</summary>
+  <ul>
+<li>Set <code>REQUIRES_THREAD_AFFINITY = True</code> if the SDK requires thread affinity</li>
+<li>Use <code>_run_blocking()</code> for all SDK calls that may block</li>
+<li>Call <code>await self._cleanup_executor()</code> in <code>close()</code> to release thread resources</li>
+</ul>
+</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -22273,6 +22163,17 @@ Uses async-first design consistent with PLC backends.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.hardware.cameras.backends.camera_backend.CameraBackend.REQUIRES_THREAD_AFFINITY">REQUIRES_THREAD_AFFINITY</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Class attribute indicating thread affinity requirement</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.camera_backend.CameraBackend.camera_name">camera_name</span></code></td>
             <td>
@@ -22349,35 +22250,6 @@ Uses async-first design consistent with PLC backends.</p>
       </tbody>
     </table>
 
-
-<details class="implementation-guide" open>
-  <summary>Implementation Guide</summary>
-  <ul>
-<li>Offload blocking SDK calls from async methods:
-  Use <code>asyncio.to_thread</code> for simple cases or <code>loop.run_in_executor</code> with a per-instance single-thread
-  executor when the SDK requires thread affinity.</li>
-<li>Thread affinity:
-  Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread
-  executor created during <code>initialize()</code> and shut down in <code>close()</code> to serialize SDK access without
-  blocking the event loop.</li>
-<li>Timeouts and cancellation:
-  Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with <code>asyncio.wait_for</code> to
-  bound runtime. Note that cancelling an await does not stop the underlying thread function; design
-  idempotent/short tasks when possible.</li>
-<li>Event loop hygiene:
-  Never call blocking functions (e.g., long SDK calls, <code>time.sleep</code>) directly in async methods. Replace
-  sleeps with <code>await asyncio.sleep</code> or run blocking work in the executor.</li>
-<li>Sync helpers:
-  Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the
-  SDK, route it through the executor to avoid blocking.</li>
-<li>Errors:
-  Map SDK-specific exceptions to the domain exceptions in <code>mindtrace.hardware.core.exceptions</code> with clear,
-  contextual messages.</li>
-<li>Cleanup:
-  Ensure resources (device handles, executors, buffers) are released in <code>close()</code>. <code>__aenter__/__aexit__</code>
-  already call <code>setup_camera</code>/<code>close</code> for async contexts.</li>
-</ul>
-</details>
         <p>Initialize base camera with configuration integration.</p>
 
 
@@ -22874,29 +22746,31 @@ abstract initialize() method and handles common initialization patterns.</p>
 
 
 
-        <p>GenICam Camera Backend Implementation</p>
-<p>This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library
-with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control,
-ROI settings, and image quality enhancement.</p>
+        <p>GenICam camera backend using the Harvesters library.</p>
+<p>This backend provides support for any GenICam-compliant camera via a GenTL
+Producer (.cti file), including cameras from Keyence, Allied Vision, FLIR,
+and others.</p>
 
 
-<details class="thread-safety" open>
-  <summary>Thread Safety</summary>
-  <p>Uses a singleton Harvester instance shared across all backend instances to avoid GenTL device conflicts.
-Multiple cameras can be opened simultaneously using the same Harvester.</p>
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>The Harvesters library requires thread affinity - ImageAcquirer operations
+must execute on the same OS thread that created the acquirer. This backend
+uses a dedicated single-thread executor per camera instance.</p>
+<p>The Harvester instance (which manages the GenTL Producer) is shared as a
+singleton across all GenICam camera instances to prevent device conflicts.
+Only the per-camera ImageAcquirer operations use the dedicated executor.</p>
 </details>
 
 <details class="features" open>
   <summary>Features</summary>
   <ul>
-<li>Full GenICam camera support via Harvesters</li>
+<li>GenICam-compliant camera support via Harvesters</li>
 <li>Matrix Vision GenTL Producer integration</li>
 <li>Hardware trigger and continuous capture modes</li>
-<li>ROI (Region of Interest) control</li>
-<li>Automatic exposure and gain control</li>
-<li>Image quality enhancement with CLAHE</li>
-<li>Configuration import/export functionality</li>
-<li>Robust error handling and connection management</li>
+<li>Region of Interest (ROI) control</li>
+<li>Automatic and manual exposure/gain control</li>
+<li>CLAHE image quality enhancement</li>
 <li>Vendor-specific parameter handling (Keyence, Basler, etc.)</li>
 </ul>
 </details>
@@ -22904,74 +22778,18 @@ Multiple cameras can be opened simultaneously using the same Harvester.</p>
 <details class="requirements" open>
   <summary>Requirements</summary>
   <ul>
-<li>Harvesters library (pip install harvesters)</li>
-<li>Matrix Vision mvIMPACT Acquire SDK</li>
+<li>Matrix Vision mvIMPACT Acquire SDK (provides GenTL Producer)</li>
+<li>Harvesters package (pip install harvesters)</li>
 <li>OpenCV for image processing</li>
-<li>GenTL Producer (.cti file) installed on system</li>
 </ul>
-</details>
-
-<details class="installation" open>
-  <summary>Installation</summary>
-  <ol>
-<li>Install Matrix Vision mvIMPACT Acquire SDK</li>
-<li>pip install harvesters opencv-python numpy</li>
-<li>Configure network interface for GigE cameras</li>
-<li>Set GENICAM_CTI_PATH environment variable (optional)</li>
-</ol>
-</details>        <p>Usage::</p>
+</details>        <p>Example::</p>
 <div class="language-text highlight"><pre><span></span><code>from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
 
-# Get available cameras
-cameras = GenICamCameraBackend.get_available_cameras()
-
-# Initialize camera
-camera = GenICamCameraBackend(&quot;device_serial&quot;, img_quality_enhancement=True)
-success, cam_obj, remote_obj = await camera.initialize()
-
-if success:
-    # Configure and capture
+async with GenICamCameraBackend(&quot;device_serial&quot;) as camera:
     await camera.set_exposure(50000)
-    await camera.set_triggermode(&quot;continuous&quot;)
     image = await camera.capture()
-    await camera.close()
 </code></pre></div>
 
-
-<details class="configuration" open>
-  <summary>Configuration</summary>
-  <p>All parameters are configurable via environment variables or the hardware configuration system:
-- GENICAM_CTI_PATH: Path to GenTL Producer (.cti file)
-- MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-- MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-- MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-- MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-- MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds</p>
-</details>
-
-<details class="supported-camera-models" open>
-  <summary>Supported Camera Models</summary>
-  <ul>
-<li>Keyence VJ series cameras</li>
-<li>Basler GigE cameras (alternative to pypylon)</li>
-<li>Allied Vision cameras</li>
-<li>FLIR/Teledyne cameras</li>
-<li>Any GenICam-compliant camera with compatible GenTL Producer</li>
-</ul>
-</details>
-
-<details class="error-handling" open>
-  <summary>Error Handling</summary>
-  <p>The class uses a comprehensive exception hierarchy for precise error reporting:
-- SDKNotAvailableError: Harvesters library not installed
-- CameraNotFoundError: Camera not detected or accessible
-- CameraInitializationError: Failed to initialize camera
-- CameraConfigurationError: Invalid configuration parameters
-- CameraConnectionError: Connection issues
-- CameraCaptureError: Image acquisition failures
-- CameraTimeoutError: Operation timeout
-- HardwareOperationError: General hardware operation failures</p>
-</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -22984,24 +22802,13 @@ if success:
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.initialized">initialized</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Whether camera was successfully initialized</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.image_acquirer">image_acquirer</span></code></td>
             <td>
                   <code><span title="typing.Optional">Optional</span>[<span title="typing.Any">Any</span>]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Harvesters ImageAcquirer object</p>
+                <p>Harvesters ImageAcquirer for this camera</p>
               </div>
             </td>
           </tr>
@@ -23012,7 +22819,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Harvesters Harvester object</p>
+                <p>Shared Harvester instance (class-level singleton)</p>
               </div>
             </td>
           </tr>
@@ -23027,16 +22834,6 @@ if success:
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.img_quality_enhancement">img_quality_enhancement</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Current image enhancement setting</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.timeout_ms">timeout_ms</span></code></td>
             <td>
             </td>
@@ -23047,23 +22844,12 @@ if success:
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.retrieve_retry_count">retrieve_retry_count</span></code></td>
+            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.cti_path">cti_path</span></code></td>
             <td>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of capture retry attempts</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.device_info">device_info</span></code></td>
-            <td>
-                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Dict">Dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Camera device information from discovery</p>
+                <p>Path to the GenTL Producer file</p>
               </div>
             </td>
           </tr>
@@ -23075,16 +22861,6 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Vendor-specific parameter handling flags</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.GenICamCameraBackend.cti_path">cti_path</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Path to GenTL Producer file</p>
               </div>
             </td>
           </tr>
@@ -26625,29 +26401,31 @@ await camera.close()
 
 
 
-        <p>GenICam Camera Backend Implementation</p>
-<p>This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library
-with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control,
-ROI settings, and image quality enhancement.</p>
+        <p>GenICam camera backend using the Harvesters library.</p>
+<p>This backend provides support for any GenICam-compliant camera via a GenTL
+Producer (.cti file), including cameras from Keyence, Allied Vision, FLIR,
+and others.</p>
 
 
-<details class="thread-safety" open>
-  <summary>Thread Safety</summary>
-  <p>Uses a singleton Harvester instance shared across all backend instances to avoid GenTL device conflicts.
-Multiple cameras can be opened simultaneously using the same Harvester.</p>
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>The Harvesters library requires thread affinity - ImageAcquirer operations
+must execute on the same OS thread that created the acquirer. This backend
+uses a dedicated single-thread executor per camera instance.</p>
+<p>The Harvester instance (which manages the GenTL Producer) is shared as a
+singleton across all GenICam camera instances to prevent device conflicts.
+Only the per-camera ImageAcquirer operations use the dedicated executor.</p>
 </details>
 
 <details class="features" open>
   <summary>Features</summary>
   <ul>
-<li>Full GenICam camera support via Harvesters</li>
+<li>GenICam-compliant camera support via Harvesters</li>
 <li>Matrix Vision GenTL Producer integration</li>
 <li>Hardware trigger and continuous capture modes</li>
-<li>ROI (Region of Interest) control</li>
-<li>Automatic exposure and gain control</li>
-<li>Image quality enhancement with CLAHE</li>
-<li>Configuration import/export functionality</li>
-<li>Robust error handling and connection management</li>
+<li>Region of Interest (ROI) control</li>
+<li>Automatic and manual exposure/gain control</li>
+<li>CLAHE image quality enhancement</li>
 <li>Vendor-specific parameter handling (Keyence, Basler, etc.)</li>
 </ul>
 </details>
@@ -26655,74 +26433,18 @@ Multiple cameras can be opened simultaneously using the same Harvester.</p>
 <details class="requirements" open>
   <summary>Requirements</summary>
   <ul>
-<li>Harvesters library (pip install harvesters)</li>
-<li>Matrix Vision mvIMPACT Acquire SDK</li>
+<li>Matrix Vision mvIMPACT Acquire SDK (provides GenTL Producer)</li>
+<li>Harvesters package (pip install harvesters)</li>
 <li>OpenCV for image processing</li>
-<li>GenTL Producer (.cti file) installed on system</li>
 </ul>
-</details>
-
-<details class="installation" open>
-  <summary>Installation</summary>
-  <ol>
-<li>Install Matrix Vision mvIMPACT Acquire SDK</li>
-<li>pip install harvesters opencv-python numpy</li>
-<li>Configure network interface for GigE cameras</li>
-<li>Set GENICAM_CTI_PATH environment variable (optional)</li>
-</ol>
-</details>        <p>Usage::</p>
+</details>        <p>Example::</p>
 <div class="language-text highlight"><pre><span></span><code>from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
 
-# Get available cameras
-cameras = GenICamCameraBackend.get_available_cameras()
-
-# Initialize camera
-camera = GenICamCameraBackend(&quot;device_serial&quot;, img_quality_enhancement=True)
-success, cam_obj, remote_obj = await camera.initialize()
-
-if success:
-    # Configure and capture
+async with GenICamCameraBackend(&quot;device_serial&quot;) as camera:
     await camera.set_exposure(50000)
-    await camera.set_triggermode(&quot;continuous&quot;)
     image = await camera.capture()
-    await camera.close()
 </code></pre></div>
 
-
-<details class="configuration" open>
-  <summary>Configuration</summary>
-  <p>All parameters are configurable via environment variables or the hardware configuration system:
-- GENICAM_CTI_PATH: Path to GenTL Producer (.cti file)
-- MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-- MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-- MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-- MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-- MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds</p>
-</details>
-
-<details class="supported-camera-models" open>
-  <summary>Supported Camera Models</summary>
-  <ul>
-<li>Keyence VJ series cameras</li>
-<li>Basler GigE cameras (alternative to pypylon)</li>
-<li>Allied Vision cameras</li>
-<li>FLIR/Teledyne cameras</li>
-<li>Any GenICam-compliant camera with compatible GenTL Producer</li>
-</ul>
-</details>
-
-<details class="error-handling" open>
-  <summary>Error Handling</summary>
-  <p>The class uses a comprehensive exception hierarchy for precise error reporting:
-- SDKNotAvailableError: Harvesters library not installed
-- CameraNotFoundError: Camera not detected or accessible
-- CameraInitializationError: Failed to initialize camera
-- CameraConfigurationError: Invalid configuration parameters
-- CameraConnectionError: Connection issues
-- CameraCaptureError: Image acquisition failures
-- CameraTimeoutError: Operation timeout
-- HardwareOperationError: General hardware operation failures</p>
-</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -26735,24 +26457,13 @@ if success:
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.initialized">initialized</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Whether camera was successfully initialized</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.image_acquirer">image_acquirer</span></code></td>
             <td>
                   <code><span title="typing.Optional">Optional</span>[<span title="typing.Any">Any</span>]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Harvesters ImageAcquirer object</p>
+                <p>Harvesters ImageAcquirer for this camera</p>
               </div>
             </td>
           </tr>
@@ -26763,7 +26474,7 @@ if success:
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Harvesters Harvester object</p>
+                <p>Shared Harvester instance (class-level singleton)</p>
               </div>
             </td>
           </tr>
@@ -26778,16 +26489,6 @@ if success:
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.img_quality_enhancement">img_quality_enhancement</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Current image enhancement setting</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
             <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.timeout_ms">timeout_ms</span></code></td>
             <td>
             </td>
@@ -26798,23 +26499,12 @@ if success:
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.retrieve_retry_count">retrieve_retry_count</span></code></td>
+            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.cti_path">cti_path</span></code></td>
             <td>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of capture retry attempts</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.device_info">device_info</span></code></td>
-            <td>
-                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Dict">Dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Camera device information from discovery</p>
+                <p>Path to the GenTL Producer file</p>
               </div>
             </td>
           </tr>
@@ -26826,16 +26516,6 @@ if success:
             <td>
               <div class="doc-md-description">
                 <p>Vendor-specific parameter handling flags</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.GenICamCameraBackend.cti_path">cti_path</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Path to GenTL Producer file</p>
               </div>
             </td>
           </tr>
@@ -30471,6 +30151,14 @@ OpenCV's <code>VideoCapture</code> with robust error handling and resource manag
 macOS with platform-aware discovery.</p>
 
 
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>OpenCV's VideoCapture is thread-safe and does not require thread affinity. This backend
+uses the default shared thread pool via <code>asyncio.to_thread()</code> for blocking operations,
+avoiding the overhead of per-camera dedicated executors. A per-instance asyncio.Lock
+serializes mutating operations to prevent concurrent set/read races.</p>
+</details>
+
 <details class="features" open>
   <summary>Features</summary>
   <ul>
@@ -30480,7 +30168,6 @@ macOS with platform-aware discovery.</p>
 <li>Optional image quality enhancement (CLAHE)</li>
 <li>Robust error handling with retries and bounded timeouts</li>
 <li>BGR to RGB conversion for consistency</li>
-<li>Thread-safe operations with per-instance serialization</li>
 <li>Platform-specific optimizations</li>
 </ul>
 </details>
@@ -30496,11 +30183,7 @@ macOS with platform-aware discovery.</p>
 - <code>MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT</code>: Enable CLAHE enhancement
 - <code>MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT</code>: Number of capture retry attempts
 - <code>MINDTRACE_CAMERA_TIMEOUT_MS</code>: Capture timeout in milliseconds</p>
-</details>        <p>Concurrency and serialization:
-- All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
-- A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
-- Unlike Basler, OpenCV cameras do not have an explicit "grabbing" state; all operations use continuous mode.</p>
-
+</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
@@ -33068,6 +32751,14 @@ OpenCV's <code>VideoCapture</code> with robust error handling and resource manag
 macOS with platform-aware discovery.</p>
 
 
+<details class="thread-model" open>
+  <summary>Thread Model</summary>
+  <p>OpenCV's VideoCapture is thread-safe and does not require thread affinity. This backend
+uses the default shared thread pool via <code>asyncio.to_thread()</code> for blocking operations,
+avoiding the overhead of per-camera dedicated executors. A per-instance asyncio.Lock
+serializes mutating operations to prevent concurrent set/read races.</p>
+</details>
+
 <details class="features" open>
   <summary>Features</summary>
   <ul>
@@ -33077,7 +32768,6 @@ macOS with platform-aware discovery.</p>
 <li>Optional image quality enhancement (CLAHE)</li>
 <li>Robust error handling with retries and bounded timeouts</li>
 <li>BGR to RGB conversion for consistency</li>
-<li>Thread-safe operations with per-instance serialization</li>
 <li>Platform-specific optimizations</li>
 </ul>
 </details>
@@ -33093,11 +32783,7 @@ macOS with platform-aware discovery.</p>
 - <code>MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT</code>: Enable CLAHE enhancement
 - <code>MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT</code>: Number of capture retry attempts
 - <code>MINDTRACE_CAMERA_TIMEOUT_MS</code>: Capture timeout in milliseconds</p>
-</details>        <p>Concurrency and serialization:
-- All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
-- A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
-- Unlike Basler, OpenCV cameras do not have an explicit "grabbing" state; all operations use continuous mode.</p>
-
+</details>
 
 <p><span class="doc-section-title">Attributes:</span></p>
     <table>
