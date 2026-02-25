@@ -1,0 +1,48 @@
+"""MindTrace training pillar — public API.
+
+Provides the core supervised training infrastructure:
+
+Training Loop
+-------------
+- ``Trainer``: Main training loop with AMP, gradient accumulation, and
+  callback support.
+
+Callbacks
+---------
+- ``Callback``: Abstract base class for all callbacks.
+- ``ModelCheckpoint``: Saves the model to a registry on metric improvement.
+- ``EarlyStopping``: Halts training when a monitored metric plateaus.
+- ``LRMonitor``: Logs learning rate each epoch.
+- ``ProgressLogger``: Emits a human-readable epoch summary.
+
+Optimizers & Schedulers
+-----------------------
+- ``build_optimizer``: Factory for named PyTorch optimizers.
+- ``build_scheduler``: Factory for named PyTorch LR schedulers.
+"""
+
+from __future__ import annotations
+
+from mindtrace.models.training.callbacks import (
+    Callback,
+    EarlyStopping,
+    LRMonitor,
+    ModelCheckpoint,
+    ProgressLogger,
+)
+from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
+from mindtrace.models.training.trainer import Trainer
+
+__all__ = [
+    # Training loop
+    "Trainer",
+    # Callbacks
+    "Callback",
+    "ModelCheckpoint",
+    "EarlyStopping",
+    "LRMonitor",
+    "ProgressLogger",
+    # Optimizer / scheduler factories
+    "build_optimizer",
+    "build_scheduler",
+]
