@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import docker
 import docker.types
@@ -18,6 +18,7 @@ class DockerEnvironment(Mindtrace):
         devices: Optional[List[str]] = None,
         working_dir: Optional[str] = None,
         ports: Optional[dict[int | str, int | str]] = None,
+        client_factory: Optional[Callable[[], Any]] = None,
         **kwargs,
     ):
         """
@@ -30,6 +31,7 @@ class DockerEnvironment(Mindtrace):
             devices: optional list of str: the GPU device IDs to use, or None to get no GPUs
             working_dir: optional str: the working directory within the Docker image
             ports: optional dict: outgoing ports to expose
+            client_factory: optional callable: factory used to create Docker client. Defaults to docker.from_env.
             kwargs: dict: additional parameters to pass to the containers.run() call.
 
         """
@@ -50,7 +52,8 @@ class DockerEnvironment(Mindtrace):
         self.working_dir = working_dir
         self.container = None
         self.ports = ports or {}
-        self.client = docker.from_env()
+        self.client_factory = client_factory or docker.from_env
+        self.client = None
         self.kwargs = kwargs
 
     def setup(self, pull=True, command=None) -> str:
@@ -63,6 +66,8 @@ class DockerEnvironment(Mindtrace):
             str: Container ID
         """
         try:
+            if self.client is None:
+                self.client = self.client_factory()
             # Pull image if not exists
             if pull:
                 self.client.images.pull(self.image)
