@@ -573,14 +573,19 @@ class LocalRegistryBackend(RegistryBackend):
                     if meta_path.exists():
                         meta_path.unlink()
 
-                    # Cleanup parent if empty
+                    # Cleanup parent if empty (race-safe under concurrent deletes).
+                    # Another thread/process may remove `parent` between checks/iteration.
                     parent = target.parent
-                    if parent.exists() and not any(parent.iterdir()):
-                        self.logger.debug(f"Removing empty parent directory: {parent}")
-                        try:
-                            parent.rmdir()
-                        except Exception:
-                            pass
+                    try:
+                        if not any(parent.iterdir()):
+                            self.logger.debug(f"Removing empty parent directory: {parent}")
+                            try:
+                                parent.rmdir()
+                            except Exception:
+                                pass
+                    except FileNotFoundError:
+                        # Parent already removed by a concurrent delete; this is fine.
+                        pass
 
                 results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
