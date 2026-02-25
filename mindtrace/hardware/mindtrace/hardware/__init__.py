@@ -104,11 +104,60 @@ def __getattr__(name):
             "MeasuredBox": MeasuredBox,
         }
         return mapping[name]
+    # -- Simplified synchronous hardware interfaces (camera / plc / scanner) --
+    elif name in {"AbstractCamera", "CameraFrame", "CameraStatus", "GigECamera", "MockCamera"}:
+        from mindtrace.hardware.camera import (
+            AbstractCamera,
+            CameraFrame,
+            CameraStatus,
+            GigECamera,
+            MockCamera,
+        )
+
+        mapping = {
+            "AbstractCamera": AbstractCamera,
+            "CameraFrame": CameraFrame,
+            "CameraStatus": CameraStatus,
+            "GigECamera": GigECamera,
+            "MockCamera": MockCamera,
+        }
+        return mapping[name]
+    elif name in {"AbstractPLC", "PLCTag", "PLCStatus", "OPCUAClient", "MockPLC"}:
+        from mindtrace.hardware.plc import (
+            AbstractPLC,
+            PLCTag,
+            PLCStatus,
+            OPCUAClient,
+            MockPLC,
+        )
+
+        mapping = {
+            "AbstractPLC": AbstractPLC,
+            "PLCTag": PLCTag,
+            "PLCStatus": PLCStatus,
+            "OPCUAClient": OPCUAClient,
+            "MockPLC": MockPLC,
+        }
+        return mapping[name]
+    elif name in {"AbstractScanner", "ScanResult", "MockScanner"}:
+        from mindtrace.hardware.scanner import (
+            AbstractScanner,
+            ScanResult,
+            MockScanner,
+        )
+
+        mapping = {
+            "AbstractScanner": AbstractScanner,
+            "ScanResult": ScanResult,
+            "MockScanner": MockScanner,
+        }
+        return mapping[name]
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
 __all__ = [
+    # Async managers (existing)
     "CameraManager",
     "PLCManager",
     "SensorManager",
@@ -117,4 +166,20 @@ __all__ = [
     "PlanarHomographyMeasurer",
     "MeasuredBox",
     "ServiceStatus",
+    # Synchronous camera interface
+    "AbstractCamera",
+    "CameraFrame",
+    "CameraStatus",
+    "GigECamera",
+    "MockCamera",
+    # Synchronous PLC interface
+    "AbstractPLC",
+    "PLCTag",
+    "PLCStatus",
+    "OPCUAClient",
+    "MockPLC",
+    # Synchronous scanner interface
+    "AbstractScanner",
+    "ScanResult",
+    "MockScanner",
 ]

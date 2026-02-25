@@ -47,6 +47,11 @@ cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]>=0.8.0"]
 stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
 stereo-all = ["mindtrace-hardware[stereo-basler]>=0.8.0"]
 hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]>=0.8.0"]
+# Simplified synchronous hardware interface extras
+gige      = ["harvesters>=1.4"]
+basler    = ["pypylon>=3.0"]
+opcua     = ["asyncua>=1.0"]
+all       = ["harvesters>=1.4", "asyncua>=1.0"]
 setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
