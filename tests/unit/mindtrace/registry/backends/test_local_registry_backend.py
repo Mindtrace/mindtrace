@@ -304,6 +304,25 @@ def test_delete_parent_directory_error(backend, sample_object_dir, sample_metada
         assert not object_path.exists()
 
 
+def test_delete_parent_cleanup_race_on_iterdir(backend, sample_object_dir, sample_metadata):
+    """Delete should succeed when parent disappears before parent.iterdir() runs."""
+    backend.push("test:race", "1.0.0", str(sample_object_dir), sample_metadata)
+
+    parent_path = backend.uri / "test:race"
+    original_iterdir = Path.iterdir
+
+    def mock_iterdir(self):
+        if self == parent_path:
+            raise FileNotFoundError("Simulated concurrent parent removal")
+        return original_iterdir(self)
+
+    with patch.object(Path, "iterdir", mock_iterdir):
+        result = backend.delete("test:race", "1.0.0")
+
+    assert result[("test:race", "1.0.0")].ok
+    assert not (backend.uri / "test:race" / "1.0.0").exists()
+
+
 def test_init_with_file_uri(temp_dir):
     """Test LocalRegistryBackend initialization with file:// URI."""
     # Test that file:// prefix is stripped
