@@ -19,6 +19,12 @@ Optimizers & Schedulers
 -----------------------
 - ``build_optimizer``: Factory for named PyTorch optimizers.
 - ``build_scheduler``: Factory for named PyTorch LR schedulers.
+
+Datalake Bridge
+---------------
+- ``DatalakeDataset``: ``torch.utils.data.Dataset`` backed by a Datalake query.
+- ``build_datalake_loader``: Factory that returns a ``DataLoader`` from a
+  Datalake query.  Requires ``mindtrace-datalake`` at runtime.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from mindtrace.models.training.callbacks import (
     ModelCheckpoint,
     ProgressLogger,
 )
+from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
 from mindtrace.models.training.trainer import Trainer
 
@@ -45,4 +52,7 @@ __all__ = [
     # Optimizer / scheduler factories
     "build_optimizer",
     "build_scheduler",
+    # Datalake bridge
+    "DatalakeDataset",
+    "build_datalake_loader",
 ]
