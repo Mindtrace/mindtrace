@@ -65,6 +65,8 @@ class Trainer:
         loss_fn: nn.Module | Callable,
         optimizer: Optimizer,
         *,
+        train_loader: Any | None = None,
+        val_loader: Any | None = None,
         scheduler: LRScheduler | None = None,
         tracker: Any | None = None,
         callbacks: list[Callback] | None = None,
@@ -82,6 +84,12 @@ class Trainer:
             model: PyTorch module to train.
             loss_fn: Loss function. Called as ``loss_fn(outputs, targets)``.
             optimizer: Optimizer that updates ``model`` parameters.
+            train_loader: Optional default training data loader.  Stored and
+                used by :meth:`train` and as a fallback by :meth:`fit` when
+                the *train_loader* argument is ``None``.
+            val_loader: Optional default validation data loader.  Stored and
+                used by :meth:`train` and as a fallback by :meth:`fit` when
+                the *val_loader* argument is ``None``.
             scheduler: Optional LR scheduler. ``ReduceLROnPlateau`` is
                 stepped after validation; all others after each optimizer step.
             tracker: Optional experiment-tracking object (e.g. a
@@ -130,6 +138,8 @@ class Trainer:
         self.clip_grad_norm = clip_grad_norm
         self.batch_fn = batch_fn
         self._ddp = ddp
+        self._default_train_loader = train_loader
+        self._default_val_loader = val_loader
 
         # Device resolution
         if device == "auto":
@@ -211,9 +221,43 @@ class Trainer:
     # Public API
     # ------------------------------------------------------------------
 
+    def train(self, **kwargs: Any) -> dict[str, float]:
+        """Train the model and return flat (last-epoch) metrics.
+
+        This is the interface expected by
+        :class:`~mindtrace.automation.pipeline.training.TrainingPipeline`.
+        It delegates to :meth:`fit` using the loaders stored at construction
+        time (overridable via *kwargs*) and flattens the per-epoch history
+        to a single dict of final-epoch values.
+
+        Keyword Args:
+            train_loader: Override the default training loader.
+            val_loader: Override the default validation loader.
+            epochs: Number of epochs (default ``1``).
+
+        Returns:
+            Dict mapping metric names to their **last-epoch** scalar values.
+
+        Raises:
+            ValueError: If no *train_loader* is available (neither passed
+                here nor at init time).
+        """
+        train_loader = kwargs.pop("train_loader", self._default_train_loader)
+        val_loader = kwargs.pop("val_loader", self._default_val_loader)
+        epochs = kwargs.pop("epochs", 1)
+
+        if train_loader is None:
+            raise ValueError(
+                "Trainer.train(): train_loader is required — pass it at "
+                "init time or as a keyword argument."
+            )
+
+        history = self.fit(train_loader, val_loader, epochs=epochs)
+        return {k: v[-1] for k, v in history.items()}
+
     def fit(
         self,
-        train_loader: Any,
+        train_loader: Any | None = None,
         val_loader: Any | None = None,
         epochs: int = 1,
     ) -> dict[str, list[float]]:
@@ -229,6 +273,18 @@ class Trainer:
             ``history``: a dict mapping metric names (e.g. ``"train/loss"``,
             ``"val/loss"``) to lists of per-epoch scalar values.
         """
+        # Fall back to default loaders when None is passed
+        if train_loader is None:
+            train_loader = self._default_train_loader
+        if val_loader is None:
+            val_loader = self._default_val_loader
+
+        if train_loader is None:
+            raise ValueError(
+                "Trainer.fit(): train_loader is required — pass it directly "
+                "or set it at init time."
+            )
+
         self._total_epochs = epochs
         self.stop_training = False
         self.history = {}
