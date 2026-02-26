@@ -178,20 +178,63 @@ class OnnxModelService(ModelService):
         )
 
     def predict(self, request: PredictRequest) -> PredictResponse:
-        """Run inference on the given request.
+        """Run inference on a :class:`PredictRequest` (images as file paths / base64).
 
-        Subclasses must override this method.  A typical implementation:
+        Subclasses that need full image-loading + pre/post-processing should
+        override this method.
 
-        1. Decode ``request.images`` into numpy arrays.
-        2. Build an input dict ``{name: array}`` matching :attr:`input_names`.
-        3. Call ``outputs = self.run(input_dict)`` to execute the session.
-        4. Decode ``outputs`` into domain objects.
-        5. Return ``PredictResponse(results=decoded, timing_s=0.0)``.
+        **For simple programmatic use — passing numpy arrays directly —
+        call :meth:`predict_array` instead.  No subclassing required.**
+
+        A typical override::
+
+            def predict(self, request):
+                imgs = [load_and_preprocess(p) for p in request.images]
+                arr  = np.stack(imgs).astype(np.float32)
+                out  = self.run({"pixel_values": arr})
+                preds = out["logits"].argmax(axis=1).tolist()
+                return PredictResponse(results=preds, timing_s=0.0)
         """
         raise NotImplementedError(
-            f"{type(self).__name__} must implement predict().  "
-            "Preprocess images → self.run({input_name: array}) → decode results."
+            f"{type(self).__name__}.predict() is not implemented.  "
+            "To run inference with numpy arrays (no subclassing needed), use:\n"
+            "    outputs = svc.predict_array({'pixel_values': your_array})\n"
+            "To handle full image loading / pre-post-processing, override predict()."
         )
+
+    def predict_array(
+        self,
+        inputs: dict[str, np.ndarray],
+    ) -> dict[str, np.ndarray]:
+        """Run inference directly from preprocessed numpy arrays.
+
+        This is the **zero-subclass** entry point for ONNX inference.  Pass a
+        dict that maps each ONNX input name to its numpy array and get back a
+        dict of output name → numpy array.
+
+        Args:
+            inputs: Dict mapping ONNX input name → numpy array.  Input names
+                must match :attr:`input_names` (e.g.
+                ``{"pixel_values": np.random.randn(1, 3, 224, 224).astype(np.float32)}``).
+
+        Returns:
+            Dict mapping ONNX output name → numpy array.
+
+        Raises:
+            RuntimeError: If :meth:`load_model` has not been called yet.
+
+        Example::
+
+            svc = OnnxModelService(
+                model_path="resnet50.onnx",
+                model_name="classifier",
+                model_version="v1",
+            )
+            svc.load_model()
+            out  = svc.predict_array({"pixel_values": img_array})
+            pred = out["logits"].argmax(axis=1)
+        """
+        return self.run(inputs)
 
     # ------------------------------------------------------------------
     # Inference helper

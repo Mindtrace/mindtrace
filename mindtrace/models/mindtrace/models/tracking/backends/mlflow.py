@@ -110,6 +110,16 @@ class MLflowTracker(Tracker):
         if not _MLFLOW_AVAILABLE:  # pragma: no cover
             raise ImportError(_MLFLOW_INSTALL_MSG)
 
+        active = mlflow.active_run()
+        if active is not None:
+            logger.warning(
+                "MLflow run '%s' is still active; ending it before starting '%s'. "
+                "Call tracker.finish() explicitly to suppress this warning.",
+                active.info.run_name,
+                name,
+            )
+            mlflow.end_run()
+
         logger.debug("Starting MLflow run: name=%s", name)
         mlflow.start_run(run_name=name)
 

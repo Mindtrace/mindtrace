@@ -309,9 +309,60 @@ class HuggingFaceDINOBackbone(nn.Module):
     # Forward
     # ------------------------------------------------------------------
 
-    def forward(self, pixel_values: torch.Tensor) -> Any:
-        """Run the HuggingFace model and return its raw output object."""
+    def _forward_raw(self, pixel_values: torch.Tensor) -> Any:
+        """Internal: run HF model and return raw ModelOutput. Not part of the public API."""
         return self.model(pixel_values=pixel_values.to(next(self.model.parameters()).device))
+
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Run backbone and return a ``(B, D)`` feature vector (CLS or pooled token).
+
+        This is the standard ``nn.Module`` forward — compatible with
+        :class:`~mindtrace.models.architectures.factory.ModelWrapper` and all
+        task heads expecting a 2-D feature tensor.
+
+        For classification heads: use ``model(x)`` directly.
+        For segmentation heads:  use :meth:`forward_spatial` or
+        :func:`~mindtrace.models.architectures.build_model` with a seg head
+        (the factory wires the spatial path automatically).
+
+        Returns:
+            ``(B, D)`` tensor — the CLS token for ViT models, the pooled
+            output for ConvNeXt models.
+        """
+        return self.get_cls_tokens(pixel_values)
+
+    def forward_spatial(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Return patch tokens as a ``(B, D, H_p, W_p)`` spatial feature map.
+
+        Intended for segmentation heads.  ``H_p = H // patch_size``,
+        ``W_p = W // patch_size``.  For ConvNeXt models, returns the last
+        hidden state permuted to ``(B, C, H, W)`` format.
+
+        Normally you do **not** call this directly — use
+        :func:`~mindtrace.models.architectures.build_model` with a seg head
+        (``"linear_seg"`` or ``"fpn_seg"``) and the factory wires this path.
+
+        Args:
+            pixel_values: ``(B, C, H, W)`` float tensor.
+
+        Returns:
+            ``(B, D, H_p, W_p)`` spatial feature map ready for convolutional
+            segmentation heads.
+        """
+        import math as _math                                         # noqa: PLC0415
+        B, C, H, W = pixel_values.shape
+        outputs = self._forward_raw(pixel_values)
+
+        if self.is_vit:
+            hidden = outputs.last_hidden_state              # (B, 1+reg+N, D)
+            start   = 1 + self._num_register_tokens
+            patches = hidden[:, start:, :]                  # (B, N, D)
+            H_p = H // self._patch_size
+            W_p = W // self._patch_size
+            return patches.permute(0, 2, 1).reshape(B, -1, H_p, W_p)
+        else:
+            # ConvNeXt: last_hidden_state is (B, H_p, W_p, C)
+            return outputs.last_hidden_state.permute(0, 3, 1, 2)    # (B, C, H_p, W_p)
 
     # ------------------------------------------------------------------
     # Feature extraction helpers
@@ -333,7 +384,7 @@ class HuggingFaceDINOBackbone(nn.Module):
         Returns:
             Tuple of ``(cls_token, patch_tokens)``.
         """
-        outputs = self.forward(pixel_values)
+        outputs = self._forward_raw(pixel_values)
 
         if self.is_vit:
             hidden = outputs.last_hidden_state       # (B, 1+registers+N, D)
@@ -390,7 +441,7 @@ class HuggingFaceDINOBackbone(nn.Module):
                 f"Model '{self.hf_model_name}' has no register tokens.  "
                 "Use a DINOv2-with-registers or DINOv3 model."
             )
-        outputs = self.forward(pixel_values)
+        outputs = self._forward_raw(pixel_values)
         hidden  = outputs.last_hidden_state  # (B, 1+registers+N, D)
         return hidden[:, 1: 1 + self._num_register_tokens, :]
 

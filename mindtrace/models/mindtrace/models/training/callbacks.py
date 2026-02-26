@@ -105,6 +105,7 @@ class ModelCheckpoint(Callback):
         save_best_only: bool = True,
         model_name: str = "checkpoint",
         version_prefix: str = "v",
+        raise_on_save_failure: bool = False,
     ) -> None:
         """Initialise the checkpoint callback.
 
@@ -120,6 +121,9 @@ class ModelCheckpoint(Callback):
             model_name: Base name used when constructing the registry key.
             version_prefix: String prepended to the epoch number in the
                 registry key (e.g. ``"v"`` → ``"resnet50:v3"``).
+            raise_on_save_failure: When ``True``, re-raise save exceptions
+                instead of silently swallowing them.  Defaults to ``False``
+                for backward compatibility.
 
         Raises:
             ValueError: If *mode* is not ``"min"`` or ``"max"``.
@@ -133,9 +137,12 @@ class ModelCheckpoint(Callback):
         self.save_best_only = save_best_only
         self.model_name = model_name
         self.version_prefix = version_prefix
+        self.raise_on_save_failure = raise_on_save_failure
 
         self.best_value: float = math.inf if mode == "min" else -math.inf
         self.last_saved_key: str | None = None
+        self.save_failures: int = 0
+        self.last_error: Exception | None = None
 
     def _is_improvement(self, current: float) -> bool:
         """Return ``True`` if *current* is better than ``self.best_value``."""
@@ -182,12 +189,18 @@ class ModelCheckpoint(Callback):
                 current,
             )
         except Exception as exc:
+            self.save_failures += 1
+            self.last_error = exc
             logger.error(
-                "ModelCheckpoint: failed to save '%s': %s",
+                "ModelCheckpoint: failed to save '%s' (%d total failure%s): %s",
                 key,
+                self.save_failures,
+                "s" if self.save_failures > 1 else "",
                 exc,
                 exc_info=True,
             )
+            if self.raise_on_save_failure:
+                raise
 
 
 class EarlyStopping(Callback):

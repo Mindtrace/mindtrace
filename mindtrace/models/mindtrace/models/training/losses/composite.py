@@ -27,7 +27,13 @@ class ComboLoss(nn.Module):
     ``named_losses`` property for convenient experiment logging.
 
     Args:
-        losses: Ordered mapping of ``{name: loss_module}``.
+        losses: The sub-losses to combine.  Two forms are accepted:
+
+            - ``dict[str, nn.Module]``: Named mapping (canonical form, good
+              for per-component logging via ``named_losses``).
+            - ``list[nn.Module]``: Positional list — auto-named ``"loss_0"``,
+              ``"loss_1"``, etc.
+
         weights: Scalar weights for each loss.  Three forms are accepted:
 
             - ``dict[str, float]``: Explicit name-to-weight mapping.
@@ -54,10 +60,14 @@ class ComboLoss(nn.Module):
 
     def __init__(
         self,
-        losses: dict[str, nn.Module],
+        losses: dict[str, nn.Module] | list[nn.Module],
         weights: dict[str, float] | list[float] | None = None,
     ) -> None:
         super().__init__()
+
+        # Coerce list → named dict for uniform downstream handling
+        if isinstance(losses, list):
+            losses = {f"loss_{i}": fn for i, fn in enumerate(losses)}
 
         if not losses:
             raise ValueError("ComboLoss requires at least one loss function.")
