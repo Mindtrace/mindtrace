@@ -43,11 +43,9 @@ scanners-photoneo = [
 ]
 scanners-all = ["mindtrace-hardware[scanners-all]>=0.8.0"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.8.0"]
-registry-timm = ["mindtrace-registry[timm]>=0.7.1"]
-registry-huggingface = ["mindtrace-registry[huggingface]>=0.7.1"]
-registry-onnx = ["mindtrace-registry[onnx]>=0.7.1"]
-registry-tensorrt-cu11 = ["mindtrace-registry[tensorrt-cu11]>=0.7.1"]
-registry-tensorrt-cu12 = ["mindtrace-registry[tensorrt-cu12]>=0.7.1"]
+registry-timm = ["mindtrace-registry[timm]>=0.8.0"]
+registry-huggingface = ["mindtrace-registry[huggingface]>=0.8.0"]
+registry-onnx = ["mindtrace-registry[onnx]>=0.8.0"]
 
 [dependency-groups]
 dev = [
@@ -148,9 +146,11 @@ publish_to_pypi = """
     bash scripts/push_to_pypi.sh ${@:-}
 """
 
+[tool.ruff.lint.isort]
+known-first-party = ["mindtrace", "tests"]
+
 [tool.ruff]
 src = [
-    ".",
     "mindtrace/apps",
     "mindtrace/automation",
     "mindtrace/cluster",
