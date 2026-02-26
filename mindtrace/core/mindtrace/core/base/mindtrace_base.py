@@ -185,7 +185,7 @@ class Mindtrace(metaclass=MindtraceMeta):
 
     @property
     def name(self) -> str:
-        return type(self).__name__
+        return getattr(self, "_name", type(self).__name__)
 
     def __enter__(self):
         self.logger.debug(f"Initializing {self.name} as a context manager.")
