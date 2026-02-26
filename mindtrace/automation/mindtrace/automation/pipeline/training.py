@@ -27,12 +27,15 @@ Typical usage::
     result = pipeline.run()
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from mindtrace.registry import Registry
 
 from .base import Pipeline, PipelineStatus, PipelineStep, StepResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -137,51 +140,85 @@ class _PromoteStep(PipelineStep):
                 metadata={"promoted": False, "reason": "disabled"},
             )
 
-        eval_metrics = context.get("eval_metrics", {})
-        accuracy = eval_metrics.get("accuracy", 0.0)
-
-        # Retrieve current baseline from the registry; default to 0.0 if unavailable.
+        # Import lifecycle utilities here to avoid circular deps at module load
         try:
-            card = self._registry.get_model_card(self._model_name)
-            baseline = (
-                card.metrics.get("accuracy", 0.0)
-                if card and card.metrics
-                else 0.0
+            from mindtrace.models.lifecycle import ModelCard, ModelStage, PromotionError, promote  # noqa: PLC0415
+        except ImportError:
+            logger.warning(
+                "_PromoteStep: mindtrace.models is not installed — skipping promotion."
             )
+            return StepResult(
+                step_name=self.name,
+                status=PipelineStatus.SUCCESS,
+                metadata={"promoted": False, "reason": "mindtrace.models unavailable"},
+            )
+
+        eval_metrics = context.get("eval_metrics", {})
+        accuracy = float(eval_metrics.get("accuracy", 0.0))
+
+        # Best-effort: load existing staging card to get the current baseline.
+        baseline = 0.0
+        try:
+            staging_key = f"{self._model_name}:{self._version}:{ModelStage.STAGING.value}"
+            prev_data = self._registry.load(staging_key)
+            if isinstance(prev_data, dict):
+                baseline = float(
+                    ModelCard.from_dict(prev_data).summary().get("accuracy", 0.0)
+                )
         except Exception:
             baseline = 0.0
 
         gain = accuracy - baseline
-        if gain >= self._min_gain:
-            try:
-                self._registry.promote(self._model_name, self._version)
-                return StepResult(
-                    step_name=self.name,
-                    status=PipelineStatus.SUCCESS,
-                    metadata={
-                        "promoted": True,
-                        "accuracy": accuracy,
-                        "gain": gain,
-                    },
-                )
-            except Exception as exc:
-                return StepResult(
-                    step_name=self.name,
-                    status=PipelineStatus.FAILED,
-                    error=str(exc),
-                )
+        if gain < self._min_gain:
+            return StepResult(
+                step_name=self.name,
+                status=PipelineStatus.SUCCESS,
+                metadata={
+                    "promoted": False,
+                    "reason": "insufficient_gain",
+                    "accuracy": accuracy,
+                    "baseline": baseline,
+                    "gain": gain,
+                },
+            )
 
-        return StepResult(
-            step_name=self.name,
-            status=PipelineStatus.SUCCESS,
-            metadata={
-                "promoted": False,
-                "reason": "insufficient_gain",
-                "accuracy": accuracy,
-                "baseline": baseline,
-                "gain": gain,
-            },
+        # Use a ModelCard from context if the training step stored one, otherwise
+        # build a minimal card from the available evaluation metrics.
+        card: ModelCard = context.get("model_card") or ModelCard(
+            name=self._model_name,
+            version=self._version,
         )
+        for metric, value in eval_metrics.items():
+            if isinstance(value, (int, float)):
+                card.add_result(metric=str(metric), value=float(value))
+
+        try:
+            promote(card, self._registry, to_stage=ModelStage.STAGING)
+            return StepResult(
+                step_name=self.name,
+                status=PipelineStatus.SUCCESS,
+                metadata={
+                    "promoted": True,
+                    "to_stage": ModelStage.STAGING.value,
+                    "accuracy": accuracy,
+                    "baseline": baseline,
+                    "gain": gain,
+                },
+            )
+        except PromotionError as exc:
+            return StepResult(
+                step_name=self.name,
+                status=PipelineStatus.FAILED,
+                error=str(exc),
+                metadata={"promoted": False},
+            )
+        except Exception as exc:
+            logger.error("_PromoteStep: unexpected error during promotion: %s", exc, exc_info=True)
+            return StepResult(
+                step_name=self.name,
+                status=PipelineStatus.FAILED,
+                error=str(exc),
+            )
 
 
 class TrainingPipeline(Pipeline):

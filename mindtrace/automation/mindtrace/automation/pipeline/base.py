@@ -102,7 +102,7 @@ class PipelineStep(ABC):
         ...
 
 
-class Pipeline(Mindtrace, ABC):
+class Pipeline(Mindtrace):
     """A named, ordered sequence of :class:`PipelineStep` objects sharing a context dict.
 
     Steps are executed in registration order.  If any step returns a
@@ -129,8 +129,12 @@ class Pipeline(Mindtrace, ABC):
 
     def __init__(self, name: str, steps: list[PipelineStep] | None = None, **kwargs):
         super().__init__(**kwargs)
-        self.name = name
+        self._pipeline_name = name
         self.steps: list[PipelineStep] = steps or []
+
+    @property
+    def name(self) -> str:  # type: ignore[override]
+        return self._pipeline_name
 
     def add_step(self, step: PipelineStep) -> "Pipeline":
         """Append a step to the end of the pipeline.
