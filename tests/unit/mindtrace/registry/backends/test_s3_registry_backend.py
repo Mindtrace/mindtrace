@@ -431,12 +431,12 @@ def test_push_uuid_error_cleanup_not_applicable(backend, sample_object_dir, samp
 
 def test_push_invalid_name(backend, sample_object_dir, sample_metadata):
     """Test push with invalid object name returns failed result."""
-    result = backend.push("invalid_name", "1.0.0", sample_object_dir, sample_metadata)
+    result = backend.push("invalid@name", "1.0.0", sample_object_dir, sample_metadata)
 
     # Backend returns failed result for validation errors (Registry handles raising)
-    assert ("invalid_name", "1.0.0") in result
-    assert result[("invalid_name", "1.0.0")].is_error
-    assert "cannot contain underscores" in result[("invalid_name", "1.0.0")].message
+    assert ("invalid@name", "1.0.0") in result
+    assert result[("invalid@name", "1.0.0")].is_error
+    assert "cannot contain '@'" in result[("invalid@name", "1.0.0")].message
 
 
 # ─────────────────────────────────────────────────────────────────────────────

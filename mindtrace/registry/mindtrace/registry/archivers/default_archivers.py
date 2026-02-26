@@ -81,10 +81,10 @@ def register_default_materializers():
         "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.nn.Module",
+        "torch.nn.modules.module.Module",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.jit.ScriptModule",
+        "torch.jit._script.ScriptModule",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )

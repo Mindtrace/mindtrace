@@ -471,7 +471,7 @@ def test_save_metadata(backend, sample_metadata):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Verify metadata was saved
-    meta_path = "_meta_test_object@1.0.0.json"
+    meta_path = "_meta_test%3Aobject@1.0.0.json"
     assert backend.gcs.exists(meta_path)
 
 
@@ -543,7 +543,7 @@ def test_delete_metadata(backend, sample_metadata):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Verify metadata exists
-    meta_path = "_meta_test_object@1.0.0.json"
+    meta_path = "_meta_test%3Aobject@1.0.0.json"
     assert backend.gcs.exists(meta_path)
 
     # Delete metadata
@@ -601,12 +601,12 @@ def test_has_object(backend, sample_metadata):
 
 def test_invalid_object_name(backend, sample_object_dir, sample_metadata):
     """Test handling of invalid object names returns failed result."""
-    result = backend.push("invalid_name", "1.0.0", sample_object_dir, sample_metadata)
+    result = backend.push("invalid@name", "1.0.0", sample_object_dir, sample_metadata)
 
     # Backend returns failed result for validation errors (Registry handles raising)
-    assert ("invalid_name", "1.0.0") in result
-    assert result[("invalid_name", "1.0.0")].is_error
-    assert "cannot contain underscores" in result[("invalid_name", "1.0.0")].message
+    assert ("invalid@name", "1.0.0") in result
+    assert result[("invalid@name", "1.0.0")].is_error
+    assert "cannot contain '@'" in result[("invalid@name", "1.0.0")].message
 
 
 def test_register_materializer(backend):
