@@ -621,7 +621,7 @@ def test_object_discovery(registry):
     registry.save(f"{test_prefix}object:1", "data1_v2", version="2.0.0")
     versions = registry.list_versions(f"{test_prefix}object:1")
     assert len(versions) == 2
-    assert "1" in versions  # Auto-generated version
+    assert "1.0.0" in versions  # Auto-generated canonical version
     assert "2.0.0" in versions
 
 
