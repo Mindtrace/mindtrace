@@ -460,70 +460,41 @@ def test_redis_backend_delete_not_found(mock_redis_backend):
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
-    # Mock the backend with proper model class
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
 
-    # Mock the get method to raise NotFoundError
-    with patch.object(UserDoc, "get", side_effect=NotFoundError):
+    with patch.object(UserDoc, "delete", side_effect=NotFoundError):
         with pytest.raises(DocumentNotFoundError):
             backend.delete("nonexistent_id")
 
 
 def test_redis_backend_delete_success(mock_redis_backend):
-    """Test delete operation when document exists."""
+    """Test delete operation calls model_cls.delete with the pk."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    # Mock the backend with proper model class
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
 
-    # Mock the get method to return existing user
-    existing_user = create_mock_redis_user()
-    existing_user.pk = "test_id"
-
-    with patch.object(UserDoc, "get", return_value=existing_user):
-        with patch.object(UserDoc, "delete"):
-            # Mock redis keys and delete
-            backend.redis.keys.return_value = ["mindtrace:test_id", "mindtrace:test_id:index"]
-            backend.redis.delete.return_value = 2
-
-            backend.delete("test_id")
-
-            # Verify redis operations were called
-            backend.redis.keys.assert_called_once()
-            backend.redis.delete.assert_called_once()
+    with patch.object(UserDoc, "delete", return_value=1) as mock_delete:
+        backend.delete("test_id")
+        mock_delete.assert_called_once_with("test_id")
 
 
 def test_redis_backend_delete_no_keys_found(mock_redis_backend):
-    """Test delete operation when no associated keys are found."""
+    """Test delete completes without error when key doesn't exist (returns 0)."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    # Mock the backend with proper model class
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
     backend.model_cls = UserDoc
     backend.redis = MagicMock()
     backend.logger = MagicMock()
 
-    # Mock the get method to return existing user
-    existing_user = create_mock_redis_user()
-    existing_user.pk = "test_id"
-
-    with patch.object(UserDoc, "get", return_value=existing_user):
-        with patch.object(UserDoc, "delete"):
-            # Mock redis keys to return empty list
-            backend.redis.keys.return_value = []
-
-            backend.delete("test_id")
-
-            # Verify redis operations were called
-            backend.redis.keys.assert_called_once()
-            # delete should not be called since no keys found
-            backend.redis.delete.assert_not_called()
+    with patch.object(UserDoc, "delete", return_value=0):
+        backend.delete("test_id")  # should not raise
 
 
 def test_redis_backend_find_with_args(mock_redis_backend):
@@ -793,10 +764,9 @@ def test_redis_backend_initialization_with_indexed_fields_metadata():
 
 
 def test_redis_backend_delete_with_keys_found():
-    """Test Redis backend delete when keys are found."""
+    """Test Redis backend delete delegates to model_cls.delete()."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    # Mock the backend with proper model class
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -805,34 +775,15 @@ def test_redis_backend_delete_with_keys_found():
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
-        # Test delete with keys found
-        with patch.object(UserDoc, "get") as mock_get:
-            mock_doc = MagicMock()
-            mock_doc.pk = "test_id"
-            mock_get.return_value = mock_doc
-
-            # Mock the model's Meta class
-            mock_meta = MagicMock()
-            mock_meta.global_key_prefix = "mindtrace"
-            UserDoc.Meta = mock_meta
-
-            # Mock redis keys and delete operations
-            with patch.object(backend, "redis") as mock_redis:
-                mock_redis.keys.return_value = ["mindtrace:user:test_id", "mindtrace:index:test_id"]
-                mock_redis.delete.return_value = 2
-
-                with patch.object(UserDoc, "delete") as mock_delete:
-                    backend.delete("test_id")
-                    mock_redis.keys.assert_called_once_with("mindtrace:*test_id*")
-                    mock_redis.delete.assert_called_once_with("mindtrace:user:test_id", "mindtrace:index:test_id")
-                    mock_delete.assert_called_once_with("test_id")
+        with patch.object(UserDoc, "delete", return_value=1) as mock_delete:
+            backend.delete("test_id")
+            mock_delete.assert_called_once_with("test_id")
 
 
 def test_redis_backend_delete_with_no_keys_found():
-    """Test Redis backend delete when no keys are found."""
+    """Test Redis backend delete with non-existent key (returns 0, no error)."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    # Mock the backend with proper model class
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -841,28 +792,9 @@ def test_redis_backend_delete_with_no_keys_found():
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
-        # Test delete with no keys found
-        with patch.object(UserDoc, "get") as mock_get:
-            mock_doc = MagicMock()
-            mock_doc.pk = "test_id"
-            mock_get.return_value = mock_doc
-
-            # Mock the model's Meta class
-            mock_meta = MagicMock()
-            mock_meta.global_key_prefix = "mindtrace"
-            UserDoc.Meta = mock_meta
-
-            # Mock redis keys and delete operations
-            with patch.object(backend, "redis") as mock_redis:
-                mock_redis.keys.return_value = []  # No keys found
-                mock_redis.delete.return_value = 0
-
-                with patch.object(UserDoc, "delete") as mock_delete:
-                    backend.delete("test_id")
-                    mock_redis.keys.assert_called_once_with("mindtrace:*test_id*")
-                    # Should not call delete on empty keys list
-                    mock_redis.delete.assert_not_called()
-                    mock_delete.assert_called_once_with("test_id")
+        with patch.object(UserDoc, "delete", return_value=0) as mock_delete:
+            backend.delete("test_id")
+            mock_delete.assert_called_once_with("test_id")
 
 
 def test_redis_backend_find_with_query_failure():
@@ -944,13 +876,12 @@ def test_redis_backend_get_with_not_found_error_specific():
 
 
 def test_redis_backend_delete_with_not_found_error_specific():
-    """Test Redis backend delete with specific NotFoundError."""
+    """Test Redis backend delete wraps NotFoundError as DocumentNotFoundError."""
     from redis_om.model.model import NotFoundError
 
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
-    # Mock the backend with proper model class
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -959,10 +890,7 @@ def test_redis_backend_delete_with_not_found_error_specific():
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
 
-        # Test delete with specific NotFoundError
-        with patch.object(UserDoc, "get") as mock_get:
-            mock_get.side_effect = NotFoundError("Document not found")
-
+        with patch.object(UserDoc, "delete", side_effect=NotFoundError("not found")):
             with pytest.raises(DocumentNotFoundError, match="Object with id test_id not found"):
                 backend.delete("test_id")
 
@@ -999,20 +927,21 @@ def test_redis_backend_find_with_complex_query():
 
         backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
+        backend._is_initialized = True
         backend.logger = MagicMock()
 
-        # Test find method with complex query
+        # Test find method with a redis-om expression query
         user1 = create_mock_redis_user("John", 30, "john@example.com")
-        user2 = create_mock_redis_user("Jane", 25, "jane@example.com")
+        user2 = create_mock_redis_user("John", 25, "john2@example.com")
 
         with patch.object(UserDoc, "find") as mock_find:
             mock_find.return_value.all.return_value = [user1, user2]
 
-            # Test with complex query
-            results = backend.find(UserDoc.name == "John", UserDoc.age > 25)
+            results = backend.find(where=(UserDoc.name == "John") & (UserDoc.age > 21))
             assert len(results) == 2
-            assert results[0].name == "John"
-            assert results[1].name == "Jane"
+            assert results[1].name == "John"
+            assert results[0].age == 30
+            assert results[1].age == 25
 
 
 def test_redis_backend_initialization_with_indexed_fields_pass_statement():
@@ -1177,11 +1106,9 @@ def test_redis_backend_get_successful():
 
 
 def test_redis_backend_delete_with_no_doc_found():
-    """Test Redis backend delete method when no document is found."""
-
+    """Test Redis backend delete when key doesn't exist (returns 0, no error)."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-    # Mock the backend with proper model class
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -1189,25 +1116,20 @@ def test_redis_backend_delete_with_no_doc_found():
         backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
-        backend._is_initialized = True  # Skip initialization
+        backend._is_initialized = True
 
-        # Test delete with no document found - should not raise error, just do nothing
-        with patch.object(UserDoc, "get") as mock_get:
-            mock_get.return_value = None
-
-            # Should not raise any error when doc is None
+        with patch.object(UserDoc, "delete", return_value=0) as mock_delete:
             backend.delete("test_id")
-            mock_get.assert_called_once_with("test_id")
+            mock_delete.assert_called_once_with("test_id")
 
 
 def test_redis_backend_delete_with_not_found_error():
-    """Test Redis backend delete method with NotFoundError."""
+    """Test Redis backend delete wraps NotFoundError as DocumentNotFoundError."""
     from redis_om.model.model import NotFoundError
 
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
     from mindtrace.database.core.exceptions import DocumentNotFoundError
 
-    # Mock the backend with proper model class
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
@@ -1215,12 +1137,9 @@ def test_redis_backend_delete_with_not_found_error():
         backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
         backend.model_cls = UserDoc
         backend.logger = MagicMock()
-        backend._is_initialized = True  # Skip initialization
+        backend._is_initialized = True
 
-        # Test delete with NotFoundError
-        with patch.object(UserDoc, "get") as mock_get:
-            mock_get.side_effect = NotFoundError("Document not found")
-
+        with patch.object(UserDoc, "delete", side_effect=NotFoundError("not found")):
             with pytest.raises(DocumentNotFoundError, match="Object with id test_id not found"):
                 backend.delete("test_id")
 
@@ -1266,18 +1185,14 @@ class TestRedisBackendEdgeCases:
             from mindtrace.database import DocumentNotFoundError
             from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
-            # Mock the Redis connection
             mock_redis = MagicMock()
             mock_get_redis.return_value = mock_redis
 
             backend = RedisMindtraceODM(model_cls=UserDoc, redis_url="redis://localhost:6379")
 
-            # Mock the model's get method to raise NotFoundError
-            with patch.object(UserDoc, "get") as mock_get:
-                from redis_om.model.model import NotFoundError
+            from redis_om.model.model import NotFoundError
 
-                mock_get.side_effect = NotFoundError("Document not found")
-
+            with patch.object(UserDoc, "delete", side_effect=NotFoundError("not found")):
                 with pytest.raises(DocumentNotFoundError):
                     backend.delete("non_existent_id")
 
@@ -1543,8 +1458,8 @@ def test_redis_backend_find_id_property_works():
         assert mock_doc2.id == "01H0000000000000000002"
 
 
-def test_redis_backend_find_fallback_id_property_works():
-    """Test Redis find method fallback path - id property returns pk automatically."""
+def test_redis_backend_find_error_returns_empty():
+    """Test Redis find method returns empty on non-index errors (no fallback to full scan)."""
     from mindtrace.database.backends.redis_odm import RedisMindtraceODM
 
     backend = RedisMindtraceODM(UserDoc, "redis://localhost:6379")
@@ -1552,32 +1467,15 @@ def test_redis_backend_find_fallback_id_property_works():
     backend._is_initialized = True
     backend.logger = MagicMock()
 
-    # Create mock documents with pk for fallback - need to mock the property behavior
-    mock_doc1 = MagicMock(spec=UserDoc)
-    mock_doc1.pk = "01H0000000000000000001"
-    type(mock_doc1).id = property(lambda self: getattr(self, "pk", None))
-
-    mock_doc2 = MagicMock(spec=UserDoc)
-    mock_doc2.pk = "01H0000000000000000002"
-    type(mock_doc2).id = property(lambda self: getattr(self, "pk", None))
-
     with patch.object(UserDoc, "find") as mock_find:
-        # First call (with args) raises exception, triggering fallback
-        # Second call (no args) succeeds and returns docs
         mock_query_result = MagicMock()
         mock_query_result.all.side_effect = Exception("Query failed")
+        mock_find.return_value = mock_query_result
 
-        mock_fallback_result = MagicMock()
-        mock_fallback_result.all.return_value = [mock_doc1, mock_doc2]
+        result = backend.find(UserDoc.name == "John")
 
-        mock_find.side_effect = [mock_query_result, mock_fallback_result]
-
-        result = backend.find("some", "args")
-
-        assert len(result) == 2
-        # Check that id property returns pk in fallback path
-        assert mock_doc1.id == "01H0000000000000000001"
-        assert mock_doc2.id == "01H0000000000000000002"
+        # Non-index errors return empty — no fallback to unfiltered scan
+        assert result == []
 
 
 def test_mindtrace_redis_document_id_property():

@@ -340,6 +340,7 @@ class UnifiedMindtraceDocument(BaseModel):
         natural_keys = getattr(meta, "natural_key_fields", None)
         if natural_keys:
             meta_attrs["natural_key_fields"] = list(natural_keys)
+
         MetaClass = type("Meta", (parent_meta,), meta_attrs)
 
         # Create the class attributes dictionary
@@ -357,6 +358,20 @@ class UnifiedMindtraceDocument(BaseModel):
         DynamicRedisModel.model_config["index"] = True
         for field_name, field_descriptor in fields.items():
             setattr(DynamicRedisModel, field_name, field_descriptor)
+
+        # Inject __init__ that derives pk from natural-key fields
+        if natural_keys:
+            nk_fields = list(natural_keys)
+            _base_cls = DynamicRedisModel.__bases__[0]  # MindtraceRedisDocument
+
+            def _make_init(nk, base):
+                def __init__(self, **data):
+                    if "pk" not in data and all(f in data for f in nk):
+                        data["pk"] = ":".join(str(data[f]) for f in nk)
+                    base.__init__(self, **data)
+                return __init__
+
+            DynamicRedisModel.__init__ = _make_init(nk_fields, _base_cls)
 
         if model_registry is not None:
             try:

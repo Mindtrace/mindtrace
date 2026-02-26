@@ -996,25 +996,16 @@ def test_redis_find_other_error_fallback():
         assert results == []
 
 
-def test_redis_find_other_error_fallback_succeeds():
-    """Test find() when query fails but fallback succeeds."""
+def test_redis_find_other_error_returns_empty():
+    """Test find() returns empty list on non-index errors (no fallback to full scan)."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
 
         # Mock find() to raise non-index error
-        call_count = [0]
-
-        def mock_find(*args):
-            mock_query = MagicMock()
-            if call_count[0] == 0:
-                call_count[0] += 1
-                mock_query.all.side_effect = Exception("Connection error")
-            else:
-                mock_query.all.return_value = [MagicMock()]
-            return mock_query
-
-        RedisDocTest.find = MagicMock(side_effect=mock_find)
+        mock_query = MagicMock()
+        mock_query.all.side_effect = Exception("Connection error")
+        RedisDocTest.find = MagicMock(return_value=mock_query)
 
         backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
         backend.logger = MagicMock()
@@ -1025,8 +1016,8 @@ def test_redis_find_other_error_fallback_succeeds():
         RedisDocTest.Meta.database = mock_redis
 
         results = backend.find()
-        # Should return results from fallback
-        assert len(results) > 0
+        # Non-index errors return empty — no fallback to unfiltered scan
+        assert results == []
 
 
 def test_redis_find_with_dict_query():
@@ -1054,17 +1045,282 @@ def test_redis_find_with_dict_query():
 
 
 def test_redis_dict_to_find_expressions():
-    """Test _dict_to_find_expressions converts dict to expressions and skips missing attrs."""
+    """Test _dict_to_find_expressions converts dict to expressions and rejects unknown fields."""
+    from mindtrace.database.core.exceptions import QueryNotSupported
+
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
         backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
         backend._is_initialized = True
 
-        exprs = backend._dict_to_find_expressions({"name": "Alice", "nonexistent": 1})
-        assert len(exprs) >= 1
+        exprs = backend._dict_to_find_expressions({"name": "Alice"})
+        assert len(exprs) == 1
         exprs_empty = backend._dict_to_find_expressions({})
         assert exprs_empty == []
+        with pytest.raises(QueryNotSupported):
+            backend._dict_to_find_expressions({"name": "Alice", "nonexistent": 1})
+        with pytest.raises(QueryNotSupported):
+            backend._dict_to_find_expressions({"$and": [{"name": "Alice"}]})
+
+
+# ── Query-shape tests for _dict_to_find_expressions ────────────────────────
+# Verify expression tree structure for every shape the ODM must support:
+# flat equality, multi-field AND, list-as-IN, $or, combined $or+equality.
+
+
+def _make_backend():
+    """Create a backend wired to RedisDocTest without hitting Redis."""
+    with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock:
+        mock.return_value = MagicMock()
+        backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
+        backend._is_initialized = True
+        return backend
+
+
+def test_dict_expr_flat_equality():
+    """Single field equality → one EQ expression."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({"name": "Alice"})
+    assert len(exprs) == 1
+    assert exprs[0].op == Operators.EQ
+    assert exprs[0].right == "Alice"
+
+
+def test_dict_expr_multi_field_and():
+    """Multiple fields → separate EQ expressions (implicit AND)."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({"name": "Alice", "age": 30})
+    assert len(exprs) == 2
+    ops = {e.op for e in exprs}
+    assert ops == {Operators.EQ}
+
+
+def test_dict_expr_list_in():
+    """List value → IN expression via << operator."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({"name": ["Alice", "Bob"]})
+    assert len(exprs) == 1
+    assert exprs[0].op == Operators.IN
+    assert exprs[0].right == ["Alice", "Bob"]
+
+
+def test_dict_expr_or():
+    """$or with two clauses → OR expression tree."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({
+        "$or": [{"name": "Alice"}, {"name": "Bob"}]
+    })
+    assert len(exprs) == 1
+    assert exprs[0].op == Operators.OR
+    assert exprs[0].left.op == Operators.EQ
+    assert exprs[0].right.op == Operators.EQ
+
+
+def test_dict_expr_or_with_multi_field_clauses():
+    """$or where each clause has two fields → OR of ANDs."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({
+        "$or": [
+            {"name": "Alice", "age": 30},
+            {"name": "Bob", "age": 25},
+        ]
+    })
+    assert len(exprs) == 1
+    assert exprs[0].op == Operators.OR
+    # Each branch is an AND of two EQ expressions
+    assert exprs[0].left.op == Operators.AND
+    assert exprs[0].right.op == Operators.AND
+
+
+def test_dict_expr_equality_plus_or():
+    """Flat equality combined with $or → two expressions (AND at query level)."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({
+        "email": "x@example.com",
+        "$or": [{"name": "Alice"}, {"name": "Bob"}],
+    })
+    assert len(exprs) == 2
+    ops = {e.op for e in exprs}
+    assert Operators.EQ in ops
+    assert Operators.OR in ops
+
+
+def test_dict_expr_or_three_clauses():
+    """$or with three clauses → nested OR tree."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    exprs = b._dict_to_find_expressions({
+        "$or": [{"name": "A"}, {"name": "B"}, {"name": "C"}]
+    })
+    assert len(exprs) == 1
+    # (A | B) | C  →  top-level OR, left is OR, right is EQ
+    top = exprs[0]
+    assert top.op == Operators.OR
+    assert top.left.op == Operators.OR
+    assert top.right.op == Operators.EQ
+
+
+def test_dict_expr_rejects_dict_style_in():
+    """{"field": {"$in": [...]}} style is rejected."""
+    from mindtrace.database.core.exceptions import QueryNotSupported
+
+    b = _make_backend()
+    with pytest.raises(QueryNotSupported, match="Dict-style operators"):
+        b._dict_to_find_expressions({"name": {"$in": ["Alice", "Bob"]}})
+
+
+def test_dict_expr_rejects_unsupported_dollar_op():
+    """$nor, $and etc. are rejected."""
+    from mindtrace.database.core.exceptions import QueryNotSupported
+
+    b = _make_backend()
+    with pytest.raises(QueryNotSupported, match="Unsupported query operator"):
+        b._dict_to_find_expressions({"$nor": [{"name": "Alice"}]})
+    with pytest.raises(QueryNotSupported, match="Unsupported query operator"):
+        b._dict_to_find_expressions({"$and": [{"name": "Alice"}]})
+
+
+# ── End-to-end ODM method tests with mocked redis-om find() ────────────────
+# These verify that find/delete_many/update_one/distinct actually call
+# model_cls.find() with the right expressions, not just that
+# _dict_to_find_expressions builds them.
+
+
+def test_find_passes_or_expressions_to_model():
+    """find(where={...$or...}) passes combined expressions to model_cls.find()."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_query = MagicMock()
+    mock_query.all.return_value = []
+    with patch.object(RedisDocTest, "find", return_value=mock_query) as mock_find:
+        b.find(where={"email": "x@y.com", "$or": [{"name": "A"}, {"name": "B"}]})
+        # model_cls.find() should have been called with 2 expression args
+        assert mock_find.called
+        args = mock_find.call_args[0]
+        assert len(args) == 2  # one EQ for email, one OR tree
+
+
+def test_find_passes_list_in_to_model():
+    """find(where={"field": [v1, v2]}) passes IN expression."""
+    from redis_om.model.model import Operators
+
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_query = MagicMock()
+    mock_query.all.return_value = []
+    with patch.object(RedisDocTest, "find", return_value=mock_query) as mock_find:
+        b.find(where={"name": ["Alice", "Bob"]})
+        args = mock_find.call_args[0]
+        assert len(args) == 1
+        assert args[0].op == Operators.IN
+
+
+def test_delete_many_calls_find_query_delete():
+    """delete_many delegates to model_cls.find(*exprs).delete()."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_query = MagicMock()
+    mock_query.delete.return_value = 3
+    with patch.object(RedisDocTest, "find", return_value=mock_query) as mock_find:
+        count = b.delete_many({"name": "Alice"})
+        assert mock_find.called
+        mock_query.delete.assert_called_once()
+        assert count == 3
+
+
+def test_delete_many_with_or():
+    """delete_many with $or passes correct expressions."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_query = MagicMock()
+    mock_query.delete.return_value = 2
+    with patch.object(RedisDocTest, "find", return_value=mock_query) as mock_find:
+        count = b.delete_many({"$or": [{"name": "A"}, {"name": "B"}]})
+        args = mock_find.call_args[0]
+        assert len(args) == 1  # single OR expression
+        assert count == 2
+
+
+def test_update_one_upsert_inserts_when_no_match():
+    """update_one with upsert=True inserts when find returns empty."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_query = MagicMock()
+    mock_query.all.return_value = []
+    with patch.object(RedisDocTest, "find", return_value=mock_query):
+        mock_doc = MagicMock()
+        mock_doc.pk = "new-pk"
+        mock_doc.model_dump.return_value = {"name": "Alice", "age": 30}
+        with patch.object(b, "insert", return_value=mock_doc):
+            result = b.update_one(
+                where={"name": "Alice"},
+                set_fields={"age": 30},
+                upsert=True,
+                return_document="after",
+            )
+            assert result == {"name": "Alice", "age": 30}
+
+
+def test_update_one_modifies_existing():
+    """update_one finds a doc and saves updates."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    mock_doc = MagicMock()
+    mock_doc.model_dump.return_value = {"name": "Alice", "age": 25}
+    mock_query = MagicMock()
+    mock_query.all.return_value = [mock_doc]
+    with patch.object(RedisDocTest, "find", return_value=mock_query):
+        result = b.update_one(
+            where={"name": "Alice"},
+            set_fields={"age": 31},
+            return_document="before",
+        )
+        # return_document="before" returns the old dump
+        assert result == {"name": "Alice", "age": 25}
+        mock_doc.save.assert_called_once()
+
+
+def test_distinct_with_filter():
+    """distinct uses find() for the fallback when FT.AGGREGATE fails."""
+    b = _make_backend()
+    b.redis = MagicMock()
+
+    # Make FT.AGGREGATE fail so it falls back to find()
+    b.redis.execute_command.side_effect = Exception("no index")
+
+    mock_doc1 = MagicMock()
+    mock_doc1.name = "Alice"
+    mock_doc2 = MagicMock()
+    mock_doc2.name = "Bob"
+    mock_doc3 = MagicMock()
+    mock_doc3.name = "Alice"
+
+    mock_query = MagicMock()
+    mock_query.all.return_value = [mock_doc1, mock_doc2, mock_doc3]
+    with patch.object(RedisDocTest, "find", return_value=mock_query):
+        RedisDocTest.Meta.index_name = "test:index"
+        values = b.distinct("name", {"email": "x@y.com"})
+        assert values == ["Alice", "Bob"]
 
 
 def test_redis_find_with_args_zero_results_but_ft_search_has_documents():

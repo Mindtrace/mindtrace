@@ -1,12 +1,12 @@
 import asyncio
-from typing import Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 from redis_om import JsonModel, Migrator, get_redis_connection
 from redis_om.model.model import ExpressionProxy, NotFoundError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError, QueryNotSupported
 
 
 class MindtraceRedisDocument(JsonModel):
@@ -594,74 +594,81 @@ class RedisMindtraceODM(MindtraceODM):
                                 f"Model {model.__name__} Meta.database using port {port}, expected {expected_port}"
                             )
 
-                # Use Migrator to create indexes (required for redis-om's find() to work)
-                migrator_success = False
-                migrator_error_msg = None
-                original_redis_url = os.environ.get("REDIS_OM_URL", None)
+                # Use Migrator (required for redis-om's find() to work)
+                if models_to_migrate:
+                    migrator_success = False
+                    migrator_error_msg = None
+                    original_redis_url = os.environ.get("REDIS_OM_URL", None)
 
-                if self.redis_url:
-                    os.environ["REDIS_OM_URL"] = self.redis_url
-                    try:
-                        from redis_om import connections
-
-                        connections.URL = self.redis_url
-                    except Exception:
-                        pass
-
-                try:
-                    # Ensure all models in registry use our connection
-                    for model in models_to_migrate:
-                        if hasattr(model, "Meta"):
-                            model.Meta.database = self.redis
-
-                    # Update all models in redis-om's registry to use our connection
-                    try:
-                        from redis_om.model.model import model_registry
-
-                        for name, cls in model_registry.items():
-                            if hasattr(cls, "Meta") and hasattr(cls.Meta, "database"):
-                                current_port = None
-                                if hasattr(cls.Meta.database, "connection_pool"):
-                                    current_port = cls.Meta.database.connection_pool.connection_kwargs.get("port", None)
-                                if current_port == 6379 or cls.Meta.database is None:
-                                    cls.Meta.database = self.redis
-                    except Exception:
-                        pass
-
-                    # Run Migrator to create indexes
-                    migrator = Migrator()
-                    migrator.run()
-                    migrator_success = True
-                except Exception as migrator_error:
-                    # Migrator failed - log the error and fall back
-                    migrator_error_msg = str(migrator_error)
-                    error_str = migrator_error_msg.lower()
-                    current_redis_url = os.environ.get("REDIS_OM_URL", "not set")
-                    if "connection" not in error_str and "111" not in error_str and "6379" not in error_str:
-                        self.logger.warning(f"Migrator failed: {migrator_error_msg}")
-                        self.logger.warning("Migrator failed - redis-om's find() may not work correctly")
-                    else:
-                        self.logger.warning(f"Migrator failed due to connection issue: {migrator_error_msg}")
-                        self.logger.warning(f"REDIS_OM_URL was: {current_redis_url}")
-                        self.logger.warning(f"Expected Redis URL: {self.redis_url}")
-                finally:
-                    # Restore original REDIS_OM_URL after Migrator runs
-                    if original_redis_url is not None:
-                        os.environ["REDIS_OM_URL"] = original_redis_url
-                    elif "REDIS_OM_URL" in os.environ and self.redis_url:
-                        # Only delete if we set it (don't delete if it was already set)
-                        del os.environ["REDIS_OM_URL"]
-
-                # Fallback to manual index creation if Migrator fails
-                if not migrator_success:
-                    self.logger.warning("Falling back to manual index creation (may not work with redis-om's find())")
-                    if migrator_error_msg:
-                        self.logger.warning(f"Migrator error was: {migrator_error_msg}")
-                    for model in models_to_migrate:
+                    if self.redis_url:
+                        os.environ["REDIS_OM_URL"] = self.redis_url
                         try:
-                            self._create_index_for_model(model)
-                        except Exception as model_error:
-                            self.logger.debug(f"Manual index creation for {model.__name__} failed: {model_error}")
+                            from redis_om import connections
+
+                            connections.URL = self.redis_url
+                        except Exception:
+                            pass
+
+                    try:
+                        # Ensure all models in registry use our connection
+                        for model in models_to_migrate:
+                            if hasattr(model, "Meta"):
+                                model.Meta.database = self.redis
+
+                        # Update all models in redis-om's registry to use our connection
+                        try:
+                            from redis_om.model.model import model_registry
+
+                            for name, cls in model_registry.items():
+                                if hasattr(cls, "Meta") and hasattr(cls.Meta, "database"):
+                                    current_port = None
+                                    if hasattr(cls.Meta.database, "connection_pool"):
+                                        current_port = cls.Meta.database.connection_pool.connection_kwargs.get(
+                                            "port", None
+                                        )
+                                    if current_port == 6379 or cls.Meta.database is None:
+                                        cls.Meta.database = self.redis
+                        except Exception:
+                            pass
+
+                        # Run Migrator to create indexes
+                        migrator = Migrator()
+                        migrator.run()
+                        migrator_success = True
+                    except Exception as migrator_error:
+                        # Migrator failed - log the error and fall back
+                        migrator_error_msg = str(migrator_error)
+                        error_str = migrator_error_msg.lower()
+                        current_redis_url = os.environ.get("REDIS_OM_URL", "not set")
+                        if "connection" not in error_str and "111" not in error_str and "6379" not in error_str:
+                            self.logger.warning(f"Migrator failed: {migrator_error_msg}")
+                            self.logger.warning("Migrator failed - redis-om's find() may not work correctly")
+                        else:
+                            self.logger.warning(f"Migrator failed due to connection issue: {migrator_error_msg}")
+                            self.logger.warning(f"REDIS_OM_URL was: {current_redis_url}")
+                            self.logger.warning(f"Expected Redis URL: {self.redis_url}")
+                    finally:
+                        # Restore original REDIS_OM_URL after Migrator runs
+                        if original_redis_url is not None:
+                            os.environ["REDIS_OM_URL"] = original_redis_url
+                        elif "REDIS_OM_URL" in os.environ and self.redis_url:
+                            # Only delete if we set it (don't delete if it was already set)
+                            del os.environ["REDIS_OM_URL"]
+
+                    # Fallback to manual index creation if Migrator fails
+                    if not migrator_success:
+                        self.logger.warning(
+                            "Falling back to manual index creation (may not work with redis-om's find())"
+                        )
+                        if migrator_error_msg:
+                            self.logger.warning(f"Migrator error was: {migrator_error_msg}")
+                        for model in models_to_migrate:
+                            try:
+                                self._create_index_for_model(model)
+                            except Exception as model_error:
+                                self.logger.debug(
+                                    f"Manual index creation for {model.__name__} failed: {model_error}"
+                                )
 
                 self._is_initialized = True
                 # Mark all model ODMs as initialized
@@ -770,30 +777,20 @@ class RedisMindtraceODM(MindtraceODM):
         else:
             obj_data = obj.model_dump() if hasattr(obj, "model_dump") else obj.__dict__
 
-        doc = self.model_cls(**obj_data)
-        doc.save()
+        doc = self.model_cls(**obj_data)  # __init__ auto-derives pk from natural keys if present
 
-        # After saving, ensure the index is working - if it has 0 docs, recreate it
-        # This handles the case where index was created before documents were inserted
+        if self._natural_key_fields():
+            result = doc.save(nx=True)
+            if result is None:
+                raise DuplicateInsertError(
+                    f"Document with pk={doc.pk} already exists"
+                )
+        else:
+            doc.save()
+
+        # Ensure the index is working after first insert
         try:
             self._ensure_index_has_documents(self.model_cls)
-            # After ensuring index, try running Migrator to make redis-om aware of it
-            # This ensures redis-om's find() method can use the index
-            try:
-                import os
-
-                original_redis_url = os.environ.get("REDIS_OM_URL", None)
-                if self.redis_url:
-                    os.environ["REDIS_OM_URL"] = self.redis_url
-                try:
-                    Migrator().run()
-                finally:
-                    if original_redis_url:
-                        os.environ["REDIS_OM_URL"] = original_redis_url
-                    elif "REDIS_OM_URL" in os.environ:
-                        del os.environ["REDIS_OM_URL"]
-            except Exception:
-                pass  # Don't fail if Migrator fails
         except Exception:
             pass  # Don't fail insert if index check fails
 
@@ -920,18 +917,9 @@ class RedisMindtraceODM(MindtraceODM):
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
         self.initialize()
         try:
-            doc = self.model_cls.get(id)
-            if doc:
-                # Get all keys associated with this document
-                pattern = f"{self.model_cls.Meta.global_key_prefix}:*{doc.pk}*"
-                keys = self.redis.keys(pattern)
-
-                # Delete all associated keys
-                if keys:
-                    self.redis.delete(*keys)
-
-                # Delete the document itself
-                self.model_cls.delete(doc.pk)
+            # delete() builds the exact model-scoped key via make_primary_key,
+            # so only the target document is removed — no wildcard patterns.
+            self.model_cls.delete(id)
         except NotFoundError:
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
@@ -978,26 +966,102 @@ class RedisMindtraceODM(MindtraceODM):
                 raise
 
     def _dict_to_find_expressions(self, query_dict: dict):
-        """Convert a dict query to redis-om expression(s) so find(dict) works."""
+        """Convert a dict query to redis-om expression(s) so find(dict) works.
+
+        Supports:
+        - Flat equality: {"field": value}
+        - List-as-IN: {"field": [v1, v2]} → Model.field << [v1, v2]
+        - $or: {"$or": [{clause1}, {clause2}]} → (clause1) | (clause2)
+        """
         if not query_dict:
             return []
         model = self.model_cls
         expressions = []
+
         for key, value in query_dict.items():
+            if key == "$or":
+                or_exprs = []
+                for clause in value:
+                    clause_exprs = self._dict_to_find_expressions(clause)
+                    if clause_exprs:
+                        combined = clause_exprs[0]
+                        for e in clause_exprs[1:]:
+                            combined = combined & e
+                        or_exprs.append(combined)
+                if or_exprs:
+                    or_combined = or_exprs[0]
+                    for e in or_exprs[1:]:
+                        or_combined = or_combined | e
+                    expressions.append(or_combined)
+                continue
+
+            if key.startswith("$"):
+                raise QueryNotSupported(
+                    f"Unsupported query operator '{key}'. "
+                    f"Supported: $or, scalar equality, list-as-IN."
+                )
+
             attr = getattr(model, key, None)
             if attr is None:
-                continue
-            expr = attr == value
+                raise QueryNotSupported(
+                    f"Field '{key}' does not exist on model {model.__name__}."
+                )
+
+            if isinstance(value, (list, tuple)):
+                expr = attr << list(value)
+            elif isinstance(value, dict):
+                raise QueryNotSupported(
+                    f"Dict-style operators on field '{key}' are not supported. "
+                    f"Use list-as-IN or scalar equality instead."
+                )
+            else:
+                expr = attr == value
+
             if getattr(expr, "op", None) is not None:
                 expressions.append(expr)
+
         return expressions
 
-    def find(self, *args, **kwargs) -> List[ModelType]:
+    def _natural_key_fields(self) -> List[str]:
+        """Return configured natural-key fields for this model."""
+        meta = getattr(self.model_cls, "Meta", None)
+        fields = getattr(meta, "natural_key_fields", []) if meta is not None else []
+        if not isinstance(fields, (list, tuple)):
+            return []
+        return [f for f in fields if isinstance(f, str) and f]
+
+    # ── FT helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _ft_escape_tag(value: str) -> str:
+        """Escape special characters for RediSearch TAG queries."""
+        special = r',.<>{}[]"\':;!@#$%^&*()-+=~/ '
+        return "".join(f"\\{c}" if c in special else c for c in str(value))
+
+    def _build_ft_filter(self, where: dict) -> str:
+        """Translate a flat where dict to an FT.AGGREGATE filter string."""
+        parts = []
+        for key, value in where.items():
+            if key.startswith("$"):
+                continue
+            escaped = self._ft_escape_tag(str(value))
+            parts.append(f"@{key}:{{{escaped}}}")
+        return " ".join(parts) if parts else "*"
+
+    def find(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        **kwargs,
+    ) -> List[ModelType]:
         """
         Find documents matching the specified criteria.
 
         Args:
-            *args: Query conditions and filters.
+            where: Portable filter document.
+            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
+            limit: Optional max number of returned docs.
             **kwargs: Additional query parameters.
 
         Returns:
@@ -1010,18 +1074,29 @@ class RedisMindtraceODM(MindtraceODM):
             .. code-block:: python
 
                 # Find users with specific email
-                users = backend.find(User.email == "john@example.com")
+                users = backend.find(where={"email": "john@example.com"})
 
                 # Find all users if no criteria specified
                 all_users = backend.find()
 
                 # Find with dict (converted to expressions internally)
-                users = backend.find({"name": "Charlie"})
+                users = backend.find(where={"name": "Charlie"})
         """
         if self._models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
-        if args and len(args) == 1 and isinstance(args[0], dict):
-            args = tuple(self._dict_to_find_expressions(args[0]))
+
+        # Legacy compat: if `where` is a redis-om expression (not a dict),
+        # pass it straight through as a positional arg to model_cls.find().
+        if where is not None and not isinstance(where, dict):
+            args = (where,)
+            query_dict = {}
+        else:
+            args = tuple()
+            query_dict = where or {}
+
+        # All dict queries go through redis-om expressions (supports $or, list-IN, equality).
+        if query_dict:
+            args = tuple(self._dict_to_find_expressions(query_dict))
         # Ensure initialization succeeded - retry if it failed due to connection issues
         if not self._is_initialized:
             self.initialize()
@@ -1073,6 +1148,14 @@ class RedisMindtraceODM(MindtraceODM):
                 except Exception:
                     pass  # If check fails, return empty results
 
+            if sort:
+                for field_name, direction in reversed(sort):
+                    results.sort(
+                        key=lambda d: (getattr(d, field_name, None) is None, getattr(d, field_name, None)),
+                        reverse=direction < 0,
+                    )
+            if limit is not None:
+                results = results[: max(0, limit)]
             return results
         except Exception as e:
             # If query fails due to missing index, try to create it and retry
@@ -1103,13 +1186,124 @@ class RedisMindtraceODM(MindtraceODM):
                     self.logger.warning(f"Redis query failed after retry: {retry_error}")
                     return []
             else:
-                # If query fails for other reasons, log the error and return empty list
+                # Never degrade a filtered query into an unfiltered scan.
+                # Returning all docs here can cause cross-registry contamination.
                 self.logger.warning(f"Redis query failed: {e}")
-                # Try to return all documents if specific query fails
-                try:
-                    return self.model_cls.find().all()
-                except Exception:
-                    return []
+                return []
+
+    def insert_one(self, doc: BaseModel | dict):
+        """Insert one document (canonical alias for insert)."""
+        return self.insert(doc)
+
+    def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> ModelType | None:
+        """Find one document matching filter."""
+        results = self.find(where=where, sort=sort, limit=1)
+        return results[0] if results else None
+
+    def update_one(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Update one matching document."""
+        if self._models is not None:
+            raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
+        if return_document not in {"none", "before", "after"}:
+            raise ValueError("return_document must be one of: 'none', 'before', 'after'")
+        self.initialize()
+
+        matches = self.find(where=where, limit=1)
+        modified_count = 0
+        upserted_id = None
+
+        if matches:
+            doc = matches[0]
+            old_doc = doc.model_dump()
+            for field, value in set_fields.items():
+                setattr(doc, field, value)
+            doc.save()
+            modified_count = 1
+            if return_document == "before":
+                return old_doc
+            if return_document == "after":
+                return doc.model_dump()
+        elif upsert:
+            if any(isinstance(v, (list, tuple, dict, set)) for v in where.values()):
+                raise ValueError("Cannot upsert with non-equality where values.")
+            payload = {**where, **set_fields}
+            inserted = self.insert_one(payload)
+            upserted_id = getattr(inserted, "pk", None) or getattr(inserted, "id", None)
+            if return_document == "before":
+                return None
+            if return_document == "after":
+                return inserted.model_dump() if hasattr(inserted, "model_dump") else inserted
+        elif return_document in {"before", "after"}:
+            return None
+
+        class _UpdateResult:
+            pass
+
+        result = _UpdateResult()
+        result.modified_count = modified_count
+        result.upserted_id = upserted_id
+        return result
+
+    def delete_one(self, where: dict) -> int:
+        """Delete one matching document."""
+        doc = self.find_one(where=where)
+        if not doc:
+            return 0
+        doc_id = getattr(doc, "pk", None) or getattr(doc, "id", None)
+        if doc_id is None:
+            return 0
+        try:
+            self.delete(str(doc_id))
+            return 1
+        except DocumentNotFoundError:
+            return 0
+
+    def delete_many(self, where: dict) -> int:
+        """Delete documents matching where filter."""
+        if self._models is not None:
+            raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
+        self.initialize()
+
+        exprs = self._dict_to_find_expressions(where)
+        if exprs:
+            return self.model_cls.find(*exprs).delete()
+        return 0
+
+    def distinct(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct field values matching where filter."""
+        if self._models is not None:
+            raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
+        self.initialize()
+
+        # Try FT.AGGREGATE for efficient distinct
+        index_name = getattr(self.model_cls.Meta, "index_name", None)
+        if index_name:
+            ft_filter = self._build_ft_filter(where) if where else "*"
+            try:
+                result = self.redis.execute_command(
+                    "FT.AGGREGATE", index_name, ft_filter,
+                    "GROUPBY", "1", f"@{field}",
+                )
+                values = []
+                for row in result[1:]:
+                    if isinstance(row, list) and len(row) >= 2:
+                        val = row[1]
+                        if isinstance(val, bytes):
+                            val = val.decode()
+                        values.append(val)
+                return sorted(values)
+            except Exception:
+                pass  # Fall through to scan
+
+        # Fallback: indexed find
+        values = {getattr(doc, field, None) for doc in self.find(where=where or {})}
+        return sorted(v for v in values if v is not None)
 
     def get_raw_model(self) -> Type[ModelType]:
         """
@@ -1279,9 +1473,39 @@ class RedisMindtraceODM(MindtraceODM):
             .. code-block:: python
 
                 # Find users with specific email
-                users = await backend.find_async(User.email == "john@example.com")
+                users = await backend.find_async(where={"email": "john@example.com"})
 
                 # Find all users if no criteria specified
                 all_users = await backend.find_async()
         """
         return await asyncio.to_thread(self.find, *args, **kwargs)
+
+    async def insert_one_async(self, doc: BaseModel | dict) -> ModelType:
+        """Async wrapper around insert_one."""
+        return await asyncio.to_thread(self.insert_one, doc)
+
+    async def find_one_async(self, where: dict, sort: list[tuple[str, int]] | None = None) -> ModelType | None:
+        """Async wrapper around find_one."""
+        return await asyncio.to_thread(self.find_one, where, sort)
+
+    async def update_one_async(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Async wrapper around update_one."""
+        return await asyncio.to_thread(self.update_one, where, set_fields, upsert, return_document)
+
+    async def delete_one_async(self, where: dict) -> int:
+        """Async wrapper around delete_one."""
+        return await asyncio.to_thread(self.delete_one, where)
+
+    async def delete_many_async(self, where: dict) -> int:
+        """Async wrapper around delete_many."""
+        return await asyncio.to_thread(self.delete_many, where)
+
+    async def distinct_async(self, field: str, where: dict | None = None) -> list[Any]:
+        """Async wrapper around distinct."""
+        return await asyncio.to_thread(self.distinct, field, where)

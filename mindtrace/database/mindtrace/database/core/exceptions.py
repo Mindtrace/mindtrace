@@ -44,3 +44,15 @@ class DuplicateInsertError(Exception):
     """
 
     pass
+
+
+class QueryNotSupported(Exception):
+    """Query cannot be resolved without a full key scan.
+
+    Raised by the Redis ODM when a query cannot be handled via
+    GET/MGET/FT.SEARCH for models with structured keys.
+    Pass ``allow_scan=True`` to ``find()`` to explicitly permit
+    a SCAN fallback.
+    """
+
+    pass

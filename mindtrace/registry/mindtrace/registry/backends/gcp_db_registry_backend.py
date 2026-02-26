@@ -41,7 +41,7 @@ class RegistryObjectMeta(UnifiedMindtraceDocument):
 
     class Meta:
         collection_name = "registry_object_metadata"
-        indexed_fields = ["registry_uri", "name"]
+        indexed_fields = ["registry_uri", "name", "version"]
         compound_indexes = [{"fields": ["registry_uri", "name", "version"], "unique": True}]
         natural_key_fields = ["registry_uri", "name", "version"]
 
@@ -55,6 +55,7 @@ class RegistryMeta(UnifiedMindtraceDocument):
     class Meta:
         collection_name = "registry_metadata"
         unique_fields = ["registry_uri"]
+        indexed_fields = ["registry_uri"]
         natural_key_fields = ["registry_uri"]
 
 
@@ -69,8 +70,8 @@ class RegistryCommitPlan(UnifiedMindtraceDocument):
 
     class Meta:
         collection_name = "registry_commit_plans"
-        indexed_fields = ["registry_uri", "expires_at"] # mongo
-        natural_key_fields = ["registry_uri", "name", "version", "uuid"] # redis
+        indexed_fields = ["registry_uri", "name", "version", "uuid", "expires_at"]
+        natural_key_fields = ["registry_uri", "name", "version", "uuid"]
 
 
 class RegistryObjectBlob(UnifiedMindtraceDocument):
@@ -84,7 +85,7 @@ class RegistryObjectBlob(UnifiedMindtraceDocument):
 
     class Meta:
         collection_name = "registry_object_blobs"
-        indexed_fields = ["uuid"]
+        indexed_fields = ["registry_uri", "name", "version", "uuid"]
         compound_indexes = [{"fields": ["registry_uri", "name", "version", "uuid"], "unique": True}]
         natural_key_fields = ["registry_uri", "name", "version", "uuid"]
 
@@ -99,7 +100,7 @@ class RegistryMaterializer(UnifiedMindtraceDocument):
 
     class Meta:
         collection_name = "registry_materializers"
-        indexed_fields = ["registry_uri"]
+        indexed_fields = ["registry_uri", "object_class"]
         compound_indexes = [{"fields": ["registry_uri", "object_class"], "unique": True}]
         natural_key_fields = ["registry_uri", "object_class"]
 
