@@ -298,34 +298,14 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """
         return True
 
-    async def insert(self, obj: BaseModel | dict) -> T:
-        """
-        Insert a new document into the MongoDB collection.
-
-        Args:
-            obj (BaseModel): The document object to insert into the database.
-                Can be a BaseModel instance or a Beanie Document. If it's a Document
-                created before initialization, it will be recreated from dict data.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
+    async def insert_one(self, obj: BaseModel | dict) -> T:
+        """Insert one document. Returns the inserted document.
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
-            ValueError: If in multi-model mode (use db.model_name.insert() instead).
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                try:
-                    inserted_user = await backend.insert(user)
-                    print(f"Inserted user with ID: {inserted_user.id}")
-                except DuplicateInsertError as e:
-                    print(f"Duplicate entry: {e}")
         """
         if self._models is not None:
-            raise ValueError("Cannot use insert() in multi-model mode. Use db.model_name.insert() instead.")
+            raise ValueError("Cannot use insert_one() in multi-model mode. Use db.model_name.insert_one() instead.")
 
         # Auto-initialize if needed (backward compatible - works with or without explicit init)
         if not self._is_initialized:
@@ -336,8 +316,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             data = obj.model_dump()
         elif isinstance(obj, dict):
             data = obj.copy()
-            # Beanie handles Document objects in dicts directly for Link fields
-            # No conversion needed - just pass the dict as-is
         else:
             data = obj.model_dump()
 
@@ -357,34 +335,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         except Exception as e:
             raise DuplicateInsertError(str(e))
 
+    async def insert(self, obj: BaseModel | dict) -> T:
+        """Legacy: insert a document. Prefer ``insert_one``."""
+        return await self.insert_one(obj)
+
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
-        """
-        Retrieve a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.get() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = await backend.get("507f1f77bcf86cd799439011")
-                    print(f"Found user: {user.name}")
-
-                    # With linked documents
-                    user = await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
-                    print(f"User address: {user.address.street}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: retrieve a document by id. Prefer ``find_one``."""
         if self._models is not None:
             raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
 
@@ -398,33 +354,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return doc
 
     async def update(self, obj: BaseModel) -> T:
-        """
-        Update an existing document in the MongoDB collection.
-
-        The document object should have been retrieved from the database,
-        modified, and then passed to this method to save the changes.
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-            ValueError: If in multi-model mode (use db.model_name.update() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = await backend.get("507f1f77bcf86cd799439011")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = await backend.update(user)
-        """
+        """Legacy: full-document save by id. Prefer ``update_one``."""
         if self._models is not None:
             raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
 
@@ -456,25 +386,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return doc
 
     async def delete(self, id: str):
-        """
-        Delete a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.delete() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    await backend.delete("507f1f77bcf86cd799439011")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: delete a document by id. Prefer ``delete_one``."""
         if self._models is not None:
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
 
@@ -489,23 +401,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
     async def all(self) -> List[T]:
-        """
-        Retrieve all documents from the collection.
-
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.all() instead).
-
-        Example:
-            .. code-block:: python
-
-                all_users = await backend.all()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
-        """
+        """Legacy: retrieve all documents. Prefer ``find()``."""
         if self._models is not None:
             raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
 
@@ -552,33 +448,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         fetch_links: bool = False,
         **kwargs,
     ) -> List[T]:
-        """
-        Find documents matching the specified criteria.
+        """Find documents matching a portable filter.
 
         Args:
-            where: Portable filter document.
-            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
-            limit: Optional max number of returned docs.
-            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
-            **kwargs: Additional query parameters.
+            where: Portable filter dict (equality, list-as-IN, ``$or``).
+            sort: ``[(field, 1|-1), ...]`` pairs.
+            limit: Maximum number of results.
+            fetch_links: If True, fetch linked documents (Beanie feature).
 
         Returns:
-            List[ModelType]: A list of documents matching the query criteria.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.find() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Find users with specific email
-                users = await backend.find(User.email == "john@example.com")
-
-                # Find users with name containing "John"
-                users = await backend.find({"name": {"$regex": "John"}})
-
-                # Find users with linked documents
-                users = await backend.find(User.name == "Alice", fetch_links=True)
+            list[T]: Matching documents.
         """
         if self._models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
@@ -625,12 +504,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
-    async def insert_one(self, doc: BaseModel | dict) -> T:
-        """Insert one document (canonical alias for insert)."""
-        return await self.insert(doc)
-
     async def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:
-        """Find one document matching where filter."""
+        """Find first document matching *where*. Returns None when empty."""
         if self._models is not None:
             raise ValueError("Cannot use find_one() in multi-model mode. Use db.model_name.find_one() instead.")
         if not self._is_initialized:
@@ -645,12 +520,13 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         upsert: bool = False,
         return_document: str = "none",
     ) -> Any:
-        """Update one matching document.
+        """Update exactly one matching document (partial field update).
 
-        return_document:
-            - "none": return pymongo UpdateResult
-            - "before": return document before update (or None)
-            - "after": return document after update (or None)
+        Args:
+            where: Portable filter dict.
+            set_fields: Fields to update (``$set`` semantics).
+            upsert: Insert a new document when no match exists.
+            return_document: ``"none"`` | ``"before"`` | ``"after"``.
         """
         if self._models is not None:
             raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
@@ -676,7 +552,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
 
     async def delete_one(self, where: dict) -> int:
-        """Delete one document matching where filter."""
+        """Delete exactly one matching document. Returns 0 or 1."""
         if self._models is not None:
             raise ValueError("Cannot use delete_one() in multi-model mode. Use db.model_name.delete_one() instead.")
         if not self._is_initialized:
@@ -686,7 +562,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return result.deleted_count if result else 0
 
     async def delete_many(self, where: dict) -> int:
-        """Delete documents matching where filter."""
+        """Delete all matching documents. Returns deleted count."""
         if self._models is not None:
             raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
         if not self._is_initialized:
@@ -696,7 +572,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return result.deleted_count if result else 0
 
     async def distinct(self, field: str, where: dict | None = None) -> list[Any]:
-        """Return distinct values for field matching filter."""
+        """Return distinct values for *field* among documents matching *where*."""
         if self._models is not None:
             raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
         if not self._is_initialized:
@@ -749,116 +625,23 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         self._run_sync(self.initialize(allow_index_dropping=allow_index_dropping))
 
     def insert_sync(self, obj: BaseModel) -> T:
-        """
-        Insert a new document synchronously (wrapper around async insert).
-
-        Args:
-            obj (BaseModel): The document object to insert into the database.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
-
-        Raises:
-            DuplicateInsertError: If the document violates unique constraints.
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                try:
-                    inserted_user = backend.insert_sync(user)
-                    print(f"Inserted user with ID: {inserted_user.id}")
-                except DuplicateInsertError as e:
-                    print(f"Duplicate entry: {e}")
-        """
+        """Legacy sync wrapper. Prefer ``insert_one_sync``."""
         return self._run_sync(self.insert(obj))
 
     def get_sync(self, id: str | PydanticObjectId) -> T:
-        """
-        Retrieve a document synchronously (wrapper around async get).
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = backend.get_sync("507f1f77bcf86cd799439011")
-                    print(f"Found user: {user.name}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy sync wrapper. Prefer ``find_one_sync``."""
         return self._run_sync(self.get(id))
 
     def delete_sync(self, id: str):
-        """
-        Delete a document synchronously (wrapper around async delete).
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    backend.delete_sync("507f1f77bcf86cd799439011")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy sync wrapper. Prefer ``delete_one_sync``."""
         return self._run_sync(self.delete(id))
 
     def update_sync(self, obj: BaseModel) -> T:
-        """
-        Update an existing document synchronously (wrapper around async update).
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = backend.get_sync("507f1f77bcf86cd799439011")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = backend.update_sync(user)
-        """
+        """Legacy sync wrapper. Prefer ``update_one_sync``."""
         return self._run_sync(self.update(obj))
 
     def all_sync(self) -> List[T]:
-        """
-        Retrieve all documents synchronously (wrapper around async all).
-
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
-
-        Example:
-            .. code-block:: python
-
-                all_users = backend.all_sync()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
-        """
+        """Legacy sync wrapper. Prefer ``find_sync``."""
         return self._run_sync(self.all())
 
     def find_sync(
@@ -868,27 +651,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         limit: int | None = None,
         **kwargs,
     ) -> List[T]:
-        """
-        Find documents synchronously (wrapper around async find).
-
-        Args:
-            where: Portable filter document.
-            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
-            limit: Optional max number of returned docs.
-            **kwargs: Additional query parameters.
-
-        Returns:
-            List[ModelType]: A list of documents matching the query criteria.
-
-        Example:
-            .. code-block:: python
-
-                # Find users with specific email
-                users = backend.find_sync(where={"email": "john@example.com"})
-
-                # Find users with name containing "John"
-                users = backend.find_sync(where={"name": {"$regex": "John"}})
-        """
+        """Find documents synchronously (wrapper around async find)."""
         return self._run_sync(self.find(where=where, sort=sort, limit=limit, **kwargs))
 
     def _get_sync_loop(self) -> asyncio.AbstractEventLoop:
@@ -949,7 +712,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return self._run_sync(self.aggregate(pipeline))
 
     def insert_one_sync(self, doc: BaseModel | dict) -> T:
-        """Insert one document synchronously."""
+        """Insert one document synchronously (wrapper around async insert_one)."""
         return self._run_sync(self.insert_one(doc))
 
     def find_one_sync(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:

@@ -744,30 +744,8 @@ class RedisMindtraceODM(MindtraceODM):
         """
         return False
 
-    def insert(self, obj: BaseModel | dict) -> ModelType:
-        """
-        Insert a new document into the Redis database.
-
-        Args:
-            obj (BaseModel | dict): The document object to insert into the database.
-                Can be a BaseModel instance or a dict. If dict, will create the document from it.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.insert() instead).
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                try:
-                    inserted_user = backend.insert(user)
-                    print(f"Inserted user with ID: {inserted_user.pk}")
-                except DuplicateInsertError as e:
-                    print(f"Duplicate entry: {e}")
-        """
+    def insert_one(self, obj: BaseModel | dict) -> ModelType:
+        """Insert one document into Redis. Returns the inserted document."""
         if self._models is not None:
             raise ValueError("Cannot use insert() in multi-model mode. Use db.model_name.insert() instead.")
         self.initialize()
@@ -797,28 +775,7 @@ class RedisMindtraceODM(MindtraceODM):
         return doc
 
     def get(self, id: str) -> ModelType:
-        """
-        Retrieve a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.get() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = backend.get("01234567-89ab-cdef-0123-456789abcdef")
-                    print(f"Found user: {user.name}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: retrieve a document by id. Prefer ``find_one``."""
         if self._models is not None:
             raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
         self.initialize()
@@ -831,33 +788,7 @@ class RedisMindtraceODM(MindtraceODM):
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
     def update(self, obj: BaseModel) -> ModelType:
-        """
-        Update an existing document in the Redis database.
-
-        The document object should have been retrieved from the database,
-        modified, and then passed to this method to save the changes.
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-            ValueError: If in multi-model mode (use db.model_name.update() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = backend.get("01234567-89ab-cdef-0123-456789abcdef")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = backend.update(user)
-        """
+        """Legacy: full-document save by id/pk. Prefer ``update_one``."""
         if self._models is not None:
             raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
         self.initialize()
@@ -894,25 +825,7 @@ class RedisMindtraceODM(MindtraceODM):
             return doc
 
     def delete(self, id: str):
-        """
-        Delete a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.delete() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    backend.delete("01234567-89ab-cdef-0123-456789abcdef")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: delete a document by id. Prefer ``delete_one``."""
         if self._models is not None:
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
         self.initialize()
@@ -924,23 +837,7 @@ class RedisMindtraceODM(MindtraceODM):
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
     def all(self) -> List[ModelType]:
-        """
-        Retrieve all documents from the collection.
-
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.all() instead).
-
-        Example:
-            .. code-block:: python
-
-                all_users = backend.all()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
-        """
+        """Legacy: retrieve all documents. Prefer ``find()``."""
         if self._models is not None:
             raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
         # Ensure initialization succeeded - retry if it failed due to connection issues
@@ -1055,32 +952,16 @@ class RedisMindtraceODM(MindtraceODM):
         limit: int | None = None,
         **kwargs,
     ) -> List[ModelType]:
-        """
-        Find documents matching the specified criteria.
+        """Find documents matching a portable filter.
 
         Args:
-            where: Portable filter document.
-            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
-            limit: Optional max number of returned docs.
-            **kwargs: Additional query parameters.
-
-        Returns:
-            List[ModelType]: A list of documents matching the query criteria.
+            where: Portable filter dict. Supported operators are equality,
+                list-as-IN, and ``$or``.
+            sort: List of ``(field, direction)`` pairs (1 asc, -1 desc).
+            limit: Maximum number of results.
 
         Raises:
-            ValueError: If in multi-model mode (use db.model_name.find() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Find users with specific email
-                users = backend.find(where={"email": "john@example.com"})
-
-                # Find all users if no criteria specified
-                all_users = backend.find()
-
-                # Find with dict (converted to expressions internally)
-                users = backend.find(where={"name": "Charlie"})
+            QueryNotSupported: If the filter cannot be represented portably.
         """
         if self._models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
@@ -1191,12 +1072,12 @@ class RedisMindtraceODM(MindtraceODM):
                 self.logger.warning(f"Redis query failed: {e}")
                 return []
 
-    def insert_one(self, doc: BaseModel | dict):
-        """Insert one document (canonical alias for insert)."""
-        return self.insert(doc)
+    def insert(self, obj: BaseModel | dict) -> ModelType:
+        """Legacy: insert a document. Prefer ``insert_one``."""
+        return self.insert_one(obj)
 
     def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> ModelType | None:
-        """Find one document matching filter."""
+        """Find first document matching *where*. Returns None when empty."""
         results = self.find(where=where, sort=sort, limit=1)
         return results[0] if results else None
 
@@ -1207,7 +1088,17 @@ class RedisMindtraceODM(MindtraceODM):
         upsert: bool = False,
         return_document: str = "none",
     ) -> Any:
-        """Update one matching document."""
+        """Update exactly one matching document (partial field update).
+
+        Args:
+            where: Portable filter dict.
+            set_fields: Fields to update (``$set`` semantics).
+            upsert: Insert a new document when no match exists.
+            return_document:
+                ``"none"``   - return a backend update-result object.
+                ``"before"`` - return document snapshot before update (or None).
+                ``"after"``  - return document snapshot after update (or None).
+        """
         if self._models is not None:
             raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
         if return_document not in {"none", "before", "after"}:
@@ -1251,21 +1142,22 @@ class RedisMindtraceODM(MindtraceODM):
         return result
 
     def delete_one(self, where: dict) -> int:
-        """Delete one matching document."""
-        doc = self.find_one(where=where)
-        if not doc:
+        """Delete exactly one matching document. Returns 0 or 1."""
+        if self._models is not None:
+            raise ValueError("Cannot use delete_one() in multi-model mode. Use db.model_name.delete_one() instead.")
+        self.initialize()
+
+        exprs = self._dict_to_find_expressions(where)
+        if not exprs:
             return 0
-        doc_id = getattr(doc, "pk", None) or getattr(doc, "id", None)
-        if doc_id is None:
+        docs = self.model_cls.find(*exprs).all()
+        if not docs:
             return 0
-        try:
-            self.delete(str(doc_id))
-            return 1
-        except DocumentNotFoundError:
-            return 0
+        self.model_cls.delete(docs[0].pk)
+        return 1
 
     def delete_many(self, where: dict) -> int:
-        """Delete documents matching where filter."""
+        """Delete all matching documents. Returns deleted count."""
         if self._models is not None:
             raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
         self.initialize()
@@ -1276,7 +1168,7 @@ class RedisMindtraceODM(MindtraceODM):
         return 0
 
     def distinct(self, field: str, where: dict | None = None) -> list[Any]:
-        """Return distinct field values matching where filter."""
+        """Return distinct values for *field* among documents matching *where*."""
         if self._models is not None:
             raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
         self.initialize()

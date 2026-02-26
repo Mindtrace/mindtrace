@@ -1270,7 +1270,7 @@ def test_update_one_upsert_inserts_when_no_match():
         mock_doc = MagicMock()
         mock_doc.pk = "new-pk"
         mock_doc.model_dump.return_value = {"name": "Alice", "age": 30}
-        with patch.object(b, "insert", return_value=mock_doc):
+        with patch.object(b, "insert_one", return_value=mock_doc):
             result = b.update_one(
                 where={"name": "Alice"},
                 set_fields={"age": 30},

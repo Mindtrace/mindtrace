@@ -508,17 +508,18 @@ class DataWrapper:
 
 
 class UnifiedMindtraceODM(MindtraceODM):
-    """
-    A unified backend that works with both MongoDB and Redis backends.
+    """Backend-agnostic surface over Mongo and Redis ODMs.
 
-    This class provides a consistent interface over both backends, supporting only
-    the intersection of features available in both:
-    - insert, get, delete, all, find operations
-    - Common exception handling
-    - Automatic backend detection and initialization
+    Exposes the same canonical query-style API as ``MindtraceODM``:
+    ``insert_one``, ``find``, ``find_one``, ``update_one``,
+    ``delete_one``, ``delete_many``, ``distinct``.
 
-    Note: Advanced features like MongoDB's aggregation are not supported
-    to maintain compatibility with both backends.
+    All ``where`` filters use the portable dict format
+    (equality, list-as-IN, ``$or``).  The unified surface delegates
+    to whichever concrete backend is configured.
+
+    Legacy methods (``insert``, ``get``, ``update``, ``delete``, ``all``)
+    are still available for backward compatibility.
     """
 
     def __init__(
