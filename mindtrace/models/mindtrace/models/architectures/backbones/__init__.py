@@ -35,6 +35,11 @@ except Exception:
     pass
 
 try:
+    import mindtrace.models.architectures.backbones.dino_hf  # noqa: F401
+except Exception:
+    pass
+
+try:
     import mindtrace.models.architectures.backbones.resnet  # noqa: F401
 except Exception:
     pass
@@ -49,9 +54,22 @@ try:
 except Exception:
     pass
 
+# Export HuggingFace DINO classes when transformers is available
+try:
+    from mindtrace.models.architectures.backbones.dino_hf import (  # noqa: F401
+        HuggingFaceDINOBackbone,
+        LoRAConfig,
+    )
+    _HF_DINO_AVAILABLE = True
+except Exception:
+    _HF_DINO_AVAILABLE = False
+
 __all__ = [
     "BackboneInfo",
     "build_backbone",
     "list_backbones",
     "register_backbone",
+    # HuggingFace DINO (available when transformers is installed)
+    "HuggingFaceDINOBackbone",
+    "LoRAConfig",
 ]
