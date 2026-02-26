@@ -146,9 +146,11 @@ publish_to_pypi = """
     bash scripts/push_to_pypi.sh ${@:-}
 """
 
+[tool.ruff.lint.isort]
+known-first-party = ["mindtrace", "tests"]
+
 [tool.ruff]
 src = [
-    ".",
     "mindtrace/apps",
     "mindtrace/automation",
     "mindtrace/cluster",
