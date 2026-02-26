@@ -398,7 +398,11 @@ class Trainer:
             return {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                     for k, v in data.items()}
 
-        # Fallback: return unchanged (e.g. lists handled by custom loss/model)
+        if isinstance(data, (list, tuple)):
+            moved = [self._to_device(v) for v in data]
+            return type(data)(moved)
+
+        # Fallback: return unchanged (e.g. custom types)
         return data
 
     def _call_callbacks(self, event: str, **kwargs: Any) -> None:
