@@ -177,15 +177,25 @@ class TimmModelArchiver(Archiver):
 
 
 def _register_timm_archiver():
-    """Register the timm archiver if timm is available."""
+    """Register the timm archiver if timm is available.
+
+    .. note::
+
+        The timm archiver is **not** auto-registered against ``nn.Module``
+        because doing so would overwrite the generic
+        ``PyTorchModuleMaterializer`` and break saving of non-timm
+        ``nn.Module`` subclasses.  Users who want automatic timm archiving
+        should register it explicitly for the specific timm model type they
+        use, or pass ``materializer=TimmModelArchiver`` when calling
+        ``registry.save()``.
+    """
     if not _TIMM_AVAILABLE:
         return
 
-    # timm models are nn.Module subclasses with no common timm-specific base class.
-    # We register against nn.Module here. The registry dispatches by most-specific
-    # type first (e.g. PreTrainedModel for HF), so this acts as a fallback for
-    # nn.Module instances that aren't matched by a more specific archiver.
-    Registry.register_default_materializer(nn.Module, TimmModelArchiver)
+    # Only register against concrete timm base classes when they exist.
+    # timm >=0.9 exposes timm.models.helpers.PretrainedCfg-bearing models
+    # but there is no common base class, so we leave nn.Module to the
+    # standard PyTorchModuleMaterializer and rely on explicit registration.
 
 
 _register_timm_archiver()

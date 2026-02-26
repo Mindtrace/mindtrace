@@ -148,18 +148,20 @@ class _StoreStep(PipelineStep):
                 metadata={"dry_run": True, "would_store": len(predictions)},
             )
 
-        stored = 0
-        for item in predictions:
-            try:
-                asyncio.run(
-                    self._datalake.store_data(
+        async def _store_all() -> int:
+            count = 0
+            for item in predictions:
+                try:
+                    await self._datalake.store_data(
                         {**(item["record"]), "prediction": item["prediction"]},
                         schema=self._result_schema,
                     )
-                )
-                stored += 1
-            except Exception:
-                pass
+                    count += 1
+                except Exception:
+                    pass
+            return count
+
+        stored = asyncio.run(_store_all())
 
         return StepResult(
             step_name=self.name,

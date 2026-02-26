@@ -54,6 +54,9 @@ class EvaluationRunner:
         task: One of ``"classification"``, ``"detection"``, or
             ``"segmentation"``.
         num_classes: Number of output classes.
+        loader: Optional default evaluation data loader.  Stored and used
+            by :meth:`evaluate` and as a fallback by :meth:`run` when the
+            *loader* argument is ``None``.
         device: Compute device.  ``"auto"`` selects ``"cuda"`` when a GPU is
             available, otherwise ``"cpu"``.
         tracker: Optional :class:`~mindtrace.models.tracking.tracker.Tracker`
@@ -89,6 +92,7 @@ class EvaluationRunner:
         *,
         task: str,
         num_classes: int,
+        loader: Any | None = None,
         device: str = "auto",
         tracker: Any | None = None,
         class_names: list[str] | None = None,
@@ -111,6 +115,7 @@ class EvaluationRunner:
 
         self._task = task
         self._num_classes = num_classes
+        self._default_loader = loader
         self._tracker = tracker
         self._class_names = class_names
         self._batch_fn = batch_fn
@@ -134,7 +139,37 @@ class EvaluationRunner:
     # Public interface
     # ------------------------------------------------------------------
 
-    def run(self, loader: Any, *, step: int | None = None) -> dict[str, Any]:
+    def evaluate(self, **kwargs: Any) -> dict[str, Any]:
+        """Evaluate the model and return metrics.
+
+        This is the interface expected by
+        :class:`~mindtrace.automation.pipeline.training.TrainingPipeline`.
+        It delegates to :meth:`run` using the loader stored at construction
+        time (overridable via *kwargs*).
+
+        Keyword Args:
+            loader: Override the default evaluation loader.
+            step: Optional step index passed to ``tracker.log``.
+
+        Returns:
+            Results dictionary (contents depend on *task*).
+
+        Raises:
+            ValueError: If no *loader* is available (neither passed here
+                nor at init time).
+        """
+        loader = kwargs.pop("loader", self._default_loader)
+        step = kwargs.pop("step", None)
+
+        if loader is None:
+            raise ValueError(
+                "EvaluationRunner.evaluate(): loader is required — pass it "
+                "at init time or as a keyword argument."
+            )
+
+        return self.run(loader, step=step)
+
+    def run(self, loader: Any | None = None, *, step: int | None = None) -> dict[str, Any]:
         """Run a full evaluation pass and return the results dictionary.
 
         The method:
@@ -160,6 +195,15 @@ class EvaluationRunner:
             * **segmentation**: ``mIoU``, ``mean_dice``, ``pixel_accuracy``,
               ``iou_per_class``, ``dice_per_class``.
         """
+        # Fall back to default loader when None is passed
+        if loader is None:
+            loader = self._default_loader
+        if loader is None:
+            raise ValueError(
+                "EvaluationRunner.run(): loader is required — pass it "
+                "directly or set it at init time."
+            )
+
         self._model.eval()
 
         if self._task == "classification":
