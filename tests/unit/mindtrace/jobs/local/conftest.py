@@ -13,7 +13,7 @@ def temp_local_client():
     """Provide a LocalClient with a temporary directory backend for each test function."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        backend = Registry(registry_dir=temp_path)
+        backend = Registry(backend=temp_path, mutable=True)
 
         # Register queue materializers for the temporary registry
         from mindtrace.jobs.local.fifo_queue import LocalQueue, LocalQueueArchiver

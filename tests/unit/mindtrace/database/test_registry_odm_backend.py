@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
+from mindtrace.registry.core.types import OnConflict
 
 
 # Test models
@@ -89,7 +90,9 @@ class TestRegistryMindtraceODM:
 
             backend = RegistryMindtraceODM(backend=mock_registry_backend)
 
-            mock_registry_cls.assert_called_once_with(backend=mock_registry_backend, version_objects=False)
+            mock_registry_cls.assert_called_once_with(
+                backend=mock_registry_backend, version_objects=False, mutable=True
+            )
             assert backend.registry == mock_registry
 
     def test_initialization_default(self):
@@ -100,7 +103,7 @@ class TestRegistryMindtraceODM:
 
             backend = RegistryMindtraceODM()
 
-            mock_registry_cls.assert_called_once_with(backend=None, version_objects=False)
+            mock_registry_cls.assert_called_once_with(backend=None, version_objects=False, mutable=True)
             assert backend.registry == mock_registry
 
     def test_is_async(self, registry_odm):
@@ -178,7 +181,7 @@ class TestRegistryMindtraceODM:
 
         # Verify the registry was checked and updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
-        registry_odm.registry.__setitem__.assert_called_once_with(test_id, updated_user)
+        registry_odm.registry.save.assert_called_once_with(test_id, updated_user, on_conflict=OnConflict.OVERWRITE)
         assert result == updated_user
 
     def test_update_nonexistent_document(self, registry_odm):
@@ -217,7 +220,7 @@ class TestRegistryMindtraceODM:
 
         # Verify the registry was checked and updated
         registry_odm.registry.__contains__.assert_called_once_with(test_id)
-        registry_odm.registry.__setitem__.assert_called_once_with(test_id, updated_user)
+        registry_odm.registry.save.assert_called_once_with(test_id, updated_user, on_conflict=OnConflict.OVERWRITE)
         assert result == updated_user
 
     def test_update_with_object_new_style_no_id(self, registry_odm):

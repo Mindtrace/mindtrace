@@ -231,7 +231,7 @@ class TestPriorityQueueArchiver:
         """Set up test method."""
         self.temp_dir = Path(tempfile.mkdtemp())
         self.registry_dir = self.temp_dir / "registry"
-        self.registry = Registry(registry_dir=str(self.registry_dir))
+        self.registry = Registry(backend=str(self.registry_dir))
 
     def teardown_method(self):
         """Clean up after test method."""
