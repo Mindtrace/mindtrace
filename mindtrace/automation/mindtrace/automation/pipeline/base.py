@@ -129,12 +129,8 @@ class Pipeline(Mindtrace):
 
     def __init__(self, name: str, steps: list[PipelineStep] | None = None, **kwargs):
         super().__init__(**kwargs)
-        self._pipeline_name = name
+        self._name = name
         self.steps: list[PipelineStep] = steps or []
-
-    @property
-    def name(self) -> str:  # type: ignore[override]
-        return self._pipeline_name
 
     def add_step(self, step: PipelineStep) -> "Pipeline":
         """Append a step to the end of the pipeline.
