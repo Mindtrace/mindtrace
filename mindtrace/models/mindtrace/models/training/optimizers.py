@@ -97,8 +97,14 @@ class WarmupCosineScheduler(LRScheduler):
 # ---------------------------------------------------------------------------
 
 
-def build_optimizer(name: str, model: nn.Module, **kwargs: Any) -> Optimizer:
-    """Build a PyTorch optimizer by name.
+def build_optimizer(
+    name: str,
+    model: nn.Module | list[dict],
+    *,
+    backbone_lr_multiplier: float | None = None,
+    **kwargs: Any,
+) -> Optimizer:
+    """Build a PyTorch optimizer by name with optional differential learning rates.
 
     Args:
         name: Case-insensitive optimizer name.  Supported values:
@@ -109,7 +115,21 @@ def build_optimizer(name: str, model: nn.Module, **kwargs: Any) -> Optimizer:
             * ``"radam"``   — :class:`torch.optim.RAdam`
             * ``"rmsprop"`` — :class:`torch.optim.RMSprop`
 
-        model: The model whose ``parameters()`` will be optimised.
+        model: Either an ``nn.Module`` (parameters resolved automatically) or
+            an explicit list of parameter-group dicts as accepted by PyTorch
+            optimizers, e.g.
+            ``[{"params": ..., "lr": 1e-5}, {"params": ..., "lr": 1e-3}]``.
+        backbone_lr_multiplier: Convenience shortcut for differential learning
+            rates.  When provided the optimizer receives two parameter groups:
+
+            * **backbone** — parameters from ``model.backbone`` at
+              ``lr * backbone_lr_multiplier``.
+            * **head** — parameters from ``model.head`` at the base ``lr``
+              given in *kwargs*.
+
+            Requires ``model`` to be an ``nn.Module`` with ``.backbone`` and
+            ``.head`` sub-modules, and ``lr`` to be present in *kwargs*.
+            Ignored when *model* is already a list of param-group dicts.
         **kwargs: Additional keyword arguments forwarded directly to the
             optimizer constructor (e.g. ``lr``, ``weight_decay``).
 
@@ -117,11 +137,29 @@ def build_optimizer(name: str, model: nn.Module, **kwargs: Any) -> Optimizer:
         A configured :class:`torch.optim.Optimizer` instance.
 
     Raises:
-        ValueError: If *name* does not match any supported optimizer.
+        ValueError: If *name* does not match any supported optimizer, or if
+            *backbone_lr_multiplier* is requested but the model lacks ``.backbone``
+            / ``.head`` attributes, or if ``lr`` is missing from *kwargs*.
 
-    Example::
+    Examples::
 
+        # Standard usage
         optimizer = build_optimizer("adamw", model, lr=3e-4, weight_decay=1e-2)
+
+        # Differential learning rates — backbone 10× slower than head
+        optimizer = build_optimizer(
+            "adamw", model,
+            backbone_lr_multiplier=0.1,
+            lr=1e-3,
+            weight_decay=1e-2,
+        )
+
+        # Explicit parameter groups
+        param_groups = [
+            {"params": model.backbone.parameters(), "lr": 1e-5},
+            {"params": model.head.parameters(),     "lr": 1e-3},
+        ]
+        optimizer = build_optimizer("adamw", param_groups, weight_decay=1e-2)
     """
     registry: dict[str, type[Optimizer]] = {
         "adam": torch.optim.Adam,
@@ -138,7 +176,33 @@ def build_optimizer(name: str, model: nn.Module, **kwargs: Any) -> Optimizer:
             f"Unknown optimizer '{name}'. Supported names: {supported}."
         )
 
-    return registry[key](model.parameters(), **kwargs)
+    optimizer_cls = registry[key]
+
+    # --- Explicit param groups: pass straight through ---
+    if isinstance(model, list):
+        return optimizer_cls(model, **kwargs)
+
+    # --- Differential LR via backbone_lr_multiplier ---
+    if backbone_lr_multiplier is not None:
+        if not hasattr(model, "backbone") or not hasattr(model, "head"):
+            raise ValueError(
+                "backbone_lr_multiplier requires 'model' to have '.backbone' and "
+                "'.head' sub-modules.  Use explicit param-group dicts instead."
+            )
+        base_lr: float | None = kwargs.get("lr")
+        if base_lr is None:
+            raise ValueError(
+                "backbone_lr_multiplier requires 'lr' to be specified in kwargs."
+            )
+        backbone_lr = float(base_lr) * backbone_lr_multiplier
+        param_groups: list[dict] = [
+            {"params": model.backbone.parameters(), "lr": backbone_lr},
+            {"params": model.head.parameters()},
+        ]
+        return optimizer_cls(param_groups, **kwargs)
+
+    # --- Default: flat parameter list ---
+    return optimizer_cls(model.parameters(), **kwargs)
 
 
 def build_scheduler(name: str, optimizer: Optimizer, **kwargs: Any) -> LRScheduler:
