@@ -52,6 +52,21 @@ class FocalLoss(nn.Module):
             raise ValueError(
                 f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'"
             )
+        if alpha is None or not isinstance(alpha, (int, float)):
+            raise TypeError(
+                f"FocalLoss: alpha must be a positive float, got {alpha!r}. "
+                "Use alpha=1.0 for uniform class weighting."
+            )
+        if alpha <= 0:
+            raise ValueError(
+                f"FocalLoss: alpha must be > 0, got {alpha}. "
+                "Use alpha=1.0 for uniform class weighting."
+            )
+        if gamma < 0:
+            raise ValueError(
+                f"FocalLoss: gamma must be >= 0, got {gamma}. "
+                "Use gamma=0 to recover standard cross-entropy."
+            )
         self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction

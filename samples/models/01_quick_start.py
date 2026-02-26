@@ -175,7 +175,6 @@ print("\n[7] Saving model to registry via RegistryBridge...")
 bridge = RegistryBridge(registry)
 key = bridge.save(model, name="beans-resnet18", version="v1")
 print(f"  saved under key: {key!r}")
-
 loaded_model = registry.load(key)
 print(f"  loaded model type: {type(loaded_model).__name__}")
 
