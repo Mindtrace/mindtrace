@@ -396,7 +396,7 @@ class CameraManagerService(Service):
         """Discover available cameras from all or specific backends."""
         try:
             manager = await self._get_camera_manager()
-            cameras = manager.discover(backends=request.backend, include_mocks=self.include_mocks)
+            cameras = await manager.discover_async(backends=request.backend, include_mocks=self.include_mocks)
 
             return ListResponse(
                 success=True,
@@ -858,6 +858,21 @@ class CameraManagerService(Service):
                 optical_power = await camera_proxy.get_optical_power()
             except Exception:
                 optical_power = None
+            # GigE network settings (camera-level)
+            try:
+                bandwidth_limit = await camera_proxy.get_bandwidth_limit()
+            except Exception:
+                bandwidth_limit = None
+
+            try:
+                packet_size = await camera_proxy.get_packet_size()
+            except Exception:
+                packet_size = None
+
+            try:
+                inter_packet_delay = await camera_proxy.get_inter_packet_delay()
+            except Exception:
+                inter_packet_delay = None
 
             config = CameraConfiguration(
                 exposure_time=exposure_time,
@@ -868,6 +883,9 @@ class CameraManagerService(Service):
                 white_balance=white_balance,
                 image_enhancement=image_enhancement,
                 optical_power=optical_power,
+                bandwidth_limit=bandwidth_limit,
+                packet_size=packet_size,
+                inter_packet_delay=inter_packet_delay,
             )
 
             return CameraConfigurationResponse(

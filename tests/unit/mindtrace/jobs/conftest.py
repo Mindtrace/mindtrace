@@ -91,7 +91,7 @@ def temp_local_client():
     """Provide a LocalClient with a temporary directory backend for each test function."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        backend = Registry(registry_dir=temp_path)
+        backend = Registry(backend=temp_path, mutable=True)
         client = LocalClient(broker_id=f"test_broker_{int(time.time())}", backend=backend)
         yield client
 

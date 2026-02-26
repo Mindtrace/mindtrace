@@ -40,101 +40,58 @@ from mindtrace.hardware.core.exceptions import (
 
 
 class GenICamCameraBackend(CameraBackend):
-    """GenICam Camera Backend Implementation
+    """GenICam camera backend using the Harvesters library.
 
-    This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library
-    with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control,
-    ROI settings, and image quality enhancement.
+    This backend provides support for any GenICam-compliant camera via a GenTL
+    Producer (.cti file), including cameras from Keyence, Allied Vision, FLIR,
+    and others.
 
-    Thread Safety:
-        Uses a singleton Harvester instance shared across all backend instances to avoid GenTL device conflicts.
-        Multiple cameras can be opened simultaneously using the same Harvester.
+    Thread Model:
+        The Harvesters library requires thread affinity - ImageAcquirer operations
+        must execute on the same OS thread that created the acquirer. This backend
+        uses a dedicated single-thread executor per camera instance.
+
+        The Harvester instance (which manages the GenTL Producer) is shared as a
+        singleton across all GenICam camera instances to prevent device conflicts.
+        Only the per-camera ImageAcquirer operations use the dedicated executor.
 
     Features:
-        - Full GenICam camera support via Harvesters
+        - GenICam-compliant camera support via Harvesters
         - Matrix Vision GenTL Producer integration
         - Hardware trigger and continuous capture modes
-        - ROI (Region of Interest) control
-        - Automatic exposure and gain control
-        - Image quality enhancement with CLAHE
-        - Configuration import/export functionality
-        - Robust error handling and connection management
+        - Region of Interest (ROI) control
+        - Automatic and manual exposure/gain control
+        - CLAHE image quality enhancement
         - Vendor-specific parameter handling (Keyence, Basler, etc.)
 
     Requirements:
-        - Harvesters library (pip install harvesters)
-        - Matrix Vision mvIMPACT Acquire SDK
+        - Matrix Vision mvIMPACT Acquire SDK (provides GenTL Producer)
+        - Harvesters package (pip install harvesters)
         - OpenCV for image processing
-        - GenTL Producer (.cti file) installed on system
 
-    Installation:
-        1. Install Matrix Vision mvIMPACT Acquire SDK
-        2. pip install harvesters opencv-python numpy
-        3. Configure network interface for GigE cameras
-        4. Set GENICAM_CTI_PATH environment variable (optional)
-
-    Usage::
+    Example::
 
         from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
 
-        # Get available cameras
-        cameras = GenICamCameraBackend.get_available_cameras()
-
-        # Initialize camera
-        camera = GenICamCameraBackend("device_serial", img_quality_enhancement=True)
-        success, cam_obj, remote_obj = await camera.initialize()
-
-        if success:
-            # Configure and capture
+        async with GenICamCameraBackend("device_serial") as camera:
             await camera.set_exposure(50000)
-            await camera.set_triggermode("continuous")
             image = await camera.capture()
-            await camera.close()
-
-    Configuration:
-        All parameters are configurable via environment variables or the hardware configuration system:
-        - GENICAM_CTI_PATH: Path to GenTL Producer (.cti file)
-        - MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-        - MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-        - MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-        - MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-        - MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds
-
-    Supported Camera Models:
-        - Keyence VJ series cameras
-        - Basler GigE cameras (alternative to pypylon)
-        - Allied Vision cameras
-        - FLIR/Teledyne cameras
-        - Any GenICam-compliant camera with compatible GenTL Producer
-
-    Error Handling:
-        The class uses a comprehensive exception hierarchy for precise error reporting:
-        - SDKNotAvailableError: Harvesters library not installed
-        - CameraNotFoundError: Camera not detected or accessible
-        - CameraInitializationError: Failed to initialize camera
-        - CameraConfigurationError: Invalid configuration parameters
-        - CameraConnectionError: Connection issues
-        - CameraCaptureError: Image acquisition failures
-        - CameraTimeoutError: Operation timeout
-        - HardwareOperationError: General hardware operation failures
 
     Attributes:
-        initialized: Whether camera was successfully initialized
-        image_acquirer: Harvesters ImageAcquirer object
-        harvester: Harvesters Harvester object
+        image_acquirer: Harvesters ImageAcquirer for this camera
+        harvester: Shared Harvester instance (class-level singleton)
         triggermode: Current trigger mode ("continuous" or "trigger")
-        img_quality_enhancement: Current image enhancement setting
         timeout_ms: Capture timeout in milliseconds
-        retrieve_retry_count: Number of capture retry attempts
-        device_info: Camera device information from discovery
+        cti_path: Path to the GenTL Producer file
         vendor_quirks: Vendor-specific parameter handling flags
-        cti_path: Path to GenTL Producer file
     """
+
+    REQUIRES_THREAD_AFFINITY = True
 
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None
     _harvester_cti_path: Optional[str] = None
-    _harvester_lock = None  # Will be initialized as threading.Lock() when first needed
+    _harvester_lock = None
 
     def __init__(
         self,
@@ -217,10 +174,6 @@ class GenICamCameraBackend(CameraBackend):
 
         # Derived operation timeout for non-capture operations
         self._op_timeout_s = max(3.0, float(self.timeout_ms) / 1000.0)
-
-        # Thread executor for blocking Harvesters calls
-        self._loop = None
-        self._sdk_executor = None
 
         self.logger.info(f"GenICam camera '{self.camera_name}' initialized successfully")
 
@@ -307,34 +260,6 @@ class GenICamCameraBackend(CameraBackend):
             f"GenTL Producer not found for {system} {machine}. "
             f"Please install Matrix Vision mvIMPACT Acquire SDK or set GENICAM_CTI_PATH environment variable."
         )
-
-    async def _run_blocking(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking Harvesters call in threadpool with timeout.
-
-        Uses asyncio.to_thread() for modern async/threading integration.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-
-        Raises:
-            CameraTimeoutError: If operation times out
-            HardwareOperationError: If operation fails
-        """
-        effective_timeout = timeout or self._op_timeout_s
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(func, *args, **kwargs), timeout=effective_timeout)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"Harvesters operation timed out after {effective_timeout:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"Harvesters operation failed for camera '{self.camera_name}': {e}") from e
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
@@ -449,15 +374,6 @@ class GenICamCameraBackend(CameraBackend):
             assert Harvester is not None, "Harvesters is available but Harvester class is not initialized"
 
         try:
-            # Prepare dedicated single-thread executor for SDK calls
-            import concurrent.futures
-
-            self._loop = asyncio.get_running_loop()
-            if not hasattr(self, "_sdk_executor") or self._sdk_executor is None:
-                self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix=f"harvesters-{self.camera_name}"
-                )
-
             # Get shared harvester instance
             self.harvester = self._get_shared_harvester(self.cti_path)
 
@@ -588,13 +504,7 @@ class GenICamCameraBackend(CameraBackend):
                 self.harvester = None
 
             # Shutdown executor
-            if hasattr(self, "_sdk_executor") and self._sdk_executor is not None:
-                try:
-                    self._sdk_executor.shutdown(wait=False, cancel_futures=True)
-                except Exception as e:
-                    self.logger.warning(f"Error shutting down executor during failure: {e}")
-                finally:
-                    self._sdk_executor = None
+            await self._cleanup_executor()
 
             self.initialized = False
 
@@ -1438,13 +1348,8 @@ class GenICamCameraBackend(CameraBackend):
         # Release harvester reference (but don't reset it - it's shared)
         self.harvester = None
 
-        # Shutdown executor if present
-        try:
-            if hasattr(self, "_sdk_executor") and self._sdk_executor is not None:
-                self._sdk_executor.shutdown(wait=False, cancel_futures=True)
-                self._sdk_executor = None
-        except Exception:
-            pass
+        # Shutdown executor
+        await self._cleanup_executor()
 
     # Placeholder implementations for optional methods - will implement based on GenICam node availability
     async def get_gain_range(self) -> List[Union[int, float]]:
