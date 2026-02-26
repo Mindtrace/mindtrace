@@ -235,6 +235,65 @@ class ProcessManager:
 
         return process
 
+    def start_scanner_3d_api(self, host: str = None, port: int = None) -> subprocess.Popen:
+        """Launch 3D Scanner API service.
+
+        Args:
+            host: Host to bind the service to (default: SCANNER_3D_API_HOST env var or 'localhost')
+            port: Port to run the service on (default: SCANNER_3D_API_PORT env var or 8005)
+
+        Returns:
+            The subprocess handle
+        """
+        # Use environment variables as defaults
+        if host is None:
+            host = os.getenv("SCANNER_3D_API_HOST", "localhost")
+        if port is None:
+            port = int(os.getenv("SCANNER_3D_API_PORT", "8005"))
+
+        # Build command
+        cmd = [
+            sys.executable,
+            "-m",
+            "mindtrace.hardware.services.scanners_3d.launcher",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
+
+        # Set 3D Scanner API environment variables for other services to use
+        os.environ["SCANNER_3D_API_HOST"] = host
+        os.environ["SCANNER_3D_API_PORT"] = str(port)
+        os.environ["SCANNER_3D_API_URL"] = f"http://{host}:{port}"
+
+        # Start process (use DEVNULL to avoid pipe buffer overflow)
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # Create new process group
+        )
+
+        # Wait a moment to ensure it started
+        time.sleep(1)
+
+        # Check if process is still running
+        if process.poll() is not None:
+            raise RuntimeError(f"Failed to start 3D Scanner API service on {host}:{port}")
+
+        # Save process info
+        self.processes["scanner_3d_api"] = {
+            "pid": process.pid,
+            "host": host,
+            "port": port,
+            "start_time": datetime.now().isoformat(),
+            "command": " ".join(cmd),
+        }
+        self.save_pids()
+
+        return process
+
     def stop_service(self, service_name: str) -> bool:
         """Stop a service by name.
 
