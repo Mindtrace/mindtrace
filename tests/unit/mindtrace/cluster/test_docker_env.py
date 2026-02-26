@@ -1,8 +1,8 @@
 import os
 from unittest.mock import Mock, patch
 
-from docker.errors import DockerException
 import pytest
+from docker.errors import DockerException
 
 from mindtrace.cluster.workers.environments.docker_env import DockerEnvironment
 
