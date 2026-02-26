@@ -1,0 +1,508 @@
+"""Store facade for working with multiple Registries."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Type
+
+from zenml.materializers.base_materializer import BaseMaterializer
+
+from mindtrace.core import Mindtrace
+from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core.exceptions import (
+    RegistryObjectNotFound,
+    StoreAmbiguousObjectError,
+    StoreKeyFormatError,
+    StoreLocationNotFound,
+)
+from mindtrace.registry.core.registry import Registry
+from mindtrace.registry.core.types import BatchResult, VerifyLevel
+
+
+@dataclass(frozen=True)
+class StoreMount:
+    name: str
+    registry: Registry
+    read_only: bool = False
+
+
+class Store(Mindtrace):
+    """Facade that routes operations to multiple registries.
+
+    Key formats:
+      - Qualified: ``<location>/<name>[@<version>]``
+      - Unqualified (load only): ``<name>[@<version>]``
+    """
+
+    def __init__(
+        self,
+        mounts: dict[str, Registry] | None = None,
+        *,
+        default_location: str | None = None,
+        create_default_local_mount: bool = True,
+        enable_location_cache: bool = True,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self._mounts: dict[str, StoreMount] = {}
+        self._name_location_cache: dict[str, list[str]] = {}
+        self._enable_location_cache = enable_location_cache
+
+        mounts = mounts or {}
+        for location, registry in mounts.items():
+            self.add_mount(location, registry)
+
+        if default_location is not None and default_location not in self._mounts:
+            raise StoreLocationNotFound(f"Default location '{default_location}' is not configured")
+
+        if not self._mounts and create_default_local_mount:
+            default_location = default_location or "default"
+            store_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["STORE_DIR"]).expanduser().resolve()
+            self.add_mount(default_location, Registry(backend=LocalRegistryBackend(uri=store_dir), **kwargs))
+
+        if not self._mounts:
+            raise ValueError("Store requires at least one mount")
+
+        self.default_location = default_location or next(iter(self._mounts.keys()))
+
+    def add_mount(self, location: str, registry: Registry, *, read_only: bool = False) -> None:
+        if not location or "/" in location or "@" in location:
+            raise ValueError("Invalid location name")
+        if location in self._mounts:
+            raise ValueError(f"Mount '{location}' already exists")
+        self._mounts[location] = StoreMount(name=location, registry=registry, read_only=read_only)
+
+    def remove_mount(self, location: str) -> None:
+        if location not in self._mounts:
+            raise StoreLocationNotFound(location)
+        if len(self._mounts) == 1:
+            raise ValueError("Cannot remove last mount")
+        del self._mounts[location]
+        if self.default_location == location:
+            self.default_location = next(iter(self._mounts.keys()))
+
+    def get_mount(self, location: str) -> StoreMount:
+        mount = self._mounts.get(location)
+        if mount is None:
+            raise StoreLocationNotFound(location)
+        return mount
+
+    def has_mount(self, location: str) -> bool:
+        return location in self._mounts
+
+    def list_mounts(self) -> list[str]:
+        return list(self._mounts.keys())
+
+    def list_mount_info(self) -> dict[str, dict[str, Any]]:
+        return {
+            name: {
+                "read_only": mount.read_only,
+                "backend": str(mount.registry.backend.uri),
+                "version_objects": mount.registry.version_objects,
+                "mutable": mount.registry.mutable,
+            }
+            for name, mount in self._mounts.items()
+        }
+
+    def parse_key(self, key: str) -> tuple[str | None, str, str | None]:
+        if not key or not key.strip():
+            raise StoreKeyFormatError("Key cannot be empty")
+
+        raw = key.strip()
+        base, version = raw.split("@", 1) if "@" in raw else (raw, None)
+
+        if not base:
+            raise StoreKeyFormatError(f"Invalid key: {key}")
+
+        # Only treat as qualified if first path segment matches a mount.
+        if "/" in base:
+            candidate_location, remainder = base.split("/", 1)
+            if candidate_location in self._mounts:
+                if not remainder:
+                    raise StoreKeyFormatError(f"Invalid key: {key}")
+                return candidate_location, remainder, version
+
+        return None, base, version
+
+    def build_key(self, location: str, name: str, version: str | None = None) -> str:
+        if location not in self._mounts:
+            raise StoreLocationNotFound(location)
+        if not name:
+            raise StoreKeyFormatError("name cannot be empty")
+        return f"{location}/{name}" if version is None else f"{location}/{name}@{version}"
+
+    def resolve_registry(self, key_or_location: str) -> Registry:
+        if key_or_location in self._mounts:
+            return self._mounts[key_or_location].registry
+        location, _, _ = self.parse_key(key_or_location)
+        if location is None:
+            raise StoreLocationNotFound("No location specified")
+        return self._mounts[location].registry
+
+    def cache_lookup_locations(self, name: str) -> list[str]:
+        if not self._enable_location_cache:
+            return []
+        return list(self._name_location_cache.get(name, []))
+
+    def cache_update_location(self, name: str, location: str) -> None:
+        if not self._enable_location_cache:
+            return
+        current = self._name_location_cache.get(name, [])
+        if location in current:
+            current = [location] + [loc for loc in current if loc != location]
+        else:
+            current = [location] + current
+        self._name_location_cache[name] = current
+
+    def cache_evict_name(self, name: str) -> None:
+        self._name_location_cache.pop(name, None)
+
+    def clear_location_cache(self) -> None:
+        self._name_location_cache.clear()
+
+    def _resolve_load_location(self, name: str, version: str | None) -> str:
+        ordered_locations: list[str] = []
+
+        # Probe cache first.
+        for loc in self.cache_lookup_locations(name):
+            if loc in self._mounts and loc not in ordered_locations:
+                ordered_locations.append(loc)
+
+        # Probe all remaining mounts.
+        for loc in self._mounts:
+            if loc not in ordered_locations:
+                ordered_locations.append(loc)
+
+        hits: list[str] = []
+        for location in ordered_locations:
+            if self._mounts[location].registry.has_object(name, version or "latest"):
+                hits.append(location)
+
+        if not hits:
+            raise RegistryObjectNotFound(f"Object {name}@{version or 'latest'} not found in any store location")
+
+        if len(hits) > 1:
+            locations = ", ".join(hits)
+            raise StoreAmbiguousObjectError(
+                f"Object '{name}' found in multiple locations: {locations}. "
+                f"Use an explicit key, e.g. '{hits[0]}/{name}'."
+            )
+
+        location = hits[0]
+        self.cache_update_location(name, location)
+        return location
+
+    def _single_save(
+        self,
+        key: str,
+        obj: Any,
+        *,
+        materializer: Type[BaseMaterializer] | None = None,
+        version: str | None = None,
+        init_params: Dict[str, Any] | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str | None:
+        location, name, key_version = self.parse_key(key)
+        if location is None:
+            raise StoreKeyFormatError("save requires qualified key: <location>/<name>")
+        mount = self.get_mount(location)
+        if mount.read_only:
+            raise PermissionError(f"Location '{location}' is read-only")
+
+        resolved_version = version if version is not None else key_version
+        out = mount.registry.save(
+            name,
+            obj,
+            materializer=materializer,
+            version=resolved_version,
+            init_params=init_params,
+            metadata=metadata,
+            on_conflict=on_conflict,
+        )
+        self.cache_update_location(name, location)
+        return out
+
+    def save(
+        self,
+        name: str | List[str],
+        obj: Any | List[Any],
+        *,
+        materializer: Type[BaseMaterializer] | None = None,
+        version: str | None | List[str | None] = None,
+        init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
+        metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
+        on_conflict: str | None = None,
+    ) -> str | None | BatchResult:
+        if isinstance(name, str):
+            return self._single_save(
+                name,
+                obj,
+                materializer=materializer,
+                version=version if isinstance(version, str) or version is None else version[0],
+                init_params=init_params if isinstance(init_params, dict) or init_params is None else init_params[0],
+                metadata=metadata if isinstance(metadata, dict) or metadata is None else metadata[0],
+                on_conflict=on_conflict,
+            )
+
+        objs = obj if isinstance(obj, list) else [obj] * len(name)
+        versions = version if isinstance(version, list) else [version] * len(name)
+        init_params_list = init_params if isinstance(init_params, list) else [init_params] * len(name)
+        metadata_list = metadata if isinstance(metadata, list) else [metadata] * len(name)
+
+        if not (len(name) == len(objs) == len(versions)):
+            raise ValueError("name, obj, and version list lengths must match")
+
+        result = BatchResult()
+        for i, key in enumerate(name):
+            try:
+                v = self._single_save(
+                    key,
+                    objs[i],
+                    materializer=materializer,
+                    version=versions[i],
+                    init_params=init_params_list[i],
+                    metadata=metadata_list[i],
+                    on_conflict=on_conflict,
+                )
+                result.results.append(v)
+                location, object_name, _ = self.parse_key(key)
+                result.succeeded.append((f"{location}/{object_name}" if location else object_name, v or "latest"))
+            except Exception as e:
+                result.results.append(None)
+                location, object_name, key_version = self.parse_key(key)
+                ver = versions[i] or key_version or "latest"
+                item_key = (f"{location}/{object_name}" if location else object_name, ver)
+                result.failed.append(item_key)
+                result.errors[item_key] = {"error": type(e).__name__, "message": str(e)}
+        return result
+
+    def _single_load(
+        self,
+        key: str,
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any:
+        location, name, key_version = self.parse_key(key)
+        resolved_version = version if version not in (None, "latest") else (key_version or version)
+
+        if location is not None:
+            mount = self.get_mount(location)
+            obj = mount.registry.load(name, version=resolved_version, output_dir=output_dir, verify=verify, **kwargs)
+            self.cache_update_location(name, location)
+            return obj
+
+        resolved_location = self._resolve_load_location(name, resolved_version)
+        return self._mounts[resolved_location].registry.load(
+            name,
+            version=resolved_version,
+            output_dir=output_dir,
+            verify=verify,
+            **kwargs,
+        )
+
+    def load(
+        self,
+        name: str | List[str],
+        version: str | None | List[str | None] = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any | BatchResult:
+        if isinstance(name, str):
+            return self._single_load(name, version if isinstance(version, str) or version is None else version[0], output_dir, verify, **kwargs)
+
+        versions = version if isinstance(version, list) else [version] * len(name)
+        if len(name) != len(versions):
+            raise ValueError("name and version lists must have same length")
+
+        result = BatchResult()
+        for i, key in enumerate(name):
+            try:
+                obj = self._single_load(key, versions[i], output_dir=output_dir, verify=verify, **kwargs)
+                result.results.append(obj)
+                result.succeeded.append((key, versions[i] or "latest"))
+            except Exception as e:
+                result.results.append(None)
+                k = (key, versions[i] or "latest")
+                result.failed.append(k)
+                result.errors[k] = {"error": type(e).__name__, "message": str(e)}
+        return result
+
+    def _single_delete(self, key: str, version: str | None = None) -> None:
+        location, name, key_version = self.parse_key(key)
+        if location is None:
+            raise StoreKeyFormatError("delete requires qualified key: <location>/<name>")
+        mount = self.get_mount(location)
+        if mount.read_only:
+            raise PermissionError(f"Location '{location}' is read-only")
+        mount.registry.delete(name, version if version is not None else key_version)
+        self.cache_evict_name(name)
+
+    def delete(self, name: str | List[str], version: str | None | List[str | None] = None) -> None | BatchResult:
+        if isinstance(name, str):
+            self._single_delete(name, version if isinstance(version, str) or version is None else version[0])
+            return None
+
+        versions = version if isinstance(version, list) else [version] * len(name)
+        if len(name) != len(versions):
+            raise ValueError("name and version lists must have same length")
+
+        result = BatchResult()
+        for i, key in enumerate(name):
+            try:
+                self._single_delete(key, versions[i])
+                result.results.append(None)
+                result.succeeded.append((key, versions[i] or "latest"))
+            except Exception as e:
+                result.results.append(None)
+                k = (key, versions[i] or "latest")
+                result.failed.append(k)
+                result.errors[k] = {"error": type(e).__name__, "message": str(e)}
+        return result
+
+    def has_object(self, name: str, version: str = "latest") -> bool:
+        location, object_name, key_version = self.parse_key(name)
+        check_version = version if version != "latest" else (key_version or "latest")
+
+        if location is not None:
+            return self.get_mount(location).registry.has_object(object_name, check_version)
+
+        for mount in self._mounts.values():
+            if mount.registry.has_object(object_name, check_version):
+                return True
+        return False
+
+    def list_objects(self, location: str | None = None) -> list[str]:
+        if location is not None:
+            mount = self.get_mount(location)
+            return [self.build_key(location, n) for n in mount.registry.list_objects()]
+
+        out: list[str] = []
+        for loc, mount in self._mounts.items():
+            out.extend(self.build_key(loc, n) for n in mount.registry.list_objects())
+        return out
+
+    def list_versions(self, name: str) -> list[str]:
+        location, object_name, _ = self.parse_key(name)
+        if location is None:
+            raise StoreKeyFormatError("list_versions requires qualified key: <location>/<name>")
+        return self.get_mount(location).registry.list_versions(object_name)
+
+    def list_objects_and_versions(self, location: str | None = None) -> dict[str, list[str]]:
+        if location is not None:
+            mount = self.get_mount(location)
+            return {self.build_key(location, k): v for k, v in mount.registry.list_objects_and_versions().items()}
+
+        out: dict[str, list[str]] = {}
+        for loc, mount in self._mounts.items():
+            for name, versions in mount.registry.list_objects_and_versions().items():
+                out[self.build_key(loc, name)] = versions
+        return out
+
+    def info(self, name: str | None = None, version: str | None = None) -> Dict[str, Any]:
+        if name is None:
+            return {
+                "default_location": self.default_location,
+                "mounts": self.list_mount_info(),
+            }
+
+        location, object_name, key_version = self.parse_key(name)
+        if location is None:
+            location = self._resolve_load_location(object_name, version or key_version)
+        return self.get_mount(location).registry.info(object_name, version=version or key_version)
+
+    def copy(
+        self,
+        source: str,
+        *,
+        target: str,
+        source_version: str = "latest",
+        target_version: str | None = None,
+    ) -> str:
+        obj = self.load(source, version=source_version)
+        saved = self.save(target, obj, version=target_version)
+        return saved if isinstance(saved, str) else (target_version or "latest")
+
+    def move(
+        self,
+        source: str,
+        *,
+        target: str,
+        source_version: str = "latest",
+        target_version: str | None = None,
+    ) -> str:
+        saved = self.copy(source, target=target, source_version=source_version, target_version=target_version)
+        self.delete(source, version=source_version)
+        return saved
+
+    def __getitem__(self, key: str | list[str]) -> Any:
+        if isinstance(key, list):
+            return self.load(key)
+        return self.load(key)
+
+    def __setitem__(self, key: str | list[str], value: Any) -> None:
+        self.save(key, value)
+
+    def __delitem__(self, key: str | list[str]) -> None:
+        self.delete(key)
+
+    def __contains__(self, key: str | list[str]) -> bool:
+        if isinstance(key, list):
+            return all(self.__contains__(k) for k in key)
+        return self.has_object(key)
+
+    def __len__(self) -> int:
+        return sum(len(mount.registry) for mount in self._mounts.values())
+
+    def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
+        sections = [f"Store(default={self.default_location})"]
+        for location, mount in self._mounts.items():
+            sections.append(f"[{location}]\n{mount.registry.__str__(color=color, latest_only=latest_only)}")
+        return "\n\n".join(sections)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except Exception:
+            return default
+
+    def keys(self, location: str | None = None) -> list[str]:
+        return self.list_objects(location=location)
+
+    def values(self, location: str | None = None) -> list[Any]:
+        return [self.load(k) for k in self.keys(location=location)]
+
+    def items(self, location: str | None = None) -> list[tuple[str, Any]]:
+        keys = self.keys(location=location)
+        return [(k, self.load(k)) for k in keys]
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        try:
+            value = self.load(key)
+            self.delete(key)
+            return value
+        except Exception:
+            if default is not None:
+                return default
+            raise
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        try:
+            return self.load(key)
+        except Exception:
+            if default is not None:
+                self.save(key, default)
+            return default
+
+    def update(self, mapping, *, sync_all_versions: bool = True) -> None:
+        if isinstance(mapping, Store):
+            for key in mapping.keys():
+                self[key] = mapping[key]
+            return
+        for key, value in mapping.items():
+            self[key] = value
