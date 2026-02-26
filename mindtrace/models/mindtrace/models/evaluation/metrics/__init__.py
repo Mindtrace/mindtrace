@@ -1,12 +1,13 @@
 """mindtrace.models.evaluation.metrics — NumPy metric functions.
 
-Re-exports all public metric functions from the three sub-modules so that
+Re-exports all public metric functions from the four task sub-modules so that
 callers can import directly from this package::
 
     from mindtrace.models.evaluation.metrics import (
         accuracy,
         mean_iou,
         mean_average_precision,
+        mae, rmse, r2_score,
     )
 """
 
@@ -26,6 +27,7 @@ from mindtrace.models.evaluation.metrics.detection import (
     mean_average_precision,
     mean_average_precision_50_95,
 )
+from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
 from mindtrace.models.evaluation.metrics.segmentation import (
     dice_score,
     frequency_weighted_iou,
@@ -46,6 +48,11 @@ __all__ = [
     "box_iou",
     "mean_average_precision",
     "mean_average_precision_50_95",
+    # regression
+    "mae",
+    "mse",
+    "rmse",
+    "r2_score",
     # segmentation
     "dice_score",
     "frequency_weighted_iou",

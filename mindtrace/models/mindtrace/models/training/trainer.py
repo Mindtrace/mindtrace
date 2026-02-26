@@ -73,6 +73,8 @@ class Trainer:
         gradient_accumulation_steps: int = 1,
         clip_grad_norm: float | None = None,
         batch_fn: Callable | None = None,
+        gradient_checkpointing: bool = False,
+        ddp: bool = False,
     ) -> None:
         """Initialise the trainer.
 
@@ -96,6 +98,17 @@ class Trainer:
                 value before each optimizer step.
             batch_fn: Optional callable ``(batch) -> (inputs, targets)``.
                 When ``None`` the trainer falls back to tuple unpacking.
+            gradient_checkpointing: Enable gradient checkpointing to trade
+                compute for memory.  Calls
+                ``model.gradient_checkpointing_enable()`` when the model
+                supports it (e.g. HuggingFace transformers models).  Silently
+                ignored when the model does not expose that method.
+            ddp: Wrap the model in
+                :class:`~torch.nn.parallel.DistributedDataParallel` for
+                multi-GPU training.  Uses ``mindtrace.cluster.distributed``
+                when available; falls back to native PyTorch DDP.  Has no
+                effect when no distributed process group is initialised or
+                when world size is 1.
 
         Raises:
             ValueError: If *gradient_accumulation_steps* < 1.
@@ -116,6 +129,7 @@ class Trainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.clip_grad_norm = clip_grad_norm
         self.batch_fn = batch_fn
+        self._ddp = ddp
 
         # Device resolution
         if device == "auto":
@@ -146,11 +160,51 @@ class Trainer:
         self._total_epochs: int = 0
 
         self.model.to(self.device)
+
+        # Gradient checkpointing — reduces VRAM at the cost of recomputation
+        if gradient_checkpointing:
+            if hasattr(self.model, "gradient_checkpointing_enable"):
+                self.model.gradient_checkpointing_enable()
+                logger.info("Trainer: gradient checkpointing enabled.")
+            else:
+                logger.warning(
+                    "Trainer: gradient_checkpointing=True but model has no "
+                    "gradient_checkpointing_enable() method — ignored."
+                )
+
+        # DDP wrapping — prefer mindtrace.cluster, fall back to native torch
+        if ddp:
+            try:
+                from mindtrace.cluster.distributed import wrap_ddp as _wrap_ddp  # noqa: PLC0415
+                self.model = _wrap_ddp(self.model)
+            except ImportError:
+                try:
+                    import torch.distributed as _dist  # noqa: PLC0415
+                    if _dist.is_initialized() and _dist.get_world_size() > 1:
+                        from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
+                        _device_ids = (
+                            [self.device.index]
+                            if self.device.type == "cuda" and self.device.index is not None
+                            else None
+                        )
+                        self.model = _DDP(self.model, device_ids=_device_ids)
+                        logger.info("Trainer: wrapped model in DistributedDataParallel.")
+                    else:
+                        logger.debug(
+                            "Trainer: ddp=True but no distributed process group active "
+                            "— running single-process."
+                        )
+                except ImportError:
+                    logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
+
         logger.info(
-            "Trainer initialised — device=%s, amp=%s, grad_accum=%d",
+            "Trainer initialised — device=%s, amp=%s, grad_accum=%d, "
+            "grad_ckpt=%s, ddp=%s",
             self.device,
             self._amp_enabled,
             self.gradient_accumulation_steps,
+            gradient_checkpointing,
+            ddp,
         )
 
     # ------------------------------------------------------------------
@@ -307,6 +361,23 @@ class Trainer:
             self._call_callbacks("on_batch_end", batch=batch_idx, loss=batch_loss)
 
         avg_loss = total_loss / max(num_batches, 1)
+
+        # Average loss across DDP workers so the reported value is consistent
+        if self._ddp:
+            try:
+                from mindtrace.cluster.distributed import all_reduce_mean as _arm  # noqa: PLC0415
+                _t = torch.tensor(avg_loss, device=self.device)
+                avg_loss = float(_arm(_t).item())
+            except ImportError:
+                try:
+                    import torch.distributed as _dist  # noqa: PLC0415
+                    if _dist.is_initialized() and _dist.get_world_size() > 1:
+                        _t = torch.tensor(avg_loss, device=self.device)
+                        _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
+                        avg_loss = float((_t / _dist.get_world_size()).item())
+                except ImportError:
+                    pass
+
         return {"train/loss": avg_loss}
 
     def _val_epoch(self, loader: Any) -> dict[str, float]:

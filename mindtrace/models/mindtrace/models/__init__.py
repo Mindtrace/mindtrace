@@ -29,8 +29,10 @@ from mindtrace.models.training import (
     EarlyStopping,
     LRMonitor,
     ModelCheckpoint,
+    OptunaCallback,
     ProgressLogger,
     Trainer,
+    UnfreezeSchedule,
     build_optimizer,
     build_scheduler,
 )
@@ -58,6 +60,7 @@ from mindtrace.models.architectures import (
     MultiLabelHead,
     build_backbone,
     build_model,
+    build_model_from_hf,
     list_backbones,
     register_backbone,
 )
@@ -67,8 +70,12 @@ from mindtrace.models.evaluation import (
     EvaluationRunner,
     accuracy,
     dice_score,
+    mae,
     mean_average_precision,
     mean_iou,
+    mse,
+    r2_score,
+    rmse,
 )
 
 # -- Lifecycle ---------------------------------------------------------------
@@ -103,6 +110,8 @@ __all__ = [
     "EarlyStopping",
     "LRMonitor",
     "ProgressLogger",
+    "UnfreezeSchedule",
+    "OptunaCallback",
     "build_optimizer",
     "build_scheduler",
     # training — losses
@@ -117,6 +126,7 @@ __all__ = [
     "ComboLoss",
     # architectures
     "build_model",
+    "build_model_from_hf",
     "build_backbone",
     "list_backbones",
     "register_backbone",
@@ -134,6 +144,10 @@ __all__ = [
     "mean_iou",
     "dice_score",
     "mean_average_precision",
+    "mae",
+    "mse",
+    "rmse",
+    "r2_score",
     # lifecycle
     "ModelStage",
     "ModelCard",

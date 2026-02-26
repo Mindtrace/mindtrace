@@ -339,6 +339,179 @@ class LRMonitor(Callback):
                 logger.warning("LRMonitor: tracker.log failed: %s", exc)
 
 
+class UnfreezeSchedule(Callback):
+    """Progressively unfreeze model parameters at specified epochs.
+
+    Designed for fine-tuning workflows where the backbone starts frozen and
+    layers are gradually unfrozen as training progresses.
+
+    Args:
+        schedule: Dict mapping zero-based epoch index to a list of parameter
+            name prefixes to unfreeze at that epoch.  Every parameter whose
+            ``name`` starts with any prefix in the list will have
+            ``requires_grad`` set to ``True``.
+
+            Example — unfreeze the last two ResNet stages at epoch 5 and the
+            full backbone at epoch 10::
+
+                schedule = {
+                    5:  ["backbone.layer3", "backbone.layer4"],
+                    10: ["backbone"],
+                }
+
+        new_lr: Optional learning rate to assign to newly unfrozen parameters
+            via an extra optimizer param group.  When ``None`` the existing
+            optimizer LR is used for those parameters.
+
+    Example::
+
+        unfreeze = UnfreezeSchedule(
+            schedule={5: ["backbone.layer3", "backbone.layer4"], 10: ["backbone"]},
+            new_lr=5e-5,
+        )
+        trainer.fit(train_loader, epochs=15, callbacks=[unfreeze])
+    """
+
+    def __init__(
+        self,
+        schedule: dict[int, list[str]],
+        new_lr: float | None = None,
+    ) -> None:
+        self.schedule = schedule
+        self.new_lr = new_lr
+
+    def on_epoch_begin(self, trainer: Trainer, epoch: int) -> None:
+        """Unfreeze parameters listed for the current epoch.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index.
+        """
+        prefixes = self.schedule.get(epoch)
+        if not prefixes:
+            return
+
+        unfrozen_params: list[Any] = []
+        unfrozen_names: list[str] = []
+
+        for name, param in trainer.model.named_parameters():
+            if any(name.startswith(pfx) for pfx in prefixes):
+                if not param.requires_grad:
+                    param.requires_grad_(True)
+                    unfrozen_params.append(param)
+                    unfrozen_names.append(name)
+
+        if not unfrozen_params:
+            logger.debug(
+                "UnfreezeSchedule: epoch %d — no frozen parameters matched prefixes %s.",
+                epoch, prefixes,
+            )
+            return
+
+        logger.info(
+            "UnfreezeSchedule: epoch %d — unfroze %d parameter tensor(s) matching %s.",
+            epoch, len(unfrozen_params), prefixes,
+        )
+
+        if self.new_lr is not None:
+            try:
+                trainer.optimizer.add_param_group(
+                    {"params": unfrozen_params, "lr": self.new_lr}
+                )
+                logger.info(
+                    "UnfreezeSchedule: added new param group with lr=%.2e for unfrozen params.",
+                    self.new_lr,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "UnfreezeSchedule: could not add param group: %s", exc
+                )
+
+
+class OptunaCallback(Callback):
+    """Optuna-aware callback for hyperparameter search.
+
+    Reports intermediate metric values to an Optuna trial after each epoch
+    and raises ``optuna.TrialPruned`` when the pruner decides to stop the
+    trial early.
+
+    **Duck-typed** — no hard Optuna dependency.  Pass any object that
+    implements ``.report(value: float, step: int)`` and
+    ``.should_prune() -> bool``.
+
+    Args:
+        trial: Optuna trial object (or any duck-typed equivalent).
+        monitor: Metric name to report.  Must appear in the ``logs`` dict
+            passed to ``on_epoch_end``.  Defaults to ``"val/loss"``.
+
+    Example::
+
+        import optuna
+        from mindtrace.models.training import OptunaCallback
+
+        def objective(trial):
+            lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
+            model = build_model("resnet50", "linear", num_classes=3)
+            optimizer = build_optimizer("adamw", model, lr=lr)
+            trainer = Trainer(
+                model=model,
+                loss_fn=nn.CrossEntropyLoss(),
+                optimizer=optimizer,
+                callbacks=[OptunaCallback(trial, monitor="val/loss")],
+            )
+            trainer.fit(train_loader, val_loader, epochs=20)
+            return trainer.history["val/loss"][-1]
+
+        study = optuna.create_study(direction="minimize")
+        study.optimize(objective, n_trials=50)
+    """
+
+    def __init__(self, trial: Any, monitor: str = "val/loss") -> None:
+        self.trial = trial
+        self.monitor = monitor
+
+    def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
+        """Report the monitored metric and prune if necessary.
+
+        Args:
+            trainer: The active ``Trainer`` instance.
+            epoch: Zero-based epoch index (used as the step for Optuna).
+            logs: Metric dict from the completed epoch.
+        """
+        value = logs.get(self.monitor)
+        if value is None:
+            logger.warning(
+                "OptunaCallback: monitored metric '%s' not in logs %s — skipping report.",
+                self.monitor, list(logs.keys()),
+            )
+            return
+
+        try:
+            self.trial.report(float(value), step=epoch)
+        except Exception as exc:
+            logger.warning("OptunaCallback: trial.report() failed: %s", exc)
+            return
+
+        try:
+            should_prune = self.trial.should_prune()
+        except Exception as exc:
+            logger.warning("OptunaCallback: trial.should_prune() failed: %s", exc)
+            return
+
+        if should_prune:
+            trainer.stop_training = True
+            logger.info(
+                "OptunaCallback: trial pruned at epoch %d (%s=%.6f).",
+                epoch, self.monitor, value,
+            )
+            # Raise TrialPruned if Optuna is available so it is recorded correctly.
+            try:
+                import optuna  # noqa: PLC0415
+                raise optuna.TrialPruned()
+            except ImportError:
+                pass
+
+
 class ProgressLogger(Callback):
     """Logs a human-readable epoch summary at INFO level.
 

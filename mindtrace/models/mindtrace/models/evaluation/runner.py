@@ -28,6 +28,7 @@ from mindtrace.models.evaluation.metrics.detection import (
     mean_average_precision,
     mean_average_precision_50_95,
 )
+from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
 from mindtrace.models.evaluation.metrics.segmentation import (
     dice_score,
     mean_iou,
@@ -36,7 +37,7 @@ from mindtrace.models.evaluation.metrics.segmentation import (
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_TASKS = frozenset({"classification", "detection", "segmentation"})
+_SUPPORTED_TASKS = frozenset({"classification", "detection", "regression", "segmentation"})
 
 
 class EvaluationRunner:
@@ -104,6 +105,7 @@ class EvaluationRunner:
                 f"task must be one of {sorted(_SUPPORTED_TASKS)}, got '{task}'."
             )
 
+
         if num_classes < 1:
             raise ValueError(f"num_classes must be >= 1, got {num_classes}.")
 
@@ -164,6 +166,8 @@ class EvaluationRunner:
             results = self._run_classification(loader)
         elif self._task == "detection":
             results = self._run_detection(loader)
+        elif self._task == "regression":
+            results = self._run_regression(loader)
         else:
             results = self._run_segmentation(loader)
 
@@ -380,6 +384,51 @@ class EvaluationRunner:
             results["mIoU"],
             results["mean_dice"],
             results["pixel_accuracy"],
+        )
+
+        return results
+
+
+    def _run_regression(self, loader: Any) -> dict[str, Any]:
+        """Accumulate regression predictions and compute scalar metrics.
+
+        Args:
+            loader: Dataloader yielding ``(inputs, targets)`` batches.
+                Inputs: any tensor accepted by the model.
+                Targets: ``(B,)`` or ``(B, 1)`` float tensors.
+
+        Returns:
+            Dict with keys: ``mae``, ``mse``, ``rmse``, ``r2``.
+        """
+        all_preds: list[np.ndarray] = []
+        all_targets: list[np.ndarray] = []
+
+        with torch.inference_mode():
+            for batch in loader:
+                inputs, targets = self._parse_batch(batch)
+                inputs = inputs.to(self._device) if hasattr(inputs, "to") else inputs
+                raw_output = self._model(inputs)
+                preds_np = self._to_numpy(raw_output).ravel()
+                all_preds.append(preds_np)
+                all_targets.append(self._to_numpy(targets).ravel())
+
+        if not all_preds:
+            logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
+            return {"mae": 0.0, "mse": 0.0, "rmse": 0.0, "r2": 0.0}
+
+        preds_arr   = np.concatenate(all_preds,   axis=0)
+        targets_arr = np.concatenate(all_targets, axis=0)
+
+        results: dict[str, Any] = {
+            "mae":  mae(preds_arr,  targets_arr),
+            "mse":  mse(preds_arr,  targets_arr),
+            "rmse": rmse(preds_arr, targets_arr),
+            "r2":   r2_score(preds_arr, targets_arr),
+        }
+
+        logger.info(
+            "EvaluationRunner [regression]: mae=%.4f mse=%.4f rmse=%.4f r2=%.4f",
+            results["mae"], results["mse"], results["rmse"], results["r2"],
         )
 
         return results

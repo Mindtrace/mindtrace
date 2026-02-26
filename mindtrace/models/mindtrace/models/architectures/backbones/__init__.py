@@ -64,6 +64,15 @@ try:
 except Exception:
     _HF_DINO_AVAILABLE = False
 
+# Export generic HuggingFace backbone when transformers is available
+try:
+    from mindtrace.models.architectures.backbones.hf_generic import (  # noqa: F401
+        HuggingFaceBackbone,
+    )
+    _HF_GENERIC_AVAILABLE = True
+except Exception:
+    _HF_GENERIC_AVAILABLE = False
+
 __all__ = [
     "BackboneInfo",
     "build_backbone",
@@ -72,4 +81,6 @@ __all__ = [
     # HuggingFace DINO (available when transformers is installed)
     "HuggingFaceDINOBackbone",
     "LoRAConfig",
+    # Generic HuggingFace backbone (available when transformers is installed)
+    "HuggingFaceBackbone",
 ]

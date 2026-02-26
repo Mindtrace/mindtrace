@@ -25,9 +25,20 @@ from __future__ import annotations
 from typing import Any
 
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 from mindtrace.models.architectures.backbones import BackboneInfo, build_backbone
+
+# Optional generic HuggingFace backbone
+try:
+    from mindtrace.models.architectures.backbones.hf_generic import (  # noqa: PLC0415
+        HuggingFaceBackbone as _HFGenericBackbone,
+    )
+    _HF_GENERIC_AVAILABLE = True
+except Exception:
+    _HFGenericBackbone = None   # type: ignore[assignment,misc]
+    _HF_GENERIC_AVAILABLE = False
 from mindtrace.models.architectures.heads.classification import (
     LinearHead,
     MLPHead,
@@ -38,6 +49,16 @@ from mindtrace.models.architectures.heads.segmentation import (
     LinearSegHead,
 )
 
+# Optional HuggingFace DINO import — only needed for seg routing
+try:
+    from mindtrace.models.architectures.backbones.dino_hf import (  # noqa: PLC0415
+        HuggingFaceDINOBackbone as _HFBackbone,
+    )
+    _HF_DINO_AVAILABLE = True
+except Exception:
+    _HFBackbone = None          # type: ignore[assignment,misc]
+    _HF_DINO_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # Supported head type keys
 # ---------------------------------------------------------------------------
@@ -45,11 +66,46 @@ from mindtrace.models.architectures.heads.segmentation import (
 _HEAD_TYPES: frozenset[str] = frozenset(
     {"linear", "mlp", "multilabel", "linear_seg", "fpn_seg"}
 )
+_SEG_HEAD_TYPES: frozenset[str] = frozenset({"linear_seg", "fpn_seg"})
 
 
 # ---------------------------------------------------------------------------
 # ModelWrapper
 # ---------------------------------------------------------------------------
+
+
+class HFDINOSegWrapper(nn.Module):
+    """Assembled HF-DINO backbone + segmentation head.
+
+    Unlike :class:`ModelWrapper`, which uses the CLS token, this wrapper:
+
+    1. Calls ``backbone.forward_spatial()`` → ``(B, D, H_p, W_p)`` patch map.
+    2. Passes that map through the segmentation head.
+    3. Bilinearly upsamples the output back to the input resolution.
+
+    Instantiated automatically by :func:`build_model` when an HF DINO
+    backbone is paired with a segmentation head (``"linear_seg"`` or
+    ``"fpn_seg"``).  You do not need to use this class directly.
+
+    Example::
+
+        model = build_model("dino_v3_small", "fpn_seg", num_classes=19)
+        # model is an HFDINOSegWrapper — call model(x) directly.
+        logits = model(images)  # (B, 19, H, W)
+    """
+
+    def __init__(self, backbone_info: BackboneInfo, head: nn.Module) -> None:
+        super().__init__()
+        self.backbone_info: BackboneInfo = backbone_info
+        self.backbone: nn.Module = backbone_info.model
+        self.head: nn.Module = head
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Spatial forward: extract patch map → head → upsample to input size."""
+        H, W = x.shape[2], x.shape[3]
+        spatial = self.backbone.forward_spatial(x)   # (B, D, H_p, W_p)
+        logits  = self.head(spatial)                 # (B, C, H_p, W_p)
+        return F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
 
 
 class ModelWrapper(nn.Module):
@@ -219,5 +275,120 @@ def build_model(
             num_classes=num_classes,
             hidden_dim=hidden_dim_seg,
         )
+
+    # HF DINO + segmentation head → spatial patch-token path with auto-upsample
+    is_hf = _HF_DINO_AVAILABLE and isinstance(backbone_info.model, _HFBackbone)
+    if is_hf and head in _SEG_HEAD_TYPES:
+        return HFDINOSegWrapper(backbone_info=backbone_info, head=head_module)
+
+    return ModelWrapper(backbone_info=backbone_info, head=head_module)
+
+
+def build_model_from_hf(
+    model_name_or_path: str,
+    head: str,
+    num_classes: int,
+    *,
+    pretrained: bool = True,
+    freeze_backbone: bool = False,
+    embed_dim: int | None = None,
+    dropout: float = 0.0,
+    cache_dir: str | None = None,
+    **head_kwargs: Any,
+) -> ModelWrapper:
+    """Assemble a model from *any* HuggingFace vision backbone + a task head.
+
+    Unlike :func:`build_model`, which requires the backbone to be pre-registered
+    under a short name, this factory accepts any HuggingFace model identifier
+    directly.  It resolves the embedding dimension automatically from the model
+    config, or accepts an explicit override via *embed_dim*.
+
+    Args:
+        model_name_or_path: HuggingFace model ID (e.g.
+            ``"microsoft/resnet-50"``, ``"google/vit-base-patch16-224"``) or
+            path to a local checkpoint directory.
+        head: Head type — one of ``"linear"``, ``"mlp"``, ``"multilabel"``.
+            Segmentation heads (``"linear_seg"``, ``"fpn_seg"``) are *not*
+            supported here because arbitrary HF models do not expose a
+            standardised spatial feature map.  Use
+            :class:`~mindtrace.models.architectures.backbones.dino_hf.HuggingFaceDINOBackbone`
+            with :func:`build_model` for segmentation.
+        num_classes: Number of output classes.
+        pretrained: Load pretrained HuggingFace weights.  Defaults to ``True``.
+        freeze_backbone: Freeze backbone parameters.  Defaults to ``False``.
+        embed_dim: Override the automatically detected embedding dimension.
+            Useful when config introspection fails for an unusual architecture.
+        dropout: Dropout rate forwarded to the head.
+        cache_dir: Optional HuggingFace cache directory.
+        **head_kwargs: Additional keyword arguments forwarded to the head
+            constructor (e.g. ``hidden_dim``, ``num_layers`` for ``"mlp"``).
+
+    Returns:
+        A :class:`ModelWrapper` ready for training or inference.
+
+    Raises:
+        ImportError: If ``transformers`` is not installed.
+        ValueError: If *head* is a segmentation head type.
+
+    Example::
+
+        from mindtrace.models.architectures import build_model_from_hf
+
+        model = build_model_from_hf(
+            "microsoft/resnet-50",
+            head="linear",
+            num_classes=10,
+            pretrained=True,
+        )
+        output = model(torch.randn(2, 3, 224, 224))  # (2, 10)
+    """
+    if not _HF_GENERIC_AVAILABLE:
+        raise ImportError(
+            "transformers is required for build_model_from_hf().  "
+            "Install it with: pip install transformers"
+        )
+
+    if head in _SEG_HEAD_TYPES:
+        raise ValueError(
+            f"Segmentation heads ({sorted(_SEG_HEAD_TYPES)}) are not supported "
+            "by build_model_from_hf().  Use build_model() with a registered DINO "
+            "backbone for segmentation."
+        )
+
+    if head not in _HEAD_TYPES:
+        raise ValueError(
+            f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}"
+        )
+
+    backbone = _HFGenericBackbone(
+        model_name_or_path=model_name_or_path,
+        pretrained=pretrained,
+        cache_dir=cache_dir,
+    )
+
+    in_features = embed_dim if embed_dim is not None else backbone.embed_dim
+    backbone_info = BackboneInfo(model=backbone, num_features=in_features)
+
+    if freeze_backbone:
+        for param in backbone.parameters():
+            param.requires_grad_(False)
+
+    # Build head
+    hidden_dim: int = int(head_kwargs.pop("hidden_dim", 512))
+    num_layers: int = int(head_kwargs.pop("num_layers", 2))
+
+    head_module: nn.Module
+    if head == "linear":
+        head_module = LinearHead(in_features=in_features, num_classes=num_classes, dropout=dropout)
+    elif head == "mlp":
+        head_module = MLPHead(
+            in_features=in_features,
+            hidden_dim=hidden_dim,
+            num_classes=num_classes,
+            dropout=dropout,
+            num_layers=num_layers,
+        )
+    else:  # "multilabel"
+        head_module = MultiLabelHead(in_features=in_features, num_classes=num_classes, dropout=dropout)
 
     return ModelWrapper(backbone_info=backbone_info, head=head_module)

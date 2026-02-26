@@ -56,7 +56,7 @@ from mindtrace.models.architectures.heads import (
 )
 
 # High-level factory
-from mindtrace.models.architectures.factory import ModelWrapper, build_model
+from mindtrace.models.architectures.factory import ModelWrapper, build_model, build_model_from_hf
 
 __all__ = [
     # Backbone registry
@@ -67,6 +67,7 @@ __all__ = [
     # Model factory
     "ModelWrapper",
     "build_model",
+    "build_model_from_hf",
     # Classification heads
     "LinearHead",
     "MLPHead",
