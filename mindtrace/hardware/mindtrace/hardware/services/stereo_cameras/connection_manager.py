@@ -177,7 +177,6 @@ class StereoCameraConnectionManager(ConnectionManager):
         camera: str,
         save_path: Optional[str] = None,
         include_colors: bool = True,
-        remove_outliers: bool = False,
         downsample_factor: int = 1,
         output_format: str = "numpy",
     ) -> Dict[str, Any]:
@@ -186,7 +185,6 @@ class StereoCameraConnectionManager(ConnectionManager):
             camera=camera,
             save_path=save_path,
             include_colors=include_colors,
-            remove_outliers=remove_outliers,
             downsample_factor=downsample_factor,
             output_format=output_format,
         )

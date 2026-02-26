@@ -32,8 +32,16 @@ dependencies = [
 cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.8.0"]
 cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.8.0"]
 cameras-all = ["mindtrace-hardware[cameras-all]>=0.8.0"]
-stereo-basler = ["mindtrace-hardware[stereo-basler]>=0.8.0"]
+stereo-basler = [
+    "mindtrace-hardware[stereo-basler]>=0.8.0",
+    "plyfile>=1.1.3",
+]
 stereo-all = ["mindtrace-hardware[stereo-all]>=0.8.0"]
+scanners-photoneo = [
+    "mindtrace-hardware[scanners-photoneo]>=0.8.0",
+    "plyfile>=1.1.3",
+]
+scanners-all = ["mindtrace-hardware[scanners-all]>=0.8.0"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.8.0"]
 registry-timm = ["mindtrace-registry[timm]>=0.7.1"]
 registry-huggingface = ["mindtrace-registry[huggingface]>=0.7.1"]

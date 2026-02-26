@@ -18,6 +18,12 @@ A command-line interface for managing Mindtrace hardware services with process l
 - **`mindtrace-hw stereo status`** - Show stereo camera service status with URLs
 - **`mindtrace-hw stereo logs`** - View stereo camera service logs
 
+**3D Scanner Services:**
+- **`mindtrace-hw scanner start`** - Start 3D scanner API service
+- **`mindtrace-hw scanner stop`** - Stop 3D scanner service gracefully
+- **`mindtrace-hw scanner status`** - Show 3D scanner service status with URLs
+- **`mindtrace-hw scanner logs`** - View 3D scanner service logs
+
 **PLC Services:**
 - **`mindtrace-hw plc start`** - Start PLC API service
 - **`mindtrace-hw plc stop`** - Stop PLC service gracefully
@@ -27,7 +33,7 @@ A command-line interface for managing Mindtrace hardware services with process l
 **Global Commands:**
 - **`mindtrace-hw status`** - Show all hardware services status
 - **`mindtrace-hw stop`** - Stop all services cleanly
-- **`mindtrace-hw logs <service>`** - View logs for camera, plc, stereo, or all services
+- **`mindtrace-hw logs <service>`** - View logs for camera, plc, scanner, stereo, or all services
 
 ### Key Capabilities
 
@@ -69,6 +75,21 @@ mindtrace-hw stereo status
 
 # Stop stereo camera service
 mindtrace-hw stereo stop
+```
+
+**3D Scanner Services:**
+```bash
+# Start 3D scanner API service
+mindtrace-hw scanner start
+
+# Open documentation in browser automatically
+mindtrace-hw scanner start --open-docs
+
+# Check 3D scanner service status
+mindtrace-hw scanner status
+
+# Stop 3D scanner service
+mindtrace-hw scanner stop
 ```
 
 **PLC Services:**
@@ -117,6 +138,7 @@ cli/
 ├── commands/
 │   ├── __init__.py
 │   ├── camera.py         # Camera service management commands
+│   ├── scanner.py        # 3D scanner service management commands
 │   ├── stereo.py         # Stereo camera service management commands
 │   ├── plc.py            # PLC service management commands
 │   └── status.py         # Global status command
@@ -133,6 +155,7 @@ cli/
 ### Service Integration Architecture
 - **Camera API**: Managed via `mindtrace.hardware.services.cameras.launcher`
 - **Stereo Camera API**: Managed via `mindtrace.hardware.services.stereo_cameras.launcher`
+- **3D Scanner API**: Managed via `mindtrace.hardware.services.scanners_3d.launcher`
 - **PLC API**: Managed via `mindtrace.hardware.services.plcs.launcher`
 - **Process Coordination**: PID tracking in `~/.mindtrace/hw_services.json`
 - **Health Monitoring**: TCP port checks and process validation
@@ -203,6 +226,11 @@ Configure services using standardized environment variables:
 - `STEREO_CAMERA_API_HOST` - API service host (default: `localhost`)
 - `STEREO_CAMERA_API_PORT` - API service port (default: `8004`)
 - `STEREO_CAMERA_API_URL` - Full API URL (default: `http://localhost:8004`)
+
+### 3D Scanner API Service Configuration
+- `SCANNER_3D_API_HOST` - API service host (default: `localhost`)
+- `SCANNER_3D_API_PORT` - API service port (default: `8005`)
+- `SCANNER_3D_API_URL` - Full API URL (default: `http://localhost:8005`)
 
 ### PLC API Service Configuration
 - `PLC_API_HOST` - API service host (default: `localhost`)
@@ -330,6 +358,59 @@ mindtrace-hw stereo status
 #### stereo logs
 ```bash
 mindtrace-hw stereo logs
+
+# Provides guidance on log locations:
+# - Console output for API service
+```
+
+### 3D Scanner Commands
+
+#### scanner start
+```bash
+mindtrace-hw scanner start [OPTIONS]
+
+Options:
+  --api-host TEXT     3D Scanner API service host [default: localhost]
+  --api-port INTEGER  3D Scanner API service port [default: 8005]
+  --open-docs        Open API documentation in browser
+
+Examples:
+  # Start with default settings
+  mindtrace-hw scanner start
+
+  # Start on custom host/port
+  mindtrace-hw scanner start --api-host 0.0.0.0 --api-port 8006
+
+  # Start and open Swagger UI in browser
+  mindtrace-hw scanner start --open-docs
+
+Access URLs:
+  - API: http://localhost:8005
+  - Swagger UI: http://localhost:8005/docs
+  - ReDoc: http://localhost:8005/redoc
+```
+
+#### scanner stop
+```bash
+mindtrace-hw scanner stop
+
+# Gracefully stops 3D scanner API service
+```
+
+#### scanner status
+```bash
+mindtrace-hw scanner status
+
+# Shows detailed status:
+# - Service running status
+# - Process ID and resource usage
+# - Host:Port and access URLs
+# - Service uptime
+```
+
+#### scanner logs
+```bash
+mindtrace-hw scanner logs
 
 # Provides guidance on log locations:
 # - Console output for API service
@@ -463,6 +544,7 @@ The CLI architecture supports easy addition of new hardware services:
 ### Implemented Services
 - **Camera Management**: `mindtrace-hw camera start/stop/status/logs`
 - **Stereo Camera Management**: `mindtrace-hw stereo start/stop/status/logs`
+- **3D Scanner Management**: `mindtrace-hw scanner start/stop/status/logs`
 - **PLC Management**: `mindtrace-hw plc start/stop/status`
 
 ### Planned Services
