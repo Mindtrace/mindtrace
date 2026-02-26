@@ -200,6 +200,60 @@ class ModelService(Service):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Convenience launcher
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def serve(
+        cls,
+        *,
+        host: str = "0.0.0.0",
+        port: int = 8080,
+        **kwargs: Any,
+    ) -> Any:
+        """Start this model service as an HTTP server.
+
+        Thin alias for :meth:`~mindtrace.services.Service.launch` with
+        model-serving-appropriate defaults (``host="0.0.0.0"``,
+        ``port=8080``).
+
+        Args:
+            host: Bind address.  Defaults to ``"0.0.0.0"`` (all interfaces).
+            port: TCP port.  Defaults to ``8080``.
+            **kwargs: Forwarded verbatim to
+                :meth:`~mindtrace.services.Service.launch`.  Use this to pass
+                model constructor arguments (``model_name``, ``model_version``,
+                ``model_path``, ``registry``, etc.).
+
+        Returns:
+            Whatever :meth:`launch` returns — a connection handle when
+            ``background=True``; otherwise blocks until the server shuts down.
+
+        Example::
+
+            class WeldDetector(OnnxModelService):
+                _task = "detection"
+
+                def predict(self, request):
+                    outputs = self.predict_array({"images": preprocess(request)})
+                    return PredictResponse(results=postprocess(outputs))
+
+            # Blocking — runs until Ctrl-C:
+            WeldDetector.serve(
+                model_name="weld-detector",
+                model_version="v2",
+                model_path="weld-v2.onnx",
+                host="0.0.0.0",
+                port=8080,
+            )
+        """
+        return cls.launch(host=host, port=port, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
     async def shutdown_cleanup(self) -> None:
         """Release model resources during shutdown.
 
