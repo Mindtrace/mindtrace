@@ -51,7 +51,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata exists in S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 1
 
     # Fetch metadata and verify contents
@@ -68,7 +68,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata is deleted
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 0
 
 
@@ -82,7 +82,7 @@ def test_delete_metadata(s3_backend, sample_metadata, s3_client, s3_test_bucket)
     assert result.first().ok
 
     # Verify metadata is deleted from S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 0
 
 
@@ -124,7 +124,7 @@ def test_list_versions_uses_metadata_prefix(s3_backend, sample_metadata, s3_clie
     s3_backend.save_metadata("test:object:with:colons", "2.0.0", sample_metadata)
 
     # Verify the metadata prefix is correctly generated (colons should be replaced with underscores)
-    expected_prefix = "_meta_test_object_with_colons@"
+    expected_prefix = "_meta_test%3Aobject%3Awith%3Acolons@"
     assert s3_backend._object_metadata_prefix("test:object:with:colons") == expected_prefix
 
     # List versions - returns Dict[str, List[str]]

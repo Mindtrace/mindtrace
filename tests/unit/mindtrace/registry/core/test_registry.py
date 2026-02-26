@@ -265,11 +265,17 @@ def test_load_nonexistent_object(registry):
         registry.load("test:config", version="1.0.0")
 
 
+def test_underscore_object_name(registry, test_config):
+    """Test that saving with underscored names works (underscores are allowed)."""
+    registry.save("test_config", test_config, version="1.0.0")
+    loaded = registry.load("test_config", version="1.0.0")
+    assert loaded is not None
+
+
 def test_invalid_object_name(registry, test_config):
-    """Test that saving with an invalid object name raises an error."""
-    error_msg = "Object name 'test_config' cannot contain underscores. Use colons (':') for namespacing."
-    with pytest.raises(ValueError, match=re.escape(error_msg)):
-        registry.save("test_config", test_config, version="1.0.0")
+    """Test that saving with an @ in the name raises an error."""
+    with pytest.raises(ValueError, match="cannot contain '@'"):
+        registry.save("test@config", test_config, version="1.0.0")
 
 
 def test_list_objects_and_versions(registry, test_config):
@@ -903,7 +909,7 @@ def test_save_push_rollback_on_error(registry, test_config):
     assert not artifact_path.exists()
 
     # Verify that metadata was not created
-    meta_path = registry.backend.uri / "_meta_test_config@1.0.0.yaml"
+    meta_path = registry.backend.uri / "_meta_test%3Aconfig@1.0.0.yaml"
     assert not meta_path.exists()
 
 
