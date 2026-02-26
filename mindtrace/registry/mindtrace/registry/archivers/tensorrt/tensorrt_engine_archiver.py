@@ -62,7 +62,7 @@ class TensorRTEngineArchiver(Archiver):
             engine: The TensorRT ICudaEngine instance to save.
         """
         if not _TRT_AVAILABLE:
-            raise ImportError("tensorrt is not installed")
+            raise ImportError("tensorrt is not installed. Install e.g. for CUDA 12: pip install tensorrt-cu12")
 
         os.makedirs(self.uri, exist_ok=True)
 
@@ -161,7 +161,7 @@ class TensorRTEngineArchiver(Archiver):
             The loaded TensorRT ICudaEngine instance.
         """
         if not _TRT_AVAILABLE:
-            raise ImportError("tensorrt is not installed")
+            raise ImportError("tensorrt is not installed. Install e.g. for CUDA 12: pip install tensorrt-cu12")
 
         engine_path = os.path.join(self.uri, "engine.trt")
 
