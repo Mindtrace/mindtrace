@@ -146,7 +146,7 @@ def init_registry(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     if args.backend == "local":
         if not args.registry_path:
             parser.error("--registry-path is required for local backend")
-        registry = Registry(registry_dir=args.registry_path)
+        registry = Registry(backend=args.registry_path)
     elif args.backend == "minio":
         required = [
             "minio_endpoint",
