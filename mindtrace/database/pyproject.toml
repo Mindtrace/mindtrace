@@ -19,7 +19,6 @@ dependencies = [
     "redis-om>=0.3.5",
     "motor>=3.3.0",
     "pymongo>=4.14.0",
-    "mindtrace-registry>=0.8.0",
 ]
 
 [project.urls]
@@ -29,7 +28,4 @@ Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/databas
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
-
-[tool.uv.sources]
-mindtrace-registry = { workspace = true }
 

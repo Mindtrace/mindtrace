@@ -110,6 +110,30 @@ async def test_mongo_backend_find(mock_mongo_backend):
 
 
 @pytest.mark.asyncio
+async def test_mongo_backend_find_one_returns_model_instance():
+    """find_one should return a model instance for parity with find()."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    mock_doc = create_mock_mongo_user()
+
+    with patch.object(backend, "find", AsyncMock(return_value=[mock_doc])) as mock_find:
+        result = await backend.find_one({"name": "John"})
+
+    assert result is mock_doc
+    mock_find.assert_awaited_once_with(where={"name": "John"}, sort=None, limit=1)
+
+
+def test_mongo_getattr_preinit_does_not_recurse():
+    """__getattr__ should fail cleanly even before __init__ populated attrs."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM.__new__(MongoMindtraceODM)
+    with pytest.raises(AttributeError):
+        backend.__getattr__("user")
+
+
+@pytest.mark.asyncio
 async def test_mongo_backend_initialize(mock_mongo_backend):
     """Test backend initialization."""
     mock_mongo_backend.initialize.assert_not_called()
@@ -367,9 +391,8 @@ async def test_mongo_backend_insert_with_duplicate_key_error():
 
 @pytest.mark.asyncio
 async def test_mongo_backend_insert_with_generic_exception():
-    """Test MongoDB insert with generic Exception."""
+    """Test MongoDB insert with generic Exception propagates naturally."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-    from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -388,7 +411,7 @@ async def test_mongo_backend_insert_with_generic_exception():
             mock_doc = MagicMock()
             mock_doc.insert = mock_insert
             with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                with pytest.raises(DuplicateInsertError, match="Generic error"):
+                with pytest.raises(Exception, match="Generic error"):
                     await backend.insert(user)
 
 
@@ -593,7 +616,7 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
                 # Test find_sync from sync context
                 result = backend.find_sync({"name": "John"})
                 assert len(result) == 1
-                mock_find.assert_called_once_with({"name": "John"})
+                mock_find.assert_called_once_with(where={"name": "John"}, sort=None, limit=None)
 
         with patch.object(backend, "initialize", new_callable=AsyncMock) as mock_init:
             # Test initialize_sync from sync context
@@ -1000,7 +1023,7 @@ async def test_mongo_backend_update_with_basemodel_not_found():
 
 
 def test_mongo_backend_update_sync():
-    """Test MongoDB update_sync method."""
+    """Test MongoDB update_sync method delegates to _run_sync."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -1011,24 +1034,17 @@ def test_mongo_backend_update_sync():
     )
     backend._is_initialized = True
 
-    # Create a mock document instance
     mock_doc = MagicMock(spec=UserDoc)
     mock_doc.id = "507f1f77bcf86cd799439011"
-    mock_doc.save = AsyncMock(return_value=mock_doc)
 
-    async def mock_update(obj):
-        return mock_doc
-
-    with patch.object(backend, "update", side_effect=mock_update):
-        with patch("asyncio.run", return_value=mock_doc) as mock_run:
-            result = backend.update_sync(mock_doc)
-
-            mock_run.assert_called_once()
-            assert result == mock_doc
+    with patch.object(backend, "_run_sync", return_value=mock_doc) as mock_run:
+        result = backend.update_sync(mock_doc)
+        mock_run.assert_called_once()
+        assert result == mock_doc
 
 
-def test_mongo_backend_update_sync_from_async_context():
-    """Test MongoDB update_sync method from async context raises error."""
+def test_mongo_backend_update_sync_from_sync_context():
+    """Test MongoDB update_sync method works from sync context (no running loop)."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(
@@ -1039,17 +1055,12 @@ def test_mongo_backend_update_sync_from_async_context():
     )
     backend._is_initialized = True
 
-    # Create a mock document instance
     mock_doc = MagicMock(spec=UserDoc)
     mock_doc.id = "507f1f77bcf86cd799439011"
 
-    # Mock asyncio.get_running_loop to raise RuntimeError with "no running event loop"
-    with patch("asyncio.get_running_loop", side_effect=RuntimeError("no running event loop")):
-        with patch("asyncio.run") as mock_run:
-            with patch.object(backend, "update", new_callable=AsyncMock, return_value=mock_doc):
-                # Should not raise, but use asyncio.run
-                backend.update_sync(mock_doc)
-                mock_run.assert_called_once()
+    with patch.object(backend, "update", new_callable=AsyncMock, return_value=mock_doc):
+        result = backend.update_sync(mock_doc)
+        assert result == mock_doc
 
 
 def test_mongo_backend_update_sync_from_async_context_raises_error():
@@ -1064,12 +1075,105 @@ def test_mongo_backend_update_sync_from_async_context_raises_error():
     )
     backend._is_initialized = True
 
-    # Create a mock document instance
     mock_doc = MagicMock(spec=UserDoc)
     mock_doc.id = "507f1f77bcf86cd799439011"
 
-    # Mock asyncio.get_running_loop to return a loop (simulating async context)
+    # Simulate async context — get_running_loop returns a loop
     mock_loop = MagicMock()
     with patch("asyncio.get_running_loop", return_value=mock_loop):
-        with pytest.raises(RuntimeError, match="update_sync\\(\\) called from async context"):
+        with pytest.raises(RuntimeError, match="Sync wrapper called from async context"):
             backend.update_sync(mock_doc)
+
+
+# ============================================================================
+# Tests for update_one (replaced find_and_modify)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_one_return_after():
+    """Test update_one with return_document='after' returns doc after update."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+
+    mock_collection = MagicMock()
+    updated_doc = {"_id": "1", "name": "obj", "value": "new"}
+
+    async def mock_find_one_and_update(*args, **kwargs):
+        return updated_doc
+
+    mock_collection.find_one_and_update = mock_find_one_and_update
+
+    with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
+        result = await backend.update_one(
+            {"name": "obj"}, {"value": "new"}, upsert=True, return_document="after"
+        )
+        assert result == updated_doc
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_one_return_before():
+    """Test update_one with return_document='before' returns doc before update."""
+    from pymongo import ReturnDocument
+
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+
+    mock_collection = MagicMock()
+    old_doc = {"_id": "1", "name": "obj", "value": "old"}
+    captured_kwargs = {}
+
+    async def mock_find_one_and_update(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return old_doc
+
+    mock_collection.find_one_and_update = mock_find_one_and_update
+
+    with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
+        result = await backend.update_one(
+            {"name": "obj"}, {"value": "new"}, return_document="before"
+        )
+        assert result == old_doc
+        assert captured_kwargs["return_document"] == ReturnDocument.BEFORE
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_update_one_no_match():
+    """Test update_one returns None when no match and no upsert."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+
+    mock_collection = MagicMock()
+
+    async def mock_find_one_and_update(*args, **kwargs):
+        return None
+
+    mock_collection.find_one_and_update = mock_find_one_and_update
+
+    with patch.object(UserDoc, "get_motor_collection", return_value=mock_collection):
+        result = await backend.update_one(
+            {"name": "nonexistent"}, {"value": "new"}, return_document="after"
+        )
+        assert result is None
+
+
+def test_mongo_backend_update_one_sync():
+    """Test update_one_sync delegates correctly."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+
+    updated_doc = {"_id": "1", "name": "obj", "value": "new"}
+
+    with patch.object(backend, "update_one", new_callable=AsyncMock, return_value=updated_doc):
+        result = backend.update_one_sync(
+            {"name": "obj"}, {"value": "new"}, upsert=True, return_document="before"
+        )
+        assert result == updated_doc

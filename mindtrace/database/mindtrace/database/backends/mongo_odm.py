@@ -1,9 +1,11 @@
 import asyncio
-from typing import Dict, List, Optional, Type, TypeVar
+import threading
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
@@ -87,6 +89,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         allow_index_dropping: bool = False,
         auto_init: bool = False,
         init_mode: InitMode | None = None,
+        client: AsyncIOMotorClient | None = None,
     ):
         """
         Initialize the MongoDB ODM backend.
@@ -127,7 +130,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not db_uri or not db_name:
             raise ValueError("db_uri and db_name are required")
 
-        self.client = AsyncIOMotorClient(db_uri)
+        self.client = client or AsyncIOMotorClient(db_uri)
         self.db_name = db_name
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
@@ -152,9 +155,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                     allow_index_dropping=allow_index_dropping,
                     auto_init=False,  # We'll initialize all together
                     init_mode=init_mode,
+                    client=self.client,
                 )
-                # Share the same client instance
-                odm.client = self.client
                 # Store parent reference for initialization delegation
                 odm._parent_odm = self
                 self._model_odms[name] = odm
@@ -172,6 +174,15 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Store init_mode for later reference
         self._init_mode = init_mode
 
+        # Dedicated event-loop thread for sync wrappers.  Motor binds to
+        # the first loop it touches; ``asyncio.run()`` creates & closes a
+        # new loop every call which breaks motor.  A background thread
+        # running ``loop.run_forever()`` lets any caller thread submit
+        # coroutines lock-free via ``run_coroutine_threadsafe()``.
+        self._sync_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._sync_thread: Optional[threading.Thread] = None
+        self._sync_loop_lock = threading.Lock()  # guards loop/thread creation only
+
         # Auto-initialize in sync contexts (if requested)
         # Note: MongoDB/Beanie is always async, so in async contexts we always defer
         if auto_init:
@@ -183,7 +194,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             except RuntimeError:
                 # We're in a sync context
                 if init_mode == InitMode.SYNC:
-                    asyncio.run(self._do_initialize())
+                    self._run_sync(self._do_initialize())
                     self._needs_init = False
                 else:
                     # Async mode in sync context - defer to first operation
@@ -261,14 +272,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await db.user.get(user_id)
             await db.address.insert(address)
         """
-        if self._models is not None and name in self._model_odms:
+        models = self.__dict__.get("_models")
+        model_odms = self.__dict__.get("_model_odms", {})
+        if models is not None and name in model_odms:
             # Ensure parent is initialized when accessing child ODM
             # This allows document creation to work (Beanie requires init before creating instances)
             if not self._is_initialized:
                 # In async context, we can't initialize here synchronously
                 # But we'll initialize on first operation via the child ODM
                 pass
-            return self._model_odms[name]
+            return model_odms[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def is_async(self) -> bool:
@@ -287,34 +300,14 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """
         return True
 
-    async def insert(self, obj: BaseModel | dict) -> T:
-        """
-        Insert a new document into the MongoDB collection.
-
-        Args:
-            obj (BaseModel): The document object to insert into the database.
-                Can be a BaseModel instance or a Beanie Document. If it's a Document
-                created before initialization, it will be recreated from dict data.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
+    async def insert_one(self, obj: BaseModel | dict) -> T:
+        """Insert one document. Returns the inserted document.
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
-            ValueError: If in multi-model mode (use db.model_name.insert() instead).
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                try:
-                    inserted_user = await backend.insert(user)
-                    print(f"Inserted user with ID: {inserted_user.id}")
-                except DuplicateInsertError as e:
-                    print(f"Duplicate entry: {e}")
         """
         if self._models is not None:
-            raise ValueError("Cannot use insert() in multi-model mode. Use db.model_name.insert() instead.")
+            raise ValueError("Cannot use insert_one() in multi-model mode. Use db.model_name.insert_one() instead.")
 
         # Auto-initialize if needed (backward compatible - works with or without explicit init)
         if not self._is_initialized:
@@ -325,8 +318,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             data = obj.model_dump()
         elif isinstance(obj, dict):
             data = obj.copy()
-            # Beanie handles Document objects in dicts directly for Link fields
-            # No conversion needed - just pass the dict as-is
         else:
             data = obj.model_dump()
 
@@ -343,37 +334,13 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
-        except Exception as e:
-            raise DuplicateInsertError(str(e))
+
+    async def insert(self, obj: BaseModel | dict) -> T:
+        """Legacy: insert a document. Prefer ``insert_one``."""
+        return await self.insert_one(obj)
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
-        """
-        Retrieve a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.get() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = await backend.get("507f1f77bcf86cd799439011")
-                    print(f"Found user: {user.name}")
-
-                    # With linked documents
-                    user = await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
-                    print(f"User address: {user.address.street}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: retrieve a document by id. Prefer ``find_one``."""
         if self._models is not None:
             raise ValueError("Cannot use get() in multi-model mode. Use db.model_name.get() instead.")
 
@@ -387,33 +354,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         return doc
 
     async def update(self, obj: BaseModel) -> T:
-        """
-        Update an existing document in the MongoDB collection.
-
-        The document object should have been retrieved from the database,
-        modified, and then passed to this method to save the changes.
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-            ValueError: If in multi-model mode (use db.model_name.update() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = await backend.get("507f1f77bcf86cd799439011")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = await backend.update(user)
-        """
+        """Legacy: full-document save by id. Prefer ``update_one``."""
         if self._models is not None:
             raise ValueError("Cannot use update() in multi-model mode. Use db.model_name.update() instead.")
 
@@ -445,25 +386,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return doc
 
     async def delete(self, id: str):
-        """
-        Delete a document by its unique identifier.
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.delete() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    await backend.delete("507f1f77bcf86cd799439011")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Legacy: delete a document by id. Prefer ``delete_one``."""
         if self._models is not None:
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
 
@@ -478,23 +401,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
     async def all(self) -> List[T]:
-        """
-        Retrieve all documents from the collection.
-
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.all() instead).
-
-        Example:
-            .. code-block:: python
-
-                all_users = await backend.all()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
-        """
+        """Legacy: retrieve all documents. Prefer ``find()``."""
         if self._models is not None:
             raise ValueError("Cannot use all() in multi-model mode. Use db.model_name.all() instead.")
 
@@ -504,32 +411,53 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         return await self.model_cls.find_all().to_list()
 
-    async def find(self, *args, fetch_links: bool = False, **kwargs) -> List[T]:
+    def _translate_filter(self, filter_dict: dict | None) -> dict:
+        """Translate portable filters to Mongo syntax.
+
+        Portable convention: list/tuple values represent IN queries.
+        Existing explicit operator dicts (e.g. {"$in": ...}) are preserved.
         """
-        Find documents matching the specified criteria.
+        translated: dict[str, Any] = {}
+        if not filter_dict:
+            return translated
+        for key, value in filter_dict.items():
+            if str(key).startswith("$"):
+                if key in {"$or", "$and", "$nor"} and isinstance(value, list):
+                    translated[key] = [
+                        self._translate_filter(clause) if isinstance(clause, dict) else clause for clause in value
+                    ]
+                else:
+                    translated[key] = value
+            elif isinstance(value, (list, tuple)):
+                translated[key] = {"$in": list(value)}
+            else:
+                translated[key] = value
+        return translated
+
+    def _to_set_update(self, set_fields: dict) -> dict:
+        """Accept either portable set_fields or Mongo update docs."""
+        if any(str(k).startswith("$") for k in set_fields.keys()):
+            return set_fields
+        return {"$set": set_fields}
+
+    async def find(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        fetch_links: bool = False,
+        **kwargs,
+    ) -> List[T]:
+        """Find documents matching a portable filter.
 
         Args:
-            *args: Query conditions and filters.
-            fetch_links (bool): If True, fetch linked documents (Beanie feature). Defaults to False.
-            **kwargs: Additional query parameters.
+            where: Portable filter dict (equality, list-as-IN, ``$or``).
+            sort: ``[(field, 1|-1), ...]`` pairs.
+            limit: Maximum number of results.
+            fetch_links: If True, fetch linked documents (Beanie feature).
 
         Returns:
-            List[ModelType]: A list of documents matching the query criteria.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.find() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Find users with specific email
-                users = await backend.find(User.email == "john@example.com")
-
-                # Find users with name containing "John"
-                users = await backend.find({"name": {"$regex": "John"}})
-
-                # Find users with linked documents
-                users = await backend.find(User.name == "Alice", fetch_links=True)
+            list[T]: Matching documents.
         """
         if self._models is not None:
             raise ValueError("Cannot use find() in multi-model mode. Use db.model_name.find() instead.")
@@ -538,11 +466,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not self._is_initialized:
             await self.initialize()
 
-        # Remove fetch_links from kwargs if present (it's a parameter, not a query field)
-        kwargs_without_fetch_links = {k: v for k, v in kwargs.items() if k != "fetch_links"}
-
-        # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
-        query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
+        mongo_filter = self._translate_filter(where or {})
+        query = self.model_cls.find(mongo_filter, fetch_links=fetch_links, **kwargs)
+        if sort:
+            query = query.sort(sort)
+        if limit is not None:
+            query = query.limit(max(0, limit))
         return await query.to_list()
 
     async def aggregate(self, pipeline: list) -> List[T]:
@@ -569,6 +498,81 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not self._is_initialized:
             await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
+
+    async def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> T | None:
+        """Find first document matching *where*. Returns None when empty."""
+        if self._models is not None:
+            raise ValueError("Cannot use find_one() in multi-model mode. Use db.model_name.find_one() instead.")
+        docs = await self.find(where=where, sort=sort, limit=1)
+        return docs[0] if docs else None
+
+    async def update_one(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Update exactly one matching document (partial field update).
+
+        Args:
+            where: Portable filter dict.
+            set_fields: Fields to update (``$set`` semantics).
+            upsert: Insert a new document when no match exists.
+            return_document: ``"none"`` | ``"before"`` | ``"after"``.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use update_one() in multi-model mode. Use db.model_name.update_one() instead.")
+        if return_document not in {"none", "before", "after"}:
+            raise ValueError("return_document must be one of: 'none', 'before', 'after'")
+        if not self._is_initialized:
+            await self.initialize()
+
+        collection = self.model_cls.get_motor_collection()
+        mongo_filter = self._translate_filter(where)
+        mongo_update = self._to_set_update(set_fields)
+
+        if return_document == "none":
+            return await collection.update_one(mongo_filter, mongo_update, upsert=upsert)
+
+        return_doc = ReturnDocument.BEFORE if return_document == "before" else ReturnDocument.AFTER
+        return await collection.find_one_and_update(
+            mongo_filter,
+            mongo_update,
+            upsert=upsert,
+            return_document=return_doc,
+        )
+
+
+    async def delete_one(self, where: dict) -> int:
+        """Delete exactly one matching document. Returns 0 or 1."""
+        if self._models is not None:
+            raise ValueError("Cannot use delete_one() in multi-model mode. Use db.model_name.delete_one() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        result = await collection.delete_one(self._translate_filter(where))
+        return result.deleted_count if result else 0
+
+    async def delete_many(self, where: dict) -> int:
+        """Delete all matching documents. Returns deleted count."""
+        if self._models is not None:
+            raise ValueError("Cannot use delete_many() in multi-model mode. Use db.model_name.delete_many() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        result = await collection.delete_many(self._translate_filter(where))
+        return result.deleted_count if result else 0
+
+    async def distinct(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct values for *field* among documents matching *where*."""
+        if self._models is not None:
+            raise ValueError("Cannot use distinct() in multi-model mode. Use db.model_name.distinct() instead.")
+        if not self._is_initialized:
+            await self.initialize()
+        collection = self.model_cls.get_motor_collection()
+        values = await collection.distinct(field, self._translate_filter(where or {}))
+        return sorted(values)
 
     def get_raw_model(self) -> Type[T]:
         """
@@ -609,223 +613,127 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 backend = MongoMindtraceODM(User, "mongodb://localhost:27017", "mydb")
                 backend.initialize_sync()  # Can be called from sync code
         """
-        # Idempotent - return early if already initialized
         if self._is_initialized:
             return
-
-        try:
-            # Check if we're already in an async context
-            _ = asyncio.get_running_loop()
-            # We're in an async context, so we can't use asyncio.run()
-            # The caller should use await initialize() directly
-            raise RuntimeError("initialize_sync() called from async context. Use await initialize() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                # Call initialize() to maintain consistency and allow mocking
-                asyncio.run(self.initialize(allow_index_dropping=allow_index_dropping))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+        self._run_sync(self.initialize(allow_index_dropping=allow_index_dropping))
 
     def insert_sync(self, obj: BaseModel) -> T:
-        """
-        Insert a new document synchronously (wrapper around async insert).
-
-        Args:
-            obj (BaseModel): The document object to insert into the database.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
-
-        Raises:
-            DuplicateInsertError: If the document violates unique constraints.
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                try:
-                    inserted_user = backend.insert_sync(user)
-                    print(f"Inserted user with ID: {inserted_user.id}")
-                except DuplicateInsertError as e:
-                    print(f"Duplicate entry: {e}")
-        """
-        try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("insert_sync() called from async context. Use await insert() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.insert(obj))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+        """Legacy sync wrapper. Prefer ``insert_one_sync``."""
+        return self._run_sync(self.insert(obj))
 
     def get_sync(self, id: str | PydanticObjectId) -> T:
-        """
-        Retrieve a document synchronously (wrapper around async get).
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = backend.get_sync("507f1f77bcf86cd799439011")
-                    print(f"Found user: {user.name}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
-        try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("get_sync() called from async context. Use await get() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.get(id))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+        """Legacy sync wrapper. Prefer ``find_one_sync``."""
+        return self._run_sync(self.get(id))
 
     def delete_sync(self, id: str):
-        """
-        Delete a document synchronously (wrapper around async delete).
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    backend.delete_sync("507f1f77bcf86cd799439011")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
-        try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("delete_sync() called from async context. Use await delete() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.delete(id))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+        """Legacy sync wrapper. Prefer ``delete_one_sync``."""
+        return self._run_sync(self.delete(id))
 
     def update_sync(self, obj: BaseModel) -> T:
-        """
-        Update an existing document synchronously (wrapper around async update).
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = backend.get_sync("507f1f77bcf86cd799439011")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = backend.update_sync(user)
-        """
-        try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("update_sync() called from async context. Use await update() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.update(obj))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+        """Legacy sync wrapper. Prefer ``update_one_sync``."""
+        return self._run_sync(self.update(obj))
 
     def all_sync(self) -> List[T]:
+        """Legacy sync wrapper. Prefer ``find_sync``."""
+        return self._run_sync(self.all())
+
+    def find_sync(
+        self,
+        where: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        **kwargs,
+    ) -> List[T]:
+        """Find documents synchronously (wrapper around async find)."""
+        return self._run_sync(self.find(where=where, sort=sort, limit=limit, **kwargs))
+
+    def _get_sync_loop(self) -> asyncio.AbstractEventLoop:
+        """Return a long-lived event loop running in a dedicated daemon thread.
+
+        Motor's ``AsyncIOMotorClient`` binds to the first event loop it
+        touches.  ``asyncio.run()`` creates **and closes** a new loop every
+        call, so subsequent motor operations hit a closed loop.
+
+        Instead we spin up a background thread running ``loop.run_forever()``.
+        Any caller thread can then submit coroutines lock-free via
+        ``asyncio.run_coroutine_threadsafe()``.
         """
-        Retrieve all documents synchronously (wrapper around async all).
+        # Walk up to the root ODM so all children share the same loop.
+        root = self
+        while root._parent_odm is not None:
+            root = root._parent_odm
 
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
+        if root._sync_loop is not None and not root._sync_loop.is_closed():
+            return root._sync_loop
 
-        Example:
-            .. code-block:: python
+        with root._sync_loop_lock:
+            # Double-check after acquiring the lock.
+            if root._sync_loop is not None and not root._sync_loop.is_closed():
+                return root._sync_loop
+            root._sync_loop = asyncio.new_event_loop()
+            root._sync_thread = threading.Thread(
+                target=root._sync_loop.run_forever,
+                daemon=True,
+                name="mongo-odm-loop",
+            )
+            root._sync_thread.start()
+        return root._sync_loop
 
-                all_users = backend.all_sync()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
+    def _run_sync(self, coro):
+        """Run an async coroutine synchronously.  Lock-free and thread-safe.
+
+        Submits the coroutine to the dedicated background event-loop thread
+        via ``run_coroutine_threadsafe`` and blocks the calling thread until
+        the result is ready.  Multiple threads can call this concurrently —
+        the event loop multiplexes the work over motor's connection pool.
         """
         try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("all_sync() called from async context. Use await all() instead.")
+            asyncio.get_running_loop()
+            # We're inside an async context — close the coroutine to avoid
+            # "coroutine was never awaited" warnings, then raise.
+            coro.close()
+            raise RuntimeError("Sync wrapper called from async context. Use the async method instead.")
         except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.all())
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+                loop = self._get_sync_loop()
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                return future.result()
+            raise
 
-    def find_sync(self, *args, **kwargs) -> List[T]:
-        """
-        Find documents synchronously (wrapper around async find).
+    def aggregate_sync(self, pipeline: list) -> list:
+        """Execute aggregation pipeline synchronously (wrapper around async aggregate)."""
+        return self._run_sync(self.aggregate(pipeline))
 
-        Args:
-            *args: Query conditions and filters.
-            **kwargs: Additional query parameters.
+    def insert_one_sync(self, doc: BaseModel | dict) -> T:
+        """Insert one document synchronously (wrapper around async insert_one)."""
+        return self._run_sync(self.insert_one(doc))
 
-        Returns:
-            List[ModelType]: A list of documents matching the query criteria.
+    def find_one_sync(self, where: dict, sort: list[tuple[str, int]] | None = None) -> T | None:
+        """Find one document synchronously."""
+        return self._run_sync(self.find_one(where, sort=sort))
 
-        Example:
-            .. code-block:: python
+    def update_one_sync(
+        self,
+        where: dict,
+        set_fields: dict,
+        upsert: bool = False,
+        return_document: str = "none",
+    ) -> Any:
+        """Update one matching document synchronously."""
+        return self._run_sync(
+            self.update_one(where, set_fields, upsert=upsert, return_document=return_document)
+        )
 
-                # Find users with specific email
-                users = backend.find_sync(User.email == "john@example.com")
 
-                # Find users with name containing "John"
-                users = backend.find_sync({"name": {"$regex": "John"}})
-        """
-        try:
-            _ = asyncio.get_running_loop()
-            # We're in an async context, raise error
-            raise RuntimeError("find_sync() called from async context. Use await find() instead.")
-        except RuntimeError as e:
-            # Check if this is the "no running event loop" error from get_running_loop()
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.find(*args, **kwargs))
-            else:
-                # Re-raise if it's a different RuntimeError (like our custom one)
-                raise
+
+    def delete_one_sync(self, where: dict) -> int:
+        """Delete one document synchronously."""
+        return self._run_sync(self.delete_one(where))
+
+    def delete_many_sync(self, where: dict) -> int:
+        """Delete documents synchronously."""
+        return self._run_sync(self.delete_many(where=where))
+
+    def distinct_sync(self, field: str, where: dict | None = None) -> list[Any]:
+        """Return distinct values for field matching filter synchronously."""
+        return self._run_sync(self.distinct(field, where))

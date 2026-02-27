@@ -47,6 +47,18 @@ class ConcreteBackend(MindtraceODM):
     def update(self, obj: BaseModel) -> BaseModel:
         return obj
 
+    def update_one(self, where, set_fields, upsert=False, return_document="none"):
+        return None
+
+    def delete_many(self, where) -> int:
+        return 0
+
+    def delete_one(self, where) -> int:
+        return 0
+
+    def distinct(self, field, where=None) -> list:
+        return []
+
 
 class AsyncConcreteBackend(MindtraceODM):
     def is_async(self) -> bool:
@@ -78,6 +90,18 @@ class AsyncConcreteBackend(MindtraceODM):
 
     async def update(self, obj: BaseModel) -> BaseModel:
         return obj
+
+    def update_one(self, where, set_fields, upsert=False, return_document="none"):
+        return None
+
+    def delete_many(self, where) -> int:
+        return 0
+
+    def delete_one(self, where) -> int:
+        return 0
+
+    def distinct(self, field, where=None) -> list:
+        return []
 
 
 # Tests for abstract base class

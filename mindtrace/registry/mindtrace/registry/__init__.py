@@ -32,4 +32,11 @@ __all__ = [
     "RegistryBackend",
 ]
 
+try:
+    from mindtrace.registry.backends.gcp_db_registry_backend import GCPDBRegistryBackend
+
+    __all__.append("GCPDBRegistryBackend")
+except ImportError:
+    pass  # mindtrace-database not installed
+
 register_default_materializers()

@@ -116,7 +116,7 @@ async def test_mongo_multi_model_cannot_use_direct_insert():
         )
 
         # Use a dict instead of creating a Beanie document (which requires initialization)
-        with pytest.raises(ValueError, match="Cannot use insert\\(\\) in multi-model mode"):
+        with pytest.raises(ValueError, match="Cannot use insert_one\\(\\) in multi-model mode"):
             await db.insert({"name": "Test", "email": "test@test.com"})
 
 

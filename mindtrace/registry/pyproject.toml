@@ -20,6 +20,9 @@ dependencies = [
     "zenml>=0.82.1",
 ]
 
+[project.optional-dependencies]
+db = ["mindtrace-database>=0.8.0"]
+
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry"
@@ -27,3 +30,6 @@ Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registr
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+mindtrace-database = { workspace = true }
