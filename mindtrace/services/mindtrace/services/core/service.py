@@ -84,6 +84,7 @@ class Service(Mindtrace):
         super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
+        self._all_routes: list[str] = []
         self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
 
         # Build URL with the following priority:
@@ -167,7 +168,7 @@ class Service(Mindtrace):
 
     def endpoints_func(self):
         """List all available endpoints for the service."""
-        return {"endpoints": list(self._endpoints.keys())}
+        return {"endpoints": list(self._all_routes)}
 
     def status_func(self):
         """Get the current status of the service."""
@@ -574,7 +575,9 @@ class Service(Mindtrace):
             "system_metrics": ["cpu_percent", "memory_percent"],
         }
         autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
-        self._endpoints[path] = schema
+        self._all_routes.append(path)
+        if schema is not None:
+            self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
         wrapped = track_operation(
