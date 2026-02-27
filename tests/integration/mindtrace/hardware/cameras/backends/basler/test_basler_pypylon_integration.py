@@ -3,12 +3,23 @@
 These tests validate that the BaslerCameraBackend correctly integrates with the real pypylon SDK without requiring
 physical cameras to be connected. They test SDK availability, camera discovery (expecting empty results),
 initialization failure modes, and error handling with real pypylon exception types.
+
+Note: These tests require pypylon to be installed but do NOT require physical hardware.
 """
 
 import pytest
 
 from mindtrace.core import check_libs
-from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+# Skip all tests if pypylon is not available
+missing_libs = check_libs(["pypylon"])
+if missing_libs:
+    pytest.skip(
+        f"Required libraries are not installed: {', '.join(missing_libs)}. Skipping pypylon SDK tests.",
+        allow_module_level=True,
+    )
+
+from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend  # noqa: E402
 
 
 class TestBaslerSDKIntegration:

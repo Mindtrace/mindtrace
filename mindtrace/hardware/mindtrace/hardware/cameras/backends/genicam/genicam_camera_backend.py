@@ -40,101 +40,58 @@ from mindtrace.hardware.core.exceptions import (
 
 
 class GenICamCameraBackend(CameraBackend):
-    """GenICam Camera Backend Implementation
+    """GenICam camera backend using the Harvesters library.
 
-    This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library
-    with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control,
-    ROI settings, and image quality enhancement.
+    This backend provides support for any GenICam-compliant camera via a GenTL
+    Producer (.cti file), including cameras from Keyence, Allied Vision, FLIR,
+    and others.
 
-    Thread Safety:
-        Uses a singleton Harvester instance shared across all backend instances to avoid GenTL device conflicts.
-        Multiple cameras can be opened simultaneously using the same Harvester.
+    Thread Model:
+        The Harvesters library requires thread affinity - ImageAcquirer operations
+        must execute on the same OS thread that created the acquirer. This backend
+        uses a dedicated single-thread executor per camera instance.
+
+        The Harvester instance (which manages the GenTL Producer) is shared as a
+        singleton across all GenICam camera instances to prevent device conflicts.
+        Only the per-camera ImageAcquirer operations use the dedicated executor.
 
     Features:
-        - Full GenICam camera support via Harvesters
+        - GenICam-compliant camera support via Harvesters
         - Matrix Vision GenTL Producer integration
         - Hardware trigger and continuous capture modes
-        - ROI (Region of Interest) control
-        - Automatic exposure and gain control
-        - Image quality enhancement with CLAHE
-        - Configuration import/export functionality
-        - Robust error handling and connection management
+        - Region of Interest (ROI) control
+        - Automatic and manual exposure/gain control
+        - CLAHE image quality enhancement
         - Vendor-specific parameter handling (Keyence, Basler, etc.)
 
     Requirements:
-        - Harvesters library (pip install harvesters)
-        - Matrix Vision mvIMPACT Acquire SDK
+        - Matrix Vision mvIMPACT Acquire SDK (provides GenTL Producer)
+        - Harvesters package (pip install harvesters)
         - OpenCV for image processing
-        - GenTL Producer (.cti file) installed on system
 
-    Installation:
-        1. Install Matrix Vision mvIMPACT Acquire SDK
-        2. pip install harvesters opencv-python numpy
-        3. Configure network interface for GigE cameras
-        4. Set GENICAM_CTI_PATH environment variable (optional)
-
-    Usage::
+    Example::
 
         from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
 
-        # Get available cameras
-        cameras = GenICamCameraBackend.get_available_cameras()
-
-        # Initialize camera
-        camera = GenICamCameraBackend("device_serial", img_quality_enhancement=True)
-        success, cam_obj, remote_obj = await camera.initialize()
-
-        if success:
-            # Configure and capture
+        async with GenICamCameraBackend("device_serial") as camera:
             await camera.set_exposure(50000)
-            await camera.set_triggermode("continuous")
             image = await camera.capture()
-            await camera.close()
-
-    Configuration:
-        All parameters are configurable via environment variables or the hardware configuration system:
-        - GENICAM_CTI_PATH: Path to GenTL Producer (.cti file)
-        - MINDTRACE_CAMERA_EXPOSURE_TIME: Default exposure time in microseconds
-        - MINDTRACE_CAMERA_TRIGGER_MODE: Default trigger mode ("continuous" or "trigger")
-        - MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-        - MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-        - MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds
-
-    Supported Camera Models:
-        - Keyence VJ series cameras
-        - Basler GigE cameras (alternative to pypylon)
-        - Allied Vision cameras
-        - FLIR/Teledyne cameras
-        - Any GenICam-compliant camera with compatible GenTL Producer
-
-    Error Handling:
-        The class uses a comprehensive exception hierarchy for precise error reporting:
-        - SDKNotAvailableError: Harvesters library not installed
-        - CameraNotFoundError: Camera not detected or accessible
-        - CameraInitializationError: Failed to initialize camera
-        - CameraConfigurationError: Invalid configuration parameters
-        - CameraConnectionError: Connection issues
-        - CameraCaptureError: Image acquisition failures
-        - CameraTimeoutError: Operation timeout
-        - HardwareOperationError: General hardware operation failures
 
     Attributes:
-        initialized: Whether camera was successfully initialized
-        image_acquirer: Harvesters ImageAcquirer object
-        harvester: Harvesters Harvester object
+        image_acquirer: Harvesters ImageAcquirer for this camera
+        harvester: Shared Harvester instance (class-level singleton)
         triggermode: Current trigger mode ("continuous" or "trigger")
-        img_quality_enhancement: Current image enhancement setting
         timeout_ms: Capture timeout in milliseconds
-        retrieve_retry_count: Number of capture retry attempts
-        device_info: Camera device information from discovery
+        cti_path: Path to the GenTL Producer file
         vendor_quirks: Vendor-specific parameter handling flags
-        cti_path: Path to GenTL Producer file
     """
+
+    REQUIRES_THREAD_AFFINITY = True
 
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None
     _harvester_cti_path: Optional[str] = None
-    _harvester_lock = None  # Will be initialized as threading.Lock() when first needed
+    _harvester_lock = None
 
     def __init__(
         self,
@@ -217,10 +174,6 @@ class GenICamCameraBackend(CameraBackend):
 
         # Derived operation timeout for non-capture operations
         self._op_timeout_s = max(3.0, float(self.timeout_ms) / 1000.0)
-
-        # Thread executor for blocking Harvesters calls
-        self._loop = None
-        self._sdk_executor = None
 
         self.logger.info(f"GenICam camera '{self.camera_name}' initialized successfully")
 
@@ -308,44 +261,6 @@ class GenICamCameraBackend(CameraBackend):
             f"Please install Matrix Vision mvIMPACT Acquire SDK or set GENICAM_CTI_PATH environment variable."
         )
 
-    async def _sdk(self, func, *args, timeout: Optional[float] = None, **kwargs):
-        """Run a potentially blocking Harvesters call on a dedicated thread with timeout.
-
-        Args:
-            func: Callable to execute
-            *args: Positional args for the callable
-            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
-            **kwargs: Keyword args for the callable
-
-        Returns:
-            Result of the callable
-
-        Raises:
-            CameraTimeoutError: If operation times out
-            HardwareOperationError: If operation fails
-        """
-        import concurrent.futures
-
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        if self._sdk_executor is None:
-            self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix=f"harvesters-{self.camera_name}"
-            )
-
-        def _call():
-            return func(*args, **kwargs)
-
-        fut = self._loop.run_in_executor(self._sdk_executor, _call)
-        try:
-            return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(
-                f"Harvesters operation timed out after {timeout or self._op_timeout_s:.2f}s for camera '{self.camera_name}'"
-            ) from e
-        except Exception as e:
-            raise HardwareOperationError(f"Harvesters operation failed for camera '{self.camera_name}': {e}") from e
-
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """Get available GenICam cameras.
@@ -424,6 +339,21 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover GenICam cameras: {str(e)}")
 
+    @classmethod
+    async def discover_async(cls, include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
+        """Async wrapper for get_available_cameras() - runs discovery in threadpool.
+
+        Use this instead of get_available_cameras() when calling from async context
+        to avoid blocking the event loop during camera discovery.
+
+        Args:
+            include_details: If True, return detailed camera information
+
+        Returns:
+            List of camera names or dict with details (same as get_available_cameras)
+        """
+        return await asyncio.to_thread(cls.get_available_cameras, include_details)
+
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
 
@@ -444,15 +374,6 @@ class GenICamCameraBackend(CameraBackend):
             assert Harvester is not None, "Harvesters is available but Harvester class is not initialized"
 
         try:
-            # Prepare dedicated single-thread executor for SDK calls
-            import concurrent.futures
-
-            self._loop = asyncio.get_running_loop()
-            if not hasattr(self, "_sdk_executor") or self._sdk_executor is None:
-                self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix=f"harvesters-{self.camera_name}"
-                )
-
             # Get shared harvester instance
             self.harvester = self._get_shared_harvester(self.cti_path)
 
@@ -571,7 +492,7 @@ class GenICamCameraBackend(CameraBackend):
                             self.image_acquirer.stop()
                         self.image_acquirer.destroy()
 
-                    await self._sdk(_cleanup_acquirer, timeout=2.0)  # Short timeout for cleanup
+                    await self._run_blocking(_cleanup_acquirer, timeout=2.0)  # Short timeout for cleanup
                 except Exception as e:
                     self.logger.warning(f"Error cleaning up image acquirer during failure: {e}")
                 finally:
@@ -583,13 +504,7 @@ class GenICamCameraBackend(CameraBackend):
                 self.harvester = None
 
             # Shutdown executor
-            if hasattr(self, "_sdk_executor") and self._sdk_executor is not None:
-                try:
-                    self._sdk_executor.shutdown(wait=False, cancel_futures=True)
-                except Exception as e:
-                    self.logger.warning(f"Error shutting down executor during failure: {e}")
-                finally:
-                    self._sdk_executor = None
+            await self._cleanup_executor()
 
             self.initialized = False
 
@@ -668,7 +583,9 @@ class GenICamCameraBackend(CameraBackend):
 
                 return is_writable, current_mode, None
 
-            is_writable, current_mode, error = await self._sdk(_check_trigger_capability, timeout=self._op_timeout_s)
+            is_writable, current_mode, error = await self._run_blocking(
+                _check_trigger_capability, timeout=self._op_timeout_s
+            )
 
             # Store results in vendor_quirks
             self.vendor_quirks["trigger_mode_writable"] = is_writable
@@ -730,7 +647,7 @@ class GenICamCameraBackend(CameraBackend):
                         return node.value
                     return None
 
-                value = await self._sdk(_get_value, timeout=self._op_timeout_s)
+                value = await self._run_blocking(_get_value, timeout=self._op_timeout_s)
                 if value is not None:
                     return value
             except Exception as e:
@@ -770,7 +687,7 @@ class GenICamCameraBackend(CameraBackend):
                     else:
                         raise AttributeError(f"Node '{name}' not found")
 
-                await self._sdk(_set_value, timeout=self._op_timeout_s)
+                await self._run_blocking(_set_value, timeout=self._op_timeout_s)
                 return  # Success - exit method
             except Exception as e:
                 self.logger.debug(f"Failed to set node '{name}' for camera '{self.camera_name}': {e}")
@@ -800,7 +717,7 @@ class GenICamCameraBackend(CameraBackend):
                     except Exception as acq_error:
                         self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
 
-            await self._sdk(_configure_buffers, timeout=self._op_timeout_s)
+            await self._run_blocking(_configure_buffers, timeout=self._op_timeout_s)
 
             self.logger.debug(f"GenICam camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
@@ -818,7 +735,7 @@ class GenICamCameraBackend(CameraBackend):
                     self.image_acquirer.start()
                     self.logger.debug(f"Started acquisition for camera '{self.camera_name}'")
 
-            await self._sdk(_start_stream, timeout=self._op_timeout_s)
+            await self._run_blocking(_start_stream, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"Failed to start acquisition for camera '{self.camera_name}': {str(e)}")
@@ -856,7 +773,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Return reasonable defaults if no exposure node found
                 return [1.0, 1000000.0]
 
-            min_value, max_value = await self._sdk(_get_exposure_range, timeout=self._op_timeout_s)
+            min_value, max_value = await self._run_blocking(_get_exposure_range, timeout=self._op_timeout_s)
             return [min_value, max_value]
 
         except Exception as e:
@@ -945,7 +862,7 @@ class GenICamCameraBackend(CameraBackend):
                     return str(pixel_format_node.value)
                 return "Unknown"
 
-            return await self._sdk(_get_pixel_format)
+            return await self._run_blocking(_get_pixel_format)
 
         except Exception as e:
             self.logger.warning(f"Pixel format not available for camera '{self.camera_name}': {str(e)}")
@@ -975,7 +892,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Return default range if Width node not available
                 return [1, 9999]
 
-            return await self._sdk(_get_width_range, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_width_range, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"Width range not available for camera '{self.camera_name}': {str(e)}")
@@ -1005,7 +922,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Return default range if Height node not available
                 return [1, 9999]
 
-            return await self._sdk(_get_height_range, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_height_range, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"Height range not available for camera '{self.camera_name}': {str(e)}")
@@ -1034,7 +951,7 @@ class GenICamCameraBackend(CameraBackend):
                     return [str(entry.symbolic) for entry in pixel_format_node.entries if entry.is_available]
                 return []
 
-            formats = await self._sdk(_get_pixel_formats)
+            formats = await self._run_blocking(_get_pixel_formats)
             return formats if formats else ["Unknown"]
 
         except Exception as e:
@@ -1076,7 +993,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 pixel_format_node.value = pixel_format
 
-            await self._sdk(_set_pixel_format)
+            await self._run_blocking(_set_pixel_format)
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -1126,7 +1043,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 return "continuous"  # Default if no trigger nodes found or readable
 
-            trigger_mode = await self._sdk(_get_trigger_mode, timeout=self._op_timeout_s)
+            trigger_mode = await self._run_blocking(_get_trigger_mode, timeout=self._op_timeout_s)
             self.triggermode = trigger_mode
             return trigger_mode
 
@@ -1202,7 +1119,7 @@ class GenICamCameraBackend(CameraBackend):
                     if was_acquiring:
                         self.image_acquirer.start()
 
-            await self._sdk(_set_trigger_mode, timeout=self._op_timeout_s)
+            await self._run_blocking(_set_trigger_mode, timeout=self._op_timeout_s)
             self.triggermode = triggermode
 
             self.logger.debug(f"Trigger mode set to '{triggermode}' for camera '{self.camera_name}'")
@@ -1299,12 +1216,10 @@ class GenICamCameraBackend(CameraBackend):
 
                             return image
 
-                    # Try direct capture without threading for debugging
-                    try:
-                        image = _capture_image()
-                    except Exception as direct_error:
-                        self.logger.warning(f"Direct capture failed, trying with SDK wrapper: {direct_error}")
-                        image = await self._sdk(_capture_image, timeout=self._op_timeout_s + (self.timeout_ms / 1000.0))
+                    # Run capture in threadpool to avoid blocking event loop
+                    image = await self._run_blocking(
+                        _capture_image, timeout=self._op_timeout_s + (self.timeout_ms / 1000.0)
+                    )
 
                     if self.img_quality_enhancement and image is not None:
                         image = await self._enhance_image(image)
@@ -1387,7 +1302,7 @@ class GenICamCameraBackend(CameraBackend):
 
             # Check if acquisition is running (good sign of healthy connection)
             is_acquiring = self.image_acquirer.is_acquiring()
-            is_accessible = await self._sdk(_check_camera_accessible, timeout=5.0)
+            is_accessible = await self._run_blocking(_check_camera_accessible, timeout=5.0)
 
             return is_accessible and is_acquiring
 
@@ -1414,13 +1329,13 @@ class GenICamCameraBackend(CameraBackend):
                         if image_acquirer.is_acquiring():
                             image_acquirer.stop()
 
-                    await self._sdk(_stop_acquisition, timeout=self._op_timeout_s)
+                    await self._run_blocking(_stop_acquisition, timeout=self._op_timeout_s)
                 except Exception as e:
                     self.logger.warning(f"Error stopping acquisition for camera '{self.camera_name}': {str(e)}")
 
                 # Destroy image acquirer
                 try:
-                    await self._sdk(image_acquirer.destroy, timeout=self._op_timeout_s)
+                    await self._run_blocking(image_acquirer.destroy, timeout=self._op_timeout_s)
                 except Exception as e:
                     self.logger.warning(f"Error destroying image acquirer for camera '{self.camera_name}': {str(e)}")
 
@@ -1433,13 +1348,8 @@ class GenICamCameraBackend(CameraBackend):
         # Release harvester reference (but don't reset it - it's shared)
         self.harvester = None
 
-        # Shutdown executor if present
-        try:
-            if hasattr(self, "_sdk_executor") and self._sdk_executor is not None:
-                self._sdk_executor.shutdown(wait=False, cancel_futures=True)
-                self._sdk_executor = None
-        except Exception:
-            pass
+        # Shutdown executor
+        await self._cleanup_executor()
 
     # Placeholder implementations for optional methods - will implement based on GenICam node availability
     async def get_gain_range(self) -> List[Union[int, float]]:
@@ -1454,7 +1364,7 @@ class GenICamCameraBackend(CameraBackend):
                     return [node.min, node.max]
                 return [1.0, 16.0]  # Default range
 
-            return await self._sdk(_get_gain_range, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_gain_range, timeout=self._op_timeout_s)
         except Exception:
             return [1.0, 16.0]  # Default range
 
@@ -1524,7 +1434,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 return "auto"  # Default
 
-            return await self._sdk(_get_wb, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_wb, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"White balance retrieval failed for camera '{self.camera_name}': {str(e)}")
@@ -1576,7 +1486,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 raise HardwareOperationError("White balance nodes not available")
 
-            await self._sdk(_set_wb, timeout=self._op_timeout_s)
+            await self._run_blocking(_set_wb, timeout=self._op_timeout_s)
             self.logger.debug(f"White balance set to '{value}' for camera '{self.camera_name}'")
 
         except Exception as e:
@@ -1624,7 +1534,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Return common modes if enumeration fails
                 return ["auto", "manual", "once"]
 
-            return await self._sdk(_get_wb_range, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_wb_range, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"White balance range retrieval failed for camera '{self.camera_name}': {str(e)}")
@@ -1651,8 +1561,12 @@ class GenICamCameraBackend(CameraBackend):
             if not os.path.exists(config_path):
                 raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
-            with open(config_path, "r") as f:
-                config = json.load(f)
+            # Read config from file (run in threadpool to avoid blocking event loop)
+            def _load_config():
+                with open(config_path, "r") as f:
+                    return json.load(f)
+
+            config = await asyncio.to_thread(_load_config)
 
             # Apply configuration settings
             # Support both 'exposure_time' (new) and 'exposure' (legacy) for backward compatibility
@@ -1725,12 +1639,15 @@ class GenICamCameraBackend(CameraBackend):
             if genicam_nodes:
                 config["genicam_nodes"] = genicam_nodes
 
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            # Ensure directory exists and save configuration (run in threadpool to avoid blocking event loop)
+            def _save_config():
+                dirname = os.path.dirname(config_path)
+                if dirname:
+                    os.makedirs(dirname, exist_ok=True)
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
 
-            # Save configuration
-            with open(config_path, "w") as f:
-                json.dump(config, f, indent=2)
+            await asyncio.to_thread(_save_config)
 
             self.logger.info(f"Configuration exported successfully for camera '{self.camera_name}' to {config_path}")
 
@@ -1765,7 +1682,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 return applied_count
 
-            applied_count = await self._sdk(_apply_nodes, timeout=self._op_timeout_s)
+            applied_count = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
             self.logger.debug(
                 f"Applied {applied_count}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
             )
@@ -1811,7 +1728,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 return nodes
 
-            return await self._sdk(_export_nodes, timeout=self._op_timeout_s)
+            return await self._run_blocking(_export_nodes, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"GenICam node export failed for camera '{self.camera_name}': {str(e)}")
@@ -1873,7 +1790,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 # No return needed - void method
 
-            await self._sdk(_set_roi, timeout=self._op_timeout_s)
+            await self._run_blocking(_set_roi, timeout=self._op_timeout_s)
             self.logger.debug(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
 
         except Exception as e:
@@ -1938,7 +1855,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 return {"x": int(x), "y": int(y), "width": int(width), "height": int(height)}
 
-            return await self._sdk(_get_roi, timeout=self._op_timeout_s)
+            return await self._run_blocking(_get_roi, timeout=self._op_timeout_s)
 
         except Exception as e:
             self.logger.warning(f"ROI retrieval failed for camera '{self.camera_name}': {str(e)}")
@@ -1997,7 +1914,7 @@ class GenICamCameraBackend(CameraBackend):
 
                 # No return needed - void method
 
-            await self._sdk(_reset_roi, timeout=self._op_timeout_s)
+            await self._run_blocking(_reset_roi, timeout=self._op_timeout_s)
             self.logger.debug(f"ROI reset to maximum sensor area for camera '{self.camera_name}'")
 
         except Exception as e:
