@@ -89,6 +89,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         allow_index_dropping: bool = False,
         auto_init: bool = False,
         init_mode: InitMode | None = None,
+        client: AsyncIOMotorClient | None = None,
     ):
         """
         Initialize the MongoDB ODM backend.
@@ -129,7 +130,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not db_uri or not db_name:
             raise ValueError("db_uri and db_name are required")
 
-        self.client = AsyncIOMotorClient(db_uri)
+        self.client = client or AsyncIOMotorClient(db_uri)
         self.db_name = db_name
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
@@ -154,9 +155,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                     allow_index_dropping=allow_index_dropping,
                     auto_init=False,  # We'll initialize all together
                     init_mode=init_mode,
+                    client=self.client,
                 )
-                # Share the same client instance
-                odm.client = self.client
                 # Store parent reference for initialization delegation
                 odm._parent_odm = self
                 self._model_odms[name] = odm
@@ -272,14 +272,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await db.user.get(user_id)
             await db.address.insert(address)
         """
-        if self._models is not None and name in self._model_odms:
+        models = self.__dict__.get("_models")
+        model_odms = self.__dict__.get("_model_odms", {})
+        if models is not None and name in model_odms:
             # Ensure parent is initialized when accessing child ODM
             # This allows document creation to work (Beanie requires init before creating instances)
             if not self._is_initialized:
                 # In async context, we can't initialize here synchronously
                 # But we'll initialize on first operation via the child ODM
                 pass
-            return self._model_odms[name]
+            return model_odms[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def is_async(self) -> bool:
@@ -332,8 +334,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
-        except Exception as e:
-            raise DuplicateInsertError(str(e))
 
     async def insert(self, obj: BaseModel | dict) -> T:
         """Legacy: insert a document. Prefer ``insert_one``."""
@@ -468,16 +468,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         mongo_filter = self._translate_filter(where or {})
         query = self.model_cls.find(mongo_filter, fetch_links=fetch_links, **kwargs)
-        docs = await query.to_list()
         if sort:
-            for field_name, direction in reversed(sort):
-                docs.sort(
-                    key=lambda d: (getattr(d, field_name, None) is None, getattr(d, field_name, None)),
-                    reverse=direction < 0,
-                )
+            query = query.sort(sort)
         if limit is not None:
-            docs = docs[: max(0, limit)]
-        return docs
+            query = query.limit(max(0, limit))
+        return await query.to_list()
 
     async def aggregate(self, pipeline: list) -> List[T]:
         """
@@ -504,14 +499,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
-    async def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:
+    async def find_one(self, where: dict, sort: list[tuple[str, int]] | None = None) -> T | None:
         """Find first document matching *where*. Returns None when empty."""
         if self._models is not None:
             raise ValueError("Cannot use find_one() in multi-model mode. Use db.model_name.find_one() instead.")
-        if not self._is_initialized:
-            await self.initialize()
-        collection = self.model_cls.get_motor_collection()
-        return await collection.find_one(self._translate_filter(where), sort=sort)
+        docs = await self.find(where=where, sort=sort, limit=1)
+        return docs[0] if docs else None
 
     async def update_one(
         self,
@@ -715,7 +708,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         """Insert one document synchronously (wrapper around async insert_one)."""
         return self._run_sync(self.insert_one(doc))
 
-    def find_one_sync(self, where: dict, sort: list[tuple[str, int]] | None = None) -> dict | None:
+    def find_one_sync(self, where: dict, sort: list[tuple[str, int]] | None = None) -> T | None:
         """Find one document synchronously."""
         return self._run_sync(self.find_one(where, sort=sort))
 

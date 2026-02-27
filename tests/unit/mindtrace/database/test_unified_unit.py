@@ -219,6 +219,13 @@ def test_backend_switching_error(unified_backend_mongo_only):
         unified_backend_mongo_only.switch_backend(BackendType.REDIS)
 
 
+def test_unified_getattr_preinit_does_not_recurse():
+    """__getattr__ should fail cleanly even before __init__ populated attrs."""
+    backend = UnifiedMindtraceODM.__new__(UnifiedMindtraceODM)
+    with pytest.raises(AttributeError):
+        backend.__getattr__("user")
+
+
 def test_is_async_mongo(unified_backend_mongo_only):
     """Test is_async with MongoDB backend."""
     assert unified_backend_mongo_only.is_async() is True
@@ -785,6 +792,19 @@ def test_unified_backend_auto_generate_redis_model_with_default_factory():
     assert redis_model is not None
     assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "default_factory_test"
+
+
+def test_unified_backend_auto_generate_redis_model_default_factory_not_shared():
+    """Redis auto-generated model should preserve default_factory callables."""
+    from typing import List
+
+    class DefaultFactoryIsolationDoc(UnifiedMindtraceDocument):
+        name: str
+        tags: List[str] = Field(default_factory=list)
+
+    redis_model = DefaultFactoryIsolationDoc._auto_generate_redis_model()
+    tags_field = redis_model.model_fields["tags"]
+    assert getattr(tags_field, "default_factory", None) is list
 
 
 @pytest.mark.asyncio

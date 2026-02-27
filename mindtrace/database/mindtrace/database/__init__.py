@@ -9,7 +9,7 @@ from mindtrace.database.backends.unified_odm import (
     UnifiedMindtraceDocument,
     UnifiedMindtraceODM,
 )
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError, QueryNotSupported
 
 __all__ = [
     "BackendType",
@@ -24,4 +24,6 @@ __all__ = [
     "RedisMindtraceODM",
     "UnifiedMindtraceDocument",
     "UnifiedMindtraceODM",
+    "QueryNotSupported",
 ]
+

@@ -31,7 +31,7 @@ from mindtrace.storage import GCSStorageHandler
 
 
 class RegistryObjectMeta(UnifiedMindtraceDocument):
-    """Stores per-object-version metadata in MongoDB."""
+    """Stores per-object-version metadata in DB."""
 
     registry_uri: str
     name: str
@@ -409,7 +409,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
 
-            # Step 6: Write metadata to MongoDB (the "commit point")
+            # Step 6: Write metadata to DB (the "commit point")
             if is_overwrite:
                 old_doc = self._obj_meta.update_one(
                     {"registry_uri": self._registry_uri_key, "name": obj_name, "version": obj_version},
@@ -564,7 +564,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 objects_with_errors.add((obj_name, obj_version))
                 results.add(OpResult.failed(obj_name, obj_version, e))
 
-        # ── Download stage: fetch data from GCS and MongoDB ──
+        # ── Download stage: fetch data from GCS and DB ──
         if all_files_to_download:
             download_result = self.gcs.download_batch(all_files_to_download, max_workers=workers)
             for file_result in download_result.failed_results:
@@ -623,7 +623,7 @@ class GCPDBRegistryBackend(RegistryBackend):
             is_inline = storage_info.get("inline", False)
 
             if not uuid_str:
-                uuid_str = str(_uuid.uuid4())
+                return OpResult.failed(obj_name, obj_version, RegistryObjectNotFound(f"Object {obj_name}@{obj_version} has corrupted metadata (missing _storage.uuid)"))
 
             if not self._create_commit_plan(obj_name, obj_version, uuid_str):
                 return OpResult.failed(obj_name, obj_version, RuntimeError("Failed to create commit plan"))
@@ -639,7 +639,7 @@ class GCPDBRegistryBackend(RegistryBackend):
                 cleanup = CleanupState.OK if blob_deleted else CleanupState.ORPHANED
                 return OpResult.success(obj_name, obj_version, cleanup=cleanup)
 
-            # GCS path: Delete metadata from MongoDB (the "commit point")
+            # GCS path: Delete metadata from DB (the "commit point")
             self._obj_meta.delete_one(where=self._query_filter(name=obj_name, version=obj_version))
 
             # Best-effort UUID folder cleanup
@@ -673,10 +673,7 @@ class GCPDBRegistryBackend(RegistryBackend):
         results = OpResults()
 
         # Fetch metadata for all objects to get UUIDs
-        metadata_results = self.fetch_metadata(
-            [n for n in names],
-            [v for v in versions],
-        )
+        metadata_results = self.fetch_metadata(names, versions)
 
         delete_tasks = list(zip(names, versions))
 

@@ -110,6 +110,30 @@ async def test_mongo_backend_find(mock_mongo_backend):
 
 
 @pytest.mark.asyncio
+async def test_mongo_backend_find_one_returns_model_instance():
+    """find_one should return a model instance for parity with find()."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    mock_doc = create_mock_mongo_user()
+
+    with patch.object(backend, "find", AsyncMock(return_value=[mock_doc])) as mock_find:
+        result = await backend.find_one({"name": "John"})
+
+    assert result is mock_doc
+    mock_find.assert_awaited_once_with(where={"name": "John"}, sort=None, limit=1)
+
+
+def test_mongo_getattr_preinit_does_not_recurse():
+    """__getattr__ should fail cleanly even before __init__ populated attrs."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM.__new__(MongoMindtraceODM)
+    with pytest.raises(AttributeError):
+        backend.__getattr__("user")
+
+
+@pytest.mark.asyncio
 async def test_mongo_backend_initialize(mock_mongo_backend):
     """Test backend initialization."""
     mock_mongo_backend.initialize.assert_not_called()
@@ -367,9 +391,8 @@ async def test_mongo_backend_insert_with_duplicate_key_error():
 
 @pytest.mark.asyncio
 async def test_mongo_backend_insert_with_generic_exception():
-    """Test MongoDB insert with generic Exception."""
+    """Test MongoDB insert with generic Exception propagates naturally."""
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-    from mindtrace.database.core.exceptions import DuplicateInsertError
 
     # Mock the backend with proper model class
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -388,7 +411,7 @@ async def test_mongo_backend_insert_with_generic_exception():
             mock_doc = MagicMock()
             mock_doc.insert = mock_insert
             with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                with pytest.raises(DuplicateInsertError, match="Generic error"):
+                with pytest.raises(Exception, match="Generic error"):
                     await backend.insert(user)
 
 

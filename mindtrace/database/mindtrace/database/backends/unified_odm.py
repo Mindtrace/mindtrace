@@ -7,7 +7,11 @@ from redis_om.model.model import model_registry
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
-from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
+from mindtrace.database.backends.redis_odm import (
+    MindtraceRedisDocument,
+    RedisMindtraceODM,
+    _ensure_redis_model_indexed,
+)
 
 # Module-level cache for generated MongoDB models to ensure class identity consistency
 _mongo_model_cache: dict[type, type] = {}
@@ -270,11 +274,9 @@ class UnifiedMindtraceDocument(BaseModel):
         cls_annotations = getattr(cls, "__annotations__", {})
         meta = getattr(cls, "Meta", cls.Meta)
 
-        # Get the original field values/defaults from the class
-        cls_fields = {}
-        for field_name in cls_annotations:
-            if hasattr(cls, field_name):
-                cls_fields[field_name] = getattr(cls, field_name)
+        # Source field metadata from Pydantic; class attributes do not contain
+        # Field(default_factory=...) entries in Pydantic v2.
+        cls_model_fields = getattr(cls, "model_fields", {}) or {}
 
         # Use a simpler approach without exec to avoid annotation issues
 
@@ -299,12 +301,22 @@ class UnifiedMindtraceDocument(BaseModel):
 
             # Check if field has a default value from Pydantic Field
             field_default = None
-            if field_name in cls_fields:
-                field_info = cls_fields[field_name]
-                if hasattr(field_info, "default") and field_info.default is not ...:
-                    field_default = field_info.default
-                elif hasattr(field_info, "default_factory") and field_info.default_factory is not None:
-                    field_default = field_info.default_factory()
+            field_default_factory = None
+            has_explicit_default = False
+            field_info = cls_model_fields.get(field_name)
+            if field_info is not None:
+                if hasattr(field_info, "default_factory") and field_info.default_factory is not None:
+                    field_default_factory = field_info.default_factory
+                    has_explicit_default = True
+                else:
+                    is_required = False
+                    if hasattr(field_info, "is_required") and callable(field_info.is_required):
+                        is_required = field_info.is_required()
+                    elif hasattr(field_info, "required"):
+                        is_required = bool(field_info.required)
+                    if not is_required and hasattr(field_info, "default"):
+                        field_default = field_info.default
+                        has_explicit_default = True
 
             # For Redis, preserve the optional nature in annotations
             if is_optional:
@@ -316,17 +328,16 @@ class UnifiedMindtraceDocument(BaseModel):
             # Only index fields that are explicitly marked as indexed
             should_index = hasattr(meta, "indexed_fields") and field_name in meta.indexed_fields
 
+            field_kwargs = {"index": should_index}
+            if field_default_factory is not None:
+                field_kwargs["default_factory"] = field_default_factory
+            elif has_explicit_default or is_optional:
+                field_kwargs["default"] = field_default
+
             if should_index:
-                if is_optional or field_default is not None:
-                    fields[field_name] = RedisField(index=True, default=field_default)
-                else:
-                    fields[field_name] = RedisField(index=True)
+                fields[field_name] = RedisField(**field_kwargs)
             else:
-                # For non-indexed fields, explicitly disable indexing
-                if is_optional or field_default is not None:
-                    fields[field_name] = RedisField(index=False, default=field_default)
-                else:
-                    fields[field_name] = RedisField(index=False)
+                fields[field_name] = RedisField(**field_kwargs)
 
         # Create the Meta class first - this must be done before class creation
         # so that Redis-OM can properly initialize its internal mechanisms
@@ -355,7 +366,7 @@ class UnifiedMindtraceDocument(BaseModel):
 
         # Create the dynamic class using type()
         DynamicRedisModel = type(f"{cls.__name__}Redis", (MindtraceRedisDocument,), class_dict)
-        DynamicRedisModel.model_config["index"] = True
+        _ensure_redis_model_indexed(DynamicRedisModel)
         for field_name, field_descriptor in fields.items():
             setattr(DynamicRedisModel, field_name, field_descriptor)
 
@@ -668,8 +679,10 @@ class UnifiedMindtraceODM(MindtraceODM):
             await db.user.get_async(user_id)
             await db.address.insert_async(address)
         """
-        if self._unified_models is not None and name in self._model_odms:
-            return self._model_odms[name]
+        unified_models = self.__dict__.get("_unified_models")
+        model_odms = self.__dict__.get("_model_odms", {})
+        if unified_models is not None and name in model_odms:
+            return model_odms[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def _get_active_backend(self):
@@ -1213,188 +1226,52 @@ class UnifiedMindtraceODM(MindtraceODM):
         return self._handle_async_call("distinct", field, where)
 
     # Asynchronous interface methods
+
+    async def _async_dispatch(self, method_name: str, *args, **kwargs):
+        """Dispatch to the active backend's async or sync method.
+
+        For async backends (MongoDB): awaits ``backend.<method_name>(*args, **kwargs)``.
+        For sync backends (Redis): tries ``backend.<method_name>_async``, then
+        falls back to the plain sync method.  ``fetch_links`` is stripped for
+        sync backends since Redis doesn't support it.
+        """
+        backend = self._get_active_backend()
+        if backend.is_async():
+            return await getattr(backend, method_name)(*args, **kwargs)
+        sync_kwargs = {k: v for k, v in kwargs.items() if k != "fetch_links"}
+        async_name = f"{method_name}_async"
+        if hasattr(backend, async_name):
+            return await getattr(backend, async_name)(*args, **sync_kwargs)
+        return getattr(backend, method_name)(*args, **sync_kwargs)
+
     async def insert_async(self, obj: BaseModel) -> ModelType:
-        """
-        Insert a document using the active backend (async version).
-
-        Args:
-            obj (BaseModel): The document object to insert into the database.
-
-        Returns:
-            ModelType: The inserted document with generated fields populated.
-
-        Raises:
-            DuplicateInsertError: If the document violates unique constraints.
-            ValueError: If in multi-model mode (use db.model_name.insert_async() instead).
-
-        Example:
-            .. code-block:: python
-
-                user = User(name="John", email="john@example.com")
-                inserted_user = await unified_backend.insert_async(user)
-                print(f"Inserted user with ID: {inserted_user.id}")
-        """
+        """Async wrapper around insert."""
         if self._unified_models is not None:
             raise ValueError("Cannot use insert_async() in multi-model mode. Use db.model_name.insert_async() instead.")
         converted_obj = self._convert_unified_to_backend_data(obj)
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.insert(converted_obj)
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "insert_async"):
-                return await backend.insert_async(converted_obj)
-            else:
-                # Fallback to sync method
-                return backend.insert(converted_obj)
+        return await self._async_dispatch("insert", converted_obj)
 
     async def get_async(self, id: str, fetch_links: bool = False) -> ModelType:
-        """
-        Retrieve a document by its unique identifier (async version).
-
-        Args:
-            id (str): The unique identifier of the document to retrieve.
-            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
-
-        Returns:
-            ModelType: The retrieved document.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-            ValueError: If in multi-model mode (use db.model_name.get_async() instead).
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    user = await unified_backend.get_async("user_123")
-                    print(f"Found user: {user.name}")
-
-                    # With linked documents (MongoDB only)
-                    user = await unified_backend.get_async("user_123", fetch_links=True)
-                    print(f"User address: {user.address.street}")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
+        """Async wrapper around get."""
         if self._unified_models is not None:
             raise ValueError("Cannot use get_async() in multi-model mode. Use db.model_name.get_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.get(id, fetch_links=fetch_links)
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "get_async"):
-                return await backend.get_async(id)
-            else:
-                # Fallback to sync method
-                return backend.get(id)
+        return await self._async_dispatch("get", id, fetch_links=fetch_links)
 
     async def update_async(self, obj: BaseModel) -> ModelType:
-        """
-        Update an existing document using the active backend (async version).
-
-        The document object should have been retrieved from the database,
-        modified, and then passed to this method to save the changes.
-
-        Args:
-            obj (BaseModel): The document object with modified fields to save.
-
-        Returns:
-            ModelType: The updated document.
-
-        Raises:
-            DocumentNotFoundError: If the document doesn't exist in the database.
-            ValueError: If in multi-model mode (use db.model_name.update_async() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Get the document
-                user = await unified_backend.get_async("user_123")
-                # Modify it
-                user.age = 31
-                user.name = "John Updated"
-                # Save the changes
-                updated_user = await unified_backend.update_async(user)
-        """
+        """Async wrapper around update."""
         if self._unified_models is not None:
             raise ValueError("Cannot use update_async() in multi-model mode. Use db.model_name.update_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.update(obj)
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "update_async"):
-                return await backend.update_async(obj)
-            else:
-                # Fallback to sync method
-                return backend.update(obj)
+        return await self._async_dispatch("update", obj)
 
     async def delete_async(self, id: str):
-        """
-        Delete a document by its unique identifier (async version).
-
-        Args:
-            id (str): The unique identifier of the document to delete.
-
-        Raises:
-            DocumentNotFoundError: If no document with the given ID exists.
-
-        Example:
-            .. code-block:: python
-
-                try:
-                    await unified_backend.delete_async("user_123")
-                    print("User deleted successfully")
-                except DocumentNotFoundError:
-                    print("User not found")
-        """
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.delete(id)
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "delete_async"):
-                return await backend.delete_async(id)
-            else:
-                # Fallback to sync method
-                return backend.delete(id)
+        """Async wrapper around delete."""
+        return await self._async_dispatch("delete", id)
 
     async def all_async(self) -> List[ModelType]:
-        """
-        Retrieve all documents from the collection (async version).
-
-        Returns:
-            List[ModelType]: A list of all documents in the collection.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.all_async() instead).
-
-        Example:
-            .. code-block:: python
-
-                all_users = await unified_backend.all_async()
-                print(f"Found {len(all_users)} users")
-                for user in all_users:
-                    print(f"- {user.name}")
-        """
+        """Async wrapper around all."""
         if self._unified_models is not None:
             raise ValueError("Cannot use all_async() in multi-model mode. Use db.model_name.all_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.all()
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "all_async"):
-                return await backend.all_async()
-            else:
-                # Fallback to sync method
-                return backend.all()
+        return await self._async_dispatch("all")
 
     async def find_async(
         self,
@@ -1404,68 +1281,23 @@ class UnifiedMindtraceODM(MindtraceODM):
         fetch_links: bool = False,
         **kwargs,
     ) -> List[ModelType]:
-        """
-        Find documents matching the specified criteria (async version).
-
-        Args:
-            where: Portable filter document.
-            sort: Optional list of (field, direction) pairs where direction is 1 or -1.
-            limit: Optional max number of returned docs.
-            fetch_links (bool): If True, fetch linked documents (Beanie/MongoDB feature). Defaults to False.
-            **kwargs: Additional query parameters.
-
-        Returns:
-            List[ModelType]: A list of documents matching the query criteria.
-
-        Raises:
-            ValueError: If in multi-model mode (use db.model_name.find_async() instead).
-
-        Example:
-            .. code-block:: python
-
-                # Find users with specific criteria
-                users = await unified_backend.find_async(where={"email": "john@example.com"})
-
-                # Find all users if no criteria specified
-                all_users = await unified_backend.find_async()
-
-                # Find users with linked documents (MongoDB only)
-                users = await unified_backend.find_async(where={"name": "Alice"}, fetch_links=True)
-        """
+        """Async wrapper around find."""
         if self._unified_models is not None:
             raise ValueError("Cannot use find_async() in multi-model mode. Use db.model_name.find_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            # For async backends (MongoDB), call async method directly
-            return await backend.find(where=where, sort=sort, limit=limit, fetch_links=fetch_links, **kwargs)
-        else:
-            # For sync backends (Redis), use async wrapper method
-            if hasattr(backend, "find_async"):
-                return await backend.find_async(where=where, sort=sort, limit=limit, **kwargs)
-            else:
-                # Fallback to sync method
-                return backend.find(where=where, sort=sort, limit=limit, **kwargs)
+        return await self._async_dispatch(
+            "find", where=where, sort=sort, limit=limit, fetch_links=fetch_links, **kwargs
+        )
 
     async def insert_one_async(self, doc: BaseModel | dict):
         """Async version of insert_one."""
         converted_obj = self._convert_unified_to_backend_data(doc)
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.insert_one(converted_obj)
-        if hasattr(backend, "insert_one_async"):
-            return await backend.insert_one_async(converted_obj)
-        return backend.insert_one(converted_obj)
+        return await self._async_dispatch("insert_one", converted_obj)
 
     async def find_one_async(self, where: dict, sort: list[tuple[str, int]] | None = None):
         """Async version of find_one."""
         if self._unified_models is not None:
             raise ValueError("Cannot use find_one_async() in multi-model mode. Use db.model_name.find_one_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.find_one(where, sort=sort)
-        if hasattr(backend, "find_one_async"):
-            return await backend.find_one_async(where, sort=sort)
-        return backend.find_one(where, sort=sort)
+        return await self._async_dispatch("find_one", where, sort=sort)
 
     async def update_one_async(
         self,
@@ -1477,45 +1309,27 @@ class UnifiedMindtraceODM(MindtraceODM):
         """Async version of update_one."""
         if self._unified_models is not None:
             raise ValueError("Cannot use update_one_async() in multi-model mode. Use db.model_name.update_one_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.update_one(where, set_fields, upsert=upsert, return_document=return_document)
-        if hasattr(backend, "update_one_async"):
-            return await backend.update_one_async(where, set_fields, upsert=upsert, return_document=return_document)
-        return backend.update_one(where, set_fields, upsert=upsert, return_document=return_document)
+        return await self._async_dispatch(
+            "update_one", where, set_fields, upsert=upsert, return_document=return_document
+        )
 
     async def delete_many_async(self, where: dict) -> int:
         """Async version of delete_many."""
         if self._unified_models is not None:
             raise ValueError("Cannot use delete_many_async() in multi-model mode. Use db.model_name.delete_many_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.delete_many(where=where)
-        if hasattr(backend, "delete_many_async"):
-            return await backend.delete_many_async(where=where)
-        return backend.delete_many(where=where)
+        return await self._async_dispatch("delete_many", where=where)
 
     async def delete_one_async(self, where: dict) -> int:
         """Async version of delete_one."""
         if self._unified_models is not None:
             raise ValueError("Cannot use delete_one_async() in multi-model mode. Use db.model_name.delete_one_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.delete_one(where=where)
-        if hasattr(backend, "delete_one_async"):
-            return await backend.delete_one_async(where=where)
-        return backend.delete_one(where=where)
+        return await self._async_dispatch("delete_one", where=where)
 
     async def distinct_async(self, field: str, where: dict | None = None) -> list[Any]:
         """Async version of distinct."""
         if self._unified_models is not None:
             raise ValueError("Cannot use distinct_async() in multi-model mode. Use db.model_name.distinct_async() instead.")
-        backend = self._get_active_backend()
-        if backend.is_async():
-            return await backend.distinct(field, where)
-        if hasattr(backend, "distinct_async"):
-            return await backend.distinct_async(field, where)
-        return backend.distinct(field, where)
+        return await self._async_dispatch("distinct", field, where)
 
     def get_raw_model(self) -> Type[ModelType]:
         """
