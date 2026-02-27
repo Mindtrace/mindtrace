@@ -127,6 +127,9 @@ def generate_connection_manager(
 
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
+        # Skip endpoints registered without a TaskSchema (pure REST routes)
+        if endpoint is None:
+            continue
         # Skip if this would override an existing method in ConnectionManager
         if endpoint_name in protected_methods:
             continue
