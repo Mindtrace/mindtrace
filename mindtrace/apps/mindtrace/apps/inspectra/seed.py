@@ -16,12 +16,14 @@ import sys
 from pathlib import Path
 
 import dotenv
+
 from mindtrace.apps.inspectra.core import get_inspectra_config, hash_password
 from mindtrace.apps.inspectra.db import get_odm, init_db
-from mindtrace.apps.inspectra.models.enums import UserRole
+from mindtrace.apps.inspectra.models.enums import OrganizationStatus, UserRole
 from mindtrace.apps.inspectra.models.organization import Organization
-from mindtrace.apps.inspectra.models.enums import OrganizationStatus
 from mindtrace.apps.inspectra.models.user import User
+
+
 # Load .env so MONGO_URI (and other vars) are set when running the seed from any directory
 def _load_dotenv() -> None:
     """Load .env from the inspectra app dir and from the current working directory."""
@@ -53,7 +55,6 @@ async def run_seed() -> None:
         org = existing_orgs[0]
         print(f"Organization '{org_name}' already exists (id={org.id})")
     else:
-
         org = Organization(name=org_name, status=OrganizationStatus.ACTIVE)
         org = await odm.organization.insert(org)
         print(f"Created organization '{org_name}' (id={org.id})")

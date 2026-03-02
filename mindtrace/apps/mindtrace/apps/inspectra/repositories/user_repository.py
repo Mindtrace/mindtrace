@@ -274,4 +274,5 @@ class UserRepository:
         if last_name is not None:
             user.last_name = last_name
         odm = get_odm()
-        return await odm.user.update(user)
+        updated = await odm.user.update(user)
+        return updated

@@ -37,7 +37,7 @@ class InspectraSettings(BaseModel):
     MONGO_DB_NAME: str = "inspectra"
 
     # Auth / JWT
-    JWT_SECRET: SecretStr = SecretStr("dev-secret-key")
+    JWT_SECRET: SecretStr = SecretStr("dev-secret-key-at-least-32-bytes-for-hs256")
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRES_IN: int = 15 * 60  # access token TTL in seconds (900 = 15 min)
     REFRESH_TOKEN_EXPIRES_IN: int = 7 * 24 * 60 * 60  # refresh token TTL (604800 = 7 days)
@@ -78,6 +78,8 @@ def get_inspectra_config() -> Config:
             defaults["MONGO_DB_NAME"] = os.environ["MONGO_DB_NAME"]
         if "CORS_ALLOW_ORIGINS" in os.environ:
             defaults["CORS_ALLOW_ORIGINS"] = os.environ["CORS_ALLOW_ORIGINS"]
+        if "INSPECTRA__JWT_SECRET" in os.environ:
+            defaults["JWT_SECRET"] = os.environ["INSPECTRA__JWT_SECRET"]
         for key in ("JWT_EXPIRES_IN", "REFRESH_TOKEN_EXPIRES_IN"):
             if key in os.environ:
                 try:

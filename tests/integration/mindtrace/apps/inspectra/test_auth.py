@@ -1,129 +1,63 @@
-import uuid
+"""Integration tests for Inspectra auth API (email/password login, refresh, me)."""
 
 
-def _u(prefix: str = "user") -> str:
-    """
-    Generate a unique username for tests.
-
-    Uses a short UUID suffix to avoid collisions between tests,
-    even when the database is reused or tests run in parallel.
-
-    Args:
-        prefix: Optional prefix to make usernames easier to read in logs.
-
-    Returns:
-        A unique username string.
-    """
-    return f"{prefix}_{uuid.uuid4().hex[:10]}"
-
-
-def _register(client, username: str, password: str):
-    """
-    Helper to register a user via the Inspectra auth endpoint.
-
-    Args:
-        client: FastAPI TestClient instance.
-        username: Username to register.
-        password: Plain-text password.
-
-    Returns:
-        FastAPI TestClient response.
-    """
-    return client.post(
-        "/auth/register",
-        json={"username": username, "password": password},
-    )
-
-
-def _login(client, username: str, password: str):
-    """
-    Helper to log a user in via the Inspectra auth endpoint.
-
-    Args:
-        client: FastAPI TestClient instance.
-        username: Username to authenticate.
-        password: Plain-text password.
-
-    Returns:
-        FastAPI TestClient response.
-    """
+def _login(client, email: str, password: str):
+    """POST /auth/login with email and password."""
     return client.post(
         "/auth/login",
-        json={"username": username, "password": password},
+        json={"email": email, "password": password},
     )
 
 
-def test_register_returns_token(client):
-    """
-    Registering a new user should succeed and return an access token.
-
-    The response must include:
-    - a non-empty access_token
-    - token_type == "bearer" (if present)
-    """
-    username = _u("alice")
-    resp = _register(client, username, "secret123")
-
-    assert resp.status_code == 200, resp.text
-
-    body = resp.json()
-    assert isinstance(body.get("access_token"), str)
-    assert body["access_token"]
-
-    if "token_type" in body:
-        assert body["token_type"] == "bearer"
-
-
-def test_register_duplicate_username_fails(client):
-    """
-    Registering the same username twice should fail with HTTP 400.
-
-    Ensures username uniqueness is enforced at the service level.
-    """
-    username = _u("bob")
-    password = "secret123"
-
-    first = _register(client, username, password)
-    assert first.status_code == 200, first.text
-
-    dup = _register(client, username, password)
-    assert dup.status_code == 400, dup.text
-
-    detail = dup.json().get("detail")
-    assert "Username already exists" in str(detail)
-
-
-def test_login_success(client):
-    """
-    Logging in with valid credentials should return a bearer token.
-
-    This test verifies the full register → login flow.
-    """
-    username = _u("charlie")
-    password = "secret123"
-
-    resp_register = _register(client, username, password)
-    assert resp_register.status_code == 200, resp_register.text
-
-    resp_login = _login(client, username, password)
-    assert resp_login.status_code == 200, resp_login.text
-
-    data = resp_login.json()
-    assert isinstance(data.get("access_token"), str)
-    assert data["access_token"]
-
-    if "token_type" in data:
-        assert data["token_type"] == "bearer"
-
-
-def test_login_invalid_credentials(client):
-    """
-    Logging in with invalid credentials should fail with HTTP 401.
-
-    Ensures incorrect username/password combinations are rejected.
-    """
-    username = _u("ghost")
-    resp = _login(client, username, "wrong")
-
+def test_login_rejects_invalid_credentials(client):
+    """Login with unknown email or wrong password returns 401."""
+    resp = _login(client, "nobody@example.com", "wrong")
     assert resp.status_code == 401, resp.text
-    assert "Invalid username or password" in str(resp.json().get("detail"))
+    assert "Invalid email or password" in str(resp.json().get("detail"))
+
+
+def test_login_requires_valid_body(client):
+    """Login with missing or invalid body returns 422."""
+    resp = client.post("/auth/login", json={"username": "alice", "password": "x"})
+    assert resp.status_code == 422, resp.text
+
+
+def test_login_success(client, auth_headers):
+    """Login with seeded user returns tokens."""
+    # auth_headers fixture creates user and logs in; we only need to assert token shape
+    assert "Authorization" in auth_headers
+    assert auth_headers["Authorization"].startswith("Bearer ")
+
+
+def test_refresh(client, auth_headers):
+    """POST /auth/refresh with valid refresh token returns new tokens."""
+    login_resp = client.post(
+        "/auth/login",
+        json={"email": "super@inspectra-test.example.com", "password": "SuperAdminPass12!"},
+    )
+    assert login_resp.status_code == 200
+    refresh_token = login_resp.json().get("refresh_token")
+    assert refresh_token
+    resp = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data.get("access_token")
+    assert data.get("refresh_token")
+
+
+def test_get_me(client, auth_headers):
+    """GET /auth/me with valid token returns current user."""
+    resp = client.get("/auth/me", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["email"] == "super@inspectra-test.example.com"
+    assert data["role"] == "super_admin"
+
+
+def test_get_me_without_auth_returns_401(client):
+    """GET /auth/me without Authorization header returns 401 (require_user)."""
+    resp = client.get("/auth/me")
+    assert resp.status_code == 401, resp.text
+    assert (
+        "Authorization" in resp.json().get("detail", "").lower() or "required" in resp.json().get("detail", "").lower()
+    )

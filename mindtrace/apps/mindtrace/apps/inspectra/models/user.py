@@ -65,13 +65,15 @@ class User(MindtraceDocument):
 
     @before_event(Insert)
     async def before_insert(self):
-        """Set created_at and updated_at before insert."""
+        """Set email_norm, created_at and updated_at before insert."""
+        self.email_norm = self.email.casefold()
         self.created_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
 
     @before_event(Replace)
     async def before_replace(self):
-        """Update updated_at before replace."""
+        """Update email_norm and updated_at before replace."""
+        self.email_norm = self.email.casefold()
         self.updated_at = datetime.now(timezone.utc)
 
     @after_event(SaveChanges)

@@ -16,9 +16,9 @@ from fastapi.responses import JSONResponse
 
 from mindtrace.apps.inspectra.core import get_inspectra_config
 from mindtrace.apps.inspectra.db import close_db
-from mindtrace.apps.inspectra.routes import auth, organizations, users
 from mindtrace.apps.inspectra.repositories.organization_repository import OrganizationRepository
 from mindtrace.apps.inspectra.repositories.user_repository import UserRepository
+from mindtrace.apps.inspectra.routes import auth, organizations, users
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
 

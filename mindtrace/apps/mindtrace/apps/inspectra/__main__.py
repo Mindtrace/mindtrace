@@ -1,11 +1,12 @@
 """Entry point for running Inspectra via `python -m mindtrace.apps.inspectra`."""
 
 import sys
+from urllib.parse import urlparse
+
+import uvicorn
 
 from mindtrace.apps.inspectra import InspectraService
 from mindtrace.apps.inspectra.core.settings import get_inspectra_config
-from urllib.parse import urlparse
-import uvicorn
 
 
 def main() -> None:
@@ -15,7 +16,6 @@ def main() -> None:
 
     # Dev mode: run uvicorn with --reload for auto-restart on code changes
     if "--reload" in sys.argv or "-r" in sys.argv:
-
         parsed = urlparse(url)
         host = parsed.hostname or "0.0.0.0"
         port = parsed.port or 8080
