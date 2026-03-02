@@ -62,7 +62,7 @@ class Trainer:
     def __init__(
         self,
         model: nn.Module,
-        loss_fn: nn.Module | Callable,
+        loss_fn: nn.Module | Callable | None,
         optimizer: Optimizer,
         *,
         train_loader: Any | None = None,
@@ -83,6 +83,9 @@ class Trainer:
         Args:
             model: PyTorch module to train.
             loss_fn: Loss function. Called as ``loss_fn(outputs, targets)``.
+                When ``None`` the model is expected to compute its own loss:
+                ``model(inputs, targets)`` must return a dict with a ``"loss"``
+                key or a tuple whose first element is the loss tensor.
             optimizer: Optimizer that updates ``model`` parameters.
             train_loader: Optional default training data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
@@ -363,11 +366,9 @@ class Trainer:
             # Forward + loss
             if self._amp_enabled and self._scaler is not None:
                 with torch.amp.autocast(device_type=self.device.type):
-                    outputs = self.model(inputs)
-                    loss: torch.Tensor = self.loss_fn(outputs, targets)
+                    loss, _outputs = self._compute_loss(inputs, targets)
             else:
-                outputs = self.model(inputs)
-                loss = self.loss_fn(outputs, targets)
+                loss, _outputs = self._compute_loss(inputs, targets)
 
             # Scale loss for accumulation so gradients average correctly
             scaled_loss = loss / self.gradient_accumulation_steps
@@ -461,11 +462,9 @@ class Trainer:
 
                 if self._amp_enabled:
                     with torch.amp.autocast(device_type=self.device.type):
-                        outputs = self.model(inputs)
-                        loss = self.loss_fn(outputs, targets)
+                        loss, _outputs = self._compute_loss(inputs, targets)
                 else:
-                    outputs = self.model(inputs)
-                    loss = self.loss_fn(outputs, targets)
+                    loss, _outputs = self._compute_loss(inputs, targets)
 
                 total_loss += loss.item()
                 num_batches += 1
@@ -531,6 +530,27 @@ class Trainer:
 
         # Fallback: return unchanged (e.g. custom types)
         return data
+
+    def _compute_loss(self, inputs: Any, targets: Any) -> tuple[torch.Tensor, Any]:
+        """Run the forward pass and return ``(loss, raw_output)``.
+
+        When ``loss_fn`` is set the standard two-step pattern is used:
+        ``model(inputs)`` followed by ``loss_fn(outputs, targets)``.  When
+        ``loss_fn`` is ``None`` the model is called as
+        ``model(inputs, targets)`` and must return a dict with a ``"loss"``
+        key or a tuple whose first element is the loss tensor.
+        """
+        if self.loss_fn is not None:
+            outputs = self.model(inputs)
+            loss: torch.Tensor = self.loss_fn(outputs, targets)
+            return loss, outputs
+
+        result = self.model(inputs, targets)
+        if isinstance(result, dict):
+            return result["loss"], result
+        if isinstance(result, tuple):
+            return result[0], result
+        return result, None
 
     def _call_callbacks(self, event: str, **kwargs: Any) -> None:
         """Dispatch an event to all registered callbacks.

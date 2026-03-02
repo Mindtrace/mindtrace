@@ -29,12 +29,22 @@ Optional subpackages (each requires additional dependencies):
     Requires: ``torch-model-archiver``, ``torchserve``.
 """
 
+from mindtrace.models.serving.results import (
+    ClassificationResult,
+    DetectionResult,
+    SegmentationResult,
+)
 from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictResponse
-from mindtrace.models.serving.service import ModelService
+from mindtrace.models.serving.service import ModelService, resolve_device
 
 __all__ = [
     "ModelInfo",
     "ModelService",
     "PredictRequest",
     "PredictResponse",
+    "resolve_device",
+    # Typed results
+    "ClassificationResult",
+    "DetectionResult",
+    "SegmentationResult",
 ]
