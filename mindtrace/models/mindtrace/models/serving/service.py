@@ -8,6 +8,7 @@ model services subclass ``ModelService`` and implement ``load_model`` and
 
 from __future__ import annotations
 
+import os
 import time
 from abc import abstractmethod
 from typing import Any
@@ -37,7 +38,7 @@ except ImportError:  # pragma: no cover
     _TORCH_AVAILABLE = False
 
 
-def _resolve_device(device: str) -> str:
+def resolve_device(device: str) -> str:
     """Resolve the requested device string to a concrete device.
 
     ``"auto"`` is resolved to ``"cuda"`` when a CUDA-capable GPU is detected
@@ -99,8 +100,24 @@ class ModelService(Service):
 
         self.model_name: str = model_name
         self.model_version: str = model_version
-        self.device: str = _resolve_device(device)
+        self.device: str = resolve_device(device)
         self.registry: Any = registry
+
+        # When launched as a subprocess via Service.launch(), registry objects
+        # cannot be JSON-serialised.  Fall back to env-var-based construction.
+        if self.registry is None:
+            registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH")
+            if registry_path:
+                try:
+                    from mindtrace.registry import Registry
+
+                    self.registry = Registry(registry_path)
+                except Exception:
+                    self.logger.warning(
+                        "Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s",
+                        registry_path,
+                        exc_info=True,
+                    )
 
         self.logger.info(
             "Initialising model service: name=%s version=%s device=%s",
