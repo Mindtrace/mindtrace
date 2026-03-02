@@ -1,89 +1,72 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import { useRouter } from "next/navigation";
 import Home from "@/app/page";
+import { useAuth } from "@/context/auth-context";
 
-// Mock the API client
-jest.mock("@/lib/api/client", () => ({
-  getHealthCheck: jest.fn(() =>
-    Promise.resolve({
-      status: "success",
-      message: "Mock API response",
-      timestamp: "2024-01-01T00:00:00.000Z",
-    })
-  ),
-}));
+jest.mock("next/navigation", () => ({ useRouter: jest.fn() }));
+jest.mock("@/context/auth-context", () => ({ useAuth: jest.fn() }));
 
-const createTestQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
+const mockReplace = jest.fn();
+const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
+const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 
 describe("Home Page", () => {
-  it("renders the main heading", () => {
-    const queryClient = createTestQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Home />
-      </QueryClientProvider>
-    );
-
-    expect(screen.getByText("Welcome to Inspectra")).toBeInTheDocument();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseRouter.mockReturnValue({ replace: mockReplace } as ReturnType<
+      typeof useRouter
+    >);
   });
 
-  it("displays the placeholder description", () => {
-    const queryClient = createTestQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Home />
-      </QueryClientProvider>
-    );
-
-    expect(
-      screen.getByText(/This is a placeholder page for Inspectra/i)
-    ).toBeInTheDocument();
-  });
-
-  it("shows API connection status after loading", async () => {
-    const queryClient = createTestQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Home />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("API Response Received")).toBeInTheDocument();
+  it("redirects to /login when not authenticated", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      logout: jest.fn(),
+      refreshUser: jest.fn(),
     });
-
-    expect(screen.getByText("Mock API response")).toBeInTheDocument();
+    render(<Home />);
+    expect(mockReplace).toHaveBeenCalledWith("/login");
   });
 
-  it("displays tech stack badges", () => {
-    const queryClient = createTestQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Home />
-      </QueryClientProvider>
-    );
-
-    expect(screen.getByText("Next.js")).toBeInTheDocument();
-    expect(screen.getByText("TypeScript")).toBeInTheDocument();
-    expect(screen.getByText("Tailwind CSS")).toBeInTheDocument();
+  it("redirects to /organizations when super_admin", () => {
+    mockUseAuth.mockReturnValue({
+      user: {
+        id: "1",
+        email: "a@b.com",
+        role: "super_admin",
+        organization_id: "o1",
+        first_name: "A",
+        last_name: "B",
+        status: "active",
+      },
+      isAuthenticated: true,
+      isLoading: false,
+      logout: jest.fn(),
+      refreshUser: jest.fn(),
+    });
+    render(<Home />);
+    expect(mockReplace).toHaveBeenCalledWith("/organizations");
   });
 
-  it("displays testing tools badges", () => {
-    const queryClient = createTestQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Home />
-      </QueryClientProvider>
-    );
-
-    expect(screen.getByText("React Testing Library")).toBeInTheDocument();
-    expect(screen.getByText("Cypress")).toBeInTheDocument();
+  it("redirects to /users when not super_admin", () => {
+    mockUseAuth.mockReturnValue({
+      user: {
+        id: "2",
+        email: "c@b.com",
+        role: "admin",
+        organization_id: "o1",
+        first_name: "C",
+        last_name: "D",
+        status: "active",
+      },
+      isAuthenticated: true,
+      isLoading: false,
+      logout: jest.fn(),
+      refreshUser: jest.fn(),
+    });
+    render(<Home />);
+    expect(mockReplace).toHaveBeenCalledWith("/users");
   });
 });

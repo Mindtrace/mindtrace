@@ -60,10 +60,17 @@ export function logout(): void {
   }
 }
 
-export function clearSessionAndRedirect(): void {
+export function clearSessionAndRedirect(
+  redirect?: (url: string) => void
+): void {
   logout();
   if (typeof window !== "undefined") {
-    window.location.href = "/login";
+    const doRedirect =
+      redirect ??
+      ((url: string) => {
+        window.location.href = url;
+      });
+    doRedirect("/login");
   }
 }
 
