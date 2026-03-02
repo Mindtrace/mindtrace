@@ -4,6 +4,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 from mindtrace.core import TaskSchema
 
+from mindtrace.apps.inspectra.schemas.user import UserResponse
+
 
 class LoginRequest(BaseModel):
     """Login request body."""
@@ -38,7 +40,15 @@ RefreshSchema = TaskSchema(
     output_schema=TokenResponse,
 )
 
+# GET /auth/me: no request body (auth via Bearer token), returns current user
+AuthMeSchema = TaskSchema(
+    name="inspectra_auth_me",
+    input_schema=None,
+    output_schema=UserResponse,
+)
+
 __all__ = [
+    "AuthMeSchema",
     "LoginRequest",
     "LoginSchema",
     "RefreshRequest",

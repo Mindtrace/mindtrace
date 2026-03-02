@@ -14,6 +14,7 @@ from mindtrace.apps.inspectra.models import User
 from mindtrace.apps.inspectra.models.enums import OrganizationStatus, UserRole, UserStatus
 from mindtrace.apps.inspectra.routes.users import user_to_response
 from mindtrace.apps.inspectra.schemas.auth import (
+    AuthMeSchema,
     LoginRequest,
     LoginSchema,
     RefreshRequest,
@@ -41,7 +42,7 @@ def register(service):
     service.add_endpoint(
         "/auth/me",
         get_me,
-        schema=None,
+        schema=AuthMeSchema,
         methods=["GET"],
         api_route_kwargs={"dependencies": [Depends(get_current_user)]},
         as_tool=False,
