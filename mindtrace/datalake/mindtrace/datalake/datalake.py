@@ -684,3 +684,42 @@ class Datalake(Mindtrace):
             return conditions[0]
         else:
             return {"$and": conditions}
+
+
+# ---------------------------------------------------------------------------
+# Standalone utilities
+# ---------------------------------------------------------------------------
+
+
+def compute_splits(
+    datum_ids: list[str],
+    train_ratio: float = 0.8,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.05,
+    seed: int = 42,
+) -> dict[str, list[str]]:
+    """Assign train / val / test splits to a list of datum IDs.
+
+    Args:
+        datum_ids: List of datum identifiers.
+        train_ratio: Fraction for the training set.
+        val_ratio: Fraction for the validation set.
+        test_ratio: Fraction for the test set.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Dict mapping split name to list of datum IDs.
+    """
+    rng = random.Random(seed)
+    shuffled = list(datum_ids)
+    rng.shuffle(shuffled)
+
+    n = len(shuffled)
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    return {
+        "train": shuffled[:n_train],
+        "val": shuffled[n_train : n_train + n_val],
+        "test": shuffled[n_train + n_val :],
+    }

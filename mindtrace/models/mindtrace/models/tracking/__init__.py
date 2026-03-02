@@ -31,6 +31,10 @@ from __future__ import annotations
 from mindtrace.models.tracking.backends.mlflow import MLflowTracker
 from mindtrace.models.tracking.backends.tensorboard import TensorBoardTracker
 from mindtrace.models.tracking.backends.wandb import WandBTracker
+from mindtrace.models.tracking.bridges import (
+    HuggingFaceTrackerBridge,
+    UltralyticsTrackerBridge,
+)
 from mindtrace.models.tracking.registry_bridge import RegistryBridge
 from mindtrace.models.tracking.tracker import CompositeTracker, Tracker
 
@@ -41,4 +45,7 @@ __all__ = [
     "TensorBoardTracker",
     "Tracker",
     "WandBTracker",
+    # Bridges
+    "UltralyticsTrackerBridge",
+    "HuggingFaceTrackerBridge",
 ]

@@ -11,15 +11,26 @@ lifecycle     Model stage management, ModelCard, and promotion logic.
 """
 
 # -- Serving -----------------------------------------------------------------
-from mindtrace.models.serving import ModelInfo, ModelService, PredictRequest, PredictResponse
+from mindtrace.models.serving import (
+    ClassificationResult,
+    DetectionResult,
+    ModelInfo,
+    ModelService,
+    PredictRequest,
+    PredictResponse,
+    SegmentationResult,
+    resolve_device,
+)
 
 # -- Tracking ----------------------------------------------------------------
 from mindtrace.models.tracking import (
     CompositeTracker,
+    HuggingFaceTrackerBridge,
     MLflowTracker,
     RegistryBridge,
     TensorBoardTracker,
     Tracker,
+    UltralyticsTrackerBridge,
     WandBTracker,
 )
 
@@ -66,6 +77,21 @@ from mindtrace.models.architectures import (
     list_backbones,
     register_backbone,
 )
+from mindtrace.models.architectures.backbones import (
+    BackboneFeatures,
+    BackboneProtocol,
+)
+
+# Adapters (guarded — heavy optional deps)
+try:
+    from mindtrace.models.architectures.backbones import (
+        MindtraceBackboneAdapter,
+        TimmBackboneAdapter,
+        TorchvisionBackboneAdapter,
+        build_backbone_adapter,
+    )
+except ImportError:
+    pass
 
 # -- Evaluation --------------------------------------------------------------
 from mindtrace.models.evaluation import (
@@ -98,6 +124,10 @@ __all__ = [
     "PredictRequest",
     "PredictResponse",
     "ModelInfo",
+    "resolve_device",
+    "ClassificationResult",
+    "DetectionResult",
+    "SegmentationResult",
     # tracking
     "Tracker",
     "CompositeTracker",
@@ -105,6 +135,8 @@ __all__ = [
     "WandBTracker",
     "TensorBoardTracker",
     "RegistryBridge",
+    "UltralyticsTrackerBridge",
+    "HuggingFaceTrackerBridge",
     # training — loop
     "Trainer",
     "Callback",
@@ -136,6 +168,12 @@ __all__ = [
     "list_backbones",
     "register_backbone",
     "BackboneInfo",
+    "BackboneFeatures",
+    "BackboneProtocol",
+    "build_backbone_adapter",
+    "TimmBackboneAdapter",
+    "TorchvisionBackboneAdapter",
+    "MindtraceBackboneAdapter",
     "ModelWrapper",
     "LinearHead",
     "MLPHead",

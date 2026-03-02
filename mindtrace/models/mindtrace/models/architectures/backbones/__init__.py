@@ -16,12 +16,28 @@ download); missing network connectivity is caught at *call* time and raised as
 
 from __future__ import annotations
 
+from mindtrace.models.architectures.backbones.protocol import (
+    BackboneFeatures,
+    BackboneProtocol,
+)
 from mindtrace.models.architectures.backbones.registry import (
     BackboneInfo,
     build_backbone,
     list_backbones,
     register_backbone,
 )
+
+# Adapters (depend on optional heavy ML libraries — guarded)
+try:
+    from mindtrace.models.architectures.backbones.adapters import (  # noqa: F401
+        MindtraceBackboneAdapter,
+        TimmBackboneAdapter,
+        TorchvisionBackboneAdapter,
+        build_backbone_adapter,
+    )
+    _ADAPTERS_AVAILABLE = True
+except Exception:
+    _ADAPTERS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Trigger registrations — each module registers its backbones at import time.
@@ -74,10 +90,19 @@ except Exception:
     _HF_GENERIC_AVAILABLE = False
 
 __all__ = [
+    # Protocol
+    "BackboneFeatures",
+    "BackboneProtocol",
+    # Registry
     "BackboneInfo",
     "build_backbone",
     "list_backbones",
     "register_backbone",
+    # Adapters
+    "TimmBackboneAdapter",
+    "TorchvisionBackboneAdapter",
+    "MindtraceBackboneAdapter",
+    "build_backbone_adapter",
     # HuggingFace DINO (available when transformers is installed)
     "HuggingFaceDINOBackbone",
     "LoRAConfig",
