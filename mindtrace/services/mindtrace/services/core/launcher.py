@@ -24,6 +24,7 @@ if not IS_WINDOWS:
                 "workers": options.num_workers,
                 "worker_class": options.worker_class,
                 "pidfile": options.pid,
+                "timeout": getattr(options, "timeout", 300),
             }
 
             # Parse init params
@@ -104,6 +105,7 @@ def main():
     )
     parser.add_argument("-p", "--pid", type=str, default=None)
     parser.add_argument("-k", "--worker_class", type=str, default="uvicorn.workers.UvicornWorker")
+    parser.add_argument("-t", "--timeout", type=int, default=300, help="Gunicorn worker timeout in seconds")
     parser.add_argument("--init-params", type=str, help="JSON string of initialization parameters")
     args = parser.parse_args()
 

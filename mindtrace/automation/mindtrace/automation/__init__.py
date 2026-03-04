@@ -8,6 +8,7 @@ Subpackages:
 """
 
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
+from mindtrace.automation.service import AutomationService
 from mindtrace.automation.pipeline import (
     ActiveLearningConfig,
     ActiveLearningPipeline,
@@ -38,4 +39,6 @@ __all__ = [
     "ActiveLearningConfig",
     # Label Studio
     "LabelStudio",
+    # Service
+    "AutomationService",
 ]
