@@ -74,10 +74,11 @@ class ModelService(Service):
     def __init__(
         self,
         *,
-        model_name: str,
-        model_version: str,
+        model_name: str = "",
+        model_version: str = "",
         device: str = "auto",
         registry: Any = None,
+        live_service: bool = True,
         **kwargs,
     ) -> None:
         """Initialise the model service.
@@ -94,20 +95,57 @@ class ModelService(Service):
                 ``self.registry.load(f"{self.model_name}:{self.model_version}")``
                 in their :meth:`load_model` implementation.  ``None`` is
                 allowed when a subclass manages loading independently.
+            live_service: When ``False`` the instance is used only for
+                endpoint discovery (e.g. by
+                ``generate_connection_manager``).  Model loading and
+                registry construction are skipped.
             **kwargs: Forwarded to :class:`mindtrace.services.Service`.
         """
-        super().__init__(**kwargs)
+        # Pass live_service through so Service.__init__ receives it too.
+        super().__init__(live_service=live_service, **kwargs)
 
         self.model_name: str = model_name
         self.model_version: str = model_version
         self.device: str = resolve_device(device)
         self.registry: Any = registry
 
+        # In non-live mode (endpoint discovery only), skip heavy init.
+        if not live_service:
+            self.add_endpoint(
+                path="predict",
+                func=self._handle_predict,
+                schema=predict_task,
+                as_tool=True,
+            )
+            self.add_endpoint(
+                path="info",
+                func=self._handle_info,
+                schema=info_task,
+            )
+            return
+
         # When launched as a subprocess via Service.launch(), registry objects
         # cannot be JSON-serialised.  Fall back to env-var-based construction.
         if self.registry is None:
-            registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH")
-            if registry_path:
+            registry_uri = os.environ.get("MINDTRACE_REGISTRY_URI", "")
+            registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH", "")
+            if registry_uri.startswith("gs://"):
+                try:
+                    from mindtrace.registry import Registry
+                    from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+
+                    backend = GCPRegistryBackend(uri=registry_uri)
+                    self.registry = Registry(backend=backend, use_cache=True)
+                    self.logger.info(
+                        "Created GCS-backed Registry: uri=%s", registry_uri,
+                    )
+                except Exception:
+                    self.logger.warning(
+                        "Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s",
+                        registry_uri,
+                        exc_info=True,
+                    )
+            elif registry_path:
                 try:
                     from mindtrace.registry import Registry
 

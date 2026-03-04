@@ -37,7 +37,15 @@ class LabelStudio(Mindtrace):
     calling project management or storage integration methods.
     """
 
-    def __init__(self, url: Optional[str] = None, api_key: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        *,
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+        **kwargs,
+    ):
         """Initialize the LabelStudio client.
 
         Args:
@@ -45,6 +53,9 @@ class LabelStudio(Mindtrace):
                 defaults to ``self.config["MINDTRACE_DEFAULT_HOST_URLS"]["LabelStudio"]``.
             api_key: Label Studio API key. If not provided,
                 defaults to ``self.config["MINDTRACE_API_KEYS"]["LabelStudio"]``.
+            email: Label Studio user email for session-based auth.  Used as
+                fallback when token-based auth is disabled (Label Studio >= 1.22).
+            password: Label Studio user password for session-based auth.
             **kwargs: Additional keyword arguments passed to ``Mindtrace``.
 
         Example::
@@ -52,12 +63,89 @@ class LabelStudio(Mindtrace):
         .. code-block:: python
 
             ls = LabelStudio(url="http://localhost:8080", api_key="my-api-key")
+            # Or session-based auth for LS >= 1.22:
+            ls = LabelStudio(url="http://localhost:8080",
+                             email="admin@example.com", password="secret")
         """
         super().__init__(**kwargs)
         self.url = ifnone(url, default=self.config["MINDTRACE_DEFAULT_HOST_URLS"]["LabelStudio"])
         self.api_key = ifnone(api_key, default=self.config["MINDTRACE_API_KEYS"]["LabelStudio"])
-        self.client = Client(url=self.url, api_key=self.api_key)
+        self.client = self._create_client(
+            url=self.url, api_key=self.api_key, email=email, password=password,
+        )
         self.logger.info(f"Initialised LS at: {self.url}")
+
+    def _create_client(
+        self,
+        url: str,
+        api_key: str,
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> Client:
+        """Create an authenticated Label Studio SDK client.
+
+        Tries token-based auth first.  If the server rejects legacy tokens
+        (Label Studio >= 1.22), falls back to session/cookie auth using the
+        provided *email* and *password*.
+        """
+        import requests as _requests
+
+        # 1. Try token-based auth (works on older LS versions)
+        try:
+            client = Client(url=url, api_key=api_key)
+            # check_connection() hits /health which is unauthenticated, so
+            # test with an actual authenticated endpoint instead.
+            client.make_request("GET", "/api/projects", params={"page_size": 1})
+            return client
+        except Exception:
+            self.logger.debug("Token auth failed, trying session-based auth")
+
+        # 2. Session-based auth (email + password)
+        if not email or not password:
+            self.logger.warning(
+                "Token auth rejected and no email/password provided. "
+                "Falling back to token auth (may fail at request time)."
+            )
+            return Client(url=url, api_key=api_key)
+
+        session = _requests.Session()
+        resp = session.get(f"{url.rstrip('/')}/user/login", timeout=10)
+        csrf = session.cookies.get("csrftoken", "")
+        resp = session.post(
+            f"{url.rstrip('/')}/user/login",
+            data={"email": email, "password": password, "csrfmiddlewaretoken": csrf},
+            headers={"Referer": f"{url.rstrip('/')}/user/login"},
+            timeout=10,
+            allow_redirects=False,
+        )
+        if resp.status_code not in (200, 302):
+            raise RuntimeError(f"Label Studio session login failed: {resp.status_code}")
+
+        # Create client with a dummy api_key (required by SDK constructor)
+        # but use the authenticated session for actual requests.
+        client = Client(url=url, api_key="session-auth")
+        client.session = session
+        # The SDK passes self.headers (including Authorization) to every
+        # request and re-creates auth in child objects (Project, etc.).
+        # Monkeypatch make_request on the Client CLASS so that all instances
+        # (including Project objects inheriting from Client) strip the
+        # Authorization header when using session-cookie auth.
+        _orig_make_request = Client.make_request
+
+        def _session_make_request(self_inner, method, *args, **kwargs):
+            saved = self_inner.headers
+            self_inner.headers = {
+                k: v for k, v in (saved or {}).items()
+                if k != "Authorization"
+            }
+            try:
+                return _orig_make_request(self_inner, method, *args, **kwargs)
+            finally:
+                self_inner.headers = saved
+
+        Client.make_request = _session_make_request
+        self.logger.info("Using session-based auth for Label Studio")
+        return client
 
     def create_project(
         self, project_name: str, description: Optional[str] = None, label_config: Optional[str] = None
