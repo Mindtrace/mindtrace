@@ -73,3 +73,15 @@ info_task = TaskSchema(
     name="info",
     output_schema=ModelInfo,
 )
+
+# Re-export training schemas for discoverability.
+from mindtrace.models.serving.training_schemas import (  # noqa: E402, F401
+    ClassifierTrainRequest,
+    DetectorTrainRequest,
+    SegmenterTrainRequest,
+    TrainRequest,
+    TrainResponse,
+    classifier_train_task,
+    detector_train_task,
+    segmenter_train_task,
+)

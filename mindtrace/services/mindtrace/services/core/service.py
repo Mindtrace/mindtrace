@@ -280,6 +280,7 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: Literal[False],
         timeout: int = 60,
+        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ) -> None: ...
@@ -296,6 +297,7 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: Literal[True] | bool = True,
         timeout: int = 60,
+        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ) -> Any: ...
@@ -311,6 +313,7 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: bool = True,
         timeout: int = 60,
+        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ):
@@ -327,6 +330,9 @@ class Service(Mindtrace):
             num_workers: Number of worker processes
             wait_for_launch: Whether to wait for server startup
             timeout: Timeout for server startup in seconds
+            worker_timeout: Gunicorn worker timeout in seconds (how long a
+                worker may spend handling a single request, including model
+                loading during init). Defaults to 300s.
             progress_bar: Show progress bar during startup
             **kwargs: Additional parameters passed to the server's __init__ method
         """
@@ -364,6 +370,8 @@ class Service(Mindtrace):
             cls._server_id_to_pid_file(server_id),
             "-k",
             "uvicorn.workers.UvicornWorker",
+            "-t",
+            str(worker_timeout),
             "--init-params",
             json.dumps(init_params),
         ]
