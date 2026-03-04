@@ -50,6 +50,12 @@ class Service(Mindtrace):
     _active_servers: dict[UUID, psutil.Process] = {}
     mcp: MCPClientManager = None
 
+    # Monitoring hooks — populated by mindtrace.services.monitoring at import time.
+    # Each hook is called with keyword arguments; exceptions are silently swallowed
+    # so hooks can never affect the launch or shutdown of a service.
+    _class_launch_hooks: list = []    # hook(service_class, url, connection_manager)
+    _class_shutdown_hooks: list = []  # hook(service_class, server_id)
+
     def __init__(
         self,
         *,
@@ -407,6 +413,13 @@ class Service(Mindtrace):
                 cls._cleanup_server(server_id)
                 raise e
 
+        # Notify monitoring hooks (fire-and-forget; never affects launch outcome)
+        for _hook in cls._class_launch_hooks:
+            try:
+                _hook(service_class=cls, url=str(launch_url), connection_manager=connection_manager)
+            except Exception:
+                pass
+
         # If blocking is requested, wait for the process
         if block:
             try:
@@ -459,6 +472,11 @@ class Service(Mindtrace):
                 cls.logger.debug("Process already terminated.")
             finally:
                 del cls._active_servers[server_id]
+                for _hook in cls._class_shutdown_hooks:
+                    try:
+                        _hook(service_class=cls, server_id=server_id)
+                    except Exception:
+                        pass
 
     @classmethod
     def _cleanup_all_servers(cls):

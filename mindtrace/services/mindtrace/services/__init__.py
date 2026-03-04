@@ -16,6 +16,15 @@ from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionM
 from mindtrace.services.gateway.types import AppConfig, RegisterAppTaskSchema
 from mindtrace.services.samples.echo_service import EchoService
 
+# Activate the global service monitor — registers launch/shutdown hooks on
+# the Service class so all subsequent launches are tracked automatically.
+# Uses a try/except so monitoring is never a hard dependency of services.
+try:
+    from mindtrace.services.monitoring.monitor import _register_global_hooks
+    _register_global_hooks()
+except Exception:  # ImportError or any unexpected error at import time
+    pass
+
 __all__ = [
     "AppConfig",
     "ConnectionManager",
