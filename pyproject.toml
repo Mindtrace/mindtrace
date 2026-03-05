@@ -26,6 +26,7 @@ dependencies = [
   "mindtrace-ui>=0.8.0",
   "mindtrace-datalake>=0.8.0",
   "mindtrace-storage>=0.8.0",
+  "mindtrace-agents>=0.8.0",
 ]
 
 [project.optional-dependencies]
@@ -82,7 +83,7 @@ mindtrace-registry = { workspace = true }
 mindtrace-ui = { workspace = true }
 mindtrace-datalake = { workspace = true }
 mindtrace-storage = { workspace = true }
-
+mindtrace-agents = { workspace = true }
 [tool.uv.workspace]
 members = [
   "mindtrace/core",
@@ -98,6 +99,7 @@ members = [
   "mindtrace/ui",
   "mindtrace/datalake",
   "mindtrace/storage",
+  "mindtrace/agents",
 ]
 
 [tool.ds.scripts]
