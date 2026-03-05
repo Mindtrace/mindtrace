@@ -1,0 +1,21 @@
+:root {
+  --bg0:    #080c18;
+  --bg1:    #0d1426;
+  --bg2:    #0f1832;
+  --border: rgba(30, 58, 95, 0.8);
+  --cyan:   #00d4ff;
+  --green:  #00ff88;
+  --txt1:   #e8f4ff;
+  --txt2:   #7ba3cc;
+  --txt3:   #3d5a7a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg0);
+  color: var(--txt1);
+  height: 100vh;
+  overflow: hidden;
+}
