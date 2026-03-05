@@ -35,7 +35,7 @@ from pydantic import BaseModel
 
 from mindtrace.services import Service
 from mindtrace.services.monitoring import get_monitor
-from mindtrace.services.monitoring.supervisor import ServiceSupervisorAgent
+from mindtrace.agents.monitoring.supervisor import ServiceSupervisorAgent
 from mindtrace.core import CoreConfig
 
 core_config = CoreConfig()

@@ -28,7 +28,7 @@ from mindtrace.agents.core.base import MindtraceAgent
 from mindtrace.agents.tools._tool import Tool
 from mindtrace.services.monitoring.memory import ServiceSessionMemory
 from mindtrace.services.monitoring.monitor import ServiceMonitor, get_monitor
-from mindtrace.services.monitoring.tools import (
+from mindtrace.agents.monitoring.tools import (
     MonitoringDeps,
     check_service_heartbeat,
     get_recent_errors,
