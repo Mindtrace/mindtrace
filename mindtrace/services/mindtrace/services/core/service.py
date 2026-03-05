@@ -21,7 +21,7 @@ import requests
 from fastapi import FastAPI, HTTPException
 from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
-
+from mindtrace.core.config import CoreConfig
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -40,7 +40,7 @@ from mindtrace.services.core.utils import generate_connection_manager
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
-
+core_config = CoreConfig()
 
 class Service(Mindtrace):
     """Base class for all Mindtrace services."""
@@ -128,8 +128,63 @@ class Service(Mindtrace):
                 await stack.enter_async_context(self.mcp_app.lifespan(app))
                 # Service's own startup logic
                 self.logger.info(f"Server {self.id} starting up.")
+                # Auto-enable local JSONL error logging if configured.
+                # Runs inside this service's subprocess so track_operation errors
+                # are captured here and written to a directory the supervisor can read.
+                _error_log_dir = core_config.MINDTRACE_DIR_PATHS.ERROR_LOG_DIR
+                if _error_log_dir:
+                    try:
+                        from mindtrace.services.monitoring.error_store import (
+                            ErrorFileCallback, ErrorFileStore,
+                        )
+                        from mindtrace.core.logging.logger import register_error_callback
+                        register_error_callback(
+                            ErrorFileCallback(ErrorFileStore(base_dir=_error_log_dir))
+                        )
+                    except Exception:
+                        pass
+                # Auto-register with supervisor monitor if configured
+                _supervisor_url = str(
+                    core_config.MINDTRACE_SUPERVISOR.SUPERVISOR_URL or ""
+                ).rstrip("/")
+                if _supervisor_url:
+                    try:
+                        import requests as _requests
+                        _logger_name = (
+                            self.__class__.__module__ + "." + self.__class__.__name__
+                        )
+                        _struct_log_dir = os.path.expanduser(
+                            core_config.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR or ""
+                        )
+                        _log_file = (
+                            os.path.join(_struct_log_dir, "modules", f"{_logger_name}.log")
+                            if _struct_log_dir else ""
+                        )
+                        _requests.post(
+                            f"{_supervisor_url}/register",
+                            json={
+                                "name": self.__class__.__name__,
+                                "url": str(self._url),
+                                "error_log_dir": _error_log_dir,
+                                "log_file": _log_file,
+                            },
+                            timeout=5,
+                        )
+                    except Exception:
+                        pass
                 yield
                 await self.shutdown_cleanup()
+                # Auto-unregister from supervisor monitor
+                if _supervisor_url:
+                    try:
+                        import requests as _requests
+                        _requests.post(
+                            f"{_supervisor_url}/unregister",
+                            json={"name": self.__class__.__name__},
+                            timeout=5,
+                        )
+                    except Exception:
+                        pass
                 self.logger.info(f"Server {self.id} shut down.")
 
         self.app = FastAPI(

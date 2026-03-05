@@ -13,6 +13,25 @@ from mindtrace.core.config import CoreSettings
 from mindtrace.core.utils import ifnone
 
 
+# ---------------------------------------------------------------------------
+# Error callback registry
+# ---------------------------------------------------------------------------
+# Populated by mindtrace.services.monitoring at import time (same pattern as
+# Service._class_launch_hooks).  Each callback is called when track_operation
+# catches an exception, before re-raising.  Exceptions from callbacks are
+# silently swallowed so they can never affect service operation.
+#
+# Callback signature:
+#   def cb(*, service_name, operation, error_type, error_message,
+#          traceback, exc_info, duration_ms) -> None: ...
+_error_callbacks: list = []
+
+
+def register_error_callback(callback) -> None:
+    """Register a callable invoked on every exception caught by track_operation."""
+    _error_callbacks.append(callback)
+
+
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
     """Create a logging formatter with a standardized default format.
 
@@ -556,6 +575,22 @@ def track_operation(
                     raise _HTTPException(status_code=504, detail="Operation timed out")  # type: ignore
                 raise
             else:
+                if _error_callbacks:
+                    import traceback as _tb_mod
+                    _tb_str = "".join(_tb_mod.format_exception(exc_type, exc_val, exc_tb))
+                    for _cb in _error_callbacks:
+                        try:
+                            _cb(
+                                service_name=self.context.get("service_name"),
+                                operation=self.name,
+                                error_type=type(exc_val).__name__,
+                                error_message=str(exc_val),
+                                traceback=_tb_str,
+                                exc_info=(exc_type, exc_val, exc_tb),
+                                duration_ms=round(duration * 1000, 2),
+                            )
+                        except Exception:
+                            pass
                 bound.error(
                     f"{self.name}_failed",
                     error=str(exc_val),
@@ -622,6 +657,24 @@ def track_operation(
                     raise
                 except Exception as e:
                     duration = _time.time() - start_time
+                    if _error_callbacks:
+                        import sys as _sys
+                        import traceback as _tb_mod
+                        _exc_info = _sys.exc_info()
+                        _tb_str = _tb_mod.format_exc()
+                        for _cb in _error_callbacks:
+                            try:
+                                _cb(
+                                    service_name=dict(self.context).get("service_name"),
+                                    operation=op_name,
+                                    error_type=type(e).__name__,
+                                    error_message=str(e),
+                                    traceback=_tb_str,
+                                    exc_info=_exc_info,
+                                    duration_ms=round(duration * 1000, 2),
+                                )
+                            except Exception:
+                                pass
                     bound.error(
                         f"{op_name}_failed",
                         error=str(e),
@@ -659,6 +712,24 @@ def track_operation(
                     return result
                 except Exception as e:
                     duration = _time.time() - start_time
+                    if _error_callbacks:
+                        import sys as _sys
+                        import traceback as _tb_mod
+                        _exc_info = _sys.exc_info()
+                        _tb_str = _tb_mod.format_exc()
+                        for _cb in _error_callbacks:
+                            try:
+                                _cb(
+                                    service_name=dict(self.context).get("service_name"),
+                                    operation=op_name,
+                                    error_type=type(e).__name__,
+                                    error_message=str(e),
+                                    traceback=_tb_str,
+                                    exc_info=_exc_info,
+                                    duration_ms=round(duration * 1000, 2),
+                                )
+                            except Exception:
+                                pass
                     bound.error(
                         f"{op_name}_failed",
                         error=str(e),

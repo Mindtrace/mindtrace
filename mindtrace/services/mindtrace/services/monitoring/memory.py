@@ -37,6 +37,7 @@ class EventType(str, Enum):
     ERROR = "error"
     RESTART = "restart"
     STATUS_CHANGE = "status_change"
+    NOTIFICATION = "notification"
 
 
 class EventSeverity(str, Enum):

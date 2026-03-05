@@ -10,9 +10,9 @@ All return values are plain strings — easy for LLMs to parse and relay.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from mindtrace.agents._run_context import RunContext
 from mindtrace.services.monitoring.memory import EventSeverity, ServiceSessionMemory
@@ -30,6 +30,7 @@ class MonitoringDeps:
 
     monitor: ServiceMonitor
     memory: ServiceSessionMemory
+    error_store: Any = field(default=None)  # Optional[ErrorFileStore]
 
 
 # ---------------------------------------------------------------------------
@@ -55,14 +56,16 @@ def get_service_logs(
     ctx: RunContext[MonitoringDeps],
     service_name: str,
     limit: int = 50,
-    min_severity: str = "info",
+    min_severity: str = "debug",
 ) -> str:
-    """Return recent log events for a specific service.
+    """Return recent log events for a specific service, including heartbeats and
+    application log lines streamed from the service's structlog file.
 
     Args:
         service_name: Name of the service to query.
         limit: Maximum number of events to return (default 50).
         min_severity: Minimum severity level — debug | info | warning | error | critical.
+                      Defaults to debug so all events including heartbeats are visible.
     """
     try:
         sev = EventSeverity(min_severity.lower())
@@ -82,12 +85,15 @@ def get_service_logs(
             "The service may not be registered or may not have emitted any events yet."
         )
 
+    from mindtrace.services.monitoring.memory import EventType
     lines = [f"Last {len(events)} events for '{service_name}' (severity >= {min_severity}):"]
     for e in events:
         ts = e.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+        # For tailed application log lines use "log" label; others use the event type
+        label = "log" if e.event_type == EventType.NOTIFICATION else e.event_type.value
         details_str = f" | {json.dumps(e.details)}" if e.details else ""
         lines.append(
-            f"  [{ts}] {e.severity.value.upper():8s} {e.event_type.value}: "
+            f"  [{ts}] {e.severity.value.upper():8s} {label}: "
             f"{e.message}{details_str}"
         )
     return "\n".join(lines)
@@ -260,3 +266,149 @@ async def restart_service(
         return f"Cannot restart: {exc}. Use list_registered_services to see valid names."
     except Exception as exc:
         return f"Restart failed for '{service_name}': {exc}"
+
+
+# ---------------------------------------------------------------------------
+# JSONL error log tools (only useful when error_log_dir was configured)
+# ---------------------------------------------------------------------------
+
+
+def search_error_logs(
+    ctx: RunContext[MonitoringDeps],
+    service_name: Optional[str] = None,
+    since_hours: float = 24.0,
+    limit: int = 20,
+) -> str:
+    """Search JSONL error log files for recent endpoint errors with full traceback
+    and code context showing exactly where in the source code each error originated.
+
+    Args:
+        service_name: Filter to one service (omit for all services).
+        since_hours: Look back this many hours (default 24).
+        limit: Maximum number of error records to return (default 20).
+    """
+    from mindtrace.services.monitoring.error_store import ErrorFileStore
+
+    # Build a list of (store, filter_name) from per-service dirs in the registry
+    log_dirs = ctx.deps.monitor.all_error_log_dirs()
+    if service_name:
+        d = ctx.deps.monitor.get_service_error_log_dir(service_name)
+        log_dirs = {service_name: d} if d else {}
+
+    # Also include the supervisor-level store if present (legacy path)
+    stores: list[tuple[Any, Optional[str]]] = []
+    if ctx.deps.error_store is not None:
+        stores.append((ctx.deps.error_store, service_name))
+    for svc, d in log_dirs.items():
+        if d:
+            try:
+                stores.append((ErrorFileStore(base_dir=d), svc if not service_name else service_name))
+            except Exception:
+                pass
+
+    if not stores:
+        return (
+            "No JSONL error logs found. Set env variable MINDTRACE_DIR_PATHS__ERROR_LOG_DIR"
+            "so it writes errors locally; the path is reported to the supervisor on registration."
+        )
+
+    records = []
+    for store, filter_name in stores:
+        records.extend(store.iter_records(
+            service_name=filter_name,
+            since_hours=since_hours,
+            limit=limit,
+        ))
+    # Sort newest first and cap at limit
+    records.sort(key=lambda r: r.get("ts", ""), reverse=True)
+    records = records[:limit]
+
+    scope = f"'{service_name}'" if service_name else "all services"
+    if not records:
+        return f"No error records found in the last {since_hours:.0f}h for {scope}."
+
+    lines = [f"{len(records)} error(s) in last {since_hours:.0f}h for {scope}:"]
+    for rec in records:
+        ts = rec.get("ts", "unknown")
+        svc = rec.get("service", "?")
+        op = rec.get("operation", "?")
+        etype = rec.get("error_type", "?")
+        emsg = rec.get("error_message", "")
+        ms = rec.get("duration_ms", 0)
+
+        lines.append(f"\n[{ts}] {svc}.{op} ({etype}) — {ms:.1f}ms")
+        lines.append(f"  Message: {emsg}")
+
+        ctx_info = rec.get("code_context")
+        if ctx_info:
+            rel_file = ctx_info.get("file", "")
+            # Show path relative to repo root if possible
+            try:
+                from pathlib import Path
+                rel_file = str(Path(rel_file).resolve())
+            except Exception:
+                pass
+            lines.append(
+                f"  Location: {rel_file}:{ctx_info.get('lineno')} "
+                f"in {ctx_info.get('function')}()"
+            )
+            snippet = ctx_info.get("snippet", "")
+            if snippet:
+                lines.append("  Code:")
+                for snippet_line in snippet.splitlines():
+                    lines.append(f"    {snippet_line}")
+
+        tb = rec.get("traceback", "")
+        if tb:
+            # Show only the last 3 lines of the traceback to keep output compact
+            tb_lines = [l for l in tb.splitlines() if l.strip()]
+            lines.append(f"  Traceback (last {min(3, len(tb_lines))} lines):")
+            for tb_line in tb_lines[-3:]:
+                lines.append(f"    {tb_line}")
+
+    return "\n".join(lines)
+
+
+def list_error_sessions(
+    ctx: RunContext[MonitoringDeps],
+) -> str:
+    """List all available JSONL error log sessions per service with their date,
+    file count, size, and total number of recorded errors.
+    """
+    from mindtrace.services.monitoring.error_store import ErrorFileStore
+
+    all_dirs: dict[str, str] = ctx.deps.monitor.all_error_log_dirs()
+    if ctx.deps.error_store is not None:
+        all_dirs["_supervisor"] = ""  # sentinel — use ctx.deps.error_store
+
+    if not all_dirs:
+        return (
+            "No JSONL error log directories registered. "
+            "Set env variable MINDTRACE_DIR_PATHS__ERROR_LOG_DIR to enable error logging."
+        )
+
+    lines = []
+    for svc_name, log_dir in all_dirs.items():
+        if svc_name == "_supervisor" and ctx.deps.error_store is not None:
+            store = ctx.deps.error_store
+        elif log_dir:
+            try:
+                store = ErrorFileStore(base_dir=log_dir)
+            except Exception:
+                continue
+        else:
+            continue
+
+        sessions = store.list_sessions()
+        if not sessions:
+            lines.append(f"{svc_name}: no sessions yet")
+            continue
+        lines.append(f"{svc_name} ({log_dir or 'supervisor store'}):")
+        for s in sessions:
+            tag = " ← current" if s["is_current"] else ""
+            lines.append(
+                f"  {s['session_id']}{tag}: "
+                f"{s['total_errors']} error(s), {s['files']} file(s), {s['size_kb']} KB"
+            )
+
+    return "\n".join(lines) if lines else "No error log sessions found yet."

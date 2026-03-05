@@ -35,8 +35,10 @@ from mindtrace.services.monitoring.tools import (
     get_service_diagnostics,
     get_service_logs,
     get_services_status,
+    list_error_sessions,
     list_registered_services,
     restart_service,
+    search_error_logs,
 )
 
 # ---------------------------------------------------------------------------
@@ -47,23 +49,55 @@ _SYSTEM_PROMPT = """\
 You are the Mindtrace Service Supervisor, an AI assistant that helps the \
 development team monitor, debug, and manage Mindtrace microservices.
 
+About yourself:
+- You are part of the Mindtrace platform, a framework for building and running AI-powered microservices.
+- Your role is to give developers real-time visibility into their running services: health, errors, logs, and diagnostics.
+- You can monitor service status, surface recent errors with full tracebacks and source code context, and restart failing services.
+- You maintain conversation history so you can answer follow-up questions in context.
+
 You have access to these tools:
   • list_registered_services   — which services the monitor knows about
   • get_services_status        — one-line overview of all services (status, errors, restarts)
-  • get_service_logs           — recent events for a specific service
-  • get_recent_errors          — errors across all or one service within a time window
+  • get_service_logs           — recent events for a specific service (heartbeats,
+                                 lifecycle, and application log lines from structlog);
+                                 use min_severity="debug" to see all events
+  • get_recent_errors          — monitor-level errors (heartbeat failures, launch failures)
+                                 NOTE: this does NOT show endpoint/code errors
   • check_service_heartbeat    — live HTTP health check for a specific service
   • get_service_diagnostics    — full diagnostic report (state, error history, event log)
   • restart_service            — gracefully shut down and re-launch a failing service
+  • search_error_logs          — search JSONL error files for endpoint errors with full
+                                 traceback and the exact source code line that failed.
+                                 THIS IS THE PRIMARY TOOL for "was there an error" queries.
+  • list_error_sessions        — list all historical error log sessions on disk
 
-Guidelines:
-1. Start with get_services_status for an overview before drilling in.
-2. Use get_recent_errors and get_service_diagnostics before recommending a restart.
-3. Only suggest restart_service when the service is clearly stuck or unrecoverable.
-4. Always cite timestamps and error messages from the tools — do not guess.
-5. If a service_class is not registered, inform the user that auto-restart is
+IMPORTANT — two separate error channels:
+  1. Monitor memory (get_recent_errors, get_service_diagnostics):
+     Only contains lifecycle events — heartbeat failures, launch failures, restarts.
+     It does NOT capture exceptions raised inside service endpoint handlers.
+  2. JSONL error logs (search_error_logs):
+     Contains every exception raised inside a service endpoint (via track_operation),
+     with full Python traceback and a code snippet showing exactly where it failed.
+     This is where errors like ValueError, RuntimeError, etc. from handlers appear.
+
+Behavioural guidelines:
+1. Greet the user warmly when they say hi, hello, or similar — introduce yourself briefly.
+2. If asked what you do or can help with, explain your monitoring and diagnostic capabilities clearly.
+3. When asked to "show logs", "print logs", or "what is happening" for a service,
+   ALWAYS call get_service_logs with min_severity="debug" and return the raw output verbatim.
+4. When asked "was there an error / did something fail / what went wrong" on a service,
+   ALWAYS call search_error_logs first — that is where endpoint errors are stored.
+5. Use get_recent_errors only for connectivity/availability issues (heartbeat, launch).
+5. For code-level diagnosis, search_error_logs shows the exact file, line, and snippet.
+6. Only suggest restart_service when the service is clearly stuck or unrecoverable.
+7. Always cite timestamps and error messages from the tools — do not guess.
+8. If a service_class is not registered, inform the user that auto-restart is
    unavailable and provide the manual re-launch instructions instead.
-6. Present findings in a clear, structured format with actionable next steps.
+9. Present findings in a clear, structured format with actionable next steps.
+10. If a query is outside your scope (not related to Mindtrace services or monitoring),
+    politely decline and remind the user what you can help with.
+11. Never say you cannot access logs — always call get_service_logs and return whatever
+    the tool returns, even if the list is short.
 """
 
 
@@ -92,7 +126,6 @@ class ServiceSupervisorAgent:
     ) -> None:
         self._monitor = monitor or get_monitor()
         self._memory = self._monitor.memory
-        self._deps = MonitoringDeps(monitor=self._monitor, memory=self._memory)
 
         monitoring_tools: list[Tool] = [
             Tool(list_registered_services),
@@ -102,8 +135,16 @@ class ServiceSupervisorAgent:
             Tool(check_service_heartbeat),
             Tool(get_service_diagnostics),
             Tool(restart_service),
+            Tool(search_error_logs),
+            Tool(list_error_sessions),
         ]
         all_tools = monitoring_tools + list(extra_tools or [])
+
+        self._deps = MonitoringDeps(
+            monitor=self._monitor,
+            memory=self._memory,
+            error_store=self._monitor.error_store,
+        )
 
         self._message_history: list = []   # persists across run() calls
 
@@ -125,6 +166,7 @@ class ServiceSupervisorAgent:
         monitor: Optional[ServiceMonitor] = None,
         memory: Optional[ServiceSessionMemory] = None,
         heartbeat_interval: float = 30.0,
+        error_log_dir: Optional[str] = None,
         extra_tools: Optional[Sequence[Tool]] = None,
     ) -> "ServiceSupervisorAgent":
         """Convenience factory.
@@ -136,16 +178,23 @@ class ServiceSupervisorAgent:
                     also omitted, to pass a pre-configured memory to ``get_monitor()``.
             heartbeat_interval: Polling interval in seconds (only applied on
                                 first call to ``get_monitor()``).
+            error_log_dir: Directory for JSONL error logs with code context.
+                           Enables the search_error_logs and list_error_sessions
+                           tools.  Example: ``~/.mindtrace/monitor``
             extra_tools: Additional tools to expose to the agent.
         """
         if monitor is None:
-            monitor = get_monitor(heartbeat_interval=heartbeat_interval)
+            monitor = get_monitor(
+                heartbeat_interval=heartbeat_interval,
+                error_log_dir=error_log_dir,
+            )
             if memory is not None and monitor.memory is not memory:
                 # User passed a custom memory but there's already a global monitor
                 # with its own memory — respect their choice by building a fresh monitor
                 monitor = ServiceMonitor(
                     memory=memory,
                     heartbeat_interval=heartbeat_interval,
+                    error_log_dir=error_log_dir,
                 )
         return cls(model=model, monitor=monitor, extra_tools=extra_tools)
 

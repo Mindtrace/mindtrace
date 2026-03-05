@@ -164,3 +164,23 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+# Usage
+
+#   # Enable with one extra argument — everything else is automatic
+#   agent = ServiceSupervisorAgent.create(
+#       model=model,
+#       error_log_dir="~/.mindtrace/monitor",
+#   )
+
+#   # Agent can now answer:
+#   await agent.run("Show me the last errors in EchoService with code context")
+#   await agent.run("What sessions of error logs do we have from this week?")
+
+#   Each JSONL record contains the timestamp, service, full traceback, and a code snippet pointing to the exact line —
+#   survives process restarts and accumulates across weeks with size-based rollover.
+
+# test restart
+
+# claude --resume 66923ba5-f6ea-4bef-83e9-74d637c3c7f4                                                                      

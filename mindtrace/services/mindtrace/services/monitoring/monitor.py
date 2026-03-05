@@ -53,6 +53,9 @@ class ServiceRegistration:
     connection_manager: Optional[Any] = None  # ConnectionManager instance
     launch_kwargs: Dict[str, Any] = field(default_factory=dict)
     consecutive_failures: int = 0
+    error_log_dir: str = ""   # path where the service writes its JSONL error logs
+    log_file: str = ""        # absolute path to the per-service structlog NDJSON file
+    _log_file_pos: int = 0    # byte offset — tracks how far we've read into log_file
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +80,7 @@ class ServiceMonitor(CallbackEmitter):
         memory: Optional[ServiceSessionMemory] = None,
         heartbeat_interval: float = 30.0,
         auto_logging: bool = True,
+        error_log_dir: Optional[str] = None,
     ) -> None:
         CallbackEmitter.__init__(self)
         self._memory = memory or ServiceSessionMemory()
@@ -93,6 +97,21 @@ class ServiceMonitor(CallbackEmitter):
         if auto_logging:
             self.add_callback(LoggingCallback())
 
+        # JSONL error file logging (opt-in)
+        self._error_store = None
+        if error_log_dir:
+            try:
+                from mindtrace.services.monitoring.error_store import (
+                    ErrorFileCallback,
+                    ErrorFileStore,
+                )
+                from mindtrace.core.logging.logger import register_error_callback
+
+                self._error_store = ErrorFileStore(base_dir=error_log_dir)
+                register_error_callback(ErrorFileCallback(self._error_store))
+            except Exception as exc:
+                logger.warning(f"Could not enable JSONL error logging: {exc}")
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -100,6 +119,11 @@ class ServiceMonitor(CallbackEmitter):
     @property
     def memory(self) -> ServiceSessionMemory:
         return self._memory
+
+    @property
+    def error_store(self):
+        """ErrorFileStore instance, or None if JSONL error logging is not enabled."""
+        return self._error_store
 
     # ------------------------------------------------------------------
     # Hook handlers — called by Service.launch() and _cleanup_server()
@@ -159,6 +183,8 @@ class ServiceMonitor(CallbackEmitter):
         connection_manager_or_url: Any,
         service_class: Optional[Any] = None,
         launch_kwargs: Optional[Dict[str, Any]] = None,
+        error_log_dir: str = "",
+        log_file: str = "",
     ) -> None:
         """Manually register a service for monitoring.
 
@@ -179,6 +205,18 @@ class ServiceMonitor(CallbackEmitter):
             cm = connection_manager_or_url
             url = str(cm.url)
 
+        # Start tailing from the current end of the log file so we only
+        # pick up lines written after registration, not the full history.
+        initial_pos = 0
+        if log_file:
+            try:
+                from pathlib import Path as _Path
+                p = _Path(log_file)
+                if p.exists():
+                    initial_pos = p.stat().st_size
+            except Exception:
+                pass
+
         with self._registry_lock:
             self._registry[name] = ServiceRegistration(
                 name=name,
@@ -186,6 +224,9 @@ class ServiceMonitor(CallbackEmitter):
                 service_class=service_class,
                 connection_manager=cm,
                 launch_kwargs=launch_kwargs or {},
+                error_log_dir=error_log_dir,
+                log_file=log_file,
+                _log_file_pos=initial_pos,
             )
 
         self._memory.update_state(
@@ -201,10 +242,27 @@ class ServiceMonitor(CallbackEmitter):
         """Remove a service from monitoring."""
         with self._registry_lock:
             self._registry.pop(name, None)
+        self._memory.update_state(name, status="stopped")
+        self._emit("on_shutdown", service_name=name)
 
     def registered_services(self) -> List[str]:
         with self._registry_lock:
             return list(self._registry.keys())
+
+    def get_service_error_log_dir(self, name: str) -> str:
+        """Return the error log directory registered for *name*, or ''."""
+        with self._registry_lock:
+            reg = self._registry.get(name)
+        return reg.error_log_dir if reg else ""
+
+    def all_error_log_dirs(self) -> Dict[str, str]:
+        """Return {service_name: error_log_dir} for all services that have one."""
+        with self._registry_lock:
+            return {
+                name: reg.error_log_dir
+                for name, reg in self._registry.items()
+                if reg.error_log_dir
+            }
 
     # ------------------------------------------------------------------
     # Actions
@@ -313,6 +371,66 @@ class ServiceMonitor(CallbackEmitter):
                 self._check_service_sync(name)
             except Exception as exc:
                 logger.debug(f"Error checking service '{name}': {exc}")
+            try:
+                self._tail_log_file(name)
+            except Exception as exc:
+                logger.debug(f"Error tailing log for '{name}': {exc}")
+
+    def _tail_log_file(self, name: str) -> None:
+        """Read any new lines appended to the service's structlog file since last poll."""
+        import json as _json
+        with self._registry_lock:
+            reg = self._registry.get(name)
+        if reg is None or not reg.log_file:
+            return
+
+        from pathlib import Path
+        path = Path(reg.log_file)
+        if not path.exists():
+            return
+
+        with open(path, "rb") as fh:
+            fh.seek(reg._log_file_pos)
+            new_bytes = fh.read()
+            reg._log_file_pos = fh.tell()
+
+        if not new_bytes:
+            return
+
+        for raw in new_bytes.decode("utf-8", errors="replace").splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                entry = _json.loads(raw)
+            except _json.JSONDecodeError:
+                continue
+
+            level = entry.get("level", "info").lower()
+            severity = {
+                "debug": EventSeverity.DEBUG,
+                "info": EventSeverity.INFO,
+                "warning": EventSeverity.WARNING,
+                "error": EventSeverity.ERROR,
+                "critical": EventSeverity.CRITICAL,
+            }.get(level, EventSeverity.INFO)
+
+            try:
+                ts = datetime.fromisoformat(
+                    entry.get("timestamp", "").replace("Z", "+00:00")
+                )
+            except Exception:
+                ts = datetime.now(timezone.utc)
+
+            self._memory.record_event(ServiceEvent(
+                timestamp=ts,
+                service_name=name,
+                event_type=EventType.NOTIFICATION,
+                severity=severity,
+                message=entry.get("event", raw[:200]),
+                details={k: v for k, v in entry.items()
+                         if k not in ("timestamp", "event", "level", "logger")},
+            ))
 
     def _check_service_sync(self, name: str) -> bool:
         """Perform a single HTTP heartbeat check. Returns True if healthy."""
@@ -362,12 +480,21 @@ _GLOBAL_LOCK = threading.Lock()
 def get_monitor(
     heartbeat_interval: float = 30.0,
     redis_url: Optional[str] = None,
+    error_log_dir: Optional[str] = None,
 ) -> ServiceMonitor:
     """Return the process-level global ServiceMonitor, creating it if needed.
 
     The same instance is returned on every call within a process. Pass
-    ``heartbeat_interval`` / ``redis_url`` only on the first call — subsequent
-    calls ignore those arguments.
+    ``heartbeat_interval`` / ``redis_url`` / ``error_log_dir`` only on the
+    first call — subsequent calls ignore those arguments.
+
+    Args:
+        heartbeat_interval: Seconds between heartbeat polls.
+        redis_url: Optional Redis URL for ServiceSessionMemory persistence.
+        error_log_dir: Directory for JSONL error logs.  When set, every
+                       endpoint exception captured by track_operation is
+                       written to a JSONL file under this directory.
+                       Example: ``~/.mindtrace/monitor``
     """
     global _GLOBAL_MONITOR
     with _GLOBAL_LOCK:
@@ -376,6 +503,7 @@ def get_monitor(
             _GLOBAL_MONITOR = ServiceMonitor(
                 memory=memory,
                 heartbeat_interval=heartbeat_interval,
+                error_log_dir=error_log_dir,
             )
     return _GLOBAL_MONITOR
 

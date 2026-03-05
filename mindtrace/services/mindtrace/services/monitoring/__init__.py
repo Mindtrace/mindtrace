@@ -57,6 +57,7 @@ from mindtrace.services.monitoring.monitor import (
     get_monitor,
 )
 from mindtrace.services.monitoring.observable_service import ObservableService
+from mindtrace.services.monitoring.error_store import ErrorFileCallback, ErrorFileStore
 
 # --- Agent layer (requires mindtrace-agents) ---
 _AGENT_AVAILABLE = False
@@ -87,6 +88,9 @@ __all__ = [
     "get_monitor",
     # Service
     "ObservableService",
+    # Error file store
+    "ErrorFileStore",
+    "ErrorFileCallback",
     # Agent (conditionally available)
     "MonitoringDeps",
     "ServiceSupervisorAgent",
