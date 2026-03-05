@@ -395,7 +395,7 @@ class Service(Mindtrace):
         if wait_for_launch:
             timeout_handler = Timeout(
                 timeout=timeout,
-                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout, HTTPException),
                 progress_bar=progress_bar,
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
