@@ -167,6 +167,8 @@ class Service(Mindtrace):
                                 "url": str(self._url),
                                 "error_log_dir": _error_log_dir,
                                 "log_file": _log_file,
+                                "module": self.__class__.__module__,
+                                "class_name": self.__class__.__name__,
                             },
                             timeout=5,
                         )

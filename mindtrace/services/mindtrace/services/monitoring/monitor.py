@@ -56,6 +56,8 @@ class ServiceRegistration:
     error_log_dir: str = ""   # path where the service writes its JSONL error logs
     log_file: str = ""        # absolute path to the per-service structlog NDJSON file
     _log_file_pos: int = 0    # byte offset — tracks how far we've read into log_file
+    module: str = ""          # importable module, e.g. "mindtrace.services.echo"
+    class_name: str = ""      # class name, e.g. "EchoService"
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +187,8 @@ class ServiceMonitor(CallbackEmitter):
         launch_kwargs: Optional[Dict[str, Any]] = None,
         error_log_dir: str = "",
         log_file: str = "",
+        module: str = "",
+        class_name: str = "",
     ) -> None:
         """Manually register a service for monitoring.
 
@@ -227,6 +231,8 @@ class ServiceMonitor(CallbackEmitter):
                 error_log_dir=error_log_dir,
                 log_file=log_file,
                 _log_file_pos=initial_pos,
+                module=module,
+                class_name=class_name or (service_class.__name__ if service_class else ""),
             )
 
         self._memory.update_state(
@@ -308,8 +314,12 @@ class ServiceMonitor(CallbackEmitter):
     def restart(self, service_name: str) -> Optional[Any]:
         """Gracefully shut down then re-launch a registered service.
 
-        Returns the new ConnectionManager, or ``None`` if the service class is
-        unknown (re-launch must be done manually in that case).
+        Works for both in-process services (connection_manager set) and
+        externally launched services that registered via HTTP (no CM — shuts
+        down via the /shutdown endpoint and re-launches via importlib).
+
+        Returns the new ConnectionManager, or ``None`` if the service class
+        cannot be resolved (re-launch must be done manually).
 
         Raises:
             KeyError: If *service_name* is not registered.
@@ -321,25 +331,53 @@ class ServiceMonitor(CallbackEmitter):
 
         self._emit("on_restart", service_name=service_name)
 
-        # Attempt graceful shutdown
+        # --- Shutdown phase ---
         if reg.connection_manager is not None:
+            # In-process: use the connection manager for a clean shutdown
             try:
                 reg.connection_manager.shutdown(block=True)
             except Exception:
                 pass  # already down
+        else:
+            # External process: hit the /shutdown HTTP endpoint
+            try:
+                requests.post(f"{reg.url}/shutdown", timeout=5)
+            except Exception:
+                pass  # may already be unreachable
+            time.sleep(2)  # give the OS time to free the port
 
-        if reg.service_class is None:
+        # --- Resolve service class ---
+        svc_class = reg.service_class
+        if svc_class is None and reg.module and reg.class_name:
+            try:
+                import importlib
+                mod = importlib.import_module(reg.module)
+                svc_class = getattr(mod, reg.class_name)
+            except Exception as exc:
+                logger.warning(
+                    f"Cannot import {reg.module}.{reg.class_name} for restart: {exc}"
+                )
+
+        if svc_class is None:
             logger.warning(
-                f"Cannot auto-restart '{service_name}': service_class not set. "
-                "Re-register with service_class to enable auto-restart."
+                f"Cannot auto-restart '{service_name}': service class not resolvable."
             )
             return None
 
-        return self.launch_and_register(
-            reg.service_class,
-            name=service_name,
-            **reg.launch_kwargs,
-        )
+        # --- Launch kwargs: fall back to deriving host/port from registered URL ---
+        kwargs = dict(reg.launch_kwargs)
+        if not kwargs and reg.url:
+            try:
+                from urllib.parse import urlparse as _urlparse
+                _p = _urlparse(reg.url)
+                if _p.hostname:
+                    kwargs["host"] = _p.hostname
+                if _p.port:
+                    kwargs["port"] = _p.port
+            except Exception:
+                pass
+
+        return self.launch_and_register(svc_class, name=service_name, **kwargs)
 
     # ------------------------------------------------------------------
     # Heartbeat polling (daemon thread)

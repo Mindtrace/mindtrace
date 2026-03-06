@@ -55,6 +55,8 @@ class RegisterRequest(BaseModel):
     url: str             # base URL, e.g. "http://localhost:8765"
     error_log_dir: str = ""  # path where service writes its JSONL error logs
     log_file: str = ""       # absolute path to the service's structlog NDJSON file
+    module: str = ""         # e.g. "mindtrace.services.echo"
+    class_name: str = ""     # e.g. "EchoService"
 
 
 class UnregisterRequest(BaseModel):
@@ -256,7 +258,7 @@ class SupervisorChatService(Service):
     async def _register(self, req: RegisterRequest) -> dict:
         """Called by a service on startup to register itself with this monitor."""
         monitor = get_monitor()
-        monitor.register(req.name, req.url, error_log_dir=req.error_log_dir, log_file=req.log_file)
+        monitor.register(req.name, req.url, error_log_dir=req.error_log_dir, log_file=req.log_file, module=req.module, class_name=req.class_name)
         _broadcast_notification("service_started", name=req.name, url=req.url)
         return {"status": "registered", "name": req.name, "url": req.url}
 

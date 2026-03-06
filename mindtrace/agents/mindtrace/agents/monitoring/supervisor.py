@@ -26,6 +26,7 @@ from typing import Any, Optional, Sequence
 
 from mindtrace.agents.core.base import MindtraceAgent
 from mindtrace.agents.tools._tool import Tool
+from mindtrace.agents._run_context import RunContext
 from mindtrace.services.monitoring.memory import ServiceSessionMemory
 from mindtrace.services.monitoring.monitor import ServiceMonitor, get_monitor
 from mindtrace.agents.monitoring.tools import (
@@ -40,6 +41,7 @@ from mindtrace.agents.monitoring.tools import (
     restart_service,
     search_error_logs,
 )
+from mindtrace.agents.monitoring.launcher import ServiceLauncherAgent
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -56,7 +58,7 @@ About yourself:
 - You maintain conversation history so you can answer follow-up questions in context.
 
 You have access to these tools:
-  • list_registered_services   — which services the monitor knows about
+  • list_registered_services   — which services the monitor currently knows about
   • get_services_status        — one-line overview of all services (status, errors, restarts)
   • get_service_logs           — recent events for a specific service (heartbeats,
                                  lifecycle, and application log lines from structlog);
@@ -70,6 +72,9 @@ You have access to these tools:
                                  traceback and the exact source code line that failed.
                                  THIS IS THE PRIMARY TOOL for "was there an error" queries.
   • list_error_sessions        — list all historical error log sessions on disk
+  • ask_launcher               — delegate to the Service Launcher agent; use this for
+                                 ANY query about discovering available services, what
+                                 services exist in the package, or starting a new service.
 
 IMPORTANT — two separate error channels:
   1. Monitor memory (get_recent_errors, get_service_diagnostics):
@@ -98,12 +103,31 @@ Behavioural guidelines:
     politely decline and remind the user what you can help with.
 11. Never say you cannot access logs — always call get_service_logs and return whatever
     the tool returns, even if the list is short.
+12. For ANY question about what services exist, what can be started, or requests to
+    start a new service — ALWAYS delegate to ask_launcher. Never answer these from
+    memory — the launcher has the live catalog.
 """
 
 
 # ---------------------------------------------------------------------------
 # ServiceSupervisorAgent
 # ---------------------------------------------------------------------------
+
+
+def _make_ask_launcher_tool(launcher: ServiceLauncherAgent):
+    """Return a Tool function that delegates a query to the launcher sub-agent."""
+    async def ask_launcher(ctx: RunContext[MonitoringDeps], query: str) -> str:
+        """Delegate a query to the Service Launcher agent.
+        Use this for: discovering available services, listing what can be started,
+        or starting a specific service. The launcher handles the catalog and confirms
+        with the user before launching anything.
+
+        Args:
+            query: The user's request as-is (e.g. "what services are available?",
+                   "start EchoService on port 8765").
+        """
+        return await launcher.run(query)
+    return ask_launcher
 
 
 class ServiceSupervisorAgent:
@@ -123,6 +147,7 @@ class ServiceSupervisorAgent:
         model: Any,
         monitor: Optional[ServiceMonitor] = None,
         extra_tools: Optional[Sequence[Tool]] = None,
+        launcher: Optional[ServiceLauncherAgent] = None,
     ) -> None:
         self._monitor = monitor or get_monitor()
         self._memory = self._monitor.memory
@@ -138,6 +163,10 @@ class ServiceSupervisorAgent:
             Tool(search_error_logs),
             Tool(list_error_sessions),
         ]
+
+        if launcher is not None:
+            monitoring_tools.append(Tool(_make_ask_launcher_tool(launcher)))
+
         all_tools = monitoring_tools + list(extra_tools or [])
 
         self._deps = MonitoringDeps(
@@ -168,6 +197,7 @@ class ServiceSupervisorAgent:
         heartbeat_interval: float = 30.0,
         error_log_dir: Optional[str] = None,
         extra_tools: Optional[Sequence[Tool]] = None,
+        launcher_roots: Optional[list[str]] = None,
     ) -> "ServiceSupervisorAgent":
         """Convenience factory.
 
@@ -196,7 +226,8 @@ class ServiceSupervisorAgent:
                     heartbeat_interval=heartbeat_interval,
                     error_log_dir=error_log_dir,
                 )
-        return cls(model=model, monitor=monitor, extra_tools=extra_tools)
+        launcher = ServiceLauncherAgent(model=model, roots=launcher_roots)
+        return cls(model=model, monitor=monitor, extra_tools=extra_tools, launcher=launcher)
 
     # ------------------------------------------------------------------
     # Run

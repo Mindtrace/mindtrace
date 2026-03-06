@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 from mindtrace.apps.supervisor_chat.backend import SupervisorChatService
 from mindtrace.core import CoreConfig
 
+os.environ["GEMINI_API_KEY"] = "AIzaSyB06067y8ihOHjEK5XdwkoE7w2RiEZRM80"
 config = CoreConfig()
 _supervisor_url = config.MINDTRACE_SUPERVISOR.SUPERVISOR_URL
 HOST = urlparse(_supervisor_url).hostname

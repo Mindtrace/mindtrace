@@ -1,13 +1,14 @@
 :root {
-  --bg0:    #080c18;
-  --bg1:    #0d1426;
-  --bg2:    #0f1832;
-  --border: rgba(30, 58, 95, 0.8);
-  --cyan:   #00d4ff;
-  --green:  #00ff88;
-  --txt1:   #e8f4ff;
-  --txt2:   #7ba3cc;
-  --txt3:   #3d5a7a;
+  --bg0:    #ffffff;
+  --bg1:    #faf8ff;
+  --bg2:    #f3f0fb;
+  --border: rgba(124, 58, 237, 0.15);
+  --purple: #7c3aed;
+  --purple2: #a78bfa;
+  --txt1:   #1a0a2e;
+  --txt2:   #6d4c8a;
+  --txt3:   #b8a0d0;
+  --green:  #16a34a;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
