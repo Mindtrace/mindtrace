@@ -10,7 +10,6 @@ TaskSchema-based Service endpoint registration.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from threading import RLock
 
 from pydantic import BaseModel, Field
@@ -70,7 +69,7 @@ BrainLoadedTaskSchema = TaskSchema(
 )
 
 
-class Brain(Service, ABC):
+class Brain(Service):
     """Abstract base class for composite model services.
 
     Subclasses must implement :meth:`on_load` and :meth:`on_unload`, and then
@@ -115,10 +114,10 @@ class Brain(Service, ABC):
         """Return current loaded state for this Brain."""
         return BrainLoadedOutput(loaded=self._loaded)
 
-    @abstractmethod
     def on_load(self, payload: BrainLoadInput) -> None:
         """Subclass hook: load underlying models/resources."""
+        raise NotImplementedError(f"{self.__class__.__name__}.on_load must be implemented")
 
-    @abstractmethod
     def on_unload(self, payload: BrainUnloadInput) -> None:
         """Subclass hook: release underlying models/resources."""
+        raise NotImplementedError(f"{self.__class__.__name__}.on_unload must be implemented")
