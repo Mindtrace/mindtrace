@@ -11,18 +11,18 @@ class EchoInput(BaseModel):
     text: str
 
 
-class TestBrain(Brain):
+class DemoBrain(Brain):
     def __init__(self, **kwargs):
-        self.loaded = 0
-        self.unloaded = 0
+        self.load_calls = 0
+        self.unload_calls = 0
         kwargs.setdefault("live_service", False)
         super().__init__(**kwargs)
 
     def on_load(self, payload: BrainLoadInput) -> None:
-        self.loaded += 1
+        self.load_calls += 1
 
     def on_unload(self, payload: BrainUnloadInput) -> None:
-        self.unloaded += 1
+        self.unload_calls += 1
 
     def echo(self, payload: EchoInput) -> dict:
         return {"text": payload.text}
@@ -31,7 +31,7 @@ class TestBrain(Brain):
 def test_brain_worker_routes_payload_to_brain_endpoint() -> None:
     # Avoid full Worker/Service initialization in unit tests.
     worker = BrainWorker.__new__(BrainWorker)
-    worker.brain_cls = TestBrain
+    worker.brain_cls = DemoBrain
     worker.brain_kwargs = {}
     worker.default_endpoint = "/echo"
     worker.auto_load = True
