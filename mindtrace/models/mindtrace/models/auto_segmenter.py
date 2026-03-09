@@ -32,8 +32,7 @@ class AutoSegmenterInput(BaseModel):
 
     image_base64: str = Field(
         description=(
-            "Input image as base64 string. May be raw base64 bytes or a data URL "
-            "(e.g. data:image/png;base64,...)."
+            "Input image as base64 string. May be raw base64 bytes or a data URL (e.g. data:image/png;base64,...)."
         )
     )
     conf: float = Field(default=0.25, ge=0.0, le=1.0, description="YOLO confidence threshold.")

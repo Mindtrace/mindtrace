@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from pydantic import BaseModel
+
 from mindtrace.cluster import BrainWorker
 from mindtrace.cluster.core.types import JobStatusEnum
 from mindtrace.models import Brain, BrainLoadInput, BrainUnloadInput
-from pydantic import BaseModel
 
 
 class EchoInput(BaseModel):
