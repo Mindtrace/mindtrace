@@ -48,10 +48,7 @@ def _worker_stub(default_endpoint: str | None = "/echo") -> BrainWorker:
 
 def test_brain_worker_from_brain_class_without_service_init(monkeypatch):
     def fake_worker_init(self, *args, **kwargs):
-        self.brain_cls = kwargs["brain_cls"]
-        self.brain_kwargs = kwargs.get("brain_kwargs") or {}
-        self.default_endpoint = kwargs.get("default_endpoint")
-        self.auto_load = kwargs.get("auto_load", True)
+        # Brain-specific kwargs are consumed by BrainWorker.__init__ before super().__init__
         self.brain = None
 
     monkeypatch.setattr("mindtrace.cluster.core.brain_worker.Worker.__init__", fake_worker_init)
