@@ -123,9 +123,7 @@ def test_auto_segmenter_returns_boxes_and_masks():
         cls=[0, 1],
     )
     seg._yolo = lambda image, conf, iou, verbose: [_FakeYOLOResult(fake_boxes, {0: "person", 1: "dog"})]
-    seg._sam = lambda image, bboxes, verbose: [
-        _FakeSAMResult(_FakeSAMMasks(np.array([np.ones((8, 8)), np.eye(8)])))
-    ]
+    seg._sam = lambda image, bboxes, verbose: [_FakeSAMResult(_FakeSAMMasks(np.array([np.ones((8, 8)), np.eye(8)])))]
 
     out = seg.auto_segment(AutoSegmenterInput(image_base64=_encode_test_image(), conf=0.2, iou=0.7))
     assert len(out.bboxes) == 2
