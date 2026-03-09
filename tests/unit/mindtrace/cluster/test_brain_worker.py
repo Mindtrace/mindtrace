@@ -12,10 +12,11 @@ class EchoInput(BaseModel):
 
 
 class TestBrain(Brain):
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.loaded = 0
         self.unloaded = 0
-        super().__init__(live_service=False)
+        kwargs.setdefault("live_service", False)
+        super().__init__(**kwargs)
 
     def on_load(self, payload: BrainLoadInput) -> None:
         self.loaded += 1
@@ -28,14 +29,15 @@ class TestBrain(Brain):
 
 
 def test_brain_worker_routes_payload_to_brain_endpoint() -> None:
-    worker = BrainWorker.from_brain_class(
-        TestBrain,
-        default_endpoint="/echo",
-        auto_load=True,
-        live_service=False,
-    )
+    # Avoid full Worker/Service initialization in unit tests.
+    worker = BrainWorker.__new__(BrainWorker)
+    worker.brain_cls = TestBrain
+    worker.brain_kwargs = {}
+    worker.default_endpoint = "/echo"
+    worker.auto_load = True
+    worker.brain = None
 
-    worker.start()
+    BrainWorker.start(worker)
     assert worker.brain is not None
     assert worker.brain.is_loaded is True
 
