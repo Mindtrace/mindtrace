@@ -8,11 +8,11 @@ from mindtrace.models.auto_segmenter import (
 )
 from mindtrace.models.brain import (
     Brain,
+    BrainLoadedOutput,
+    BrainLoadedTaskSchema,
     BrainLoadInput,
     BrainLoadOutput,
     BrainLoadTaskSchema,
-    BrainLoadedOutput,
-    BrainLoadedTaskSchema,
     BrainUnloadInput,
     BrainUnloadOutput,
     BrainUnloadTaskSchema,
