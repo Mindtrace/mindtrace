@@ -174,9 +174,9 @@ def test_versioning(registry, test_config):
     # List versions
     versions = registry.list_versions("test:versioning")
     assert len(versions) == 3
-    assert "1.0.0" in versions
+    assert "1" in versions
     assert "1.0.1" in versions
-    assert "1.1.0" in versions
+    assert "1.1" in versions
 
     # Load specific version
     loaded_config = registry.load("test:versioning", version="1.0.1")
@@ -219,8 +219,8 @@ def test_info(registry, test_config):
 
     # Get info for all versions - returns dict of {version: metadata}
     all_info = registry.info("test:info")
-    assert "1.0.0" in all_info
-    assert all_info["1.0.0"]["metadata"]["description"] == "test object"
+    assert "1" in all_info
+    assert all_info["1"]["metadata"]["description"] == "test object"
 
 
 @pytest.mark.slow
@@ -622,7 +622,7 @@ def test_object_discovery(registry):
     versions = registry.list_versions(f"{test_prefix}object:1")
     assert len(versions) == 2
     assert "1" in versions  # Auto-generated version
-    assert "2.0.0" in versions
+    assert "2" in versions
 
 
 def test_metadata_operations(registry):
@@ -876,9 +876,9 @@ def test_versioned_registry_keeps_history(registry):
 
     # List versions should show all
     versions = registry.list_versions("test:history")
-    assert "1.0.0" in versions
-    assert "2.0.0" in versions
-    assert "3.0.0" in versions
+    assert "1" in versions
+    assert "2" in versions
+    assert "3" in versions
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -918,17 +918,12 @@ def test_delete_all_versions(registry):
 
 
 def test_delete_nonexistent_raises(registry):
-    """Test that deleting nonexistent object raises error when version is None.
-    Note: Deleting with a specific version is idempotent (succeeds even if not found).
-    """
+    """Test that deleting a single nonexistent object raises error."""
     from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
-    # Deleting with specific version is idempotent - no error
-    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
-
-    # Deleting with version=None raises because object has no versions
+    # Deleting a single nonexistent object raises error
     with pytest.raises(RegistryObjectNotFound):
-        registry.delete("test:nonexistent", version=None)
+        registry.delete("test:nonexistent")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ from mindtrace.registry.core.exceptions import (
     RegistryVersionConflict,
 )
 from mindtrace.registry.core.types import (
+    _POP_MISSING,
     ERROR_UNKNOWN,
     VERSION_PENDING,
     BatchResult,
@@ -803,14 +804,24 @@ class _RegistryCore(Mindtrace):
         if version is None:
             # Delete all versions
             if not self.version_objects:
+                if not self.has_object(name, "1"):
+                    raise RegistryObjectNotFound(f"Object {name} does not exist")
                 versions_to_delete = ["1"]
             else:
                 versions_to_delete = self.list_versions(name)
                 if not versions_to_delete:
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
+        elif version == "latest":
+            # Resolve "latest" to concrete version
+            latest = self._latest(name)
+            if latest is None:
+                raise RegistryObjectNotFound(f"Object {name}@latest does not exist")
+            versions_to_delete = [latest]
         else:
             # Explicit version only — validate format, pass directly
             validated = self._validate_version(version)
+            if not self.has_object(name, validated):
+                raise RegistryObjectNotFound(f"Object {name}@{validated} not exist")
             versions_to_delete = [validated]
 
         # Delete and check for errors
@@ -861,6 +872,17 @@ class _RegistryCore(Mindtrace):
                     for ver in all_versions:
                         items_to_delete.append((n, ver))
                         resolved_to_original[(n, ver)] = original_key
+            elif v == "latest":
+                # Delete latest version
+                latest = self._latest(n)
+                if latest is None:
+                    result.errors[original_key] = {
+                        "error": "RegistryObjectNotFound",
+                        "message": f"Object {n} does not exist",
+                    }
+                else:
+                    items_to_delete.append((n, latest))
+                    resolved_to_original[(n, latest)] = original_key
             else:
                 # Explicit version only — validate format, pass directly
                 try:
@@ -934,7 +956,7 @@ class _RegistryCore(Mindtrace):
             items = [(n, v) for n in self.list_objects() for v in self.list_versions(n)]
         elif version is not None:
             # Specific version (resolve "latest")
-            resolved_version = self._latest(name) if version == "latest" else version
+            resolved_version = self._latest(name) if version == "latest" else self._validate_version(version)
             items = [(name, resolved_version)] if resolved_version else []
         else:
             # All versions for one object
@@ -1186,13 +1208,20 @@ class _RegistryCore(Mindtrace):
         # Remove any 'v' prefix
         if version.startswith("v"):
             version = version[1:]
+        # if more than 3 components, raise error
+        if len(version.split(".")) > 3:
+            raise ValueError(
+                f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
+            )
 
         # Split into components and validate
         try:
             components = version.split(".")
-            # Convert each component to int to validate
-            [int(c) for c in components]
-            return version
+            int_components = [int(c) for c in components]
+            # Strip trailing zeros: "1.0.0" → "1", "1.1.0" → "1.1"
+            while len(int_components) > 1 and int_components[-1] == 0:
+                int_components.pop()
+            return ".".join(str(c) for c in int_components)
         except ValueError:
             raise ValueError(
                 f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
@@ -1589,8 +1618,9 @@ class _RegistryCore(Mindtrace):
             except Exception as e:
                 self.logger.warning(f"Could not clear registry metadata: {e}")
 
-    def pop(self, key: str, default: Any = None) -> Any:
+    def pop(self, key: str, default: Any = _POP_MISSING) -> Any:
         """Remove and return an object from the registry.
+
 
         Args:
             key: The object name, optionally including version (e.g. "name@version")
@@ -1602,29 +1632,20 @@ class _RegistryCore(Mindtrace):
         Raises:
             KeyError: If the object doesn't exist and no default is provided.
         """
+        name, parsed_version = self._parse_key(key)
+        requested_version = parsed_version or "latest"
         try:
-            name, version = self._parse_key(key)
-            if version is None:
-                version = self._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
+            value = self.load(name=name, version=requested_version)
+        except (RegistryObjectNotFound, ValueError):
+            if default is _POP_MISSING:
+                if parsed_version is None:
                     raise KeyError(f"Object {name} does not exist")
+                raise KeyError(f"Object {name} version {parsed_version} does not exist")
+            return default
 
-            # Check existence first
-            if not self.has_object(name, version):
-                if default is not None:
-                    return default
-                raise KeyError(f"Object {name} version {version} does not exist")
-
-            # Load and delete (backend handles locking internally)
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
-            if default is not None:
-                return default
-            raise
+        delete_version = parsed_version if parsed_version is not None else self._latest(name)
+        self.delete(name=name, version=delete_version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Get an object from the registry, setting it to default if it doesn't exist.
