@@ -1294,6 +1294,35 @@ class TestServiceInterruption:
     @patch("mindtrace.services.core.service.uuid.uuid1")
     @patch("mindtrace.services.core.service.atexit.register")
     @patch("mindtrace.services.core.service.signal.signal")
+    @patch("mindtrace.services.core.service.Path")
+    def test_launch_creates_pid_dir_before_start(
+        self, mock_path, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method creates pid directory before starting subprocess."""
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+        mock_path.return_value.parent.mkdir = Mock()
+
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            Service.launch(wait_for_launch=False)
+
+            expected_pid_file = Service._server_id_to_pid_file(test_uuid)
+            mock_path.assert_called_with(expected_pid_file)
+            mock_path.return_value.parent.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        finally:
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
     def test_launch_signal_valueerror_handling(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
