@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mindtrace.models import Brain, BrainLoadInput, BrainUnloadInput
 
 
@@ -14,6 +16,10 @@ class DummyBrain(Brain):
 
     def on_unload(self, payload: BrainUnloadInput) -> None:
         self.unload_calls += 1
+
+
+class IncompleteBrain(Brain):
+    pass
 
 
 def test_brain_load_unload_lifecycle() -> None:
@@ -35,6 +41,44 @@ def test_brain_load_unload_lifecycle() -> None:
     assert out3.loaded is False
     assert brain.is_loaded is False
     assert brain.unload_calls == 1
+
+
+def test_brain_force_load_and_unload_paths() -> None:
+    brain = DummyBrain()
+
+    brain.load(BrainLoadInput(force=False))
+    assert brain.load_calls == 1
+
+    # Force should call on_load even when already loaded.
+    out_force_load = brain.load(BrainLoadInput(force=True))
+    assert out_force_load.loaded is True
+    assert brain.load_calls == 2
+
+    brain.unload(BrainUnloadInput(force=False))
+    assert brain.unload_calls == 1
+
+    # Force should call on_unload even when already unloaded.
+    out_force_unload = brain.unload(BrainUnloadInput(force=True))
+    assert out_force_unload.loaded is False
+    assert brain.unload_calls == 2
+
+
+def test_brain_loaded_endpoint_reflects_state() -> None:
+    brain = DummyBrain()
+    assert brain.loaded().loaded is False
+
+    brain.load(BrainLoadInput(force=False))
+    assert brain.loaded().loaded is True
+
+
+def test_brain_base_hooks_raise_when_not_implemented() -> None:
+    brain = IncompleteBrain(live_service=False)
+
+    with pytest.raises(NotImplementedError):
+        brain.load(BrainLoadInput(force=False))
+
+    with pytest.raises(NotImplementedError):
+        brain.unload(BrainUnloadInput(force=True))
 
 
 def test_brain_registers_lifecycle_endpoints() -> None:
