@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from ..profiles import ModelProfile
-from . import Provider
+from ._provider import Provider
 
 try:
     from openai import AsyncOpenAI

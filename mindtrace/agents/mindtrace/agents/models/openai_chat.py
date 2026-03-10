@@ -14,9 +14,9 @@ from ..events import (
 )
 from ..messages import ModelMessage, TextPart, ToolCallPart, ToolReturnPart
 from ..messages._parts import SystemPromptPart
-from ..models import Model, ModelRequestParameters, ModelResponse
 from ..prompts import BinaryContent, ImageUrl, UserPromptPart
 from ..providers import Provider
+from ._model import Model, ModelRequestParameters, ModelResponse
 
 try:
     from openai import AsyncOpenAI
