@@ -75,7 +75,7 @@ async def test_capture_point_cloud_happy_path_with_colors():
         )
     )
 
-    cloud = await cam.capture_point_cloud(include_colors=True, downsample_factor=1, remove_outliers=False)
+    cloud = await cam.capture_point_cloud(include_colors=True, downsample_factor=1)
 
     assert cloud.num_points > 0
     assert cloud.has_colors is True
