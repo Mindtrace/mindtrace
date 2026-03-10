@@ -197,6 +197,15 @@ class TestServiceStatusAndConnection:
         assert status == ServerStatus.DOWN
 
     @patch("mindtrace.services.core.service.requests.request")
+    def test_status_at_host_timeout(self, mock_request):
+        """Test status_at_host when request times out."""
+        mock_request.side_effect = requests.exceptions.Timeout()
+
+        status = Service.status_at_host("http://localhost:8000")
+
+        assert status == ServerStatus.DOWN
+
+    @patch("mindtrace.services.core.service.requests.request")
     def test_status_at_host_bad_status_code(self, mock_request):
         """Test status_at_host when response has bad status code."""
         mock_response = Mock()
