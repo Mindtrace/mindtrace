@@ -186,7 +186,7 @@ class TestMindtraceAgentRun:
         result = await agent.run("trigger error")
         assert result == "got error"
 
-    async def test_run_sync(self):
+    def test_run_sync(self):
         """run_sync() wraps run() and returns the same result synchronously."""
         agent = _make_agent(responses=[text_response("sync result")])
         result = agent.run_sync("question")
