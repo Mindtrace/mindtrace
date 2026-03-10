@@ -222,7 +222,7 @@ class Service(Mindtrace):
         url = parse_url(url) if isinstance(url, str) else url
         try:
             response = requests.request("POST", str(url) + "/status", timeout=timeout)
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             return ServerStatus.DOWN
         if response.status_code != 200:
             return ServerStatus.DOWN
