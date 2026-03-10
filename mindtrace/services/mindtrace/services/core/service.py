@@ -240,7 +240,10 @@ class Service(Mindtrace):
                 raise KeyboardInterrupt("Service terminated by SIGINT.")
             else:
                 raise RuntimeError(f"Server exited with code {process.returncode}")
-        return cls.connect(url=url)
+        # Use a short per-request timeout so the Timeout handler can retry
+        # instead of a single request consuming the entire launch timeout
+        per_request_timeout = min(5, timeout)
+        return cls.connect(url=url, timeout=per_request_timeout)
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
@@ -349,6 +352,8 @@ class Service(Mindtrace):
 
         # Create launch command
         server_id = uuid.uuid1()
+        pid_file = cls._server_id_to_pid_file(server_id)
+        Path(pid_file).parent.mkdir(parents=True, exist_ok=True)
         launch_command = [
             sys.executable,
             "-m",
@@ -360,7 +365,7 @@ class Service(Mindtrace):
             "-b",
             f"{launch_url.host}:{launch_url.port}",
             "-p",
-            cls._server_id_to_pid_file(server_id),
+            pid_file,
             "-k",
             "uvicorn.workers.UvicornWorker",
             "--init-params",
@@ -386,7 +391,12 @@ class Service(Mindtrace):
         if wait_for_launch:
             timeout_handler = Timeout(
                 timeout=timeout,
-                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                exceptions=(
+                    ConnectionRefusedError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout,
+                    HTTPException,
+                ),
                 progress_bar=progress_bar,
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )

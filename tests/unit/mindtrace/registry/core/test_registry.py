@@ -2497,6 +2497,9 @@ def test_load_missing_hash_warning(registry, test_config, caplog):
     """Test that load() logs warning when hash is missing from metadata."""
     import yaml
 
+    # Explicitly opt-in to propagation for this capture-oriented test.
+    registry.logger.propagate = True
+
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
 
