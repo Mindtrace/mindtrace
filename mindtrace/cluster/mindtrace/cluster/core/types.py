@@ -186,6 +186,11 @@ class RegisterNodeOutput(BaseModel):
     access_key: str
     secret_key: str
     bucket: str
+    minio_port: int
+    rabbitmq_host: str
+    rabbitmq_port: int
+    rabbitmq_username: str
+    rabbitmq_password: str
 
 
 class RegisterWorkerTypeInput(BaseModel):

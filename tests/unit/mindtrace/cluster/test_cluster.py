@@ -768,6 +768,13 @@ def test_register_node(cluster_manager):
         "access_key": cluster_manager.worker_registry_access_key,
         "secret_key": cluster_manager.worker_registry_secret_key,
         "bucket": cluster_manager.worker_registry_bucket,
+        "minio_port": cluster_manager.worker_registry_port,
+        "rabbitmq_host": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
+        "rabbitmq_port": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
+        "rabbitmq_username": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
+        "rabbitmq_password": cluster_manager.config.get_secret(
+            "MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"
+        ),
     }
 
     assert result == expected_result
@@ -990,11 +997,17 @@ def mock_node():
 
         mock_registry = MockRegistry.return_value
         mock_cluster_manager_connect = MockClusterManagerConnect.return_value
-        mock_cluster_manager_connect.worker_registry = mock_registry
-        mock_cluster_manager_connect.worker_registry_endpoint = "http://localhost:8081"
-        mock_cluster_manager_connect.worker_registry_access_key = "test_access_key"
-        mock_cluster_manager_connect.worker_registry_secret_key = "test_secret_key"
-        mock_cluster_manager_connect.worker_registry_bucket = "test_bucket"
+        mock_cluster_manager_connect.register_node.return_value = cluster_types.RegisterNodeOutput(
+            endpoint="localhost:9000",
+            access_key="test_access_key",
+            secret_key="test_secret_key",
+            bucket="test_bucket",
+            minio_port=9000,
+            rabbitmq_host="localhost",
+            rabbitmq_port=5672,
+            rabbitmq_username="user",
+            rabbitmq_password="password",
+        )
 
         # Create Node with cluster_url
         node = Node(cluster_url="http://cluster:8080")
