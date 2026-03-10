@@ -6,7 +6,6 @@ multi-component capture results, calibration parameters, and 3D point clouds.
 
 from __future__ import annotations
 
-import importlib.util
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -234,28 +233,6 @@ class PointCloudData:
                 ply_data.text = True
                 ply_data.write(f)
 
-    def to_open3d(self):
-        """Convert to Open3D PointCloud object.
-
-        Returns:
-            open3d.geometry.PointCloud instance
-
-        Raises:
-            ImportError: If open3d is not installed
-        """
-        try:
-            import open3d as o3d
-        except ImportError:
-            raise ImportError("open3d package required for visualization. Install with: pip install open3d") from None
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(self.points)
-
-        if self.has_colors:
-            pcd.colors = o3d.utility.Vector3dVector(self.colors)
-
-        return pcd
-
     def downsample(self, factor: int) -> "PointCloudData":
         """Downsample point cloud by given factor.
 
@@ -270,36 +247,6 @@ class PointCloudData:
         colors_ds = self.colors[indices] if self.has_colors else None
 
         return PointCloudData(points=points_ds, colors=colors_ds, num_points=len(points_ds), has_colors=self.has_colors)
-
-    def remove_statistical_outliers(self, nb_neighbors: int = 20, std_ratio: float = 2.0) -> "PointCloudData":
-        """Remove statistical outliers from point cloud.
-
-        Args:
-            nb_neighbors: Number of neighbors to consider
-            std_ratio: Standard deviation ratio threshold
-
-        Returns:
-            New PointCloudData with outliers removed
-
-        Raises:
-            ImportError: If open3d is not installed
-        """
-        if importlib.util.find_spec("open3d") is None:
-            raise ImportError("open3d package required for outlier removal. Install with: pip install open3d")
-
-        pcd = self.to_open3d()
-        pcd_clean, inlier_indices = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors, std_ratio=std_ratio)
-
-        # Extract inlier points and colors
-        inlier_mask = np.zeros(self.num_points, dtype=bool)
-        inlier_mask[inlier_indices] = True
-
-        points_clean = self.points[inlier_mask]
-        colors_clean = self.colors[inlier_mask] if self.has_colors else None
-
-        return PointCloudData(
-            points=points_clean, colors=colors_clean, num_points=len(points_clean), has_colors=self.has_colors
-        )
 
     def __repr__(self) -> str:
         """String representation of point cloud."""

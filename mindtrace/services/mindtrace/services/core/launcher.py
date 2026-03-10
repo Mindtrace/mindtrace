@@ -26,19 +26,14 @@ if not IS_WINDOWS:
                 "pidfile": options.pid,
             }
 
-            # Parse init params
-            init_params = json.loads(options.init_params) if options.init_params else {}
-
-            # Create server with initialization parameters
-            server = instantiate_target(options.server_class, pid_file=options.pid, **init_params)
-            server.logger = setup_logger(
-                name=server.unique_name,
-                stream_level=logging.INFO,
-                file_level=logging.DEBUG,
-                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
-            )
-            self.application = server.app
-            server.url = options.bind
+            # Defer instantiation to load(), which gunicorn calls in the worker after fork.
+            # Running Service.__init__ (which creates thread pools) in the master before fork
+            # causes non-deterministic deadlocks in the child due to inherited locked mutexes.
+            self._server_class = options.server_class
+            self._pid = options.pid
+            self._bind = options.bind
+            self._init_params = json.loads(options.init_params) if options.init_params else {}
+            self.application = None
             super().__init__()
 
         def load_config(self):
@@ -51,6 +46,16 @@ if not IS_WINDOWS:
                 self.cfg.set(key.lower(), value)
 
         def load(self):
+            # Called in the worker process after fork (preload_app=False, the default).
+            server = instantiate_target(self._server_class, pid_file=self._pid, **self._init_params)
+            server.logger = setup_logger(
+                name=server.unique_name,
+                stream_level=logging.INFO,
+                file_level=logging.DEBUG,
+                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
+            )
+            server.url = self._bind
+            self.application = server.app
             return self.application
 else:
 
