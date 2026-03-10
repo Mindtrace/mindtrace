@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-registry"
-version = "0.8.0"
+version = "0.9.0"
 description = "Registry functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,13 +12,19 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core>=0.8.0",
-    "mindtrace-storage>=0.8.0",
+    "mindtrace-core>=0.9.0",
+    "mindtrace-storage>=0.9.0",
     "minio<7.2.19",
     "pydantic>=2.11.1",
     "pyyaml>=6.0.1",
     "zenml>=0.82.1",
 ]
+
+[project.optional-dependencies]
+timm = ["timm>=1.0"]
+huggingface = ["transformers>=4.0", "peft>=0.5"]
+ultralytics = ["ultralytics>=8.0"]
+onnx = ["onnx>=1.14", "onnxruntime>=1.15"]
 
 [project.urls]
 Homepage = "https://mindtrace.ai"

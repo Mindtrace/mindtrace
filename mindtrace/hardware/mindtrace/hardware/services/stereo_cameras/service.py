@@ -698,7 +698,6 @@ class StereoCameraService(Service):
             # Capture point cloud
             point_cloud = await camera.capture_point_cloud(
                 include_colors=request.include_colors,
-                remove_outliers=request.remove_outliers,
                 downsample_factor=request.downsample_factor,
             )
 
@@ -743,7 +742,6 @@ class StereoCameraService(Service):
                 # Capture point cloud
                 point_cloud = await camera.capture_point_cloud(
                     include_colors=capture_config.get("include_colors", True),
-                    remove_outliers=capture_config.get("remove_outliers", False),
                     downsample_factor=capture_config.get("downsample_factor", 1),
                 )
 
