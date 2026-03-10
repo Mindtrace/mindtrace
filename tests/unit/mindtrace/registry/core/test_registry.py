@@ -414,7 +414,8 @@ def test_registry_default_materializer_supports_lambda(temp_registry_dir):
         default_materializer=CloudpickleMaterializer,
     )
 
-    fn = lambda x: x + 1
+    def fn(x):
+        return x + 1
     registry.save("test:lambda", fn, version="1.0.0")
 
     loaded_fn = registry.load("test:lambda", version="1.0.0")
