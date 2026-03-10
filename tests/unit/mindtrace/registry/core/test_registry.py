@@ -404,6 +404,64 @@ def test_save_without_materializer(registry):
         registry.save("test:custom", custom_obj)
 
 
+def test_registry_default_materializer_supports_lambda(temp_registry_dir):
+    """Registry default_materializer should enable lambda/cloudpickle roundtrips."""
+    from zenml.materializers.cloudpickle_materializer import CloudpickleMaterializer
+
+    registry = Registry(
+        backend=temp_registry_dir,
+        version_objects=True,
+        default_materializer=CloudpickleMaterializer,
+    )
+
+    def fn(x):
+        return x + 1
+
+    registry.save("test:lambda", fn, version="1.0.0")
+
+    loaded_fn = registry.load("test:lambda", version="1.0.0")
+    assert callable(loaded_fn)
+    assert loaded_fn(1) == 2
+
+
+def test_registry_default_materializer_supports_reduce_protocol(temp_registry_dir):
+    """Registry default_materializer should serialize objects via __reduce__."""
+    from zenml.materializers.cloudpickle_materializer import CloudpickleMaterializer
+
+    class Point:
+        def __init__(self, x):
+            self.x = x
+
+        def __reduce__(self):
+            return (Point, (self.x,))
+
+    registry = Registry(
+        backend=temp_registry_dir,
+        version_objects=True,
+        default_materializer=CloudpickleMaterializer,
+    )
+
+    registry.save("test:point", Point(5), version="1.0.0")
+    point = registry.load("test:point", version="1.0.0")
+    assert isinstance(point, Point)
+    assert point.x == 5
+
+
+def test_registry_core_default_materializer_string_is_used(temp_registry_dir):
+    """_RegistryCore should accept a string default_materializer fallback."""
+    registry = Registry(
+        backend=temp_registry_dir,
+        version_objects=True,
+        default_materializer="zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer",
+    )
+
+    class CustomObject:
+        pass
+
+    materializer = registry._find_materializer(CustomObject())
+    assert materializer == "zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer"
+
+
 def test_find_materializer_with_class_object(registry, test_config):
     """Test that _find_materializer() converts a materializer class object to a string.
 
