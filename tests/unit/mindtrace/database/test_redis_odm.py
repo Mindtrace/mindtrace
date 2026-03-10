@@ -3199,8 +3199,8 @@ def test_redis_do_initialize_model_registry_has_models():
         def get_meta():
             raise Exception("Meta access failed")
 
-        mock_registry_model.__getattribute__ = (
-            lambda self, name: get_meta() if name == "Meta" else object.__getattribute__(self, name)
+        mock_registry_model.__getattribute__ = lambda self, name: (
+            get_meta() if name == "Meta" else object.__getattribute__(self, name)
         )
 
         with patch("redis_om.model.model.model_registry", {"TestModel": mock_registry_model}):
