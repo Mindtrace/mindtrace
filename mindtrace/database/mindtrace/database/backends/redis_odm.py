@@ -964,28 +964,7 @@ class RedisMindtraceODM(MindtraceODM):
         if not self._is_initialized:
             self._do_initialize()
         try:
-            results = self.model_cls.find().all()
-
-            if len(results) == 0:
-                try:
-                    self._ensure_index_has_documents(self.model_cls)
-                    import os
-
-                    original_redis_url = os.environ.get("REDIS_OM_URL", None)
-                    if self.redis_url:
-                        os.environ["REDIS_OM_URL"] = self.redis_url
-                    try:
-                        Migrator().run()
-                    finally:
-                        if original_redis_url is not None:
-                            os.environ["REDIS_OM_URL"] = original_redis_url
-                        elif "REDIS_OM_URL" in os.environ:
-                            del os.environ["REDIS_OM_URL"]
-                    results = self.model_cls.find().all()
-                except Exception:
-                    pass
-
-            return results
+            return self.model_cls.find().all()
         except Exception as e:
             # If "No such index" error, try to create index and retry
             if "No such index" in str(e):
