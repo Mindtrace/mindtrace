@@ -58,16 +58,12 @@ class Version:
 
         components = raw.split(".")
         if len(components) < 1 or len(components) > digits:
-            raise ValueError(
-                f"Invalid version string '{value}'. Expected between 1 and {digits} numeric components."
-            )
+            raise ValueError(f"Invalid version string '{value}'. Expected between 1 and {digits} numeric components.")
 
         try:
             parsed = tuple(int(component) for component in components)
         except ValueError as exc:
-            raise ValueError(
-                f"Invalid version string '{value}'. Expected numeric components like '1.0.0'."
-            ) from exc
+            raise ValueError(f"Invalid version string '{value}'. Expected numeric components like '1.0.0'.") from exc
 
         if any(component < 0 for component in parsed):
             raise ValueError(f"Invalid version string '{value}'. Components must be non-negative integers.")
