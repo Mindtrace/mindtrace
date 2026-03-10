@@ -41,7 +41,8 @@ class ClusterManager(Gateway):
     def __init__(self, minio_endpoint=None, **kwargs):
         """
         Args:
-            minio_endpoint: str | None: the location of the minio server to use for the registry. If None, use MINDTRACE_CLUSTER_MINIO_ENDPOINT
+            minio_endpoint: str | None: the location of the minio server to use for the registry.
+                If None, use MINDTRACE_CLUSTER.MINIO_HOST and MINDTRACE_CLUSTER.MINIO_PORT
         """
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
@@ -87,7 +88,22 @@ class ClusterManager(Gateway):
             )
             self.worker_status_database.initialize_sync()
             self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
-            self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER"]["MINIO_ENDPOINT"])
+            # Derive Minio host/port from either explicit endpoint override or cluster config.
+            if minio_endpoint is not None:
+                parsed_minio = urllib.parse.urlparse(minio_endpoint)
+                if parsed_minio.hostname:
+                    self.worker_registry_host = parsed_minio.hostname
+                    self.worker_registry_port = parsed_minio.port or 9000
+                else:
+                    # Handle host:port or bare host for backward compatibility
+                    host, _, port_str = minio_endpoint.partition(":")
+                    self.worker_registry_host = host or "localhost"
+                    self.worker_registry_port = int(port_str) if port_str else 9000
+            else:
+                self.worker_registry_host = self.config["MINDTRACE_CLUSTER"]["MINIO_HOST"]
+                self.worker_registry_port = int(self.config["MINDTRACE_CLUSTER"]["MINIO_PORT"])
+
+            self.worker_registry_endpoint = f"{self.worker_registry_host}:{self.worker_registry_port}"
             self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
             self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
             self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
@@ -700,6 +716,11 @@ class ClusterManager(Gateway):
             "access_key": self.worker_registry_access_key,
             "secret_key": self.worker_registry_secret_key,
             "bucket": self.worker_registry_bucket,
+            "minio_port": self.worker_registry_port,
+            "rabbitmq_host": self.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
+            "rabbitmq_port": self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
+            "rabbitmq_username": self.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
+            "rabbitmq_password": self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"),
         }
 
     def launch_worker(self, payload: dict):
@@ -760,12 +781,40 @@ class Node(Service):
         self.worker_registry: Registry = None  # type: ignore
         self.cluster_url = cluster_url
         if cluster_url is not None:
+            # Connect to the cluster and register this node. The response contains
+            # Minio and RabbitMQ configuration details (keys, ports, etc.). The
+            # externally reachable host is inferred from the cluster_url rather than
+            # trusting the cluster manager to know its own hostname.
             self.cluster_cm = ClusterManager.connect(cluster_url)
-            minio_params = self.cluster_cm.register_node(node_url=str(self._url))
+            register_output = self.cluster_cm.register_node(node_url=str(self._url))
+            parsed_cluster_url = urllib.parse.urlparse(cluster_url)
+            cluster_host = parsed_cluster_url.hostname or "localhost"
+
+            # Use the Minio port provided by the cluster, but always pair it with the
+            # host derived from cluster_url so that nodes work correctly in dockerised
+            # environments where the cluster's own hostname may not be externally
+            # reachable.
+            minio_port = register_output.minio_port
+            node_minio_endpoint = f"{cluster_host}:{minio_port}"
+
             minio_backend = MinioRegistryBackend(
-                uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
+                uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}",
+                endpoint=node_minio_endpoint,
+                access_key=register_output.access_key,
+                secret_key=register_output.secret_key,
+                bucket=register_output.bucket,
+                secure=False,
             )
             self.worker_registry = Registry(backend=minio_backend)
+
+            # Derive RabbitMQ host from the cluster URL and take the remaining
+            # connection details from the cluster response.
+            self.rabbitmq_config = {
+                "host": cluster_host,
+                "port": register_output.rabbitmq_port,
+                "username": register_output.rabbitmq_username,
+                "password": register_output.rabbitmq_password,
+            }
             self.node_worker_database: UnifiedMindtraceODM = UnifiedMindtraceODM(
                 unified_model_cls=cluster_types.NodeWorker,
                 redis_url=self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"],
