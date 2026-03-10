@@ -86,7 +86,9 @@ async def test_start_stream_success_tracks_stream(service_and_manager):
     camera_proxy = AsyncMock()
     manager.open.return_value = camera_proxy
 
-    with patch("os.getenv", side_effect=lambda k, d=None: {"CAMERA_API_HOST": "localhost", "CAMERA_API_PORT": "8002"}.get(k, d)):
+    with patch(
+        "os.getenv", side_effect=lambda k, d=None: {"CAMERA_API_HOST": "localhost", "CAMERA_API_PORT": "8002"}.get(k, d)
+    ):
         response = await service.start_stream(StreamStartRequest(camera="Basler:cam1", fps=15, quality=80))
 
     assert response.success is True
