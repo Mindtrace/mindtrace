@@ -13,8 +13,8 @@ from .history import AbstractHistoryStrategy, InMemoryHistory
 from .messages import ModelMessage, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
 from .models import Model, ModelRequestParameters, ModelResponse, OpenAIChatModel
 from .profiles import ModelProfile
-from .providers import GeminiProvider, OllamaProvider, OpenAIProvider, Provider
 from .prompts import UserPromptPart
+from .providers import GeminiProvider, OllamaProvider, OpenAIProvider, Provider
 from .tools import RunContext, Tool, ToolDefinition
 from .toolsets import AbstractToolset, FunctionToolset
 

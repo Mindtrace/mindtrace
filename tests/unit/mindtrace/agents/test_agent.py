@@ -1,13 +1,10 @@
 """Unit tests for mindtrace.agents.core.base.MindtraceAgent."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-import pytest
-
 from mindtrace.agents import MindtraceAgent
-from mindtrace.agents._run_context import RunContext
 from mindtrace.agents.callbacks import AgentCallbacks
 from mindtrace.agents.history import InMemoryHistory
 from mindtrace.agents.messages import ModelMessage, SystemPromptPart, TextPart
@@ -16,10 +13,10 @@ from mindtrace.agents.tools import Tool
 
 from .conftest import FakeModel, text_response, tool_call_response
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def _make_agent(responses: list[ModelResponse] | None = None, **kwargs: Any) -> MindtraceAgent:
     model = FakeModel(responses=responses)
@@ -29,6 +26,7 @@ def _make_agent(responses: list[ModelResponse] | None = None, **kwargs: Any) -> 
 # ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
+
 
 class TestMindtraceAgentInit:
     """Tests for MindtraceAgent construction and properties."""
@@ -67,8 +65,10 @@ class TestMindtraceAgentInit:
 
     def test_tools_stored(self):
         """Tools passed at construction are stored in self.tools."""
+
         def my_tool(x: int) -> int:
             return x
+
         tool = Tool(my_tool)
         agent = _make_agent(tools=[tool])
         assert len(agent.tools) == 1
@@ -83,6 +83,7 @@ class TestMindtraceAgentInit:
 # ---------------------------------------------------------------------------
 # _build_messages
 # ---------------------------------------------------------------------------
+
 
 class TestBuildMessages:
     """Tests for MindtraceAgent._build_messages."""
@@ -117,6 +118,7 @@ class TestBuildMessages:
 # ---------------------------------------------------------------------------
 # run()
 # ---------------------------------------------------------------------------
+
 
 class TestMindtraceAgentRun:
     """Tests for MindtraceAgent.run()."""
@@ -173,6 +175,7 @@ class TestMindtraceAgentRun:
 
     async def test_tool_error_captured_in_message(self):
         """An exception raised by a tool is captured as an error message and run continues."""
+
         def boom(x: int) -> int:
             """Always fails."""
             raise RuntimeError("tool error")
@@ -197,16 +200,19 @@ class TestMindtraceAgentRun:
 # History via session_id
 # ---------------------------------------------------------------------------
 
+
 class TestMindtraceAgentHistory:
     """Tests for history load/save via session_id."""
 
     async def test_history_persisted_across_runs(self):
         """A second run with the same session_id includes the prior exchange."""
         history = InMemoryHistory()
-        model = FakeModel(responses=[
-            text_response("I am a bot."),
-            text_response("You asked about me."),
-        ])
+        model = FakeModel(
+            responses=[
+                text_response("I am a bot."),
+                text_response("You asked about me."),
+            ]
+        )
         agent = MindtraceAgent(model=model, history=history)
 
         await agent.run("Who are you?", session_id="s1")
@@ -223,8 +229,8 @@ class TestMindtraceAgentHistory:
         model = FakeModel(responses=[text_response("first"), text_response("second")])
         agent = MindtraceAgent(model=model, history=history)
 
-        await agent.run("run1")   # no session_id
-        await agent.run("run2")   # no session_id
+        await agent.run("run1")  # no session_id
+        await agent.run("run2")  # no session_id
 
         # Second request should still only have 1 user message (no history)
         second_request_msgs = model.requests[1]
@@ -234,10 +240,12 @@ class TestMindtraceAgentHistory:
     async def test_history_cleared_between_sessions(self):
         """Different session IDs maintain separate histories."""
         history = InMemoryHistory()
-        model = FakeModel(responses=[
-            text_response("for s1"),
-            text_response("for s2"),
-        ])
+        model = FakeModel(
+            responses=[
+                text_response("for s1"),
+                text_response("for s2"),
+            ]
+        )
         agent = MindtraceAgent(model=model, history=history)
 
         await agent.run("session one", session_id="s1")
@@ -251,6 +259,7 @@ class TestMindtraceAgentHistory:
 # ---------------------------------------------------------------------------
 # Callbacks
 # ---------------------------------------------------------------------------
+
 
 class TestMindtraceAgentCallbacks:
     """Tests for AgentCallbacks integration."""
@@ -350,6 +359,7 @@ class TestMindtraceAgentCallbacks:
 # run_stream_events()
 # ---------------------------------------------------------------------------
 
+
 class TestMindtraceAgentStream:
     """Tests for MindtraceAgent.run_stream_events()."""
 
@@ -368,7 +378,7 @@ class TestMindtraceAgentStream:
 
     async def test_stream_tool_call_yields_tool_result_event(self):
         """When a tool is called during streaming, a ToolResultEvent is emitted."""
-        from mindtrace.agents.events import AgentRunResultEvent, ToolResultEvent
+        from mindtrace.agents.events import ToolResultEvent
 
         def my_tool(x: int) -> int:
             """Return x squared."""
@@ -393,6 +403,7 @@ class TestMindtraceAgentStream:
 # ---------------------------------------------------------------------------
 # iter()
 # ---------------------------------------------------------------------------
+
 
 class TestMindtraceAgentIter:
     """Tests for the MindtraceAgent.iter() async context manager."""
@@ -423,6 +434,7 @@ class TestMindtraceAgentIter:
 
     async def test_iter_tool_call_yields_tool_result_step(self):
         """iter() yields a tool_result step when a tool is invoked."""
+
         def double(x: int) -> int:
             """Double x."""
             return x * 2
@@ -471,6 +483,7 @@ class TestMindtraceAgentIter:
 # ---------------------------------------------------------------------------
 # Async context manager
 # ---------------------------------------------------------------------------
+
 
 class TestMindtraceAgentContextManager:
     """Tests for __aenter__ / __aexit__."""

@@ -29,9 +29,7 @@ class ToolManager(Generic[AgentDepsT]):
 
         tool = self.tools.get(tool_name)
         if tool is None:
-            available = (
-                ", ".join(f"{n!r}" for n in self.tools.keys()) if self.tools else "No tools"
-            )
+            available = ", ".join(f"{n!r}" for n in self.tools.keys()) if self.tools else "No tools"
             raise ValueError(f"Unknown tool name: {tool_name!r}. Available tools: {available}")
 
         max_retries = tool.max_retries if tool.max_retries is not None else 1

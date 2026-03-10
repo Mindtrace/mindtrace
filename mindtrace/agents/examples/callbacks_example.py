@@ -1,12 +1,13 @@
 """Lifecycle callbacks — before/after LLM call and tool call."""
+
 import asyncio
 
 from mindtrace.agents import (
     AgentCallbacks,
     MindtraceAgent,
     ModelResponse,
-    OpenAIChatModel,
     OllamaProvider,
+    OpenAIChatModel,
     RunContext,
     Tool,
 )

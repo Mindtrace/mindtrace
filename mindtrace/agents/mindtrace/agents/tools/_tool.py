@@ -6,8 +6,8 @@ from typing import Any, Concatenate, TypeAlias
 
 from typing_extensions import ParamSpec, TypeVar
 
-from .._run_context import AgentDepsT, RunContext
 from .._function_schema import FunctionSchema, function_schema
+from .._run_context import RunContext
 
 ToolParams = ParamSpec("ToolParams")
 ToolAgentDepsT = TypeVar("ToolAgentDepsT")

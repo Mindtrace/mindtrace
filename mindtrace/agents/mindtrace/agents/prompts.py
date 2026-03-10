@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
-    from google.cloud import storage
+    pass
 
 __all__ = [
     "BinaryContent",
@@ -57,8 +57,7 @@ class BinaryContent:
             from google.cloud import storage
         except ImportError as e:
             raise ImportError(
-                "google-cloud-storage is required for from_gcs(). "
-                "Install it with: pip install google-cloud-storage"
+                "google-cloud-storage is required for from_gcs(). Install it with: pip install google-cloud-storage"
             ) from e
 
         if client is None:

@@ -1,4 +1,5 @@
 """Shared fixtures and test helpers for mindtrace.agents unit tests."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
@@ -7,8 +8,7 @@ from typing import Any
 import pytest
 
 from mindtrace.agents.events import NativeEvent, PartEndEvent
-from mindtrace.agents.messages import TextPart, ToolCallPart
-from mindtrace.agents.messages import ModelMessage
+from mindtrace.agents.messages import ModelMessage, TextPart, ToolCallPart
 from mindtrace.agents.models import Model, ModelRequestParameters, ModelResponse
 
 

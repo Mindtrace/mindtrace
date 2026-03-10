@@ -1,4 +1,5 @@
 """Unit tests for mindtrace.agents.messages."""
+
 import pytest
 
 from mindtrace.agents.messages import (

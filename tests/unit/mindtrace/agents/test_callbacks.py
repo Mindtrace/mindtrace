@@ -1,5 +1,4 @@
 """Unit tests for mindtrace.agents.callbacks."""
-import pytest
 
 from mindtrace.agents.callbacks import AgentCallbacks, _invoke
 
@@ -9,6 +8,7 @@ class TestInvoke:
 
     async def test_sync_callback_is_called(self):
         """Sync callable is invoked and its return value is returned."""
+
         def cb(x: int) -> int:
             return x * 2
 
@@ -17,6 +17,7 @@ class TestInvoke:
 
     async def test_async_callback_is_awaited(self):
         """Async callable is awaited and its return value is returned."""
+
         async def cb(x: int) -> int:
             return x + 100
 
@@ -35,6 +36,7 @@ class TestInvoke:
 
     async def test_multiple_args_passed(self):
         """All positional arguments are forwarded to the callback."""
+
         def cb(a, b, c):
             return (a, b, c)
 
@@ -43,6 +45,7 @@ class TestInvoke:
 
     async def test_sync_callback_returning_none(self):
         """A sync callback that returns None yields None."""
+
         def cb(x):
             pass  # returns None implicitly
 
@@ -63,6 +66,7 @@ class TestAgentCallbacks:
 
     def test_assign_sync_callbacks(self):
         """Sync callables can be assigned to all callback fields."""
+
         def noop(*args): ...
 
         callbacks = AgentCallbacks(
@@ -78,6 +82,7 @@ class TestAgentCallbacks:
 
     def test_assign_async_callbacks(self):
         """Async callables can be assigned to callback fields."""
+
         async def async_cb(*args): ...
 
         callbacks = AgentCallbacks(before_llm_call=async_cb)
@@ -85,6 +90,7 @@ class TestAgentCallbacks:
 
     def test_partial_assignment(self):
         """Only specified callbacks are set; others remain None."""
+
         def my_cb(*args): ...
 
         callbacks = AgentCallbacks(after_llm_call=my_cb)
