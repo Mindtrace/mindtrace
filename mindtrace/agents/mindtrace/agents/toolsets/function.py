@@ -6,7 +6,7 @@ from typing import Any
 
 from .._run_context import RunContext
 from ..tools import Tool, ToolAgentDepsT
-from . import AbstractToolset, ToolsetTool
+from ._toolset import AbstractToolset, ToolsetTool
 
 
 @dataclass
