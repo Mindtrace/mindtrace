@@ -1036,7 +1036,7 @@ class TestServiceInterruption:
             result = Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
             assert result == mock_connection_manager
-            mock_connect.assert_called_once_with(url="http://localhost:8000")
+            mock_connect.assert_called_once_with(url="http://localhost:8000", timeout=5)
 
     @patch.object(Service, "status_at_host")
     @patch("mindtrace.services.core.service.subprocess.Popen")
@@ -1248,7 +1248,12 @@ class TestServiceInterruption:
                 # Should create Timeout with correct parameters
                 mock_timeout_class.assert_called_once_with(
                     timeout=60,
-                    exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                    exceptions=(
+                        ConnectionRefusedError,
+                        requests.exceptions.ConnectionError,
+                        requests.exceptions.ReadTimeout,
+                        HTTPException,
+                    ),
                     progress_bar=True,
                     desc=f"Launching {Service.unique_name.split('.')[-1]} at http://service.example.com:8080",
                 )
