@@ -314,7 +314,13 @@ class Store(Mindtrace):
         **kwargs,
     ) -> Any | BatchResult:
         if isinstance(name, str):
-            return self._single_load(name, version if isinstance(version, str) or version is None else version[0], output_dir, verify, **kwargs)
+            return self._single_load(
+                name,
+                version if isinstance(version, str) or version is None else version[0],
+                output_dir,
+                verify,
+                **kwargs,
+            )
 
         versions = version if isinstance(version, list) else [version] * len(name)
         if len(name) != len(versions):

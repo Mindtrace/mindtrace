@@ -872,7 +872,11 @@ class _RegistryCore(Mindtrace):
 
             if v is None:
                 # Delete all versions
-                all_versions = [str(Version("1", digits=self.version_digits))] if not self.version_objects else self.list_versions(n)
+                all_versions = (
+                    [str(Version("1", digits=self.version_digits))]
+                    if not self.version_objects
+                    else self.list_versions(n)
+                )
                 if not all_versions:
                     result.errors[original_key] = {
                         "error": "RegistryObjectNotFound",
@@ -1268,7 +1272,9 @@ class _RegistryCore(Mindtrace):
             for object_name, versions in info.items():
                 version_items = versions.items()
                 if latest_only and version_items:
-                    version_items = [max(versions.items(), key=lambda kv: _version_sort_key(kv[0], self.version_digits))]
+                    version_items = [
+                        max(versions.items(), key=lambda kv: _version_sort_key(kv[0], self.version_digits))
+                    ]
 
                 for version, details in version_items:
                     meta = details.get("metadata", {})
