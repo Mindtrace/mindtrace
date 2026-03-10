@@ -1,5 +1,4 @@
 """Unit tests for mindtrace.agents.tools."""
-import pytest
 
 from mindtrace.agents._run_context import RunContext
 from mindtrace.agents.tools import Tool, ToolDefinition

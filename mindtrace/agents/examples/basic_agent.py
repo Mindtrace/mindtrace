@@ -1,7 +1,8 @@
 """Basic agent example — no tools, just a conversation."""
+
 import asyncio
 
-from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OllamaProvider
+from mindtrace.agents import MindtraceAgent, OllamaProvider, OpenAIChatModel
 
 
 async def main() -> None:

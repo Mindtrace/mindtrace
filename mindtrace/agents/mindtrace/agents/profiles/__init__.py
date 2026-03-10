@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, fields, replace
 from textwrap import dedent
 
 from typing_extensions import Self

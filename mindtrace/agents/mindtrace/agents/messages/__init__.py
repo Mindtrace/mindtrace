@@ -1,6 +1,6 @@
+from ..prompts import UserPromptPart
 from ._builder import MessagePart, MessagesBuilder, ModelMessage
 from ._parts import SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
-from ..prompts import UserPromptPart
 
 __all__ = [
     "MessagePart",

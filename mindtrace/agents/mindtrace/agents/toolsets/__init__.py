@@ -4,8 +4,9 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic
 
-from ..tools import ToolAgentDepsT, ToolDefinition
 from .._run_context import RunContext
+from ..tools import ToolAgentDepsT, ToolDefinition
+from .function import FunctionToolset, FunctionToolsetTool
 
 
 @dataclass
@@ -29,8 +30,6 @@ class AbstractToolset(Generic[ToolAgentDepsT]):
     ) -> Any:
         raise NotImplementedError
 
-
-from .function import FunctionToolset, FunctionToolsetTool
 
 __all__ = [
     "AbstractToolset",

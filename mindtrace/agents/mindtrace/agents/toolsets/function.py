@@ -4,9 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import AbstractToolset, ToolsetTool
-from ..tools import Tool, ToolAgentDepsT
 from .._run_context import RunContext
+from ..tools import Tool, ToolAgentDepsT
+from . import AbstractToolset, ToolsetTool
 
 
 @dataclass

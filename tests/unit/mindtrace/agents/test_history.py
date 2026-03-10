@@ -1,5 +1,4 @@
 """Unit tests for mindtrace.agents.history."""
-import pytest
 
 from mindtrace.agents.history import InMemoryHistory
 from mindtrace.agents.messages import ModelMessage, TextPart

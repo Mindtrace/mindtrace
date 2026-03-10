@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from mindtrace.core import MindtraceABC
 
 from ..profiles import ModelProfile
+from .gemini import GeminiProvider
+from .ollama import OllamaProvider
+from .openai import OpenAIProvider
 
 InterfaceClient = TypeVar("InterfaceClient")
 
@@ -34,10 +37,6 @@ class Provider(MindtraceABC, Generic[InterfaceClient]):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name!r}, base_url={self.base_url!r})"
 
-
-from .gemini import GeminiProvider
-from .ollama import OllamaProvider
-from .openai import OpenAIProvider
 
 __all__ = [
     "GeminiProvider",

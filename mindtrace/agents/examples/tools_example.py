@@ -1,8 +1,9 @@
 """Agent with tools and typed dependency injection via RunContext."""
+
 import asyncio
 from dataclasses import dataclass
 
-from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OllamaProvider, RunContext, Tool
+from mindtrace.agents import MindtraceAgent, OllamaProvider, OpenAIChatModel, RunContext, Tool
 
 
 @dataclass

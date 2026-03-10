@@ -1,14 +1,11 @@
 """Unit tests for mindtrace.agents.core.wrapper.WrapperAgent."""
+
 from __future__ import annotations
-
-from typing import Any
-
-import pytest
 
 from mindtrace.agents import MindtraceAgent
 from mindtrace.agents.core.wrapper import WrapperAgent
 
-from .conftest import FakeModel, text_response, tool_call_response
+from .conftest import FakeModel, text_response
 
 
 def _make_inner(responses=None, **kwargs) -> MindtraceAgent:

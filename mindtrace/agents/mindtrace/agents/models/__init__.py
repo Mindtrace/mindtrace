@@ -13,6 +13,7 @@ from ..events import NativeEvent
 from ..messages import ModelMessage
 from ..profiles import DEFAULT_PROFILE, ModelProfile, ModelProfileSpec
 from ..tools import ToolDefinition
+from .openai_chat import OpenAIChatModel
 
 
 @dataclass(kw_only=True)
@@ -90,8 +91,6 @@ class Model(MindtraceABC):
     ) -> AsyncIterator[NativeEvent]:
         raise NotImplementedError()
 
-
-from .openai_chat import OpenAIChatModel
 
 __all__ = [
     "Model",

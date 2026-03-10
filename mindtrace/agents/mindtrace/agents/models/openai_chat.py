@@ -122,11 +122,13 @@ class OpenAIChatModel(Model):
             elif msg.role == "tool":
                 part = msg.parts[0]
                 if isinstance(part, ToolReturnPart):
-                    openai_messages.append({
-                        "role": "tool",
-                        "tool_call_id": part.tool_call_id,
-                        "content": part.content,
-                    })
+                    openai_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": part.tool_call_id,
+                            "content": part.content,
+                        }
+                    )
                 else:
                     openai_messages.append({"role": "tool", "tool_call_id": "", "content": ""})
         return openai_messages
@@ -162,11 +164,13 @@ class OpenAIChatModel(Model):
         tool_calls = []
         if message.tool_calls:
             for tool_call in message.tool_calls:
-                tool_calls.append({
-                    "id": tool_call.id,
-                    "name": tool_call.function.name,
-                    "arguments": tool_call.function.arguments,
-                })
+                tool_calls.append(
+                    {
+                        "id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    }
+                )
         return ModelResponse(
             text=message.content or "",
             tool_calls=tool_calls,

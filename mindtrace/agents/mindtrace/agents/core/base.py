@@ -5,6 +5,8 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
+from .._run_context import AgentDepsT as _AgentDepsT
+from .._tool_manager import ToolManager
 from ..callbacks import AgentCallbacks, _invoke
 from ..events import (
     AgentRunResult,
@@ -19,8 +21,6 @@ from ..messages._parts import SystemPromptPart
 from ..models import Model, ModelRequestParameters, ModelResponse
 from ..prompts import UserContent, UserPromptPart
 from ..tools import RunContext, Tool
-from .._run_context import AgentDepsT as _AgentDepsT
-from .._tool_manager import ToolManager
 from ..toolsets.function import FunctionToolset
 from .abstract import AbstractMindtraceAgent, OutputDataT
 
@@ -80,9 +80,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
     ) -> list[ModelMessage]:
         messages: list[ModelMessage] = []
         if self.system_prompt:
-            messages.append(
-                ModelMessage(role="system", parts=[SystemPromptPart(content=self.system_prompt)])
-            )
+            messages.append(ModelMessage(role="system", parts=[SystemPromptPart(content=self.system_prompt)]))
         if message_history:
             messages.extend(message_history)
         messages.append(ModelMessage(role="user", parts=[UserPromptPart(content=input_data)]))
@@ -116,9 +114,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             iteration += 1
             ctx = RunContext(deps=deps)
             await self._tool_manager.for_run_step(ctx)
-            tool_definitions = [
-                tool.tool_def for tool in (self._tool_manager.tools or {}).values()
-            ]
+            tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
             request_params = ModelRequestParameters(function_tools=tool_definitions)
 
             model_settings = kwargs.get("model_settings")
@@ -161,9 +157,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                     tool_args = tool_call.get("arguments", "{}")
                     try:
                         if self.callbacks and self.callbacks.before_tool_call:
-                            result = await _invoke(
-                                self.callbacks.before_tool_call, tool_name, tool_args, ctx
-                            )
+                            result = await _invoke(self.callbacks.before_tool_call, tool_name, tool_args, ctx)
                             if result is not None:
                                 tool_name, tool_args = result
 
@@ -234,9 +228,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             iteration += 1
             ctx = RunContext(deps=deps)
             await self._tool_manager.for_run_step(ctx)
-            tool_definitions = [
-                tool.tool_def for tool in (self._tool_manager.tools or {}).values()
-            ]
+            tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
             request_params = ModelRequestParameters(function_tools=tool_definitions)
 
             model_settings = kwargs.get("model_settings")
@@ -293,9 +285,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                     content = str(tool_result)
 
                     if self.callbacks and self.callbacks.after_tool_call:
-                        result = await _invoke(
-                            self.callbacks.after_tool_call, tool_name, tool_args, tool_result, ctx
-                        )
+                        result = await _invoke(self.callbacks.after_tool_call, tool_name, tool_args, tool_result, ctx)
                         if result is not None:
                             content = str(result)
                 except Exception as exc:
@@ -344,9 +334,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             for iteration in range(max_iterations):
                 ctx = RunContext(deps=deps, step=iteration)
                 await self._tool_manager.for_run_step(ctx)
-                tool_definitions = [
-                    tool.tool_def for tool in (self._tool_manager.tools or {}).values()
-                ]
+                tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
                 request_params = ModelRequestParameters(function_tools=tool_definitions)
 
                 model_settings = kwargs.get("model_settings")
@@ -398,9 +386,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                         tool_args = tc.get("arguments", "{}")
                         try:
                             if self.callbacks and self.callbacks.before_tool_call:
-                                result = await _invoke(
-                                    self.callbacks.before_tool_call, tool_name, tool_args, ctx
-                                )
+                                result = await _invoke(self.callbacks.before_tool_call, tool_name, tool_args, ctx)
                                 if result is not None:
                                     tool_name, tool_args = result
 

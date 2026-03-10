@@ -1,7 +1,8 @@
 """Multi-turn conversation with persistent history via session_id."""
+
 import asyncio
 
-from mindtrace.agents import InMemoryHistory, MindtraceAgent, OpenAIChatModel, OllamaProvider
+from mindtrace.agents import InMemoryHistory, MindtraceAgent, OllamaProvider, OpenAIChatModel
 
 
 async def main() -> None:

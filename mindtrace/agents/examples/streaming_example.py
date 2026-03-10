@@ -1,15 +1,15 @@
 """Streaming events — print tokens as they arrive."""
+
 import asyncio
 
 from mindtrace.agents import (
     AgentRunResultEvent,
     MindtraceAgent,
-    OpenAIChatModel,
     OllamaProvider,
+    OpenAIChatModel,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
-    RunContext,
     Tool,
     ToolResultEvent,
 )
@@ -46,7 +46,7 @@ async def main() -> None:
         elif isinstance(event, ToolResultEvent):
             print(f"[tool result: {event.content}]")
         elif isinstance(event, AgentRunResultEvent):
-            print(f"\n\n[done]")
+            print("\n\n[done]")
 
 
 if __name__ == "__main__":
