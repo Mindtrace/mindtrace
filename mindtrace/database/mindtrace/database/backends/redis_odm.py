@@ -339,7 +339,9 @@ class RedisMindtraceODM(MindtraceODM):
                             index_info = model_redis.execute_command("FT.INFO", actual_index_name)
                             if isinstance(index_info, list) and "num_docs" in index_info:
                                 num_docs_idx = index_info.index("num_docs")
-                                num_docs = int(index_info[num_docs_idx + 1]) if num_docs_idx + 1 < len(index_info) else 0
+                                num_docs = (
+                                    int(index_info[num_docs_idx + 1]) if num_docs_idx + 1 < len(index_info) else 0
+                                )
                                 self.logger.debug(f"Index {actual_index_name} verified, has {num_docs} documents")
                         except Exception as info_error:
                             self.logger.debug(f"Could not verify index: {info_error}")
