@@ -37,8 +37,10 @@ class TestLauncher:
         # Setup mocks
         mock_instantiate.return_value = mock_server
 
-        # Create launcher
+        # Server instantiation is deferred to load(); application is None until then
         launcher = Launcher(mock_options)
+        assert launcher.application is None
+        mock_instantiate.assert_not_called()
 
         # Verify gunicorn options are set correctly
         expected_options = {
@@ -49,7 +51,9 @@ class TestLauncher:
         }
         assert launcher.gunicorn_options == expected_options
 
-        # Verify server instantiation
+        launcher.load()
+
+        # Verify server instantiation happened in load()
         mock_instantiate.assert_called_once_with(
             "test.server.TestServer", param1="value1", param2=42, pid_file="/tmp/test.pid"
         )
@@ -76,8 +80,8 @@ class TestLauncher:
 
         mock_instantiate.return_value = mock_server
 
-        # Create launcher
         launcher = Launcher(options)
+        launcher.load()
 
         # Verify server instantiation with no init params
         mock_instantiate.assert_called_once_with("default.Server", pid_file=None)
@@ -105,8 +109,8 @@ class TestLauncher:
 
         mock_instantiate.return_value = mock_server
 
-        # Create launcher
-        _ = Launcher(options)
+        launcher = Launcher(options)
+        launcher.load()
 
         # Verify server instantiation with empty init params
         mock_instantiate.assert_called_once_with("test.Server", pid_file=None)
@@ -423,8 +427,8 @@ class TestLauncherIntegration:
         mock_server.app = Mock()
         mock_instantiate.return_value = mock_server
 
-        # Create launcher
-        Launcher(options)
+        launcher = Launcher(options)
+        launcher.load()
 
         # Verify complex params were passed correctly
         mock_instantiate.assert_called_once_with(
