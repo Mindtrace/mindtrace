@@ -14,6 +14,7 @@ classifiers = [
 ]
 dependencies = [
   "mindtrace-core>=0.9.0",
+  "mindtrace-agents>=0.9.0",
   "mindtrace-jobs>=0.9.0",
   "mindtrace-registry>=0.9.0",
   "mindtrace-database>=0.9.0",
@@ -76,6 +77,7 @@ Repository = "https://github.com/mindtrace/mindtrace"
 
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
+mindtrace-agents = { workspace = true }
 mindtrace-services = { workspace = true }
 mindtrace-apps = { workspace = true }
 mindtrace-cluster = { workspace = true }
@@ -92,6 +94,7 @@ mindtrace-storage = { workspace = true }
 [tool.uv.workspace]
 members = [
   "mindtrace/core",
+  "mindtrace/agents",
   "mindtrace/services",
   "mindtrace/apps",
   "mindtrace/cluster",
