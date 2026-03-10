@@ -287,7 +287,7 @@ class RedisMindtraceODM(MindtraceODM):
                     index_info = model_redis.execute_command("FT.INFO", index_name)
                     if isinstance(index_info, list) and "num_docs" in index_info:
                         num_docs_idx = index_info.index("num_docs")
-                        num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+                        num_docs = int(index_info[num_docs_idx + 1]) if num_docs_idx + 1 < len(index_info) else 0
                         matching_keys = []
                         for pattern in key_patterns:
                             matching_keys.extend(model_redis.keys(pattern))
@@ -339,7 +339,9 @@ class RedisMindtraceODM(MindtraceODM):
                             index_info = model_redis.execute_command("FT.INFO", actual_index_name)
                             if isinstance(index_info, list) and "num_docs" in index_info:
                                 num_docs_idx = index_info.index("num_docs")
-                                num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+                                num_docs = (
+                                    int(index_info[num_docs_idx + 1]) if num_docs_idx + 1 < len(index_info) else 0
+                                )
                                 self.logger.debug(f"Index {actual_index_name} verified, has {num_docs} documents")
                         except Exception as info_error:
                             self.logger.debug(f"Could not verify index: {info_error}")
@@ -493,7 +495,7 @@ class RedisMindtraceODM(MindtraceODM):
                 index_info = model_redis.execute_command("FT.INFO", index_name)
                 if isinstance(index_info, list) and "num_docs" in index_info:
                     num_docs_idx = index_info.index("num_docs")
-                    num_docs = index_info[num_docs_idx + 1] if num_docs_idx + 1 < len(index_info) else 0
+                    num_docs = int(index_info[num_docs_idx + 1]) if num_docs_idx + 1 < len(index_info) else 0
 
                     # Check if there are keys but index has 0 docs
                     matching_keys = []
@@ -519,7 +521,7 @@ class RedisMindtraceODM(MindtraceODM):
                                     info = model_redis.execute_command("FT.INFO", index_name)
                                     if isinstance(info, list) and "num_docs" in info:
                                         idx = info.index("num_docs")
-                                        n = info[idx + 1] if idx + 1 < len(info) else 0
+                                        n = int(info[idx + 1]) if idx + 1 < len(info) else 0
                                         if n > 0:
                                             self.logger.debug(
                                                 f"After recreation, index has {n} documents (waited {waited:.1f}s)"
