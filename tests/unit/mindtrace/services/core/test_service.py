@@ -1248,7 +1248,12 @@ class TestServiceInterruption:
                 # Should create Timeout with correct parameters
                 mock_timeout_class.assert_called_once_with(
                     timeout=60,
-                    exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout, HTTPException),
+                    exceptions=(
+                        ConnectionRefusedError,
+                        requests.exceptions.ConnectionError,
+                        requests.exceptions.ReadTimeout,
+                        HTTPException,
+                    ),
                     progress_bar=True,
                     desc=f"Launching {Service.unique_name.split('.')[-1]} at http://service.example.com:8080",
                 )
