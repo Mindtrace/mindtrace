@@ -264,7 +264,6 @@ class StereoCameraSettings:
 
     # Point cloud generation settings
     enable_colors: bool = True  # Include color information in point clouds
-    remove_outliers: bool = False  # Remove statistical outliers from point clouds
     downsample_factor: int = 1  # Point cloud downsampling factor (1 = no downsampling)
 
 
@@ -908,9 +907,6 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS"):
             self._config.stereo_cameras.enable_colors = env_val.lower() == "true"
-
-        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS"):
-            self._config.stereo_cameras.remove_outliers = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR"):
             try:
