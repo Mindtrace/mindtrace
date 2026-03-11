@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core.cluster import Worker
 from mindtrace.cluster.core.types import JobStatusEnum
-from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
+from mindtrace.models import BrainLoadInput, BrainUnloadInput, Pipeline
 
 
 class PipelineWorker(Worker):

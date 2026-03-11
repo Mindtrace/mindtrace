@@ -6,8 +6,7 @@ from mindtrace.models.auto_segmenter import (
     BoundingBoxPrediction,
     SegmentationMaskPrediction,
 )
-from mindtrace.models.brain import (
-    Pipeline,
+from mindtrace.models.pipeline import (
     BrainLoadedOutput,
     BrainLoadedTaskSchema,
     BrainLoadInput,
@@ -16,6 +15,7 @@ from mindtrace.models.brain import (
     BrainUnloadInput,
     BrainUnloadOutput,
     BrainUnloadTaskSchema,
+    Pipeline,
 )
 
 __all__ = [
