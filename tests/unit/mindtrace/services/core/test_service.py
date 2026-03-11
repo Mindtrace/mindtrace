@@ -197,6 +197,15 @@ class TestServiceStatusAndConnection:
         assert status == ServerStatus.DOWN
 
     @patch("mindtrace.services.core.service.requests.request")
+    def test_status_at_host_timeout(self, mock_request):
+        """Test status_at_host when request times out."""
+        mock_request.side_effect = requests.exceptions.Timeout()
+
+        status = Service.status_at_host("http://localhost:8000")
+
+        assert status == ServerStatus.DOWN
+
+    @patch("mindtrace.services.core.service.requests.request")
     def test_status_at_host_bad_status_code(self, mock_request):
         """Test status_at_host when response has bad status code."""
         mock_response = Mock()
@@ -1036,7 +1045,7 @@ class TestServiceInterruption:
             result = Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
             assert result == mock_connection_manager
-            mock_connect.assert_called_once_with(url="http://localhost:8000")
+            mock_connect.assert_called_once_with(url="http://localhost:8000", timeout=5)
 
     @patch.object(Service, "status_at_host")
     @patch("mindtrace.services.core.service.subprocess.Popen")
@@ -1248,7 +1257,12 @@ class TestServiceInterruption:
                 # Should create Timeout with correct parameters
                 mock_timeout_class.assert_called_once_with(
                     timeout=60,
-                    exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                    exceptions=(
+                        ConnectionRefusedError,
+                        requests.exceptions.ConnectionError,
+                        requests.exceptions.ReadTimeout,
+                        HTTPException,
+                    ),
                     progress_bar=True,
                     desc=f"Launching {Service.unique_name.split('.')[-1]} at http://service.example.com:8080",
                 )

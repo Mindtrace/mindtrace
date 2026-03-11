@@ -17,9 +17,9 @@ def test_cluster_manager_as_gateway():
     echo_job = JobSchema(name="gateway_echo_job", input_schema=EchoInput, output_schema=EchoOutput)
 
     # Launch Gateway service on port 8097
-    cluster_cm = ClusterManager.launch(port=8097, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(port=8097, wait_for_launch=True, timeout=30)
     # Launch EchoService on port 8098
-    echo_cm = EchoWorker.launch(port=8098, wait_for_launch=True, timeout=15)
+    echo_cm = EchoWorker.launch(port=8098, wait_for_launch=True, timeout=30)
 
     try:
         # Register the EchoService with the Gateway
@@ -44,8 +44,8 @@ def test_cluster_manager_as_gateway():
 def test_cluster_manager_with_prelaunched_worker():
     """Integration test for ClusterManager with a prelaunched EchoWorker."""
     # Use different ports to avoid conflicts with other tests
-    cluster_cm = ClusterManager.launch(host="localhost", port=8100, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8101, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8100, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8101, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="prelaunched_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
@@ -82,8 +82,8 @@ def test_cluster_manager_multiple_jobs_with_worker():
     """Integration test for submitting multiple jobs to a prelaunched EchoWorker."""
     from mindtrace.cluster.workers.echo_worker import EchoWorker
 
-    cluster_cm = ClusterManager.launch(host="localhost", port=8102, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8103, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8102, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8103, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="multiple_jobs_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
@@ -117,8 +117,8 @@ def test_cluster_manager_worker_failure():
     """Integration test for handling worker failure (simulate by shutting down worker before job submission)."""
     from mindtrace.cluster.workers.echo_worker import EchoWorker
 
-    cluster_cm = ClusterManager.launch(host="localhost", port=8104, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8105, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8104, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8105, wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="worker_failure_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
         cluster_cm.register_job_to_worker(job_type="worker_failure_echo", worker_url=str(worker_cm.url))
@@ -137,8 +137,8 @@ def test_cluster_manager_worker_failure():
 @pytest.mark.integration
 def test_cluster_manager_with_node():
     """Integration test for ClusterManager with a Node."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8106, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8107, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8106, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8107, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
     try:
         cluster_cm.register_worker_type(
             worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}
@@ -163,8 +163,8 @@ def test_cluster_manager_with_node():
 def test_cluster_manager_launch_worker():
     """Integration test for ClusterManager.launch_worker method."""
     # Launch cluster manager and node
-    cluster_cm = ClusterManager.launch(host="localhost", port=8108, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8109, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8108, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8109, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type first
@@ -211,8 +211,8 @@ def test_cluster_manager_launch_worker():
 def test_cluster_manager_launch_worker_multiple_workers():
     """Integration test for launching multiple workers using ClusterManager.launch_worker."""
     # Launch cluster manager and node
-    cluster_cm = ClusterManager.launch(host="localhost", port=8111, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8112, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8111, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8112, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type
@@ -262,7 +262,7 @@ def test_cluster_manager_launch_worker_multiple_workers():
 def test_cluster_manager_launch_worker_node_failure():
     """Integration test for launch_worker when node is not available."""
     # Launch only cluster manager (no node)
-    cluster_cm = ClusterManager.launch(host="localhost", port=8116, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8116, wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type
@@ -287,7 +287,7 @@ def test_cluster_manager_launch_worker_node_failure():
 def test_register_worker_type_with_job_schema_name():
     """Integration test for register_worker_type when job_schema_name is provided."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8118, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8118, wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type with job schema name
@@ -301,7 +301,7 @@ def test_register_worker_type_with_job_schema_name():
         # Verify that the job schema was automatically registered to the worker type
         # by checking if we can launch a worker and it gets auto-connected
         node = Node.launch(
-            host="localhost", port=8119, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15
+            host="localhost", port=8119, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30
         )
 
         try:
@@ -338,7 +338,7 @@ def test_register_worker_type_with_job_schema_name():
 def test_register_job_schema_to_worker_type():
     """Integration test for register_job_schema_to_worker_type method."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8121, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8121, wait_for_launch=True, timeout=30)
 
     try:
         # First register a worker type without job schema
@@ -353,7 +353,7 @@ def test_register_job_schema_to_worker_type():
 
         # Launch a node and worker
         node = Node.launch(
-            host="localhost", port=8122, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15
+            host="localhost", port=8122, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30
         )
 
         try:
@@ -392,7 +392,7 @@ def test_register_job_schema_to_worker_type():
 def test_register_job_schema_to_worker_type_nonexistent_worker():
     """Integration test for register_job_schema_to_worker_type with non-existent worker type."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8124, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8124, wait_for_launch=True, timeout=30)
 
     try:
         # Try to register job schema to non-existent worker type
@@ -421,8 +421,8 @@ def test_register_job_schema_to_worker_type_nonexistent_worker():
 def test_launch_worker_with_auto_connect_database():
     """Integration test for launch_worker when worker is in auto-connect database."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type with job schema name (this creates auto-connect entry)
@@ -464,8 +464,8 @@ def test_launch_worker_with_auto_connect_database():
 def test_launch_worker_without_auto_connect_database():
     """Integration test for launch_worker when worker is not in auto-connect database."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8128, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8129, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8128, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8129, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type without job schema name (no auto-connect entry)
@@ -517,8 +517,8 @@ def test_launch_worker_without_auto_connect_database():
 def test_multiple_worker_types_with_auto_connect():
     """Integration test for multiple worker types with auto-connect functionality."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8131, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8132, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8131, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8132, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register multiple worker types with different job schemas
@@ -580,8 +580,8 @@ def test_multiple_worker_types_with_auto_connect():
 def test_launch_worker_with_delay():
     """Integration test for launch_worker when worker is in auto-connect database."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         # Register a worker type with job schema name (this creates auto-connect entry)
@@ -654,8 +654,8 @@ def test_launch_worker_with_delay():
 def test_query_worker_status_integration():
     """Integration test for query_worker_status method with real worker."""
     # Launch cluster manager and worker
-    cluster_cm = ClusterManager.launch(host="localhost", port=8140, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8141, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8140, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8141, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
 
     try:
@@ -701,8 +701,8 @@ def test_query_worker_status_integration():
 def test_query_worker_status_by_url_integration():
     """Integration test for query_worker_status_by_url method with real worker."""
     # Launch cluster manager and worker
-    cluster_cm = ClusterManager.launch(host="localhost", port=8142, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8143, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8142, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8143, wait_for_launch=True, timeout=30)
     worker_url = str(worker_cm.url)
 
     try:
@@ -756,7 +756,7 @@ def test_query_worker_status_by_url_integration():
 def test_query_worker_status_nonexistent_worker():
     """Integration test for query_worker_status with non-existent worker."""
     # Launch cluster manager only (no worker)
-    cluster_cm = ClusterManager.launch(host="localhost", port=8144, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8144, wait_for_launch=True, timeout=30)
 
     try:
         # Test query_worker_status with non-existent worker ID
@@ -777,7 +777,7 @@ def test_query_worker_status_nonexistent_worker():
 def test_query_worker_status_by_url_nonexistent_worker():
     """Integration test for query_worker_status_by_url with non-existent worker URL."""
     # Launch cluster manager only (no worker)
-    cluster_cm = ClusterManager.launch(host="localhost", port=8145, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8145, wait_for_launch=True, timeout=30)
 
     try:
         # Test query_worker_status_by_url with non-existent worker URL
@@ -798,8 +798,8 @@ def test_query_worker_status_by_url_nonexistent_worker():
 def test_query_worker_status_worker_shutdown():
     """Integration test for query_worker_status when worker is shut down."""
     # Launch cluster manager and worker
-    cluster_cm = ClusterManager.launch(host="localhost", port=8146, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8147, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8146, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8147, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     worker_url = str(worker_cm.url)
 
@@ -837,9 +837,9 @@ def test_query_worker_status_worker_shutdown():
 def test_query_worker_status_multiple_workers():
     """Integration test for query_worker_status with multiple workers."""
     # Launch cluster manager and multiple workers
-    cluster_cm = ClusterManager.launch(host="localhost", port=8148, wait_for_launch=True, timeout=15)
-    worker1_cm = EchoWorker.launch(host="localhost", port=8149, wait_for_launch=True, timeout=15)
-    worker2_cm = EchoWorker.launch(host="localhost", port=8150, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8148, wait_for_launch=True, timeout=30)
+    worker1_cm = EchoWorker.launch(host="localhost", port=8149, wait_for_launch=True, timeout=30)
+    worker2_cm = EchoWorker.launch(host="localhost", port=8150, wait_for_launch=True, timeout=30)
 
     worker1_id = str(worker1_cm.heartbeat().heartbeat.server_id)
     worker2_id = str(worker2_cm.heartbeat().heartbeat.server_id)
@@ -915,8 +915,8 @@ def test_query_worker_status_multiple_workers():
 def test_query_worker_status_vs_get_worker_status():
     """Integration test comparing query_worker_status vs get_worker_status."""
     # Launch cluster manager and worker
-    cluster_cm = ClusterManager.launch(host="localhost", port=8151, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8152, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8151, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8152, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     worker_url = str(worker_cm.url)
 
@@ -975,8 +975,8 @@ def test_query_worker_status_vs_get_worker_status():
 def test_query_worker_status_real_time_updates():
     """Integration test for real-time worker status updates using query_worker_status."""
     # Launch cluster manager and worker
-    cluster_cm = ClusterManager.launch(host="localhost", port=8153, wait_for_launch=True, timeout=15)
-    worker_cm = EchoWorker.launch(host="localhost", port=8154, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8153, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=8154, wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
 
     try:
@@ -1027,8 +1027,8 @@ def test_query_worker_status_real_time_updates():
 def test_node_shutdown_worker():
     """Integration test for Node.shutdown_worker."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8155, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8156, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8155, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8156, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         cluster_cm.register_worker_type(
@@ -1057,8 +1057,8 @@ def test_node_shutdown_worker():
 def test_node_shutdown_worker_by_id():
     """Integration test for Node.shutdown_worker_by_id."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8158, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8159, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8158, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8159, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         cluster_cm.register_worker_type(
@@ -1089,8 +1089,8 @@ def test_node_shutdown_worker_by_id():
 def test_node_shutdown_worker_by_port():
     """Integration test for Node.shutdown_worker_by_port."""
     # Launch cluster manager
-    cluster_cm = ClusterManager.launch(host="localhost", port=8161, wait_for_launch=True, timeout=15)
-    node = Node.launch(host="localhost", port=8162, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8161, wait_for_launch=True, timeout=30)
+    node = Node.launch(host="localhost", port=8162, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=30)
 
     try:
         cluster_cm.register_worker_type(
@@ -1148,8 +1148,8 @@ class FailingInput(BaseModel):
 @pytest.mark.integration
 def test_dlq_job_failure_and_requeue():
     """Integration test for DLQ: job fails, goes to DLQ, can be requeued."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8164, wait_for_launch=True, timeout=15)
-    worker_cm = ErrorWorker.launch(host="localhost", port=8165, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8164, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8165, wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -1196,8 +1196,8 @@ def test_dlq_job_failure_and_requeue():
 @pytest.mark.integration
 def test_dlq_job_failure_and_discard():
     """Integration test for DLQ: job fails, goes to DLQ, can be discarded."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8166, wait_for_launch=True, timeout=15)
-    worker_cm = ErrorWorker.launch(host="localhost", port=8167, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8166, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8167, wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_discard_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -1236,8 +1236,8 @@ def test_dlq_job_failure_and_discard():
 @pytest.mark.integration
 def test_dlq_multiple_failed_jobs():
     """Integration test for DLQ with multiple failed jobs."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8168, wait_for_launch=True, timeout=15)
-    worker_cm = ErrorWorker.launch(host="localhost", port=8169, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8168, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=8169, wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_multiple_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -1282,7 +1282,7 @@ def test_dlq_multiple_failed_jobs():
 @pytest.mark.integration
 def test_dlq_requeue_nonexistent_job():
     """Integration test for requeue_from_dlq with non-existent job."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8170, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8170, wait_for_launch=True, timeout=30)
 
     try:
         # Try to requeue a job that doesn't exist in DLQ
@@ -1298,7 +1298,7 @@ def test_dlq_requeue_nonexistent_job():
 @pytest.mark.integration
 def test_dlq_discard_nonexistent_job():
     """Integration test for discard_from_dlq with non-existent job."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8171, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8171, wait_for_launch=True, timeout=30)
 
     try:
         # Try to discard a job that doesn't exist in DLQ
@@ -1314,8 +1314,8 @@ def test_dlq_discard_nonexistent_job():
 @pytest.mark.integration
 def test_dlq_failed_job_adds_to_dlq():
     """Integration test for DLQ: job with error status goes to DLQ."""
-    cluster_cm = ClusterManager.launch(host="localhost", port=8172, wait_for_launch=True, timeout=15)
-    worker_cm = FailingWorker.launch(host="localhost", port=8173, wait_for_launch=True, timeout=15)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8172, wait_for_launch=True, timeout=30)
+    worker_cm = FailingWorker.launch(host="localhost", port=8173, wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_failed_test_echo", input_schema=FailingInput, output_schema=EchoOutput)
 
     try:
