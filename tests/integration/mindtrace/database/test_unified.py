@@ -161,6 +161,9 @@ async def dual_unified_backend():
 
     redis_backend = backend.get_redis_backend()
     _cleanup_redis_state(redis_backend, RedisUserDoc.Meta.global_key_prefix)
+    # Re-initialize since cleanup dropped indexes
+    redis_backend._is_initialized = False
+    redis_backend.initialize()
 
     yield backend
 
