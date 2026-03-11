@@ -1,10 +1,10 @@
-"""Base Brain abstraction for model-composition services.
+"""Base Pipeline abstraction for model-composition services.
 
-A Brain is a Service with a minimal lifecycle contract:
+A Pipeline is a Service with a minimal lifecycle contract:
 - load: initialize models/resources
 - unload: release models/resources
 
-Concrete Brain implementations define their own inference endpoints using normal
+Concrete Pipeline implementations define their own inference endpoints using normal
 TaskSchema-based Service endpoint registration.
 """
 
@@ -19,33 +19,33 @@ from mindtrace.services import Service
 
 
 class PipelineLoadInput(BaseModel):
-    """Request payload for loading a Brain."""
+    """Request payload for loading a Pipeline."""
 
     force: bool = Field(default=False, description="Force reload even if already loaded.")
 
 
 class PipelineLoadOutput(BaseModel):
-    """Response payload for loading a Brain."""
+    """Response payload for loading a Pipeline."""
 
     loaded: bool
     message: str
 
 
 class PipelineUnloadInput(BaseModel):
-    """Request payload for unloading a Brain."""
+    """Request payload for unloading a Pipeline."""
 
     force: bool = Field(default=False, description="Force unload behavior when supported.")
 
 
 class PipelineUnloadOutput(BaseModel):
-    """Response payload for unloading a Brain."""
+    """Response payload for unloading a Pipeline."""
 
     loaded: bool
     message: str
 
 
 class PipelineLoadedOutput(BaseModel):
-    """Response payload for checking whether a Brain is loaded."""
+    """Response payload for checking whether a Pipeline is loaded."""
 
     loaded: bool
 
@@ -87,31 +87,31 @@ class Pipeline(Service):
 
     @property
     def is_loaded(self) -> bool:
-        """Whether this Brain currently has resources/models loaded."""
+        """Whether this Pipeline currently has resources/models loaded."""
         return self._loaded
 
     def load(self, payload: PipelineLoadInput) -> PipelineLoadOutput:
-        """Load models/resources used by this Brain."""
+        """Load models/resources used by this Pipeline."""
         with self._load_state_lock:
             if self._loaded and not payload.force:
-                return PipelineLoadOutput(loaded=True, message="Brain already loaded.")
+                return PipelineLoadOutput(loaded=True, message="Pipeline already loaded.")
 
             self.on_load(payload)
             self._loaded = True
-            return PipelineLoadOutput(loaded=True, message="Brain loaded successfully.")
+            return PipelineLoadOutput(loaded=True, message="Pipeline loaded successfully.")
 
     def unload(self, payload: PipelineUnloadInput) -> PipelineUnloadOutput:
-        """Unload models/resources used by this Brain."""
+        """Unload models/resources used by this Pipeline."""
         with self._load_state_lock:
             if not self._loaded and not payload.force:
-                return PipelineUnloadOutput(loaded=False, message="Brain already unloaded.")
+                return PipelineUnloadOutput(loaded=False, message="Pipeline already unloaded.")
 
             self.on_unload(payload)
             self._loaded = False
-            return PipelineUnloadOutput(loaded=False, message="Brain unloaded successfully.")
+            return PipelineUnloadOutput(loaded=False, message="Pipeline unloaded successfully.")
 
     def loaded(self) -> PipelineLoadedOutput:
-        """Return current loaded state for this Brain."""
+        """Return current loaded state for this Pipeline."""
         return PipelineLoadedOutput(loaded=self._loaded)
 
     def on_load(self, payload: PipelineLoadInput) -> None:

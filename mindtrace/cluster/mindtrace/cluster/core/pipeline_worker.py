@@ -1,6 +1,6 @@
-"""Brain worker adapter.
+"""Pipeline worker adapter.
 
-Provides a generic Worker wrapper that hosts a Brain instance and executes brain
+Provides a generic Worker wrapper that hosts a Pipeline instance and executes pipeline
 endpoints from queued jobs.
 """
 
@@ -16,13 +16,13 @@ from mindtrace.models import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
 
 class PipelineWorker(Worker):
-    """Generic queue worker that wraps a Brain class.
+    """Generic queue worker that wraps a Pipeline class.
 
     Job payload contract (default):
     - payload["endpoint"]: str (optional if default_endpoint set)
     - payload["input"]: dict (optional)
 
-    The selected endpoint is resolved to a Brain method name by stripping a
+    The selected endpoint is resolved to a Pipeline method name by stripping a
     leading slash if present.
     """
 
@@ -52,7 +52,7 @@ class PipelineWorker(Worker):
         auto_load: bool = True,
         **worker_kwargs,
     ) -> "PipelineWorker":
-        """Construct a PipelineWorker from a Brain class and init kwargs."""
+        """Construct a PipelineWorker from a Pipeline class and init kwargs."""
         return cls(
             pipeline_cls=pipeline_cls,
             pipeline_kwargs=pipeline_kwargs,
@@ -62,7 +62,7 @@ class PipelineWorker(Worker):
         )
 
     def start(self):
-        """Initialize and optionally load wrapped Brain instance."""
+        """Initialize and optionally load wrapped Pipeline instance."""
         pipeline_kwargs = dict(self.pipeline_kwargs)
         # Avoid standing up a second externally-live service when embedding in worker.
         pipeline_kwargs.setdefault("live_service", False)
@@ -71,7 +71,7 @@ class PipelineWorker(Worker):
             self.pipeline.load(PipelineLoadInput(force=False))
 
     def _run(self, job_dict: dict) -> dict:
-        """Run a job payload against a selected Brain endpoint."""
+        """Run a job payload against a selected Pipeline endpoint."""
         if self.pipeline is None:
             raise RuntimeError("PipelineWorker has not been started.")
 
@@ -81,7 +81,7 @@ class PipelineWorker(Worker):
 
         method_name = endpoint.lstrip("/")
         if not hasattr(self.pipeline, method_name):
-            raise ValueError(f"Brain endpoint '{endpoint}' is not available on {self.pipeline.__class__.__name__}.")
+            raise ValueError(f"Pipeline endpoint '{endpoint}' is not available on {self.pipeline.__class__.__name__}.")
 
         method = getattr(self.pipeline, method_name)
         input_payload = job_dict.get("input", {})
@@ -93,9 +93,9 @@ class PipelineWorker(Worker):
         return {"status": JobStatusEnum.COMPLETED, "output": output_dict}
 
     def _validate_input(self, method_name: str, input_payload: Any) -> Any:
-        """Validate payload against Brain endpoint TaskSchema input model when available."""
+        """Validate payload against Pipeline endpoint TaskSchema input model when available."""
         if self.pipeline is None:
-            raise RuntimeError("Brain is not initialized.")
+            raise RuntimeError("Pipeline is not initialized.")
 
         schema = self.pipeline.endpoints.get(method_name)
         if schema is None or schema.input_schema is None:
@@ -114,7 +114,7 @@ class PipelineWorker(Worker):
         return output
 
     async def shutdown_cleanup(self):
-        """Unload wrapped Brain on worker shutdown."""
+        """Unload wrapped Pipeline on worker shutdown."""
         if self.pipeline is not None:
             try:
                 self.pipeline.unload(PipelineUnloadInput(force=False))
