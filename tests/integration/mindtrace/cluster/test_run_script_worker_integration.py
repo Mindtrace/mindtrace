@@ -1,11 +1,10 @@
-import time
-
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.workers.run_script_worker import RunScriptWorkerInput, RunScriptWorkerOutput
 from mindtrace.jobs import JobSchema, job_from_schema
 
+from .conftest import wait_for_job_status
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
 
@@ -50,20 +49,9 @@ def test_run_script_worker_simple():
 
         # Submit job and wait for completion
         cluster_manager.submit_job(job)
-        status = cluster_manager.get_job_status(job_id=job.id)
-
-        # Wait for job to complete with timeout
-        timeout = 30  # 30 seconds timeout
-        start_time = time.time()
-        while status.status != "completed" and status.status != "failed":
-            if time.time() - start_time > timeout:
-                pytest.fail(f"Job timed out after {timeout} seconds. Final status: {status}")
-            print(f"Job status: {status}")
-            time.sleep(1)
-            status = cluster_manager.get_job_status(job_id=job.id)
 
         # This job should fail due to invalid environment configuration
-        assert status.status == "failed", f"Job should have failed but got status: {status}"
+        status = wait_for_job_status(cluster_manager, job.id, "failed", timeout=30)
         print(f"Final job status: {status}")
 
     finally:
@@ -121,20 +109,8 @@ def test_run_script_worker_git_environment():
 
         # Submit job and wait for completion
         cluster_manager.submit_job(job)
-        status = cluster_manager.get_job_status(job_id=job.id)
 
-        # Wait for job to complete with timeout
-        timeout = 60  # 60 seconds timeout
-        start_time = time.time()
-        while status.status != "completed" and status.status != "failed":
-            if time.time() - start_time > timeout:
-                pytest.fail(f"Job timed out after {timeout} seconds. Final status: {status}")
-            print(f"Job status: {status}")
-            time.sleep(1)
-            status = cluster_manager.get_job_status(job_id=job.id)
-
-        # Assert job completed successfully
-        assert status.status == "completed", f"Job failed with status: {status}"
+        status = wait_for_job_status(cluster_manager, job.id, "completed", timeout=60)
         print(f"Final job status: {status}")
 
     finally:
@@ -194,20 +170,8 @@ def test_run_script_worker_docker_environment():
 
         # Submit job and wait for completion
         cluster_manager.submit_job(job)
-        status = cluster_manager.get_job_status(job_id=job.id)
 
-        # Wait for job to complete with timeout
-        timeout = 60  # 60 seconds timeout
-        start_time = time.time()
-        while status.status != "completed" and status.status != "failed":
-            if time.time() - start_time > timeout:
-                pytest.fail(f"Job timed out after {timeout} seconds. Final status: {status}")
-            print(f"Job status: {status}")
-            time.sleep(1)
-            status = cluster_manager.get_job_status(job_id=job.id)
-
-        # Assert job completed successfully
-        assert status.status == "completed", f"Job failed with status: {status}"
+        status = wait_for_job_status(cluster_manager, job.id, "completed", timeout=60)
         print(f"Final job status: {status}")
 
     finally:
@@ -264,19 +228,9 @@ def test_run_script_worker_both_environments():
         )
 
         cluster_manager.submit_job(git_job)
-        git_status = cluster_manager.get_job_status(job_id=git_job.id)
 
         # Wait for Git job to complete
-        timeout = 60
-        start_time = time.time()
-        while git_status.status != "completed" and git_status.status != "failed":
-            if time.time() - start_time > timeout:
-                pytest.fail(f"Git job timed out after {timeout} seconds. Final status: {git_status}")
-            print(f"Git job status: {git_status}")
-            time.sleep(1)
-            git_status = cluster_manager.get_job_status(job_id=git_job.id)
-
-        assert git_status.status == "completed", f"Git job failed with status: {git_status}"
+        git_status = wait_for_job_status(cluster_manager, git_job.id, "completed", timeout=60)
 
         # Test 2: Docker environment job
         docker_job = job_from_schema(
@@ -296,18 +250,9 @@ def test_run_script_worker_both_environments():
         )
 
         cluster_manager.submit_job(docker_job)
-        docker_status = cluster_manager.get_job_status(job_id=docker_job.id)
 
         # Wait for Docker job to complete
-        start_time = time.time()
-        while docker_status.status != "completed" and docker_status.status != "failed":
-            if time.time() - start_time > timeout:
-                pytest.fail(f"Docker job timed out after {timeout} seconds. Final status: {docker_status}")
-            print(f"Docker job status: {docker_status}")
-            time.sleep(1)
-            docker_status = cluster_manager.get_job_status(job_id=docker_job.id)
-
-        assert docker_status.status == "completed", f"Docker job failed with status: {docker_status}"
+        docker_status = wait_for_job_status(cluster_manager, docker_job.id, "completed", timeout=60)
 
         print("Both jobs completed successfully:")
         print(f"Git job: {git_status}")
