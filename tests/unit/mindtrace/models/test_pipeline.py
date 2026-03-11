@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from mindtrace.models import Brain, BrainLoadInput, BrainUnloadInput
+from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
 
 
-class DummyBrain(Brain):
+class DummyPipeline(Pipeline):
     def __init__(self):
         self.load_calls = 0
         self.unload_calls = 0
@@ -18,12 +18,12 @@ class DummyBrain(Brain):
         self.unload_calls += 1
 
 
-class IncompleteBrain(Brain):
+class IncompletePipeline(Pipeline):
     pass
 
 
-def test_brain_load_unload_lifecycle() -> None:
-    brain = DummyBrain()
+def test_pipeline_load_unload_lifecycle() -> None:
+    brain = DummyPipeline()
 
     assert brain.is_loaded is False
 
@@ -43,8 +43,8 @@ def test_brain_load_unload_lifecycle() -> None:
     assert brain.unload_calls == 1
 
 
-def test_brain_force_load_and_unload_paths() -> None:
-    brain = DummyBrain()
+def test_pipeline_force_load_and_unload_paths() -> None:
+    brain = DummyPipeline()
 
     brain.load(BrainLoadInput(force=False))
     assert brain.load_calls == 1
@@ -63,16 +63,16 @@ def test_brain_force_load_and_unload_paths() -> None:
     assert brain.unload_calls == 2
 
 
-def test_brain_loaded_endpoint_reflects_state() -> None:
-    brain = DummyBrain()
+def test_pipeline_loaded_endpoint_reflects_state() -> None:
+    brain = DummyPipeline()
     assert brain.loaded().loaded is False
 
     brain.load(BrainLoadInput(force=False))
     assert brain.loaded().loaded is True
 
 
-def test_brain_base_hooks_raise_when_not_implemented() -> None:
-    brain = IncompleteBrain(live_service=False)
+def test_pipeline_base_hooks_raise_when_not_implemented() -> None:
+    brain = IncompletePipeline(live_service=False)
 
     with pytest.raises(NotImplementedError):
         brain.load(BrainLoadInput(force=False))
@@ -81,8 +81,8 @@ def test_brain_base_hooks_raise_when_not_implemented() -> None:
         brain.unload(BrainUnloadInput(force=True))
 
 
-def test_brain_registers_lifecycle_endpoints() -> None:
-    brain = DummyBrain()
+def test_pipeline_registers_lifecycle_endpoints() -> None:
+    brain = DummyPipeline()
     assert "load" in brain.endpoints
     assert "unload" in brain.endpoints
     assert "loaded" in brain.endpoints

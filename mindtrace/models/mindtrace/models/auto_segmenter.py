@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.models.brain import Brain, BrainLoadInput, BrainUnloadInput
+from mindtrace.models.brain import Pipeline, BrainLoadInput, BrainUnloadInput
 
 try:
     from ultralytics import SAM, YOLO
@@ -72,7 +72,7 @@ AutoSegmenterTaskSchema = TaskSchema(
 )
 
 
-class AutoSegmenter(Brain):
+class AutoSegmenter(Pipeline):
     """Brain that combines YOLO detection with SAM segmentation.
 
     Defaults:
