@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-database"
-version = "0.9.3"
+version = "0.9.4"
 description = "Database functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,13 +13,13 @@ classifiers = [
 ]
 dependencies = [
     "beanie>=1.29.0, <2",
-    "mindtrace-core>=0.9.3",
+    "mindtrace-core>=0.9.4",
     "pydantic>=2.11.1",
     "redis>=4.0.0",
     "redis-om>=0.3.5",
     "motor>=3.3.0",
     "pymongo>=4.14.0",
-    "mindtrace-registry>=0.9.3",
+    "mindtrace-registry>=0.9.4",
 ]
 
 [project.urls]
