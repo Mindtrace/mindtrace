@@ -11,8 +11,6 @@ from mindtrace.database import MindtraceDocument, MongoMindtraceODM
 
 from .test_redis_odm import UserDoc as RedisUserDoc
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # MongoDB connection settings
