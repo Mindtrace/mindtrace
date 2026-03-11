@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-apps"
-version = "0.9.1"
+version = "0.9.2"
 description = "Applications for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -11,17 +11,17 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core>=0.9.1",
-    "mindtrace-registry>=0.9.1",
-    "mindtrace-database>=0.9.1",
-    "mindtrace-services>=0.9.1",
-    "mindtrace-datalake>=0.9.1",
-    "mindtrace-models>=0.9.1",
-    "mindtrace-cluster>=0.9.1",
-    "mindtrace-jobs>=0.9.1",
-    "mindtrace-hardware>=0.9.1",
-    "mindtrace-ui>=0.9.1",
-    "mindtrace-automation>=0.9.1"
+    "mindtrace-core>=0.9.2",
+    "mindtrace-registry>=0.9.2",
+    "mindtrace-database>=0.9.2",
+    "mindtrace-services>=0.9.2",
+    "mindtrace-datalake>=0.9.2",
+    "mindtrace-models>=0.9.2",
+    "mindtrace-cluster>=0.9.2",
+    "mindtrace-jobs>=0.9.2",
+    "mindtrace-hardware>=0.9.2",
+    "mindtrace-ui>=0.9.2",
+    "mindtrace-automation>=0.9.2"
 ]
 
 [project.urls]
