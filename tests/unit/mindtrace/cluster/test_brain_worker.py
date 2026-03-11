@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster import BrainWorker
 from mindtrace.cluster.core.types import JobStatusEnum
-from mindtrace.models import Brain, BrainLoadInput, BrainUnloadInput
+from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
 
 
 class EchoInput(BaseModel):
@@ -16,7 +16,7 @@ class EchoOutput(BaseModel):
     text: str
 
 
-class DemoBrain(Brain):
+class DemoPipeline(Pipeline):
     def __init__(self, **kwargs):
         self.load_calls = 0
         self.unload_calls = 0
@@ -38,7 +38,7 @@ class DemoBrain(Brain):
 
 def _worker_stub(default_endpoint: str | None = "/echo") -> BrainWorker:
     worker = BrainWorker.__new__(BrainWorker)
-    worker.brain_cls = DemoBrain
+    worker.brain_cls = DemoPipeline
     worker.brain_kwargs = {}
     worker.default_endpoint = default_endpoint
     worker.auto_load = True
@@ -54,14 +54,14 @@ def test_brain_worker_from_brain_class_without_service_init(monkeypatch):
     monkeypatch.setattr("mindtrace.cluster.core.brain_worker.Worker.__init__", fake_worker_init)
 
     worker = BrainWorker.from_brain_class(
-        DemoBrain,
+        DemoPipeline,
         brain_kwargs={"x": 1},
         default_endpoint="/echo",
         auto_load=False,
         live_service=False,
     )
     assert isinstance(worker, BrainWorker)
-    assert worker.brain_cls is DemoBrain
+    assert worker.brain_cls is DemoPipeline
     assert worker.brain_kwargs == {"x": 1}
     assert worker.default_endpoint == "/echo"
     assert worker.auto_load is False
@@ -141,7 +141,7 @@ async def test_shutdown_cleanup_unloads_brain_and_swallows_errors(monkeypatch):
     assert called["super"] == 1
 
     # force unload exception path
-    class BoomBrain(DemoBrain):
+    class BoomBrain(DemoPipeline):
         def unload(self, payload):
             raise RuntimeError("boom")
 

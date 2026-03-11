@@ -69,7 +69,7 @@ BrainLoadedTaskSchema = TaskSchema(
 )
 
 
-class Brain(Service):
+class Pipeline(Service):
     """Abstract base class for composite model services.
 
     Subclasses must implement :meth:`on_load` and :meth:`on_unload`, and then

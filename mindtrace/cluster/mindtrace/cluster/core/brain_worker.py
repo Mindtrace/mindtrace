@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core.cluster import Worker
 from mindtrace.cluster.core.types import JobStatusEnum
-from mindtrace.models import Brain, BrainLoadInput, BrainUnloadInput
+from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
 
 
 class BrainWorker(Worker):
@@ -29,7 +29,7 @@ class BrainWorker(Worker):
     def __init__(
         self,
         *args,
-        brain_cls: type[Brain],
+        brain_cls: type[Pipeline],
         brain_kwargs: dict[str, Any] | None = None,
         default_endpoint: str | None = None,
         auto_load: bool = True,
@@ -40,12 +40,12 @@ class BrainWorker(Worker):
         self.brain_kwargs = brain_kwargs or {}
         self.default_endpoint = default_endpoint
         self.auto_load = auto_load
-        self.brain: Brain | None = None
+        self.brain: Pipeline | None = None
 
     @classmethod
     def from_brain_class(
         cls,
-        brain_cls: type[Brain],
+        brain_cls: type[Pipeline],
         *,
         brain_kwargs: dict[str, Any] | None = None,
         default_endpoint: str | None = None,
