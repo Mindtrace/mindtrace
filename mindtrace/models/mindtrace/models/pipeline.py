@@ -18,58 +18,58 @@ from mindtrace.core import TaskSchema
 from mindtrace.services import Service
 
 
-class BrainLoadInput(BaseModel):
+class PipelineLoadInput(BaseModel):
     """Request payload for loading a Brain."""
 
     force: bool = Field(default=False, description="Force reload even if already loaded.")
 
 
-class BrainLoadOutput(BaseModel):
+class PipelineLoadOutput(BaseModel):
     """Response payload for loading a Brain."""
 
     loaded: bool
     message: str
 
 
-class BrainUnloadInput(BaseModel):
+class PipelineUnloadInput(BaseModel):
     """Request payload for unloading a Brain."""
 
     force: bool = Field(default=False, description="Force unload behavior when supported.")
 
 
-class BrainUnloadOutput(BaseModel):
+class PipelineUnloadOutput(BaseModel):
     """Response payload for unloading a Brain."""
 
     loaded: bool
     message: str
 
 
-class BrainLoadedOutput(BaseModel):
+class PipelineLoadedOutput(BaseModel):
     """Response payload for checking whether a Brain is loaded."""
 
     loaded: bool
 
 
-BrainLoadTaskSchema = TaskSchema(
-    name="brain_load",
-    input_schema=BrainLoadInput,
-    output_schema=BrainLoadOutput,
+PipelineLoadTaskSchema = TaskSchema(
+    name="pipeline_load",
+    input_schema=PipelineLoadInput,
+    output_schema=PipelineLoadOutput,
 )
 
-BrainUnloadTaskSchema = TaskSchema(
-    name="brain_unload",
-    input_schema=BrainUnloadInput,
-    output_schema=BrainUnloadOutput,
+PipelineUnloadTaskSchema = TaskSchema(
+    name="pipeline_unload",
+    input_schema=PipelineUnloadInput,
+    output_schema=PipelineUnloadOutput,
 )
 
-BrainLoadedTaskSchema = TaskSchema(
-    name="brain_loaded",
+PipelineLoadedTaskSchema = TaskSchema(
+    name="pipeline_loaded",
     input_schema=None,
-    output_schema=BrainLoadedOutput,
+    output_schema=PipelineLoadedOutput,
 )
 
 
-class Brain(Service):
+class Pipeline(Service):
     """Abstract base class for composite model services.
 
     Subclasses must implement :meth:`on_load` and :meth:`on_unload`, and then
@@ -81,43 +81,43 @@ class Brain(Service):
         self._loaded = False
         self._load_state_lock = RLock()
 
-        self.add_endpoint(path="/load", func=self.load, schema=BrainLoadTaskSchema)
-        self.add_endpoint(path="/unload", func=self.unload, schema=BrainUnloadTaskSchema)
-        self.add_endpoint(path="/loaded", func=self.loaded, schema=BrainLoadedTaskSchema)
+        self.add_endpoint(path="/load", func=self.load, schema=PipelineLoadTaskSchema)
+        self.add_endpoint(path="/unload", func=self.unload, schema=PipelineUnloadTaskSchema)
+        self.add_endpoint(path="/loaded", func=self.loaded, schema=PipelineLoadedTaskSchema)
 
     @property
     def is_loaded(self) -> bool:
         """Whether this Brain currently has resources/models loaded."""
         return self._loaded
 
-    def load(self, payload: BrainLoadInput) -> BrainLoadOutput:
+    def load(self, payload: PipelineLoadInput) -> PipelineLoadOutput:
         """Load models/resources used by this Brain."""
         with self._load_state_lock:
             if self._loaded and not payload.force:
-                return BrainLoadOutput(loaded=True, message="Brain already loaded.")
+                return PipelineLoadOutput(loaded=True, message="Brain already loaded.")
 
             self.on_load(payload)
             self._loaded = True
-            return BrainLoadOutput(loaded=True, message="Brain loaded successfully.")
+            return PipelineLoadOutput(loaded=True, message="Brain loaded successfully.")
 
-    def unload(self, payload: BrainUnloadInput) -> BrainUnloadOutput:
+    def unload(self, payload: PipelineUnloadInput) -> PipelineUnloadOutput:
         """Unload models/resources used by this Brain."""
         with self._load_state_lock:
             if not self._loaded and not payload.force:
-                return BrainUnloadOutput(loaded=False, message="Brain already unloaded.")
+                return PipelineUnloadOutput(loaded=False, message="Brain already unloaded.")
 
             self.on_unload(payload)
             self._loaded = False
-            return BrainUnloadOutput(loaded=False, message="Brain unloaded successfully.")
+            return PipelineUnloadOutput(loaded=False, message="Brain unloaded successfully.")
 
-    def loaded(self) -> BrainLoadedOutput:
+    def loaded(self) -> PipelineLoadedOutput:
         """Return current loaded state for this Brain."""
-        return BrainLoadedOutput(loaded=self._loaded)
+        return PipelineLoadedOutput(loaded=self._loaded)
 
-    def on_load(self, payload: BrainLoadInput) -> None:
+    def on_load(self, payload: PipelineLoadInput) -> None:
         """Subclass hook: load underlying models/resources."""
         raise NotImplementedError(f"{self.__class__.__name__}.on_load must be implemented")
 
-    def on_unload(self, payload: BrainUnloadInput) -> None:
+    def on_unload(self, payload: PipelineUnloadInput) -> None:
         """Subclass hook: release underlying models/resources."""
         raise NotImplementedError(f"{self.__class__.__name__}.on_unload must be implemented")
