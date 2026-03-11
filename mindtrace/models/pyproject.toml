@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-models"
-version = "0.9.2"
+version = "0.9.3"
 description = "Models for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -12,9 +12,9 @@ classifiers = [
 ]
 dependencies = [
     "dill>=0.4.0",
-    "mindtrace-core>=0.9.2",
-    "mindtrace-registry>=0.9.2",
-    "mindtrace-services>=0.9.2",
+    "mindtrace-core>=0.9.3",
+    "mindtrace-registry>=0.9.3",
+    "mindtrace-services>=0.9.3",
     "numpy>=2.3.1",
     "opencv-python>=4.11.0.86",
     "supervision>=0.26.0",
