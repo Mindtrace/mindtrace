@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.cluster import BrainWorker
+from mindtrace.cluster import PipelineWorker
 from mindtrace.cluster.core.types import JobStatusEnum
 from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
 
@@ -36,8 +36,8 @@ class DemoPipeline(Pipeline):
         return EchoOutput(text=payload.text)
 
 
-def _worker_stub(default_endpoint: str | None = "/echo") -> BrainWorker:
-    worker = BrainWorker.__new__(BrainWorker)
+def _worker_stub(default_endpoint: str | None = "/echo") -> PipelineWorker:
+    worker = PipelineWorker.__new__(PipelineWorker)
     worker.brain_cls = DemoPipeline
     worker.brain_kwargs = {}
     worker.default_endpoint = default_endpoint
@@ -46,31 +46,31 @@ def _worker_stub(default_endpoint: str | None = "/echo") -> BrainWorker:
     return worker
 
 
-def test_brain_worker_from_brain_class_without_service_init(monkeypatch):
+def test_pipeline_worker_from_brain_class_without_service_init(monkeypatch):
     def fake_worker_init(self, *args, **kwargs):
-        # Brain-specific kwargs are consumed by BrainWorker.__init__ before super().__init__
+        # Brain-specific kwargs are consumed by PipelineWorker.__init__ before super().__init__
         self.brain = None
 
-    monkeypatch.setattr("mindtrace.cluster.core.brain_worker.Worker.__init__", fake_worker_init)
+    monkeypatch.setattr("mindtrace.cluster.core.pipeline_worker.Worker.__init__", fake_worker_init)
 
-    worker = BrainWorker.from_brain_class(
+    worker = PipelineWorker.from_brain_class(
         DemoPipeline,
         brain_kwargs={"x": 1},
         default_endpoint="/echo",
         auto_load=False,
         live_service=False,
     )
-    assert isinstance(worker, BrainWorker)
+    assert isinstance(worker, PipelineWorker)
     assert worker.brain_cls is DemoPipeline
     assert worker.brain_kwargs == {"x": 1}
     assert worker.default_endpoint == "/echo"
     assert worker.auto_load is False
 
 
-def test_brain_worker_routes_payload_to_brain_endpoint() -> None:
+def test_pipeline_worker_routes_payload_to_brain_endpoint() -> None:
     worker = _worker_stub(default_endpoint="/echo")
 
-    BrainWorker.start(worker)
+    PipelineWorker.start(worker)
     assert worker.brain is not None
     assert worker.brain.is_loaded is True
 
@@ -83,12 +83,12 @@ def test_brain_worker_routes_payload_to_brain_endpoint() -> None:
     assert out["output"] == {"text": "hello"}
 
 
-def test_brain_worker_run_errors_for_missing_state_or_endpoint() -> None:
+def test_pipeline_worker_run_errors_for_missing_state_or_endpoint() -> None:
     worker = _worker_stub(default_endpoint=None)
     with pytest.raises(RuntimeError, match="not been started"):
         worker._run({})
 
-    BrainWorker.start(worker)
+    PipelineWorker.start(worker)
 
     with pytest.raises(ValueError, match="No endpoint provided"):
         worker._run({"input": {"text": "hi"}})
@@ -99,7 +99,7 @@ def test_brain_worker_run_errors_for_missing_state_or_endpoint() -> None:
 
 def test_validate_input_and_normalize_output_paths() -> None:
     worker = _worker_stub(default_endpoint="/echo_model")
-    BrainWorker.start(worker)
+    PipelineWorker.start(worker)
 
     from mindtrace.core import TaskSchema
 
@@ -128,14 +128,14 @@ def test_validate_input_without_brain_raises() -> None:
 @pytest.mark.anyio
 async def test_shutdown_cleanup_unloads_brain_and_swallows_errors(monkeypatch):
     worker = _worker_stub(default_endpoint="/echo")
-    BrainWorker.start(worker)
+    PipelineWorker.start(worker)
 
     called = {"super": 0}
 
     async def fake_super_shutdown(self):
         called["super"] += 1
 
-    monkeypatch.setattr("mindtrace.cluster.core.brain_worker.Worker.shutdown_cleanup", fake_super_shutdown)
+    monkeypatch.setattr("mindtrace.cluster.core.pipeline_worker.Worker.shutdown_cleanup", fake_super_shutdown)
 
     await worker.shutdown_cleanup()
     assert called["super"] == 1

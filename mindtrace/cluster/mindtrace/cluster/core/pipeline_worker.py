@@ -15,7 +15,7 @@ from mindtrace.cluster.core.types import JobStatusEnum
 from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
 
 
-class BrainWorker(Worker):
+class PipelineWorker(Worker):
     """Generic queue worker that wraps a Brain class.
 
     Job payload contract (default):
@@ -51,8 +51,8 @@ class BrainWorker(Worker):
         default_endpoint: str | None = None,
         auto_load: bool = True,
         **worker_kwargs,
-    ) -> "BrainWorker":
-        """Construct a BrainWorker from a Brain class and init kwargs."""
+    ) -> "PipelineWorker":
+        """Construct a PipelineWorker from a Brain class and init kwargs."""
         return cls(
             brain_cls=brain_cls,
             brain_kwargs=brain_kwargs,
@@ -73,7 +73,7 @@ class BrainWorker(Worker):
     def _run(self, job_dict: dict) -> dict:
         """Run a job payload against a selected Brain endpoint."""
         if self.brain is None:
-            raise RuntimeError("BrainWorker has not been started.")
+            raise RuntimeError("PipelineWorker has not been started.")
 
         endpoint = str(job_dict.get("endpoint") or self.default_endpoint or "").strip()
         if not endpoint:
