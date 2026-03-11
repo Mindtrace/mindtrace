@@ -48,7 +48,7 @@ def _worker_stub(default_endpoint: str | None = "/echo") -> PipelineWorker:
 
 def test_pipeline_worker_from_pipeline_class_without_service_init(monkeypatch):
     def fake_worker_init(self, *args, **kwargs):
-        # Brain-specific kwargs are consumed by PipelineWorker.__init__ before super().__init__
+        # Pipeline-specific kwargs are consumed by PipelineWorker.__init__ before super().__init__
         self.pipeline = None
 
     monkeypatch.setattr("mindtrace.cluster.core.pipeline_worker.Worker.__init__", fake_worker_init)
