@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mindtrace.models import Pipeline, BrainLoadInput, BrainUnloadInput
+from mindtrace.models import BrainLoadInput, BrainUnloadInput, Pipeline
 
 
 class DummyPipeline(Pipeline):

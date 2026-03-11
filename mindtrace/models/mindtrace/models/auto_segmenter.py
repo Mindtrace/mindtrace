@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.models.brain import Pipeline, BrainLoadInput, BrainUnloadInput
+from mindtrace.models.pipeline import BrainLoadInput, BrainUnloadInput, Pipeline
 
 try:
     from ultralytics import SAM, YOLO
