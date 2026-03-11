@@ -3,6 +3,7 @@ import time
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node
+from mindtrace.core import get_free_port
 
 
 def wait_for_job_status(cm, job_id, expected_status, timeout=10, poll_interval=0.1):
@@ -17,11 +18,13 @@ def wait_for_job_status(cm, job_id, expected_status, timeout=10, poll_interval=0
     pytest.fail(f"Job {job_id} did not reach '{expected_status}' within {timeout}s. Last: {result.status}")
 
 
-@pytest.fixture(scope="module")
-def _shared_cluster_cm():
-    """Module-scoped ClusterManager — launched once, reused across all tests in a file."""
-    cm = ClusterManager.launch(host="localhost", port=8080, wait_for_launch=True, timeout=30)
+@pytest.fixture
+def cluster_cm():
+    """Function-scoped ClusterManager with dynamic port."""
+    port = get_free_port()
+    cm = ClusterManager.launch(host="localhost", port=port, wait_for_launch=True, timeout=30)
     try:
+        cm.clear_databases()
         yield cm
     finally:
         cm.clear_databases()
@@ -29,30 +32,18 @@ def _shared_cluster_cm():
 
 
 @pytest.fixture
-def cluster_cm(_shared_cluster_cm):
-    """Function-scoped wrapper that clears databases before each test for isolation."""
-    _shared_cluster_cm.clear_databases()
-    return _shared_cluster_cm
-
-
-@pytest.fixture(scope="module")
-def _shared_node(_shared_cluster_cm):
-    """Module-scoped Node — launched once, connected to the shared ClusterManager."""
+def node(cluster_cm):
+    """Function-scoped Node connected to the test's ClusterManager."""
+    port = get_free_port()
     n = Node.launch(
         host="localhost",
-        port=8081,
-        cluster_url=str(_shared_cluster_cm.url),
+        port=port,
+        cluster_url=str(cluster_cm.url),
         wait_for_launch=True,
         timeout=30,
     )
     try:
         yield n
     finally:
+        n.shutdown_all_workers()
         n.shutdown()
-
-
-@pytest.fixture
-def node(cluster_cm, _shared_node):
-    """Function-scoped wrapper. Cleans up workers and depends on cluster_cm for DB cleanup ordering."""
-    _shared_node.shutdown_all_workers()
-    return _shared_node
