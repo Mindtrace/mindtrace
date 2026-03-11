@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mindtrace.models import BrainLoadInput, BrainUnloadInput, Pipeline
+from mindtrace.models import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
 
 class DummyPipeline(Pipeline):
@@ -11,10 +11,10 @@ class DummyPipeline(Pipeline):
         self.unload_calls = 0
         super().__init__(live_service=False)
 
-    def on_load(self, payload: BrainLoadInput) -> None:
+    def on_load(self, payload: PipelineLoadInput) -> None:
         self.load_calls += 1
 
-    def on_unload(self, payload: BrainUnloadInput) -> None:
+    def on_unload(self, payload: PipelineUnloadInput) -> None:
         self.unload_calls += 1
 
 
@@ -23,66 +23,66 @@ class IncompletePipeline(Pipeline):
 
 
 def test_pipeline_load_unload_lifecycle() -> None:
-    brain = DummyPipeline()
+    pipeline = DummyPipeline()
 
-    assert brain.is_loaded is False
+    assert pipeline.is_loaded is False
 
-    out1 = brain.load(BrainLoadInput(force=False))
+    out1 = pipeline.load(PipelineLoadInput(force=False))
     assert out1.loaded is True
-    assert brain.is_loaded is True
-    assert brain.load_calls == 1
+    assert pipeline.is_loaded is True
+    assert pipeline.load_calls == 1
 
     # No-op when already loaded and force=False
-    out2 = brain.load(BrainLoadInput(force=False))
+    out2 = pipeline.load(PipelineLoadInput(force=False))
     assert out2.loaded is True
-    assert brain.load_calls == 1
+    assert pipeline.load_calls == 1
 
-    out3 = brain.unload(BrainUnloadInput(force=False))
+    out3 = pipeline.unload(PipelineUnloadInput(force=False))
     assert out3.loaded is False
-    assert brain.is_loaded is False
-    assert brain.unload_calls == 1
+    assert pipeline.is_loaded is False
+    assert pipeline.unload_calls == 1
 
 
 def test_pipeline_force_load_and_unload_paths() -> None:
-    brain = DummyPipeline()
+    pipeline = DummyPipeline()
 
-    brain.load(BrainLoadInput(force=False))
-    assert brain.load_calls == 1
+    pipeline.load(PipelineLoadInput(force=False))
+    assert pipeline.load_calls == 1
 
     # Force should call on_load even when already loaded.
-    out_force_load = brain.load(BrainLoadInput(force=True))
+    out_force_load = pipeline.load(PipelineLoadInput(force=True))
     assert out_force_load.loaded is True
-    assert brain.load_calls == 2
+    assert pipeline.load_calls == 2
 
-    brain.unload(BrainUnloadInput(force=False))
-    assert brain.unload_calls == 1
+    pipeline.unload(PipelineUnloadInput(force=False))
+    assert pipeline.unload_calls == 1
 
     # Force should call on_unload even when already unloaded.
-    out_force_unload = brain.unload(BrainUnloadInput(force=True))
+    out_force_unload = pipeline.unload(PipelineUnloadInput(force=True))
     assert out_force_unload.loaded is False
-    assert brain.unload_calls == 2
+    assert pipeline.unload_calls == 2
 
 
 def test_pipeline_loaded_endpoint_reflects_state() -> None:
-    brain = DummyPipeline()
-    assert brain.loaded().loaded is False
+    pipeline = DummyPipeline()
+    assert pipeline.loaded().loaded is False
 
-    brain.load(BrainLoadInput(force=False))
-    assert brain.loaded().loaded is True
+    pipeline.load(PipelineLoadInput(force=False))
+    assert pipeline.loaded().loaded is True
 
 
 def test_pipeline_base_hooks_raise_when_not_implemented() -> None:
-    brain = IncompletePipeline(live_service=False)
+    pipeline = IncompletePipeline(live_service=False)
 
     with pytest.raises(NotImplementedError):
-        brain.load(BrainLoadInput(force=False))
+        pipeline.load(PipelineLoadInput(force=False))
 
     with pytest.raises(NotImplementedError):
-        brain.unload(BrainUnloadInput(force=True))
+        pipeline.unload(PipelineUnloadInput(force=True))
 
 
 def test_pipeline_registers_lifecycle_endpoints() -> None:
-    brain = DummyPipeline()
-    assert "load" in brain.endpoints
-    assert "unload" in brain.endpoints
-    assert "loaded" in brain.endpoints
+    pipeline = DummyPipeline()
+    assert "load" in pipeline.endpoints
+    assert "unload" in pipeline.endpoints
+    assert "loaded" in pipeline.endpoints

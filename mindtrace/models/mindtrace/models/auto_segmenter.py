@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.models.pipeline import BrainLoadInput, BrainUnloadInput, Pipeline
+from mindtrace.models.pipeline import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
 try:
     from ultralytics import SAM, YOLO
@@ -95,7 +95,7 @@ class AutoSegmenter(Pipeline):
 
         self.add_endpoint(path="/auto_segment", func=self.auto_segment, schema=AutoSegmenterTaskSchema)
 
-    def on_load(self, payload: BrainLoadInput) -> None:
+    def on_load(self, payload: PipelineLoadInput) -> None:
         """Load YOLO and SAM models."""
         if _ULTRALYTICS_IMPORT_ERROR is not None:
             raise RuntimeError("Ultralytics import failed; cannot load AutoSegmenter.") from _ULTRALYTICS_IMPORT_ERROR
@@ -105,7 +105,7 @@ class AutoSegmenter(Pipeline):
         if self._sam is None:
             self._sam = SAM(self.sam_model_name)
 
-    def on_unload(self, payload: BrainUnloadInput) -> None:
+    def on_unload(self, payload: PipelineUnloadInput) -> None:
         """Unload YOLO and SAM models."""
         self._yolo = None
         self._sam = None
