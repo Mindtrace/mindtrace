@@ -28,13 +28,6 @@ jobs:
       - name: Build all packages
         run: uv build --all-packages
 
-      - name: Publish to Test PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          UV_PUBLISH_URL: https://test.pypi.org/legacy/
-          UV_PUBLISH_CHECK_URL: https://test.pypi.org/simple/
-        run: uv publish dist/mindtrace*
-
       - name: Publish to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
