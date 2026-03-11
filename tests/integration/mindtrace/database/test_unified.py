@@ -117,24 +117,6 @@ def redis_unified_backend():
         redis_backend.delete(user.pk)
 
 
-def _cleanup_redis_state(redis_backend, key_prefix):
-    """Delete Redis keys and search indexes for the given prefix."""
-    keys = redis_backend.redis.keys(f"{key_prefix}:*")
-    if keys:
-        redis_backend.redis.delete(*keys)
-    try:
-        indexes = redis_backend.redis.execute_command("FT._LIST")
-        for idx in indexes:
-            idx_name = idx.decode() if isinstance(idx, bytes) else str(idx)
-            if key_prefix in idx_name:
-                try:
-                    redis_backend.redis.execute_command("FT.DROPINDEX", idx_name)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-
 @pytest_asyncio.fixture(scope="function")
 async def dual_unified_backend():
     """Create a unified backend with both MongoDB and Redis configured."""
@@ -160,10 +142,11 @@ async def dual_unified_backend():
         pass
 
     redis_backend = backend.get_redis_backend()
-    _cleanup_redis_state(redis_backend, RedisUserDoc.Meta.global_key_prefix)
-    # Re-initialize since cleanup dropped indexes
-    redis_backend._is_initialized = False
-    redis_backend.initialize()
+    try:
+        for user in redis_backend.all():
+            redis_backend.delete(user.pk)
+    except Exception:
+        pass
 
     yield backend
 
@@ -175,8 +158,11 @@ async def dual_unified_backend():
     except Exception:
         pass
 
-    # Clean up Redis
-    _cleanup_redis_state(redis_backend, RedisUserDoc.Meta.global_key_prefix)
+    try:
+        for user in redis_backend.all():
+            redis_backend.delete(user.pk)
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -206,10 +192,11 @@ async def unified_model_backend():
 
     if backend.has_redis_backend():
         redis_backend = backend.get_redis_backend()
-        _cleanup_redis_state(redis_backend, IntegrationUnifiedUserDoc.get_meta().global_key_prefix)
-        # Re-initialize to recreate clean indexes after dropping stale ones
-        redis_backend._is_initialized = False
-        redis_backend._do_initialize()
+        try:
+            for user in redis_backend.all():
+                redis_backend.delete(user.pk)
+        except Exception:
+            pass
 
     yield backend
 
@@ -223,10 +210,13 @@ async def unified_model_backend():
     except Exception:
         pass
 
-    # Clean up Redis
     if backend.has_redis_backend():
         redis_backend = backend.get_redis_backend()
-        _cleanup_redis_state(redis_backend, IntegrationUnifiedUserDoc.get_meta().global_key_prefix)
+        try:
+            for user in redis_backend.all():
+                redis_backend.delete(user.pk)
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio
