@@ -64,7 +64,7 @@ def configure_logging_for_tests(caplog):
     root_logger.setLevel(logging.DEBUG)
 
     # Suppress noisy third-party DEBUG logs
-    noisy_loggers = ["botocore", "boto3", "urllib3", "s3transfer"]
+    noisy_loggers = ["botocore", "boto3", "urllib3", "s3transfer", "httpcore", "httpx", "hpack"]
     original_noisy_levels = {}
     for name in noisy_loggers:
         lg = logging.getLogger(name)
