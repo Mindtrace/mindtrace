@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-ui"
-version = "0.9.0"
+version = "0.9.1"
 description = "UI for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -12,7 +12,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "mindtrace-core>=0.9.0"
+    "mindtrace-core>=0.9.1"
 ]
 
 [project.urls]
