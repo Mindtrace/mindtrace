@@ -31,9 +31,9 @@ jobs:
       - name: Publish to Test PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
-        run: uv publish dist/mindtrace-* --publish-url https://test.pypi.org/legacy/
+        run: uv publish dist/mindtrace* --publish-url https://test.pypi.org/legacy/
 
       - name: Publish to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: uv publish dist/mindtrace-*
+        run: uv publish dist/mindtrace*
