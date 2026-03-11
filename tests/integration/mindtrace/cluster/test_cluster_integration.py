@@ -11,6 +11,8 @@ from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
+from .conftest import wait_for_job_status
+
 
 @pytest.mark.integration
 def test_cluster_manager_as_gateway():
@@ -57,9 +59,7 @@ def test_cluster_manager_with_prelaunched_worker():
         assert result.status == JobStatusEnum.QUEUED
         assert result.output == {}
 
-        time.sleep(1)
-        result = cluster_cm.get_job_status(job_id=job.id)
-        assert result.status == JobStatusEnum.COMPLETED
+        result = wait_for_job_status(cluster_cm, job.id, JobStatusEnum.COMPLETED)
         assert result.output == {"echoed": "Hello, Worker!"}
 
         # Test both status methods after job completion
@@ -97,10 +97,8 @@ def test_cluster_manager_multiple_jobs_with_worker():
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == JobStatusEnum.QUEUED
-        time.sleep(1)
         for i, job in enumerate(jobs):
-            result = cluster_cm.get_job_status(job_id=job.id)
-            assert result.status == JobStatusEnum.COMPLETED
+            result = wait_for_job_status(cluster_cm, job.id, JobStatusEnum.COMPLETED)
             assert result.output == {"echoed": messages[i]}
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
@@ -126,7 +124,6 @@ def test_cluster_manager_worker_failure():
         worker_cm.shutdown()
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
         result = cluster_cm.submit_job(job)
-        time.sleep(1)
         assert result.status == JobStatusEnum.QUEUED  # Should still succeed but the job is queued
     finally:
         if cluster_cm is not None:
@@ -148,10 +145,8 @@ def test_cluster_manager_with_node():
         echo_job_schema = JobSchema(name="node_echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_cm.register_job_to_worker(job_type="node_echo", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!"})
-        result = cluster_cm.submit_job(job)
-        time.sleep(1)
-        result = cluster_cm.get_job_status(job_id=job.id)
-        assert result.status == JobStatusEnum.COMPLETED
+        cluster_cm.submit_job(job)
+        result = wait_for_job_status(cluster_cm, job.id, JobStatusEnum.COMPLETED)
         assert result.output == {"echoed": "Hello, World!"}
     finally:
         node.shutdown()
@@ -194,11 +189,7 @@ def test_cluster_manager_launch_worker():
         assert result.output == {}
 
         # Wait for the job to be processed
-        time.sleep(2)
-
-        # Check the final job status
-        final_result = cluster_cm.get_job_status(job_id=job.id)
-        assert final_result.status == "completed"
+        final_result = wait_for_job_status(cluster_cm, job.id, "completed")
         assert final_result.output == {"echoed": "Hello from launch_worker test!"}
 
     finally:
@@ -244,12 +235,8 @@ def test_cluster_manager_launch_worker_multiple_workers():
             assert result.status == JobStatusEnum.QUEUED
 
         # Wait for all jobs to be processed
-        time.sleep(3)
-
-        # Verify all jobs completed successfully
         for i, job in enumerate(jobs):
-            final_result = cluster_cm.get_job_status(job_id=job.id)
-            assert final_result.status == "completed"
+            final_result = wait_for_job_status(cluster_cm, job.id, "completed")
             assert final_result.output == {"echoed": f"Job {i + 1} from worker {worker_urls[i]}"}
 
     finally:
@@ -319,11 +306,7 @@ def test_register_worker_type_with_job_schema_name():
             assert result.output == {}
 
             # Wait for the job to be processed
-            time.sleep(2)
-
-            # Check the final job status - should be completed due to auto-connection
-            final_result = cluster_cm.get_job_status(job_id=job.id)
-            assert final_result.status == "completed"
+            final_result = wait_for_job_status(cluster_cm, job.id, "completed")
             assert final_result.output == {"echoed": "Auto-connected worker test!"}
 
         finally:
@@ -373,11 +356,7 @@ def test_register_job_schema_to_worker_type():
             assert result.output == {}
 
             # Wait for the job to be processed
-            time.sleep(2)
-
-            # Check the final job status
-            final_result = cluster_cm.get_job_status(job_id=job.id)
-            assert final_result.status == "completed"
+            final_result = wait_for_job_status(cluster_cm, job.id, "completed")
             assert final_result.output == {"echoed": "Manual registration test!"}
 
         finally:
@@ -447,11 +426,7 @@ def test_launch_worker_with_auto_connect_database():
         assert result.output == {}
 
         # Wait for the job to be processed
-        time.sleep(2)
-
-        # Check the final job status
-        final_result = cluster_cm.get_job_status(job_id=job.id)
-        assert final_result.status == "completed"
+        final_result = wait_for_job_status(cluster_cm, job.id, "completed")
         assert final_result.output == {"echoed": "Auto-connect database test!"}
 
     finally:
@@ -500,11 +475,7 @@ def test_launch_worker_without_auto_connect_database():
         assert result.output == {}
 
         # Wait for the job to be processed
-        time.sleep(2)
-
-        # Check the final job status
-        final_result = cluster_cm.get_job_status(job_id=job2.id)
-        assert final_result.status == "completed"
+        final_result = wait_for_job_status(cluster_cm, job2.id, "completed")
         assert final_result.output == {"echoed": "Manual registration after launch!"}
 
     finally:
@@ -559,15 +530,10 @@ def test_multiple_worker_types_with_auto_connect():
         assert result2.status == "queued"
 
         # Wait for the jobs to be processed
-        time.sleep(3)
+        final_result1 = wait_for_job_status(cluster_cm, job1.id, "completed")
+        final_result2 = wait_for_job_status(cluster_cm, job2.id, "completed")
 
-        # Check the final job statuses
-        final_result1 = cluster_cm.get_job_status(job_id=job1.id)
-        final_result2 = cluster_cm.get_job_status(job_id=job2.id)
-
-        assert final_result1.status == "completed"
         assert final_result1.output == {"echoed": "Worker 1 job!"}
-        assert final_result2.status == "completed"
         assert final_result2.output == {"echoed": "Worker 2 job!"}
 
     finally:
@@ -628,11 +594,8 @@ def test_launch_worker_with_delay():
         assert query_status.status == WorkerStatusEnum.RUNNING.value
         assert query_status.job_id == job.id
 
-        time.sleep(3)
-
-        # Check the final job status
-        final_result = cluster_cm.get_job_status(job_id=job.id)
-        assert final_result.status == "completed"
+        # Wait for the job to complete
+        final_result = wait_for_job_status(cluster_cm, job.id, "completed")
         assert final_result.output == {"echoed": "Launch worker with delay test!"}
 
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
@@ -675,19 +638,15 @@ def test_query_worker_status_integration():
         result = cluster_cm.submit_job(job)
         assert result.status == JobStatusEnum.QUEUED
 
-        # Wait a bit for the job to run
-        time.sleep(2)
+        # Wait for job to complete
+        job_result = wait_for_job_status(cluster_cm, job.id, "completed")
+        assert job_result.output == {"echoed": "Query status test!"}
 
         # Query worker status after job completion
         worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
         assert worker_status.worker_id == worker_id
         assert worker_status.status == WorkerStatusEnum.IDLE.value
         assert worker_status.job_id is None
-
-        # Verify job was completed
-        job_result = cluster_cm.get_job_status(job_id=job.id)
-        assert job_result.status == "completed"
-        assert job_result.output == {"echoed": "Query status test!"}
 
     finally:
         if worker_cm is not None:
@@ -721,28 +680,15 @@ def test_query_worker_status_by_url_integration():
         result = cluster_cm.submit_job(job)
         assert result.status == JobStatusEnum.QUEUED
 
-        # Wait a bit for the job to start
-        time.sleep(0.5)
-
-        # Query worker status during job execution
-        worker_status = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
-        assert worker_status.worker_url == worker_url
-        # Status could be either IDLE (if job hasn't started) or RUNNING (if job is in progress)
-        assert worker_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
-
-        # Wait for job completion
-        time.sleep(2)
+        # Wait for job to complete
+        job_result = wait_for_job_status(cluster_cm, job.id, "completed")
+        assert job_result.output == {"echoed": "Query status by URL test!"}
 
         # Query worker status after job completion
         worker_status = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
         assert worker_status.worker_url == worker_url
         assert worker_status.status == WorkerStatusEnum.IDLE.value
         assert worker_status.job_id is None
-
-        # Verify job was completed
-        job_result = cluster_cm.get_job_status(job_id=job.id)
-        assert job_result.status == "completed"
-        assert job_result.output == {"echoed": "Query status by URL test!"}
 
     finally:
         if worker_cm is not None:
@@ -883,8 +829,9 @@ def test_query_worker_status_multiple_workers():
         assert worker1_status.status == WorkerStatusEnum.RUNNING.value
         assert worker2_status.status == WorkerStatusEnum.RUNNING.value
 
-        # Wait for job completion
-        time.sleep(3)
+        # Wait for both jobs to complete
+        _ = wait_for_job_status(cluster_cm, job1.id, "completed")
+        _ = wait_for_job_status(cluster_cm, job2.id, "completed")
 
         # Query status of both workers after job completion
         worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
@@ -894,12 +841,6 @@ def test_query_worker_status_multiple_workers():
         assert worker1_status.job_id is None
         assert worker2_status.status == WorkerStatusEnum.IDLE.value
         assert worker2_status.job_id is None
-
-        # Verify both jobs were completed
-        job1_result = cluster_cm.get_job_status(job_id=job1.id)
-        job2_result = cluster_cm.get_job_status(job_id=job2.id)
-        assert job1_result.status == "completed"
-        assert job2_result.status == "completed"
 
     finally:
         if worker1_cm is not None:
@@ -951,7 +892,7 @@ def test_query_worker_status_vs_get_worker_status():
         assert get_status.worker_url == query_status.worker_url
 
         # Wait for job completion
-        time.sleep(2)
+        wait_for_job_status(cluster_cm, job.id, "completed")
 
         # Compare status after job completion
         get_status = cluster_cm.get_worker_status(worker_id=worker_id)
@@ -1003,17 +944,13 @@ def test_query_worker_status_real_time_updates():
         assert worker_status.job_id == job.id
 
         # Wait for job completion
-        time.sleep(2.5)
+        job_result = wait_for_job_status(cluster_cm, job.id, "completed")
+        assert job_result.output == {"echoed": "Real-time status test!"}
 
         # Check status after job completion (should be IDLE again)
         worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
         assert worker_status.job_id is None
-
-        # Verify job was completed
-        job_result = cluster_cm.get_job_status(job_id=job.id)
-        assert job_result.status == "completed"
-        assert job_result.output == {"echoed": "Real-time status test!"}
 
     finally:
         if worker_cm is not None:
@@ -1161,9 +1098,7 @@ def test_dlq_job_failure_and_requeue():
         assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to complete (and fail)
-        time.sleep(2)
-        job_status = cluster_cm.get_job_status(job_id=job.id)
-        assert job_status.status == JobStatusEnum.ERROR
+        wait_for_job_status(cluster_cm, job.id, JobStatusEnum.ERROR)
 
         # Check that job is in DLQ
         dlq_jobs = cluster_cm.get_dlq_jobs()
@@ -1178,10 +1113,8 @@ def test_dlq_job_failure_and_requeue():
         dlq_jobs_after = cluster_cm.get_dlq_jobs()
         assert len(dlq_jobs_after.jobs) == 0
 
-        # Wait for requeued job to complete
-        time.sleep(2)
-        final_status = cluster_cm.get_job_status(job_id=job.id)
-        assert final_status.status == JobStatusEnum.ERROR
+        # Wait for requeued job to complete (will error again)
+        wait_for_job_status(cluster_cm, job.id, JobStatusEnum.ERROR)
         # Note: The job will fail again because it has should_fail=True
         # But we've tested the requeue functionality
 
@@ -1209,9 +1142,7 @@ def test_dlq_job_failure_and_discard():
         assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to complete (and fail)
-        time.sleep(1)
-        job_status = cluster_cm.get_job_status(job_id=job.id)
-        assert job_status.status == JobStatusEnum.ERROR
+        wait_for_job_status(cluster_cm, job.id, JobStatusEnum.ERROR)
 
         # Check that job is in DLQ
         dlq_jobs = cluster_cm.get_dlq_jobs()
@@ -1252,7 +1183,8 @@ def test_dlq_multiple_failed_jobs():
             assert result.status == JobStatusEnum.QUEUED
 
         # Wait for all jobs to complete (and fail)
-        time.sleep(3)
+        for job in jobs:
+            wait_for_job_status(cluster_cm, job.id, JobStatusEnum.ERROR)
 
         # Check that all jobs are in DLQ
         dlq_jobs = cluster_cm.get_dlq_jobs()
@@ -1327,9 +1259,7 @@ def test_dlq_failed_job_adds_to_dlq():
         assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to complete (and error)
-        time.sleep(2)
-        job_status = cluster_cm.get_job_status(job_id=job.id)
-        assert job_status.status == JobStatusEnum.FAILED
+        wait_for_job_status(cluster_cm, job.id, JobStatusEnum.FAILED)
 
         # Check that job is in DLQ
         dlq_jobs = cluster_cm.get_dlq_jobs()
