@@ -1,6 +1,6 @@
-"""Auto-segmentation Brain built from Ultralytics YOLO + SAM.
+"""Auto-segmentation Pipeline built from Ultralytics YOLO + SAM.
 
-This Brain runs object detection first, then uses detection boxes as prompts for
+This Pipeline runs object detection first, then uses detection boxes as prompts for
 SAM segmentation.
 """
 
@@ -73,7 +73,7 @@ AutoSegmenterTaskSchema = TaskSchema(
 
 
 class AutoSegmenter(Pipeline):
-    """Brain that combines YOLO detection with SAM segmentation.
+    """Pipeline that combines YOLO detection with SAM segmentation.
 
     Defaults:
     - YOLO model: yolov10m.pt
