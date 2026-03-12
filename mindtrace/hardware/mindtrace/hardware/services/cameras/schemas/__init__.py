@@ -19,6 +19,14 @@ from mindtrace.hardware.services.cameras.schemas.config_schemas import (
     GetCameraConfigurationSchema,
     ImportCameraConfigSchema,
 )
+from mindtrace.hardware.services.cameras.schemas.focus_schemas import (
+    GetFocusConfigSchema,
+    GetLensStatusSchema,
+    GetOpticalPowerSchema,
+    SetFocusConfigSchema,
+    SetOpticalPowerSchema,
+    TriggerAutofocusSchema,
+)
 from mindtrace.hardware.services.cameras.schemas.health_schemas import (
     HealthSchema,
 )
@@ -88,6 +96,13 @@ ALL_SCHEMAS = {
     "capture_images_batch": CaptureImagesBatchSchema,
     "capture_hdr_image": CaptureHDRImageSchema,
     "capture_hdr_images_batch": CaptureHDRImagesBatchSchema,
+    # Focus / Liquid Lens
+    "get_lens_status": GetLensStatusSchema,
+    "get_optical_power": GetOpticalPowerSchema,
+    "set_optical_power": SetOpticalPowerSchema,
+    "trigger_autofocus": TriggerAutofocusSchema,
+    "get_focus_config": GetFocusConfigSchema,
+    "set_focus_config": SetFocusConfigSchema,
     # Network & Performance
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
     "get_performance_settings": GetPerformanceSettingsSchema,
@@ -137,6 +152,13 @@ __all__ = [
     "CaptureImagesBatchSchema",
     "CaptureHDRImageSchema",
     "CaptureHDRImagesBatchSchema",
+    # Focus / Liquid Lens
+    "GetLensStatusSchema",
+    "GetOpticalPowerSchema",
+    "SetOpticalPowerSchema",
+    "TriggerAutofocusSchema",
+    "GetFocusConfigSchema",
+    "SetFocusConfigSchema",
     # Network & Performance
     "GetNetworkDiagnosticsSchema",
     "GetPerformanceSettingsSchema",
