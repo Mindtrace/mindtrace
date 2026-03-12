@@ -56,29 +56,3 @@ async def datalake():
         pass  # Ignore cleanup errors
 
 
-@pytest.fixture(scope="session", autouse=True)
-def suppress_pymongo_logs():
-    """Suppress PyMongo debug logging during tests."""
-    import logging
-
-    # Suppress all PyMongo related loggers
-    loggers_to_suppress = [
-        "pymongo",
-        "pymongo.topology",
-        "pymongo.connection",
-        "pymongo.monitor",
-        "pymongo.periodic_executor",
-    ]
-
-    original_levels = {}
-    for logger_name in loggers_to_suppress:
-        logger = logging.getLogger(logger_name)
-        original_levels[logger_name] = logger.level
-        logger.setLevel(logging.CRITICAL)
-
-    yield
-
-    # Restore original levels
-    for logger_name, original_level in original_levels.items():
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(original_level)
