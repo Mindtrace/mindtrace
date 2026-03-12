@@ -16,7 +16,7 @@ from .profiles import ModelProfile
 from .prompts import UserPromptPart
 from .providers import GeminiProvider, OllamaProvider, OpenAIProvider, Provider
 from .tools import RunContext, Tool, ToolDefinition
-from .toolsets import AbstractToolset, FunctionToolset
+from .toolsets import AbstractToolset, CompoundToolset, FunctionToolset, MCPToolset, ToolFilter
 
 __all__ = [
     "AbstractHistoryStrategy",
@@ -26,9 +26,11 @@ __all__ = [
     "AgentDepsT",
     "AgentRunResult",
     "AgentRunResultEvent",
+    "CompoundToolset",
     "FunctionToolset",
     "GeminiProvider",
     "InMemoryHistory",
+    "MCPToolset",
     "Model",
     "ModelMessage",
     "ModelProfile",
@@ -50,6 +52,7 @@ __all__ = [
     "Tool",
     "ToolCallPart",
     "ToolDefinition",
+    "ToolFilter",
     "ToolResultEvent",
     "ToolReturnPart",
     "UserPromptPart",
