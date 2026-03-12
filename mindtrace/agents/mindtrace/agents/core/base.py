@@ -21,6 +21,8 @@ from ..messages._parts import SystemPromptPart
 from ..models import Model, ModelRequestParameters, ModelResponse
 from ..prompts import UserContent, UserPromptPart
 from ..tools import RunContext, Tool
+from ..toolsets._toolset import AbstractToolset
+from ..toolsets.compound import CompoundToolset
 from ..toolsets.function import FunctionToolset
 from .abstract import AbstractMindtraceAgent, OutputDataT
 
@@ -33,6 +35,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
         model: Model,
         *,
         tools: Sequence[Tool] | None = None,
+        toolset: AbstractToolset | None = None,
         system_prompt: str | None = None,
         name: str | None = None,
         deps_type: type = type(None),
@@ -52,10 +55,19 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
         self.history = history
         self._entered_count = 0
         self._lock = asyncio.Lock()
-        toolset: FunctionToolset = FunctionToolset()
+
+        func_toolset: FunctionToolset = FunctionToolset()
         for tool in self.tools:
-            toolset.add_tool(tool)
-        self._tool_manager: ToolManager = ToolManager(toolset=toolset)
+            func_toolset.add_tool(tool)
+
+        if toolset is None:
+            effective_toolset: AbstractToolset = func_toolset
+        elif self.tools:
+            effective_toolset = CompoundToolset(func_toolset, toolset)
+        else:
+            effective_toolset = toolset
+
+        self._tool_manager: ToolManager = ToolManager(toolset=effective_toolset)
 
     @property
     def name(self) -> str | None:
