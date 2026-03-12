@@ -1,52 +1,25 @@
 import time
+from functools import partial
 
 import httpx
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node, Worker
+from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
+free_port = partial(get_free_port, start_port=8351, end_port=8370)
+
 
 @pytest.mark.integration
 def test_start_worker_from_git():
     """Integration test for starting a worker from a git repository."""
-    # Use different ports to avoid conflicts with other tests
-    cluster_port = 8212
-    node_port = 8213
-    worker_port = 8214
-
-    # Check for pre-existing services on the ports we'll use (fail fast with clear error)
-    ports_to_check = {
-        "cluster_manager": cluster_port,
-        "node": node_port,
-        "worker": worker_port,
-    }
-
-    for service_name, port in ports_to_check.items():
-        url = f"http://localhost:{port}"
-        try:
-            # Try to connect to see if something is already running
-            response = httpx.post(f"{url}/heartbeat", json={}, timeout=1.0)
-            if response.status_code == 200:
-                pytest.fail(
-                    f"Pre-existing service detected on port {port} ({service_name}). "
-                    f"Service at {url} is already running and responding to heartbeat. "
-                    f"This test requires clean ports. Please stop any existing Mindtrace services "
-                    f"(ClusterManager, Node, or Worker) running on ports {cluster_port}, {node_port}, or {worker_port}."
-                )
-        except (httpx.ConnectError, httpx.TimeoutException):
-            # Port is free, which is what we want
-            pass
-        except Exception as e:
-            # Other errors (like 405 Method Not Allowed) suggest something is on the port
-            pytest.fail(
-                f"Port {port} ({service_name}) appears to be in use. "
-                f"Attempted to check {url}/heartbeat but got unexpected error: {e}. "
-                f"This test requires clean ports. Please stop any existing services on ports {cluster_port}, {node_port}, or {worker_port}."
-            )
+    cluster_port = free_port()
+    node_port = free_port()
+    worker_port = free_port()
 
     cluster_manager = ClusterManager.launch(host="localhost", port=cluster_port, wait_for_launch=True, timeout=15)
     node = Node.launch(
