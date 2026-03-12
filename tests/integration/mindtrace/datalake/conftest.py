@@ -54,5 +54,3 @@ async def datalake():
         await Datum.delete_all()
     except Exception:
         pass  # Ignore cleanup errors
-
-

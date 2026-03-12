@@ -153,5 +153,3 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Give background threads more time to finish
     time.sleep(0.3)
-
-
