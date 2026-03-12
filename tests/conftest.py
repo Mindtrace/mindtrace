@@ -66,17 +66,25 @@ def configure_logging_for_tests(caplog):
     # Remove third-party handlers (e.g. ZenML) from root logger that cause noise.
     # caplog's handler is managed by pytest and re-added each test automatically.
     original_root_handlers = root_logger.handlers[:]
-    root_logger.handlers = [
-        h for h in root_logger.handlers if type(h).__module__.startswith("_pytest")
-    ]
+    root_logger.handlers = [h for h in root_logger.handlers if type(h).__module__.startswith("_pytest")]
 
     # Suppress noisy third-party DEBUG logs
     noisy_loggers = [
-        "botocore", "boto3", "urllib3", "s3transfer",
-        "httpcore", "httpx", "hpack",
-        "pika", "asyncio", "mcp",
-        "pymongo", "pymongo.topology", "pymongo.connection",
-        "pymongo.monitor", "pymongo.periodic_executor",
+        "botocore",
+        "boto3",
+        "urllib3",
+        "s3transfer",
+        "httpcore",
+        "httpx",
+        "hpack",
+        "pika",
+        "asyncio",
+        "mcp",
+        "pymongo",
+        "pymongo.topology",
+        "pymongo.connection",
+        "pymongo.monitor",
+        "pymongo.periodic_executor",
     ]
     original_noisy_levels = {}
     for name in noisy_loggers:
