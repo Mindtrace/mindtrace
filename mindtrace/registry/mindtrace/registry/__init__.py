@@ -14,8 +14,18 @@ from mindtrace.registry.core.registry import Registry
 
 if check_libs(["ultralytics", "torch"]) == []:
     # Registers the Ultralytics archivers to the Registry class
-    import mindtrace.registry.archivers.ultralytics.sam_archiver  # noqa: F401
-    import mindtrace.registry.archivers.ultralytics.yolo_archiver  # noqa: F401
+    try:
+        import mindtrace.registry.archivers.ultralytics.sam_archiver  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        import mindtrace.registry.archivers.ultralytics.yolo_archiver  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        import mindtrace.registry.archivers.ultralytics.yoloe_archiver  # noqa: F401
+    except ImportError:
+        pass
     import mindtrace.registry.archivers.ultralytics.yoloe_archiver  # noqa: F401
 
 
