@@ -1,5 +1,4 @@
 import time
-from functools import partial
 
 import httpx
 import pytest
@@ -11,15 +10,13 @@ from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
-free_port = partial(get_free_port, start_port=8351, end_port=8370)
-
 
 @pytest.mark.integration
 def test_start_worker_from_git():
     """Integration test for starting a worker from a git repository."""
-    cluster_port = free_port()
-    node_port = free_port()
-    worker_port = free_port()
+    cluster_port = get_free_port(start_port=8351, end_port=8370)
+    node_port = get_free_port(start_port=cluster_port + 1, end_port=8370)
+    worker_port = get_free_port(start_port=node_port + 1, end_port=8370)
 
     cluster_manager = ClusterManager.launch(host="localhost", port=cluster_port, wait_for_launch=True, timeout=15)
     node = Node.launch(
