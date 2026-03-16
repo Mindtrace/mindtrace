@@ -13,7 +13,7 @@ Run:
 """
 
 import asyncio
-import os
+
 from mindtrace.agents import MCPToolset, MindtraceAgent, OpenAIChatModel, OpenAIProvider
 from mindtrace.services.samples.echo_mcp import EchoService
 
@@ -41,10 +41,7 @@ async def main() -> None:
         agent = MindtraceAgent(
             model=model,
             toolset=toolset,
-            system_prompt=(
-                "You have access to two tools: echo and reverse_message. "
-                "Use them when asked. Be concise."
-            ),
+            system_prompt=("You have access to two tools: echo and reverse_message. Use them when asked. Be concise."),
             name="echo_agent",
         )
 
@@ -60,9 +57,7 @@ async def main() -> None:
 
         # --- Run 3: both in one turn ---
         print("\n=== chained ===")
-        result = await agent.run(
-            'Echo "ping", then reverse "pong" and tell me both results.'
-        )
+        result = await agent.run('Echo "ping", then reverse "pong" and tell me both results.')
         print(result)
 
     print("\nEchoService shut down.")
