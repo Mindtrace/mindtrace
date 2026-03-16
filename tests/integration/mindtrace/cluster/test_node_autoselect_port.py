@@ -51,33 +51,30 @@ def test_node_launch_worker_autoselect_port_reuse_port(cluster_cm, node):
         job_type="auto_connect_db_echo",
     )
 
+    launches = []
+
     launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
     )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8300"
+    launches.append(launch)
 
     launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
     )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8301"
+    launches.append(launch)
+    
+    for i, launch in enumerate(launches):
+        launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+        assert launch_status.status == LaunchStatusEnum.READY
+        assert launch_status.worker_url == f"http://localhost:830{i}"
+
     node.shutdown_all_workers()
 
-    launch = cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
-    )
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2")
+
     launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
     assert launch_status.status == LaunchStatusEnum.READY
     assert launch_status.worker_url == "http://localhost:8300"
-    launch = cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker3"
-    )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8301"
 
 
 @pytest.mark.integration
@@ -89,25 +86,21 @@ def test_node_launch_worker_autoselect_port_worker_crashed(cluster_cm, node):
         worker_params={},
         job_type="auto_connect_db_echo",
     )
+    launches = []
 
-    launch = cluster_cm.launch_worker(
+    launches.append(cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
-    )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8300"
-    launch = cluster_cm.launch_worker(
+    ))
+    launches.append(cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
-    )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8301"
-    launch = cluster_cm.launch_worker(
+    ))
+    launches.append(cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
-    )
-    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
-    assert launch_status.status == LaunchStatusEnum.READY
-    assert launch_status.worker_url == "http://localhost:8302"
+    ))
+    for i, launch in enumerate(launches):
+        launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+        assert launch_status.status == LaunchStatusEnum.READY
+        assert launch_status.worker_url == f"http://localhost:830{i}"
 
     worker_cm = Worker.connect(url="http://localhost:8301")
     worker_cm.shutdown()
