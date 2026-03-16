@@ -20,7 +20,9 @@ def wait_for_job_status(cm, job_id, expected_status, timeout=10, poll_interval=0
     pytest.fail(f"Job {job_id} did not reach '{expected_status}' within {timeout}s. Last: {result.status}")
 
 
-def wait_for_worker_launch(cluster_cm, node_url: str, launch_id: str, timeout: float = 60.0, poll_interval: float = 0.5):
+def wait_for_worker_launch(
+    cluster_cm, node_url: str, launch_id: str, timeout: float = 60.0, poll_interval: float = 0.5
+):
     """Poll worker launch status until READY or FAILED, or timeout.
 
     Returns the final LaunchWorkerStatusOutput on success; fails the test on timeout.

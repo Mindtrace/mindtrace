@@ -187,7 +187,7 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
             worker_url=worker_url,
             job_type=None,
         )
-    
+
         launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
         assert launch_status.status == LaunchStatusEnum.READY
         cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=launch_status.worker_url)
@@ -449,9 +449,7 @@ def test_launch_worker_with_delay(cluster_cm, node):
 
     # Launch a worker - it should be automatically connected due to auto-connect database
     worker_url = f"http://localhost:{free_port()}"
-    launch = cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=worker_url
-    )
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
     launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
     assert launch_status.status == LaunchStatusEnum.READY
     worker_id = launch_status.worker_id
@@ -814,6 +812,7 @@ def test_node_shutdown_worker(cluster_cm, node):
     )
     launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
     assert launch_status.status == LaunchStatusEnum.READY
+
 
 @pytest.mark.integration
 def test_node_shutdown_worker_by_id(cluster_cm, node):

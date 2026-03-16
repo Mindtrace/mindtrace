@@ -3,7 +3,7 @@ import time
 import httpx
 import pytest
 
-from mindtrace.cluster import ClusterManager, Node, Worker
+from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.core.types import LaunchStatusEnum
 from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
@@ -47,8 +47,7 @@ def test_start_worker_from_git():
         status = wait_for_worker_launch(cluster_manager, str(node.url), launch.launch_id, timeout=150.0)
         if status.status != LaunchStatusEnum.READY:
             pytest.fail(
-                f"Worker did not become ready. Status: {status.status}, error: {status.error}. "
-                f"Worker URL: {worker_url}"
+                f"Worker did not become ready. Status: {status.status}, error: {status.error}. Worker URL: {worker_url}"
             )
 
         # Verify worker is launched and reachable (quick validation to catch launch failures early)
