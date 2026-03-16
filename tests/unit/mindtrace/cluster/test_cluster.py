@@ -772,9 +772,7 @@ def test_register_node(cluster_manager):
         "rabbitmq_host": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
         "rabbitmq_port": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
         "rabbitmq_username": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
-        "rabbitmq_password": cluster_manager.config.get_secret(
-            "MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"
-        ),
+        "rabbitmq_password": cluster_manager.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"),
     }
 
     assert result == expected_result
