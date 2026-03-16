@@ -17,15 +17,15 @@ def test_node_launch_worker_autoselect_port(cluster_cm, node):
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
     )
-    assert output.worker_url == "http://localhost:8200"
+    assert output.worker_url == "http://localhost:8300"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
     )
-    assert output.worker_url == "http://localhost:8201"
+    assert output.worker_url == "http://localhost:8301"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
     )
-    assert output.worker_url == "http://localhost:8202"
+    assert output.worker_url == "http://localhost:8302"
     with pytest.raises(HTTPException):
         cluster_cm.launch_worker(
             node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker3"
@@ -45,20 +45,20 @@ def test_node_launch_worker_autoselect_port_reuse_port(cluster_cm, node):
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
     )
-    assert output.worker_url == "http://localhost:8200"
+    assert output.worker_url == "http://localhost:8300"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
     )
-    assert output.worker_url == "http://localhost:8201"
+    assert output.worker_url == "http://localhost:8301"
     node.shutdown_all_workers()
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
     )
-    assert output.worker_url == "http://localhost:8200"
+    assert output.worker_url == "http://localhost:8300"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker3"
     )
-    assert output.worker_url == "http://localhost:8201"
+    assert output.worker_url == "http://localhost:8301"
 
 
 @pytest.mark.integration
@@ -74,20 +74,20 @@ def test_node_launch_worker_autoselect_port_worker_crashed(cluster_cm, node):
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
     )
-    assert output.worker_url == "http://localhost:8200"
+    assert output.worker_url == "http://localhost:8300"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
     )
-    assert output.worker_url == "http://localhost:8201"
+    assert output.worker_url == "http://localhost:8301"
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
     )
-    assert output.worker_url == "http://localhost:8202"
+    assert output.worker_url == "http://localhost:8302"
 
-    worker_cm = Worker.connect(url="http://localhost:8201")
+    worker_cm = Worker.connect(url="http://localhost:8301")
     worker_cm.shutdown()
 
     output = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker3"
     )
-    assert output.worker_url == "http://localhost:8201"
+    assert output.worker_url == "http://localhost:8301"
