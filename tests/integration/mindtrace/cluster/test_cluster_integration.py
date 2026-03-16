@@ -178,6 +178,7 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
 
     # Launch multiple workers (allocate port and launch together so free_port() sees the bound port)
     worker_urls = []
+    launches = []
     ports = free_ports(ports_to_find=3)
     for port in ports:
         worker_url = f"http://localhost:{port}"
@@ -187,7 +188,9 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
             worker_url=worker_url,
             job_type=None,
         )
-
+        launches.append(launch)
+    
+    for launch in launches:
         launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
         assert launch_status.status == LaunchStatusEnum.READY
         cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=launch_status.worker_url)
@@ -405,11 +408,11 @@ def test_multiple_worker_types_with_auto_connect(cluster_cm, node):
     worker_url1 = f"http://localhost:{port1}"
     launch1 = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker1", worker_url=worker_url1)
 
-    launch_status1 = wait_for_worker_launch(cluster_cm, str(node.url), launch1.launch_id, timeout=60.0)
-    assert launch_status1.status == LaunchStatusEnum.READY
-
     worker_url2 = f"http://localhost:{port2}"
     launch2 = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker2", worker_url=worker_url2)
+
+    launch_status1 = wait_for_worker_launch(cluster_cm, str(node.url), launch1.launch_id, timeout=60.0)
+    assert launch_status1.status == LaunchStatusEnum.READY
 
     launch_status2 = wait_for_worker_launch(cluster_cm, str(node.url), launch2.launch_id, timeout=60.0)
     assert launch_status2.status == LaunchStatusEnum.READY
