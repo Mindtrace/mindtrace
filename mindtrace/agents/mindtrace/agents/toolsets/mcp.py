@@ -59,15 +59,16 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
     @classmethod
     def from_sse(cls, url: str, *, prefix: str | None = None) -> MCPToolset:
         """Connect via SSE transport (legacy MCP HTTP)."""
+
         def _make():
             try:
                 from fastmcp.client.transports import SSETransport
             except ImportError:
                 raise ImportError(
-                    "fastmcp is required for MCPToolset. "
-                    "Install with: pip install 'mindtrace-agents[mcp]'"
+                    "fastmcp is required for MCPToolset. Install with: pip install 'mindtrace-agents[mcp]'"
                 )
             return SSETransport(url)
+
         return cls(_make, prefix=prefix)
 
     @classmethod
@@ -79,15 +80,16 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         prefix: str | None = None,
     ) -> MCPToolset:
         """Connect via stdio transport — for local subprocess MCP servers (e.g. npx)."""
+
         def _make():
             try:
                 from fastmcp.client.transports import StdioTransport
             except ImportError:
                 raise ImportError(
-                    "fastmcp is required for MCPToolset. "
-                    "Install with: pip install 'mindtrace-agents[mcp]'"
+                    "fastmcp is required for MCPToolset. Install with: pip install 'mindtrace-agents[mcp]'"
                 )
             return StdioTransport(command, env=env)
+
         return cls(_make, prefix=prefix)
 
     # ------------------------------------------------------------------
@@ -98,10 +100,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         try:
             from fastmcp import Client
         except ImportError:
-            raise ImportError(
-                "fastmcp is required for MCPToolset. "
-                "Install with: pip install 'mindtrace-agents[mcp]'"
-            )
+            raise ImportError("fastmcp is required for MCPToolset. Install with: pip install 'mindtrace-agents[mcp]'")
 
         async with Client(self._transport_factory()) as client:
             response = await client.list_tools()
@@ -132,10 +131,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         try:
             from fastmcp import Client
         except ImportError:
-            raise ImportError(
-                "fastmcp is required for MCPToolset. "
-                "Install with: pip install 'mindtrace-agents[mcp]'"
-            )
+            raise ImportError("fastmcp is required for MCPToolset. Install with: pip install 'mindtrace-agents[mcp]'")
 
         mcp_name = self._name_map.get(name, name)
         async with Client(self._transport_factory()) as client:
@@ -145,10 +141,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         # structured responses (dataclass/dict) are in .data — prefer that when present
         if result.data is not None:
             return str(result.data)
-        return "\n".join(
-            part.text if hasattr(part, "text") else str(part)
-            for part in result.content
-        )
+        return "\n".join(part.text if hasattr(part, "text") else str(part) for part in result.content)
 
 
 __all__ = ["MCPToolset"]

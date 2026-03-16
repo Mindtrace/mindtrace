@@ -20,6 +20,8 @@ pip install mindtrace-agents
 | **Model** | `OpenAIChatModel` | Calls the LLM API (supports streaming) |
 | **Provider** | `OpenAIProvider` / `OllamaProvider` / `GeminiProvider` | Holds the authenticated client |
 | **Tool** | `Tool` | Wraps a Python function for LLM tool-calling |
+| **Toolset** | `FunctionToolset` / `CompoundToolset` / `MCPToolset` | Groups tools and controls which are exposed to the agent |
+| **ToolFilter** | `ToolFilter` | Predicate for selectively showing/hiding tools by name or description |
 | **Callbacks** | `AgentCallbacks` | Lifecycle hooks: before/after LLM call and tool call |
 | **History** | `AbstractHistoryStrategy` / `InMemoryHistory` | Persists conversation across runs |
 | **RunContext** | `RunContext[T]` | Injected into tools — carries deps, retry count, step |
@@ -114,6 +116,134 @@ def lookup_user(ctx: RunContext[AppDeps], user_id: str) -> dict:
 
 deps = AppDeps(db_url="postgresql://...", api_key="secret")
 result = asyncio.run(agent.run("Find user 123", deps=deps))
+```
+
+---
+
+## Toolsets
+
+Toolsets are the primary way to supply tools to an agent. They group related tools together and give you control over which tools are visible to the model at runtime.
+
+### FunctionToolset
+
+`FunctionToolset` collects Python `Tool` objects and exposes them to the agent. Use it when you want to organise tools manually or share a toolset across multiple agents.
+
+```python
+from mindtrace.agents.toolsets import FunctionToolset
+from mindtrace.agents.tools import Tool
+
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+async def fetch(url: str) -> str:
+    """Fetch a URL."""
+    ...
+
+toolset = FunctionToolset(max_retries=2)
+toolset.add_tool(Tool(add))
+toolset.add_tool(Tool(fetch))
+
+agent = MindtraceAgent(model=model, toolset=toolset)
+```
+
+`max_retries` on the toolset is the default for every tool added to it. Override per-tool by setting `Tool(..., max_retries=N)` before calling `add_tool()`.
+
+### CompoundToolset
+
+`CompoundToolset` merges tools from multiple toolsets into one. Later toolsets win on name collisions — use `prefix` on `MCPToolset` to avoid conflicts.
+
+```python
+from mindtrace.agents.toolsets import CompoundToolset, FunctionToolset
+
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/"),
+        FunctionToolset(),   # local tools
+    ),
+)
+```
+
+### MCPToolset
+
+`MCPToolset` exposes tools from any remote MCP server. Requires `fastmcp`:
+
+```bash
+pip install 'mindtrace-agents[mcp]'
+```
+
+**Constructors**
+
+```python
+from mindtrace.agents.toolsets import MCPToolset
+
+# HTTP (streamable-http) — default for Mindtrace services
+ts = MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/")
+
+# SSE (legacy HTTP)
+ts = MCPToolset.from_sse("http://localhost:9000/sse")
+
+# stdio — local subprocess servers (e.g. npx)
+ts = MCPToolset.from_stdio(["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
+```
+
+**Prefix** — avoid name collisions when combining multiple MCP services:
+
+```python
+ts = MCPToolset.from_http("http://localhost:8002/mcp/", prefix="db")
+# tools are exposed as "db__query", "db__list_tables", etc.
+```
+
+---
+
+## Filtering tools
+
+Every toolset exposes shorthand methods that return a `FilteredToolset`. Chain them to control exactly which tools the agent sees.
+
+```python
+# Allow only named tools
+toolset.include("search", "summarise")
+
+# Block a specific tool
+toolset.exclude("drop_table")
+
+# Glob patterns
+toolset.include_pattern("read_*", "list_*")
+toolset.exclude_pattern("admin_*")
+
+# Compose via FilteredToolset.with_filter() for boolean logic
+from mindtrace.agents.toolsets import ToolFilter
+
+f = ToolFilter.include_pattern("read_*") & ~ToolFilter.include("read_credentials")
+toolset.with_filter(f)
+```
+
+Filtering applies at `get_tools()` time — the underlying toolset is unchanged.
+
+### ToolFilter API
+
+| Factory | Behaviour |
+|---------|-----------|
+| `ToolFilter.include(*names)` | Allow only tools whose name is in `names` |
+| `ToolFilter.exclude(*names)` | Block tools whose name is in `names` |
+| `ToolFilter.include_pattern(*globs)` | Allow tools matching any glob (e.g. `"read_*"`) |
+| `ToolFilter.exclude_pattern(*globs)` | Block tools matching any glob |
+| `ToolFilter.by_description(fn)` | Custom predicate on the tool description string |
+
+Filters compose with `&` (AND), `|` (OR), and `~` (NOT).
+
+### Combining filtering with CompoundToolset
+
+```python
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        MCPToolset.from_http("http://localhost:8001/mcp/").include("generate_image"),
+        MCPToolset.from_http("http://localhost:8002/mcp/").exclude_pattern("admin_*"),
+        FunctionToolset(),
+    ),
+)
 ```
 
 ---
@@ -301,7 +431,7 @@ mindtrace/agents/
 ├── events/              # streaming event types
 ├── messages/            # ModelMessage, parts, builder
 ├── tools/               # Tool, ToolDefinition
-├── toolsets/            # AbstractToolset, FunctionToolset
+├── toolsets/            # AbstractToolset, FunctionToolset, CompoundToolset, MCPToolset, ToolFilter, FilteredToolset
 ├── providers/           # Provider ABC + OpenAI, Ollama, Gemini
 ├── models/              # Model ABC + OpenAIChatModel
 ├── callbacks/           # AgentCallbacks + _invoke helper

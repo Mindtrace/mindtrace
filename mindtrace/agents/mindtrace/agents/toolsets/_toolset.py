@@ -41,29 +41,34 @@ class AbstractToolset(Generic[ToolAgentDepsT]):
         """Expose only the named tools from this toolset."""
         from ._filter import ToolFilter
         from .filtered import FilteredToolset
+
         return FilteredToolset(self, ToolFilter.include(*names))
 
     def exclude(self, *names: str) -> FilteredToolset:
         """Expose all tools except the named ones."""
         from ._filter import ToolFilter
         from .filtered import FilteredToolset
+
         return FilteredToolset(self, ToolFilter.exclude(*names))
 
     def include_pattern(self, *patterns: str) -> FilteredToolset:
         """Expose tools whose name matches any glob pattern (e.g. ``"read_*"``)."""
         from ._filter import ToolFilter
         from .filtered import FilteredToolset
+
         return FilteredToolset(self, ToolFilter.include_pattern(*patterns))
 
     def exclude_pattern(self, *patterns: str) -> FilteredToolset:
         """Block tools whose name matches any glob pattern."""
         from ._filter import ToolFilter
         from .filtered import FilteredToolset
+
         return FilteredToolset(self, ToolFilter.exclude_pattern(*patterns))
 
     def with_filter(self, filter: ToolFilter) -> FilteredToolset:
         """Apply a custom composed ``ToolFilter`` to this toolset."""
         from .filtered import FilteredToolset
+
         return FilteredToolset(self, filter)
 
 

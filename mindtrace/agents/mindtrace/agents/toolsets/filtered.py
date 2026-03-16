@@ -26,11 +26,7 @@ class FilteredToolset(AbstractToolset[ToolAgentDepsT]):
 
     async def get_tools(self, ctx: RunContext[ToolAgentDepsT]) -> dict[str, ToolsetTool]:
         all_tools = await self._inner.get_tools(ctx)
-        return {
-            name: tool
-            for name, tool in all_tools.items()
-            if self._filter.allows(name, tool.tool_def.description)
-        }
+        return {name: tool for name, tool in all_tools.items() if self._filter.allows(name, tool.tool_def.description)}
 
     async def call_tool(
         self,
