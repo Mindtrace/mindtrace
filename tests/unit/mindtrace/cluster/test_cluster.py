@@ -593,7 +593,6 @@ def test_launch_worker_with_auto_connect(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -633,7 +632,6 @@ def test_launch_worker_without_auto_connect(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -707,7 +705,6 @@ def test_launch_worker_with_different_ports(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -747,7 +744,6 @@ def test_launch_worker_logging(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(cluster_manager, "logger"),
         patch.object(Worker, "connect") as mock_connect,
     ):
