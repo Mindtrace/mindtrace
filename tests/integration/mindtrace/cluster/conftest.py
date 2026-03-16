@@ -1,5 +1,7 @@
 import time
 
+import os
+
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node
@@ -34,6 +36,9 @@ def cluster_cm():
 @pytest.fixture(scope="session")
 def node(cluster_cm):
     """Session-scoped Node connected to the test's ClusterManager."""
+    # Use a non-default worker ports range to avoid conflicts with services
+    # that might already be listening on the default 8200-8202 range.
+    os.environ["MINDTRACE_CLUSTER__WORKER_PORTS_RANGE"] = "8300-8302"
     port = get_free_port()
     n = Node.launch(
         host="localhost",
