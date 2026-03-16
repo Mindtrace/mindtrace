@@ -7,15 +7,16 @@ from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from mindtrace.cluster import ClusterManager
-from mindtrace.cluster.core.types import JobStatusEnum, WorkerStatusEnum
+from mindtrace.cluster.core.types import JobStatusEnum, LaunchStatusEnum, WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
-from mindtrace.core import get_free_port
+from mindtrace.core import get_free_port, get_free_ports
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
-from .conftest import wait_for_job_status
+from .conftest import wait_for_job_status, wait_for_worker_launch
 
 free_port = partial(get_free_port, start_port=8251, end_port=8350)
+free_ports = partial(get_free_ports, start_port=8251, end_port=8350)
 
 
 @pytest.mark.integration
@@ -119,7 +120,10 @@ def test_cluster_manager_with_node(cluster_cm, node):
         worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}
     )
     worker_url = f"http://localhost:{free_port()}"
-    node.launch_worker(worker_type="echoworker", worker_url=worker_url)
+    launch = node.launch_worker(worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
+
     echo_job_schema = JobSchema(name="node_echo", input_schema=EchoInput, output_schema=EchoOutput)
     cluster_cm.register_job_to_worker(job_type="node_echo", worker_url=worker_url)
     job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!"})
@@ -138,12 +142,14 @@ def test_cluster_manager_launch_worker(cluster_cm, node):
 
     # Launch a worker using the cluster manager's launch_worker method
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url),
         worker_type="echoworker",
         worker_url=worker_url,
         job_type=None,
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
     # Register the worker with the cluster for job processing
     echo_job_schema = JobSchema(name="launch_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -172,16 +178,20 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
 
     # Launch multiple workers (allocate port and launch together so free_port() sees the bound port)
     worker_urls = []
-    for _ in range(3):
-        worker_url = f"http://localhost:{free_port()}"
-        cluster_cm.launch_worker(
+    ports = free_ports(ports_to_find=3)
+    for port in ports:
+        worker_url = f"http://localhost:{port}"
+        launch = cluster_cm.launch_worker(
             node_url=str(node.url),
             worker_type="echoworker",
             worker_url=worker_url,
             job_type=None,
         )
-        cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=worker_url)
-        worker_urls.append(worker_url)
+    
+        launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+        assert launch_status.status == LaunchStatusEnum.READY
+        cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=launch_status.worker_url)
+        worker_urls.append(launch_status.worker_url)
 
     # Submit jobs to different workers
     echo_job_schema = JobSchema(name="multiple_workers_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -229,7 +239,10 @@ def test_register_worker_type_with_job_schema_name(cluster_cm, node):
 
     # Launch a worker - it should be automatically connected to the job schema
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
     # Submit a job - it should be processed automatically without manual registration
     echo_job_schema = JobSchema(name="auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -258,7 +271,9 @@ def test_register_job_schema_to_worker_type(cluster_cm, node):
 
     # Launch a worker - it should be automatically connected due to the registration
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
     # Submit a job - it should be processed automatically
     echo_job_schema = JobSchema(name="manual_registration_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -307,7 +322,9 @@ def test_launch_worker_with_auto_connect_database(cluster_cm, node):
 
     # Launch a worker - it should be automatically connected due to auto-connect database
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
     # Submit a job - it should be processed automatically without manual registration
     echo_job_schema = JobSchema(name="auto_connect_db_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -336,7 +353,9 @@ def test_launch_worker_without_auto_connect_database(cluster_cm, node):
 
     # Launch a worker - it should NOT be automatically connected
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
     # Submit a job - it should fail because no targeting was created
     echo_job_schema = JobSchema(name="no_auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -381,11 +400,19 @@ def test_multiple_worker_types_with_auto_connect(cluster_cm, node):
     )
 
     # Launch workers for both types (allocate port and launch together)
-    worker_url1 = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker1", worker_url=worker_url1)
+    port1, port2 = free_ports(ports_to_find=2)
 
-    worker_url2 = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker2", worker_url=worker_url2)
+    worker_url1 = f"http://localhost:{port1}"
+    launch1 = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker1", worker_url=worker_url1)
+
+    launch_status1 = wait_for_worker_launch(cluster_cm, str(node.url), launch1.launch_id, timeout=60.0)
+    assert launch_status1.status == LaunchStatusEnum.READY
+
+    worker_url2 = f"http://localhost:{port2}"
+    launch2 = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker2", worker_url=worker_url2)
+
+    launch_status2 = wait_for_worker_launch(cluster_cm, str(node.url), launch2.launch_id, timeout=60.0)
+    assert launch_status2.status == LaunchStatusEnum.READY
 
     # Submit jobs to both workers
     echo_job_schema1 = JobSchema(name="echo1", input_schema=EchoInput, output_schema=EchoOutput)
@@ -422,9 +449,12 @@ def test_launch_worker_with_delay(cluster_cm, node):
 
     # Launch a worker - it should be automatically connected due to auto-connect database
     worker_url = f"http://localhost:{free_port()}"
-    worker_id = cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url
-    ).worker_id
+    )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
+    worker_id = launch_status.worker_id
 
     # Submit a job - it should be processed automatically without manual registration
     echo_job_schema = JobSchema(name="delay_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -773,14 +803,17 @@ def test_node_shutdown_worker(cluster_cm, node):
     )
 
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
     node.shutdown_worker(worker_name="echoworker")
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
     )
-
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
 @pytest.mark.integration
 def test_node_shutdown_worker_by_id(cluster_cm, node):
@@ -793,15 +826,19 @@ def test_node_shutdown_worker_by_id(cluster_cm, node):
     )
 
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
     worker_cm = EchoWorker.connect(worker_url)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     node.shutdown_worker_by_id(worker_id=worker_id)
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
 
 @pytest.mark.integration
@@ -816,13 +853,17 @@ def test_node_shutdown_worker_by_port(cluster_cm, node):
 
     worker_port = free_port()
     worker_url = f"http://localhost:{worker_port}"
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
     node.shutdown_worker_by_port(worker_port=worker_port)
-    cluster_cm.launch_worker(
+    launch = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
     )
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
 
 
 class ErrorWorker(EchoWorker):

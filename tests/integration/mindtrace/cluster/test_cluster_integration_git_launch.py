@@ -4,10 +4,12 @@ import httpx
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node, Worker
+from mindtrace.cluster.core.types import LaunchStatusEnum
 from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
+from .conftest import wait_for_worker_launch
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
 
@@ -39,65 +41,15 @@ def test_start_worker_from_git():
         # Launch worker on the node
         worker_url = f"http://localhost:{worker_port}"
 
-        # Launch worker - may timeout if git clone/dependency sync takes too long, but worker might still start
-        try:
-            cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
-        except (httpx.ReadTimeout, httpx.TimeoutException) as e:
-            # Worker launch timed out, but the worker process might have started anyway.
-            # Check if worker is actually responding before failing
-            print(f"Worker launch timed out: {e}. Checking if worker started anyway...")
-
-            # Give worker a bit more time to become ready (git clones can take a while)
-            max_wait_for_worker = 30  # seconds
-            start_time = time.time()
-            worker_ready = False
-            while (time.time() - start_time) < max_wait_for_worker:
-                try:
-                    response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
-                    if response.status_code == 200:
-                        worker_ready = True
-                        print(f"Worker is ready after launch timeout (took {time.time() - start_time:.1f}s)")
-                        break
-                except (httpx.ConnectError, httpx.TimeoutException):
-                    pass  # Worker not ready yet, continue waiting
-                time.sleep(1)
-
-            if not worker_ready:
-                pytest.fail(
-                    f"Worker launch timed out after 60s and worker did not become ready within {max_wait_for_worker}s. "
-                    f"This indicates the worker failed to launch properly. "
-                    f"Git-based worker launches (clone + dependency sync) can take longer than the 60s timeout. "
-                    f"Worker URL: {worker_url}"
-                )
-
-            # Worker is ready, but launch_worker timed out before completing the setup.
-            # We need to manually complete the worker registration to the cluster and job queue.
-            # This is what launch_worker does after the worker launches
-            print("Completing worker registration to cluster after timeout...")
-            try:
-                Worker.connect(worker_url)
-
-                # Check if worker auto-connect is configured for this worker type
-                worker_auto_connect_list = cluster_manager.worker_auto_connect_database.find(
-                    cluster_manager.worker_auto_connect_database.redis_backend.model_cls.worker_type == "echoworker"
-                )
-                if worker_auto_connect_list:
-                    worker_auto_connect = worker_auto_connect_list[0]
-                    # Register the worker to the job queue (this connects it to the cluster and starts consuming)
-                    cluster_manager.register_job_to_worker(
-                        payload={"job_type": worker_auto_connect.schema_name, "worker_url": worker_url}
-                    )
-                    print(f"Worker registered to job type '{worker_auto_connect.schema_name}' and started consuming")
-                else:
-                    pytest.fail(
-                        "Worker launched but auto-connect configuration not found for worker type 'echoworker'. "
-                        "This indicates the worker registration setup is incomplete."
-                    )
-            except Exception as setup_error:
-                pytest.fail(
-                    f"Worker launched successfully but failed to complete cluster registration: {setup_error}. "
-                    f"This indicates the worker may not be able to consume jobs from the queue."
-                )
+        # Launch worker asynchronously and wait for it to become ready. Git clone
+        # and dependency sync can take a while, so we use a generous timeout.
+        launch = cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+        status = wait_for_worker_launch(cluster_manager, str(node.url), launch.launch_id, timeout=150.0)
+        if status.status != LaunchStatusEnum.READY:
+            pytest.fail(
+                f"Worker did not become ready. Status: {status.status}, error: {status.error}. "
+                f"Worker URL: {worker_url}"
+            )
 
         # Verify worker is launched and reachable (quick validation to catch launch failures early)
         try:
