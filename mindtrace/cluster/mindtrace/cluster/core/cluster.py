@@ -1,6 +1,7 @@
 import json
 import threading
 import urllib.parse
+import uuid
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -185,6 +186,16 @@ class ClusterManager(Gateway):
                 name="launch_worker",
                 input_schema=cluster_types.ClusterLaunchWorkerInput,
                 output_schema=cluster_types.ClusterLaunchWorkerOutput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/launch_worker_status",
+            func=self.launch_worker_status,
+            schema=TaskSchema(
+                name="launch_worker_status",
+                input_schema=cluster_types.ClusterLaunchWorkerStatusInput,
+                output_schema=cluster_types.ClusterLaunchWorkerStatusOutput,
             ),
             methods=["POST"],
         )
@@ -725,7 +736,8 @@ class ClusterManager(Gateway):
 
     def launch_worker(self, payload: dict):
         """
-        Launch a worker on a node. If the worker type is registered to a job schema, the worker will be automatically connected to the job schema.
+        Launch a worker on a node asynchronously. If the worker type is registered to a job schema,
+        the worker will be automatically connected to the job schema once it is ready.
 
         Args:
             payload (dict): The payload containing the node URL, worker type, worker URL, and (optional) worker name.
@@ -735,20 +747,30 @@ class ClusterManager(Gateway):
         worker_url = payload["worker_url"]
         worker_name = payload["worker_name"]
         node_cm = Node.connect(node_url)
-        output = node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url, worker_name=worker_name)
-        worker_auto_connect_list = self.worker_auto_connect_database.find(
+        # If this worker type has an auto-connect entry, pass the job type down to the node
+        auto_connect_list = self.worker_auto_connect_database.find(
             self.worker_auto_connect_database.redis_backend.model_cls.worker_type == worker_type
         )
-        if worker_auto_connect_list:
-            worker_auto_connect = worker_auto_connect_list[0]
-            self.register_job_to_worker(
-                payload={"job_type": worker_auto_connect.schema_name, "worker_url": output.worker_url}
-            )
+        auto_connect_job_type = auto_connect_list[0].schema_name if auto_connect_list else None
+
+        output = node_cm.launch_worker(
+            worker_type=worker_type,
+            worker_url=worker_url,
+            worker_name=worker_name,
+            auto_connect_job_type=auto_connect_job_type,
+        )
         return {
-            "worker_id": output.worker_id,
-            "worker_name": output.worker_name,
-            "worker_url": output.worker_url,
+            "launch_id": output.launch_id,
         }
+
+    def launch_worker_status(self, payload: dict):
+        """
+        Proxy launch status queries to the appropriate node.
+        """
+        node_url = payload["node_url"]
+        launch_id = payload["launch_id"]
+        node_cm = Node.connect(node_url)
+        return node_cm.launch_worker_status(launch_id=launch_id)
 
     def clear_databases(self):
         """
@@ -826,6 +848,11 @@ class Node(Service):
             self.worker_registry = None  # type: ignore
             self.node_worker_database = None  # type: ignore
 
+        # Track asynchronous worker launches by launch_id and port
+        self._launch_status_lock = threading.Lock()
+        self._launch_status: dict[str, cluster_types.LaunchWorkerStatusOutput] = {}
+        self._launching_ports: set[int] = set()
+
         if worker_ports is not None:
             self.worker_ports = worker_ports
         else:
@@ -840,6 +867,16 @@ class Node(Service):
                 name="launch_worker",
                 input_schema=cluster_types.LaunchWorkerInput,
                 output_schema=cluster_types.LaunchWorkerOutput,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/launch_worker_status",
+            func=self.launch_worker_status,
+            schema=TaskSchema(
+                name="launch_worker_status",
+                input_schema=cluster_types.LaunchWorkerStatusInput,
+                output_schema=cluster_types.LaunchWorkerStatusOutput,
             ),
             methods=["POST"],
         )
@@ -879,6 +916,18 @@ class Node(Service):
             methods=["POST"],
         )
 
+    def launch_worker_status(self, payload: dict):
+        """
+        Return the status of a previously requested worker launch.
+        """
+        launch_id = payload["launch_id"]
+        with self._launch_status_lock:
+            status = self._launch_status.get(launch_id)
+        if status is None:
+            raise ValueError(f"Unknown launch_id: {launch_id}")
+        return status.model_dump()
+
+
     def _parse_port_range(self, port_range: str) -> list[int]:
         """
         Parse a port range string into a list of ports.
@@ -909,6 +958,8 @@ class Node(Service):
         Get a worker port from the list of worker ports.
         """
         for port in self.worker_ports:
+            if port in self._launching_ports:
+                continue
             matches = self.node_worker_database.find(
                 self.node_worker_database.redis_backend.model_cls.worker_port == port
             )
@@ -916,6 +967,8 @@ class Node(Service):
                 return port
         # see if any worker has crashed so the port is available
         for port in self.worker_ports:
+            if port in self._launching_ports:
+                continue
             matches = self.node_worker_database.find(
                 self.node_worker_database.redis_backend.model_cls.worker_port == port
             )
@@ -934,47 +987,110 @@ class Node(Service):
 
     def launch_worker(self, payload: dict):
         """
-        Launch a worker from the Worker registry.
+        Asynchronously launch a worker from the Worker registry and return a launch_id.
 
         Args:
             payload (dict): The payload containing the worker type and worker URL.
                 worker_name (optional): str: The name of the worker. If not provided, the worker id will be used.
+
         Returns:
             LaunchWorkerOutput:
-                worker_id: str: The id of the worker.
-                worker_name: str: The name of the worker.
-                worker_url: str: The URL of the worker.
-        Raises:
-            ValueError: If no worker ports are available in range.
+                launch_id: str: Identifier that can be used to query launch status.
         """
         worker_type = payload["worker_type"]
-        if payload["worker_url"] is None:
-            port = self._get_worker_port()
-            worker_url = f"http://{self._url.hostname}:{port}"
-        else:
-            worker_url = payload["worker_url"]
-            port = urllib.parse.urlparse(worker_url).port
-            if port is None:
-                raise ValueError(f"Worker URL {worker_url} does not have a port")
-        worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
-        worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+        worker_url = payload["worker_url"]
         worker_name = payload.get("worker_name")
-        if worker_name is None:
-            worker_name = worker_id
-        self.node_worker_database.insert(
-            cluster_types.NodeWorker(
-                worker_type=worker_type,
-                worker_port=port,
+        auto_connect_job_type = payload.get("auto_connect_job_type")
+
+        launch_id = str(uuid.uuid4())
+        with self._launch_status_lock:
+            self._launch_status[launch_id] = cluster_types.LaunchWorkerStatusOutput(
+                launch_id=launch_id,
+                status=cluster_types.LaunchStatusEnum.PENDING,
+            )
+
+        thread = threading.Thread(
+            target=self._launch_worker_background,
+            args=(launch_id, worker_type, worker_url, worker_name, auto_connect_job_type),
+            daemon=True,
+        )
+        thread.start()
+
+        return {"launch_id": launch_id}
+
+    def _launch_worker_background(
+        self,
+        launch_id: str,
+        worker_type: str,
+        worker_url: str | None,
+        worker_name: str | None,
+        auto_connect_job_type: str | None,
+    ) -> None:
+        with self._launch_status_lock:
+            self._launch_status[launch_id].status = cluster_types.LaunchStatusEnum.RUNNING
+
+        try:
+            if worker_url is None:
+                port = self._get_worker_port()
+                worker_url = f"http://{self._url.hostname}:{port}"
+            else:
+                port = urllib.parse.urlparse(worker_url).port
+                if port is None:
+                    raise ValueError(f"Worker URL {worker_url} does not have a port")
+
+            # Mark this port as in the process of launching to avoid reusing it
+            # for another auto-selected worker until launch completes.
+            self._launching_ports.add(port)
+
+            worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
+            worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+            if worker_name is None:
+                worker_name = worker_id
+
+            self.node_worker_database.insert(
+                cluster_types.NodeWorker(
+                    worker_type=worker_type,
+                    worker_port=port,
+                    worker_id=worker_id,
+                    worker_name=worker_name,
+                    worker_url=worker_url,
+                )
+            )
+
+            # If an auto-connect job type was provided and this node is attached to a cluster,
+            # automatically register the worker to the appropriate job schema once it is ready.
+            if auto_connect_job_type and self.cluster_cm is not None:
+                try:
+                    self.cluster_cm.register_job_to_worker(
+                        job_type=auto_connect_job_type,
+                        worker_url=worker_url,
+                    )
+                except Exception as auto_connect_error:
+                    self.logger.error(
+                        f"Auto-connect registration failed for worker {worker_name} at {worker_url}: {auto_connect_error}"
+                    )
+                    raise auto_connect_error
+
+            status = cluster_types.LaunchWorkerStatusOutput(
+                launch_id=launch_id,
+                status=cluster_types.LaunchStatusEnum.READY,
                 worker_id=worker_id,
                 worker_name=worker_name,
                 worker_url=worker_url,
             )
-        )
-        return {
-            "worker_id": worker_id,
-            "worker_name": worker_name,
-            "worker_url": worker_url,
-        }
+        except Exception as e:
+            self.logger.error(f"Failed to launch worker {worker_type}: {e}")
+            status = cluster_types.LaunchWorkerStatusOutput(
+                launch_id=launch_id,
+                status=cluster_types.LaunchStatusEnum.FAILED,
+                error=str(e),
+            )
+
+        with self._launch_status_lock:
+            self._launch_status[launch_id] = status
+        # Always clear the launching port marker once the launch attempt is finished.
+        if "port" in locals():
+            self._launching_ports.discard(port)
 
     def _shutdown_workers(self, entries: list[cluster_types.NodeWorker]):
         """
