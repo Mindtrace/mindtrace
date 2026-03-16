@@ -1,11 +1,10 @@
 import time
 
 from mindtrace.cluster import ClusterManager
-from mindtrace.cluster.workers.echo_worker import EchoWorker
+from mindtrace.cluster.core.types import JobStatusEnum
+from mindtrace.core import get_free_ports
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
-from mindtrace.core import get_free_ports
-from mindtrace.cluster.core.types import JobStatusEnum
 
 
 def main():
@@ -102,12 +101,11 @@ def main():
         time.sleep(1.0)
         s1 = cluster_cm.get_job_status(job_id=job1.id)
         s2 = cluster_cm.get_job_status(job_id=job2.id)
-        print(f"[t+{i+1:02d}s] job1: {s1.status}, output={s1.output}")
-        print(f"[t+{i+1:02d}s] job2: {s2.status}, output={s2.output}")
+        print(f"[t+{i + 1:02d}s] job1: {s1.status}, output={s1.output}")
+        print(f"[t+{i + 1:02d}s] job2: {s2.status}, output={s2.output}")
         if s1.status == JobStatusEnum.COMPLETED and s2.status == JobStatusEnum.COMPLETED:
             break
 
 
 if __name__ == "__main__":
     main()
-

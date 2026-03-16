@@ -409,7 +409,9 @@ class ClusterManager(Gateway):
             try:
                 self.job_schema_targeting_database.delete(entry.pk)
             except Exception as e:
-                self.logger.warning(f"Failed to delete job schema targeting for job type {job_type} from endpoint {entry.target_endpoint}: {e}")
+                self.logger.warning(
+                    f"Failed to delete job schema targeting for job type {job_type} from endpoint {entry.target_endpoint}: {e}"
+                )
         self.job_schema_targeting_database.insert(
             cluster_types.JobSchemaTargeting(schema_name=job_type, target_endpoint="@orchestrator")
         )
