@@ -189,7 +189,7 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
             job_type=None,
         )
         launches.append(launch)
-    
+
     for launch in launches:
         launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
         assert launch_status.status == LaunchStatusEnum.READY

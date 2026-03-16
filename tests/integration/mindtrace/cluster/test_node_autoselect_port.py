@@ -62,7 +62,7 @@ def test_node_launch_worker_autoselect_port_reuse_port(cluster_cm, node):
         node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
     )
     launches.append(launch)
-    
+
     for i, launch in enumerate(launches):
         launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
         assert launch_status.status == LaunchStatusEnum.READY
@@ -70,7 +70,9 @@ def test_node_launch_worker_autoselect_port_reuse_port(cluster_cm, node):
 
     node.shutdown_all_workers()
 
-    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2")
+    launch = cluster_cm.launch_worker(
+        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
+    )
 
     launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
     assert launch_status.status == LaunchStatusEnum.READY
@@ -88,15 +90,21 @@ def test_node_launch_worker_autoselect_port_worker_crashed(cluster_cm, node):
     )
     launches = []
 
-    launches.append(cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
-    ))
-    launches.append(cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
-    ))
-    launches.append(cluster_cm.launch_worker(
-        node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
-    ))
+    launches.append(
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker0"
+        )
+    )
+    launches.append(
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker1"
+        )
+    )
+    launches.append(
+        cluster_cm.launch_worker(
+            node_url=str(node.url), worker_type="echoworker", worker_url=None, worker_name="echoworker2"
+        )
+    )
     for i, launch in enumerate(launches):
         launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
         assert launch_status.status == LaunchStatusEnum.READY
