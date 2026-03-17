@@ -180,12 +180,28 @@ class TestGitEnvironment:
         mock_repo.git.checkout = Mock()
         mock_clone.return_value = mock_repo
 
+        # Ensure we start from a clean git-config env to make assertions deterministic
+        os.environ.pop("GIT_CONFIG_COUNT", None)
+        for key in list(os.environ.keys()):
+            if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_"):
+                del os.environ[key]
+
         git_env._clone_repository()
 
-        # Verify clone was called with token
-        expected_url = "https://test_token@github.com/test-owner/test-repo.git"
-        mock_clone.assert_called_once_with(expected_url, "/tmp/test-repo-123")
+        # With token-based auth we now configure git via GIT_CONFIG_* and call clone_from
+        # with the plain GitHub URL, allowing all subsequent git commands (including
+        # those spawned by tools like `uv`) to reuse the same tokenized mapping.
+        mock_clone.assert_called_once_with("https://github.com/test-owner/test-repo.git", "/tmp/test-repo-123")
         assert git_env.repo == mock_repo
+        # Verify that token-based mapping was injected into git config environment
+        assert os.environ.get("GIT_CONFIG_COUNT") == "3"
+        # The exact numbered keys depend on prior environment, but at least one mapping
+        # should target the https GitHub URL.
+        assert any(
+            os.environ[k].endswith("github.com/.insteadOf")
+            for k in os.environ
+            if k.startswith("GIT_CONFIG_KEY_")
+        )
 
     @patch("git.Repo.clone_from")
     def test_clone_repository_without_token(self, mock_clone, git_env):
@@ -316,7 +332,7 @@ class TestGitEnvironment:
         git_env._sync_dependencies("/tmp/test-repo-123")
 
         mock_run.assert_called_once_with(
-            ["uv", "sync"], cwd="/tmp/test-repo-123", capture_output=True, text=True, check=True
+            ["uv", "sync"], cwd="/tmp/test-repo-123", capture_output=False, text=True, check=True
         )
 
     @patch("subprocess.run")

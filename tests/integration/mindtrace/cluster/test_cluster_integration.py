@@ -46,6 +46,36 @@ def test_cluster_manager_as_gateway():
 
 
 @pytest.mark.integration
+def test_register_worker_type_then_submit_job_then_launch_worker(cluster_cm, node):
+    """Job submitted after worker-type registration but before worker launch should still be processed once a worker starts."""
+    # Register a worker type but do not launch any workers yet
+    cluster_cm.register_worker_type(
+        worker_name="echoworker",
+        worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
+        worker_params={},
+    )
+
+    # Explicitly bind job type to the (future) worker type
+    cluster_cm.register_job_schema_to_worker_type(job_schema_name="late_launch_echo", worker_type="echoworker")
+
+    # Submit a job BEFORE any worker of this type is running
+    echo_job_schema = JobSchema(name="late_launch_echo", input_schema=EchoInput, output_schema=EchoOutput)
+    job = job_from_schema(echo_job_schema, input_data={"message": "Late launch test"})
+    initial_result = cluster_cm.submit_job(job)
+    assert initial_result.status == JobStatusEnum.QUEUED
+
+    # Now launch the worker of the previously-registered type
+    worker_url = f"http://localhost:{free_port()}"
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+    launch_status = wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
+    assert launch_status.status == LaunchStatusEnum.READY
+
+    # The previously submitted job should eventually complete once the worker starts
+    final_result = wait_for_job_status(cluster_cm, job.id, JobStatusEnum.COMPLETED)
+    assert final_result.output == {"echoed": "Late launch test"}
+
+
+@pytest.mark.integration
 def test_cluster_manager_with_prelaunched_worker(cluster_cm):
     """Integration test for ClusterManager with a prelaunched EchoWorker."""
     worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
