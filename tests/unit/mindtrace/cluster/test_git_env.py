@@ -198,9 +198,7 @@ class TestGitEnvironment:
         # The exact numbered keys depend on prior environment, but at least one mapping
         # should target the https GitHub URL.
         assert any(
-            os.environ[k].endswith("github.com/.insteadOf")
-            for k in os.environ
-            if k.startswith("GIT_CONFIG_KEY_")
+            os.environ[k].endswith("github.com/.insteadOf") for k in os.environ if k.startswith("GIT_CONFIG_KEY_")
         )
 
     @patch("git.Repo.clone_from")
