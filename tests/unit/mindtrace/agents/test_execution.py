@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -142,6 +142,7 @@ class TestLocalTaskQueueSubmit:
             return "done"
 
         from mindtrace.agents.tools import Tool
+
         responses = [
             ModelResponse(
                 text="",
@@ -174,6 +175,7 @@ class TestLocalTaskQueueSubmit:
             return "never"
 
         from mindtrace.agents.tools import Tool
+
         responses = [
             ModelResponse(
                 text="",

@@ -15,8 +15,7 @@ try:
     import aio_pika.abc
 except ImportError as e:
     raise ImportError(
-        "RabbitMQTaskQueue requires aio-pika. "
-        "Install it with: pip install 'mindtrace-agents[distributed-rabbitmq]'"
+        "RabbitMQTaskQueue requires aio-pika. Install it with: pip install 'mindtrace-agents[distributed-rabbitmq]'"
     ) from e
 
 
@@ -115,9 +114,7 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
                 async with message.process():
                     task: AgentTask = pickle.loads(message.body)
                     try:
-                        result = await agent.run(
-                            task.input, deps=task.deps, session_id=task.session_id
-                        )
+                        result = await agent.run(task.input, deps=task.deps, session_id=task.session_id)
                         body = pickle.dumps(result)
                     except Exception as exc:
                         body = pickle.dumps(exc)

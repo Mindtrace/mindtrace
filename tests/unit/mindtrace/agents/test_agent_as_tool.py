@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from mindtrace.agents import MindtraceAgent
 from mindtrace.agents.models import ModelResponse
 from mindtrace.agents.tools import Tool
@@ -118,17 +116,18 @@ class TestAgentAsTool:
             description="Research a topic",
             responses=[text_response("sub result")],
         )
-        parent_model = FakeModel(responses=[
-            tool_call_response("researcher", arguments='{"input": "topic"}'),
-            text_response("got: sub result"),
-        ])
+        parent_model = FakeModel(
+            responses=[
+                tool_call_response("researcher", arguments='{"input": "topic"}'),
+                text_response("got: sub result"),
+            ]
+        )
         parent = MindtraceAgent(model=parent_model, tools=[sub])
         result = await parent.run("go")
         assert result == "got: sub result"
 
     async def test_deps_forwarded_to_sub_agent(self):
         """Parent deps are forwarded to the sub-agent's run() call."""
-        from unittest.mock import AsyncMock, patch
 
         class MyDeps:
             value = 42
@@ -137,7 +136,6 @@ class TestAgentAsTool:
 
         # Patch sub.run to capture what deps it receives
         received: list[Any] = []
-        original_run = sub.run
 
         async def spy_run(input_data, *, deps=None, **kwargs):
             received.append(deps)

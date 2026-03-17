@@ -43,9 +43,7 @@ class JsonFileStore(AbstractMemoryStore):
         self._data = {k: _dict_to_entry(v) for k, v in raw.items()}
 
     def _flush(self) -> None:
-        self._path.write_text(
-            json.dumps({k: _entry_to_dict(v) for k, v in self._data.items()}, indent=2)
-        )
+        self._path.write_text(json.dumps({k: _entry_to_dict(v) for k, v in self._data.items()}, indent=2))
 
     async def save(self, key: str, value: str, metadata: dict | None = None) -> None:
         now = datetime.now(timezone.utc)
@@ -65,7 +63,8 @@ class JsonFileStore(AbstractMemoryStore):
     async def search(self, query: str, top_k: int = 5) -> list[MemoryEntry]:
         query_lower = query.lower()
         matches = [
-            entry for entry in self._data.values()
+            entry
+            for entry in self._data.values()
             if query_lower in entry.key.lower() or query_lower in entry.value.lower()
         ]
         return matches[:top_k]

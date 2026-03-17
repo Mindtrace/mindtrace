@@ -5,13 +5,9 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from mindtrace.agents._run_context import RunContext
 from mindtrace.agents.memory import (
-    AbstractMemoryStore,
     InMemoryStore,
     JsonFileStore,
     MemoryEntry,
@@ -34,6 +30,7 @@ class TestMemoryEntry:
     def test_fields_stored(self):
         """MemoryEntry stores key, value, and metadata."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
         entry = MemoryEntry(key="k", value="v", metadata={"tag": "x"}, created_at=now, updated_at=now)
         assert entry.key == "k"
@@ -43,6 +40,7 @@ class TestMemoryEntry:
     def test_default_metadata_is_empty_dict(self):
         """metadata defaults to an empty dict."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
         entry = MemoryEntry(key="k", value="v", created_at=now, updated_at=now)
         assert entry.metadata == {}
@@ -90,6 +88,7 @@ class TestInMemoryStore:
     async def test_updated_at_changes_on_update(self):
         """updated_at is refreshed when an existing key is saved again."""
         import asyncio
+
         store = InMemoryStore()
         await store.save("k", "v1")
         original = await store.get("k")
