@@ -90,19 +90,28 @@ class GitEnvironment(Mindtrace):
         """Configure git to inject the token into all GitHub HTTPS URLs.
 
         This uses git's GIT_CONFIG_* environment variables to add a temporary
-        config entry:
+        config entries so that common GitHub URL forms are rewritten:
+
             url.https://<token>@github.com/.insteadOf = https://github.com/
+            url.https://<token>@github.com/.insteadOf = ssh://git@github.com/
+            url.https://<token>@github.com/.insteadOf = git@github.com:
 
         Any git process that inherits this environment (including those
         spawned by tools like `uv`) will transparently rewrite GitHub URLs
         to include the token.
         """
         current_count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
-        key_var = f"GIT_CONFIG_KEY_{current_count}"
-        value_var = f"GIT_CONFIG_VALUE_{current_count}"
-        os.environ[key_var] = f"url.https://{token}@github.com/.insteadOf"
-        os.environ[value_var] = "https://github.com/"
-        os.environ["GIT_CONFIG_COUNT"] = str(current_count + 1)
+        mappings = [
+            "https://github.com/",
+            "ssh://git@github.com/",
+            "git@github.com:",
+        ]
+        for index, source in enumerate(mappings):
+            key_var = f"GIT_CONFIG_KEY_{current_count + index}"
+            value_var = f"GIT_CONFIG_VALUE_{current_count + index}"
+            os.environ[key_var] = f"url.https://{token}@github.com/.insteadOf"
+            os.environ[value_var] = source
+        os.environ["GIT_CONFIG_COUNT"] = str(current_count + len(mappings))
 
     def _get_token(self):
         """
