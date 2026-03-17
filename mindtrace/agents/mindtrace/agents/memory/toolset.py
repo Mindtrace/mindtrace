@@ -26,7 +26,7 @@ class MemoryToolset(AbstractToolset[ToolAgentDepsT]):
 
     def _strip_prefix(self, key: str) -> str:
         prefix = f"{self._namespace}:"
-        return key[len(prefix):] if key.startswith(prefix) else key
+        return key[len(prefix) :] if key.startswith(prefix) else key
 
     def _build_toolset(self) -> FunctionToolset:
         store = self._store

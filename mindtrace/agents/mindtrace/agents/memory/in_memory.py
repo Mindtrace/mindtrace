@@ -28,7 +28,8 @@ class InMemoryStore(AbstractMemoryStore):
     async def search(self, query: str, top_k: int = 5) -> list[MemoryEntry]:
         query_lower = query.lower()
         matches = [
-            entry for entry in self._data.values()
+            entry
+            for entry in self._data.values()
             if query_lower in entry.key.lower() or query_lower in entry.value.lower()
         ]
         return matches[:top_k]

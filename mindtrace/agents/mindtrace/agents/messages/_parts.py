@@ -29,6 +29,7 @@ class ToolReturnPart:
 @dataclass(frozen=True)
 class HandoffPart:
     """Marks an agent-to-agent handoff boundary in message history."""
+
     from_agent: str
     to_agent: str
     summary: str
