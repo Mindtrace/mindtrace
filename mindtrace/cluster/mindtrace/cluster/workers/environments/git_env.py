@@ -152,7 +152,7 @@ class GitEnvironment(Mindtrace):
     def _sync_dependencies(self, working_dir: str):
         """Sync Python dependencies using uv."""
         self.logger.info(f"Running 'uv sync' in {working_dir}")
-        result = subprocess.run(["uv", "sync"], cwd=working_dir, capture_output=True, text=True, check=True)
+        result = subprocess.run(["uv", "sync"], cwd=working_dir, capture_output=False, text=True, check=True)
         if result.returncode != 0:
             raise RuntimeError(f"'uv sync' failed: {result.stderr}")
         self.logger.info("Dependencies synced successfully")
