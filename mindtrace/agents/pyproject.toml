@@ -20,6 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["fastmcp>=2.13.0"]
+distributed-rabbitmq = ["aio-pika>=9.0"]
+memory-redis = ["redis>=5.0"]
+memory-vector = ["chromadb>=0.4"]
 
 [project.urls]
 Homepage = "https://mindtrace.ai"

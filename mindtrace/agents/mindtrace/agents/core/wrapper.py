@@ -26,6 +26,10 @@ class WrapperAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
         self.wrapped.name = value
 
     @property
+    def description(self) -> str | None:
+        return self.wrapped.description
+
+    @property
     def deps_type(self) -> type:
         return self.wrapped.deps_type
 

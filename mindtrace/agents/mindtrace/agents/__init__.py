@@ -1,5 +1,7 @@
 from .callbacks import AgentCallbacks
-from .core import AbstractMindtraceAgent, AgentDepsT, MindtraceAgent, OutputDataT, WrapperAgent
+from .core import AbstractMindtraceAgent, AgentDepsT, DistributedAgent, MindtraceAgent, OutputDataT, WrapperAgent
+from .execution import AbstractTaskQueue, AgentTask, LocalTaskQueue, TaskStatus
+from .memory import AbstractMemoryStore, InMemoryStore, JsonFileStore, MemoryEntry, MemoryToolset
 from .events import (
     AgentRunResult,
     AgentRunResultEvent,
@@ -10,7 +12,7 @@ from .events import (
     ToolResultEvent,
 )
 from .history import AbstractHistoryStrategy, InMemoryHistory
-from .messages import ModelMessage, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
+from .messages import HandoffPart, ModelMessage, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
 from .models import Model, ModelRequestParameters, ModelResponse, OpenAIChatModel
 from .profiles import ModelProfile
 from .prompts import UserPromptPart
@@ -20,17 +22,27 @@ from .toolsets import AbstractToolset, CompoundToolset, FunctionToolset, MCPTool
 
 __all__ = [
     "AbstractHistoryStrategy",
+    "AbstractMemoryStore",
     "AbstractMindtraceAgent",
+    "AbstractTaskQueue",
     "AbstractToolset",
     "AgentCallbacks",
     "AgentDepsT",
     "AgentRunResult",
     "AgentRunResultEvent",
+    "AgentTask",
     "CompoundToolset",
+    "DistributedAgent",
     "FunctionToolset",
     "GeminiProvider",
+    "HandoffPart",
     "InMemoryHistory",
+    "InMemoryStore",
+    "JsonFileStore",
+    "LocalTaskQueue",
     "MCPToolset",
+    "MemoryEntry",
+    "MemoryToolset",
     "Model",
     "ModelMessage",
     "ModelProfile",
@@ -48,6 +60,7 @@ __all__ = [
     "Provider",
     "RunContext",
     "SystemPromptPart",
+    "TaskStatus",
     "TextPart",
     "Tool",
     "ToolCallPart",
