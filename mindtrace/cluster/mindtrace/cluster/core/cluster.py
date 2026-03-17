@@ -482,12 +482,20 @@ class ClusterManager(Gateway):
 
         job_schema_name = payload["job_schema_name"]
         worker_type = payload["worker_type"]
+
+        # Ensure the job type is routed via the orchestrator.
         self.job_schema_targeting_database.insert(
             cluster_types.JobSchemaTargeting(schema_name=job_schema_name, target_endpoint="@orchestrator")
         )
+        # Enable auto-connect so that future launches of this worker type are automatically
+        # wired up to the appropriate queue.
         self.worker_auto_connect_database.insert(
             cluster_types.WorkerAutoConnect(worker_type=worker_type, schema_name=job_schema_name)
         )
+        # Critically, declare the orchestrator queue up-front so that jobs submitted
+        # before any worker is launched are durably enqueued and can be consumed once
+        # a worker connects.
+        self.orchestrator.register(JobSchema(name=job_schema_name, input_schema=BaseModel))
         self.logger.info(f"Registered job schema {job_schema_name} to worker type {worker_type}")
 
     def get_job_status(self, payload: dict):
