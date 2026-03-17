@@ -27,7 +27,12 @@ class GitEnvironment(Mindtrace):
         self.working_dir = working_dir
         self.temp_dir: str = None  # type: ignore
         self.repo = None
-        self.allowed_owners = ["Mindtrace"]  # private allowed repos  TODO: get from env or config
+        allowed_owners_env = os.environ.get("GIT_ALLOWED_OWNERS")
+        if allowed_owners_env:
+            self.allowed_owners = [owner.strip() for owner in allowed_owners_env.split(",") if owner.strip()]
+        else:
+            # Default to Mindtrace org; can be overridden via GIT_ALLOWED_OWNERS.
+            self.allowed_owners = ["Mindtrace"]
 
     def _extract_repo_owner(self, url: str) -> str:
         """Extracts the repository identifier (owner/repo) from a GitHub URL.
@@ -81,6 +86,24 @@ class GitEnvironment(Mindtrace):
         os.environ["GIT_CONFIG_GLOBAL"] = "0"
         os.environ["GIT_CONFIG_SYSTEM"] = "0"
 
+    def _configure_git_token(self, token: str) -> None:
+        """Configure git to inject the token into all GitHub HTTPS URLs.
+
+        This uses git's GIT_CONFIG_* environment variables to add a temporary
+        config entry:
+            url.https://<token>@github.com/.insteadOf = https://github.com/
+
+        Any git process that inherits this environment (including those
+        spawned by tools like `uv`) will transparently rewrite GitHub URLs
+        to include the token.
+        """
+        current_count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+        key_var = f"GIT_CONFIG_KEY_{current_count}"
+        value_var = f"GIT_CONFIG_VALUE_{current_count}"
+        os.environ[key_var] = f"url.https://{token}@github.com/.insteadOf"
+        os.environ[value_var] = "https://github.com/"
+        os.environ["GIT_CONFIG_COUNT"] = str(current_count + 1)
+
     def _get_token(self):
         """
         Priority:
@@ -93,7 +116,8 @@ class GitEnvironment(Mindtrace):
         if repo_owner in self.allowed_owners:
             token = os.environ.get("GIT_FINE_GRAINED_TOKEN")
             if token:
-                self.logger.info(f"Using token: {token}")
+                # Do not log the raw token to avoid leaking secrets.
+                self.logger.info("Using fine-grained GitHub token for authenticated clone")
                 return token
         return None
 
@@ -107,12 +131,13 @@ class GitEnvironment(Mindtrace):
         try:
             self._remove_git_auth_methods()
             if token:
-                if "github.com" in self.repo_url:
-                    repo_name = self.repo_url.split("github.com/")[1]
-                    repo_url_with_pat = f"https://{token}@github.com/{repo_name}"
-                else:
-                    raise RuntimeError(f"Unsupported repository URL: {self.repo_url}")
-                self.repo = git.Repo.clone_from(repo_url_with_pat, self.temp_dir)
+                if "github.com" not in self.repo_url:
+                    raise RuntimeError(f"Unsupported repository URL for token-based auth: {self.repo_url}")
+                # Configure git so that all GitHub HTTPS URLs (including those
+                # used by tools like `uv` for dependency fetches) are rewritten
+                # to include the fine-grained token.
+                self._configure_git_token(token)
+                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
                 self.logger.info("Successfully cloned repository with token")
             else:
                 self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
