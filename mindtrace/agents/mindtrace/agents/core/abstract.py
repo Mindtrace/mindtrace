@@ -27,6 +27,11 @@ class AbstractMindtraceAgent(Generic[AgentDepsT, OutputDataT], MindtraceABC):
 
     @property
     @abstractmethod
+    def description(self) -> str | None:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
     def deps_type(self) -> type:
         raise NotImplementedError
 
