@@ -13,10 +13,21 @@ from mindtrace.registry.core.exceptions import LockTimeoutError
 from mindtrace.registry.core.registry import Registry
 
 if check_libs(["ultralytics", "torch"]) == []:
-    # Registers the Ultralytics archivers to the Registry class
-    import mindtrace.registry.archivers.ultralytics.sam_archiver  # noqa: F401
-    import mindtrace.registry.archivers.ultralytics.yolo_archiver  # noqa: F401
-    import mindtrace.registry.archivers.ultralytics.yoloe_archiver  # noqa: F401
+    # Registers the Ultralytics archivers to the Registry class.
+    # Each import is guarded individually — older ultralytics versions
+    # (e.g. yolov10 forks) may not have YOLOE or other newer classes.
+    try:
+        import mindtrace.registry.archivers.ultralytics.sam_archiver  # noqa: F401
+    except (ImportError, AttributeError):
+        pass
+    try:
+        import mindtrace.registry.archivers.ultralytics.yolo_archiver  # noqa: F401
+    except (ImportError, AttributeError):
+        pass
+    try:
+        import mindtrace.registry.archivers.ultralytics.yoloe_archiver  # noqa: F401
+    except (ImportError, AttributeError):
+        pass
 
 
 __all__ = [
