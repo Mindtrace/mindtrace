@@ -19,12 +19,14 @@ class GitEnvironment(Mindtrace):
         branch: Optional[str] = None,
         commit: Optional[str] = None,
         working_dir: Optional[str] = None,
+        project: Optional[str] = None,
     ):
         super().__init__()
         self.repo_url = repo_url
         self.branch = branch  # Use provided branch or get default from config
         self.commit = commit
         self.working_dir = working_dir
+        self.project = project
         self.temp_dir: str = None  # type: ignore
         self.repo = None
         allowed_owners_env = os.environ.get("GIT_ALLOWED_OWNERS")
@@ -186,7 +188,10 @@ class GitEnvironment(Mindtrace):
     def _sync_dependencies(self, working_dir: str):
         """Sync Python dependencies using uv."""
         self.logger.info(f"Running 'uv sync' in {working_dir}")
-        result = subprocess.run(["uv", "sync"], cwd=working_dir, capture_output=False, text=True, check=True)
+        command = ["uv", "sync"]
+        if self.project:
+            command.extend(["--project", self.project])
+        result = subprocess.run(command, cwd=working_dir, capture_output=False, text=True, check=True)
         if result.returncode != 0:
             raise RuntimeError(f"'uv sync' failed: {result.stderr}")
         self.logger.info("Dependencies synced successfully")
