@@ -1335,6 +1335,7 @@ class StandardWorkerLauncher(Archiver):
                 branch=worker_dict["git_branch"],
                 commit=worker_dict["git_commit"],
                 working_dir=worker_dict["git_working_dir"],
+                project=worker_dict.get("git_project"),
             )
             _ = environment.setup()
 

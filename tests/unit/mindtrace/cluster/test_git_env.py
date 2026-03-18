@@ -33,13 +33,18 @@ class TestGitEnvironment:
     def test_initialization(self):
         """Test GitEnvironment initialization with all parameters."""
         env = GitEnvironment(
-            repo_url="https://github.com/test-owner/test-repo.git", branch="main", commit="abc123", working_dir="src"
+            repo_url="https://github.com/test-owner/test-repo.git",
+            branch="main",
+            commit="abc123",
+            working_dir="src",
+            project="our-project",
         )
 
         assert env.repo_url == "https://github.com/test-owner/test-repo.git"
         assert env.branch == "main"
         assert env.commit == "abc123"
         assert env.working_dir == "src"
+        assert env.project == "our-project"
         assert env.temp_dir is None
         assert env.repo is None
         assert env.allowed_owners == ["Mindtrace"]
@@ -52,6 +57,7 @@ class TestGitEnvironment:
         assert env.branch is None
         assert env.commit is None
         assert env.working_dir is None
+        assert env.project is None
         assert env.temp_dir is None
         assert env.repo is None
 
@@ -331,6 +337,26 @@ class TestGitEnvironment:
 
         mock_run.assert_called_once_with(
             ["uv", "sync"], cwd="/tmp/test-repo-123", capture_output=False, text=True, check=True
+        )
+
+    @patch("subprocess.run")
+    def test_sync_dependencies_with_project(self, mock_run, git_env):
+        """Test dependency synchronization with a specific uv project."""
+        git_env.project = "our-project"
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        git_env._sync_dependencies("/tmp/test-repo-123")
+
+        mock_run.assert_called_once_with(
+            ["uv", "sync", "--project", "our-project"],
+            cwd="/tmp/test-repo-123",
+            capture_output=False,
+            text=True,
+            check=True,
         )
 
     @patch("subprocess.run")

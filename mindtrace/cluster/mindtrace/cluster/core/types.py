@@ -14,6 +14,7 @@ class ProxyWorker(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
     worker_params: dict
 
 
@@ -202,6 +203,7 @@ class RegisterWorkerTypeInput(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
 
 
 class ClusterLaunchWorkerInput(BaseModel):
