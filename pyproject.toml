@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.8.0"
+version = "0.9.4"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,33 +13,40 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.8.0",
-  "mindtrace-jobs>=0.8.0",
-  "mindtrace-registry>=0.8.0",
-  "mindtrace-database>=0.8.0",
-  "mindtrace-services>=0.8.0",
-  "mindtrace-hardware>=0.8.0",
-  "mindtrace-cluster>=0.8.0",
-  "mindtrace-models>=0.8.0",
-  "mindtrace-automation>=0.8.0",
-  "mindtrace-apps>=0.8.0",
-  "mindtrace-ui>=0.8.0",
-  "mindtrace-datalake>=0.8.0",
-  "mindtrace-storage>=0.8.0",
+  "mindtrace-core>=0.9.4",
+  "mindtrace-agents>=0.9.4",
+  "mindtrace-jobs>=0.9.4",
+  "mindtrace-registry>=0.9.4",
+  "mindtrace-database>=0.9.4",
+  "mindtrace-services>=0.9.4",
+  "mindtrace-hardware>=0.9.4",
+  "mindtrace-cluster>=0.9.4",
+  "mindtrace-models>=0.9.4",
+  "mindtrace-automation>=0.9.4",
+  "mindtrace-apps>=0.9.4",
+  "mindtrace-ui>=0.9.4",
+  "mindtrace-datalake>=0.9.4",
+  "mindtrace-storage>=0.9.4",
 ]
 
 [project.optional-dependencies]
-cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.8.0"]
-cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.8.0"]
-cameras-all = ["mindtrace-hardware[cameras-all]>=0.8.0"]
-stereo-basler = ["mindtrace-hardware[stereo-basler]>=0.8.0"]
-stereo-all = ["mindtrace-hardware[stereo-all]>=0.8.0"]
-hardware-all = ["mindtrace-hardware[hardware-all]>=0.8.0"]
-registry-timm = ["mindtrace-registry[timm]>=0.7.1"]
-registry-huggingface = ["mindtrace-registry[huggingface]>=0.7.1"]
-registry-onnx = ["mindtrace-registry[onnx]>=0.7.1"]
-registry-tensorrt-cu11 = ["mindtrace-registry[tensorrt-cu11]>=0.7.1"]
-registry-tensorrt-cu12 = ["mindtrace-registry[tensorrt-cu12]>=0.7.1"]
+cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.9.4"]
+cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.9.4"]
+cameras-all = ["mindtrace-hardware[cameras-all]>=0.9.4"]
+stereo-basler = [
+    "mindtrace-hardware[stereo-basler]>=0.9.4",
+    "plyfile>=1.1.3",
+]
+stereo-all = ["mindtrace-hardware[stereo-all]>=0.9.4"]
+scanners-photoneo = [
+    "mindtrace-hardware[scanners-photoneo]>=0.9.4",
+    "plyfile>=1.1.3",
+]
+scanners-all = ["mindtrace-hardware[scanners-all]>=0.9.4"]
+hardware-all = ["mindtrace-hardware[hardware-all]>=0.9.4"]
+registry-timm = ["mindtrace-registry[timm]>=0.9.4"]
+registry-huggingface = ["mindtrace-registry[huggingface]>=0.9.4"]
+registry-onnx = ["mindtrace-registry[onnx]>=0.9.4"]
 
 [dependency-groups]
 dev = [
@@ -70,6 +77,7 @@ Repository = "https://github.com/mindtrace/mindtrace"
 
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
+mindtrace-agents = { workspace = true }
 mindtrace-services = { workspace = true }
 mindtrace-apps = { workspace = true }
 mindtrace-cluster = { workspace = true }
@@ -86,6 +94,7 @@ mindtrace-storage = { workspace = true }
 [tool.uv.workspace]
 members = [
   "mindtrace/core",
+  "mindtrace/agents",
   "mindtrace/services",
   "mindtrace/apps",
   "mindtrace/cluster",
@@ -140,9 +149,11 @@ publish_to_pypi = """
     bash scripts/push_to_pypi.sh ${@:-}
 """
 
+[tool.ruff.lint.isort]
+known-first-party = ["mindtrace", "tests"]
+
 [tool.ruff]
 src = [
-    ".",
     "mindtrace/apps",
     "mindtrace/automation",
     "mindtrace/cluster",
