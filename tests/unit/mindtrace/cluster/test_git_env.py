@@ -408,6 +408,7 @@ class TestGitEnvironment:
     def test_execute_success(self, mock_exists, mock_run, git_env):
         """Test successful command execution."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -428,6 +429,7 @@ class TestGitEnvironment:
     def test_execute_list_command(self, mock_exists, mock_run, git_env):
         """Test command execution with list command."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -450,6 +452,7 @@ class TestGitEnvironment:
     def test_execute_without_uv_prefix(self, mock_exists, mock_run, git_env):
         """Test command execution without uv prefix."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -469,6 +472,7 @@ class TestGitEnvironment:
     def test_execute_with_uv_prefix(self, mock_exists, mock_run, git_env):
         """Test command execution with uv prefix."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -488,6 +492,7 @@ class TestGitEnvironment:
     def test_execute_with_custom_environment(self, mock_exists, mock_run, git_env):
         """Test command execution with custom environment variables."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -507,6 +512,7 @@ class TestGitEnvironment:
     def test_execute_with_custom_working_directory(self, mock_run, git_env):
         """Test command execution with custom working directory."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
 
         mock_result = Mock()
         mock_result.returncode = 0
@@ -525,6 +531,7 @@ class TestGitEnvironment:
     def test_execute_subprocess_exception(self, mock_run, mock_exists, git_env):
         """Test command execution with subprocess exception."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
 
         mock_exists.return_value = True
         mock_run.side_effect = Exception("Subprocess error")
@@ -541,3 +548,51 @@ class TestGitEnvironment:
 
         with pytest.raises(RuntimeError, match="Git environment not initialized"):
             git_env.execute("python script.py")
+
+    @patch("subprocess.Popen")
+    @patch("os.path.exists")
+    def test_execute_detach_with_project_and_list_command(self, mock_exists, mock_popen, git_env):
+        """Test detached execution with project flag and list command."""
+        git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = "apps/chiron/backend/chiron/trainingcluster"
+        mock_exists.return_value = True
+
+        mock_process = Mock()
+        mock_process.pid = 1234
+        mock_popen.return_value = mock_process
+
+        pid, stdout, stderr = git_env.execute(["python", "train.py"], detach=True)
+
+        assert pid == 1234
+        assert stdout == ""
+        assert stderr == ""
+        # Expect uv run with --project prefix added as separate list elements
+        expected_prefix = ["uv", "run", "--project " + git_env.project]
+        call_args = mock_popen.call_args[0][0]
+        assert call_args[: len(expected_prefix)] == expected_prefix
+        assert call_args[len(expected_prefix):] == ["python", "train.py"]
+
+    @patch("subprocess.run")
+    @patch("os.path.exists")
+    def test_execute_non_detach_with_project_and_string_command(self, mock_exists, mock_run, git_env):
+        """Test non-detached execution with project flag and string command."""
+        git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = "apps/chiron/backend/chiron/trainingcluster"
+        mock_exists.return_value = True
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Output"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        exit_code, stdout, stderr = git_env.execute("python script.py")
+
+        assert exit_code == 0
+        assert stdout == "Output"
+        assert stderr == ""
+        # Verify the generated shell command includes uv run --project and the original command
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert cmd.startswith(f"uv run --project {git_env.project} ")
+        assert cmd.endswith("python script.py")

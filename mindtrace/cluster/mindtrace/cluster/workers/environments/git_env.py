@@ -227,16 +227,32 @@ class GitEnvironment(Mindtrace):
         if detach:
             if isinstance(command, list):
                 if not command[0].startswith("uv"):
-                    command = ["uv", "run"] + command
+                    if self.project:
+                        command = ["uv", "run", "--project " + self.project] + command
+                    else:
+                        command = ["uv", "run"] + command
+                else:
+                    self.logger.warning("Don't know how to handle project when uv is already in the command, running command as-is")
             else:
                 if not command.startswith("uv"):
-                    command = ["uv run " + command]
+                    if self.project:
+                        command = ["uv run --project " + self.project + " " + command]
+                    else:
+                        command = ["uv run " + command]
+                else:
+                    if self.project:
+                        self.logger.warning("Don't know how to handle project when uv is already in the command, running command as-is")
         else:
             if isinstance(command, list):
                 command = " ".join(command)
 
             if not command.startswith("uv"):
-                command = "uv run " + command
+                if self.project:
+                    command = "uv run --project " + self.project + " " + command
+                else:
+                    command = "uv run " + command
+            else:
+                self.logger.warning("Don't know how to handle project when uv is already in the command, running command as-is")
 
         working_dir = cwd or self._get_working_dir()
         environment_vars = {**os.environ, **(env or {})}
