@@ -1,158 +1,147 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 [![License](https://img.shields.io/pypi/l/mindtrace-models)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/models/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-models)](https://pepy.tech/projects/mindtrace-models)
 
-# mindtrace-models
+# Mindtrace Models Module
 
-Full ML lifecycle library for the Mindtrace ecosystem: assemble models from 33 registered backbones and 6 head types, train with rich callbacks and 9 loss functions, track experiments across MLflow / WandB / TensorBoard, evaluate with task-specific metrics, manage model stages through a promotion graph, and serve inference via ONNX or TorchServe.
+The Mindtrace Models module provides a complete ML lifecycle library: assemble models from 33 registered backbones and 6 head types, train with callbacks and 9 loss functions, track experiments across MLflow / WandB / TensorBoard, evaluate with task-specific metrics, manage model stages through a promotion graph, serve inference via ONNX or TorchServe, and serialize models for the Mindtrace Registry.
 
-711 tests, 84% coverage.
+## Table of Contents
 
-```python
-from mindtrace.models import build_model, Trainer, EvaluationRunner, ModelCard, promote, ModelStage
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Architectures](#architectures)
+- [Training](#training)
+- [Tracking](#tracking)
+- [Evaluation](#evaluation)
+- [Lifecycle](#lifecycle)
+- [Serving](#serving)
+- [Archivers](#archivers)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [API Reference](#api-reference)
 
-model = build_model("dino_v3_small", "linear", num_classes=10)
+## Overview
+
+The models module consists of seven sub-packages:
+
+- **Architectures**: Backbone + head assembly with factory pattern, 33 registered backbones, 6 head types, LoRA fine-tuning
+- **Training**: Supervised training loop with AMP, DDP, gradient accumulation, 7 callbacks, 9 loss functions, optimizer/scheduler factories
+- **Tracking**: Unified experiment tracking with MLflow, WandB, TensorBoard backends and framework bridges
+- **Evaluation**: Framework-agnostic metric computation (pure NumPy) with EvaluationRunner for orchestrated inference
+- **Lifecycle**: Model stage management (DEV/STAGING/PRODUCTION/ARCHIVED) with metric-gated promotion
+- **Serving**: Model inference services via ONNX Runtime and TorchServe with a common ModelService base
+- **Archivers**: ML model serialization that self-registers with the Mindtrace Registry at import time
+
+Each sub-package provides:
+- Typed interfaces with Pydantic schemas
+- Integration with the Mindtrace Registry for artifact persistence
+- Structured logging via the Mindtrace base classes
+- Optional dependency guards so missing extras do not break imports
+
+## Architecture
+
 ```
-
----
-
-## Package structure
-
-| Sub-package | Purpose | Key exports |
-|---|---|---|
-| [`architectures/`](mindtrace/models/architectures/) | Backbone + head assembly, factory pattern, LoRA fine-tuning | `build_model`, `build_model_from_hf`, `register_backbone`, `ModelWrapper` |
-| [`training/`](mindtrace/models/training/) | Trainer loop, callbacks, optimizers, schedulers, datalake bridge | `Trainer`, `Callback`, `ModelCheckpoint`, `EarlyStopping`, `build_optimizer` |
-| [`training/losses/`](mindtrace/models/training/losses/) | 9 loss functions: classification, detection, segmentation, composite | `FocalLoss`, `DiceLoss`, `ComboLoss`, `GIoULoss`, `CIoULoss` |
-| [`tracking/`](mindtrace/models/tracking/) | Unified experiment tracking with backend bridges | `Tracker`, `CompositeTracker`, `MLflowTracker`, `RegistryBridge` |
-| [`evaluation/`](mindtrace/models/evaluation/) | EvaluationRunner and pure-NumPy metric functions | `EvaluationRunner`, `accuracy`, `mean_iou`, `mean_average_precision` |
-| [`lifecycle/`](mindtrace/models/lifecycle/) | ModelCard, ModelStage, metric-gated promotion/demotion | `ModelCard`, `ModelStage`, `promote`, `demote`, `PromotionResult` |
-| [`serving/`](mindtrace/models/serving/) | ModelService base, ONNX inference, TorchServe integration | `ModelService`, `OnnxModelService`, `TorchServeModelService` |
-| [`archivers/`](mindtrace/models/archivers/) | ML model serialization (self-register with Registry at import) | HuggingFace, timm, Ultralytics (YOLO, YOLOE, SAM), ONNX archivers |
-
-Each sub-package listed above contains its own README with detailed API documentation.
-
-> Sample scripts covering every flow are in [`samples/models/`](../../samples/models/).
-
----
+mindtrace/models/
+├── architectures/               # Backbone + head assembly
+│   ├── backbones/               # Backbone registry, DINO, HuggingFace, LoRA
+│   └── heads/                   # LinearHead, MLPHead, FPNSegHead, etc.
+├── training/                    # Supervised training loop
+│   └── losses/                  # 9 loss functions (focal, dice, combo, etc.)
+├── tracking/                    # Experiment tracking
+│   └── backends/                # MLflow, WandB, TensorBoard
+├── evaluation/                  # Evaluation orchestration
+│   └── metrics/                 # Classification, detection, segmentation, regression
+├── lifecycle/                   # Model stage management and promotion
+├── serving/                     # Inference services
+│   ├── onnx/                    # ONNX Runtime backend
+│   └── torchserve/              # TorchServe proxy and exporter
+└── archivers/                   # Registry serialization
+    ├── huggingface/             # PreTrainedModel, processors
+    ├── timm/                    # timm models
+    ├── onnx/                    # ONNX ModelProto
+    └── ultralytics/             # YOLO, YOLOE, SAM
+```
 
 ## Installation
 
 ```bash
-# Core (torch, numpy, pydantic, mindtrace-core, mindtrace-registry, mindtrace-services)
-uv add mindtrace-models
-
-# Torchvision backbones (ResNet, ViT, EfficientNet)
-uv add "mindtrace-models[train]"
-
-# HuggingFace backbones (DINOv2, DINOv3, Swin, generic HF vision models)
-uv add "mindtrace-models[transformers]"
-
-# timm backbones (800+ architectures via timm registry)
-uv add "mindtrace-models[timm]"
-
-# LoRA fine-tuning via PEFT
-uv add "mindtrace-models[peft]"
-
-# Experiment tracking backends
-uv add "mindtrace-models[mlflow]"
-uv add "mindtrace-models[wandb]"
-uv add "mindtrace-models[tensorboard]"
-
-# ONNX inference serving
-uv add "mindtrace-models[onnx]"
-
-# Ultralytics archivers (YOLO, YOLOE, SAM)
-uv add "mindtrace-models[ultralytics]"
-
-# Everything
-uv add "mindtrace-models[all]"
+# Base installation (torch, numpy, pydantic, mindtrace-core, mindtrace-registry, mindtrace-services)
+pip install mindtrace-models
 ```
 
----
+### Optional Extras
 
-## Quick start: full lifecycle in 30 lines
+| Extra | Command | What it adds |
+|-------|---------|--------------|
+| `train` | `pip install mindtrace-models[train]` | torchvision backbones (ResNet, ViT, EfficientNet) |
+| `transformers` | `pip install mindtrace-models[transformers]` | HuggingFace backbones (DINOv2, DINOv3, Swin) |
+| `timm` | `pip install mindtrace-models[timm]` | 800+ timm architectures |
+| `peft` | `pip install mindtrace-models[peft]` | LoRA fine-tuning via PEFT |
+| `mlflow` | `pip install mindtrace-models[mlflow]` | MLflow experiment tracking |
+| `wandb` | `pip install mindtrace-models[wandb]` | Weights & Biases tracking |
+| `tensorboard` | `pip install mindtrace-models[tensorboard]` | TensorBoard tracking |
+| `onnx` | `pip install mindtrace-models[onnx]` | ONNX Runtime inference serving |
+| `ultralytics` | `pip install mindtrace-models[ultralytics]` | Ultralytics archivers (YOLO, YOLOE, SAM) |
+| `all` | `pip install mindtrace-models[all]` | All optional dependencies |
 
-```python
-import torch.nn as nn
-from mindtrace.models import (
-    build_model, Trainer, build_optimizer, build_scheduler,
-    ModelCheckpoint, EarlyStopping,
-    CompositeTracker, MLflowTracker,
-    EvaluationRunner,
-    ModelCard, ModelStage, promote,
-)
-
-# 1. Assemble model
-model = build_model("resnet50", "linear", num_classes=10, pretrained=True)
-
-# 2. Configure training
-optimizer = build_optimizer("adamw", model, lr=3e-4, backbone_lr_multiplier=0.1)
-scheduler = build_scheduler("cosine_warmup", optimizer, warmup_steps=500, total_steps=5000)
-
-# 3. Track experiments
-tracker = CompositeTracker(trackers=[MLflowTracker(experiment_name="quickstart")])
-
-# 4. Train
-trainer = Trainer(
-    model=model, loss_fn=nn.CrossEntropyLoss(), optimizer=optimizer,
-    scheduler=scheduler, tracker=tracker, device="auto", mixed_precision=True,
-    callbacks=[ModelCheckpoint(registry=registry, model_name="my-model"), EarlyStopping(patience=5)],
-)
-with tracker.run("run-001", config={"lr": 3e-4, "epochs": 20}):
-    history = trainer.fit(train_loader, val_loader, epochs=20)
-
-# 5. Evaluate
-runner = EvaluationRunner(model=model, task="classification", num_classes=10, device="auto")
-metrics = runner.run(val_loader)  # {"accuracy": 0.94, "f1": 0.93, ...}
-
-# 6. Promote
-card = ModelCard(name="my-model", version="v1", task="classification")
-card.add_result("val/accuracy", metrics["accuracy"])
-promote(card, registry, to_stage=ModelStage.STAGING, require={"val/accuracy": 0.85})
-```
-
----
-
-## 1. Architectures
+## Architectures
 
 Build models by combining any registered backbone with a task-specific head. The factory pattern handles feature dimension matching automatically.
 
-### 33 registered backbones
+### Interface Hierarchy
 
-ResNet (18, 34, 50, 101, 152), ViT (B/16, B/32, L/16, L/32), EfficientNet (B0-B7), DINOv2 (small, base, large, giant), DINOv3 (small, base, large), ConvNeXt variants, plus any HuggingFace vision model via `build_model_from_hf`.
+| Interface | Purpose | Output |
+|-----------|---------|--------|
+| `build_model` | Registered backbone + head key | `ModelWrapper` |
+| `build_model_from_hf` | Any HuggingFace model ID + head key | `ModelWrapper` |
+| `build_backbone` | Backbone only | `BackboneInfo` |
+| `register_backbone` | Decorator to add custom backbones | -- |
+| `list_backbones` | List all registered names | `list[str]` |
 
-### 6 head types
+### Backbone Registry
 
-| Head | Import | Task | Output shape |
-|---|---|---|---|
-| `LinearHead` | `from mindtrace.models import LinearHead` | Classification | `(B, C)` |
-| `MLPHead` | `from mindtrace.models import MLPHead` | Classification | `(B, C)` |
-| `MultiLabelHead` | `from mindtrace.models import MultiLabelHead` | Multi-label | `(B, C)` with sigmoid |
-| `LinearSegHead` | `from mindtrace.models import LinearSegHead` | Segmentation | `(B, C, H, W)` |
-| `FPNSegHead` | `from mindtrace.models import FPNSegHead` | Segmentation | `(B, C, H, W)` |
-| `DetectionHead` | `from mindtrace.models import DetectionHead` | Detection | task-specific |
+| Family | Names | Feature dim |
+|--------|-------|-------------|
+| ResNet | `resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152` | 512--2048 |
+| ViT | `vit_b_16`, `vit_b_32`, `vit_l_16` | 768--1024 |
+| DINOv2 | `dino_v2_small`, `dino_v2_base`, `dino_v2_large`, `dino_v2_giant` | 384--1536 |
+| DINOv2+regs | `dino_v2_small_reg`, `dino_v2_base_reg`, `dino_v2_large_reg`, `dino_v2_giant_reg` | 384--1536 |
+| DINOv3 ViT | `dino_v3_small`, `dino_v3_base`, `dino_v3_large`, `dino_v3_huge_plus`, `dino_v3_7b` | 384--4096 |
+| DINOv3 ConvNeXt | `dino_v3_convnext_tiny`, `dino_v3_convnext_small`, `dino_v3_convnext_base`, `dino_v3_convnext_large` | varies |
+| EfficientNet | via torchvision (when available) | varies |
 
-### Build a model
+### Head Types
+
+| Key | Class | Task | Output shape |
+|-----|-------|------|--------------|
+| `"linear"` | `LinearHead` | Classification | `(B, C)` |
+| `"mlp"` | `MLPHead` | Classification | `(B, C)` |
+| `"multilabel"` | `MultiLabelHead` | Multi-label | `(B, C)` with sigmoid |
+| `"linear_seg"` | `LinearSegHead` | Segmentation | `(B, C, H, W)` |
+| `"fpn_seg"` | `FPNSegHead` | Segmentation | `(B, C, H, W)` |
+| -- | `DetectionHead` | Detection | `(cls_logits, bbox_deltas)` |
+
+### Basic Usage
 
 ```python
 from mindtrace.models import build_model, build_model_from_hf, list_backbones
 
 # List all registered backbones
-print(list_backbones())  # ["resnet18", "resnet50", ..., "dino_v3_small", ...]
+print(list_backbones())
 
 # Classification
-model = build_model("resnet50", "linear", num_classes=10)
+model = build_model("resnet50", "linear", num_classes=10, pretrained=True)
 
 # Segmentation with FPN head
 model = build_model("dino_v3_small", "fpn_seg", num_classes=19, hidden_dim=256)
-
-# Multi-label classification
-model = build_model("efficientnet_b0", "multilabel", num_classes=80)
 
 # Any HuggingFace vision model
 model = build_model_from_hf("microsoft/swin-tiny-patch4-window7-224", "linear", num_classes=10)
 ```
 
-### Register a custom backbone
+### Custom Backbone Registration
 
 ```python
 from mindtrace.models import register_backbone, BackboneInfo
@@ -166,7 +155,7 @@ def _build(pretrained=True, **kw):
 model = build_model("my_effnet", "linear", num_classes=5)
 ```
 
-### LoRA fine-tuning
+### LoRA Fine-Tuning
 
 Requires the `peft` extra. Wraps the backbone with low-rank adapters for parameter-efficient training.
 
@@ -178,24 +167,27 @@ lora = LoRAConfig(r=8, lora_alpha=16, lora_dropout=0.1, target_modules="qv")
 model = build_model("dino_v3_small", "linear", num_classes=3, lora_config=lora)
 model.backbone.print_trainable_parameters()
 # "trainable params: 294,912 / 21,986,688 (1.34%)"
-
-# Merge adapters for clean export
-model.backbone.merge_lora()
-model.backbone.save_pretrained("/ckpt/merged")
 ```
 
----
+See [Architectures Documentation](mindtrace/models/architectures/README.md) for details.
 
-## 2. Training
+## Training
 
-The `Trainer` class provides a complete supervised training loop with automatic mixed precision (AMP), gradient accumulation, gradient checkpointing, gradient clipping, DDP multi-GPU support, and a callback system.
+### Interface Hierarchy
 
-### Core training loop
+| Interface | AMP | DDP | Callbacks | Tracker |
+|-----------|-----|-----|-----------|---------|
+| `Trainer` | Yes | Yes | Yes | Yes |
+| `build_optimizer` | -- | -- | -- | -- |
+| `build_scheduler` | -- | -- | -- | -- |
+| `DatalakeDataset` | -- | -- | -- | -- |
+
+### Basic Usage
 
 ```python
 from mindtrace.models import (
     Trainer, build_optimizer, build_scheduler,
-    ModelCheckpoint, EarlyStopping, LRMonitor, ProgressLogger, UnfreezeSchedule,
+    ModelCheckpoint, EarlyStopping,
 )
 import torch.nn as nn
 
@@ -211,22 +203,18 @@ trainer = Trainer(
     mixed_precision=True,
     gradient_accumulation_steps=4,
     clip_grad_norm=1.0,
-    gradient_checkpointing=True,
     callbacks=[
         ModelCheckpoint(registry=registry, model_name="my-model"),
         EarlyStopping(patience=5),
-        LRMonitor(),
-        ProgressLogger(),
-        UnfreezeSchedule(schedule={5: ["backbone.layer4"]}, new_lr=5e-5),
     ],
 )
 history = trainer.fit(train_loader, val_loader, epochs=50)
 ```
 
-### 7 built-in callbacks
+### Callbacks
 
 | Callback | Purpose |
-|---|---|
+|----------|---------|
 | `ModelCheckpoint` | Save model to registry on metric improvement |
 | `EarlyStopping` | Stop training when monitored metric plateaus |
 | `LRMonitor` | Log learning rate each epoch |
@@ -235,47 +223,21 @@ history = trainer.fit(train_loader, val_loader, epochs=50)
 | `OptunaCallback` | Report intermediate metrics to Optuna, handle pruning |
 | `Callback` | Abstract base class for custom callbacks |
 
-### 9 loss functions
+### Loss Functions
 
-```python
-from mindtrace.models import (
-    # Classification
-    FocalLoss, LabelSmoothingCrossEntropy, SupConLoss,
-    # Detection
-    GIoULoss, CIoULoss,
-    # Segmentation
-    DiceLoss, TverskyLoss, IoULoss,
-    # Composite
-    ComboLoss,
-)
+| Loss | Task | Import |
+|------|------|--------|
+| `FocalLoss` | Classification | `from mindtrace.models import FocalLoss` |
+| `LabelSmoothingCrossEntropy` | Classification | `from mindtrace.models import LabelSmoothingCrossEntropy` |
+| `SupConLoss` | Classification | `from mindtrace.models import SupConLoss` |
+| `GIoULoss` | Detection | `from mindtrace.models import GIoULoss` |
+| `CIoULoss` | Detection | `from mindtrace.models import CIoULoss` |
+| `DiceLoss` | Segmentation | `from mindtrace.models import DiceLoss` |
+| `TverskyLoss` | Segmentation | `from mindtrace.models import TverskyLoss` |
+| `IoULoss` | Segmentation | `from mindtrace.models import IoULoss` |
+| `ComboLoss` | Composite | `from mindtrace.models import ComboLoss` |
 
-# Weighted composite loss
-combo = ComboLoss(
-    losses={"dice": DiceLoss(), "focal": FocalLoss()},
-    weights={"dice": 0.6, "focal": 0.4},
-)
-loss = combo(logits, targets)
-print(combo.named_losses)  # {"dice": 0.23, "focal": 0.18}
-```
-
-### Datalake bridge
-
-Load training data directly from a Mindtrace Datalake query. Requires `mindtrace-datalake` at runtime.
-
-```python
-from mindtrace.models import DatalakeDataset, build_datalake_loader
-
-loader = build_datalake_loader(
-    datalake=datalake,
-    query={"tags": ["weld", "defect"]},
-    transform=train_transform,
-    batch_size=32,
-    num_workers=4,
-)
-history = trainer.fit(loader, val_loader, epochs=20)
-```
-
-### Multi-GPU training
+### Multi-GPU Training
 
 ```python
 trainer = Trainer(..., ddp=True)
@@ -283,265 +245,240 @@ trainer.fit(train_loader, val_loader, epochs=20)
 # Launch: torchrun --nproc_per_node=4 train.py
 ```
 
----
+See [Training Documentation](mindtrace/models/training/README.md) for details.
 
-## 3. Tracking
+## Tracking
 
-Unified experiment tracking with a `Tracker` abstract base class and concrete backends for MLflow, Weights & Biases, and TensorBoard. All tracker implementations extend `mindtrace.core.MindtraceABC`.
+### Backend Comparison
 
-### Single backend
+| Feature | MLflow | WandB | TensorBoard |
+|---------|--------|-------|-------------|
+| `log` (scalars) | Yes | Yes | Yes |
+| `log_params` | Yes | config update | text note |
+| `log_model` | Yes (state dict) | Yes (state dict) | text note only |
+| `log_artifact` | Yes | Yes | No (warning) |
+| Remote server | optional | required | optional |
+| Offline support | Yes | No | Yes |
 
-```python
-from mindtrace.models import MLflowTracker
-
-tracker = MLflowTracker(experiment_name="detection_v2")
-with tracker.run("run-001", config={"lr": 3e-4, "batch_size": 32}):
-    tracker.log({"train/loss": 0.42, "val/loss": 0.38}, step=1)
-    tracker.log_model(model, name="detector", version="v1")
-```
-
-### Fan-out to multiple backends
+### Basic Usage
 
 ```python
-from mindtrace.models import CompositeTracker, MLflowTracker, WandBTracker, TensorBoardTracker
+from mindtrace.models import CompositeTracker, MLflowTracker, WandBTracker
 
 tracker = CompositeTracker(trackers=[
     MLflowTracker(experiment_name="my-exp"),
     WandBTracker(project="my-project"),
-    TensorBoardTracker(log_dir="runs/exp1"),
 ])
 
 with tracker.run("run-001", config={"lr": 3e-4}):
     history = trainer.fit(train_loader, val_loader, epochs=20)
 ```
 
-### Registry bridge
+### Framework Bridges
 
-Connect experiment tracking runs to the Mindtrace artifact registry.
+| Bridge | Framework | Integration |
+|--------|-----------|-------------|
+| `UltralyticsTrackerBridge` | Ultralytics YOLO | Registers epoch-end callbacks |
+| `HuggingFaceTrackerBridge` | HuggingFace Transformers | Implements `TrainerCallback` |
 
-```python
-from mindtrace.models import RegistryBridge
+See [Tracking Documentation](mindtrace/models/tracking/README.md) for details.
 
-bridge = RegistryBridge(registry=registry, tracker=tracker)
-bridge.log_model(model, name="weld-classifier", version="v2")
-```
+## Evaluation
 
-### Framework bridges
+### Metrics by Task
 
-Adapt third-party training loops (Ultralytics, HuggingFace Transformers) to emit metrics through the Mindtrace tracking interface.
+| Task | Returned keys |
+|------|---------------|
+| `"classification"` | `accuracy`, `precision`, `recall`, `f1`, `classification_report` |
+| `"detection"` | `mAP@50`, `mAP@75`, `mAP@50:95`, `AP_per_class` |
+| `"segmentation"` | `mIoU`, `mean_dice`, `pixel_accuracy`, `iou_per_class`, `dice_per_class` |
+| `"regression"` | `mae`, `mse`, `rmse`, `r2` |
 
-```python
-from mindtrace.models import UltralyticsTrackerBridge, HuggingFaceTrackerBridge
-
-# Ultralytics YOLO training with Mindtrace tracking
-ul_bridge = UltralyticsTrackerBridge(tracker=tracker)
-
-# HuggingFace Transformers training with Mindtrace tracking
-hf_bridge = HuggingFaceTrackerBridge(tracker=tracker)
-```
-
----
-
-## 4. Evaluation
-
-Framework-agnostic evaluation with pure-NumPy metric functions. The `EvaluationRunner` orchestrates inference over a PyTorch DataLoader and computes task-specific metrics automatically.
-
-### EvaluationRunner
+### Basic Usage
 
 ```python
 from mindtrace.models import EvaluationRunner
 
-# Classification
 runner = EvaluationRunner(model=model, task="classification", num_classes=10, device="auto")
 metrics = runner.run(val_loader)
 # {"accuracy": 0.94, "precision": 0.93, "recall": 0.92, "f1": 0.93, ...}
-
-# Object detection
-runner = EvaluationRunner(model=model, task="detection", num_classes=20, device="auto")
-metrics = runner.run(val_loader)
-# {"mAP": 0.71, "mAP_50": 0.82, ...}
-
-# Segmentation
-runner = EvaluationRunner(model=model, task="segmentation", num_classes=19, device="auto")
-metrics = runner.run(val_loader)
-# {"mean_iou": 0.68, "dice": 0.74, ...}
-
-# Regression
-runner = EvaluationRunner(model=model, task="regression", num_classes=1, device="auto")
-metrics = runner.run(val_loader)
-# {"mae": 0.12, "mse": 0.02, "rmse": 0.14, "r2": 0.97}
 ```
 
-### Standalone metric functions
+### Standalone Metric Functions
 
 All metric functions accept NumPy arrays and have no framework dependencies.
 
 ```python
 import numpy as np
-from mindtrace.models import accuracy, mean_iou, dice_score, mean_average_precision, mae, mse, rmse, r2_score
+from mindtrace.models import accuracy, mean_iou, dice_score, mean_average_precision
 
-# Classification
 acc = accuracy(y_true=np.array([0, 1, 2, 1]), y_pred=np.array([0, 1, 2, 0]))
-
-# Segmentation
 iou = mean_iou(pred_mask, true_mask, num_classes=19)
-dice = dice_score(pred_mask, true_mask, num_classes=19)
-
-# Detection
 mAP = mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5)
-
-# Regression
-error = mae(y_true, y_pred)
-r2 = r2_score(y_true, y_pred)
 ```
 
----
+See [Evaluation Documentation](mindtrace/models/evaluation/README.md) for details.
 
-## 5. Lifecycle
+## Lifecycle
 
-Manage model stages from development through production with metric-gated promotion. The lifecycle graph enforces valid transitions and threshold checks.
-
-### Stage graph
+### Stage Graph
 
 ```
 DEV --> STAGING --> PRODUCTION --> ARCHIVED
-                        |              ^
-                        +--------------+
-                   (demote / archive)
+                       |              ^
+                       +--------------+
+                  (demote / archive)
 ```
 
-Valid transitions are defined in `VALID_TRANSITIONS`.
+### Valid Transitions
 
-### ModelCard and promotion
+| From | To |
+|------|----|
+| DEV | STAGING, ARCHIVED |
+| STAGING | PRODUCTION, DEV, ARCHIVED |
+| PRODUCTION | ARCHIVED |
+| ARCHIVED | (terminal) |
+
+### Basic Usage
 
 ```python
-from mindtrace.models import ModelCard, ModelStage, promote, demote, PromotionResult, PromotionError
+from mindtrace.models import ModelCard, ModelStage, promote, demote
 
-# Create a model card with evaluation results
 card = ModelCard(name="weld-classifier", version="v2", task="classification")
 card.add_result("val/accuracy", 0.94, dataset="weld-val-2024")
-card.add_result("val/f1", 0.93, dataset="weld-val-2024")
 
 # DEV -> STAGING with threshold gate
 result = promote(card, registry, to_stage=ModelStage.STAGING,
-                 require={"val/accuracy": 0.85, "val/f1": 0.80})
-assert result.success
-print(result)  # PromotionResult(from_stage=DEV, to_stage=STAGING, ...)
+                 require={"val/accuracy": 0.85})
 
-# STAGING -> PRODUCTION with stricter thresholds
-promote(card, registry, to_stage=ModelStage.PRODUCTION,
-        require={"val/accuracy": 0.90})
-
-# Rollback to STAGING (no threshold checks on demotion)
-demote(card, registry, to_stage=ModelStage.STAGING, reason="production regression detected")
+# Rollback (no threshold checks on demotion)
+demote(card, registry, to_stage=ModelStage.STAGING, reason="production regression")
 ```
 
-If any metric falls below the required threshold, `promote` raises `PromotionError` with details about which gates failed.
+See [Lifecycle Documentation](mindtrace/models/lifecycle/README.md) for details.
 
----
+## Serving
 
-## 6. Serving
+### Backend Comparison
 
-Serve trained models via HTTP with the `ModelService` base class, which extends `mindtrace.services.Service` (FastAPI + Uvicorn). Two concrete implementations are provided: ONNX Runtime and TorchServe.
+| Feature | ONNX | TorchServe |
+|---------|------|------------|
+| Hardware | CPU / GPU | CPU / GPU |
+| Zero-subclass inference | Yes | No |
+| Dynamic batch size | Yes | Yes |
+| HTTP serving | via `serve()` | native |
+| FP16 | provider-dependent | Yes |
+| Python dependency | `onnxruntime` | TorchServe server |
 
-### ONNX serving
+### ONNX Serving
 
 ```python
-import torch
-import numpy as np
 from mindtrace.models.serving.onnx import OnnxModelService
+import numpy as np
 
-# Export to ONNX
-torch.onnx.export(
-    model.cpu(), torch.randn(1, 3, 224, 224), "model.onnx",
-    input_names=["pixel_values"], output_names=["logits"],
-    dynamic_axes={"pixel_values": {0: "batch"}, "logits": {0: "batch"}},
-    opset_version=17,
+svc = OnnxModelService(
+    model_name="my-model", model_version="v1", model_path="model.onnx"
 )
-
-# Serve
-svc = OnnxModelService(model_name="my-model", model_version="v1", model_path="model.onnx")
 outs = svc.predict_array({"pixel_values": np.random.randn(4, 3, 224, 224).astype("f")})
 preds = outs["logits"].argmax(axis=1)
-
-# Start HTTP server (exposes /predict and /info endpoints)
-OnnxModelService.serve(host="0.0.0.0", port=8080)
 ```
 
-### TorchServe integration
-
-```python
-from mindtrace.models.serving.torchserve import (
-    TorchServeModelService,
-    TorchServeExporter,
-    MindtraceHandler,
-)
-
-# Export a .mar archive
-exporter = TorchServeExporter(model_name="my-model", version="v1", registry=registry)
-exporter.export("model.mar")
-
-# Proxy to a running TorchServe server
-svc = TorchServeModelService(torchserve_url="http://localhost:8080", model_name="my-model")
-response = svc.predict(request)
-```
-
-### ModelService base class
+### ModelService Base
 
 All model services expose a standard interface:
 
 | Endpoint | Method | Description |
-|---|---|---|
+|----------|--------|-------------|
 | `/predict` | POST | Run inference on input data |
 | `/info` | GET | Return model metadata (`ModelInfo`) |
 
-```python
-from mindtrace.models import ModelService, ModelInfo, PredictRequest, PredictResponse
+See [Serving Documentation](mindtrace/models/serving/README.md) for details.
 
-class MyModelService(ModelService):
-    def load_model(self):
-        self.model = ...  # load from registry or path
+## Archivers
 
-    def predict(self, request: PredictRequest) -> PredictResponse:
-        ...  # run inference
-```
+### Archiver Registry
 
----
+| Archiver | Model Type | Extra | Auto-registered |
+|----------|-----------|-------|-----------------|
+| `HuggingFaceModelArchiver` | `PreTrainedModel`, `PeftModel` | `transformers` | Yes |
+| `HuggingFaceProcessorArchiver` | `ProcessorMixin`, `PreTrainedTokenizerBase` | `transformers` | Yes |
+| `OnnxModelArchiver` | `onnx.ModelProto` | `onnx` | Yes |
+| `TimmModelArchiver` | timm models | `timm` | No (explicit) |
+| `YoloArchiver` | `ultralytics.YOLO`, `YOLOWorld` | `ultralytics` | Yes |
+| `YoloEArchiver` | `ultralytics.YOLOE` | `ultralytics` | Yes |
+| `SamArchiver` | `ultralytics.SAM` | `ultralytics` | Yes |
 
-## 7. Archivers
+### Basic Usage
 
-ML model serialization modules that self-register with the Mindtrace Registry at import time via `Registry.register_default_materializer()`. Each archiver handles save/load for a specific model format.
-
-| Archiver | Format | Extra required |
-|---|---|---|
-| `hf_model_archiver` | HuggingFace `PreTrainedModel` | `transformers` |
-| `hf_processor_archiver` | HuggingFace `PreTrainedProcessor` | `transformers` |
-| `timm_model_archiver` | timm models | `timm` |
-| `onnx_model_archiver` | ONNX `ModelProto` | `onnx` |
-| `yolo_archiver` | Ultralytics YOLO | `ultralytics` |
-| `yoloe_archiver` | Ultralytics YOLOE | `ultralytics` |
-| `sam_archiver` | Ultralytics SAM | `ultralytics` |
-
-Archivers are activated automatically when `mindtrace.models` is imported. No explicit registration is needed.
+Archivers self-register when `mindtrace.models` is imported. No explicit registration is needed.
 
 ```python
 import mindtrace.models  # triggers archiver registration
 
-# The registry now knows how to serialize/deserialize HuggingFace models,
-# ONNX graphs, timm checkpoints, and Ultralytics models.
-registry.save("my-model", "v1", model)  # archiver selected automatically by type
-model = registry.load("my-model", "v1")  # deserialized with the matching archiver
+registry.save("my-model:v1", model)   # archiver selected automatically by type
+model = registry.load("my-model:v1")  # deserialized with the matching archiver
 ```
 
----
+See [Archivers Documentation](mindtrace/models/archivers/README.md) for details.
 
-## Complete exports reference
+## Configuration
+
+### Default Paths
+
+Model tracking and lifecycle data are stored under the standard Mindtrace directory structure defined by `MINDTRACE_DIR_PATHS`:
+
+| Path | Default | Purpose |
+|------|---------|---------|
+| `models/` | `~/.mindtrace/models/` | Model checkpoints and cards |
+| `experiments/` | `~/.mindtrace/experiments/` | Experiment tracking data |
+| `registry/` | `~/.mindtrace/registry/` | Artifact registry root |
+
+### Environment Variables
+
+```bash
+# Tracking backends
+export MLFLOW_TRACKING_URI=http://localhost:5000
+export WANDB_PROJECT=my-project
+export WANDB_ENTITY=my-team
+
+# Device selection
+export MINDTRACE_DEVICE=auto            # "auto" | "cuda" | "cpu"
+
+# Training defaults
+export MINDTRACE_MIXED_PRECISION=true
+export MINDTRACE_GRADIENT_CHECKPOINTING=false
+```
+
+## Testing
+
+```bash
+# Full test suite
+pytest tests/unit/mindtrace/models/
+
+# By sub-package
+pytest tests/unit/mindtrace/models/architectures/
+pytest tests/unit/mindtrace/models/training/
+pytest tests/unit/mindtrace/models/tracking/
+pytest tests/unit/mindtrace/models/evaluation/
+pytest tests/unit/mindtrace/models/lifecycle/
+pytest tests/unit/mindtrace/models/serving/
+pytest tests/unit/mindtrace/models/archivers/
+
+# With coverage
+pytest tests/unit/mindtrace/models/ --cov=mindtrace.models --cov-report=term-missing
+```
+
+711 tests, 84% coverage.
+
+## API Reference
+
+### Complete Exports
 
 Everything below is importable directly from `mindtrace.models`:
 
 ```python
 from mindtrace.models import (
-    # -- Architectures ----------------------------------------------------------
+    # -- Architectures --
     build_model,                    # Build backbone+head from registry names
     build_model_from_hf,            # Build from any HuggingFace model ID
     build_backbone,                 # Instantiate a registered backbone
@@ -558,7 +495,7 @@ from mindtrace.models import (
     FPNSegHead,                     # Feature Pyramid Network segmentation head
     DetectionHead,                  # Object detection head
 
-    # -- Training ---------------------------------------------------------------
+    # -- Training --
     Trainer,                        # Core training loop (AMP, DDP, grad accum)
     Callback,                       # Abstract callback base class
     ModelCheckpoint,                # Save on metric improvement
@@ -572,7 +509,7 @@ from mindtrace.models import (
     DatalakeDataset,                # torch Dataset backed by Datalake query
     build_datalake_loader,          # Factory: Datalake query -> DataLoader
 
-    # -- Losses -----------------------------------------------------------------
+    # -- Losses --
     FocalLoss,                      # Class-imbalanced classification
     LabelSmoothingCrossEntropy,     # Soft-label regularization
     SupConLoss,                     # Supervised contrastive loss
@@ -583,7 +520,7 @@ from mindtrace.models import (
     IoULoss,                        # Jaccard / IoU (segmentation)
     ComboLoss,                      # Weighted sum of sub-losses
 
-    # -- Tracking ---------------------------------------------------------------
+    # -- Tracking --
     Tracker,                        # Abstract tracker base (extends MindtraceABC)
     CompositeTracker,               # Fan-out to multiple backends
     MLflowTracker,                  # MLflow backend
@@ -593,7 +530,7 @@ from mindtrace.models import (
     UltralyticsTrackerBridge,       # Adapt Ultralytics training to Tracker
     HuggingFaceTrackerBridge,       # Adapt HF Transformers training to Tracker
 
-    # -- Evaluation -------------------------------------------------------------
+    # -- Evaluation --
     EvaluationRunner,               # Orchestrate inference + metric computation
     accuracy,                       # Classification accuracy (NumPy)
     mean_iou,                       # Mean intersection-over-union (NumPy)
@@ -604,7 +541,7 @@ from mindtrace.models import (
     rmse,                           # Root mean squared error (NumPy)
     r2_score,                       # R-squared (NumPy)
 
-    # -- Lifecycle --------------------------------------------------------------
+    # -- Lifecycle --
     ModelStage,                     # Enum: DEV, STAGING, PRODUCTION, ARCHIVED
     VALID_TRANSITIONS,              # Allowed stage transition graph
     ModelCard,                      # Structured model metadata
@@ -614,7 +551,7 @@ from mindtrace.models import (
     promote,                        # Promote with metric threshold checks
     demote,                         # Demote (rollback / archive)
 
-    # -- Serving ----------------------------------------------------------------
+    # -- Serving --
     ModelService,                   # Abstract base (extends mindtrace.services.Service)
     ModelInfo,                      # Model metadata schema
     PredictRequest,                 # Inference request schema
@@ -633,3 +570,9 @@ from mindtrace.models import (
     MindtraceBackboneAdapter,       # Adapt Mindtrace model as backbone
 )
 ```
+
+Sample scripts covering every flow are in `samples/models/`.
+
+## License
+
+Apache-2.0. See LICENSE file for details.
