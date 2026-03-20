@@ -84,7 +84,6 @@ class Service(Mindtrace):
         super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
-        self._all_routes: list[str] = []
         self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
 
         # Build URL with the following priority:
@@ -168,7 +167,7 @@ class Service(Mindtrace):
 
     def endpoints_func(self):
         """List all available endpoints for the service."""
-        return {"endpoints": list(self._all_routes)}
+        return {"endpoints": list(self._endpoints.keys())}
 
     def status_func(self):
         """Get the current status of the service."""
@@ -223,7 +222,7 @@ class Service(Mindtrace):
         url = parse_url(url) if isinstance(url, str) else url
         try:
             response = requests.request("POST", str(url) + "/status", timeout=timeout)
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             return ServerStatus.DOWN
         if response.status_code != 200:
             return ServerStatus.DOWN
@@ -241,7 +240,10 @@ class Service(Mindtrace):
                 raise KeyboardInterrupt("Service terminated by SIGINT.")
             else:
                 raise RuntimeError(f"Server exited with code {process.returncode}")
-        return cls.connect(url=url)
+        # Use a short per-request timeout so the Timeout handler can retry
+        # instead of a single request consuming the entire launch timeout
+        per_request_timeout = min(5, timeout)
+        return cls.connect(url=url, timeout=per_request_timeout)
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
@@ -280,7 +282,6 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: Literal[False],
         timeout: int = 60,
-        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ) -> None: ...
@@ -297,7 +298,6 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: Literal[True] | bool = True,
         timeout: int = 60,
-        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ) -> Any: ...
@@ -313,7 +313,6 @@ class Service(Mindtrace):
         num_workers: int = 1,
         wait_for_launch: bool = True,
         timeout: int = 60,
-        worker_timeout: int = 300,
         progress_bar: bool = True,
         **kwargs,
     ):
@@ -330,9 +329,6 @@ class Service(Mindtrace):
             num_workers: Number of worker processes
             wait_for_launch: Whether to wait for server startup
             timeout: Timeout for server startup in seconds
-            worker_timeout: Gunicorn worker timeout in seconds (how long a
-                worker may spend handling a single request, including model
-                loading during init). Defaults to 300s.
             progress_bar: Show progress bar during startup
             **kwargs: Additional parameters passed to the server's __init__ method
         """
@@ -356,6 +352,8 @@ class Service(Mindtrace):
 
         # Create launch command
         server_id = uuid.uuid1()
+        pid_file = cls._server_id_to_pid_file(server_id)
+        Path(pid_file).parent.mkdir(parents=True, exist_ok=True)
         launch_command = [
             sys.executable,
             "-m",
@@ -367,11 +365,9 @@ class Service(Mindtrace):
             "-b",
             f"{launch_url.host}:{launch_url.port}",
             "-p",
-            cls._server_id_to_pid_file(server_id),
+            pid_file,
             "-k",
             "uvicorn.workers.UvicornWorker",
-            "-t",
-            str(worker_timeout),
             "--init-params",
             json.dumps(init_params),
         ]
@@ -395,7 +391,12 @@ class Service(Mindtrace):
         if wait_for_launch:
             timeout_handler = Timeout(
                 timeout=timeout,
-                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout, HTTPException),
+                exceptions=(
+                    ConnectionRefusedError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout,
+                    HTTPException,
+                ),
                 progress_bar=progress_bar,
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
@@ -583,9 +584,7 @@ class Service(Mindtrace):
             "system_metrics": ["cpu_percent", "memory_percent"],
         }
         autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
-        self._all_routes.append(path)
-        if schema is not None:
-            self._endpoints[path] = schema
+        self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
         wrapped = track_operation(

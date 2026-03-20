@@ -1,5 +1,6 @@
 # Existing core exports — preserved for backwards compatibility.
 from mindtrace.cluster.core.cluster import ClusterManager, Node, StandardWorkerLauncher, Worker
+from mindtrace.cluster.core.pipeline_worker import PipelineWorker
 from mindtrace.cluster.core.types import ProxyWorker
 
 # New Level-3 cluster API.
@@ -22,6 +23,7 @@ __all__ = [
     # ---- backwards-compatible core exports ----
     "ClusterManager",
     "Node",
+    "PipelineWorker",
     "ProxyWorker",
     "StandardWorkerLauncher",
     "Worker",
