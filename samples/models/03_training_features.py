@@ -22,36 +22,36 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from mindtrace.registry import Registry
 from mindtrace.models import (
+    EarlyStopping,
+    EvaluationRunner,
+    LRMonitor,
+    ModelCheckpoint,
+    OptunaCallback,
+    ProgressLogger,
+    Trainer,
+    UnfreezeSchedule,
     build_model,
     build_optimizer,
     build_scheduler,
-    Trainer,
-    EvaluationRunner,
-    ModelCheckpoint,
-    EarlyStopping,
-    LRMonitor,
-    ProgressLogger,
-    UnfreezeSchedule,
-    OptunaCallback,
 )
+from mindtrace.registry import Registry
 
 # ── Shared synthetic data ──────────────────────────────────────────────────────
 
-NUM_CLASSES   = 4
-BATCH_SIZE    = 8
+NUM_CLASSES = 4
+BATCH_SIZE = 8
 TRAIN_SAMPLES = 64
-VAL_SAMPLES   = 32
+VAL_SAMPLES = 32
 H = W = 32
 
 train_x = torch.randn(TRAIN_SAMPLES, 3, H, W)
 train_y = torch.randint(0, NUM_CLASSES, (TRAIN_SAMPLES,))
-val_x   = torch.randn(VAL_SAMPLES, 3, H, W)
-val_y   = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
+val_x = torch.randn(VAL_SAMPLES, 3, H, W)
+val_y = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
 
 train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True)
-val_loader   = DataLoader(TensorDataset(val_x,   val_y),   batch_size=BATCH_SIZE)
+val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
 
 registry = Registry(tempfile.mkdtemp(prefix="mt_train_"))
 
@@ -69,13 +69,11 @@ def _steps() -> int:
 # ── 1. All callbacks ───────────────────────────────────────────────────────────
 
 print("=" * 60)
-print("[1] All callbacks: ModelCheckpoint + EarlyStopping + LRMonitor"
-      " + ProgressLogger + UnfreezeSchedule")
+print("[1] All callbacks: ModelCheckpoint + EarlyStopping + LRMonitor + ProgressLogger + UnfreezeSchedule")
 print("=" * 60)
 
-model = build_model("resnet18", "linear", num_classes=NUM_CLASSES,
-                    pretrained=False, freeze_backbone=True)
-opt   = build_optimizer("adamw", model, lr=1e-3, weight_decay=1e-2)
+model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False, freeze_backbone=True)
+opt = build_optimizer("adamw", model, lr=1e-3, weight_decay=1e-2)
 sched = build_scheduler("cosine", opt, total_steps=_steps())
 
 callbacks = [
@@ -88,14 +86,14 @@ callbacks = [
         version_prefix="ep",
     ),
     EarlyStopping(monitor="val/loss", patience=10, mode="min", min_delta=1e-4),
-    LRMonitor(),          # logs LR via Python logger; pass tracker= for remote
+    LRMonitor(),  # logs LR via Python logger; pass tracker= for remote
     ProgressLogger(),
     UnfreezeSchedule(
         schedule={
             1: ["backbone.layer3", "backbone.layer4"],  # unfreeze at epoch 1
-            2: ["backbone"],                             # full backbone at epoch 2
+            2: ["backbone"],  # full backbone at epoch 2
         },
-        new_lr=5e-5,      # new param group LR for freshly unfrozen params
+        new_lr=5e-5,  # new param group LR for freshly unfrozen params
     ),
 ]
 
@@ -108,8 +106,7 @@ trainer = Trainer(
     device="auto",
 )
 history = trainer.fit(train_loader, val_loader, epochs=3)
-print(f"  final train/loss={history['train/loss'][-1]:.4f}  "
-      f"val/loss={history['val/loss'][-1]:.4f}")
+print(f"  final train/loss={history['train/loss'][-1]:.4f}  val/loss={history['val/loss'][-1]:.4f}")
 
 # ── 2a. Optimizer — flat LR ────────────────────────────────────────────────────
 
@@ -122,8 +119,7 @@ for opt_name in ("adam", "adamw", "sgd", "radam", "rmsprop"):
     if opt_name == "sgd":
         kwargs["momentum"] = 0.9
     opt = build_optimizer(opt_name, _fresh(), **kwargs)
-    print(f"  {opt_name:<10} param_groups={len(opt.param_groups)}"
-          f"  lr={opt.param_groups[0]['lr']}")
+    print(f"  {opt_name:<10} param_groups={len(opt.param_groups)}  lr={opt.param_groups[0]['lr']}")
 
 # ── 2b. Optimizer — backbone_lr_multiplier ────────────────────────────────────
 
@@ -132,13 +128,9 @@ print("[2b] Optimizer — backbone_lr_multiplier (differential LR)")
 print("=" * 60)
 
 model = _fresh()
-opt = build_optimizer("adamw", model,
-                      backbone_lr_multiplier=0.1,
-                      lr=1e-3,
-                      weight_decay=1e-2)
+opt = build_optimizer("adamw", model, backbone_lr_multiplier=0.1, lr=1e-3, weight_decay=1e-2)
 print(f"  param_groups: {len(opt.param_groups)}")
-print(f"  backbone LR : {opt.param_groups[0]['lr']:.2e}  "
-      f"(= 0.1 × 1e-3 = 1e-4)")
+print(f"  backbone LR : {opt.param_groups[0]['lr']:.2e}  (= 0.1 × 1e-3 = 1e-4)")
 print(f"  head LR     : {opt.param_groups[1]['lr']:.2e}")
 
 # ── 2c. Optimizer — explicit param groups ─────────────────────────────────────
@@ -150,7 +142,7 @@ print("=" * 60)
 model = _fresh()
 param_groups = [
     {"params": model.backbone.parameters(), "lr": 5e-5},
-    {"params": model.head.parameters(),     "lr": 1e-3},
+    {"params": model.head.parameters(), "lr": 1e-3},
 ]
 opt = build_optimizer("adamw", param_groups, weight_decay=1e-2)
 print(f"  backbone LR : {opt.param_groups[0]['lr']:.2e}")
@@ -166,12 +158,12 @@ model = _fresh()
 _opt = build_optimizer("adamw", model, lr=1e-3)
 
 schedulers_spec = [
-    ("cosine",        {"total_steps": _steps()}),
+    ("cosine", {"total_steps": _steps()}),
     ("cosine_warmup", {"warmup_steps": 4, "total_steps": _steps()}),
-    ("step",          {"step_size": 4, "gamma": 0.5}),
-    ("plateau",       {"patience": 3, "factor": 0.5}),
-    ("onecycle",      {"max_lr": 1e-2, "total_steps": _steps()}),
-    ("constant",      {}),
+    ("step", {"step_size": 4, "gamma": 0.5}),
+    ("plateau", {"patience": 3, "factor": 0.5}),
+    ("onecycle", {"max_lr": 1e-2, "total_steps": _steps()}),
+    ("constant", {}),
 ]
 
 for name, kw in schedulers_spec:
@@ -182,12 +174,11 @@ for name, kw in schedulers_spec:
 # ── 4. gradient_accumulation_steps + clip_grad_norm + mixed_precision ─────────
 
 print("\n" + "=" * 60)
-print("[4] gradient_accumulation_steps=4  clip_grad_norm=1.0  "
-      "mixed_precision=True (no-op on CPU)")
+print("[4] gradient_accumulation_steps=4  clip_grad_norm=1.0  mixed_precision=True (no-op on CPU)")
 print("=" * 60)
 
 model = _fresh()
-opt   = build_optimizer("adamw", model, lr=1e-3)
+opt = build_optimizer("adamw", model, lr=1e-3)
 sched = build_scheduler("cosine", opt, total_steps=_steps())
 
 trainer = Trainer(
@@ -196,7 +187,7 @@ trainer = Trainer(
     optimizer=opt,
     scheduler=sched,
     device="auto",
-    mixed_precision=True,           # silently ignored when CUDA unavailable
+    mixed_precision=True,  # silently ignored when CUDA unavailable
     gradient_accumulation_steps=4,  # accumulate 4 micro-batches per step
     clip_grad_norm=1.0,
 )
@@ -211,7 +202,7 @@ print("[5] gradient_checkpointing (only HF transformer models support it)")
 print("=" * 60)
 
 model = _fresh()
-opt   = build_optimizer("adamw", model, lr=1e-3)
+opt = build_optimizer("adamw", model, lr=1e-3)
 
 try:
     trainer = Trainer(
@@ -219,11 +210,12 @@ try:
         loss_fn=nn.CrossEntropyLoss(),
         optimizer=opt,
         device="auto",
-        gradient_checkpointing=True,   # silently ignored for resnet18
+        gradient_checkpointing=True,  # silently ignored for resnet18
     )
     trainer.fit(train_loader, epochs=1)
-    print("  gradient_checkpointing=True (silently ignored for resnet18 — "
-          "model has no .gradient_checkpointing_enable())")
+    print(
+        "  gradient_checkpointing=True (silently ignored for resnet18 — model has no .gradient_checkpointing_enable())"
+    )
 except Exception as e:
     print(f"  Skipped: {e}")
 
@@ -235,16 +227,17 @@ print("=" * 60)
 
 # Simulate a dataloader that returns dicts instead of (x, y) tuples
 dict_batches = [
-    {"image": torch.randn(BATCH_SIZE, 3, H, W),
-     "label": torch.randint(0, NUM_CLASSES, (BATCH_SIZE,))}
+    {"image": torch.randn(BATCH_SIZE, 3, H, W), "label": torch.randint(0, NUM_CLASSES, (BATCH_SIZE,))}
     for _ in range(len(train_loader))
 ]
+
 
 def unpack_dict(batch: dict) -> tuple:
     return batch["image"], batch["label"]
 
+
 model = _fresh()
-opt   = build_optimizer("adamw", model, lr=1e-3)
+opt = build_optimizer("adamw", model, lr=1e-3)
 
 trainer = Trainer(
     model=model,
@@ -262,25 +255,28 @@ print("\n" + "=" * 60)
 print("[7] Regression model + EvaluationRunner(task='regression')")
 print("=" * 60)
 
+
 # Tiny 1-D regressor: input is a 16-dim vector, output is a scalar
 class TinyRegressor(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(16, 64), nn.ReLU(),
+            nn.Linear(16, 64),
+            nn.ReLU(),
             nn.Linear(64, 1),
         )
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
 
-reg_model  = TinyRegressor()
+
+reg_model = TinyRegressor()
 reg_train_x = torch.randn(64, 16)
 reg_train_y = torch.randn(64)
-reg_val_x   = torch.randn(32, 16)
-reg_val_y   = torch.randn(32)
-reg_train   = DataLoader(TensorDataset(reg_train_x, reg_train_y),
-                         batch_size=8, shuffle=True)
-reg_val     = DataLoader(TensorDataset(reg_val_x, reg_val_y), batch_size=8)
+reg_val_x = torch.randn(32, 16)
+reg_val_y = torch.randn(32)
+reg_train = DataLoader(TensorDataset(reg_train_x, reg_train_y), batch_size=8, shuffle=True)
+reg_val = DataLoader(TensorDataset(reg_val_x, reg_val_y), batch_size=8)
 
 reg_opt = build_optimizer("adamw", reg_model, lr=1e-3)
 reg_trainer = Trainer(
@@ -309,18 +305,23 @@ print("\n" + "=" * 60)
 print("[8] OptunaCallback with duck-typed trial object")
 print("=" * 60)
 
+
 class _FakeTrial:
     """Minimal duck-typed Optuna trial for demo purposes."""
+
     def __init__(self):
         self.values: list = []
+
     def report(self, value: float, step: int) -> None:
         self.values.append((step, value))
+
     def should_prune(self) -> bool:
-        return False   # never prune in demo
+        return False  # never prune in demo
+
 
 fake_trial = _FakeTrial()
 model = _fresh()
-opt   = build_optimizer("adamw", model, lr=1e-3)
+opt = build_optimizer("adamw", model, lr=1e-3)
 
 trainer = Trainer(
     model=model,

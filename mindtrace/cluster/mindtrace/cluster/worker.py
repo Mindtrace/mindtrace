@@ -7,16 +7,16 @@ inherits from :class:`mindtrace.services.Service` and communicates over HTTP.
 The :class:`Worker` class here is a lightweight, dependency-free executor that
 runs callables in-process, suitable for local and distributed scheduling.
 """
+
 from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
-from mindtrace.core import Mindtrace
-
 from mindtrace.cluster.node import ClusterNode
+from mindtrace.core import Mindtrace
 
 
 @dataclass
@@ -218,7 +218,8 @@ class Worker(Mindtrace):
         during the wait, and the timeout is enforced via
         :meth:`~concurrent.futures.Future.result`.
         """
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import TimeoutError as FuturesTimeout
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(fn, *args, **kwargs)
@@ -235,6 +236,4 @@ class Worker(Mindtrace):
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"Worker(node_id={self.node.node_id!r}, device={self.device!r})"
-        )
+        return f"Worker(node_id={self.node.node_id!r}, device={self.device!r})"

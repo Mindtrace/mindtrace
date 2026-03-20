@@ -7,19 +7,15 @@ implementations must provide :meth:`connect`, :meth:`disconnect`,
 The context manager protocol calls :meth:`connect` on entry and
 :meth:`disconnect` on exit.
 """
+
 from __future__ import annotations
 
-import time
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from mindtrace.core import MindtraceABC
-from mindtrace.hardware.core.exceptions import (
-    PLCConnectionError,
-    PLCTagError,
-)
 
 
 @dataclass
@@ -75,9 +71,7 @@ class AbstractPLC(MindtraceABC):
         self._port = port
         self._config: dict[str, Any] = config or {}
 
-        self.logger.debug(
-            f"AbstractPLC initialised: host={host!r}, port={port}"
-        )
+        self.logger.debug(f"AbstractPLC initialised: host={host!r}, port={port}")
 
     # ------------------------------------------------------------------
     # Abstract interface
@@ -192,9 +186,7 @@ class AbstractPLC(MindtraceABC):
     # ------------------------------------------------------------------
 
     def __enter__(self) -> AbstractPLC:
-        self.logger.debug(
-            f"Entering context manager for {self.name} ({self._host}:{self._port})"
-        )
+        self.logger.debug(f"Entering context manager for {self.name} ({self._host}:{self._port})")
         self.connect()
         return self
 
@@ -204,15 +196,11 @@ class AbstractPLC(MindtraceABC):
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> bool:
-        self.logger.debug(
-            f"Exiting context manager for {self.name} ({self._host}:{self._port})"
-        )
+        self.logger.debug(f"Exiting context manager for {self.name} ({self._host}:{self._port})")
         try:
             self.disconnect()
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                f"Non-fatal error during disconnect in __exit__ for {self.name}: {exc}"
-            )
+            self.logger.warning(f"Non-fatal error during disconnect in __exit__ for {self.name}: {exc}")
         if exc_type is not None:
             self.logger.exception(
                 f"Exception propagated through {self.name} context manager",
@@ -222,7 +210,4 @@ class AbstractPLC(MindtraceABC):
         return False
 
     def __repr__(self) -> str:
-        return (
-            f"<{type(self).__name__} host={self._host!r} port={self._port}"
-            f" status={self.status.value!r}>"
-        )
+        return f"<{type(self).__name__} host={self._host!r} port={self._port} status={self.status.value!r}>"

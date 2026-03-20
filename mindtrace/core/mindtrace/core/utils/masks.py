@@ -96,14 +96,10 @@ class MaskProcessor:
             had_batch = False
 
         if logits.ndim != 4:
-            raise ValueError(
-                f"logits must be 3D (C,H,W) or 4D (B,C,H,W), got {logits.ndim}D"
-            )
+            raise ValueError(f"logits must be 3D (C,H,W) or 4D (B,C,H,W), got {logits.ndim}D")
 
         if num_classes is not None and logits.shape[1] != num_classes:
-            raise ValueError(
-                f"Expected {num_classes} classes in logits dim 1, got {logits.shape[1]}"
-            )
+            raise ValueError(f"Expected {num_classes} classes in logits dim 1, got {logits.shape[1]}")
 
         # Resize logits to target size if specified
         if target_size is not None:
@@ -176,7 +172,7 @@ class MaskProcessor:
                 class_mask = mask == class_id
                 overlay[class_mask] = color_map[class_id_int]
 
-        blended = (image.astype(np.float64) * (1 - alpha) + overlay.astype(np.float64) * alpha)
+        blended = image.astype(np.float64) * (1 - alpha) + overlay.astype(np.float64) * alpha
         return np.clip(blended, 0, 255).astype(np.uint8)
 
     @staticmethod
@@ -208,9 +204,7 @@ class MaskProcessor:
         base_shape = masks[0].shape
         for i, m in enumerate(masks):
             if m.shape != base_shape:
-                raise ValueError(
-                    f"Mask at index {i} has shape {m.shape}, expected {base_shape}"
-                )
+                raise ValueError(f"Mask at index {i} has shape {m.shape}, expected {base_shape}")
 
         if strategy == "max":
             result = masks[0].copy()

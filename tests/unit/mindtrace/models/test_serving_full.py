@@ -11,13 +11,17 @@ from __future__ import annotations
 import json
 import urllib.error
 from io import BytesIO
-from typing import Any
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from mindtrace.models.serving.results import (
+    ClassificationResult,
+    DetectionResult,
+    SegmentationResult,
+)
 from mindtrace.models.serving.schemas import (
     ModelInfo,
     PredictRequest,
@@ -25,13 +29,7 @@ from mindtrace.models.serving.schemas import (
     info_task,
     predict_task,
 )
-from mindtrace.models.serving.results import (
-    ClassificationResult,
-    DetectionResult,
-    SegmentationResult,
-)
 from mindtrace.models.serving.service import ModelService, resolve_device
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -218,8 +216,11 @@ class TestDetectionResult:
 
     def test_with_id_and_extra(self):
         r = DetectionResult(
-            bbox=(0, 0, 50, 50), cls="spatter", confidence=0.9,
-            id="det_0", extra={"area": 2500},
+            bbox=(0, 0, 50, 50),
+            cls="spatter",
+            confidence=0.9,
+            id="det_0",
+            extra={"area": 2500},
         )
         assert r.id == "det_0"
         assert r.extra["area"] == 2500
@@ -317,8 +318,10 @@ class TestModelServiceLifecycle:
         """When live_service=False, load_model must NOT be called."""
         Cls = _make_concrete_model_service()
         svc = Cls(
-            model_name="test", model_version="v1",
-            registry=None, live_service=False,
+            model_name="test",
+            model_version="v1",
+            registry=None,
+            live_service=False,
         )
         # load_model sets self.model = "loaded"; it should not have run.
         assert not hasattr(svc, "model")
@@ -327,8 +330,10 @@ class TestModelServiceLifecycle:
         """Even in non-live mode, predict and info endpoints are registered."""
         Cls = _make_concrete_model_service()
         svc = Cls(
-            model_name="test", model_version="v1",
-            registry=None, live_service=False,
+            model_name="test",
+            model_version="v1",
+            registry=None,
+            live_service=False,
         )
         # svc.endpoints is dict[str, TaskSchema] where keys are path strings
         endpoint_paths = list(svc.endpoints.keys())
@@ -377,14 +382,15 @@ class TestModelServiceLifecycle:
 
         Cls = _make_concrete_model_service()
 
-        with patch.dict("sys.modules", {
-            "mindtrace.registry": MagicMock(Registry=mock_registry_cls),
-            "mindtrace.registry.backends": MagicMock(),
-            "mindtrace.registry.backends.gcp_registry_backend": MagicMock(
-                GCPRegistryBackend=mock_backend_cls
-            ),
-        }):
-            svc = Cls(model_name="m", model_version="v1", registry=None)
+        with patch.dict(
+            "sys.modules",
+            {
+                "mindtrace.registry": MagicMock(Registry=mock_registry_cls),
+                "mindtrace.registry.backends": MagicMock(),
+                "mindtrace.registry.backends.gcp_registry_backend": MagicMock(GCPRegistryBackend=mock_backend_cls),
+            },
+        ):
+            Cls(model_name="m", model_version="v1", registry=None)
 
         mock_backend_cls.assert_called_once_with(uri="gs://test-bucket/registry")
         mock_registry_cls.assert_called_once()
@@ -398,10 +404,13 @@ class TestModelServiceLifecycle:
         mock_registry_cls = MagicMock()
         Cls = _make_concrete_model_service()
 
-        with patch.dict("sys.modules", {
-            "mindtrace.registry": MagicMock(Registry=mock_registry_cls),
-        }):
-            svc = Cls(model_name="m", model_version="v1", registry=None)
+        with patch.dict(
+            "sys.modules",
+            {
+                "mindtrace.registry": MagicMock(Registry=mock_registry_cls),
+            },
+        ):
+            Cls(model_name="m", model_version="v1", registry=None)
 
         mock_registry_cls.assert_called_once_with("/tmp/test_registry")
 
@@ -476,6 +485,7 @@ class TestOnnxModelServiceFromFile:
 
             class TestOnnx(OnnxModelService):
                 _task = "classification"
+
                 def predict(self, request):
                     return PredictResponse(results=[], timing_s=0.0)
 
@@ -495,6 +505,7 @@ class TestOnnxModelServiceFromFile:
 
         class TestOnnx(OnnxModelService):
             _task = "test"
+
             def predict(self, request):
                 return PredictResponse(results=[], timing_s=0.0)
 
@@ -519,6 +530,7 @@ class TestOnnxModelServiceFromFile:
 
             class TestOnnx(OnnxModelService):
                 _task = "test"
+
                 def predict(self, request):
                     return PredictResponse(results=[], timing_s=0.0)
 
@@ -555,6 +567,7 @@ class TestOnnxModelServiceFromRegistry:
 
             class TestOnnx(OnnxModelService):
                 _task = "detection"
+
                 def predict(self, request):
                     return PredictResponse(results=[], timing_s=0.0)
 
@@ -582,6 +595,7 @@ class TestOnnxModelServiceInference:
 
         class TestOnnx(OnnxModelService):
             _task = "test"
+
             def predict(self, request):
                 return PredictResponse(results=[], timing_s=0.0)
 
@@ -593,7 +607,9 @@ class TestOnnxModelServiceInference:
             mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
             mock_ort_fn.return_value = mock_ort
 
-            import tempfile, os
+            import os
+            import tempfile
+
             fd, path = tempfile.mkstemp(suffix=".onnx")
             os.write(fd, b"fake")
             os.close(fd)
@@ -868,7 +884,8 @@ class TestOnnxHelpers:
 
         mock_ort = MagicMock()
         mock_ort.get_available_providers.return_value = [
-            "CUDAExecutionProvider", "CPUExecutionProvider",
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
         ]
 
         with patch("mindtrace.models.serving.onnx.service._require_onnxruntime", return_value=mock_ort):
@@ -902,10 +919,13 @@ class TestOnnxShutdownCleanup:
 
         class TestOnnx(OnnxModelService):
             _task = "test"
+
             def predict(self, request):
                 return PredictResponse(results=[], timing_s=0.0)
 
-        import tempfile, os
+        import os
+        import tempfile
+
         fd, path = tempfile.mkstemp(suffix=".onnx")
         os.write(fd, b"fake")
         os.close(fd)

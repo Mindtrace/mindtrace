@@ -8,11 +8,11 @@ Provides the foundational building blocks for all pipeline implementations:
 - :class:`Pipeline` — orchestrated sequence of steps sharing a context dict
 """
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-import time
 
 from mindtrace.core import Mindtrace
 
@@ -184,7 +184,5 @@ class Pipeline(Mindtrace):
         result.total_duration_s = time.perf_counter() - t0
         if result.status == PipelineStatus.RUNNING:
             result.status = PipelineStatus.SUCCESS
-        self.logger.info(
-            f"Pipeline '{self.name}' {result.status.value} in {result.total_duration_s:.2f}s"
-        )
+        self.logger.info(f"Pipeline '{self.name}' {result.status.value} in {result.total_duration_s:.2f}s")
         return result

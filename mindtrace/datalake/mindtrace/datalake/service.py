@@ -18,9 +18,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import Service
-
 from mindtrace.datalake import Datalake, compute_splits
+from mindtrace.services import Service
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
+
 
 class StoreDataRequest(BaseModel):
     """Request to store a datum in the datalake."""
@@ -129,6 +129,7 @@ splits_task = TaskSchema(
 # Service
 # ---------------------------------------------------------------------------
 
+
 class DatalakeService(Service):
     """Launchable service wrapping :class:`mindtrace.datalake.Datalake`.
 
@@ -147,10 +148,7 @@ class DatalakeService(Service):
     ) -> None:
         super().__init__(
             summary="Datalake Service",
-            description=(
-                "Shared datum CRUD, lineage tracking, querying, "
-                "and train/val/test split computation."
-            ),
+            description=("Shared datum CRUD, lineage tracking, querying, and train/val/test split computation."),
             **kwargs,
         )
         self._mongo_uri = mongo_uri
@@ -182,6 +180,7 @@ class DatalakeService(Service):
         """Return a persistent background event loop (created once per worker)."""
         if self._bg_loop is None or self._bg_loop.is_closed():
             import threading
+
             self._bg_loop = asyncio.new_event_loop()
             t = threading.Thread(target=self._bg_loop.run_forever, daemon=True)
             t.start()
@@ -199,6 +198,7 @@ class DatalakeService(Service):
 
     def _store_data(self, request: StoreDataRequest) -> StoreDataResponse:
         """Store a datum in the datalake with optional metadata and lineage."""
+
         async def _do():
             dl = await self._ensure_datalake()
             datum = await dl.store_data(
@@ -212,10 +212,12 @@ class DatalakeService(Service):
                 datum_id=str(datum.id),
                 metadata=request.metadata,
             )
+
         return self._run_async(_do())
 
     def _get_datum(self, request: GetDatumRequest) -> GetDatumResponse:
         """Retrieve a single datum by its ID."""
+
         async def _do():
             dl = await self._ensure_datalake()
             try:
@@ -232,10 +234,12 @@ class DatalakeService(Service):
                 derived_from=str(datum.derived_from) if datum.derived_from else None,
                 added_at=datum.added_at.isoformat() if datum.added_at else None,
             )
+
         return self._run_async(_do())
 
     def _query_data(self, request: QueryDataRequest) -> QueryDataResponse:
         """Query datums with MongoDB-style filter criteria."""
+
         async def _do():
             dl = await self._ensure_datalake()
             results = await dl.query_data(
@@ -245,6 +249,7 @@ class DatalakeService(Service):
             )
             count = len(results) if isinstance(results, list) else 0
             return QueryDataResponse(results=results, count=count)
+
         return self._run_async(_do())
 
     def _compute_splits(self, request: ComputeSplitsRequest) -> ComputeSplitsResponse:

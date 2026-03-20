@@ -6,6 +6,7 @@ Ties together:
   - Jobs: Orchestrator for async job dispatch               (mindtrace-jobs)
   - Datalake: async result storage                          (mindtrace-datalake)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,12 +19,13 @@ from mindtrace.core import Mindtrace
 @dataclass
 class InspectionAppConfig:
     """Runtime configuration for InspectionApp."""
+
     app_name: str = "inspection_app"
-    store_results: bool = True          # write predictions to datalake
-    store_images: bool = False          # also write raw frames
+    store_results: bool = True  # write predictions to datalake
+    store_images: bool = False  # also write raw frames
     result_schema: str = "inspection_result"
-    max_queue_depth: int = 64           # job queue backpressure limit
-    transform: Callable | None = None   # frame → model input transform
+    max_queue_depth: int = 64  # job queue backpressure limit
+    transform: Callable | None = None  # frame → model input transform
     metadata: dict = field(default_factory=dict)
 
 
@@ -120,8 +122,7 @@ class InspectionApp(Mindtrace):
         results: list[dict] = []
         frame_idx = 0
         self.logger.info(
-            f"InspectionApp '{self.config.app_name}' starting "
-            f"(frames={'∞' if num_frames is None else num_frames})"
+            f"InspectionApp '{self.config.app_name}' starting (frames={'∞' if num_frames is None else num_frames})"
         )
         try:
             while self._running and (num_frames is None or frame_idx < num_frames):

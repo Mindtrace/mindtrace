@@ -19,6 +19,7 @@ import torch.nn as nn
 # ── ONNX runtime guard ─────────────────────────────────────────────────────
 try:
     import onnxruntime  # noqa: F401
+
     _ORT_AVAILABLE = True
 except ImportError:
     _ORT_AVAILABLE = False
@@ -27,6 +28,7 @@ except ImportError:
 # ── torchvision guard ──────────────────────────────────────────────────────
 try:
     import torchvision.models as tvm
+
     _TV_AVAILABLE = True
 except ImportError:
     _TV_AVAILABLE = False
@@ -90,8 +92,8 @@ t0 = time.perf_counter()
 outputs = svc.predict_array({"pixel_values": img_batch})
 elapsed = time.perf_counter() - t0
 
-logits = outputs["logits"]                    # (4, NUM_CLASSES)
-preds  = logits.argmax(axis=1)
+logits = outputs["logits"]  # (4, NUM_CLASSES)
+preds = logits.argmax(axis=1)
 print(f"  Input shape  : {img_batch.shape}")
 print(f"  Output logits: {logits.shape}")
 print(f"  Predictions  : {preds.tolist()}")

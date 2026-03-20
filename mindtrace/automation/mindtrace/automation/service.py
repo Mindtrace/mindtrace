@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class CreateProjectRequest(BaseModel):
     """Request to create a Label Studio project."""
 
@@ -178,6 +179,7 @@ delete_project_task = TaskSchema(
 # Service
 # ---------------------------------------------------------------------------
 
+
 class AutomationService(Service):
     """Launchable service wrapping :class:`mindtrace.automation.LabelStudio`.
 
@@ -202,8 +204,7 @@ class AutomationService(Service):
         super().__init__(
             summary="Automation Service",
             description=(
-                "Annotation management via Label Studio — "
-                "project creation, task import, and annotation export."
+                "Annotation management via Label Studio — project creation, task import, and annotation export."
             ),
             **kwargs,
         )
@@ -225,8 +226,10 @@ class AutomationService(Service):
         # skips live_service so the client is never needed for schema discovery).
         if kwargs.get("live_service", True):
             self._ls = LabelStudio(
-                url=label_studio_url, api_key=api_key,
-                email=email or None, password=password or None,
+                url=label_studio_url,
+                api_key=api_key,
+                email=email or None,
+                password=password or None,
             )
 
         logger.info(
@@ -243,8 +246,10 @@ class AutomationService(Service):
         """Lazy-initialised Label Studio client."""
         if self._ls is None:
             self._ls = LabelStudio(
-                url=self._label_studio_url, api_key=self._api_key,
-                email=self._email or None, password=self._password or None,
+                url=self._label_studio_url,
+                api_key=self._api_key,
+                email=self._email or None,
+                password=self._password or None,
             )
         return self._ls
 
@@ -286,6 +291,7 @@ class AutomationService(Service):
     def _import_images(self, request: ImportImagesRequest) -> ImportImagesResponse:
         """Import images from a local directory as Label Studio tasks."""
         import os
+
         if not os.path.isdir(request.image_dir):
             return ImportImagesResponse(tasks_created=0)
         result = self.ls.create_tasks_from_images(

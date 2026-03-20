@@ -20,28 +20,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 import torch.nn as nn
-from torch import Tensor
-
-# ---------------------------------------------------------------------------
-# Head modules (no heavy dependencies)
-# ---------------------------------------------------------------------------
-from mindtrace.models.architectures.heads.classification import (
-    LinearHead,
-    MLPHead,
-    MultiLabelHead,
-)
-from mindtrace.models.architectures.heads.detection import DetectionHead
-from mindtrace.models.architectures.heads.segmentation import (
-    FPNSegHead,
-    LinearSegHead,
-)
 
 # ---------------------------------------------------------------------------
 # Backbone registry
 # ---------------------------------------------------------------------------
 from mindtrace.models.architectures.backbones.registry import (
-    BackboneInfo,
     _BACKBONE_REGISTRY,
+    BackboneInfo,
     build_backbone,
     list_backbones,
     register_backbone,
@@ -58,6 +43,19 @@ from mindtrace.models.architectures.factory import (
     build_model_from_hf,
 )
 
+# ---------------------------------------------------------------------------
+# Head modules (no heavy dependencies)
+# ---------------------------------------------------------------------------
+from mindtrace.models.architectures.heads.classification import (
+    LinearHead,
+    MLPHead,
+    MultiLabelHead,
+)
+from mindtrace.models.architectures.heads.detection import DetectionHead
+from mindtrace.models.architectures.heads.segmentation import (
+    FPNSegHead,
+    LinearSegHead,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -71,6 +69,7 @@ H, W = 8, 8  # spatial dims for segmentation tests
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _patched_backbone_info(**kwargs):
     """Create BackboneInfo, supplying 'name' if missing (works around factory bug)."""
@@ -245,9 +244,7 @@ class TestMultiLabelHead:
         assert out.min() < 0.0 or out.max() > 1.0
 
     def test_dropout_applied(self) -> None:
-        head = MultiLabelHead(
-            in_features=IN_FEATURES, num_classes=NUM_CLASSES, dropout=0.4
-        )
+        head = MultiLabelHead(in_features=IN_FEATURES, num_classes=NUM_CLASSES, dropout=0.4)
         layers = list(head.classifier)
         assert len(layers) == 2
         assert isinstance(layers[0], nn.Dropout)
@@ -284,9 +281,7 @@ class TestDetectionHead:
         assert cls_logits.shape == (BATCH, NUM_CLASSES)
 
     def test_bbox_reg_shape_single_anchor(self) -> None:
-        head = DetectionHead(
-            in_channels=IN_FEATURES, num_classes=NUM_CLASSES, num_anchors=1
-        )
+        head = DetectionHead(in_channels=IN_FEATURES, num_classes=NUM_CLASSES, num_anchors=1)
         x = torch.randn(BATCH, IN_FEATURES)
         _, bbox_reg = head(x)
         assert bbox_reg.shape == (BATCH, 4)
@@ -347,9 +342,7 @@ class TestFPNSegHead:
     """Tests for FPNSegHead segmentation head."""
 
     def test_output_shape(self) -> None:
-        head = FPNSegHead(
-            in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32
-        )
+        head = FPNSegHead(in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32)
         x = torch.randn(BATCH, IN_FEATURES, H, W)
         out = head(x)
         assert out.shape == (BATCH, NUM_CLASSES, H, W)
@@ -361,16 +354,12 @@ class TestFPNSegHead:
         assert first_conv.out_channels == 256
 
     def test_custom_hidden_dim(self) -> None:
-        head = FPNSegHead(
-            in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=128
-        )
+        head = FPNSegHead(in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=128)
         first_conv = head.refinement[0]
         assert first_conv.out_channels == 128
 
     def test_refinement_has_bn_relu(self) -> None:
-        head = FPNSegHead(
-            in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32
-        )
+        head = FPNSegHead(in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32)
         layers = list(head.refinement)
         assert len(layers) == 3
         assert isinstance(layers[0], nn.Conv2d)
@@ -378,9 +367,7 @@ class TestFPNSegHead:
         assert isinstance(layers[2], nn.ReLU)
 
     def test_preserves_spatial_dims(self) -> None:
-        head = FPNSegHead(
-            in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32
-        )
+        head = FPNSegHead(in_channels=IN_FEATURES, num_classes=NUM_CLASSES, hidden_dim=32)
         x = torch.randn(BATCH, IN_FEATURES, 13, 17)
         out = head(x)
         assert out.shape == (BATCH, NUM_CLASSES, 13, 17)
@@ -544,9 +531,7 @@ class TestBuildHeadHelper:
 class TestModelWrapper:
     """Tests for ModelWrapper assembled model."""
 
-    def _make_wrapper(
-        self, head_module: nn.Module, num_features: int = IN_FEATURES
-    ) -> ModelWrapper:
+    def _make_wrapper(self, head_module: nn.Module, num_features: int = IN_FEATURES) -> ModelWrapper:
         backbone = nn.Sequential(
             nn.Flatten(),
             nn.Linear(3 * 32 * 32, num_features),
@@ -608,9 +593,7 @@ class TestHFDINOSegWrapper:
         """Create a wrapper with a mock backbone that has forward_spatial."""
         backbone = MagicMock(spec=nn.Module)
         backbone.forward_spatial = MagicMock(
-            side_effect=lambda x: torch.randn(
-                x.shape[0], in_channels, patch_h, patch_w
-            )
+            side_effect=lambda x: torch.randn(x.shape[0], in_channels, patch_h, patch_w)
         )
         backbone.parameters = MagicMock(return_value=iter([]))
         backbone.named_modules = MagicMock(return_value=iter([("", backbone)]))
@@ -645,9 +628,7 @@ class TestHFDINOSegWrapper:
 
     def test_forward_with_fpn_head(self) -> None:
         backbone = MagicMock(spec=nn.Module)
-        backbone.forward_spatial = MagicMock(
-            side_effect=lambda x: torch.randn(x.shape[0], IN_FEATURES, 4, 4)
-        )
+        backbone.forward_spatial = MagicMock(side_effect=lambda x: torch.randn(x.shape[0], IN_FEATURES, 4, 4))
         backbone.parameters = MagicMock(return_value=iter([]))
         backbone.named_modules = MagicMock(return_value=iter([("", backbone)]))
 
@@ -671,9 +652,7 @@ class TestBuildModel:
     """
 
     def test_build_linear(self) -> None:
-        model = build_model(
-            "resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         assert isinstance(model, ModelWrapper)
         x = torch.randn(BATCH, 3, 32, 32)
         out = model(x)
@@ -693,31 +672,23 @@ class TestBuildModel:
         assert out.shape == (BATCH, NUM_CLASSES)
 
     def test_build_multilabel(self) -> None:
-        model = build_model(
-            "resnet18", "multilabel", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("resnet18", "multilabel", num_classes=NUM_CLASSES, pretrained=False)
         assert isinstance(model, ModelWrapper)
         x = torch.randn(BATCH, 3, 32, 32)
         out = model(x)
         assert out.shape == (BATCH, NUM_CLASSES)
 
     def test_build_linear_seg(self) -> None:
-        model = build_model(
-            "resnet18", "linear_seg", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("resnet18", "linear_seg", num_classes=NUM_CLASSES, pretrained=False)
         assert isinstance(model, (ModelWrapper, HFDINOSegWrapper))
 
     def test_build_fpn_seg(self) -> None:
-        model = build_model(
-            "resnet18", "fpn_seg", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("resnet18", "fpn_seg", num_classes=NUM_CLASSES, pretrained=False)
         assert isinstance(model, (ModelWrapper, HFDINOSegWrapper))
 
     def test_unknown_head_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="Unknown head type"):
-            build_model(
-                "resnet18", "nonexistent_head", num_classes=NUM_CLASSES, pretrained=False
-            )
+            build_model("resnet18", "nonexistent_head", num_classes=NUM_CLASSES, pretrained=False)
 
     def test_unknown_backbone_raises_key_error(self) -> None:
         with pytest.raises(KeyError, match="not registered"):
@@ -765,9 +736,7 @@ class TestBuildModel:
         assert any(isinstance(layer, nn.Dropout) for layer in layers)
 
     def test_backbone_info_num_features(self) -> None:
-        model = build_model(
-            "resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         assert model.backbone_info.num_features == 512
 
     def test_hidden_dim_forwarded_to_mlp(self) -> None:
@@ -836,9 +805,7 @@ class TestBuildModelFromHF:
 
     def test_import_error_when_transformers_missing(self) -> None:
         """When _HF_GENERIC_AVAILABLE is False, ImportError should be raised."""
-        with patch(
-            "mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", False
-        ):
+        with patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", False):
             with pytest.raises(ImportError, match="transformers is required"):
                 build_model_from_hf(
                     "some/model",
@@ -859,12 +826,8 @@ class TestBuildModelFromHF:
         mock_cls = MagicMock(return_value=mock_backbone)
 
         with (
-            patch(
-                "mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True
-            ),
-            patch(
-                "mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls
-            ),
+            patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True),
+            patch("mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls),
         ):
             with pytest.raises(TypeError, match="missing 1 required positional argument"):
                 build_model_from_hf(
@@ -889,12 +852,8 @@ class TestBuildModelFromHF:
         mock_cls = MagicMock(return_value=mock_backbone)
 
         with (
-            patch(
-                "mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True
-            ),
-            patch(
-                "mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls
-            ),
+            patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True),
+            patch("mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls),
         ):
             model = build_model_from_hf(
                 "mock/model",
@@ -924,12 +883,8 @@ class TestBuildModelFromHF:
         mock_cls = MagicMock(return_value=mock_backbone)
 
         with (
-            patch(
-                "mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True
-            ),
-            patch(
-                "mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls
-            ),
+            patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True),
+            patch("mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls),
         ):
             model = build_model_from_hf(
                 "mock/model",
@@ -955,12 +910,8 @@ class TestBuildModelFromHF:
         mock_cls = MagicMock(return_value=mock_backbone)
 
         with (
-            patch(
-                "mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True
-            ),
-            patch(
-                "mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls
-            ),
+            patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True),
+            patch("mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls),
         ):
             model = build_model_from_hf(
                 "mock/model",
@@ -983,9 +934,7 @@ class TestIntegrationResnet18:
 
     def test_end_to_end_train_step(self) -> None:
         """Full forward + backward pass simulating a training step."""
-        model = build_model(
-            "resnet18", "mlp", num_classes=NUM_CLASSES, pretrained=False, hidden_dim=64
-        )
+        model = build_model("resnet18", "mlp", num_classes=NUM_CLASSES, pretrained=False, hidden_dim=64)
         model.train()
         x = torch.randn(BATCH, 3, 32, 32)
         target = torch.randint(0, NUM_CLASSES, (BATCH,))
@@ -1016,13 +965,9 @@ class TestIntegrationResnet18:
 
     def test_state_dict_save_load(self) -> None:
         """Model state dict should be savable and loadable."""
-        model1 = build_model(
-            "resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model1 = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         sd = model1.state_dict()
-        model2 = build_model(
-            "resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model2 = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         model2.load_state_dict(sd)
 
         model1.eval()

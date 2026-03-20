@@ -5,18 +5,17 @@ operations, and real-time node status reporting.  This manager is the
 lightweight, callable-dispatch counterpart to the HTTP-service-based
 ``mindtrace.cluster.core.cluster.ClusterManager``.
 """
+
 from __future__ import annotations
 
-import asyncio
 import itertools
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
-from mindtrace.core import Mindtrace
-
 from mindtrace.cluster.node import ClusterNode, NodeInfo, NodeStatus
 from mindtrace.cluster.worker import Worker, WorkerResult
+from mindtrace.core import Mindtrace
 
 
 class ClusterManager(Mindtrace):
@@ -56,14 +55,11 @@ class ClusterManager(Mindtrace):
         self.strategy = strategy
         self.registry = registry
 
-        for node in (nodes or []):
+        for node in nodes or []:
             self.add_node(node)
 
         if strategy not in ("round_robin", "least_loaded"):
-            raise ValueError(
-                f"Unknown dispatch strategy {strategy!r}. "
-                "Expected 'round_robin' or 'least_loaded'."
-            )
+            raise ValueError(f"Unknown dispatch strategy {strategy!r}. Expected 'round_robin' or 'least_loaded'.")
 
     # ------------------------------------------------------------------
     # Node registry management
@@ -81,10 +77,7 @@ class ClusterManager(Mindtrace):
         """
         with self._lock:
             if node.node_id in self._nodes:
-                raise ValueError(
-                    f"Node {node.node_id!r} is already registered. "
-                    "Use remove_node() first to replace it."
-                )
+                raise ValueError(f"Node {node.node_id!r} is already registered. Use remove_node() first to replace it.")
             self._nodes[node.node_id] = node
             self._rebuild_round_robin()
             self.logger.info("Registered node %s (%s:%s)", node.node_id, node.host, node.port)
@@ -203,10 +196,7 @@ class ClusterManager(Mindtrace):
 
         max_workers = max(1, len(self._nodes))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(_run_one, idx, item): idx
-                for idx, item in enumerate(items)
-            }
+            futures = {executor.submit(_run_one, idx, item): idx for idx, item in enumerate(items)}
             for future in as_completed(futures):
                 idx, result = future.result()
                 results[idx] = result
@@ -272,10 +262,7 @@ class ClusterManager(Mindtrace):
                 return node
             attempts += 1
 
-        raise RuntimeError(
-            "No available nodes found (round_robin). "
-            f"Registered nodes: {list(self._nodes.keys())}"
-        )
+        raise RuntimeError(f"No available nodes found (round_robin). Registered nodes: {list(self._nodes.keys())}")
 
     def _select_least_loaded(self) -> ClusterNode:
         """Return the IDLE node that is least loaded (fewest BUSY assignments).
@@ -283,15 +270,9 @@ class ClusterManager(Mindtrace):
         When all nodes are BUSY, falls back to whichever IDLE node responds
         to a ping first in iteration order.
         """
-        idle_nodes = [
-            node for node in self._nodes.values()
-            if node.status == NodeStatus.IDLE
-        ]
+        idle_nodes = [node for node in self._nodes.values() if node.status == NodeStatus.IDLE]
         if not idle_nodes:
-            raise RuntimeError(
-                "No IDLE nodes available (least_loaded). "
-                f"Registered nodes: {list(self._nodes.keys())}"
-            )
+            raise RuntimeError(f"No IDLE nodes available (least_loaded). Registered nodes: {list(self._nodes.keys())}")
 
         # Among idle nodes, prefer those that pass the live ping check.
         available = [n for n in idle_nodes if n.ping()]
@@ -321,10 +302,7 @@ class ClusterManager(Mindtrace):
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"ClusterManager(nodes={list(self._nodes.keys())!r}, "
-            f"strategy={self.strategy!r})"
-        )
+        return f"ClusterManager(nodes={list(self._nodes.keys())!r}, strategy={self.strategy!r})"
 
     def __len__(self) -> int:
         return len(self._nodes)

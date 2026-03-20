@@ -19,13 +19,14 @@ Typical usage::
             r = scanner.scan()
             print(r.data)   # ABC123 DEF456 GHI789 ABC123 DEF456 GHI789
 """
+
 from __future__ import annotations
 
 import time
 from typing import Any
 
-from mindtrace.hardware.scanner.base import AbstractScanner, ScanResult
 from mindtrace.hardware.core.exceptions import HardwareOperationError
+from mindtrace.hardware.scanner.base import AbstractScanner, ScanResult
 
 
 class MockScanner(AbstractScanner):
@@ -83,8 +84,7 @@ class MockScanner(AbstractScanner):
         """
         if not self._connected:
             raise HardwareOperationError(
-                f"MockScanner {self._scanner_id!r} is not connected.  "
-                "Call connect() or use as a context manager."
+                f"MockScanner {self._scanner_id!r} is not connected.  Call connect() or use as a context manager."
             )
 
         self._scan_counter += 1
@@ -105,10 +105,7 @@ class MockScanner(AbstractScanner):
             metadata=metadata,
         )
 
-        self.logger.debug(
-            f"MockScanner {self._scanner_id!r}: scan #{self._scan_counter} "
-            f"-> {payload!r}"
-        )
+        self.logger.debug(f"MockScanner {self._scanner_id!r}: scan #{self._scan_counter} -> {payload!r}")
         return result
 
     # ------------------------------------------------------------------

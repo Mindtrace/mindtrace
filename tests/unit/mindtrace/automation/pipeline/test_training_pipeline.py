@@ -14,7 +14,6 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mindtrace.automation.pipeline import (
-    PipelineStatus,
     TrainingConfig,
     TrainingPipeline,
 )
@@ -25,7 +24,6 @@ from mindtrace.models import (
     build_optimizer,
 )
 from mindtrace.registry import Registry
-
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -40,12 +38,8 @@ def synthetic_loaders():
     train_y = torch.randint(0, NUM_CLASSES, (32,))
     val_x = torch.randn(16, 3, 32, 32)
     val_y = torch.randint(0, NUM_CLASSES, (16,))
-    train_loader = DataLoader(
-        TensorDataset(train_x, train_y), batch_size=BATCH_SIZE
-    )
-    val_loader = DataLoader(
-        TensorDataset(val_x, val_y), batch_size=BATCH_SIZE
-    )
+    train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE)
+    val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
     return train_loader, val_loader
 
 

@@ -4,8 +4,6 @@ Resizes an image to fit within target dimensions while maintaining aspect ratio,
 adding padding (letterbox) to fill the remaining space.
 """
 
-from typing import Optional
-
 try:
     import numpy as np
 
@@ -103,9 +101,7 @@ class LetterBox:
         shape = image.shape[:2]  # current shape [height, width]
 
         if shape[0] <= 0 or shape[1] <= 0:
-            raise ValueError(
-                f"Image dimensions must be positive, got height={shape[0]}, width={shape[1]}"
-            )
+            raise ValueError(f"Image dimensions must be positive, got height={shape[0]}, width={shape[1]}")
 
         if isinstance(self.new_shape, int):
             new_shape = (self.new_shape, self.new_shape)
@@ -153,9 +149,7 @@ class LetterBox:
             bottom = int(round(dh))
             right = int(round(dw))
 
-        image = cv2.copyMakeBorder(
-            image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color
-        )
+        image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
 
         return image
 

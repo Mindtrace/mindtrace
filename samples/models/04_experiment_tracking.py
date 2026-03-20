@@ -25,35 +25,35 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from mindtrace.registry import Registry
 from mindtrace.models import (
+    CompositeTracker,
+    MLflowTracker,
+    RegistryBridge,
+    TensorBoardTracker,
+    Trainer,
+    WandBTracker,
     build_model,
     build_optimizer,
     build_scheduler,
-    Trainer,
-    CompositeTracker,
-    MLflowTracker,
-    TensorBoardTracker,
-    WandBTracker,
-    RegistryBridge,
 )
 from mindtrace.models.tracking import Tracker
+from mindtrace.registry import Registry
 
 # ── Shared synthetic data ──────────────────────────────────────────────────────
 
-NUM_CLASSES   = 3
-BATCH_SIZE    = 8
+NUM_CLASSES = 3
+BATCH_SIZE = 8
 TRAIN_SAMPLES = 48
-VAL_SAMPLES   = 24
+VAL_SAMPLES = 24
 H = W = 32
 
 train_x = torch.randn(TRAIN_SAMPLES, 3, H, W)
 train_y = torch.randint(0, NUM_CLASSES, (TRAIN_SAMPLES,))
-val_x   = torch.randn(VAL_SAMPLES,   3, H, W)
-val_y   = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
+val_x = torch.randn(VAL_SAMPLES, 3, H, W)
+val_y = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
 
 train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True)
-val_loader   = DataLoader(TensorDataset(val_x,   val_y),   batch_size=BATCH_SIZE)
+val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
 
 registry = Registry(tempfile.mkdtemp(prefix="mt_track_"))
 
@@ -82,7 +82,7 @@ try:
         t.log({"train/loss": 1.20, "val/loss": 1.35}, step=0)
         t.log({"train/loss": 0.95, "val/loss": 1.10}, step=1)
         t.log_model(_fresh_model(), name="resnet18-demo", version="v0")
-        t.log_artifact("/tmp")   # TensorBoard skips artifacts — logs a note
+        t.log_artifact("/tmp")  # TensorBoard skips artifacts — logs a note
 
     print(f"  TensorBoardTracker OK — events written to: {tb_log_dir}")
     available_trackers.append(TensorBoardTracker(log_dir=tb_log_dir))
@@ -117,9 +117,7 @@ try:
             print(f"  log_model skipped (mlflow.pytorch unavailable): {lm_err}")
 
     print(f"  MLflowTracker OK — tracking URI: {mlflow_uri}")
-    available_trackers.append(
-        MLflowTracker(tracking_uri=mlflow_uri, experiment_name="mindtrace-demo")
-    )
+    available_trackers.append(MLflowTracker(tracking_uri=mlflow_uri, experiment_name="mindtrace-demo"))
 
 except ImportError as e:
     print(f"  Skipped (not installed): {e}")
@@ -166,17 +164,30 @@ if available_trackers:
         ct.log_params({"note": "fan-out demo"})
     print("  CompositeTracker run completed.")
 else:
-    print("  No trackers available — constructing CompositeTracker from a "
-          "minimal in-memory stub to illustrate the API.")
+    print(
+        "  No trackers available — constructing CompositeTracker from a minimal in-memory stub to illustrate the API."
+    )
 
     class _NoOpTracker(Tracker):
         """Stand-in tracker that silently discards all calls."""
-        def start_run(self, name, config): pass
-        def log(self, metrics, step):      pass
-        def log_params(self, params):      pass
-        def log_model(self, model, name, version): pass
-        def log_artifact(self, path):      pass
-        def finish(self):                  pass
+
+        def start_run(self, name, config):
+            pass
+
+        def log(self, metrics, step):
+            pass
+
+        def log_params(self, params):
+            pass
+
+        def log_model(self, model, name, version):
+            pass
+
+        def log_artifact(self, path):
+            pass
+
+        def finish(self):
+            pass
 
     composite = CompositeTracker(trackers=[_NoOpTracker(), _NoOpTracker()])
     with composite.run("noop_composite", config={"note": "no external deps"}) as ct:
@@ -190,8 +201,8 @@ print("[5] RegistryBridge — save model to Registry")
 print("=" * 60)
 
 bridge = RegistryBridge(registry)
-model  = _fresh_model()
-key    = bridge.save(model, name="resnet18-bridge", version="v2")
+model = _fresh_model()
+key = bridge.save(model, name="resnet18-bridge", version="v2")
 print(f"  Saved via bridge under key: {key!r}")
 loaded = registry.load(key)
 print(f"  Loaded from registry: {type(loaded).__name__}")
@@ -202,32 +213,39 @@ print("\n" + "=" * 60)
 print("[6] tracker= in Trainer — automatic per-epoch metric forwarding")
 print("=" * 60)
 
+
 # Build a simple in-memory tracker to capture what the Trainer logs
 class InMemoryTracker(Tracker):
     """Minimal tracker that stores logged values in a list."""
+
     def __init__(self):
         super().__init__()
         self.logs: list[dict] = []
+
     def start_run(self, name, config):
         print(f"  [Tracker] start_run name={name!r}")
+
     def log(self, metrics, step):
         self.logs.append({"step": step, **metrics})
+
     def log_params(self, params):
         pass
+
     def log_model(self, model, name, version):
         print(f"  [Tracker] log_model name={name!r} version={version!r}")
+
     def log_artifact(self, path):
         pass
+
     def finish(self):
         print("  [Tracker] finish")
 
+
 mem_tracker = InMemoryTracker()
-model   = _fresh_model()
-opt     = build_optimizer("adamw", model, lr=1e-3, weight_decay=1e-2)
+model = _fresh_model()
+opt = build_optimizer("adamw", model, lr=1e-3, weight_decay=1e-2)
 total_s = len(train_loader) * 2
-sched   = build_scheduler("cosine_warmup", opt,
-                           warmup_steps=max(1, total_s // 5),
-                           total_steps=total_s)
+sched = build_scheduler("cosine_warmup", opt, warmup_steps=max(1, total_s // 5), total_steps=total_s)
 
 with mem_tracker.run("trainer_run", config={"lr": 1e-3, "epochs": 2}):
     trainer = Trainer(
@@ -274,9 +292,8 @@ print("=" * 60)
 
 for backend, kwargs in [
     ("tensorboard", {"log_dir": tempfile.mkdtemp()}),
-    ("mlflow",      {"tracking_uri": f"file://{tempfile.mkdtemp()}",
-                     "experiment_name": "factory-demo"}),
-    ("wandb",       {"project": "factory-demo"}),
+    ("mlflow", {"tracking_uri": f"file://{tempfile.mkdtemp()}", "experiment_name": "factory-demo"}),
+    ("wandb", {"project": "factory-demo"}),
 ]:
     try:
         t = Tracker.from_config(backend, **kwargs)

@@ -137,7 +137,4 @@ class Crop:
         return hash((self.source_bbox, self.source_key, self.image.tobytes()))
 
     def __repr__(self) -> str:
-        return (
-            f"Crop(shape={self.shape}, source_bbox={self.source_bbox}, "
-            f"source_key={self.source_key!r})"
-        )
+        return f"Crop(shape={self.shape}, source_bbox={self.source_bbox}, source_key={self.source_key!r})"

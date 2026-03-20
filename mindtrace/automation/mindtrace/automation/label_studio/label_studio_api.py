@@ -71,7 +71,10 @@ class LabelStudio(Mindtrace):
         self.url = ifnone(url, default=self.config["MINDTRACE_DEFAULT_HOST_URLS"]["LabelStudio"])
         self.api_key = ifnone(api_key, default=self.config["MINDTRACE_API_KEYS"]["LabelStudio"])
         self.client = self._create_client(
-            url=self.url, api_key=self.api_key, email=email, password=password,
+            url=self.url,
+            api_key=self.api_key,
+            email=email,
+            password=password,
         )
         self.logger.info(f"Initialised LS at: {self.url}")
 
@@ -134,10 +137,7 @@ class LabelStudio(Mindtrace):
 
         def _session_make_request(self_inner, method, *args, **kwargs):
             saved = self_inner.headers
-            self_inner.headers = {
-                k: v for k, v in (saved or {}).items()
-                if k != "Authorization"
-            }
+            self_inner.headers = {k: v for k, v in (saved or {}).items() if k != "Authorization"}
             try:
                 return _orig_make_request(self_inner, method, *args, **kwargs)
             finally:

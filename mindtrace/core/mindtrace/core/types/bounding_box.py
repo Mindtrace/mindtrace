@@ -134,8 +134,7 @@ class BoundingBox:
         """
         if not _HAS_NUMPY:
             raise ImportError(
-                "crop_from_image needs numpy, but it was not installed. "
-                "Install it with `pip install numpy`"
+                "crop_from_image needs numpy, but it was not installed. Install it with `pip install numpy`"
             )
         h_img, w_img = image.shape[:2]
 

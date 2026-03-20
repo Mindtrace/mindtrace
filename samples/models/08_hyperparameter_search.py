@@ -13,13 +13,14 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mindtrace.models.architectures.factory import build_model
-from mindtrace.models.training.trainer import Trainer
-from mindtrace.models.training.optimizers import build_optimizer
 from mindtrace.models.training.callbacks import OptunaCallback
+from mindtrace.models.training.optimizers import build_optimizer
+from mindtrace.models.training.trainer import Trainer
 
 # ── Optuna guard ───────────────────────────────────────────────────────────
 try:
     import optuna
+
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     _OPTUNA = True
 except ImportError:
@@ -28,40 +29,42 @@ except ImportError:
 
 # ── Synthetic data ─────────────────────────────────────────────────────────
 NUM_CLASSES = 3
-IN_CH       = 3
-IMG_SIZE    = 32
-N_TRAIN     = 256
-N_VAL       = 64
-BATCH       = 32
+IN_CH = 3
+IMG_SIZE = 32
+N_TRAIN = 256
+N_VAL = 64
+BATCH = 32
 
 X_train = torch.randn(N_TRAIN, IN_CH, IMG_SIZE, IMG_SIZE)
 Y_train = torch.randint(0, NUM_CLASSES, (N_TRAIN,))
-X_val   = torch.randn(N_VAL,   IN_CH, IMG_SIZE, IMG_SIZE)
-Y_val   = torch.randint(0, NUM_CLASSES, (N_VAL,))
+X_val = torch.randn(N_VAL, IN_CH, IMG_SIZE, IMG_SIZE)
+Y_val = torch.randint(0, NUM_CLASSES, (N_VAL,))
 
 train_loader = DataLoader(TensorDataset(X_train, Y_train), batch_size=BATCH, shuffle=True)
-val_loader   = DataLoader(TensorDataset(X_val,   Y_val),   batch_size=BATCH)
+val_loader = DataLoader(TensorDataset(X_val, Y_val), batch_size=BATCH)
 
 
 # ── Section 1: Single-objective search (minimize val/loss) ─────────────────
 print("\n── Section 1: Optuna single-objective (minimize val/loss) ──")
 
 if _OPTUNA:
+
     def objective(trial: "optuna.Trial") -> float:
-        lr        = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-        wd        = trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True)
-        hidden    = trial.suggest_categorical("hidden_dim", [256, 512])
-        dropout   = trial.suggest_float("dropout", 0.0, 0.4, step=0.1)
+        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        wd = trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True)
+        hidden = trial.suggest_categorical("hidden_dim", [256, 512])
+        dropout = trial.suggest_float("dropout", 0.0, 0.4, step=0.1)
 
         model = build_model(
-            "resnet50", "mlp",
+            "resnet50",
+            "mlp",
             num_classes=NUM_CLASSES,
             hidden_dim=hidden,
             pretrained=False,
             dropout=dropout,
         )
         optimizer = build_optimizer("adamw", model, lr=lr, weight_decay=wd)
-        trainer   = Trainer(
+        trainer = Trainer(
             model=model,
             loss_fn=nn.CrossEntropyLoss(),
             optimizer=optimizer,
@@ -94,12 +97,14 @@ else:
 print("\n── Section 2: Optuna with MedianPruner ──")
 
 if _OPTUNA:
+
     def pruning_objective(trial: "optuna.Trial") -> float:
-        lr     = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-        hidden = trial.suggest_categorical("hidden_dim", [256, 512])
+        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        trial.suggest_categorical("hidden_dim", [256, 512])
 
         model = build_model(
-            "resnet50", "linear",
+            "resnet50",
+            "linear",
             num_classes=NUM_CLASSES,
             pretrained=False,
         )
@@ -126,7 +131,7 @@ if _OPTUNA:
     pruning_study = optuna.create_study(direction="minimize", pruner=pruner)
     pruning_study.optimize(pruning_objective, n_trials=6, show_progress_bar=False)
 
-    pruned   = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.PRUNED]
+    pruned = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.PRUNED]
     complete = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     print(f"  Total trials   : {len(pruning_study.trials)}")
     print(f"  Completed      : {len(complete)}")
@@ -145,14 +150,16 @@ if _OPTUNA:
     print(f"  Using best params: {best}")
 
     final_model = build_model(
-        "resnet50", "mlp",
+        "resnet50",
+        "mlp",
         num_classes=NUM_CLASSES,
         hidden_dim=best.get("hidden_dim", 512),
         pretrained=False,
         dropout=best.get("dropout", 0.1),
     )
     final_opt = build_optimizer(
-        "adamw", final_model,
+        "adamw",
+        final_model,
         lr=best["lr"],
         weight_decay=best["weight_decay"],
     )
@@ -170,7 +177,7 @@ else:
     # Fallback: just train a default model to show the pattern
     print("  Training fallback model (optuna not available)")
     fallback_model = build_model("resnet50", "mlp", num_classes=NUM_CLASSES, pretrained=False)
-    fallback_opt   = build_optimizer("adamw", fallback_model, lr=3e-4, weight_decay=1e-2)
+    fallback_opt = build_optimizer("adamw", fallback_model, lr=3e-4, weight_decay=1e-2)
     fallback_trainer = Trainer(
         model=fallback_model,
         loss_fn=nn.CrossEntropyLoss(),
@@ -183,11 +190,13 @@ else:
 # ── Section 4: Duck-typed trial (no optuna needed) ────────────────────────
 print("\n── Section 4: Duck-typed trial — OptunaCallback without Optuna ──")
 
+
 class DuckTrial:
     """Minimal trial object that satisfies OptunaCallback's interface."""
+
     def __init__(self):
         self.reports: list[tuple[float, int]] = []
-        self._prune_after = 3           # simulate pruning after step 3
+        self._prune_after = 3  # simulate pruning after step 3
 
     def report(self, value: float, step: int) -> None:
         self.reports.append((value, step))
@@ -202,10 +211,10 @@ class DuckTrial:
 
 
 duck_trial = DuckTrial()
-duck_cb    = OptunaCallback(duck_trial, monitor="val/loss")
+duck_cb = OptunaCallback(duck_trial, monitor="val/loss")
 
-duck_model  = build_model("resnet50", "linear", num_classes=NUM_CLASSES, pretrained=False)
-duck_opt    = build_optimizer("adam", duck_model, lr=1e-3)
+duck_model = build_model("resnet50", "linear", num_classes=NUM_CLASSES, pretrained=False)
+duck_opt = build_optimizer("adam", duck_model, lr=1e-3)
 duck_trainer = Trainer(
     model=duck_model,
     loss_fn=nn.CrossEntropyLoss(),
@@ -219,7 +228,7 @@ duck_trainer = Trainer(
 duck_trainer.fit(train_loader, val_loader, epochs=6)
 
 print(f"  Epochs run before prune : {len(duck_trial.reports)}")
-print(f"  Reports logged          : {[(round(v,4), s) for v, s in duck_trial.reports]}")
+print(f"  Reports logged          : {[(round(v, 4), s) for v, s in duck_trial.reports]}")
 print(f"  stop_training flag      : {duck_trainer.stop_training}")
 
 print("\nDone.")

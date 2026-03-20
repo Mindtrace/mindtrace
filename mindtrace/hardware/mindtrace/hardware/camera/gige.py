@@ -19,12 +19,11 @@ Typical usage::
     with GigECamera("12345678") as cam:
         frame = cam.grab()
 """
+
 from __future__ import annotations
 
 import time
 from typing import Any
-
-import numpy as np
 
 from mindtrace.hardware.camera.base import AbstractCamera, CameraFrame, CameraStatus
 from mindtrace.hardware.core.exceptions import (
@@ -38,14 +37,14 @@ from mindtrace.hardware.core.exceptions import (
 # Optional SDK availability flags — evaluated once at module import time.
 # ---------------------------------------------------------------------------
 try:
-    from harvesters.core import Harvester  # type: ignore[import]
+    from harvesters.core import Harvester  # type: ignore[import] # noqa: F401
 
     _HARVESTERS_AVAILABLE = True
 except ImportError:
     _HARVESTERS_AVAILABLE = False
 
 try:
-    from pypylon import pylon  # type: ignore[import]
+    from pypylon import pylon  # type: ignore[import] # noqa: F401
 
     _PYPYLON_AVAILABLE = True
 except ImportError:
@@ -143,9 +142,7 @@ class GigECamera(AbstractCamera):
             CameraConnectionError: If the connection handshake fails.
         """
         if self._status == CameraStatus.CONNECTED:
-            self.logger.debug(
-                f"GigECamera {self._camera_id!r} is already connected — skipping."
-            )
+            self.logger.debug(f"GigECamera {self._camera_id!r} is already connected — skipping.")
             return
 
         if _HARVESTERS_AVAILABLE:
@@ -155,9 +152,7 @@ class GigECamera(AbstractCamera):
         else:
             raise SDKNotAvailableError(
                 sdk_name="harvesters or pypylon",
-                installation_instructions=(
-                    _HARVESTERS_INSTALL_MSG + "\n\n--- OR ---\n\n" + _PYPYLON_INSTALL_MSG
-                ),
+                installation_instructions=(_HARVESTERS_INSTALL_MSG + "\n\n--- OR ---\n\n" + _PYPYLON_INSTALL_MSG),
             )
 
     def disconnect(self) -> None:
@@ -174,9 +169,7 @@ class GigECamera(AbstractCamera):
             elif self._backend == "pypylon":
                 self._disconnect_pypylon()
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                f"Non-fatal error while disconnecting GigECamera {self._camera_id!r}: {exc}"
-            )
+            self.logger.warning(f"Non-fatal error while disconnecting GigECamera {self._camera_id!r}: {exc}")
         finally:
             self._status = CameraStatus.DISCONNECTED
             self._backend = None
@@ -216,9 +209,7 @@ class GigECamera(AbstractCamera):
             CameraConnectionError: If the camera is not connected.
         """
         if self._status not in (CameraStatus.CONNECTED, CameraStatus.STREAMING):
-            raise CameraConnectionError(
-                f"GigECamera {self._camera_id!r} must be connected before configure()."
-            )
+            raise CameraConnectionError(f"GigECamera {self._camera_id!r} must be connected before configure().")
 
         if self._backend == "harvesters":
             self._configure_harvesters(**params)
@@ -253,9 +244,7 @@ class GigECamera(AbstractCamera):
         """Initialise harvesters ImageAcquirer for the target camera."""
         from harvesters.core import Harvester  # type: ignore[import]
 
-        self.logger.info(
-            f"Connecting GigECamera {self._camera_id!r} via harvesters."
-        )
+        self.logger.info(f"Connecting GigECamera {self._camera_id!r} via harvesters.")
         try:
             h = Harvester()
             if self._cti_file:
@@ -266,8 +255,8 @@ class GigECamera(AbstractCamera):
             device_info_list = h.device_info_list
             if not device_info_list:
                 raise CameraNotFoundError(
-                    f"No GigE cameras found.  Ensure the camera is powered, "
-                    f"reachable on the network, and the GenTL producer is correct."
+                    "No GigE cameras found.  Ensure the camera is powered, "
+                    "reachable on the network, and the GenTL producer is correct."
                 )
 
             # Match by serial or IP if possible; otherwise take the first device.
@@ -287,10 +276,7 @@ class GigECamera(AbstractCamera):
             self._backend = "harvesters"
             self._status = CameraStatus.STREAMING
 
-            self.logger.info(
-                f"GigECamera {self._camera_id!r} connected via harvesters "
-                f"(device index={target_index})."
-            )
+            self.logger.info(f"GigECamera {self._camera_id!r} connected via harvesters (device index={target_index}).")
         except (CameraNotFoundError, CameraConnectionError):
             raise
         except Exception as exc:
@@ -345,18 +331,14 @@ class GigECamera(AbstractCamera):
                 )
         except Exception as exc:
             self._status = CameraStatus.ERROR
-            raise CameraCaptureError(
-                f"GigECamera {self._camera_id!r} frame grab failed (harvesters): {exc}"
-            ) from exc
+            raise CameraCaptureError(f"GigECamera {self._camera_id!r} frame grab failed (harvesters): {exc}") from exc
 
     def _configure_harvesters(self, **params: Any) -> None:
         """Apply parameters to the harvesters node map."""
         try:
             node_map = self._acquirer.remote_device.node_map
         except Exception as exc:
-            raise CameraConnectionError(
-                f"Cannot access node map for GigECamera {self._camera_id!r}: {exc}"
-            ) from exc
+            raise CameraConnectionError(f"Cannot access node map for GigECamera {self._camera_id!r}: {exc}") from exc
 
         if "exposure_us" in params:
             val = float(params["exposure_us"])
@@ -408,16 +390,13 @@ class GigECamera(AbstractCamera):
         """Initialise a pypylon InstantCamera for the target serial number."""
         from pypylon import pylon  # type: ignore[import]
 
-        self.logger.info(
-            f"Connecting GigECamera {self._camera_id!r} via pypylon."
-        )
+        self.logger.info(f"Connecting GigECamera {self._camera_id!r} via pypylon.")
         try:
             tl_factory = pylon.TlFactory.GetInstance()
             devices = tl_factory.EnumerateDevices()
             if not devices:
                 raise CameraNotFoundError(
-                    "No Basler cameras found.  Ensure the camera is powered "
-                    "and reachable on the network."
+                    "No Basler cameras found.  Ensure the camera is powered and reachable on the network."
                 )
 
             target_device = None
@@ -442,16 +421,13 @@ class GigECamera(AbstractCamera):
             self._status = CameraStatus.STREAMING
 
             self.logger.info(
-                f"GigECamera {self._camera_id!r} connected via pypylon "
-                f"(serial={target_device.GetSerialNumber()!r})."
+                f"GigECamera {self._camera_id!r} connected via pypylon (serial={target_device.GetSerialNumber()!r})."
             )
         except (CameraNotFoundError, CameraConnectionError):
             raise
         except Exception as exc:
             self._status = CameraStatus.ERROR
-            raise CameraConnectionError(
-                f"Failed to connect GigECamera {self._camera_id!r} via pypylon: {exc}"
-            ) from exc
+            raise CameraConnectionError(f"Failed to connect GigECamera {self._camera_id!r} via pypylon: {exc}") from exc
 
     def _disconnect_pypylon(self) -> None:
         """Stop grabbing and close the pypylon InstantCamera."""
@@ -469,14 +445,10 @@ class GigECamera(AbstractCamera):
         from pypylon import pylon  # type: ignore[import]
 
         try:
-            grab_result = self._pylon_camera.RetrieveResult(
-                5000, pylon.TimeoutHandling_ThrowException
-            )
+            grab_result = self._pylon_camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
             if not grab_result.GrabSucceeded():
                 grab_result.Release()
-                raise CameraCaptureError(
-                    f"GigECamera {self._camera_id!r}: pypylon grab did not succeed."
-                )
+                raise CameraCaptureError(f"GigECamera {self._camera_id!r}: pypylon grab did not succeed.")
 
             frame_data = grab_result.Array.copy()
             width = grab_result.Width
@@ -504,17 +476,13 @@ class GigECamera(AbstractCamera):
             raise
         except Exception as exc:
             self._status = CameraStatus.ERROR
-            raise CameraCaptureError(
-                f"GigECamera {self._camera_id!r} frame grab failed (pypylon): {exc}"
-            ) from exc
+            raise CameraCaptureError(f"GigECamera {self._camera_id!r} frame grab failed (pypylon): {exc}") from exc
 
     def _configure_pypylon(self, **params: Any) -> None:
         """Apply parameters to the pypylon camera node map."""
         cam = self._pylon_camera
         if cam is None:
-            raise CameraConnectionError(
-                f"GigECamera {self._camera_id!r} pypylon camera handle is None."
-            )
+            raise CameraConnectionError(f"GigECamera {self._camera_id!r} pypylon camera handle is None.")
 
         if "exposure_us" in params:
             val = float(params["exposure_us"])

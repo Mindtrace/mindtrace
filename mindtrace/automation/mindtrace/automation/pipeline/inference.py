@@ -20,10 +20,10 @@ Typical usage::
 """
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
-from .base import Pipeline, PipelineResult, PipelineStatus, PipelineStep, StepResult
+from .base import Pipeline, PipelineStatus, PipelineStep, StepResult
 
 
 @dataclass
@@ -67,9 +67,7 @@ class _FetchStep(PipelineStep):
         self._datums_wanted = datums_wanted
 
     def run(self, context: dict) -> StepResult:
-        rows = asyncio.run(
-            self._datalake.query_data(self._query, datums_wanted=self._datums_wanted)
-        )
+        rows = asyncio.run(self._datalake.query_data(self._query, datums_wanted=self._datums_wanted))
         context["records"] = rows
         return StepResult(
             step_name=self.name,
@@ -221,7 +219,5 @@ class InferencePipeline(Pipeline):
         pipeline.add_step(_FetchStep(datalake, config.query, config.datums_wanted))
         pipeline.add_step(_InferStep(service, config.transform, config.batch_size))
         if not config.dry_run:
-            pipeline.add_step(
-                _StoreStep(datalake, config.result_schema, dry_run=False)
-            )
+            pipeline.add_step(_StoreStep(datalake, config.result_schema, dry_run=False))
         return pipeline

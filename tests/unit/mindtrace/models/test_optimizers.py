@@ -11,17 +11,17 @@ from __future__ import annotations
 import pytest
 
 torch = pytest.importorskip("torch")
-import torch.nn as nn
-from torch.optim import Adam, AdamW, Optimizer, RAdam, SGD
-from torch.optim.lr_scheduler import (
+import torch.nn as nn  # noqa: E402
+from torch.optim import SGD, Adam, AdamW, Optimizer, RAdam  # noqa: E402
+from torch.optim.lr_scheduler import (  # noqa: E402
     CosineAnnealingLR,
-    LRScheduler,
     LambdaLR,
+    LRScheduler,
     ReduceLROnPlateau,
     StepLR,
 )
 
-from mindtrace.models.training.optimizers import (
+from mindtrace.models.training.optimizers import (  # noqa: E402
     WarmupCosineScheduler,
     build_optimizer,
     build_scheduler,
@@ -138,9 +138,7 @@ class TestBuildScheduler:
 class TestWarmupCosineScheduler:
     def test_warmup_phase_increases_lr(self, tiny_optimizer):
         """During warm-up steps the LR should increase from near-zero."""
-        scheduler = WarmupCosineScheduler(
-            tiny_optimizer, warmup_steps=5, total_steps=20
-        )
+        scheduler = WarmupCosineScheduler(tiny_optimizer, warmup_steps=5, total_steps=20)
         lrs = []
         for _ in range(5):
             lrs.append(scheduler.get_lr()[0])
@@ -151,9 +149,7 @@ class TestWarmupCosineScheduler:
 
     def test_cosine_phase_decreases_lr(self, tiny_optimizer):
         """After warm-up the LR should decrease towards eta_min."""
-        scheduler = WarmupCosineScheduler(
-            tiny_optimizer, warmup_steps=2, total_steps=10, eta_min=0.0
-        )
+        scheduler = WarmupCosineScheduler(tiny_optimizer, warmup_steps=2, total_steps=10, eta_min=0.0)
         # Advance past warm-up
         for _ in range(2):
             scheduler.step()

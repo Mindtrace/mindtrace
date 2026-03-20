@@ -24,52 +24,12 @@ Run:
     python samples/models/11_full_e2e.py
 """
 
-import asyncio
 import tempfile
 from typing import Any
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-
-from mindtrace.registry import Registry
-
-# -- Architecture ---------------------------------------------------------------
-from mindtrace.models import (
-    build_model,
-    ModelWrapper,
-)
-
-# -- Training -------------------------------------------------------------------
-from mindtrace.models import (
-    build_optimizer,
-    build_scheduler,
-    Trainer,
-    EarlyStopping,
-    LRMonitor,
-    ModelCheckpoint,
-    ProgressLogger,
-    UnfreezeSchedule,
-)
-
-# -- Evaluation -----------------------------------------------------------------
-from mindtrace.models import (
-    EvaluationRunner,
-    accuracy,
-)
-
-# -- Lifecycle ------------------------------------------------------------------
-from mindtrace.models import (
-    ModelCard,
-    ModelStage,
-    EvalResult,
-    PromotionResult,
-    promote,
-    demote,
-)
-
-# -- Serving --------------------------------------------------------------------
-from mindtrace.models.serving.onnx import OnnxModelService
 
 # -- Automation -----------------------------------------------------------------
 from mindtrace.automation.pipeline import (
@@ -79,30 +39,55 @@ from mindtrace.automation.pipeline import (
     TrainingPipeline,
 )
 
+# -- Architecture ---------------------------------------------------------------
+# -- Training -------------------------------------------------------------------
+# -- Evaluation -----------------------------------------------------------------
+# -- Lifecycle ------------------------------------------------------------------
+from mindtrace.models import (
+    EarlyStopping,
+    EvaluationRunner,
+    LRMonitor,
+    ModelCard,
+    ModelCheckpoint,
+    ModelStage,
+    ProgressLogger,
+    PromotionResult,
+    Trainer,
+    UnfreezeSchedule,
+    accuracy,
+    build_model,
+    build_optimizer,
+    build_scheduler,
+    promote,
+)
+
+# -- Serving --------------------------------------------------------------------
+from mindtrace.models.serving.onnx import OnnxModelService
+from mindtrace.registry import Registry
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 0. Shared fixtures
 # ══════════════════════════════════════════════════════════════════════════════
 
-NUM_CLASSES   = 4
-BATCH_SIZE    = 16
+NUM_CLASSES = 4
+BATCH_SIZE = 16
 TRAIN_SAMPLES = 128
-VAL_SAMPLES   = 32
+VAL_SAMPLES = 32
 H = W = 32
 EPOCHS = 3
 DEVICE = "cpu"
 
-tmpdir   = tempfile.mkdtemp(prefix="mt_e2e_")
+tmpdir = tempfile.mkdtemp(prefix="mt_e2e_")
 registry = Registry(tmpdir)
 
 # Synthetic weld-defect classification dataset
 train_x = torch.randn(TRAIN_SAMPLES, 3, H, W)
 train_y = torch.randint(0, NUM_CLASSES, (TRAIN_SAMPLES,))
-val_x   = torch.randn(VAL_SAMPLES, 3, H, W)
-val_y   = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
+val_x = torch.randn(VAL_SAMPLES, 3, H, W)
+val_y = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
 
 train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True)
-val_loader   = DataLoader(TensorDataset(val_x, val_y),   batch_size=BATCH_SIZE)
+val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
 
 _BANNER = "─" * 62
 
@@ -140,7 +125,7 @@ optimizer = build_optimizer(
     "adam",
     model,
     lr=1e-3,
-    backbone_lr_multiplier=0.1,     # backbone → 1e-4, head → 1e-3
+    backbone_lr_multiplier=0.1,  # backbone → 1e-4, head → 1e-3
 )
 steps_per_epoch = len(train_loader)
 scheduler = build_scheduler(
@@ -156,14 +141,14 @@ trainer = Trainer(
     optimizer=optimizer,
     scheduler=scheduler,
     device=DEVICE,
-    gradient_checkpointing=False,   # enable for HF models with gradient_checkpointing_enable()
+    gradient_checkpointing=False,  # enable for HF models with gradient_checkpointing_enable()
     callbacks=[
         ProgressLogger(),
         LRMonitor(),
         EarlyStopping(patience=5, monitor="val/loss"),
         ModelCheckpoint(registry=registry, model_name="weld_classifier"),
         UnfreezeSchedule(
-            schedule={2: ["backbone.layer4"]},   # unfreeze layer4 at epoch 2
+            schedule={2: ["backbone.layer4"]},  # unfreeze layer4 at epoch 2
             new_lr=5e-5,
         ),
     ],
@@ -228,7 +213,7 @@ result: PromotionResult = promote(
     card=card,
     registry=registry,
     to_stage=ModelStage.STAGING,
-    require={},                     # no hard thresholds for demo
+    require={},  # no hard thresholds for demo
 )
 print(f"Promoted: {result.success}  →  stage={card.stage.value}")
 print(f"Model: {result.model_name} {result.model_version}  ({result.from_stage.value} → {result.to_stage.value})")
@@ -242,7 +227,8 @@ print(f"\n{'═' * 62}")
 print("STEP 6 — ONNX export and OnnxModelService")
 print(_BANNER)
 
-import os
+import os  # noqa: E731
+
 onnx_path = os.path.join(tmpdir, "weld_classifier_v1.onnx")
 
 dummy_input = torch.randn(1, 3, H, W)
@@ -274,6 +260,7 @@ except Exception as exc:
 print(f"\n{'═' * 62}")
 print("STEP 7 — TrainingPipeline (automation layer)")
 print(_BANNER)
+
 
 class _E2ETrainer:
     """Duck-typed trainer wrapping the already-trained model."""
@@ -339,17 +326,17 @@ class _TorchService:
 
     def predict(self, inp: Any) -> dict:
         # inp is a raw record dict from the datalake; synthesise a tensor.
-        x      = torch.randn(1, 3, H, W)
+        x = torch.randn(1, 3, H, W)
         with torch.no_grad():
             logits = self._model(x)
-        label  = logits.argmax(1).item()
-        conf   = torch.softmax(logits, dim=1).max().item()
+        label = logits.argmax(1).item()
+        conf = torch.softmax(logits, dim=1).max().item()
         return {"label": int(label), "confidence": round(conf, 4)}
 
 
 dl_records = [{"id": i, "type": "weld_image"} for i in range(12)]
-datalake   = _MockDatalake(dl_records)
-service    = _TorchService(model)
+datalake = _MockDatalake(dl_records)
+service = _TorchService(model)
 
 infer_pipeline = InferencePipeline.build(
     name="weld_batch_inference",
@@ -410,4 +397,4 @@ print(f"  Val accuracy : {acc:.4f}")
 print(f"  Lifecycle    : DEV → STAGING  (success={result.success})")
 print(f"  Inference    : {infer_step.metadata.get('ok', '?')} records processed")
 print(f"  Registry dir : {tmpdir}")
-print(f"\n✓ 11_full_e2e.py complete.")
+print("\n✓ 11_full_e2e.py complete.")

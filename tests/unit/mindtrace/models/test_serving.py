@@ -9,12 +9,11 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictResponse
-
 
 # ---------------------------------------------------------------------------
 # Helpers shared across test classes
@@ -130,12 +129,14 @@ class TestModelService:
         monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
 
         from mindtrace.models.serving.service import ModelService
-        from mindtrace.models.serving.schemas import PredictRequest, PredictResponse
 
         # Subclass that doesn't implement predict — load_model is a no-op
         class _NoPredictService(ModelService):
             _task = "test"
-            def load_model(self): self.model = object()
+
+            def load_model(self):
+                self.model = object()
+
             # predict intentionally omitted — inherits abstract method
 
         # Python will raise TypeError when a class with unimplemented abstract
@@ -221,7 +222,5 @@ class TestModelService:
         # Patch torch.cuda.is_available to return False regardless of hardware
         with patch.object(service_mod, "_TORCH_AVAILABLE", True):
             with patch("torch.cuda.is_available", return_value=False):
-                svc = _DeviceService(
-                    model_name="m", model_version="v1", device="auto", registry=None
-                )
+                svc = _DeviceService(model_name="m", model_version="v1", device="auto", registry=None)
         assert svc.device == "cpu"

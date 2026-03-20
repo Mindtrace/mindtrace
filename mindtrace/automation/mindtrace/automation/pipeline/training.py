@@ -31,8 +31,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from mindtrace.registry import Registry
-
 from .base import Pipeline, PipelineStatus, PipelineStep, StepResult
 
 logger = logging.getLogger(__name__)
@@ -144,9 +142,7 @@ class _PromoteStep(PipelineStep):
         try:
             from mindtrace.models.lifecycle import ModelCard, ModelStage, PromotionError, promote  # noqa: PLC0415
         except ImportError:
-            logger.warning(
-                "_PromoteStep: mindtrace.models is not installed — skipping promotion."
-            )
+            logger.warning("_PromoteStep: mindtrace.models is not installed — skipping promotion.")
             return StepResult(
                 step_name=self.name,
                 status=PipelineStatus.SUCCESS,
@@ -162,9 +158,7 @@ class _PromoteStep(PipelineStep):
             staging_key = f"{self._model_name}:{self._version}:{ModelStage.STAGING.value}"
             prev_data = self._registry.load(staging_key)
             if isinstance(prev_data, dict):
-                baseline = float(
-                    ModelCard.from_dict(prev_data).summary().get("accuracy", 0.0)
-                )
+                baseline = float(ModelCard.from_dict(prev_data).summary().get("accuracy", 0.0))
         except Exception:
             baseline = 0.0
 

@@ -29,8 +29,7 @@ Typical usage::
     result = pipeline.run()
 """
 
-import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from .base import Pipeline, PipelineStatus, PipelineStep, StepResult
@@ -94,11 +93,7 @@ class _UncertaintyFilterStep(PipelineStep):
 
         for item in predictions:
             pred = item.get("prediction", {})
-            confidence = (
-                pred.get("confidence", pred.get("score", 1.0))
-                if isinstance(pred, dict)
-                else float(pred)
-            )
+            confidence = pred.get("confidence", pred.get("score", 1.0)) if isinstance(pred, dict) else float(pred)
             if confidence < self._threshold:
                 uncertain.append(item)
             if len(uncertain) >= self._max_samples:
@@ -149,11 +144,7 @@ class _PushToLabelStudioStep(PipelineStep):
             )
 
         try:
-            project = (
-                self._ls.client.get_project(self._project_id)
-                if self._project_id is not None
-                else None
-            )
+            project = self._ls.client.get_project(self._project_id) if self._project_id is not None else None
             pushed = 0
             for item in uncertain:
                 record = item.get("record", {})
@@ -286,14 +277,8 @@ class ActiveLearningPipeline(Pipeline):
         pipeline = cls(name=name, **kwargs)
         pipeline.add_step(_FetchStep(datalake, config.query, None))
         pipeline.add_step(_InferStep(service, config.transform, batch_size=32))
-        pipeline.add_step(
-            _UncertaintyFilterStep(
-                config.uncertainty_threshold, config.max_samples_to_label
-            )
-        )
-        pipeline.add_step(
-            _PushToLabelStudioStep(label_studio, config.label_studio_project_id)
-        )
+        pipeline.add_step(_UncertaintyFilterStep(config.uncertainty_threshold, config.max_samples_to_label))
+        pipeline.add_step(_PushToLabelStudioStep(label_studio, config.label_studio_project_id))
         if config.auto_retrain:
             pipeline.add_step(_ConditionalRetrainStep(config.retrain_pipeline))
 
