@@ -474,8 +474,6 @@ pytest tests/unit/mindtrace/models/archivers/
 pytest tests/unit/mindtrace/models/ --cov=mindtrace.models --cov-report=term-missing
 ```
 
-711 tests, 84% coverage.
-
 ## API Reference
 
 ### Complete Exports
