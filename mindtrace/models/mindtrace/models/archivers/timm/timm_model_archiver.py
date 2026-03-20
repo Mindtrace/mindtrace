@@ -14,7 +14,7 @@ import torch
 from torch import nn
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver, Registry
+from mindtrace.registry import Archiver
 
 try:
     import timm

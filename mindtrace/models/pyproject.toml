@@ -39,6 +39,8 @@ transformers = ["transformers>=4.35"]
 onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
 peft = ["peft>=0.6"]
 
+# Archiver extras
+ultralytics = ["ultralytics>=8.0"]
 # Install everything
 all = [
     "mlflow>=2.0",
@@ -50,6 +52,7 @@ all = [
     "onnxruntime>=1.16",
     "onnx>=1.14",
     "peft>=0.6",
+    "ultralytics>=8.0",
 ]
 
 [project.urls]

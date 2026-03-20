@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mindtrace.registry.archivers.onnx.onnx_model_archiver import (
+from mindtrace.models.archivers.onnx.onnx_model_archiver import (
     _ONNX_AVAILABLE,
     OnnxModelArchiver,
 )

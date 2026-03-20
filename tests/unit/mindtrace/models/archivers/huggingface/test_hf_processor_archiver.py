@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.registry.archivers.huggingface.hf_processor_archiver import (
+from mindtrace.models.archivers.huggingface.hf_processor_archiver import (
     _HF_AVAILABLE,
     HuggingFaceProcessorArchiver,
 )
