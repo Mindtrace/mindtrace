@@ -86,7 +86,7 @@ class UltralyticsTrackerBridge:
                 try:
                     bridge._tracker.log(loggable, step=epoch)
                 except Exception as exc:
-                    logger.warning(
+                    logger.error(
                         "UltralyticsTrackerBridge: tracker.log failed at epoch %d: %s",
                         epoch,
                         exc,
@@ -95,9 +95,7 @@ class UltralyticsTrackerBridge:
         def _on_train_end(ultralytics_trainer: Any) -> None:
             raw_metrics: dict = getattr(ultralytics_trainer, "metrics", {})
             final_loggable: dict[str, float] = {
-                k: float(v)
-                for k, v in raw_metrics.items()
-                if isinstance(v, (int, float))
+                k: float(v) for k, v in raw_metrics.items() if isinstance(v, (int, float))
             }
             logger.info(
                 "UltralyticsTrackerBridge: training ended — final metrics: %s",
@@ -110,7 +108,7 @@ class UltralyticsTrackerBridge:
                         step=bridge._current_epoch,
                     )
                 except Exception as exc:
-                    logger.warning(
+                    logger.error(
                         "UltralyticsTrackerBridge: tracker.log (on_train_end) failed: %s",
                         exc,
                     )
@@ -120,12 +118,23 @@ class UltralyticsTrackerBridge:
         logger.debug("UltralyticsTrackerBridge: callbacks registered on YOLO model.")
 
 
-class HuggingFaceTrackerBridge:
+# Resolve the base class for HuggingFaceTrackerBridge at import time.
+# When transformers is installed, inherit from TrainerCallback so HF Trainer
+# accepts the bridge natively. Otherwise, inherit from object (duck-typing
+# still works since we implement the on_log interface).
+try:
+    from transformers import TrainerCallback as _HFBase
+except ImportError:
+    _HFBase = object  # type: ignore[assignment,misc]
+
+
+class HuggingFaceTrackerBridge(_HFBase):
     """Bridges HuggingFace Trainer callbacks to a mindtrace Tracker.
 
-    This class duck-types the HuggingFace ``TrainerCallback`` interface.  When
-    ``transformers`` is available it additionally inherits from
-    ``TrainerCallback`` so that the HF Trainer accepts it natively.
+    When ``transformers`` is installed this class inherits from
+    ``TrainerCallback``, so the HF Trainer accepts it natively.  When
+    ``transformers`` is not installed it falls back to ``object`` and
+    relies on duck-typing.
 
     Usage::
 
@@ -137,6 +146,7 @@ class HuggingFaceTrackerBridge:
     """
 
     def __init__(self, tracker: Any | None = None) -> None:
+        super().__init__()
         self._tracker = tracker
 
     def on_log(
@@ -162,26 +172,8 @@ class HuggingFaceTrackerBridge:
         try:
             self._tracker.log(loggable, step=step)
         except Exception as exc:
-            logger.warning(
+            logger.error(
                 "HuggingFaceTrackerBridge: tracker.log failed at step %d: %s",
                 step,
                 exc,
             )
-
-
-# When transformers is available, create a subclass that also inherits from
-# TrainerCallback so the HF Trainer accepts it without type errors.
-try:
-    from transformers import TrainerCallback as _TrainerCallback
-
-    class _HFBridgeWithCallback(_TrainerCallback, HuggingFaceTrackerBridge):
-        """HuggingFaceTrackerBridge that inherits from TrainerCallback."""
-
-        def __init__(self, tracker: Any | None = None) -> None:
-            _TrainerCallback.__init__(self)
-            HuggingFaceTrackerBridge.__init__(self, tracker)
-
-    # Replace the public class so users get the TrainerCallback-compatible version.
-    HuggingFaceTrackerBridge = _HFBridgeWithCallback  # type: ignore[misc]
-except ImportError:
-    pass

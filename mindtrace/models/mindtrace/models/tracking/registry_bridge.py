@@ -84,9 +84,7 @@ class RegistryBridge:
                 f"'save(key, model)' method). Got: {type(registry).__name__!r}."
             )
         self.registry = registry
-        logger.debug(
-            "RegistryBridge initialised with registry: %s", type(registry).__name__
-        )
+        logger.debug("RegistryBridge initialised with registry: %s", type(registry).__name__)
 
     def save(self, model: Any, name: str, version: str) -> str:
         """Save a model to the registry and return the registry key.

@@ -8,14 +8,11 @@ even when the library is not installed; methods that require it raise a clear
 
 from __future__ import annotations
 
-import logging
 import os
 import tempfile
 from typing import Any
 
 from mindtrace.models.tracking.tracker import Tracker
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional WandB import
@@ -37,14 +34,8 @@ except ImportError:  # pragma: no cover
     torch = None  # type: ignore[assignment]
     _TORCH_AVAILABLE = False
 
-_WANDB_INSTALL_MSG = (
-    "Weights & Biases is not installed. "
-    "Install it with: pip install wandb"
-)
-_TORCH_INSTALL_MSG = (
-    "PyTorch is required to save model state dicts. "
-    "Install it with: pip install torch"
-)
+_WANDB_INSTALL_MSG = "Weights & Biases is not installed. Install it with: pip install wandb"
+_TORCH_INSTALL_MSG = "PyTorch is required to save model state dicts. Install it with: pip install torch"
 
 
 class WandBTracker(Tracker):
@@ -88,12 +79,22 @@ class WandBTracker(Tracker):
         Raises:
             ImportError: If ``wandb`` is not installed.
         """
+        super().__init__()
         if not _WANDB_AVAILABLE:
             raise ImportError(_WANDB_INSTALL_MSG)
 
+        # Point WandB data directory to mindtrace's managed cache
+        import os
+
+        if "WANDB_DIR" not in os.environ:
+            root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
+            wandb_dir = os.path.join(root, "wandb")
+            os.makedirs(wandb_dir, exist_ok=True)
+            os.environ["WANDB_DIR"] = wandb_dir
+
         self._project = project
         self._entity = entity
-        logger.debug(
+        self.logger.debug(
             "WandBTracker initialised: project=%s entity=%s",
             project,
             entity,
@@ -116,7 +117,7 @@ class WandBTracker(Tracker):
         if not _WANDB_AVAILABLE:  # pragma: no cover
             raise ImportError(_WANDB_INSTALL_MSG)
 
-        logger.debug("Starting WandB run: name=%s project=%s", name, self._project)
+        self.logger.debug("Starting WandB run: name=%s project=%s", name, self._project)
         wandb.init(
             project=self._project,
             entity=self._entity,
@@ -178,13 +179,11 @@ class WandBTracker(Tracker):
 
         tmp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".pt", delete=False, prefix=f"{name}_"
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False, prefix=f"{name}_") as tmp:
                 tmp_path = tmp.name
 
             torch.save(model.state_dict(), tmp_path)
-            logger.debug(
+            self.logger.debug(
                 "Saved model state dict to temp file: %s (name=%s version=%s)",
                 tmp_path,
                 name,
@@ -194,7 +193,7 @@ class WandBTracker(Tracker):
             artifact = wandb.Artifact(name=name, type="model", metadata={"version": version})
             artifact.add_file(tmp_path)
             wandb.log_artifact(artifact, aliases=[version])
-            logger.debug("Uploaded model artifact to WandB: name=%s version=%s", name, version)
+            self.logger.debug("Uploaded model artifact to WandB: name=%s version=%s", name, version)
         finally:
             if tmp_path is not None and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -220,7 +219,7 @@ class WandBTracker(Tracker):
             artifact.add_file(path)
 
         wandb.log_artifact(artifact)
-        logger.debug("Logged artifact to WandB: path=%s", path)
+        self.logger.debug("Logged artifact to WandB: path=%s", path)
 
     def finish(self) -> None:
         """Finalise and close the current WandB run.
@@ -232,7 +231,7 @@ class WandBTracker(Tracker):
             raise ImportError(_WANDB_INSTALL_MSG)
 
         wandb.finish()
-        logger.debug("WandB run finished.")
+        self.logger.debug("WandB run finished.")
 
 
 __all__ = ["WandBTracker"]

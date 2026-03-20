@@ -7,10 +7,11 @@ a :class:`~mindtrace.models.tracking.tracker.Tracker`.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable
 
 import numpy as np
+
+from mindtrace.core import Mindtrace
 
 try:
     import torch
@@ -35,12 +36,17 @@ from mindtrace.models.evaluation.metrics.segmentation import (
     pixel_accuracy,
 )
 
-logger = logging.getLogger(__name__)
-
 _SUPPORTED_TASKS = frozenset({"classification", "detection", "regression", "segmentation"})
 
+_ZERO_METRICS: dict[str, dict[str, float]] = {
+    "classification": {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0},
+    "detection": {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0},
+    "segmentation": {"mIoU": 0.0, "mean_dice": 0.0, "pixel_accuracy": 0.0, "iou_per_class": [], "dice_per_class": []},
+    "regression": {"mae": 0.0, "mse": 0.0, "rmse": 0.0, "r2": 0.0},
+}
 
-class EvaluationRunner:
+
+class EvaluationRunner(Mindtrace):
     """Run evaluation over a dataloader and compute a set of metrics.
 
     The runner handles device placement, model-eval-mode activation, and
@@ -98,17 +104,13 @@ class EvaluationRunner:
         class_names: list[str] | None = None,
         batch_fn: Callable[[Any], tuple[Any, Any]] | None = None,
     ) -> None:
+        super().__init__()
+
         if not _TORCH_AVAILABLE:
-            raise ImportError(
-                "PyTorch is required for EvaluationRunner.  "
-                "Install it with: pip install torch"
-            )
+            raise ImportError("PyTorch is required for EvaluationRunner.  Install it with: pip install torch")
 
         if task not in _SUPPORTED_TASKS:
-            raise ValueError(
-                f"task must be one of {sorted(_SUPPORTED_TASKS)}, got '{task}'."
-            )
-
+            raise ValueError(f"task must be one of {sorted(_SUPPORTED_TASKS)}, got '{task}'.")
 
         if num_classes < 1:
             raise ValueError(f"num_classes must be >= 1, got {num_classes}.")
@@ -128,7 +130,7 @@ class EvaluationRunner:
         self._device = torch.device(resolved_device)
 
         self._model: nn.Module = model.to(self._device)
-        logger.debug(
+        self.logger.debug(
             "EvaluationRunner initialised: task=%s num_classes=%d device=%s",
             task,
             num_classes,
@@ -163,8 +165,7 @@ class EvaluationRunner:
 
         if loader is None:
             raise ValueError(
-                "EvaluationRunner.evaluate(): loader is required — pass it "
-                "at init time or as a keyword argument."
+                "EvaluationRunner.evaluate(): loader is required — pass it at init time or as a keyword argument."
             )
 
         return self.run(loader, step=step)
@@ -199,10 +200,7 @@ class EvaluationRunner:
         if loader is None:
             loader = self._default_loader
         if loader is None:
-            raise ValueError(
-                "EvaluationRunner.run(): loader is required — pass it "
-                "directly or set it at init time."
-            )
+            raise ValueError("EvaluationRunner.run(): loader is required — pass it directly or set it at init time.")
 
         self._model.eval()
 
@@ -220,9 +218,9 @@ class EvaluationRunner:
             try:
                 log_step = step if step is not None else 0
                 self._tracker.log(scalars, step=log_step)
-                logger.debug("EvaluationRunner: logged %d scalars at step=%d.", len(scalars), log_step)
+                self.logger.debug("EvaluationRunner: logged %d scalars at step=%d.", len(scalars), log_step)
             except Exception as exc:
-                logger.warning("EvaluationRunner: tracker.log failed: %s", exc)
+                self.logger.warning("EvaluationRunner: tracker.log failed: %s", exc)
 
         return results
 
@@ -283,8 +281,8 @@ class EvaluationRunner:
                 all_targets.append(self._to_numpy(targets))
 
         if not all_preds:
-            logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
-            return {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0, "classification_report": {}}
+            self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
+            return {**_ZERO_METRICS["classification"], "classification_report": {}}
 
         preds_arr = np.concatenate(all_preds, axis=0)
         targets_arr = np.concatenate(all_targets, axis=0)
@@ -300,7 +298,7 @@ class EvaluationRunner:
             class_names=self._class_names,
         )
 
-        logger.info(
+        self.logger.info(
             "EvaluationRunner [classification]: accuracy=%.4f precision=%.4f recall=%.4f f1=%.4f",
             acc,
             prec,
@@ -345,21 +343,25 @@ class EvaluationRunner:
                 outputs = self._model(inputs)
 
                 for out in outputs:
-                    all_preds.append({
-                        "boxes": self._to_numpy(out["boxes"]),
-                        "scores": self._to_numpy(out["scores"]),
-                        "labels": self._to_numpy(out["labels"]),
-                    })
+                    all_preds.append(
+                        {
+                            "boxes": self._to_numpy(out["boxes"]),
+                            "scores": self._to_numpy(out["scores"]),
+                            "labels": self._to_numpy(out["labels"]),
+                        }
+                    )
 
                 for tgt in targets:
-                    all_targets.append({
-                        "boxes": self._to_numpy(tgt["boxes"]),
-                        "labels": self._to_numpy(tgt["labels"]),
-                    })
+                    all_targets.append(
+                        {
+                            "boxes": self._to_numpy(tgt["boxes"]),
+                            "labels": self._to_numpy(tgt["labels"]),
+                        }
+                    )
 
         if not all_preds:
-            logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
-            return {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0}
+            self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
+            return dict(_ZERO_METRICS["detection"])
 
         coco_result = mean_average_precision_50_95(all_preds, all_targets, self._num_classes)
         map50_result = mean_average_precision(all_preds, all_targets, self._num_classes, iou_threshold=0.5)
@@ -371,7 +373,7 @@ class EvaluationRunner:
             "AP_per_class": map50_result["AP_per_class"],
         }
 
-        logger.info(
+        self.logger.info(
             "EvaluationRunner [detection]: mAP@50=%.4f mAP@75=%.4f mAP@50:95=%.4f",
             results["mAP@50"],
             results["mAP@75"],
@@ -405,8 +407,8 @@ class EvaluationRunner:
                 all_targets.append(self._to_numpy(targets))
 
         if not all_preds:
-            logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
-            return {"mIoU": 0.0, "mean_dice": 0.0, "pixel_accuracy": 0.0, "iou_per_class": [], "dice_per_class": []}
+            self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
+            return dict(_ZERO_METRICS["segmentation"])
 
         preds_arr = np.concatenate(all_preds, axis=0)
         targets_arr = np.concatenate(all_targets, axis=0)
@@ -423,7 +425,7 @@ class EvaluationRunner:
             "dice_per_class": dice_result["dice_per_class"],
         }
 
-        logger.info(
+        self.logger.info(
             "EvaluationRunner [segmentation]: mIoU=%.4f mean_dice=%.4f pixel_accuracy=%.4f",
             results["mIoU"],
             results["mean_dice"],
@@ -431,7 +433,6 @@ class EvaluationRunner:
         )
 
         return results
-
 
     def _run_regression(self, loader: Any) -> dict[str, Any]:
         """Accumulate regression predictions and compute scalar metrics.
@@ -457,22 +458,25 @@ class EvaluationRunner:
                 all_targets.append(self._to_numpy(targets).ravel())
 
         if not all_preds:
-            logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
-            return {"mae": 0.0, "mse": 0.0, "rmse": 0.0, "r2": 0.0}
+            self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
+            return dict(_ZERO_METRICS["regression"])
 
-        preds_arr   = np.concatenate(all_preds,   axis=0)
+        preds_arr = np.concatenate(all_preds, axis=0)
         targets_arr = np.concatenate(all_targets, axis=0)
 
         results: dict[str, Any] = {
-            "mae":  mae(preds_arr,  targets_arr),
-            "mse":  mse(preds_arr,  targets_arr),
+            "mae": mae(preds_arr, targets_arr),
+            "mse": mse(preds_arr, targets_arr),
             "rmse": rmse(preds_arr, targets_arr),
-            "r2":   r2_score(preds_arr, targets_arr),
+            "r2": r2_score(preds_arr, targets_arr),
         }
 
-        logger.info(
+        self.logger.info(
             "EvaluationRunner [regression]: mae=%.4f mse=%.4f rmse=%.4f r2=%.4f",
-            results["mae"], results["mse"], results["rmse"], results["r2"],
+            results["mae"],
+            results["mse"],
+            results["rmse"],
+            results["r2"],
         )
 
         return results

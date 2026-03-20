@@ -7,7 +7,6 @@ training, LR scheduling, callback dispatch, and metric history tracking.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable
 
 import torch
@@ -15,12 +14,11 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 
+from mindtrace.core import Mindtrace
 from mindtrace.models.training.callbacks import Callback
 
-logger = logging.getLogger(__name__)
 
-
-class Trainer:
+class Trainer(Mindtrace):
     """Supervised training loop with mixed precision and callback support.
 
     The ``Trainer`` is deliberately framework-agnostic at the data level: it
@@ -124,11 +122,10 @@ class Trainer:
         Raises:
             ValueError: If *gradient_accumulation_steps* < 1.
         """
+        super().__init__()
+
         if gradient_accumulation_steps < 1:
-            raise ValueError(
-                f"gradient_accumulation_steps must be >= 1, "
-                f"got {gradient_accumulation_steps}"
-            )
+            raise ValueError(f"gradient_accumulation_steps must be >= 1, got {gradient_accumulation_steps}")
 
         self.model = model
         self.loss_fn = loss_fn
@@ -151,21 +148,12 @@ class Trainer:
             self.device = torch.device(device)
 
         # AMP setup — only activate when CUDA is actually available
-        self._amp_enabled: bool = (
-            mixed_precision
-            and self.device.type == "cuda"
-            and torch.cuda.is_available()
-        )
+        self._amp_enabled: bool = mixed_precision and self.device.type == "cuda" and torch.cuda.is_available()
 
         if mixed_precision and not self._amp_enabled:
-            logger.warning(
-                "Trainer: mixed_precision=True but CUDA is not available. "
-                "Running in full precision."
-            )
+            self.logger.warning("Trainer: mixed_precision=True but CUDA is not available. Running in full precision.")
 
-        self._scaler: torch.amp.GradScaler | None = (
-            torch.amp.GradScaler() if self._amp_enabled else None
-        )
+        self._scaler: torch.amp.GradScaler | None = torch.amp.GradScaler() if self._amp_enabled else None
 
         # Mutable training state
         self.stop_training: bool = False
@@ -178,9 +166,9 @@ class Trainer:
         if gradient_checkpointing:
             if hasattr(self.model, "gradient_checkpointing_enable"):
                 self.model.gradient_checkpointing_enable()
-                logger.info("Trainer: gradient checkpointing enabled.")
+                self.logger.info("Trainer: gradient checkpointing enabled.")
             else:
-                logger.warning(
+                self.logger.warning(
                     "Trainer: gradient_checkpointing=True but model has no "
                     "gradient_checkpointing_enable() method — ignored."
                 )
@@ -189,30 +177,31 @@ class Trainer:
         if ddp:
             try:
                 from mindtrace.cluster.distributed import wrap_ddp as _wrap_ddp  # noqa: PLC0415
+
                 self.model = _wrap_ddp(self.model)
             except ImportError:
                 try:
                     import torch.distributed as _dist  # noqa: PLC0415
+
                     if _dist.is_initialized() and _dist.get_world_size() > 1:
                         from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
+
                         _device_ids = (
                             [self.device.index]
                             if self.device.type == "cuda" and self.device.index is not None
                             else None
                         )
                         self.model = _DDP(self.model, device_ids=_device_ids)
-                        logger.info("Trainer: wrapped model in DistributedDataParallel.")
+                        self.logger.info("Trainer: wrapped model in DistributedDataParallel.")
                     else:
-                        logger.debug(
-                            "Trainer: ddp=True but no distributed process group active "
-                            "— running single-process."
+                        self.logger.debug(
+                            "Trainer: ddp=True but no distributed process group active — running single-process."
                         )
                 except ImportError:
-                    logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
+                    self.logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
 
-        logger.info(
-            "Trainer initialised — device=%s, amp=%s, grad_accum=%d, "
-            "grad_ckpt=%s, ddp=%s",
+        self.logger.info(
+            "Trainer initialised — device=%s, amp=%s, grad_accum=%d, grad_ckpt=%s, ddp=%s",
             self.device,
             self._amp_enabled,
             self.gradient_accumulation_steps,
@@ -251,8 +240,7 @@ class Trainer:
 
         if train_loader is None:
             raise ValueError(
-                "Trainer.train(): train_loader is required — pass it at "
-                "init time or as a keyword argument."
+                "Trainer.train(): train_loader is required — pass it at init time or as a keyword argument."
             )
 
         history = self.fit(train_loader, val_loader, epochs=epochs)
@@ -283,10 +271,7 @@ class Trainer:
             val_loader = self._default_val_loader
 
         if train_loader is None:
-            raise ValueError(
-                "Trainer.fit(): train_loader is required — pass it directly "
-                "or set it at init time."
-            )
+            raise ValueError("Trainer.fit(): train_loader is required — pass it directly or set it at init time.")
 
         self._total_epochs = epochs
         self.stop_training = False
@@ -319,12 +304,12 @@ class Trainer:
                 try:
                     self.tracker.log(logs, step=epoch)
                 except Exception as exc:
-                    logger.warning("Trainer: tracker.log failed at epoch %d: %s", epoch, exc)
+                    self.logger.warning("Trainer: tracker.log failed at epoch %d: %s", epoch, exc)
 
             self._call_callbacks("on_epoch_end", epoch=epoch, logs=logs)
 
             if self.stop_training:
-                logger.info("Trainer: early stopping triggered at epoch %d.", epoch)
+                self.logger.info("Trainer: early stopping triggered at epoch %d.", epoch)
                 break
 
         self._call_callbacks("on_train_end")
@@ -378,9 +363,7 @@ class Trainer:
             else:
                 scaled_loss.backward()
 
-            is_accumulation_step = (
-                (batch_idx + 1) % self.gradient_accumulation_steps == 0
-            )
+            is_accumulation_step = (batch_idx + 1) % self.gradient_accumulation_steps == 0
             # Check if this is the last batch (handle partial windows at epoch end)
             try:
                 is_last_batch = batch_idx == len(loader) - 1  # type: ignore[arg-type]
@@ -389,27 +372,7 @@ class Trainer:
                 is_last_batch = False
 
             if is_accumulation_step or is_last_batch:
-                if self.clip_grad_norm is not None:
-                    if self._amp_enabled and self._scaler is not None:
-                        self._scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.clip_grad_norm
-                    )
-
-                if self._amp_enabled and self._scaler is not None:
-                    self._scaler.step(self.optimizer)
-                    self._scaler.update()
-                else:
-                    self.optimizer.step()
-
-                self.optimizer.zero_grad()
-
-                # Step non-Plateau schedulers after optimizer update
-                if (
-                    self.scheduler is not None
-                    and not isinstance(self.scheduler, ReduceLROnPlateau)
-                ):
-                    self.scheduler.step()
+                self._optimizer_step()
 
             batch_loss = loss.item()
             total_loss += batch_loss
@@ -417,17 +380,22 @@ class Trainer:
 
             self._call_callbacks("on_batch_end", batch=batch_idx, loss=batch_loss)
 
+        if num_batches == 0:
+            self.logger.warning("Training epoch produced zero batches. Check your DataLoader.")
+
         avg_loss = total_loss / max(num_batches, 1)
 
         # Average loss across DDP workers so the reported value is consistent
         if self._ddp:
             try:
                 from mindtrace.cluster.distributed import all_reduce_mean as _arm  # noqa: PLC0415
+
                 _t = torch.tensor(avg_loss, device=self.device)
                 avg_loss = float(_arm(_t).item())
             except ImportError:
                 try:
                     import torch.distributed as _dist  # noqa: PLC0415
+
                     if _dist.is_initialized() and _dist.get_world_size() > 1:
                         _t = torch.tensor(avg_loss, device=self.device)
                         _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
@@ -436,6 +404,32 @@ class Trainer:
                     pass
 
         return {"train/loss": avg_loss}
+
+    def _optimizer_step(self) -> None:
+        """Execute one optimizer step with optional gradient clipping and AMP scaling.
+
+        Handles the full sequence: unscale (AMP), clip gradients, step the
+        optimizer (via scaler or directly), zero gradients, and step the LR
+        scheduler (for non-Plateau schedulers).
+
+        This is called once per accumulation window inside :meth:`_train_epoch`.
+        """
+        if self.clip_grad_norm is not None:
+            if self._amp_enabled and self._scaler is not None:
+                self._scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
+
+        if self._amp_enabled and self._scaler is not None:
+            self._scaler.step(self.optimizer)
+            self._scaler.update()
+        else:
+            self.optimizer.step()
+
+        self.optimizer.zero_grad()
+
+        # Step non-Plateau schedulers after optimizer update
+        if self.scheduler is not None and not isinstance(self.scheduler, ReduceLROnPlateau):
+            self.scheduler.step()
 
     def _val_epoch(self, loader: Any) -> dict[str, float]:
         """Execute one full validation epoch.
@@ -499,8 +493,7 @@ class Trainer:
             inputs, targets = batch
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "Trainer: cannot unpack batch into (inputs, targets). "
-                "Provide a 'batch_fn' to handle this batch layout."
+                "Trainer: cannot unpack batch into (inputs, targets). Provide a 'batch_fn' to handle this batch layout."
             ) from exc
 
         return inputs, targets
@@ -521,8 +514,7 @@ class Trainer:
             return data.to(self.device)
 
         if isinstance(data, dict):
-            return {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                    for k, v in data.items()}
+            return {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in data.items()}
 
         if isinstance(data, (list, tuple)):
             moved = [self._to_device(v) for v in data]
@@ -571,7 +563,7 @@ class Trainer:
             try:
                 method(self, **kwargs)
             except Exception as exc:
-                logger.error(
+                self.logger.error(
                     "Trainer: callback %s.%s raised an exception: %s",
                     type(cb).__name__,
                     event,

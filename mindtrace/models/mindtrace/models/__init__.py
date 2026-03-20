@@ -11,6 +11,26 @@ lifecycle     Model stage management, ModelCard, and promotion logic.
 """
 
 # -- Serving -----------------------------------------------------------------
+# -- Architectures -----------------------------------------------------------
+from mindtrace.models.architectures import (
+    BackboneInfo,
+    DetectionHead,
+    FPNSegHead,
+    LinearHead,
+    LinearSegHead,
+    MLPHead,
+    ModelWrapper,
+    MultiLabelHead,
+    build_backbone,
+    build_model,
+    build_model_from_hf,
+    list_backbones,
+    register_backbone,
+)
+from mindtrace.models.architectures.backbones import (
+    BackboneFeatures,
+    BackboneProtocol,
+)
 from mindtrace.models.serving import (
     ClassificationResult,
     DetectionResult,
@@ -61,27 +81,6 @@ from mindtrace.models.training.losses import (
     TverskyLoss,
 )
 
-# -- Architectures -----------------------------------------------------------
-from mindtrace.models.architectures import (
-    BackboneInfo,
-    DetectionHead,
-    FPNSegHead,
-    LinearHead,
-    LinearSegHead,
-    MLPHead,
-    ModelWrapper,
-    MultiLabelHead,
-    build_backbone,
-    build_model,
-    build_model_from_hf,
-    list_backbones,
-    register_backbone,
-)
-from mindtrace.models.architectures.backbones import (
-    BackboneFeatures,
-    BackboneProtocol,
-)
-
 # Adapters (guarded — heavy optional deps)
 try:
     from mindtrace.models.architectures.backbones import (
@@ -108,12 +107,12 @@ from mindtrace.models.evaluation import (
 
 # -- Lifecycle ---------------------------------------------------------------
 from mindtrace.models.lifecycle import (
+    VALID_TRANSITIONS,
     EvalResult,
     ModelCard,
     ModelStage,
     PromotionError,
     PromotionResult,
-    VALID_TRANSITIONS,
     demote,
     promote,
 )
@@ -201,3 +200,6 @@ __all__ = [
     "promote",
     "demote",
 ]
+
+# -- Archivers (ML-specific, self-register with Registry at import time) ------
+import mindtrace.models.archivers  # noqa: F401, E402
