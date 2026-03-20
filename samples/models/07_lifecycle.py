@@ -14,7 +14,7 @@ Demonstrates:
 """
 
 import os
-import torch
+
 import torch.nn as nn
 
 from mindtrace.models.lifecycle import (
@@ -45,9 +45,9 @@ print(f"  stage (default)         : {card.stage}")
 print(f"  stage value             : {card.stage.value}")
 
 card.add_result("val/accuracy", 0.927, dataset="imagenet-val", split="val")
-card.add_result("val/f1",       0.912, dataset="imagenet-val", split="val")
+card.add_result("val/f1", 0.912, dataset="imagenet-val", split="val")
 card.add_result("val/precision", 0.918)
-card.add_result("val/recall",   0.907)
+card.add_result("val/recall", 0.907)
 
 print(f"  summary()               : {card.summary()}")
 print(f"  get_metric('val/accuracy'): {card.get_metric('val/accuracy')}")
@@ -88,16 +88,26 @@ print(f"  VALID_TRANSITIONS keys: {[s.value for s in VALID_TRANSITIONS]}")
 # ── Section: promote() passing thresholds ─────────────────────────────────
 print("\n── promote(): passing thresholds ──")
 
+
 class _DummyRegistry:
     """Minimal registry stub — stores items in memory."""
-    def __init__(self): self._store = {}
-    def save(self, key, obj): self._store[key] = obj; print(f"  registry.save({key!r})")
-    def load(self, key): return self._store.get(key)
+
+    def __init__(self):
+        self._store = {}
+
+    def save(self, key, obj):
+        self._store[key] = obj
+        print(f"  registry.save({key!r})")
+
+    def load(self, key):
+        return self._store.get(key)
+
 
 registry = _DummyRegistry()
 
 result: PromotionResult = promote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.STAGING,
     require={"val/accuracy": 0.90, "val/f1": 0.88},
 )
@@ -112,7 +122,8 @@ print("\n── promote(): failing thresholds (catches PromotionError) ──")
 
 try:
     promote(
-        card, registry,
+        card,
+        registry,
         to_stage=ModelStage.PRODUCTION,
         require={"val/accuracy": 0.99},  # threshold too high
     )
@@ -124,7 +135,8 @@ print("\n── promote(): dry_run=True ──")
 
 card_pre_stage = card.stage
 dry = promote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.PRODUCTION,
     require={"val/accuracy": 0.90},
     dry_run=True,
@@ -136,7 +148,8 @@ print(f"  card.stage unchanged   : {card.stage == card_pre_stage}")
 print("\n── promote(): STAGING → PRODUCTION ──")
 
 result_prod: PromotionResult = promote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.PRODUCTION,
     require={"val/accuracy": 0.90},
 )
@@ -147,7 +160,8 @@ print(f"  card.stage : {card.stage}")
 print("\n── demote(): PRODUCTION → ARCHIVED ──")
 
 demote_result = demote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.ARCHIVED,
     reason="Performance regression detected in v1 — retiring model.",
 )
@@ -179,7 +193,7 @@ print("\n── Registry integration: save card dict + model weights ──")
 
 simple_model = nn.Linear(10, 3)
 registry.save(f"{card.name}:{card.version}:weights", simple_model.state_dict())
-registry.save(f"{card.name}:{card.version}:card",    card.to_dict())
+registry.save(f"{card.name}:{card.version}:card", card.to_dict())
 print(f"  Registry keys  : {list(registry._store.keys())}")
 
 # ── Section: Full lifecycle journey ───────────────────────────────────────
@@ -191,9 +205,9 @@ journey_card.add_result("val/map75", 0.65)
 registry2 = _DummyRegistry()
 
 stages = [
-    (ModelStage.STAGING,    {"val/map50": 0.65}),
+    (ModelStage.STAGING, {"val/map50": 0.65}),
     (ModelStage.PRODUCTION, {"val/map50": 0.70, "val/map75": 0.60}),
-    (ModelStage.ARCHIVED,   {}),
+    (ModelStage.ARCHIVED, {}),
 ]
 for target, reqs in stages:
     r = promote(journey_card, registry2, to_stage=target, require=reqs or None)

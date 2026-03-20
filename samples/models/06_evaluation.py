@@ -26,6 +26,7 @@ from mindtrace.models.evaluation.metrics.segmentation import dice_score, mean_io
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+
 def make_cls_loader(n=128, num_classes=3, h=32, w=32, batch=16):
     x = torch.randn(n, 3, h, w)
     y = torch.randint(0, num_classes, (n,))
@@ -49,8 +50,10 @@ print("\n── EvaluationRunner: classification ──")
 
 NUM_CLS = 3
 cls_model = nn.Sequential(
-    nn.Conv2d(3, 16, 3, padding=1), nn.ReLU(),
-    nn.AdaptiveAvgPool2d(1), nn.Flatten(),
+    nn.Conv2d(3, 16, 3, padding=1),
+    nn.ReLU(),
+    nn.AdaptiveAvgPool2d(1),
+    nn.Flatten(),
     nn.Linear(16, NUM_CLS),
 )
 cls_loader = make_cls_loader(num_classes=NUM_CLS)
@@ -74,14 +77,13 @@ print("\n── EvaluationRunner: segmentation ──")
 
 NUM_SEG = 4
 seg_model = nn.Sequential(
-    nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(),
-    nn.Conv2d(32, NUM_SEG, 1),     # (B, NUM_SEG, H, W) logits
+    nn.Conv2d(3, 32, 3, padding=1),
+    nn.ReLU(),
+    nn.Conv2d(32, NUM_SEG, 1),  # (B, NUM_SEG, H, W) logits
 )
 seg_loader = make_seg_loader(num_classes=NUM_SEG)
 
-runner_seg = EvaluationRunner(
-    model=seg_model, task="segmentation", num_classes=NUM_SEG, device="auto"
-)
+runner_seg = EvaluationRunner(model=seg_model, task="segmentation", num_classes=NUM_SEG, device="auto")
 seg_results = runner_seg.run(seg_loader, step=0)
 print(f"  mIoU          : {seg_results['mIoU']:.4f}")
 print(f"  mean_dice     : {seg_results['mean_dice']:.4f}")
@@ -93,20 +95,24 @@ print("\n── EvaluationRunner: detection ──")
 
 NUM_DET = 3
 
+
 class FakeDetector(nn.Module):
     """Returns per-image dicts with boxes / scores / labels."""
+
     def forward(self, images):
         b = images.shape[0]
         results = []
         for _ in range(b):
             n_preds = torch.randint(1, 5, (1,)).item()
             boxes = torch.rand(n_preds, 4)
-            boxes[:, 2:] += boxes[:, :2]          # ensure x2>x1, y2>y1
-            results.append({
-                "boxes":  boxes * 100,
-                "scores": torch.rand(n_preds),
-                "labels": torch.randint(0, NUM_DET, (n_preds,)),
-            })
+            boxes[:, 2:] += boxes[:, :2]  # ensure x2>x1, y2>y1
+            results.append(
+                {
+                    "boxes": boxes * 100,
+                    "scores": torch.rand(n_preds),
+                    "labels": torch.randint(0, NUM_DET, (n_preds,)),
+                }
+            )
         return results
 
 
@@ -119,18 +125,18 @@ def det_batch_fn(batch):
         n_gt = torch.randint(1, 4, (1,)).item()
         gt_boxes = torch.rand(n_gt, 4)
         gt_boxes[:, 2:] += gt_boxes[:, :2]
-        targets.append({
-            "boxes":  gt_boxes * 100,
-            "labels": torch.randint(0, NUM_DET, (n_gt,)),
-        })
+        targets.append(
+            {
+                "boxes": gt_boxes * 100,
+                "labels": torch.randint(0, NUM_DET, (n_gt,)),
+            }
+        )
     return images, targets
 
 
 det_images = torch.randn(8, 3, 64, 64)
-det_targets_dummy = torch.zeros(8)          # placeholder — det_batch_fn ignores it
-det_loader = DataLoader(
-    TensorDataset(det_images, det_targets_dummy), batch_size=4
-)
+det_targets_dummy = torch.zeros(8)  # placeholder — det_batch_fn ignores it
+det_loader = DataLoader(TensorDataset(det_images, det_targets_dummy), batch_size=4)
 runner_det = EvaluationRunner(
     model=FakeDetector(),
     task="detection",
@@ -150,9 +156,7 @@ IN_FEAT = 16
 reg_model = nn.Sequential(nn.Linear(IN_FEAT, 64), nn.ReLU(), nn.Linear(64, 1))
 reg_loader = make_reg_loader(in_features=IN_FEAT)
 
-runner_reg = EvaluationRunner(
-    model=reg_model, task="regression", num_classes=1, device="auto"
-)
+runner_reg = EvaluationRunner(model=reg_model, task="regression", num_classes=1, device="auto")
 reg_results = runner_reg.run(reg_loader, step=0)
 print(f"  mae  : {reg_results['mae']:.4f}")
 print(f"  mse  : {reg_results['mse']:.4f}")
@@ -164,27 +168,25 @@ print("\n── Standalone metric functions ──")
 
 N = 200
 preds_cls = np.random.randint(0, 3, N)
-tgts_cls  = np.random.randint(0, 3, N)
+tgts_cls = np.random.randint(0, 3, N)
 print(f"  accuracy      : {accuracy(preds_cls, tgts_cls):.4f}")
 
-report = classification_report(preds_cls, tgts_cls, num_classes=3,
-                                class_names=["a", "b", "c"])
+report = classification_report(preds_cls, tgts_cls, num_classes=3, class_names=["a", "b", "c"])
 print(f"  macro f1      : {report['macro']['f1']:.4f}")
 print(f"  num_samples   : {report['num_samples']}")
 
 H, W = 32, 32
 preds_seg = np.random.randint(0, 4, (N, H, W))
-tgts_seg  = np.random.randint(0, 4, (N, H, W))
-iou_res   = mean_iou(preds_seg, tgts_seg, num_classes=4)
-dice_res  = dice_score(preds_seg, tgts_seg, num_classes=4)
+tgts_seg = np.random.randint(0, 4, (N, H, W))
+iou_res = mean_iou(preds_seg, tgts_seg, num_classes=4)
+dice_res = dice_score(preds_seg, tgts_seg, num_classes=4)
 print(f"  mean_iou      : {iou_res['mIoU']:.4f}")
 print(f"  mean_dice     : {dice_res['mean_dice']:.4f}")
 
-det_preds = [{"boxes": np.random.rand(3, 4) * 100,
-              "scores": np.random.rand(3),
-              "labels": np.array([0, 1, 2])} for _ in range(10)]
-det_tgts  = [{"boxes": np.random.rand(2, 4) * 100,
-              "labels": np.array([0, 2])} for _ in range(10)]
+det_preds = [
+    {"boxes": np.random.rand(3, 4) * 100, "scores": np.random.rand(3), "labels": np.array([0, 1, 2])} for _ in range(10)
+]
+det_tgts = [{"boxes": np.random.rand(2, 4) * 100, "labels": np.array([0, 2])} for _ in range(10)]
 map_res = mean_average_precision(det_preds, det_tgts, num_classes=3, iou_threshold=0.5)
 print(f"  mAP@0.5       : {map_res['mAP']:.4f}")
 
@@ -198,10 +200,12 @@ print(f"  r2_score      : {r2_score(y_pred, y_true):.4f}")
 # ── Section: Custom batch_fn ──────────────────────────────────────────────
 print("\n── Custom batch_fn ──")
 
+
 def dict_batch_fn(batch):
     """Handle batches where inputs arrive as {'image': tensor}."""
     images, labels = batch
     return images, labels
+
 
 runner_custom = EvaluationRunner(
     model=cls_model,

@@ -14,6 +14,7 @@ Availability flags
     ``True`` when :mod:`torch.distributed` is importable **and** the current
     platform supports at least one distributed backend.
 """
+
 from __future__ import annotations
 
 import logging
@@ -87,9 +88,7 @@ def init_distributed(
             environment.
     """
     if not _DISTRIBUTED_AVAILABLE:
-        logger.warning(
-            "torch.distributed is not available — skipping init_distributed()."
-        )
+        logger.warning("torch.distributed is not available — skipping init_distributed().")
         return
 
     if dist.is_initialized():
@@ -113,8 +112,7 @@ def init_distributed(
     effective_world = int(os.environ.get("WORLD_SIZE", 1))
 
     logger.info(
-        "Initialising torch.distributed: backend=%s, rank=%d, world_size=%d, "
-        "master=%s:%s",
+        "Initialising torch.distributed: backend=%s, rank=%d, world_size=%d, master=%s:%s",
         backend,
         effective_rank,
         effective_world,
@@ -208,9 +206,7 @@ def wrap_ddp(
     if device_ids is None and torch.cuda.is_available():
         device_ids = [torch.cuda.current_device()]
 
-    logger.info(
-        "Wrapping model in DistributedDataParallel (device_ids=%s).", device_ids
-    )
+    logger.info("Wrapping model in DistributedDataParallel (device_ids=%s).", device_ids)
     return torch.nn.parallel.DistributedDataParallel(model, device_ids=device_ids)
 
 

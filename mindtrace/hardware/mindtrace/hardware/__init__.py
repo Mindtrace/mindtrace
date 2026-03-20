@@ -125,10 +125,10 @@ def __getattr__(name):
     elif name in {"AbstractPLC", "PLCTag", "PLCStatus", "OPCUAClient", "MockPLC"}:
         from mindtrace.hardware.plc import (
             AbstractPLC,
-            PLCTag,
-            PLCStatus,
-            OPCUAClient,
             MockPLC,
+            OPCUAClient,
+            PLCStatus,
+            PLCTag,
         )
 
         mapping = {
@@ -142,8 +142,8 @@ def __getattr__(name):
     elif name in {"AbstractScanner", "ScanResult", "MockScanner"}:
         from mindtrace.hardware.scanner import (
             AbstractScanner,
-            ScanResult,
             MockScanner,
+            ScanResult,
         )
 
         mapping = {

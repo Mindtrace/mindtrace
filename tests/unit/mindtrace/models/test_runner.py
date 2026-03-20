@@ -30,7 +30,6 @@ from mindtrace.models.evaluation.metrics.detection import (
 from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
 from mindtrace.models.evaluation.runner import EvaluationRunner
 
-
 # ---------------------------------------------------------------------------
 # Environment fixture (Mindtrace base class requires certain env vars)
 # ---------------------------------------------------------------------------
@@ -120,12 +119,7 @@ def _make_segmentation_loader(
 
     if perfect:
         # Logits = 10 * one_hot(targets)  -- argmax will equal targets.
-        inputs = (
-            torch.nn.functional.one_hot(targets.long(), num_classes)
-            .permute(0, 3, 1, 2)
-            .float()
-            * 10.0
-        )
+        inputs = torch.nn.functional.one_hot(targets.long(), num_classes).permute(0, 3, 1, 2).float() * 10.0
     else:
         inputs = torch.randn(num_samples, num_classes, h, w)
 
@@ -177,16 +171,12 @@ class TestEvaluationRunnerInit:
             EvaluationRunner(nn.Linear(4, 3), task="classification", num_classes=-2)
 
     def test_device_auto_resolves_correctly(self):
-        runner = EvaluationRunner(
-            nn.Linear(4, 3), task="classification", num_classes=3, device="auto"
-        )
+        runner = EvaluationRunner(nn.Linear(4, 3), task="classification", num_classes=3, device="auto")
         expected = "cuda" if torch.cuda.is_available() else "cpu"
         assert runner._device == torch.device(expected)
 
     def test_explicit_device_cpu(self):
-        runner = EvaluationRunner(
-            nn.Linear(4, 3), task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(nn.Linear(4, 3), task="classification", num_classes=3, device="cpu")
         assert runner._device == torch.device("cpu")
 
 
@@ -198,18 +188,14 @@ class TestEvaluationRunnerInit:
 class TestRunClassification:
     def test_run_returns_expected_keys(self):
         loader, model = _make_classification_loader()
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         results = runner.run(loader)
         for key in ("accuracy", "precision", "recall", "f1", "classification_report"):
             assert key in results
 
     def test_perfect_classification_metrics(self):
         loader, model = _make_classification_loader(perfect=True)
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         results = runner.run(loader)
         assert results["accuracy"] == pytest.approx(1.0)
         assert results["precision"] == pytest.approx(1.0)
@@ -218,9 +204,7 @@ class TestRunClassification:
 
     def test_classification_values_in_range(self):
         loader, model = _make_classification_loader()
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         results = runner.run(loader)
         for key in ("accuracy", "precision", "recall", "f1"):
             assert 0.0 <= results[key] <= 1.0
@@ -263,13 +247,9 @@ class TestRunDetection:
         model = _DetectionModel(preds)
 
         # Create a simple loader that yields (dummy_input, target_list) pairs.
-        batches = [
-            ([torch.zeros(1)] * 2, tgts[i : i + 2]) for i in range(0, 4, 2)
-        ]
+        batches = [([torch.zeros(1)] * 2, tgts[i : i + 2]) for i in range(0, 4, 2)]
 
-        runner = EvaluationRunner(
-            model, task="detection", num_classes=2, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="detection", num_classes=2, device="cpu")
         results = runner.run(iter(batches))
 
         for key in ("mAP@50", "mAP@75", "mAP@50:95"):
@@ -280,13 +260,9 @@ class TestRunDetection:
         preds, tgts, _ = self._build_detection_data(num_images=4)
         model = _DetectionModel(preds)
 
-        batches = [
-            ([torch.zeros(1)] * 2, tgts[i : i + 2]) for i in range(0, 4, 2)
-        ]
+        batches = [([torch.zeros(1)] * 2, tgts[i : i + 2]) for i in range(0, 4, 2)]
 
-        runner = EvaluationRunner(
-            model, task="detection", num_classes=2, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="detection", num_classes=2, device="cpu")
         results = runner.run(iter(batches))
 
         assert results["mAP@50"] == pytest.approx(1.0, abs=0.05)
@@ -300,18 +276,14 @@ class TestRunDetection:
 class TestRunSegmentation:
     def test_segmentation_returns_expected_keys(self):
         loader, model = _make_segmentation_loader()
-        runner = EvaluationRunner(
-            model, task="segmentation", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="segmentation", num_classes=3, device="cpu")
         results = runner.run(loader)
         for key in ("mIoU", "mean_dice", "pixel_accuracy", "iou_per_class", "dice_per_class"):
             assert key in results
 
     def test_perfect_segmentation_metrics(self):
         loader, model = _make_segmentation_loader(perfect=True)
-        runner = EvaluationRunner(
-            model, task="segmentation", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="segmentation", num_classes=3, device="cpu")
         results = runner.run(loader)
         assert results["pixel_accuracy"] == pytest.approx(1.0)
         assert results["mIoU"] == pytest.approx(1.0)
@@ -326,18 +298,14 @@ class TestRunSegmentation:
 class TestRunRegression:
     def test_regression_returns_expected_keys(self):
         loader, model = _make_regression_loader()
-        runner = EvaluationRunner(
-            model, task="regression", num_classes=1, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="regression", num_classes=1, device="cpu")
         results = runner.run(loader)
         for key in ("mae", "mse", "rmse", "r2"):
             assert key in results
 
     def test_regression_metrics_non_negative(self):
         loader, model = _make_regression_loader()
-        runner = EvaluationRunner(
-            model, task="regression", num_classes=1, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="regression", num_classes=1, device="cpu")
         results = runner.run(loader)
         assert results["mae"] >= 0.0
         assert results["mse"] >= 0.0
@@ -345,9 +313,7 @@ class TestRunRegression:
 
     def test_regression_rmse_equals_sqrt_mse(self):
         loader, model = _make_regression_loader()
-        runner = EvaluationRunner(
-            model, task="regression", num_classes=1, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="regression", num_classes=1, device="cpu")
         results = runner.run(loader)
         assert results["rmse"] == pytest.approx(np.sqrt(results["mse"]), abs=1e-7)
 
@@ -360,9 +326,7 @@ class TestRunRegression:
 class TestEmptyLoader:
     def test_classification_empty_loader_returns_zeros(self):
         model = nn.Linear(4, 3)
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         results = runner.run(iter([]))
         assert results["accuracy"] == 0.0
         assert results["precision"] == 0.0
@@ -372,9 +336,7 @@ class TestEmptyLoader:
 
     def test_detection_empty_loader_returns_zeros(self):
         model = _DetectionModel([])
-        runner = EvaluationRunner(
-            model, task="detection", num_classes=2, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="detection", num_classes=2, device="cpu")
         results = runner.run(iter([]))
         assert results["mAP@50"] == 0.0
         assert results["mAP@75"] == 0.0
@@ -382,9 +344,7 @@ class TestEmptyLoader:
 
     def test_segmentation_empty_loader_returns_zeros(self):
         model = nn.Identity()
-        runner = EvaluationRunner(
-            model, task="segmentation", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="segmentation", num_classes=3, device="cpu")
         results = runner.run(iter([]))
         assert results["mIoU"] == 0.0
         assert results["mean_dice"] == 0.0
@@ -392,9 +352,7 @@ class TestEmptyLoader:
 
     def test_regression_empty_loader_returns_zeros(self):
         model = nn.Linear(4, 1)
-        runner = EvaluationRunner(
-            model, task="regression", num_classes=1, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="regression", num_classes=1, device="cpu")
         results = runner.run(iter([]))
         assert results["mae"] == 0.0
         assert results["mse"] == 0.0
@@ -500,17 +458,13 @@ class TestBatchFn:
 class TestEvaluateMethod:
     def test_evaluate_uses_default_loader(self):
         loader, model = _make_classification_loader()
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu", loader=loader
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu", loader=loader)
         results = runner.evaluate()
         assert "accuracy" in results
 
     def test_evaluate_raises_without_loader(self):
         model = nn.Linear(4, 3)
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         with pytest.raises(ValueError, match="loader is required"):
             runner.evaluate()
 
@@ -529,9 +483,7 @@ class TestEvaluateMethod:
 
     def test_run_raises_without_loader(self):
         model = nn.Linear(4, 3)
-        runner = EvaluationRunner(
-            model, task="classification", num_classes=3, device="cpu"
-        )
+        runner = EvaluationRunner(model, task="classification", num_classes=3, device="cpu")
         with pytest.raises(ValueError, match="loader is required"):
             runner.run()
 
@@ -648,18 +600,14 @@ class TestMeanAveragePrecision:
     def test_multi_class_map(self):
         preds = [
             {
-                "boxes": np.array(
-                    [[10, 10, 50, 50], [60, 60, 100, 100]], dtype=np.float64
-                ),
+                "boxes": np.array([[10, 10, 50, 50], [60, 60, 100, 100]], dtype=np.float64),
                 "scores": np.array([0.95, 0.90]),
                 "labels": np.array([0, 1]),
             }
         ]
         targets = [
             {
-                "boxes": np.array(
-                    [[10, 10, 50, 50], [60, 60, 100, 100]], dtype=np.float64
-                ),
+                "boxes": np.array([[10, 10, 50, 50], [60, 60, 100, 100]], dtype=np.float64),
                 "labels": np.array([0, 1]),
             }
         ]

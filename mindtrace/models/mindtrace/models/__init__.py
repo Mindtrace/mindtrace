@@ -218,6 +218,8 @@ __all__ = [
 ]
 
 # -- Pipeline (core inference orchestration) --------------------------------
+# -- Archivers (ML-specific, self-register with Registry at import time) ------
+import mindtrace.models.archivers  # noqa: F401, E402
 from mindtrace.models.auto_segmenter import (
     AutoSegmenter,
     AutoSegmenterInput,
@@ -237,7 +239,3 @@ from mindtrace.models.pipeline import (
     PipelineUnloadOutput,
     PipelineUnloadTaskSchema,
 )
-
-
-# -- Archivers (ML-specific, self-register with Registry at import time) ------
-import mindtrace.models.archivers  # noqa: F401, E402

@@ -18,6 +18,7 @@ Typical usage::
     with MockCamera(image_dir="/data/test_images") as cam:
         frame = cam.grab()
 """
+
 from __future__ import annotations
 
 import glob
@@ -29,7 +30,6 @@ import numpy as np
 
 from mindtrace.hardware.camera.base import AbstractCamera, CameraFrame, CameraStatus
 from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
     CameraConnectionError,
 )
 
@@ -122,8 +122,7 @@ class MockCamera(AbstractCamera):
         """
         if self._status != CameraStatus.CONNECTED:
             raise CameraConnectionError(
-                f"MockCamera {self._camera_id!r} is not connected.  "
-                "Call connect() or use as a context manager."
+                f"MockCamera {self._camera_id!r} is not connected.  Call connect() or use as a context manager."
             )
 
         self._frame_counter += 1
@@ -167,33 +166,23 @@ class MockCamera(AbstractCamera):
             CameraConnectionError: If the camera is not connected.
         """
         if self._status != CameraStatus.CONNECTED:
-            raise CameraConnectionError(
-                f"MockCamera {self._camera_id!r} must be connected before configure()."
-            )
+            raise CameraConnectionError(f"MockCamera {self._camera_id!r} must be connected before configure().")
 
         if "exposure_us" in params:
             self._exposure_us = float(params["exposure_us"])
-            self.logger.debug(
-                f"MockCamera {self._camera_id!r}: exposure_us={self._exposure_us}"
-            )
+            self.logger.debug(f"MockCamera {self._camera_id!r}: exposure_us={self._exposure_us}")
 
         if "gain_db" in params:
             self._gain_db = float(params["gain_db"])
-            self.logger.debug(
-                f"MockCamera {self._camera_id!r}: gain_db={self._gain_db}"
-            )
+            self.logger.debug(f"MockCamera {self._camera_id!r}: gain_db={self._gain_db}")
 
         if "width" in params:
             self._width = int(params["width"])
-            self.logger.debug(
-                f"MockCamera {self._camera_id!r}: width={self._width}"
-            )
+            self.logger.debug(f"MockCamera {self._camera_id!r}: width={self._width}")
 
         if "height" in params:
             self._height = int(params["height"])
-            self.logger.debug(
-                f"MockCamera {self._camera_id!r}: height={self._height}"
-            )
+            self.logger.debug(f"MockCamera {self._camera_id!r}: height={self._height}")
 
         if "fps" in params:
             self._fps = float(params["fps"])
@@ -214,9 +203,9 @@ class MockCamera(AbstractCamera):
     def _generate_synthetic_frame(self) -> np.ndarray:
         """Return a solid-colour H×W×3 uint8 array with frame_id in green channel."""
         frame = np.zeros((self._height, self._width, 3), dtype=np.uint8)
-        frame[:, :, 0] = 128                           # Red constant
-        frame[:, :, 1] = self._frame_counter % 256    # Green encodes frame_id
-        frame[:, :, 2] = 64                            # Blue constant
+        frame[:, :, 0] = 128  # Red constant
+        frame[:, :, 1] = self._frame_counter % 256  # Green encodes frame_id
+        frame[:, :, 2] = 64  # Blue constant
         return frame
 
     def _load_images(self, directory: str) -> None:
@@ -244,15 +233,10 @@ class MockCamera(AbstractCamera):
                 if img is not None:
                     loaded.append(img)
             except Exception as exc:  # noqa: BLE001
-                self.logger.warning(
-                    f"MockCamera: could not load image {path!r}: {exc} — skipping."
-                )
+                self.logger.warning(f"MockCamera: could not load image {path!r}: {exc} — skipping.")
 
         self._image_pool = loaded
-        self.logger.info(
-            f"MockCamera {self._camera_id!r}: loaded {len(loaded)} images "
-            f"from {directory!r}."
-        )
+        self.logger.info(f"MockCamera {self._camera_id!r}: loaded {len(loaded)} images from {directory!r}.")
 
     @staticmethod
     def _load_single_image(path: str) -> np.ndarray | None:

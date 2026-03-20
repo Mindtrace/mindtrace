@@ -17,34 +17,33 @@ tests run correctly regardless of whether the real library is installed.
 
 from __future__ import annotations
 
-import os
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest
 
-from mindtrace.models.tracking.tracker import CompositeTracker, Tracker
-from mindtrace.models.tracking.backends.mlflow import MLflowTracker
-from mindtrace.models.tracking.backends.wandb import WandBTracker
-from mindtrace.models.tracking.backends.tensorboard import TensorBoardTracker
-from mindtrace.models.tracking.registry_bridge import RegistryBridge, RegistryProtocol
-from mindtrace.models.tracking.bridges import (
+from mindtrace.models.tracking.backends.mlflow import MLflowTracker  # noqa: E402
+from mindtrace.models.tracking.backends.tensorboard import TensorBoardTracker  # noqa: E402
+from mindtrace.models.tracking.backends.wandb import WandBTracker  # noqa: E402
+from mindtrace.models.tracking.bridges import (  # noqa: E402
     HuggingFaceTrackerBridge,
     UltralyticsTrackerBridge,
 )
+from mindtrace.models.tracking.registry_bridge import RegistryBridge, RegistryProtocol  # noqa: E402
+from mindtrace.models.tracking.tracker import CompositeTracker, Tracker  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Detect whether optional backends are truly installed
 # ---------------------------------------------------------------------------
 try:
-    import mlflow as _real_mlflow
+    import mlflow as _real_mlflow  # noqa: F401
 
     _HAS_MLFLOW = True
 except ImportError:
     _HAS_MLFLOW = False
 
 try:
-    import wandb as _real_wandb  # noqa: F841
+    import wandb as _real_wandb  # noqa: F401
 
     _HAS_WANDB = True
 except ImportError:
@@ -77,12 +76,8 @@ def mock_mlflow(monkeypatch):
     instantiated even when mlflow is not installed.
     """
     mock_mod = MagicMock()
-    monkeypatch.setattr(
-        "mindtrace.models.tracking.backends.mlflow._MLFLOW_AVAILABLE", True
-    )
-    monkeypatch.setattr(
-        "mindtrace.models.tracking.backends.mlflow.mlflow", mock_mod
-    )
+    monkeypatch.setattr("mindtrace.models.tracking.backends.mlflow._MLFLOW_AVAILABLE", True)
+    monkeypatch.setattr("mindtrace.models.tracking.backends.mlflow.mlflow", mock_mod)
     return mock_mod
 
 
@@ -95,12 +90,8 @@ def mock_wandb(monkeypatch):
     instantiated even when wandb is not installed.
     """
     mock_mod = MagicMock()
-    monkeypatch.setattr(
-        "mindtrace.models.tracking.backends.wandb._WANDB_AVAILABLE", True
-    )
-    monkeypatch.setattr(
-        "mindtrace.models.tracking.backends.wandb.wandb", mock_mod
-    )
+    monkeypatch.setattr("mindtrace.models.tracking.backends.wandb._WANDB_AVAILABLE", True)
+    monkeypatch.setattr("mindtrace.models.tracking.backends.wandb.wandb", mock_mod)
     return mock_mod
 
 
@@ -358,7 +349,7 @@ class TestMLflowTracker:
         mock_mlflow.set_experiment.assert_called_with("exp")
 
     def test_init_no_tracking_uri_uses_mindtrace_default(self, mock_mlflow):
-        tracker = MLflowTracker(tracking_uri=None, experiment_name="default")
+        MLflowTracker(tracking_uri=None, experiment_name="default")
         # Should derive URI from MINDTRACE_DIR_PATHS.ROOT/mlflow
         mock_mlflow.set_tracking_uri.assert_called_once()
         uri = mock_mlflow.set_tracking_uri.call_args[0][0]
@@ -470,9 +461,7 @@ class TestWandBTracker:
     def test_start_run(self, mock_wandb):
         tracker = WandBTracker(project="proj")
         tracker.start_run("run-1", {"epochs": 10})
-        mock_wandb.init.assert_called_once_with(
-            project="proj", entity=None, name="run-1", config={"epochs": 10}
-        )
+        mock_wandb.init.assert_called_once_with(project="proj", entity=None, name="run-1", config={"epochs": 10})
 
     def test_log(self, mock_wandb):
         tracker = WandBTracker(project="proj")
@@ -487,20 +476,15 @@ class TestWandBTracker:
     def test_log_model(self, mock_wandb, monkeypatch):
         """log_model should save state_dict, create artifact, upload, and cleanup."""
         mock_torch = MagicMock()
-        monkeypatch.setattr(
-            "mindtrace.models.tracking.backends.wandb._TORCH_AVAILABLE", True
-        )
-        monkeypatch.setattr(
-            "mindtrace.models.tracking.backends.wandb.torch", mock_torch
-        )
+        monkeypatch.setattr("mindtrace.models.tracking.backends.wandb._TORCH_AVAILABLE", True)
+        monkeypatch.setattr("mindtrace.models.tracking.backends.wandb.torch", mock_torch)
 
         tracker = WandBTracker(project="proj")
 
         model = MagicMock()
         model.state_dict.return_value = {"weights": [1, 2, 3]}
 
-        with patch("os.path.exists", return_value=True), \
-             patch("os.unlink") as mock_unlink:
+        with patch("os.path.exists", return_value=True), patch("os.unlink") as mock_unlink:
             tracker.log_model(model, "detector", "v2.0")
 
         mock_torch.save.assert_called_once()
@@ -511,9 +495,7 @@ class TestWandBTracker:
     def test_log_model_torch_unavailable(self, mock_wandb, monkeypatch):
         """When torch is not available, log_model raises ImportError."""
         tracker = WandBTracker(project="proj")
-        monkeypatch.setattr(
-            "mindtrace.models.tracking.backends.wandb._TORCH_AVAILABLE", False
-        )
+        monkeypatch.setattr("mindtrace.models.tracking.backends.wandb._TORCH_AVAILABLE", False)
         with pytest.raises(ImportError, match="PyTorch is required"):
             tracker.log_model(MagicMock(), "model", "v1")
 
@@ -544,9 +526,7 @@ class TestWandBTracker:
         with patch("os.path.isdir", return_value=False):
             tracker.log_artifact("/some/path/weights.pt")
 
-        mock_wandb.Artifact.assert_called_once_with(
-            name="weights.pt", type="artifact"
-        )
+        mock_wandb.Artifact.assert_called_once_with(name="weights.pt", type="artifact")
 
     def test_finish(self, mock_wandb):
         tracker = WandBTracker(project="proj")
@@ -595,9 +575,7 @@ class TestTensorBoardTracker:
         tracker = TensorBoardTracker(log_dir="/tmp/tb")
 
         tracker.start_run("exp", {"lr": 0.01, "batch": 32})
-        mock_writer.add_text.assert_called_once_with(
-            "hparams/config", str({"lr": 0.01, "batch": 32}), global_step=0
-        )
+        mock_writer.add_text.assert_called_once_with("hparams/config", str({"lr": 0.01, "batch": 32}), global_step=0)
 
     @patch("mindtrace.models.tracking.backends.tensorboard.SummaryWriter")
     def test_start_run_empty_config_skips_text(self, mock_sw):
@@ -626,9 +604,7 @@ class TestTensorBoardTracker:
         tracker._writer = mock_writer
 
         tracker.log_params({"dropout": 0.3})
-        mock_writer.add_text.assert_called_once_with(
-            "hparams/params", str({"dropout": 0.3})
-        )
+        mock_writer.add_text.assert_called_once_with("hparams/params", str({"dropout": 0.3}))
 
     @patch("mindtrace.models.tracking.backends.tensorboard.SummaryWriter")
     def test_log_model_writes_text_note(self, mock_sw):
@@ -816,8 +792,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list
-                    if c[0][0] == "on_fit_epoch_end"][0]
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.epoch = 7
@@ -831,8 +806,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list
-                    if c[0][0] == "on_fit_epoch_end"][0]
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.epoch = 0
@@ -846,8 +820,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list
-                    if c[0][0] == "on_fit_epoch_end"][0]
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.epoch = 1
@@ -861,8 +834,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        end_cb = [c[0][1] for c in model.add_callback.call_args_list
-                  if c[0][0] == "on_train_end"][0]
+        end_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_train_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.metrics = {"mAP50": 0.92, "mAP50-95": 0.78}
@@ -880,8 +852,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        end_cb = [c[0][1] for c in model.add_callback.call_args_list
-                  if c[0][0] == "on_train_end"][0]
+        end_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_train_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.metrics = {"loss": 0.1}
@@ -892,8 +863,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        end_cb = [c[0][1] for c in model.add_callback.call_args_list
-                  if c[0][0] == "on_train_end"][0]
+        end_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_train_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.metrics = {"loss": 0.1}
@@ -906,8 +876,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list
-                    if c[0][0] == "on_fit_epoch_end"][0]
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.epoch = 0
@@ -927,8 +896,7 @@ class TestUltralyticsTrackerBridge:
         model = MagicMock()
         bridge.attach(model)
 
-        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list
-                    if c[0][0] == "on_fit_epoch_end"][0]
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
 
         trainer_mock = MagicMock()
         trainer_mock.epoch = 0
@@ -972,10 +940,7 @@ class TestHuggingFaceTrackerBridge:
         bridge = HuggingFaceTrackerBridge(tracker)
         state = self._make_state(global_step=5)
 
-        bridge.on_log(
-            args=None, state=state, control=None,
-            logs={"loss": 0.5, "status": "running", "epoch": 2}
-        )
+        bridge.on_log(args=None, state=state, control=None, logs={"loss": 0.5, "status": "running", "epoch": 2})
 
         logged = tracker.log.call_args[0][0]
         assert "status" not in logged
@@ -990,10 +955,7 @@ class TestHuggingFaceTrackerBridge:
 
     def test_on_log_none_tracker_is_noop(self):
         bridge = HuggingFaceTrackerBridge(None)
-        bridge.on_log(
-            args=None, state=MagicMock(), control=None,
-            logs={"loss": 0.5}
-        )
+        bridge.on_log(args=None, state=MagicMock(), control=None, logs={"loss": 0.5})
 
     def test_on_log_empty_loggable_skips_call(self):
         """If all values are non-numeric, tracker.log should not be called."""
@@ -1001,10 +963,7 @@ class TestHuggingFaceTrackerBridge:
         bridge = HuggingFaceTrackerBridge(tracker)
         state = self._make_state(global_step=1)
 
-        bridge.on_log(
-            args=None, state=state, control=None,
-            logs={"status": "training", "msg": "ok"}
-        )
+        bridge.on_log(args=None, state=state, control=None, logs={"status": "training", "msg": "ok"})
         tracker.log.assert_not_called()
 
     def test_on_log_tracker_error_is_caught(self):

@@ -32,38 +32,37 @@ Run:
     torchrun --nproc_per_node=<N> samples/models/09_multi_gpu.py  # real DDP
 """
 
-import tempfile
 import os
+import tempfile
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from mindtrace.cluster.distributed import (
-    init_distributed,
-    cleanup_distributed,
-    wrap_ddp,
-    is_main_process,
     all_reduce_mean,
+    cleanup_distributed,
+    init_distributed,
+    is_main_process,
+    wrap_ddp,
 )
 from mindtrace.models import (
+    EarlyStopping,
+    ModelCheckpoint,
+    ProgressLogger,
+    Trainer,
     build_model,
     build_optimizer,
     build_scheduler,
-    Trainer,
-    ModelCheckpoint,
-    EarlyStopping,
-    ProgressLogger,
 )
 from mindtrace.registry import Registry
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-NUM_CLASSES   = 4
-BATCH_SIZE    = 16
+NUM_CLASSES = 4
+BATCH_SIZE = 16
 TRAIN_SAMPLES = 128
-VAL_SAMPLES   = 32
+VAL_SAMPLES = 32
 H = W = 32
 EPOCHS = 3
 
@@ -71,11 +70,11 @@ EPOCHS = 3
 def _make_loaders(use_distributed_sampler: bool = False):
     train_x = torch.randn(TRAIN_SAMPLES, 3, H, W)
     train_y = torch.randint(0, NUM_CLASSES, (TRAIN_SAMPLES,))
-    val_x   = torch.randn(VAL_SAMPLES, 3, H, W)
-    val_y   = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
+    val_x = torch.randn(VAL_SAMPLES, 3, H, W)
+    val_y = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
 
     if use_distributed_sampler and torch.distributed.is_initialized():
-        rank       = torch.distributed.get_rank()
+        rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         train_sampler = DistributedSampler(
             TensorDataset(train_x, train_y),
@@ -89,15 +88,14 @@ def _make_loaders(use_distributed_sampler: bool = False):
             sampler=train_sampler,
         )
     else:
-        train_loader = DataLoader(
-            TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True
-        )
+        train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True)
 
     val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
     return train_loader, val_loader
 
 
 # ── Section 1 — low-level distributed API ──────────────────────────────────────
+
 
 def demo_cluster_primitives():
     """Illustrate the mindtrace.cluster.distributed primitives directly."""
@@ -127,7 +125,7 @@ def demo_cluster_primitives():
 
     # ── 1c. Metric synchronisation across ranks ─────────────────────────────────
     loss_tensor = torch.tensor(0.4321)
-    avg_loss    = all_reduce_mean(loss_tensor)
+    avg_loss = all_reduce_mean(loss_tensor)
     print(f"all_reduce_mean(0.4321) → {avg_loss.item():.4f}  (no-op at world_size=1)")
 
     # ── 1d. Rank-guarded operations (only rank-0 saves / logs) ─────────────────
@@ -141,6 +139,7 @@ def demo_cluster_primitives():
 
 # ── Section 2 — Trainer(ddp=True) high-level integration ──────────────────────
 
+
 def demo_trainer_ddp():
     """Show Trainer(ddp=True) — the one-liner path to DDP training."""
     print("\n" + "=" * 60)
@@ -150,7 +149,7 @@ def demo_trainer_ddp():
     tmpdir = tempfile.mkdtemp(prefix="mt_ddp_")
     registry = Registry(tmpdir)
 
-    model     = build_model("resnet18", head="linear", num_classes=NUM_CLASSES, pretrained=False)
+    model = build_model("resnet18", head="linear", num_classes=NUM_CLASSES, pretrained=False)
     optimizer = build_optimizer("adam", model, lr=1e-3)
     scheduler = build_scheduler("cosine", optimizer, T_max=EPOCHS)
 
@@ -166,7 +165,7 @@ def demo_trainer_ddp():
         optimizer=optimizer,
         scheduler=scheduler,
         device="cpu",
-        ddp=True,                   # ← enables the DDP path
+        ddp=True,  # ← enables the DDP path
         gradient_checkpointing=False,
         callbacks=[
             ProgressLogger(),
@@ -190,6 +189,7 @@ def demo_trainer_ddp():
 
 # ── Section 3 — Custom training loop with cluster primitives ──────────────────
 
+
 def demo_custom_loop():
     """Manual training loop using cluster primitives — for non-Trainer use."""
     print("\n" + "=" * 60)
@@ -202,8 +202,8 @@ def demo_custom_loop():
     os.environ.setdefault("WORLD_SIZE", "1")
     init_distributed(backend="gloo")
 
-    model     = build_model("resnet18", head="linear", num_classes=NUM_CLASSES, pretrained=False)
-    model     = wrap_ddp(model, device_ids=[])
+    model = build_model("resnet18", head="linear", num_classes=NUM_CLASSES, pretrained=False)
+    model = wrap_ddp(model, device_ids=[])
     optimizer = build_optimizer("adam", model, lr=1e-3)
     criterion = nn.CrossEntropyLoss()
 

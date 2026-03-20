@@ -28,8 +28,8 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileExportRequest,
     ConfigFileImportRequest,
     StreamStartRequest,
-    StreamStopRequest,
     StreamStatusRequest,
+    StreamStopRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
 

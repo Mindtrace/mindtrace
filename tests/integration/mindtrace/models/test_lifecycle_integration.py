@@ -8,10 +8,8 @@ Synthetic data (torch.randn) keeps tests fast (~1-3s each on CPU).
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -28,8 +26,8 @@ from mindtrace.models import (
     build_model,
     build_optimizer,
     build_scheduler,
-    promote,
     demote,
+    promote,
 )
 from mindtrace.models.training.losses import (
     CIoULoss,
@@ -42,7 +40,6 @@ from mindtrace.models.training.losses import (
     TverskyLoss,
 )
 from mindtrace.registry import Registry
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -173,8 +170,11 @@ class TestRegistryRoundtrip:
         optimizer = build_optimizer("adamw", resnet_model, lr=1e-3)
         callbacks = [ModelCheckpoint(registry=registry, monitor="val/loss", mode="min", model_name="ckpt_test")]
         trainer = Trainer(
-            model=resnet_model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, callbacks=callbacks, device="cpu",
+            model=resnet_model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            callbacks=callbacks,
+            device="cpu",
         )
         trainer.fit(train_loader, val_loader, epochs=2)
         assert len(list(registry.keys())) > 0
@@ -186,11 +186,14 @@ class TestRegistryRoundtrip:
 class TestLossesInTraining:
     """Verify every loss function works in a real training loop."""
 
-    @pytest.mark.parametrize("loss_fn", [
-        nn.CrossEntropyLoss(),
-        FocalLoss(alpha=0.25, gamma=2.0),
-        LabelSmoothingCrossEntropy(smoothing=0.1),
-    ])
+    @pytest.mark.parametrize(
+        "loss_fn",
+        [
+            nn.CrossEntropyLoss(),
+            FocalLoss(alpha=0.25, gamma=2.0),
+            LabelSmoothingCrossEntropy(smoothing=0.1),
+        ],
+    )
     def test_classification_losses(self, synthetic_loaders, loss_fn):
         train_loader, _ = synthetic_loaders
         model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
@@ -211,11 +214,14 @@ class TestLossesInTraining:
         history = trainer.fit(train_loader, epochs=2)
         assert all(v > 0 for v in history["train/loss"])
 
-    @pytest.mark.parametrize("loss_cls,kwargs", [
-        (DiceLoss, {"smooth": 1.0}),
-        (TverskyLoss, {"alpha": 0.5, "beta": 0.5}),
-        (IoULoss, {}),
-    ])
+    @pytest.mark.parametrize(
+        "loss_cls,kwargs",
+        [
+            (DiceLoss, {"smooth": 1.0}),
+            (TverskyLoss, {"alpha": 0.5, "beta": 0.5}),
+            (IoULoss, {}),
+        ],
+    )
     def test_segmentation_losses(self, loss_cls, kwargs):
         """Run segmentation losses with real tensors (forward + backward)."""
         n_cls = NUM_CLASSES
@@ -249,11 +255,14 @@ class TestLossesInTraining:
 class TestOptimizerSchedulerCombinations:
     """Test real optimizer+scheduler pairs in training."""
 
-    @pytest.mark.parametrize("opt_name,opt_kwargs", [
-        ("adamw", {"lr": 1e-3, "weight_decay": 0.01}),
-        ("sgd", {"lr": 1e-2, "momentum": 0.9}),
-        ("adam", {"lr": 1e-3}),
-    ])
+    @pytest.mark.parametrize(
+        "opt_name,opt_kwargs",
+        [
+            ("adamw", {"lr": 1e-3, "weight_decay": 0.01}),
+            ("sgd", {"lr": 1e-2, "momentum": 0.9}),
+            ("adam", {"lr": 1e-3}),
+        ],
+    )
     def test_optimizers(self, synthetic_loaders, opt_name, opt_kwargs):
         train_loader, _ = synthetic_loaders
         model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
@@ -262,19 +271,25 @@ class TestOptimizerSchedulerCombinations:
         history = trainer.fit(train_loader, epochs=2)
         assert len(history["train/loss"]) == 2
 
-    @pytest.mark.parametrize("sched_name,sched_kwargs", [
-        ("step", {"step_size": 2, "gamma": 0.5}),
-        ("cosine", {"T_max": 10}),
-        ("plateau", {"patience": 2, "factor": 0.5}),
-    ])
+    @pytest.mark.parametrize(
+        "sched_name,sched_kwargs",
+        [
+            ("step", {"step_size": 2, "gamma": 0.5}),
+            ("cosine", {"T_max": 10}),
+            ("plateau", {"patience": 2, "factor": 0.5}),
+        ],
+    )
     def test_schedulers(self, synthetic_loaders, sched_name, sched_kwargs):
         train_loader, val_loader = synthetic_loaders
         model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         optimizer = build_optimizer("adamw", model, lr=1e-3)
         scheduler = build_scheduler(sched_name, optimizer, **sched_kwargs)
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, scheduler=scheduler, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device="cpu",
         )
         history = trainer.fit(train_loader, val_loader, epochs=3)
         assert len(history["train/loss"]) == 3
@@ -309,8 +324,11 @@ class TestCallbackIntegration:
         optimizer = build_optimizer("adamw", model, lr=1e-5)  # tiny LR = no improvement
         callbacks = [EarlyStopping(patience=2, monitor="val/loss", mode="min")]
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, callbacks=callbacks, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            callbacks=callbacks,
+            device="cpu",
         )
         history = trainer.fit(loader, loader, epochs=20)
         # Should stop well before 20 epochs
@@ -325,8 +343,11 @@ class TestCallbackIntegration:
             ProgressLogger(),
         ]
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, callbacks=callbacks, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            callbacks=callbacks,
+            device="cpu",
         )
         trainer.fit(train_loader, val_loader, epochs=3)
         keys = list(registry.keys())
@@ -338,8 +359,10 @@ class TestCallbackIntegration:
         model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         optimizer = build_optimizer("adamw", model, lr=1e-3)
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            device="cpu",
             gradient_accumulation_steps=4,
         )
         history = trainer.fit(train_loader, epochs=2)
@@ -350,8 +373,10 @@ class TestCallbackIntegration:
         model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
         optimizer = build_optimizer("adamw", model, lr=1e-3)
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            device="cpu",
             clip_grad_norm=1.0,
         )
         history = trainer.fit(train_loader, epochs=2)
@@ -375,16 +400,23 @@ class TestArchitectureVariants:
     def test_segmentation_heads_with_spatial_backbone(self):
         """Seg heads need spatial (B, C, H, W) features, not flat (B, C) from ResNet.
         Test with a simple conv backbone that preserves spatial dims."""
+
         class SpatialBackbone(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Conv2d(3, 64, 3, padding=1)
+
             def forward(self, x):
                 return self.conv(x)
 
-        from mindtrace.models.architectures.heads.segmentation import LinearSegHead, FPNSegHead
+        from mindtrace.models.architectures.heads.segmentation import FPNSegHead, LinearSegHead
+
         for HeadCls in [LinearSegHead, FPNSegHead]:
-            head = HeadCls(in_channels=64, num_classes=NUM_CLASSES) if HeadCls == LinearSegHead else HeadCls(in_channels=64, num_classes=NUM_CLASSES, hidden_dim=32)
+            head = (
+                HeadCls(in_channels=64, num_classes=NUM_CLASSES)
+                if HeadCls == LinearSegHead
+                else HeadCls(in_channels=64, num_classes=NUM_CLASSES, hidden_dim=32)
+            )
             backbone = SpatialBackbone()
             x = torch.randn(2, 3, IMG_SIZE, IMG_SIZE)
             features = backbone(x)  # (2, 64, 32, 32)
@@ -400,6 +432,7 @@ class TestArchitectureVariants:
 
     def test_detection_head_shapes(self):
         from mindtrace.models.architectures.heads.detection import DetectionHead
+
         head = DetectionHead(in_channels=512, num_classes=NUM_CLASSES, num_anchors=3)
         features = torch.randn(2, 512)
         cls_logits, bbox_reg = head(features)
@@ -415,6 +448,7 @@ class TestEvaluationWithKnownData:
 
     def test_perfect_classifier(self):
         """A model that always returns the correct class gets accuracy=1.0."""
+
         class PerfectModel(nn.Module):
             def forward(self, x):
                 batch_size = x.shape[0]
@@ -435,6 +469,7 @@ class TestEvaluationWithKnownData:
 
     def test_regression_metrics(self):
         """Test regression evaluation with known predicted=target."""
+
         class IdentityModel(nn.Module):
             def forward(self, x):
                 return x[:, 0, 0, 0]  # just return first pixel as scalar
@@ -466,8 +501,11 @@ class TestTensorBoardIntegration:
         tb_dir = str(tmp_path / "tb_logs")
         tracker = TensorBoardTracker(log_dir=tb_dir)
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, tracker=tracker, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            tracker=tracker,
+            device="cpu",
         )
 
         with tracker.run("test_run", config={"lr": 1e-3}):

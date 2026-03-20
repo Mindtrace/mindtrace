@@ -12,7 +12,6 @@ batch=4, 32x32) keep every test fast (<5s on CPU).
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -27,10 +26,6 @@ from mindtrace.models import (
     build_model,
     build_optimizer,
 )
-from mindtrace.models.training.losses import (
-    LabelSmoothingCrossEntropy,
-    SupConLoss,
-)
 from mindtrace.models.evaluation.metrics.classification import (
     roc_auc_score,
     top_k_accuracy,
@@ -40,8 +35,11 @@ from mindtrace.models.evaluation.metrics.segmentation import (
     frequency_weighted_iou,
     pixel_accuracy,
 )
+from mindtrace.models.training.losses import (
+    LabelSmoothingCrossEntropy,
+    SupConLoss,
+)
 from mindtrace.registry import Registry
-
 
 # ---------------------------------------------------------------------------
 # Optional dependency guards
@@ -50,30 +48,35 @@ from mindtrace.registry import Registry
 try:
     import onnx
     import onnxscript  # noqa: F401 -- required by torch.onnx.export
+
     _HAS_ONNX = True
 except ImportError:
     _HAS_ONNX = False
 
 try:
     import onnxruntime  # noqa: F401
+
     _HAS_ONNXRUNTIME = True
 except ImportError:
     _HAS_ONNXRUNTIME = False
 
 try:
     import timm
+
     _HAS_TIMM = True
 except ImportError:
     _HAS_TIMM = False
 
 try:
     import transformers  # noqa: F401
+
     _HAS_TRANSFORMERS = True
 except ImportError:
     _HAS_TRANSFORMERS = False
 
 try:
     import peft  # noqa: F401
+
     _HAS_PEFT = True
 except ImportError:
     _HAS_PEFT = False
@@ -201,9 +204,7 @@ class TestOnnxExportAndArchiver:
 
         dummy_export = torch.randn(1, 3, IMG_SIZE, IMG_SIZE)
         proto = self._export_to_onnx(resnet_model, dummy_export, tmp_path)
-        session = ort.InferenceSession(
-            proto.SerializeToString(), providers=["CPUExecutionProvider"]
-        )
+        session = ort.InferenceSession(proto.SerializeToString(), providers=["CPUExecutionProvider"])
 
         for bs in [1, 2, 8]:
             inp = np.random.randn(bs, 3, IMG_SIZE, IMG_SIZE).astype(np.float32)
@@ -291,9 +292,7 @@ class TestHuggingFaceDINOBackbone:
 
     def test_dino_v2_small_with_linear_head(self):
         """Build full model: dino_v2_small + linear head, verify logit shape."""
-        model = build_model(
-            "dino_v2_small", "linear", num_classes=NUM_CLASSES, pretrained=False
-        )
+        model = build_model("dino_v2_small", "linear", num_classes=NUM_CLASSES, pretrained=False)
         model.eval()
 
         x = torch.randn(2, 3, 224, 224)
@@ -365,12 +364,14 @@ class TestClassificationLosses:
     def test_top_k_accuracy_known_predictions(self):
         """Verify top-k accuracy with known probability distributions."""
         # 4 samples, 4 classes. Ground truth: [0, 1, 2, 3]
-        probs = np.array([
-            [0.9, 0.05, 0.03, 0.02],  # correct: class 0
-            [0.1, 0.7, 0.15, 0.05],   # correct: class 1
-            [0.1, 0.1, 0.6, 0.2],     # correct: class 2
-            [0.05, 0.05, 0.1, 0.8],   # correct: class 3
-        ])
+        probs = np.array(
+            [
+                [0.9, 0.05, 0.03, 0.02],  # correct: class 0
+                [0.1, 0.7, 0.15, 0.05],  # correct: class 1
+                [0.1, 0.1, 0.6, 0.2],  # correct: class 2
+                [0.05, 0.05, 0.1, 0.8],  # correct: class 3
+            ]
+        )
         targets = np.array([0, 1, 2, 3])
 
         assert top_k_accuracy(probs, targets, k=1) == pytest.approx(1.0)
@@ -378,10 +379,12 @@ class TestClassificationLosses:
 
     def test_top_k_accuracy_partial(self):
         """Top-1 misses some, top-2 catches them."""
-        probs = np.array([
-            [0.4, 0.5, 0.05, 0.05],   # top-1 = class 1, true = 0 -> miss
-            [0.3, 0.6, 0.05, 0.05],   # top-1 = class 1, true = 1 -> hit
-        ])
+        probs = np.array(
+            [
+                [0.4, 0.5, 0.05, 0.05],  # top-1 = class 1, true = 0 -> miss
+                [0.3, 0.6, 0.05, 0.05],  # top-1 = class 1, true = 1 -> hit
+            ]
+        )
         targets = np.array([0, 1])
 
         assert top_k_accuracy(probs, targets, k=1) == pytest.approx(0.5)
@@ -390,14 +393,16 @@ class TestClassificationLosses:
     def test_roc_auc_score_perfect_separation(self):
         """Perfect class separation yields AUC close to 1.0."""
         # 3 classes, 6 samples, perfectly separated
-        probs = np.array([
-            [0.95, 0.03, 0.02],
-            [0.90, 0.05, 0.05],
-            [0.02, 0.93, 0.05],
-            [0.03, 0.90, 0.07],
-            [0.01, 0.04, 0.95],
-            [0.02, 0.03, 0.95],
-        ])
+        probs = np.array(
+            [
+                [0.95, 0.03, 0.02],
+                [0.90, 0.05, 0.05],
+                [0.02, 0.93, 0.05],
+                [0.03, 0.90, 0.07],
+                [0.01, 0.04, 0.95],
+                [0.02, 0.03, 0.95],
+            ]
+        )
         targets = np.array([0, 0, 1, 1, 2, 2])
 
         auc = roc_auc_score(probs, targets, num_classes=3, average="macro")
@@ -527,8 +532,11 @@ class TestPeftLoRA:
         # LoRA requires pretrained=True to freeze base weights then add adapters
         lora_cfg = LoRAConfig(r=4, lora_alpha=4, target_modules="qv")
         model = build_model(
-            "dino_v2_small_reg", "linear", num_classes=NUM_CLASSES,
-            pretrained=True, lora_config=lora_cfg,
+            "dino_v2_small_reg",
+            "linear",
+            num_classes=NUM_CLASSES,
+            pretrained=True,
+            lora_config=lora_cfg,
         )
         backbone = model.backbone
 
@@ -543,8 +551,11 @@ class TestPeftLoRA:
         from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
 
         model = build_model(
-            "dino_v2_small_reg", "linear", num_classes=NUM_CLASSES,
-            pretrained=False, lora_config=LoRAConfig(r=4, target_modules="qv"),
+            "dino_v2_small_reg",
+            "linear",
+            num_classes=NUM_CLASSES,
+            pretrained=False,
+            lora_config=LoRAConfig(r=4, target_modules="qv"),
         )
         model.eval()
 
@@ -558,8 +569,11 @@ class TestPeftLoRA:
         from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
 
         model = build_model(
-            "dino_v2_small_reg", "linear", num_classes=NUM_CLASSES,
-            pretrained=False, lora_config=LoRAConfig(r=4, target_modules="qv"),
+            "dino_v2_small_reg",
+            "linear",
+            num_classes=NUM_CLASSES,
+            pretrained=False,
+            lora_config=LoRAConfig(r=4, target_modules="qv"),
         )
         optimizer = build_optimizer("adamw", model, lr=1e-3)
 
@@ -568,8 +582,10 @@ class TestPeftLoRA:
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
 
         trainer = Trainer(
-            model=model, loss_fn=nn.CrossEntropyLoss(),
-            optimizer=optimizer, device="cpu",
+            model=model,
+            loss_fn=nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            device="cpu",
         )
         history = trainer.fit(loader, epochs=1)
 

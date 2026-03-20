@@ -18,6 +18,7 @@ Typical usage::
         print(tag.value, tag.data_type)
         plc.write("ns=2;s=Conveyor.SetPoint", 120.5)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,21 +27,20 @@ import threading
 import time
 from typing import Any
 
-from mindtrace.hardware.plc.base import AbstractPLC, PLCStatus, PLCTag
 from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
-    PLCTagError,
     PLCTagReadError,
     PLCTagWriteError,
     SDKNotAvailableError,
 )
+from mindtrace.hardware.plc.base import AbstractPLC, PLCStatus, PLCTag
 
 # ---------------------------------------------------------------------------
 # Optional SDK guard
 # ---------------------------------------------------------------------------
 try:
     import asyncua  # type: ignore[import]
-    import asyncua.ua  # type: ignore[import]
+    import asyncua.ua  # type: ignore[import] # noqa: F401
 
     _ASYNCUA_AVAILABLE = True
 except ImportError:
@@ -132,30 +132,23 @@ class OPCUAClient(AbstractPLC):
             )
 
         if self._status == PLCStatus.CONNECTED:
-            self.logger.debug(
-                f"OPCUAClient {self._host}:{self._port} already connected — skipping."
-            )
+            self.logger.debug(f"OPCUAClient {self._host}:{self._port} already connected — skipping.")
             return
 
-        self.logger.info(
-            f"Connecting OPCUAClient to opc.tcp://{self._host}:{self._port}"
-        )
+        self.logger.info(f"Connecting OPCUAClient to opc.tcp://{self._host}:{self._port}")
 
         try:
             self._start_event_loop()
             self._run_sync(self._async_connect())
             self._status = PLCStatus.CONNECTED
-            self.logger.info(
-                f"OPCUAClient connected: opc.tcp://{self._host}:{self._port}"
-            )
+            self.logger.info(f"OPCUAClient connected: opc.tcp://{self._host}:{self._port}")
         except PLCConnectionError:
             raise
         except Exception as exc:
             self._status = PLCStatus.ERROR
             self._stop_event_loop()
             raise PLCConnectionError(
-                f"OPCUAClient failed to connect to "
-                f"opc.tcp://{self._host}:{self._port}: {exc}"
+                f"OPCUAClient failed to connect to opc.tcp://{self._host}:{self._port}: {exc}"
             ) from exc
 
     def disconnect(self) -> None:
@@ -166,24 +159,18 @@ class OPCUAClient(AbstractPLC):
         if self._status == PLCStatus.DISCONNECTED:
             return
 
-        self.logger.info(
-            f"Disconnecting OPCUAClient from opc.tcp://{self._host}:{self._port}"
-        )
+        self.logger.info(f"Disconnecting OPCUAClient from opc.tcp://{self._host}:{self._port}")
 
         try:
             if self._loop is not None and self._client is not None:
                 self._run_sync(self._async_disconnect())
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                f"Error during OPCUAClient disconnect: {exc}"
-            )
+            self.logger.warning(f"Error during OPCUAClient disconnect: {exc}")
         finally:
             self._stop_event_loop()
             self._client = None
             self._status = PLCStatus.DISCONNECTED
-            self.logger.info(
-                f"OPCUAClient disconnected from opc.tcp://{self._host}:{self._port}"
-            )
+            self.logger.info(f"OPCUAClient disconnected from opc.tcp://{self._host}:{self._port}")
 
     def read(self, tag: str) -> PLCTag:
         """Read a single OPC-UA node value.
@@ -209,10 +196,7 @@ class OPCUAClient(AbstractPLC):
         except (PLCConnectionError, PLCTagReadError):
             raise
         except Exception as exc:
-            raise PLCTagReadError(
-                f"OPCUAClient failed to read tag {tag!r} "
-                f"(node_id={node_id!r}): {exc}"
-            ) from exc
+            raise PLCTagReadError(f"OPCUAClient failed to read tag {tag!r} (node_id={node_id!r}): {exc}") from exc
 
         return PLCTag(
             name=tag,
@@ -242,8 +226,7 @@ class OPCUAClient(AbstractPLC):
             raise
         except Exception as exc:
             raise PLCTagWriteError(
-                f"OPCUAClient failed to write tag {tag!r} "
-                f"(node_id={node_id!r}) value={value!r}: {exc}"
+                f"OPCUAClient failed to write tag {tag!r} (node_id={node_id!r}) value={value!r}: {exc}"
             ) from exc
 
         self.logger.debug(f"OPCUAClient wrote tag {tag!r} = {value!r}")
@@ -283,7 +266,6 @@ class OPCUAClient(AbstractPLC):
         type_name = type(value).__name__
 
         # Map asyncua variant type to friendly string
-        import asyncua.ua as ua  # type: ignore[import]
 
         variant_type = dv.Value.VariantType
         data_type = _OPCUA_DATA_TYPE_MAP.get(variant_type.name, type_name.lower())
@@ -292,7 +274,6 @@ class OPCUAClient(AbstractPLC):
 
     async def _async_write(self, node_id: str, value: Any) -> None:
         """Write one node value."""
-        import asyncua.ua as ua  # type: ignore[import]
 
         node = self._client.get_node(node_id)
         await node.write_value(value)
@@ -346,8 +327,7 @@ class OPCUAClient(AbstractPLC):
         """
         if self._loop is None:
             raise PLCConnectionError(
-                f"OPCUAClient {self._host}:{self._port}: "
-                "event loop is not running.  Call connect() first."
+                f"OPCUAClient {self._host}:{self._port}: event loop is not running.  Call connect() first."
             )
 
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
@@ -356,8 +336,7 @@ class OPCUAClient(AbstractPLC):
         except concurrent.futures.TimeoutError as exc:
             future.cancel()
             raise PLCConnectionError(
-                f"OPCUAClient {self._host}:{self._port}: "
-                f"operation timed out after {self._timeout}s"
+                f"OPCUAClient {self._host}:{self._port}: operation timed out after {self._timeout}s"
             ) from exc
 
     # ------------------------------------------------------------------

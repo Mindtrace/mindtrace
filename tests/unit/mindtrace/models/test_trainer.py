@@ -12,19 +12,18 @@ config / logging infrastructure is required.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest
 
 torch = pytest.importorskip("torch")
 
-import torch.nn as nn
-from torch.optim import SGD
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+import torch.nn as nn  # noqa: E402
+from torch.optim import SGD  # noqa: E402
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR  # noqa: E402
 
-from mindtrace.models.training.trainer import Trainer
-from mindtrace.models.training.callbacks import Callback
+from mindtrace.models.training.callbacks import Callback  # noqa: E402
+from mindtrace.models.training.trainer import Trainer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Environment & fixtures
@@ -114,15 +113,20 @@ class TestTrainerInit:
     def test_amp_disabled_on_cpu(self, simple_model, loss_fn, optimizer):
         """mixed_precision=True with cpu device should disable AMP silently."""
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
-            device="cpu", mixed_precision=True,
+            simple_model,
+            loss_fn,
+            optimizer,
+            device="cpu",
+            mixed_precision=True,
         )
         assert trainer._amp_enabled is False
         assert trainer._scaler is None
 
     def test_gradient_accumulation_stored(self, simple_model, loss_fn, optimizer):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             gradient_accumulation_steps=4,
         )
         assert trainer.gradient_accumulation_steps == 4
@@ -130,14 +134,18 @@ class TestTrainerInit:
     def test_gradient_accumulation_invalid_raises(self, simple_model, loss_fn, optimizer):
         with pytest.raises(ValueError, match="gradient_accumulation_steps must be >= 1"):
             _make_trainer(
-                simple_model, loss_fn, optimizer,
+                simple_model,
+                loss_fn,
+                optimizer,
                 gradient_accumulation_steps=0,
             )
 
     def test_gradient_accumulation_negative_raises(self, simple_model, loss_fn, optimizer):
         with pytest.raises(ValueError, match="gradient_accumulation_steps must be >= 1"):
             _make_trainer(
-                simple_model, loss_fn, optimizer,
+                simple_model,
+                loss_fn,
+                optimizer,
                 gradient_accumulation_steps=-2,
             )
 
@@ -175,34 +183,46 @@ class TestTrainerInit:
         """When model has gradient_checkpointing_enable(), it gets called."""
         model = nn.Linear(IN_FEATURES, OUT_FEATURES)
         model.gradient_checkpointing_enable = MagicMock()
-        trainer = _make_trainer(
-            model, loss_fn, SGD(model.parameters(), lr=0.01),
+        _make_trainer(
+            model,
+            loss_fn,
+            SGD(model.parameters(), lr=0.01),
             gradient_checkpointing=True,
         )
         model.gradient_checkpointing_enable.assert_called_once()
 
     def test_gradient_checkpointing_ignored_when_unsupported(
-        self, simple_model, loss_fn, optimizer,
+        self,
+        simple_model,
+        loss_fn,
+        optimizer,
     ):
         """When model lacks the method, no error is raised."""
         assert not hasattr(simple_model, "gradient_checkpointing_enable")
         # Should not raise
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             gradient_checkpointing=True,
         )
         assert trainer is not None
 
     def test_default_loaders_stored(self, simple_model, loss_fn, optimizer, train_loader, val_loader):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
-            train_loader=train_loader, val_loader=val_loader,
+            simple_model,
+            loss_fn,
+            optimizer,
+            train_loader=train_loader,
+            val_loader=val_loader,
         )
         assert trainer._default_train_loader is train_loader
         assert trainer._default_val_loader is val_loader
 
     def test_batch_fn_stored(self, simple_model, loss_fn, optimizer):
-        fn = lambda batch: (batch[0], batch[1])
+        def fn(batch):
+            return (batch[0], batch[1])
+
         trainer = _make_trainer(simple_model, loss_fn, optimizer, batch_fn=fn)
         assert trainer.batch_fn is fn
 
@@ -249,7 +269,11 @@ class TestFit:
         assert len(history["val/loss"]) == 2
 
     def test_fit_no_val_loader_skips_validation(
-        self, simple_model, loss_fn, optimizer, train_loader,
+        self,
+        simple_model,
+        loss_fn,
+        optimizer,
+        train_loader,
     ):
         trainer = _make_trainer(simple_model, loss_fn, optimizer)
         history = trainer.fit(train_loader, val_loader=None, epochs=1)
@@ -257,8 +281,11 @@ class TestFit:
 
     def test_fit_uses_default_loaders(self, simple_model, loss_fn, optimizer, train_loader, val_loader):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
-            train_loader=train_loader, val_loader=val_loader,
+            simple_model,
+            loss_fn,
+            optimizer,
+            train_loader=train_loader,
+            val_loader=val_loader,
         )
         history = trainer.fit(epochs=2)
         assert "train/loss" in history
@@ -271,6 +298,7 @@ class TestFit:
 
     def test_fit_early_stopping(self, simple_model, loss_fn, optimizer, train_loader):
         """A callback that sets stop_training=True should abort after that epoch."""
+
         class StopAfterOne(Callback):
             def on_epoch_end(self, trainer, **kwargs):
                 trainer.stop_training = True
@@ -300,7 +328,11 @@ class TestFit:
         assert tracker.log.call_count == 2
 
     def test_fit_tracker_exception_does_not_abort(
-        self, simple_model, loss_fn, optimizer, train_loader,
+        self,
+        simple_model,
+        loss_fn,
+        optimizer,
+        train_loader,
     ):
         tracker = MagicMock()
         tracker.log.side_effect = RuntimeError("tracker failure")
@@ -310,11 +342,19 @@ class TestFit:
         assert len(history["train/loss"]) == 2
 
     def test_fit_reduce_lr_on_plateau_stepped(
-        self, simple_model, loss_fn, optimizer, train_loader, val_loader,
+        self,
+        simple_model,
+        loss_fn,
+        optimizer,
+        train_loader,
+        val_loader,
     ):
         scheduler = ReduceLROnPlateau(optimizer, mode="min")
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer, scheduler=scheduler,
+            simple_model,
+            loss_fn,
+            optimizer,
+            scheduler=scheduler,
         )
         # Patch scheduler.step to verify it gets called with val loss
         with patch.object(scheduler, "step", wraps=scheduler.step) as mock_step:
@@ -350,7 +390,9 @@ class TestTrainEpoch:
     def test_gradient_accumulation_steps_1(self, simple_model, loss_fn, optimizer, train_loader):
         """With accum=1 the optimizer should step once per batch."""
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             gradient_accumulation_steps=1,
         )
         with patch.object(trainer, "_optimizer_step", wraps=trainer._optimizer_step) as mock:
@@ -361,7 +403,9 @@ class TestTrainEpoch:
         """With accum=4 and 8 batches, optimizer should step exactly 2 times."""
         loader = _make_loader(n_batches=8)
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             gradient_accumulation_steps=4,
         )
         with patch.object(trainer, "_optimizer_step", wraps=trainer._optimizer_step) as mock:
@@ -372,7 +416,9 @@ class TestTrainEpoch:
         """With accum=3 and 5 batches, optimizer steps at batch 2 and batch 4 (last)."""
         loader = _make_loader(n_batches=5)
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             gradient_accumulation_steps=3,
         )
         with patch.object(trainer, "_optimizer_step", wraps=trainer._optimizer_step) as mock:
@@ -396,7 +442,10 @@ class TestTrainEpoch:
         """Non-Plateau schedulers should be stepped after each optimizer step."""
         scheduler = StepLR(optimizer, step_size=1)
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer, scheduler=scheduler,
+            simple_model,
+            loss_fn,
+            optimizer,
+            scheduler=scheduler,
         )
         with patch.object(scheduler, "step", wraps=scheduler.step) as mock_step:
             trainer._train_epoch(train_loader)
@@ -489,9 +538,7 @@ class TestOptimizerStep:
         loss = loss_fn(out, y)
         loss.backward()
 
-        with patch(
-            "mindtrace.models.training.trainer.torch.nn.utils.clip_grad_norm_"
-        ) as mock_clip:
+        with patch("mindtrace.models.training.trainer.torch.nn.utils.clip_grad_norm_") as mock_clip:
             trainer._optimizer_step()
             mock_clip.assert_called_once()
             # Verify the max_norm argument
@@ -499,7 +546,11 @@ class TestOptimizerStep:
             assert args[1] == 0.5
 
     def test_gradient_clipping_not_applied_when_none(
-        self, simple_model, loss_fn, optimizer, train_loader,
+        self,
+        simple_model,
+        loss_fn,
+        optimizer,
+        train_loader,
     ):
         """When clip_grad_norm is None, clipping should not be called."""
         trainer = _make_trainer(simple_model, loss_fn, optimizer, clip_grad_norm=None)
@@ -508,9 +559,7 @@ class TestOptimizerStep:
         loss = loss_fn(out, y)
         loss.backward()
 
-        with patch(
-            "mindtrace.models.training.trainer.torch.nn.utils.clip_grad_norm_"
-        ) as mock_clip:
+        with patch("mindtrace.models.training.trainer.torch.nn.utils.clip_grad_norm_") as mock_clip:
             trainer._optimizer_step()
             mock_clip.assert_not_called()
 
@@ -529,7 +578,10 @@ class TestOptimizerStep:
         """ReduceLROnPlateau should NOT be stepped inside _optimizer_step."""
         scheduler = ReduceLROnPlateau(optimizer, mode="min")
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer, scheduler=scheduler,
+            simple_model,
+            loss_fn,
+            optimizer,
+            scheduler=scheduler,
         )
         x, y = train_loader[0]
         out = simple_model(x)
@@ -543,7 +595,10 @@ class TestOptimizerStep:
     def test_non_plateau_scheduler_stepped(self, simple_model, loss_fn, optimizer, train_loader):
         scheduler = StepLR(optimizer, step_size=1)
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer, scheduler=scheduler,
+            simple_model,
+            loss_fn,
+            optimizer,
+            scheduler=scheduler,
         )
         x, y = train_loader[0]
         out = simple_model(x)
@@ -591,9 +646,7 @@ class TestCallCallbacks:
         cb = MagicMock(spec=Callback)
         trainer = _make_trainer(simple_model, loss_fn, optimizer, callbacks=[cb])
         trainer._call_callbacks("on_epoch_end", epoch=5, logs={"train/loss": 0.1})
-        cb.on_epoch_end.assert_called_once_with(
-            trainer, epoch=5, logs={"train/loss": 0.1}
-        )
+        cb.on_epoch_end.assert_called_once_with(trainer, epoch=5, logs={"train/loss": 0.1})
 
     def test_callback_exception_caught(self, simple_model, loss_fn, optimizer):
         """A misbehaving callback should not crash the trainer."""
@@ -635,7 +688,9 @@ class TestTrain:
 
     def test_train_returns_flat_dict(self, simple_model, loss_fn, optimizer, train_loader):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             train_loader=train_loader,
         )
         result = trainer.train(epochs=3)
@@ -646,7 +701,9 @@ class TestTrain:
 
     def test_train_returns_last_epoch_values(self, simple_model, loss_fn, optimizer, train_loader):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer,
+            simple_model,
+            loss_fn,
+            optimizer,
             train_loader=train_loader,
         )
         result = trainer.train(epochs=3)
@@ -662,16 +719,21 @@ class TestTrain:
     def test_train_override_loaders(self, simple_model, loss_fn, optimizer, train_loader, val_loader):
         trainer = _make_trainer(simple_model, loss_fn, optimizer)
         result = trainer.train(
-            train_loader=train_loader, val_loader=val_loader, epochs=1,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=1,
         )
         assert "train/loss" in result
         assert "val/loss" in result
 
     def test_train_default_one_epoch(self, simple_model, loss_fn, optimizer, train_loader):
         trainer = _make_trainer(
-            simple_model, loss_fn, optimizer, train_loader=train_loader,
+            simple_model,
+            loss_fn,
+            optimizer,
+            train_loader=train_loader,
         )
-        result = trainer.train()
+        trainer.train()
         assert len(trainer.history["train/loss"]) == 1
 
 
@@ -867,19 +929,21 @@ class TestFitIntegration:
 
         assert events == [
             "train_begin",
-            "epoch_begin", "epoch_end",
-            "epoch_begin", "epoch_end",
+            "epoch_begin",
+            "epoch_end",
+            "epoch_begin",
+            "epoch_end",
             "train_end",
         ]
 
     def test_fit_with_custom_batch_fn(self, simple_model, loss_fn, optimizer):
         """fit() should work with a custom batch_fn for non-standard batch layouts."""
+
         def batch_fn(batch):
             return batch["input"], batch["target"]
 
         loader = [
-            {"input": torch.randn(BATCH_SIZE, IN_FEATURES),
-             "target": torch.randint(0, OUT_FEATURES, (BATCH_SIZE,))}
+            {"input": torch.randn(BATCH_SIZE, IN_FEATURES), "target": torch.randint(0, OUT_FEATURES, (BATCH_SIZE,))}
             for _ in range(3)
         ]
         trainer = _make_trainer(simple_model, loss_fn, optimizer, batch_fn=batch_fn)

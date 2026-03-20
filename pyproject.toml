@@ -225,6 +225,7 @@ target-version = "py312"
 # McCabe complexity (`C901`) by default.
 select = ["E4", "E7", "E9", "F", "I001"]
 ignore = []
+per-file-ignores = {"tests/**" = ["E402"], "samples/**" = ["E402", "E731"]}
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

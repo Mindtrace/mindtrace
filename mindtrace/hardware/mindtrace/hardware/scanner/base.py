@@ -8,16 +8,15 @@ All scanner backends in mindtrace-hardware extend this class.  Concrete
 implementations must provide :meth:`connect`, :meth:`disconnect`, and
 :meth:`scan`.  The context manager protocol wraps those calls automatically.
 """
+
 from __future__ import annotations
 
-import time
 import uuid
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
 from mindtrace.core import MindtraceABC
-from mindtrace.hardware.core.exceptions import HardwareOperationError
 
 
 @dataclass
@@ -120,9 +119,7 @@ class AbstractScanner(MindtraceABC):
     # ------------------------------------------------------------------
 
     def __enter__(self) -> AbstractScanner:
-        self.logger.debug(
-            f"Entering context manager for {self.name} ({self._scanner_id!r})"
-        )
+        self.logger.debug(f"Entering context manager for {self.name} ({self._scanner_id!r})")
         self.connect()
         return self
 
@@ -132,15 +129,11 @@ class AbstractScanner(MindtraceABC):
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> bool:
-        self.logger.debug(
-            f"Exiting context manager for {self.name} ({self._scanner_id!r})"
-        )
+        self.logger.debug(f"Exiting context manager for {self.name} ({self._scanner_id!r})")
         try:
             self.disconnect()
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                f"Non-fatal error during disconnect in __exit__ for {self.name}: {exc}"
-            )
+            self.logger.warning(f"Non-fatal error during disconnect in __exit__ for {self.name}: {exc}")
         if exc_type is not None:
             self.logger.exception(
                 f"Exception propagated through {self.name} context manager",

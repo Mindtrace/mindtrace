@@ -25,23 +25,12 @@ Run:
     python samples/models/10_automation_pipeline.py
 """
 
-import asyncio
 import tempfile
-from dataclasses import dataclass, field
 from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 
-from mindtrace.registry import Registry
-from mindtrace.models import (
-    build_model,
-    build_optimizer,
-    ModelCard,
-    ModelStage,
-    promote,
-)
 from mindtrace.automation.pipeline import (
     InferenceConfig,
     InferencePipeline,
@@ -52,9 +41,13 @@ from mindtrace.automation.pipeline import (
     TrainingConfig,
     TrainingPipeline,
 )
-
+from mindtrace.models import (
+    build_model,
+)
+from mindtrace.registry import Registry
 
 # ── Mock collaborators ─────────────────────────────────────────────────────────
+
 
 class _MockTrainer:
     """Duck-typed trainer — only .train(**kwargs) required."""
@@ -67,8 +60,8 @@ class _MockTrainer:
         x = torch.randn(32, 3, 32, 32)
         y = torch.randint(0, 4, (32,))
         logits = self._model(x)
-        loss   = nn.CrossEntropyLoss()(logits, y)
-        acc    = (logits.argmax(1) == y).float().mean().item()
+        loss = nn.CrossEntropyLoss()(logits, y)
+        acc = (logits.argmax(1) == y).float().mean().item()
         print(f"  [MockTrainer] loss={loss.item():.4f}  accuracy={acc:.4f}")
         return {"loss": loss.item(), "accuracy": acc}
 
@@ -110,16 +103,17 @@ class _MockService:
 
 # ── Section 1 — TrainingPipeline ───────────────────────────────────────────────
 
+
 def demo_training_pipeline():
     print("\n" + "=" * 60)
     print("SECTION 1 — TrainingPipeline: train → evaluate → promote")
     print("=" * 60)
 
-    tmpdir  = tempfile.mkdtemp(prefix="mt_auto_train_")
+    tmpdir = tempfile.mkdtemp(prefix="mt_auto_train_")
     registry = Registry(tmpdir)
 
-    model    = build_model("resnet18", head="linear", num_classes=4, pretrained=False)
-    trainer  = _MockTrainer(model)
+    model = build_model("resnet18", head="linear", num_classes=4, pretrained=False)
+    trainer = _MockTrainer(model)
     evaluator = _MockEvaluator(accuracy=0.84)
 
     pipeline = TrainingPipeline.build(
@@ -131,7 +125,7 @@ def demo_training_pipeline():
             model_name="weld_classifier",
             version="v1",
             promote_on_improvement=True,
-            min_accuracy_gain=0.0,     # promote whenever eval > baseline
+            min_accuracy_gain=0.0,  # promote whenever eval > baseline
         ),
     )
 
@@ -149,17 +143,15 @@ def demo_training_pipeline():
 
 # ── Section 2 — InferencePipeline (dry_run) ────────────────────────────────────
 
+
 def demo_inference_pipeline_dry_run():
     print("\n" + "=" * 60)
     print("SECTION 2 — InferencePipeline (dry_run=True)")
     print("=" * 60)
 
-    records = [
-        {"id": i, "type": "weld_image", "path": f"/data/img_{i:04d}.jpg"}
-        for i in range(20)
-    ]
+    records = [{"id": i, "type": "weld_image", "path": f"/data/img_{i:04d}.jpg"} for i in range(20)]
     datalake = _MockDatalake(records)
-    service  = _MockService()
+    service = _MockService()
 
     def transform(record: dict) -> dict:
         """Strip datalake metadata, keep only what the service needs."""
@@ -174,7 +166,7 @@ def demo_inference_pipeline_dry_run():
             datums_wanted=10,
             batch_size=5,
             transform=transform,
-            dry_run=True,       # ← no writes to datalake
+            dry_run=True,  # ← no writes to datalake
         ),
     )
 
@@ -191,17 +183,15 @@ def demo_inference_pipeline_dry_run():
 
 # ── Section 3 — InferencePipeline (live store) ────────────────────────────────
 
+
 def demo_inference_pipeline_live():
     print("\n" + "=" * 60)
     print("SECTION 3 — InferencePipeline (live store)")
     print("=" * 60)
 
-    records = [
-        {"id": i, "type": "weld_image", "path": f"/data/img_{i:04d}.jpg"}
-        for i in range(8)
-    ]
+    records = [{"id": i, "type": "weld_image", "path": f"/data/img_{i:04d}.jpg"} for i in range(8)]
     datalake = _MockDatalake(records)
-    service  = _MockService()
+    service = _MockService()
 
     pipeline = InferencePipeline.build(
         name="weld_inference_live",
@@ -211,7 +201,7 @@ def demo_inference_pipeline_live():
             query={"type": "weld_image"},
             batch_size=4,
             result_schema="weld_predictions",
-            dry_run=False,      # ← writes predictions back to datalake
+            dry_run=False,  # ← writes predictions back to datalake
         ),
     )
 
@@ -224,6 +214,7 @@ def demo_inference_pipeline_live():
 
 
 # ── Section 4 — PipelineResult inspection ─────────────────────────────────────
+
 
 def demo_result_inspection():
     print("\n" + "=" * 60)
@@ -256,6 +247,7 @@ def demo_result_inspection():
 
 
 # ── Section 5 — Custom PipelineStep composition ────────────────────────────────
+
 
 def demo_custom_steps():
     print("\n" + "=" * 60)

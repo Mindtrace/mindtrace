@@ -22,40 +22,40 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from mindtrace.registry import Registry
 from mindtrace.models import (
+    EarlyStopping,
+    EvaluationRunner,
+    ModelCard,
+    ModelCheckpoint,
+    ModelStage,
+    ProgressLogger,
+    RegistryBridge,
+    Trainer,
     build_model,
     build_optimizer,
     build_scheduler,
-    Trainer,
-    EvaluationRunner,
-    ModelCheckpoint,
-    EarlyStopping,
-    ProgressLogger,
-    ModelCard,
-    ModelStage,
-    promote,
     demote,
-    RegistryBridge,
+    promote,
 )
+from mindtrace.registry import Registry
 
 # ── Synthetic dataset ──────────────────────────────────────────────────────────
 
-NUM_CLASSES   = 3
-IMG_SIZE      = 64
-BATCH_SIZE    = 16
+NUM_CLASSES = 3
+IMG_SIZE = 64
+BATCH_SIZE = 16
 TRAIN_SAMPLES = 128
-VAL_SAMPLES   = 64
-EPOCHS        = 3
+VAL_SAMPLES = 64
+EPOCHS = 3
 
 print("Generating synthetic beans-like dataset (3 classes, 64×64 images)...")
 train_x = torch.randn(TRAIN_SAMPLES, 3, IMG_SIZE, IMG_SIZE)
 train_y = torch.randint(0, NUM_CLASSES, (TRAIN_SAMPLES,))
-val_x   = torch.randn(VAL_SAMPLES,   3, IMG_SIZE, IMG_SIZE)
-val_y   = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
+val_x = torch.randn(VAL_SAMPLES, 3, IMG_SIZE, IMG_SIZE)
+val_y = torch.randint(0, NUM_CLASSES, (VAL_SAMPLES,))
 
 train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=BATCH_SIZE, shuffle=True)
-val_loader   = DataLoader(TensorDataset(val_x,   val_y),   batch_size=BATCH_SIZE)
+val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size=BATCH_SIZE)
 
 print(f"  train batches: {len(train_loader)}   val batches: {len(val_loader)}")
 
@@ -72,8 +72,9 @@ print(f"  head type           : {type(model.head).__name__}")
 print("\n[2] Building AdamW optimizer + cosine_warmup scheduler...")
 optimizer = build_optimizer("adamw", model, lr=1e-3, weight_decay=1e-2)
 total_steps = len(train_loader) * EPOCHS
-scheduler   = build_scheduler(
-    "cosine_warmup", optimizer,
+scheduler = build_scheduler(
+    "cosine_warmup",
+    optimizer,
     warmup_steps=max(1, total_steps // 10),
     total_steps=total_steps,
 )
@@ -104,7 +105,7 @@ trainer = Trainer(
         ProgressLogger(),
     ],
     device="auto",
-    mixed_precision=True,   # silently falls back to FP32 on CPU
+    mixed_precision=True,  # silently falls back to FP32 on CPU
     gradient_accumulation_steps=2,
     clip_grad_norm=1.0,
 )
@@ -140,22 +141,26 @@ card = ModelCard(
     description="Quick-start demo model trained on synthetic beans data.",
 )
 card.add_result(metric="val/accuracy", value=results["accuracy"], dataset="beans-synthetic-val")
-card.add_result(metric="val/f1",       value=results["f1"],       dataset="beans-synthetic-val")
+card.add_result(metric="val/f1", value=results["f1"], dataset="beans-synthetic-val")
 print(f"  card stage  : {card.stage.value}")
 print(f"  card summary: {card.summary()}")
 
 # Promote DEV -> STAGING (require val/accuracy > 0.0 — trivially passes with random data)
 staging_result = promote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.STAGING,
     require={"val/accuracy": 0.0},
 )
-print(f"  promote -> STAGING  success={staging_result.success}  "
-      f"from={staging_result.from_stage.value}  to={staging_result.to_stage.value}")
+print(
+    f"  promote -> STAGING  success={staging_result.success}  "
+    f"from={staging_result.from_stage.value}  to={staging_result.to_stage.value}"
+)
 
 # Demote STAGING -> DEV (simulate a regression)
 demote_result = demote(
-    card, registry,
+    card,
+    registry,
     to_stage=ModelStage.DEV,
     reason="Regression detected in nightly eval — rolling back.",
 )
@@ -200,7 +205,7 @@ try:
     print("    class BeansSvc(OnnxModelService):")
     print("        _task = 'classification'")
     print("        def predict(self, request): ...")
-    print(f"    svc = BeansSvc(model_name='beans-resnet18', model_version='v1',")
+    print("    svc = BeansSvc(model_name='beans-resnet18', model_version='v1',")
     print(f"                   model_path='{onnx_path}')")
     print("    svc.load_model()")
     print("    import numpy as np")

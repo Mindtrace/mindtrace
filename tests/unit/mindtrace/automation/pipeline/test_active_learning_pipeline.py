@@ -12,11 +12,9 @@ import pytest
 from mindtrace.automation.pipeline import (
     ActiveLearningConfig,
     ActiveLearningPipeline,
-    PipelineStatus,
     TrainingConfig,
     TrainingPipeline,
 )
-
 
 # -- Stubs -------------------------------------------------------------------
 
@@ -33,10 +31,7 @@ class _FakeDatalake:
     ) -> list[dict]:
         if isinstance(query, list):
             query = query[0] if query else {}
-        results = [
-            r for r in self._records
-            if all(r.get(k) == v for k, v in query.items())
-        ]
+        results = [r for r in self._records if all(r.get(k) == v for k, v in query.items())]
         if datums_wanted:
             results = results[:datums_wanted]
         return results
@@ -190,7 +185,8 @@ class TestActiveLearningPipeline:
             trainer=_FakeTrainer(),
             evaluator=_FakeEvaluator(),
             config=TrainingConfig(
-                model_name="test", version="v1",
+                model_name="test",
+                version="v1",
                 trainer_kwargs={"epochs": 1},
             ),
         )

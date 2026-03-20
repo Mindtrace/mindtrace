@@ -4,9 +4,9 @@ All camera implementations in mindtrace-hardware extend this class and
 provide concrete implementations for connect / disconnect / grab / configure.
 The context manager protocol calls connect() and disconnect() automatically.
 """
+
 from __future__ import annotations
 
-import time
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -15,10 +15,6 @@ from typing import Any
 import numpy as np
 
 from mindtrace.core import MindtraceABC
-from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
-    CameraConnectionError,
-)
 
 
 @dataclass
@@ -80,9 +76,7 @@ class AbstractCamera(MindtraceABC):
         self._initial_config: dict[str, Any] = config or {}
         self._frame_counter: int = 0
 
-        self.logger.debug(
-            f"AbstractCamera initialised: camera_id={camera_id!r}"
-        )
+        self.logger.debug(f"AbstractCamera initialised: camera_id={camera_id!r}")
 
     # ------------------------------------------------------------------
     # Abstract interface — must be implemented by every concrete backend
@@ -206,9 +200,7 @@ class AbstractCamera(MindtraceABC):
         try:
             self.disconnect()
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                f"Exception during disconnect in __exit__ for {self.name}: {exc}"
-            )
+            self.logger.warning(f"Exception during disconnect in __exit__ for {self.name}: {exc}")
         if exc_type is not None:
             self.logger.exception(
                 f"Exception propagated through {self.name} context manager",
@@ -218,7 +210,4 @@ class AbstractCamera(MindtraceABC):
         return False
 
     def __repr__(self) -> str:
-        return (
-            f"<{type(self).__name__} camera_id={self._camera_id!r}"
-            f" status={self.status.value!r}>"
-        )
+        return f"<{type(self).__name__} camera_id={self._camera_id!r} status={self.status.value!r}>"

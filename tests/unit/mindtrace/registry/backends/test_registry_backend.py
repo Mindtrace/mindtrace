@@ -88,7 +88,15 @@ def concrete_backend():
 
 def test_validate_object_name_valid(concrete_backend):
     # Test valid object names
-    valid_names = ["object", "namespace:object", "deep:namespace:object", "object-with-hyphens", "object123", "object_name", "my_model_v1"]
+    valid_names = [
+        "object",
+        "namespace:object",
+        "deep:namespace:object",
+        "object-with-hyphens",
+        "object123",
+        "object_name",
+        "my_model_v1",
+    ]
 
     for name in valid_names:
         concrete_backend.validate_object_name(name)  # Should not raise any exception

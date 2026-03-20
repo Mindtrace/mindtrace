@@ -17,15 +17,14 @@ from __future__ import annotations
 
 import math
 import sys
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Environment fixtures (must exist before any Mindtrace import)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _mock_env(monkeypatch):
@@ -38,7 +37,7 @@ def _mock_env(monkeypatch):
 # Imports (after env fixture is declared so collection order is correct)
 # ---------------------------------------------------------------------------
 
-from mindtrace.models.training.callbacks import (
+from mindtrace.models.training.callbacks import (  # noqa: E402
     Callback,
     EarlyStopping,
     LRMonitor,
@@ -48,10 +47,10 @@ from mindtrace.models.training.callbacks import (
     UnfreezeSchedule,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_trainer(**overrides):
     """Build a minimal mock trainer with sensible defaults."""
@@ -78,6 +77,7 @@ def _make_param(name: str, frozen: bool = True):
 # ===================================================================
 # 1. Callback base class
 # ===================================================================
+
 
 class TestCallbackBase:
     """The abstract base class hooks should be silent no-ops."""
@@ -111,8 +111,8 @@ class TestCallbackBase:
 # 2. ModelCheckpoint
 # ===================================================================
 
-class TestModelCheckpoint:
 
+class TestModelCheckpoint:
     def test_invalid_mode_raises(self):
         with pytest.raises(ValueError, match="mode must be"):
             ModelCheckpoint(registry=MagicMock(), mode="average")
@@ -177,7 +177,9 @@ class TestModelCheckpoint:
         registry = MagicMock()
         registry.save.side_effect = RuntimeError("disk full")
         cp = ModelCheckpoint(
-            registry=registry, monitor="val/loss", mode="min",
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
             raise_on_save_failure=False,
         )
         trainer = _make_trainer()
@@ -192,7 +194,9 @@ class TestModelCheckpoint:
         registry = MagicMock()
         registry.save.side_effect = RuntimeError("disk full")
         cp = ModelCheckpoint(
-            registry=registry, monitor="val/loss", mode="min",
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
             raise_on_save_failure=True,
         )
         trainer = _make_trainer()
@@ -204,8 +208,11 @@ class TestModelCheckpoint:
     def test_version_prefix(self):
         registry = MagicMock()
         cp = ModelCheckpoint(
-            registry=registry, monitor="val/loss", mode="min",
-            model_name="resnet50", version_prefix="epoch_",
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
+            model_name="resnet50",
+            version_prefix="epoch_",
         )
         trainer = _make_trainer()
 
@@ -217,7 +224,9 @@ class TestModelCheckpoint:
         """When save_best_only=False, save every epoch even without improvement."""
         registry = MagicMock()
         cp = ModelCheckpoint(
-            registry=registry, monitor="val/loss", mode="min",
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
             save_best_only=False,
         )
         trainer = _make_trainer()
@@ -241,8 +250,11 @@ class TestModelCheckpoint:
         registry = MagicMock()
         registry.save.side_effect = RuntimeError("nope")
         cp = ModelCheckpoint(
-            registry=registry, monitor="val/loss", mode="min",
-            save_best_only=False, raise_on_save_failure=False,
+            registry=registry,
+            monitor="val/loss",
+            mode="min",
+            save_best_only=False,
+            raise_on_save_failure=False,
         )
         trainer = _make_trainer()
 
@@ -255,8 +267,8 @@ class TestModelCheckpoint:
 # 3. EarlyStopping
 # ===================================================================
 
-class TestEarlyStopping:
 
+class TestEarlyStopping:
     def test_invalid_mode_raises(self):
         with pytest.raises(ValueError, match="mode must be"):
             EarlyStopping(mode="average")
@@ -386,8 +398,8 @@ class TestEarlyStopping:
 # 4. LRMonitor
 # ===================================================================
 
-class TestLRMonitor:
 
+class TestLRMonitor:
     def test_logs_learning_rate(self):
         lr_mon = LRMonitor()
         trainer = _make_trainer()
@@ -434,8 +446,8 @@ class TestLRMonitor:
 # 5. ProgressLogger
 # ===================================================================
 
-class TestProgressLogger:
 
+class TestProgressLogger:
     def test_formats_epoch_summary(self):
         pl = ProgressLogger()
         trainer = _make_trainer()
@@ -450,7 +462,7 @@ class TestProgressLogger:
             fmt_str = call_args[0][0]
             assert "Epoch" in fmt_str
             # Check positional args: epoch+1, total, metrics_str
-            assert call_args[0][1] == 3   # epoch 2 + 1
+            assert call_args[0][1] == 3  # epoch 2 + 1
             assert call_args[0][2] == 20  # total
 
     def test_total_epochs_unknown(self):
@@ -496,8 +508,8 @@ class TestProgressLogger:
 # 6. UnfreezeSchedule
 # ===================================================================
 
-class TestUnfreezeSchedule:
 
+class TestUnfreezeSchedule:
     def _make_model_with_params(self, param_specs):
         """Create a model mock with named_parameters returning param_specs.
 
@@ -517,11 +529,13 @@ class TestUnfreezeSchedule:
         schedule = {5: ["backbone.layer3"]}
         uf = UnfreezeSchedule(schedule=schedule)
 
-        model, params = self._make_model_with_params([
-            ("backbone.layer3.weight", True),
-            ("backbone.layer3.bias", True),
-            ("head.weight", False),
-        ])
+        model, params = self._make_model_with_params(
+            [
+                ("backbone.layer3.weight", True),
+                ("backbone.layer3.bias", True),
+                ("head.weight", False),
+            ]
+        )
         trainer = _make_trainer(model=model)
 
         # Epoch 3: not scheduled
@@ -551,9 +565,11 @@ class TestUnfreezeSchedule:
         schedule = {2: ["backbone"]}
         uf = UnfreezeSchedule(schedule=schedule, new_lr=5e-5)
 
-        model, params = self._make_model_with_params([
-            ("backbone.weight", True),
-        ])
+        model, params = self._make_model_with_params(
+            [
+                ("backbone.weight", True),
+            ]
+        )
         trainer = _make_trainer(model=model)
 
         uf.on_epoch_begin(trainer, epoch=2)
@@ -587,9 +603,11 @@ class TestUnfreezeSchedule:
         schedule = {0: ["backbone"]}
         uf = UnfreezeSchedule(schedule=schedule)
 
-        model, params = self._make_model_with_params([
-            ("backbone.weight", False),  # already unfrozen
-        ])
+        model, params = self._make_model_with_params(
+            [
+                ("backbone.weight", False),  # already unfrozen
+            ]
+        )
         trainer = _make_trainer(model=model)
 
         with patch.object(uf, "logger") as mock_logger:
@@ -612,8 +630,8 @@ class TestUnfreezeSchedule:
 # 7. OptunaCallback
 # ===================================================================
 
-class TestOptunaCallback:
 
+class TestOptunaCallback:
     def test_reports_to_trial(self):
         trial = MagicMock()
         trial.should_prune.return_value = False

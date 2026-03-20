@@ -14,9 +14,7 @@ import pytest
 from mindtrace.automation.pipeline import (
     InferenceConfig,
     InferencePipeline,
-    PipelineStatus,
 )
-
 
 # -- Duck-typed collaborators ------------------------------------------------
 
@@ -36,10 +34,7 @@ class _FakeDatalake:
     ) -> list[dict]:
         if isinstance(query, list):
             query = query[0] if query else {}
-        results = [
-            r for r in self._records
-            if all(r.get(k) == v for k, v in query.items())
-        ]
+        results = [r for r in self._records if all(r.get(k) == v for k, v in query.items())]
         if datums_wanted:
             results = results[:datums_wanted]
         return results
@@ -70,10 +65,7 @@ class _FakeService:
 
 @pytest.fixture()
 def records():
-    return [
-        {"id": i, "type": "image", "path": f"/data/{i:04d}.jpg"}
-        for i in range(12)
-    ]
+    return [{"id": i, "type": "image", "path": f"/data/{i:04d}.jpg"} for i in range(12)]
 
 
 @pytest.fixture()
@@ -199,9 +191,7 @@ class TestInferencePipelineSteps:
             ),
         )
         result = pipeline.run()
-        assert [s.step_name for s in result.steps] == [
-            "fetch_records", "run_inference", "store_results"
-        ]
+        assert [s.step_name for s in result.steps] == ["fetch_records", "run_inference", "store_results"]
 
     def test_two_steps_when_dry_run(self, datalake, service):
         pipeline = InferencePipeline.build(
@@ -214,9 +204,7 @@ class TestInferencePipelineSteps:
             ),
         )
         result = pipeline.run()
-        assert [s.step_name for s in result.steps] == [
-            "fetch_records", "run_inference"
-        ]
+        assert [s.step_name for s in result.steps] == ["fetch_records", "run_inference"]
 
     def test_fetch_metadata_has_record_count(self, datalake, service):
         pipeline = InferencePipeline.build(

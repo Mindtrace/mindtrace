@@ -18,16 +18,17 @@ Typical usage::
         print(tag.value, tag.data_type)   # 120.5  float
         batch = plc.read_many(["Motor.Speed", "Conveyor.Active"])
 """
+
 from __future__ import annotations
 
 import time
 from typing import Any
 
-from mindtrace.hardware.plc.base import AbstractPLC, PLCStatus, PLCTag
 from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCTagNotFoundError,
 )
+from mindtrace.hardware.plc.base import AbstractPLC, PLCStatus, PLCTag
 
 
 class MockPLC(AbstractPLC):
@@ -82,8 +83,7 @@ class MockPLC(AbstractPLC):
 
         if tag not in self._tag_store:
             raise PLCTagNotFoundError(
-                f"MockPLC {self._host!r}: tag {tag!r} not found.  "
-                f"Available tags: {list(self._tag_store.keys())}"
+                f"MockPLC {self._host!r}: tag {tag!r} not found.  Available tags: {list(self._tag_store.keys())}"
             )
 
         value = self._tag_store[tag]
@@ -106,10 +106,7 @@ class MockPLC(AbstractPLC):
         """
         self._assert_connected("write")
         self._tag_store[tag] = value
-        self.logger.debug(
-            f"MockPLC {self._host!r}: wrote {tag!r} = {value!r} "
-            f"({self._infer_data_type(value)})"
-        )
+        self.logger.debug(f"MockPLC {self._host!r}: wrote {tag!r} = {value!r} ({self._infer_data_type(value)})")
 
     @property
     def status(self) -> PLCStatus:

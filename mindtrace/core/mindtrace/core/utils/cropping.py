@@ -133,9 +133,7 @@ class CropExtractor:
             ImportError: If cv2 is not installed.
         """
         if not _HAS_CV2:
-            raise ImportError(
-                "cv2 (opencv-python) is required for from_mask but is not installed."
-            )
+            raise ImportError("cv2 (opencv-python) is required for from_mask but is not installed.")
 
         h_img, w_img = image.shape[:2]
 

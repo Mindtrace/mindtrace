@@ -15,9 +15,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -25,7 +23,6 @@ torch = pytest.importorskip("torch")
 from torch.utils.data import DataLoader  # noqa: E402
 
 from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Helpers

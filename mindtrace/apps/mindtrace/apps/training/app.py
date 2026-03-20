@@ -4,6 +4,7 @@ Wraps mindtrace-automation TrainingPipeline into an application that can be
 triggered on-demand, on a schedule (via mindtrace-jobs), or by a threshold
 (e.g., "N new labeled samples arrived in the datalake").
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,8 @@ from typing import Any
 from mindtrace.core import Mindtrace
 
 try:
-    from mindtrace.automation.pipeline.training import TrainingConfig, TrainingPipeline
+    from mindtrace.automation.pipeline.training import TrainingConfig, TrainingPipeline  # noqa: F401
+
     _AUTOMATION_AVAILABLE = True
 except ImportError:
     _AUTOMATION_AVAILABLE = False
@@ -22,10 +24,11 @@ except ImportError:
 @dataclass
 class TrainingAppConfig:
     """Configuration for TrainingApp."""
+
     app_name: str = "training_app"
-    training_config: Any = None             # TrainingConfig instance
-    min_new_samples: int = 0                # trigger only when this many new samples exist
-    new_samples_query: dict = field(default_factory=dict)   # datalake query to count new samples
+    training_config: Any = None  # TrainingConfig instance
+    min_new_samples: int = 0  # trigger only when this many new samples exist
+    new_samples_query: dict = field(default_factory=dict)  # datalake query to count new samples
     auto_push_to_registry: bool = True
     metadata: dict = field(default_factory=dict)
 
@@ -75,9 +78,7 @@ class TrainingApp(Mindtrace):
         if self.datalake is None or not self.config.new_samples_query:
             return 0
         try:
-            rows = asyncio.run(
-                self.datalake.query_data(self.config.new_samples_query, datums_wanted=None)
-            )
+            rows = asyncio.run(self.datalake.query_data(self.config.new_samples_query, datums_wanted=None))
             return len(rows)
         except Exception as exc:
             self.logger.warning(f"Could not count new samples: {exc}")
@@ -88,9 +89,7 @@ class TrainingApp(Mindtrace):
         if self.config.min_new_samples <= 0:
             return True
         count = self._count_new_samples()
-        self.logger.info(
-            f"New samples: {count} / {self.config.min_new_samples} required"
-        )
+        self.logger.info(f"New samples: {count} / {self.config.min_new_samples} required")
         return count >= self.config.min_new_samples
 
     def run(self) -> Any:
@@ -120,8 +119,5 @@ class TrainingApp(Mindtrace):
         )
         self.logger.info(f"Starting training pipeline '{pipeline.name}'...")
         result = pipeline.run()
-        self.logger.info(
-            f"Training {'succeeded' if result.success else 'FAILED'} "
-            f"in {result.total_duration_s:.1f}s"
-        )
+        self.logger.info(f"Training {'succeeded' if result.success else 'FAILED'} in {result.total_duration_s:.1f}s")
         return result

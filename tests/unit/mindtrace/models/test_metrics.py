@@ -28,7 +28,6 @@ from mindtrace.models.evaluation.metrics.segmentation import (
     pixel_accuracy,
 )
 
-
 # ===========================================================================
 # Classification metrics
 # ===========================================================================
@@ -68,9 +67,7 @@ class TestClassificationMetrics:
         targets = np.array([0, 1, 0, 1])
         # Build probs: one-hot on preds
         probs = np.eye(3)[preds]  # (4, 3)
-        assert top_k_accuracy(probs, targets, k=1) == pytest.approx(
-            accuracy(preds, targets)
-        )
+        assert top_k_accuracy(probs, targets, k=1) == pytest.approx(accuracy(preds, targets))
 
     def test_top_k_accuracy_k_geq_num_classes_is_one(self):
         """When k >= num_classes every sample is in the top-k."""
@@ -132,7 +129,7 @@ class TestClassificationMetrics:
 
     def test_confusion_matrix_off_diagonal(self):
         """A single misclassification appears in the correct off-diagonal cell."""
-        preds = np.array([0, 0])    # predicted 0, 0
+        preds = np.array([0, 0])  # predicted 0, 0
         targets = np.array([0, 1])  # true 0, 1 → (1, 0) is wrong
         cm = confusion_matrix(preds, targets, num_classes=2)
         # cm[true_class, pred_class]
@@ -226,7 +223,7 @@ class TestSegmentationMetrics:
         """Pixels labelled with ignore_index must not affect mIoU."""
         targets = np.zeros((1, 4, 4), dtype=np.int64)
         targets[0, 0, 0] = 255  # ignore pixel
-        targets[0, 1, 1] = 1    # class 1 pixel
+        targets[0, 1, 1] = 1  # class 1 pixel
 
         # Predict perfectly on the non-ignored pixels
         preds = targets.copy()

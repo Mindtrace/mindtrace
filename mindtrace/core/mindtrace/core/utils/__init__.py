@@ -28,6 +28,7 @@ def __getattr__(name: str):
     # image_io.py -> mindtrace.core.base -> config -> utils.__init__ -> image_io.py
     if name == "ImageLoader":
         from mindtrace.core.utils.image_io import ImageLoader  # noqa: PLC0415
+
         return ImageLoader
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

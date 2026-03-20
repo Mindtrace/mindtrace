@@ -124,8 +124,7 @@ class ImageLoader(Mindtrace):
 
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
             future_to_key: dict[Future, str] = {
-                executor.submit(self._read_single, key, path): key
-                for key, path in paths.items()
+                executor.submit(self._read_single, key, path): key for key, path in paths.items()
             }
 
             for future in as_completed(future_to_key):
@@ -160,8 +159,7 @@ class ImageLoader(Mindtrace):
 
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
             future_to_idx: dict[Future, int] = {
-                executor.submit(self._read_single, str(idx), path): idx
-                for idx, path in enumerate(paths)
+                executor.submit(self._read_single, str(idx), path): idx for idx, path in enumerate(paths)
             }
 
             for future in as_completed(future_to_idx):
@@ -184,14 +182,9 @@ class ImageLoader(Mindtrace):
             if img is not None:
                 output.append(img)
             else:
-                self.logger.warning(
-                    "Image at index %d excluded from batch result (load failed)", idx
-                )
+                self.logger.warning("Image at index %d excluded from batch result (load failed)", idx)
 
         return output
 
     def __repr__(self) -> str:
-        return (
-            f"ImageLoader(num_workers={self.num_workers}, "
-            f"color_mode={self.color_mode!r})"
-        )
+        return f"ImageLoader(num_workers={self.num_workers}, color_mode={self.color_mode!r})"

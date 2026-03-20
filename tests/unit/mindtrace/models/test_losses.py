@@ -13,10 +13,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn as nn  # noqa: E402
 
-from mindtrace.models.training.losses import (
+from mindtrace.models.training.losses import (  # noqa: E402
     CIoULoss,
     ComboLoss,
     DiceLoss,
@@ -31,11 +30,11 @@ from mindtrace.models.training.losses import (
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-N = 4       # batch size for classification losses
-C = 3       # number of classes
-BN = 2      # batch size for segmentation / detection losses
-H = 8       # spatial height
-W = 8       # spatial width
+N = 4  # batch size for classification losses
+C = 3  # number of classes
+BN = 2  # batch size for segmentation / detection losses
+H = 8  # spatial height
+W = 8  # spatial width
 
 
 def _seg_logits_perfect(n: int = BN, c: int = C, h: int = H, w: int = W) -> tuple:
@@ -196,9 +195,7 @@ class TestTverskyLoss:
         fn_heavy = TverskyLoss(alpha=0.1, beta=0.9)  # penalise FN heavily
 
         # fn_heavy penalises missed detections more — loss values will differ
-        assert balanced(logits, targets).item() != pytest.approx(
-            fn_heavy(logits, targets).item(), abs=1e-3
-        )
+        assert balanced(logits, targets).item() != pytest.approx(fn_heavy(logits, targets).item(), abs=1e-3)
 
 
 # ---------------------------------------------------------------------------
