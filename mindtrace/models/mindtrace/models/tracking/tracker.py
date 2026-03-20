@@ -7,18 +7,17 @@ live in ``mindtrace.models.tracking.backends``.
 
 from __future__ import annotations
 
-import logging
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Generator
+
+from mindtrace.core import MindtraceABC
 
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
 
-
-class Tracker(ABC):
+class Tracker(MindtraceABC):
     """Abstract base class for all experiment tracking backends.
 
     All concrete tracker implementations must subclass ``Tracker`` and
@@ -104,9 +103,7 @@ class Tracker(ABC):
     # ------------------------------------------------------------------
 
     @contextmanager
-    def run(
-        self, name: str, config: dict[str, Any] | None = None
-    ) -> Generator[Tracker, None, None]:
+    def run(self, name: str, config: dict[str, Any] | None = None) -> Generator[Tracker, None, None]:
         """Context manager that wraps a training run.
 
         Calls :meth:`start_run` on entry and :meth:`finish` on exit,
@@ -128,16 +125,19 @@ class Tracker(ABC):
             ```
         """
         resolved_config: dict[str, Any] = config if config is not None else {}
-        logger.debug("Starting tracking run: name=%s", name)
+        self.logger.debug("Starting tracking run: name=%s", name)
         self.start_run(name, resolved_config)
         try:
             yield self
         except Exception:
-            logger.exception("Exception raised during tracking run '%s'.", name)
+            self.logger.exception("Exception raised during tracking run '%s'.", name)
             raise
         finally:
-            logger.debug("Finishing tracking run: name=%s", name)
-            self.finish()
+            self.logger.debug("Finishing tracking run: name=%s", name)
+            try:
+                self.finish()
+            except Exception:
+                self.logger.warning("Failed to finish tracking run", exc_info=True)
 
     # ------------------------------------------------------------------
     # Factory
@@ -193,12 +193,9 @@ class Tracker(ABC):
         tracker_cls = _registry.get(key)
         if tracker_cls is None:
             supported = ", ".join(f'"{k}"' for k in _registry)
-            raise ValueError(
-                f"Unknown tracking backend: '{backend}'. "
-                f"Supported backends are: {supported}."
-            )
+            raise ValueError(f"Unknown tracking backend: '{backend}'. Supported backends are: {supported}.")
 
-        logger.debug("Creating tracker: backend=%s kwargs=%s", backend, list(kwargs))
+        cls.logger.debug("Creating tracker: backend=%s kwargs=%s", backend, list(kwargs))
         return tracker_cls(**kwargs)
 
 
@@ -236,15 +233,14 @@ class CompositeTracker(Tracker):
             **kwargs: Accepted for forward compatibility; not forwarded to
                 children.
         """
+        super().__init__()
         if not trackers:
             raise ValueError(
                 "CompositeTracker requires at least one child tracker. "
                 "Pass a non-empty list via the 'trackers' argument."
             )
         self._trackers: list[Tracker] = list(trackers)
-        logger.debug(
-            "CompositeTracker initialised with %d child tracker(s).", len(self._trackers)
-        )
+        self.logger.debug("CompositeTracker initialised with %d child tracker(s).", len(self._trackers))
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -269,7 +265,7 @@ class CompositeTracker(Tracker):
             try:
                 getattr(child, method_name)(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
+                self.logger.warning(
                     "Child tracker %s.%s raised an exception: %s",
                     type(child).__name__,
                     method_name,

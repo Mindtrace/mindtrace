@@ -8,12 +8,9 @@ even when ``mlflow`` is not installed; methods that require it raise a clear
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from mindtrace.models.tracking.tracker import Tracker
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional MLflow import
@@ -26,10 +23,7 @@ except ImportError:  # pragma: no cover
     mlflow = None  # type: ignore[assignment]
     _MLFLOW_AVAILABLE = False
 
-_MLFLOW_INSTALL_MSG = (
-    "MLflow is not installed. "
-    "Install it with: pip install mlflow"
-)
+_MLFLOW_INSTALL_MSG = "MLflow is not installed. Install it with: pip install mlflow"
 
 
 class MLflowTracker(Tracker):
@@ -79,18 +73,25 @@ class MLflowTracker(Tracker):
         Raises:
             ImportError: If ``mlflow`` is not installed.
         """
+        super().__init__()
         if not _MLFLOW_AVAILABLE:
             raise ImportError(_MLFLOW_INSTALL_MSG)
+
+        # Derive default tracking URI from mindtrace directory structure
+        if tracking_uri is None:
+            import os
+
+            root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
+            tracking_uri = f"file://{os.path.join(root, 'mlflow')}"
 
         self._tracking_uri = tracking_uri
         self._experiment_name = experiment_name
 
-        if tracking_uri is not None:
-            mlflow.set_tracking_uri(tracking_uri)
-            logger.debug("MLflow tracking URI set to: %s", tracking_uri)
+        mlflow.set_tracking_uri(tracking_uri)
+        self.logger.debug("MLflow tracking URI set to: %s", tracking_uri)
 
         mlflow.set_experiment(experiment_name)
-        logger.debug("MLflow experiment set to: %s", experiment_name)
+        self.logger.debug("MLflow experiment set to: %s", experiment_name)
 
     # ------------------------------------------------------------------
     # Tracker interface
@@ -112,7 +113,7 @@ class MLflowTracker(Tracker):
 
         active = mlflow.active_run()
         if active is not None:
-            logger.warning(
+            self.logger.warning(
                 "MLflow run '%s' is still active; ending it before starting '%s'. "
                 "Call tracker.finish() explicitly to suppress this warning.",
                 active.info.run_name,
@@ -120,7 +121,7 @@ class MLflowTracker(Tracker):
             )
             mlflow.end_run()
 
-        logger.debug("Starting MLflow run: name=%s", name)
+        self.logger.debug("Starting MLflow run: name=%s", name)
         mlflow.start_run(run_name=name)
 
         if config:
@@ -177,12 +178,12 @@ class MLflowTracker(Tracker):
         mlflow.set_tag("model_version", version)
 
         try:
-            import mlflow.pytorch  # noqa: PLC0415
+            from mlflow import pytorch as mlflow_pytorch  # noqa: PLC0415
 
-            mlflow.pytorch.log_model(model, artifact_path=name)
-            logger.debug("Logged PyTorch model to MLflow: path=%s version=%s", name, version)
+            mlflow_pytorch.log_model(model, artifact_path=name)
+            self.logger.debug("Logged PyTorch model to MLflow: path=%s version=%s", name, version)
         except ImportError:
-            logger.warning(
+            self.logger.warning(
                 "mlflow.pytorch is not available. Model artifact '%s' was NOT logged. "
                 "Install PyTorch to enable model logging: pip install torch",
                 name,
@@ -201,7 +202,7 @@ class MLflowTracker(Tracker):
             raise ImportError(_MLFLOW_INSTALL_MSG)
 
         mlflow.log_artifact(path)
-        logger.debug("Logged artifact to MLflow: path=%s", path)
+        self.logger.debug("Logged artifact to MLflow: path=%s", path)
 
     def finish(self) -> None:
         """End the active MLflow run.
@@ -213,7 +214,7 @@ class MLflowTracker(Tracker):
             raise ImportError(_MLFLOW_INSTALL_MSG)
 
         mlflow.end_run()
-        logger.debug("MLflow run ended.")
+        self.logger.debug("MLflow run ended.")
 
 
 __all__ = ["MLflowTracker"]

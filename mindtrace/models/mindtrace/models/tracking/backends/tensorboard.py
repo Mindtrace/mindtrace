@@ -8,13 +8,10 @@ methods that require it raise a clear :class:`ImportError` at call time.
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
 from mindtrace.models.tracking.tracker import Tracker
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional TensorBoard import
@@ -27,10 +24,7 @@ except ImportError:  # pragma: no cover
     SummaryWriter = None  # type: ignore[assignment,misc]
     _TB_AVAILABLE = False
 
-_TB_INSTALL_MSG = (
-    "TensorBoard support requires PyTorch. "
-    "Install it with: pip install torch tensorboard"
-)
+_TB_INSTALL_MSG = "TensorBoard support requires PyTorch. Install it with: pip install torch tensorboard"
 
 
 class TensorBoardTracker(Tracker):
@@ -60,22 +54,29 @@ class TensorBoardTracker(Tracker):
         ```
     """
 
-    def __init__(self, log_dir: str = "runs", **kwargs: Any) -> None:
+    def __init__(self, log_dir: str | None = None, **kwargs: Any) -> None:
         """Initialise the TensorBoard tracker.
 
         Args:
-            log_dir: Root directory for TensorBoard event files.
+            log_dir: Root directory for TensorBoard event files.  When
+                ``None``, defaults to ``<MINDTRACE_DIR_PATHS.ROOT>/tensorboard``.
             **kwargs: Ignored; present for API compatibility.
 
         Raises:
             ImportError: If PyTorch / TensorBoard is not installed.
         """
+        super().__init__()
         if not _TB_AVAILABLE:
             raise ImportError(_TB_INSTALL_MSG)
 
+        if log_dir is None:
+            import os
+
+            root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
+            log_dir = os.path.join(root, "tensorboard")
         self.log_dir: str = log_dir
         self._writer: Any = None  # SummaryWriter; set in start_run
-        logger.debug("TensorBoardTracker initialised: log_dir=%s", log_dir)
+        self.logger.debug("TensorBoardTracker initialised: log_dir=%s", log_dir)
 
     # ------------------------------------------------------------------
     # Tracker interface
@@ -99,7 +100,7 @@ class TensorBoardTracker(Tracker):
             raise ImportError(_TB_INSTALL_MSG)
 
         run_log_dir = os.path.join(self.log_dir, name)
-        logger.debug("Opening TensorBoard SummaryWriter at: %s", run_log_dir)
+        self.logger.debug("Opening TensorBoard SummaryWriter at: %s", run_log_dir)
         self._writer = SummaryWriter(log_dir=run_log_dir)
 
         if config:
@@ -164,7 +165,7 @@ class TensorBoardTracker(Tracker):
             "TensorBoard does not store model weights; use MLflow or WandB for model logging."
         )
         self._writer.add_text("model/info", note)
-        logger.info(
+        self.logger.info(
             "TensorBoardTracker.log_model: model weight storage is not supported by "
             "TensorBoard. Logged a text note instead (name=%s version=%s).",
             name,
@@ -185,11 +186,10 @@ class TensorBoardTracker(Tracker):
         """
         self._require_writer("log_artifact")
         note = (
-            f"Artifact at path '{path}' was NOT uploaded. "
-            "TensorBoard does not support arbitrary file artifact storage."
+            f"Artifact at path '{path}' was NOT uploaded. TensorBoard does not support arbitrary file artifact storage."
         )
         self._writer.add_text("artifacts/skipped", note)
-        logger.warning(
+        self.logger.warning(
             "TensorBoardTracker.log_artifact: TensorBoard does not support arbitrary "
             "file artifacts. Path '%s' was skipped. Use MLflow or WandB for artifact "
             "logging.",
@@ -207,7 +207,7 @@ class TensorBoardTracker(Tracker):
 
         if self._writer is not None:
             self._writer.close()
-            logger.debug("TensorBoard SummaryWriter closed.")
+            self.logger.debug("TensorBoard SummaryWriter closed.")
             self._writer = None
 
     # ------------------------------------------------------------------

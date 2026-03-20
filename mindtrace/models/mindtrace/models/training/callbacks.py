@@ -6,24 +6,28 @@ callback implementations that integrate with the ``Trainer`` training loop.
 
 from __future__ import annotations
 
-import logging
 import math
-from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
+
+from mindtrace.core import Mindtrace
 
 if TYPE_CHECKING:
     from mindtrace.models.training.trainer import Trainer
 
-logger = logging.getLogger(__name__)
 
-
-class Callback(ABC):
-    """Abstract base class for all training callbacks.
+class Callback(Mindtrace):
+    """Base class for all training callbacks.
 
     Subclasses override the hook methods they care about. All hooks receive
     a reference to the active ``Trainer`` instance so they can inspect or
     mutate training state (e.g. set ``trainer.stop_training = True``).
+
+    Inherits from :class:`~mindtrace.core.Mindtrace` to provide unified
+    logging via ``self.logger`` and configuration via ``self.config``.
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def on_train_begin(self, trainer: Trainer) -> None:
         """Called once before the first epoch starts.
@@ -131,6 +135,8 @@ class ModelCheckpoint(Callback):
         if mode not in ("min", "max"):
             raise ValueError(f"mode must be 'min' or 'max', got '{mode}'")
 
+        super().__init__()
+
         self.registry = registry
         self.monitor = monitor
         self.mode = mode
@@ -161,9 +167,8 @@ class ModelCheckpoint(Callback):
         """
         current = logs.get(self.monitor)
         if current is None:
-            logger.warning(
-                "ModelCheckpoint: monitored metric '%s' not found in logs %s. "
-                "Skipping checkpoint.",
+            self.logger.warning(
+                "ModelCheckpoint: monitored metric '%s' not found in logs %s. Skipping checkpoint.",
                 self.monitor,
                 list(logs.keys()),
             )
@@ -181,7 +186,7 @@ class ModelCheckpoint(Callback):
         try:
             self.registry.save(key, trainer.model)
             self.last_saved_key = key
-            logger.info(
+            self.logger.info(
                 "ModelCheckpoint: saved '%s' (epoch=%d, %s=%.6f).",
                 key,
                 epoch,
@@ -191,7 +196,7 @@ class ModelCheckpoint(Callback):
         except Exception as exc:
             self.save_failures += 1
             self.last_error = exc
-            logger.error(
+            self.logger.error(
                 "ModelCheckpoint: failed to save '%s' (%d total failure%s): %s",
                 key,
                 self.save_failures,
@@ -244,6 +249,8 @@ class EarlyStopping(Callback):
         if mode not in ("min", "max"):
             raise ValueError(f"mode must be 'min' or 'max', got '{mode}'")
 
+        super().__init__()
+
         self.monitor = monitor
         self.patience = patience
         self.mode = mode
@@ -279,7 +286,7 @@ class EarlyStopping(Callback):
         """
         current = logs.get(self.monitor)
         if current is None:
-            logger.warning(
+            self.logger.warning(
                 "EarlyStopping: monitored metric '%s' not found in logs %s.",
                 self.monitor,
                 list(logs.keys()),
@@ -294,9 +301,8 @@ class EarlyStopping(Callback):
             if self.wait >= self.patience:
                 self.stopped_epoch = epoch
                 trainer.stop_training = True
-                logger.info(
-                    "EarlyStopping: stopping at epoch %d. "
-                    "No improvement in '%s' for %d epochs (best=%.6f).",
+                self.logger.info(
+                    "EarlyStopping: stopping at epoch %d. No improvement in '%s' for %d epochs (best=%.6f).",
                     epoch,
                     self.monitor,
                     self.patience,
@@ -325,6 +331,7 @@ class LRMonitor(Callback):
                 ``log(metrics, step)`` method.  If ``None`` only Python
                 logging is used.
         """
+        super().__init__()
         self.tracker = tracker
 
     def on_epoch_end(self, trainer: Trainer, epoch: int, logs: dict[str, float]) -> None:
@@ -340,16 +347,16 @@ class LRMonitor(Callback):
         try:
             lr: float = trainer.optimizer.param_groups[0]["lr"]
         except (AttributeError, IndexError, KeyError) as exc:
-            logger.warning("LRMonitor: could not read learning rate: %s", exc)
+            self.logger.warning("LRMonitor: could not read learning rate: %s", exc)
             return
 
-        logger.debug("LRMonitor: epoch=%d lr=%.2e", epoch, lr)
+        self.logger.debug("LRMonitor: epoch=%d lr=%.2e", epoch, lr)
 
         if self.tracker is not None:
             try:
                 self.tracker.log({"train/lr": lr}, step=epoch)
             except Exception as exc:
-                logger.warning("LRMonitor: tracker.log failed: %s", exc)
+                self.logger.warning("LRMonitor: tracker.log failed: %s", exc)
 
 
 class UnfreezeSchedule(Callback):
@@ -390,6 +397,7 @@ class UnfreezeSchedule(Callback):
         schedule: dict[int, list[str]],
         new_lr: float | None = None,
     ) -> None:
+        super().__init__()
         self.schedule = schedule
         self.new_lr = new_lr
 
@@ -415,30 +423,30 @@ class UnfreezeSchedule(Callback):
                     unfrozen_names.append(name)
 
         if not unfrozen_params:
-            logger.debug(
-                "UnfreezeSchedule: epoch %d — no frozen parameters matched prefixes %s.",
-                epoch, prefixes,
+            self.logger.warning(
+                "UnfreezeSchedule: epoch %d — no frozen parameters matched prefixes %s. "
+                "Check for typos in your prefix names.",
+                epoch,
+                prefixes,
             )
             return
 
-        logger.info(
+        self.logger.info(
             "UnfreezeSchedule: epoch %d — unfroze %d parameter tensor(s) matching %s.",
-            epoch, len(unfrozen_params), prefixes,
+            epoch,
+            len(unfrozen_params),
+            prefixes,
         )
 
         if self.new_lr is not None:
             try:
-                trainer.optimizer.add_param_group(
-                    {"params": unfrozen_params, "lr": self.new_lr}
-                )
-                logger.info(
+                trainer.optimizer.add_param_group({"params": unfrozen_params, "lr": self.new_lr})
+                self.logger.info(
                     "UnfreezeSchedule: added new param group with lr=%.2e for unfrozen params.",
                     self.new_lr,
                 )
             except Exception as exc:
-                logger.warning(
-                    "UnfreezeSchedule: could not add param group: %s", exc
-                )
+                self.logger.warning("UnfreezeSchedule: could not add param group: %s", exc)
 
 
 class OptunaCallback(Callback):
@@ -480,6 +488,7 @@ class OptunaCallback(Callback):
     """
 
     def __init__(self, trial: Any, monitor: str = "val/loss") -> None:
+        super().__init__()
         self.trial = trial
         self.monitor = monitor
 
@@ -493,33 +502,37 @@ class OptunaCallback(Callback):
         """
         value = logs.get(self.monitor)
         if value is None:
-            logger.warning(
+            self.logger.warning(
                 "OptunaCallback: monitored metric '%s' not in logs %s — skipping report.",
-                self.monitor, list(logs.keys()),
+                self.monitor,
+                list(logs.keys()),
             )
             return
 
         try:
             self.trial.report(float(value), step=epoch)
         except Exception as exc:
-            logger.warning("OptunaCallback: trial.report() failed: %s", exc)
+            self.logger.warning("OptunaCallback: trial.report() failed: %s", exc)
             return
 
         try:
             should_prune = self.trial.should_prune()
         except Exception as exc:
-            logger.warning("OptunaCallback: trial.should_prune() failed: %s", exc)
+            self.logger.warning("OptunaCallback: trial.should_prune() failed: %s", exc)
             return
 
         if should_prune:
             trainer.stop_training = True
-            logger.info(
+            self.logger.info(
                 "OptunaCallback: trial pruned at epoch %d (%s=%.6f).",
-                epoch, self.monitor, value,
+                epoch,
+                self.monitor,
+                value,
             )
             # Raise TrialPruned if Optuna is available so it is recorded correctly.
             try:
                 import optuna  # noqa: PLC0415
+
                 raise optuna.TrialPruned()
             except ImportError:
                 pass
@@ -540,6 +553,7 @@ class ProgressLogger(Callback):
 
     def __init__(self) -> None:
         """Initialise the progress logger, storing total epochs once known."""
+        super().__init__()
         self._total_epochs: int = 0
 
     def on_train_begin(self, trainer: Trainer) -> None:
@@ -560,7 +574,5 @@ class ProgressLogger(Callback):
         """
         total = self._total_epochs or "?"
         # Build a sorted metric string for consistent, readable output.
-        metrics_str = "  ".join(
-            f"{k}={v:.4f}" for k, v in sorted(logs.items())
-        )
-        logger.info("Epoch %d/%s — %s", epoch + 1, total, metrics_str)
+        metrics_str = "  ".join(f"{k}={v:.4f}" for k, v in sorted(logs.items()))
+        self.logger.info("Epoch %d/%s — %s", epoch + 1, total, metrics_str)
