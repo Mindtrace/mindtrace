@@ -1,50 +1,69 @@
-# mindtrace.models.architectures
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-Backbone + head assembly for ML models. Build any architecture with one call,
-extend the backbone registry with custom models, and fine-tune with LoRA.
+# Mindtrace Models -- Architectures
 
-```python
-from mindtrace.models.architectures import (
-    build_model, build_model_from_hf, ModelWrapper,
-    build_backbone, list_backbones, register_backbone, BackboneInfo,
-    LinearHead, MLPHead, MultiLabelHead,
-    LinearSegHead, FPNSegHead,
-    DetectionHead,
-)
+Backbone + head assembly for ML models. Build any architecture with one call, extend the backbone registry with custom models, and fine-tune with LoRA.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Model Factory](#model-factory)
+- [Backbone Registry](#backbone-registry)
+- [Head Types](#head-types)
+- [LoRA Fine-Tuning](#lora-fine-tuning)
+- [ModelWrapper](#modelwrapper)
+- [API Reference](#api-reference)
+
+## Overview
+
+The architectures sub-package provides:
+
+- **Model Factory**: `build_model` and `build_model_from_hf` assemble a backbone + head into a single `nn.Module`
+- **Backbone Registry**: 33 built-in backbones with a decorator-based extension mechanism
+- **Head Types**: 6 task-specific heads for classification, segmentation, and detection
+- **LoRA Support**: Parameter-efficient fine-tuning via PEFT for HuggingFace DINO backbones
+- **Automatic Routing**: HF DINO + segmentation head produces `HFDINOSegWrapper` with spatial upsampling
+
+## Architecture
+
+```
+architectures/
+├── __init__.py              # Public API: build_model, build_model_from_hf, heads
+├── factory.py               # build_model, build_model_from_hf, _build_head
+├── model_wrapper.py         # ModelWrapper, HFDINOSegWrapper
+├── backbones/
+│   ├── __init__.py          # build_backbone, list_backbones, register_backbone
+│   ├── registry.py          # BackboneRegistry singleton
+│   ├── torchvision.py       # ResNet, ViT, EfficientNet registrations
+│   ├── dino_hf.py           # DINOv2, DINOv3, LoRAConfig
+│   └── huggingface.py       # Generic HuggingFace backbone adapter
+└── heads/
+    ├── __init__.py          # All head exports
+    ├── classification.py    # LinearHead, MLPHead, MultiLabelHead
+    ├── segmentation.py      # LinearSegHead, FPNSegHead
+    └── detection.py         # DetectionHead
 ```
 
-> **See also:** [`backbones/`](backbones/README.md) -- backbone registry, DINO, HuggingFace, LoRA.
+## Model Factory
 
----
+### `build_model` -- registered backbone + head
 
-## `build_model()` -- registered backbone + head
-
-Assembles a backbone from the registry and a head by type key into a single
-`ModelWrapper` (or `HFDINOSegWrapper` for segmentation with HF DINO backbones).
-Head construction is handled by an internal `_build_head()` helper that
-centralizes the instantiation logic for classification heads, while segmentation
-heads are built inline because they use `in_channels` semantics instead of
-`in_features`.
+Assembles a backbone from the registry and a head by type key into a single `ModelWrapper`. Head construction is handled by an internal `_build_head` helper that centralizes instantiation logic.
 
 ```python
 from mindtrace.models.architectures import build_model
 
-# -- Classification --------------------------------------------------------
-model = build_model("resnet50",      "linear",     num_classes=10)
-model = build_model("vit_b_16",      "mlp",        num_classes=10, hidden_dim=512, num_layers=2)
+# Classification
+model = build_model("resnet50", "linear", num_classes=10)
+model = build_model("vit_b_16", "mlp", num_classes=10, hidden_dim=512, num_layers=2)
 model = build_model("dino_v3_small", "multilabel", num_classes=80)
-model = build_model("resnet18",      "linear",     num_classes=4,  pretrained=False)
 
-# -- Segmentation ----------------------------------------------------------
+# Segmentation
 model = build_model("dino_v3_small", "linear_seg", num_classes=19)
-model = build_model("dino_v3_small", "fpn_seg",    num_classes=19, hidden_dim=256)
+model = build_model("dino_v3_small", "fpn_seg", num_classes=19, hidden_dim=256)
 
-# -- Detection -------------------------------------------------------------
-# DetectionHead is available as a standalone nn.Module (see Head classes below).
-# build_model does not include "detection" as a head key; use DetectionHead
-# directly with a backbone for detection tasks.
-
-# -- Common options ---------------------------------------------------------
+# Common options
 model = build_model(
     backbone="dino_v3_small",
     head="linear",
@@ -60,30 +79,7 @@ logits   = model.head(features) # (B, num_classes)
 info     = model.backbone_info  # BackboneInfo(name, num_features, model)
 ```
 
-### Supported head keys
-
-| Key | Class | Task | Notes |
-|-----|-------|------|-------|
-| `"linear"` | `LinearHead` | Classification | Single linear layer |
-| `"mlp"` | `MLPHead` | Classification | BN + dropout; add `hidden_dim`, `num_layers` |
-| `"multilabel"` | `MultiLabelHead` | Multi-label | Pair with `BCEWithLogitsLoss` |
-| `"linear_seg"` | `LinearSegHead` | Segmentation | 1x1 conv |
-| `"fpn_seg"` | `FPNSegHead` | Segmentation | 3x3 + 1x1 refinement; add `hidden_dim` |
-
-### `isinstance` routing for segmentation
-
-When a HuggingFace DINO backbone (`HuggingFaceDINOBackbone`) is paired with a
-segmentation head (`"linear_seg"` or `"fpn_seg"`), `build_model` returns an
-`HFDINOSegWrapper` instead of `ModelWrapper`. The wrapper calls
-`backbone.forward_spatial(x)` to produce a `(B, D, H_p, W_p)` patch token map,
-passes it through the segmentation head, and bilinearly upsamples the output
-back to the input resolution. This routing uses `isinstance` to check whether
-the backbone model is an `HuggingFaceDINOBackbone` instance, guarded by an
-availability check for the `transformers` library.
-
----
-
-## `build_model_from_hf()` -- any HuggingFace vision model
+### `build_model_from_hf` -- any HuggingFace vision model
 
 ```python
 from mindtrace.models.architectures import build_model_from_hf
@@ -98,21 +94,42 @@ model = build_model_from_hf(
     dropout=0.0,
     cache_dir=None,          # HuggingFace cache directory
 )
-# model.backbone  -> HuggingFaceBackbone wrapping the AutoModel
-# model.head      -> any classification head
 ```
 
-Segmentation heads (`"linear_seg"`, `"fpn_seg"`) are not supported via this
-factory because arbitrary HF models do not expose a standardised spatial
-feature map. Use `build_model()` with a registered DINO backbone for
-segmentation.
+Segmentation heads (`"linear_seg"`, `"fpn_seg"`) are not supported via this factory because arbitrary HF models do not expose a standardized spatial feature map. Use `build_model` with a registered DINO backbone for segmentation.
 
----
+### Supported Head Keys
 
-## Backbone registry
+| Key | Class | Task | Notes |
+|-----|-------|------|-------|
+| `"linear"` | `LinearHead` | Classification | Single linear layer |
+| `"mlp"` | `MLPHead` | Classification | BN + dropout; accepts `hidden_dim`, `num_layers` |
+| `"multilabel"` | `MultiLabelHead` | Multi-label | Pair with `BCEWithLogitsLoss` |
+| `"linear_seg"` | `LinearSegHead` | Segmentation | 1x1 conv |
+| `"fpn_seg"` | `FPNSegHead` | Segmentation | 3x3 + 1x1 refinement; accepts `hidden_dim` |
+
+### Segmentation Routing
+
+When a HuggingFace DINO backbone (`HuggingFaceDINOBackbone`) is paired with a segmentation head, `build_model` returns an `HFDINOSegWrapper` instead of `ModelWrapper`. The wrapper calls `backbone.forward_spatial(x)` to produce a `(B, D, H_p, W_p)` patch token map, passes it through the segmentation head, and bilinearly upsamples the output back to the input resolution.
+
+## Backbone Registry
+
+### Built-in Backbone Families
+
+| Family | Names | Feature dim | Extra |
+|--------|-------|-------------|-------|
+| ResNet | `resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152` | 512--2048 | `train` |
+| ViT | `vit_b_16`, `vit_b_32`, `vit_l_16` | 768--1024 | `train` |
+| EfficientNet | via torchvision | varies | `train` |
+| DINOv2 | `dino_v2_small`, `dino_v2_base`, `dino_v2_large`, `dino_v2_giant` | 384--1536 | `transformers` |
+| DINOv2+regs | `dino_v2_small_reg`, `dino_v2_base_reg`, `dino_v2_large_reg`, `dino_v2_giant_reg` | 384--1536 | `transformers` |
+| DINOv3 ViT | `dino_v3_small`, `dino_v3_small_plus`, `dino_v3_base`, `dino_v3_large`, `dino_v3_large_sat`, `dino_v3_huge_plus`, `dino_v3_7b`, `dino_v3_7b_sat` | 384--4096 | `transformers` |
+| DINOv3 ConvNeXt | `dino_v3_convnext_tiny`, `dino_v3_convnext_small`, `dino_v3_convnext_base`, `dino_v3_convnext_large` | varies | `transformers` |
+
+### Querying and Building
 
 ```python
-from mindtrace.models.architectures import build_backbone, list_backbones, register_backbone, BackboneInfo
+from mindtrace.models.architectures import build_backbone, list_backbones, BackboneInfo
 
 # List all registered names
 print(list_backbones())
@@ -123,8 +140,13 @@ info: BackboneInfo = build_backbone("resnet50", pretrained=True)
 info.name          # "resnet50"
 info.num_features  # 2048
 info.model         # nn.Module
+```
 
-# Register your own backbone
+### Registering a Custom Backbone
+
+```python
+from mindtrace.models.architectures import register_backbone, BackboneInfo
+
 @register_backbone("timm_effnet")
 def _build(pretrained: bool = True, **kwargs):
     import timm
@@ -135,25 +157,68 @@ def _build(pretrained: bool = True, **kwargs):
 model = build_model("timm_effnet", "linear", num_classes=5)
 ```
 
-### Built-in backbone families
+## Head Types
 
-| Family | Names | `embed_dim` |
-|--------|-------|-------------|
-| ResNet | `resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152` | 512-2048 |
-| ViT | `vit_b_16`, `vit_b_32`, `vit_l_16` | 768-1024 |
-| DINOv2 | `dino_v2_small`, `dino_v2_base`, `dino_v2_large`, `dino_v2_giant` | 384-1536 |
-| DINOv2+regs | `dino_v2_small_reg`, `dino_v2_base_reg`, `dino_v2_large_reg`, `dino_v2_giant_reg` | 384-1536 |
-| DINOv3 ViT | `dino_v3_small`, `dino_v3_small_plus`, `dino_v3_base`, `dino_v3_large`, `dino_v3_large_sat`, `dino_v3_huge_plus`, `dino_v3_7b`, `dino_v3_7b_sat` | 384-4096 |
-| DINOv3 ConvNeXt | `dino_v3_convnext_tiny`, `dino_v3_convnext_small`, `dino_v3_convnext_base`, `dino_v3_convnext_large` | varies |
-| EfficientNet | via torchvision (when available) | varies |
+All heads are `nn.Module` subclasses and can be used standalone.
 
----
+### Classification Heads
 
-## LoRA support
+```python
+from mindtrace.models.architectures import LinearHead, MLPHead, MultiLabelHead
 
-Pass a `LoRAConfig` to `build_backbone()` to apply LoRA adapters to any
-HuggingFace DINO backbone. Target module names differ between DINOv2 and DINOv3
-and are resolved automatically.
+head = LinearHead(in_features=768, num_classes=10, dropout=0.1)
+head = MLPHead(in_features=768, hidden_dim=512, num_classes=10, dropout=0.1, num_layers=2)
+head = MultiLabelHead(in_features=768, num_classes=80, dropout=0.0)
+```
+
+### Segmentation Heads
+
+Input shape: `(B, C, H_p, W_p)` patch feature map.
+
+```python
+from mindtrace.models.architectures import LinearSegHead, FPNSegHead
+
+head = LinearSegHead(in_channels=384, num_classes=19)
+head = FPNSegHead(in_channels=384, num_classes=19, hidden_dim=256)
+```
+
+### Detection Head
+
+Returns `(cls_logits, bbox_deltas)`.
+
+```python
+from mindtrace.models.architectures import DetectionHead
+
+head = DetectionHead(in_channels=768, num_classes=80, num_anchors=1)
+logits, deltas = head(features)  # features (B, in_channels)
+# logits: (B, num_classes), deltas: (B, 4 * num_anchors)
+```
+
+## LoRA Fine-Tuning
+
+Pass a `LoRAConfig` to `build_backbone` or `build_model` to apply LoRA adapters to any HuggingFace DINO backbone. Target module names differ between DINOv2 and DINOv3 and are resolved automatically.
+
+### LoRAConfig Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `r` | 8 | LoRA rank |
+| `lora_alpha` | 8 | LoRA scaling factor |
+| `lora_dropout` | 0.1 | Dropout on LoRA layers |
+| `target_modules` | `"qv"` | Preset name or explicit list of module name substrings |
+| `bias` | `"none"` | Which bias params to train: `"none"`, `"all"`, `"lora_only"` |
+
+### Target Module Presets
+
+| Preset | DINOv2 modules | DINOv3 modules |
+|--------|----------------|----------------|
+| `"qv"` | query, value | q_proj, v_proj |
+| `"qkv"` | query, key, value | q_proj, k_proj, v_proj |
+| `"qkv_proj"` | q, k, v + output dense | q, k, v + o_proj |
+| `"mlp"` | fc1, fc2 | up_proj, down_proj |
+| `"all"` | all attention + MLP | all attention + MLP |
+
+### Usage
 
 ```python
 from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
@@ -170,110 +235,56 @@ model = build_model(
     "dino_v3_large", "linear", num_classes=10,
     lora_config=LoRAConfig(r=8, lora_alpha=8, target_modules="qv"),
 )
+
+# Merge adapters for clean export
+model.backbone.merge_lora()
+model.backbone.save_pretrained("/ckpt/merged")
 ```
 
-### LoRAConfig parameters
+## ModelWrapper
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `r` | 8 | LoRA rank |
-| `lora_alpha` | 8 | LoRA scaling factor |
-| `lora_dropout` | 0.1 | Dropout on LoRA layers |
-| `target_modules` | `"qv"` | Preset name or explicit list of module name substrings |
-| `bias` | `"none"` | Which bias params to train: `"none"`, `"all"`, `"lora_only"` |
-
-### Target module presets
-
-| Preset | DINOv2 modules | DINOv3 modules |
-|--------|---------------|----------------|
-| `"qv"` | query, value | q_proj, v_proj |
-| `"qkv"` | query, key, value | q_proj, k_proj, v_proj |
-| `"qkv_proj"` | q, k, v + output dense | q, k, v + o_proj |
-| `"mlp"` | fc1, fc2 | up_proj, down_proj |
-| `"all"` | all attention + MLP | all attention + MLP |
-
----
-
-## Head classes
-
-All heads are `nn.Module` subclasses and can be used standalone:
+The assembled model returned by `build_model` and `build_model_from_hf`.
 
 ```python
-from mindtrace.models.architectures import (
-    LinearHead, MLPHead, MultiLabelHead,
-    LinearSegHead, FPNSegHead, DetectionHead,
-)
-
-# Classification
-head = LinearHead(in_features=768, num_classes=10, dropout=0.1)
-head = MLPHead(in_features=768, hidden_dim=512, num_classes=10,
-               dropout=0.1, num_layers=2)
-head = MultiLabelHead(in_features=768, num_classes=80, dropout=0.0)
-
-# Segmentation -- input: (B, C, H_p, W_p) patch feature map
-head = LinearSegHead(in_channels=384, num_classes=19)
-head = FPNSegHead(in_channels=384, num_classes=19, hidden_dim=256)
-
-# Detection -- returns (cls_logits, bbox_deltas)
-head = DetectionHead(in_channels=768, num_classes=80, num_anchors=1)
-logits, deltas = head(features)   # features (B, in_channels)
-# logits: (B, num_classes), deltas: (B, 4 * num_anchors)
-```
-
----
-
-## `ModelWrapper`
-
-The assembled model returned by `build_model` and `build_model_from_hf`:
-
-```python
-# ModelWrapper exposes:
 model.backbone       # the nn.Module backbone
 model.head           # the nn.Module head
 model.backbone_info  # BackboneInfo(name, num_features, model)
 model(x)             # forward: backbone(x) -> head(features) -> logits
 ```
 
-### `HFDINOSegWrapper`
-
-Returned by `build_model` when an HF DINO backbone is paired with a
-segmentation head. Uses `backbone.forward_spatial(x)` to produce a
-`(B, D, H_p, W_p)` patch map, runs it through the head, and bilinearly
-upsamples to the input resolution.
+`HFDINOSegWrapper` is returned when an HF DINO backbone is paired with a segmentation head. Uses `backbone.forward_spatial(x)` to produce a `(B, D, H_p, W_p)` patch map, runs it through the head, and bilinearly upsamples to the input resolution.
 
 ```python
 model = build_model("dino_v3_small", "fpn_seg", num_classes=19)
 logits = model(images)  # (B, 19, H, W)
 ```
 
----
-
-## Public API reference
+## API Reference
 
 ```python
 from mindtrace.models.architectures import (
     # Model factory
     build_model,            # backbone name + head key -> ModelWrapper
     build_model_from_hf,    # HF model ID + head key -> ModelWrapper
-    ModelWrapper,            # assembled backbone + head nn.Module
+    ModelWrapper,           # assembled backbone + head nn.Module
 
     # Backbone registry
-    build_backbone,          # name -> BackboneInfo
-    list_backbones,          # -> list[str] of registered names
-    register_backbone,       # decorator to add custom backbones
-    BackboneInfo,            # dataclass: name, num_features, model
+    build_backbone,         # name -> BackboneInfo
+    list_backbones,         # -> list[str] of registered names
+    register_backbone,      # decorator to add custom backbones
+    BackboneInfo,           # dataclass: name, num_features, model
 
     # Classification heads
-    LinearHead,              # single linear layer
-    MLPHead,                 # MLP with BN + dropout
-    MultiLabelHead,          # raw logits for BCEWithLogitsLoss
+    LinearHead,             # single linear layer
+    MLPHead,                # MLP with BN + dropout
+    MultiLabelHead,         # raw logits for BCEWithLogitsLoss
 
     # Segmentation heads
-    LinearSegHead,           # 1x1 conv
-    FPNSegHead,              # 3x3 + 1x1 refinement
+    LinearSegHead,          # 1x1 conv
+    FPNSegHead,             # 3x3 + 1x1 refinement
 
     # Detection head
-    DetectionHead,           # dual-branch cls + bbox regression
+    DetectionHead,          # dual-branch cls + bbox regression
 )
 
 # LoRA (requires transformers + peft)

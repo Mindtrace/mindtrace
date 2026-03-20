@@ -1,37 +1,63 @@
-# mindtrace.models.tracking
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-Unified experiment-tracking layer supporting MLflow, Weights & Biases, TensorBoard,
-and any combination via `CompositeTracker`. A `RegistryBridge` adapts the mindtrace
-Registry as a model artifact store. Framework bridges for Ultralytics and
-HuggingFace connect third-party training loops to the same tracking interface.
+# Mindtrace Models -- Tracking
 
-```python
-from mindtrace.models.tracking import (
-    Tracker, MLflowTracker, WandBTracker,
-    TensorBoardTracker, CompositeTracker,
-    RegistryBridge,
-    UltralyticsTrackerBridge, HuggingFaceTrackerBridge,
-)
+Unified experiment-tracking layer supporting MLflow, Weights & Biases, and TensorBoard backends. A `CompositeTracker` fans out to multiple backends simultaneously. A `RegistryBridge` adapts the Mindtrace Registry as a model artifact store. Framework bridges for Ultralytics and HuggingFace connect third-party training loops to the same tracking interface.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tracker Interface](#tracker-interface)
+- [Backends](#backends)
+- [CompositeTracker](#compositetracker)
+- [RegistryBridge](#registrybridge)
+- [Framework Bridges](#framework-bridges)
+- [Trainer Integration](#trainer-integration)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+
+## Overview
+
+The tracking sub-package provides:
+
+- **Tracker**: Abstract base class extending `MindtraceABC` with a uniform tracking interface
+- **Three Backends**: MLflow, Weights & Biases, TensorBoard with consistent API
+- **CompositeTracker**: Fan-out to multiple backends with per-child error isolation
+- **RegistryBridge**: Connect experiment tracking to the Mindtrace artifact registry
+- **Framework Bridges**: Adapt Ultralytics and HuggingFace Transformers training to emit metrics through the Tracker interface
+
+## Architecture
+
+```
+tracking/
+├── __init__.py              # Public API exports
+├── tracker.py               # Tracker ABC, CompositeTracker
+├── registry_bridge.py       # RegistryBridge adapter
+├── bridges.py               # UltralyticsTrackerBridge, HuggingFaceTrackerBridge
+└── backends/
+    ├── __init__.py
+    ├── mlflow.py            # MLflowTracker
+    ├── wandb.py             # WandBTracker
+    └── tensorboard.py       # TensorBoardTracker
 ```
 
----
+## Tracker Interface
 
-## Tracker -- abstract base
+`Tracker` extends `MindtraceABC` (the framework's abstract base class). All backends share this interface.
 
-`Tracker` extends `MindtraceABC` (the framework's abstract base class), which
-provides structured logging via `self.logger`. All backends share this interface:
+### Methods
 
-```python
-class Tracker(MindtraceABC):
-    def start_run(self, name: str, config: dict[str, Any]) -> None: ...
-    def log(self, metrics: dict[str, float], step: int) -> None: ...
-    def log_params(self, params: dict[str, Any]) -> None: ...
-    def log_model(self, model: Any, name: str, version: str) -> None: ...
-    def log_artifact(self, path: str) -> None: ...
-    def finish(self) -> None: ...
-```
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start_run` | `(name: str, config: dict) -> None` | Begin a named run with config |
+| `log` | `(metrics: dict[str, float], step: int) -> None` | Log scalar metrics |
+| `log_params` | `(params: dict[str, Any]) -> None` | Log hyperparameters |
+| `log_model` | `(model: Any, name: str, version: str) -> None` | Log model artifact |
+| `log_artifact` | `(path: str) -> None` | Log file artifact |
+| `finish` | `() -> None` | End the current run |
 
-### Context manager (recommended)
+### Context Manager (Recommended)
 
 ```python
 with tracker.run("exp-001", config={"lr": 3e-4, "epochs": 50}):
@@ -43,11 +69,9 @@ with tracker.run("exp-001", config={"lr": 3e-4, "epochs": 50}):
     tracker.log_artifact("/tmp/confusion_matrix.png")
 ```
 
-The context manager calls `start_run` on entry and `finish` on exit (including
-when an exception is raised). It yields `self`, so the tracker is usable both
-inside and outside the `with` block.
+The context manager calls `start_run` on entry and `finish` on exit (including when an exception is raised).
 
-### Factory (`from_config`)
+### Factory
 
 ```python
 tracker = Tracker.from_config(
@@ -57,9 +81,20 @@ tracker = Tracker.from_config(
 )
 ```
 
----
-
 ## Backends
+
+### Backend Comparison
+
+| Feature | MLflow | WandB | TensorBoard |
+|---------|--------|-------|-------------|
+| `start_run` | Yes | Yes | Yes |
+| `log` (scalars) | Yes | Yes | Yes |
+| `log_params` | Yes | config update | text note |
+| `log_model` | Yes (state dict) | Yes (state dict) | text note only |
+| `log_artifact` | Yes | Yes | No (warning) |
+| Remote server | optional | required | optional |
+| Offline support | Yes | No | Yes |
+| Extra required | `mlflow` | `wandb` | `tensorboard` |
 
 ### MLflowTracker
 
@@ -100,70 +135,58 @@ tracker = TensorBoardTracker(log_dir="/tmp/tb_logs")
 
 with tracker.run("run-001", config={}):
     tracker.log({"loss": 0.5}, step=0)
-    # log_artifact: not supported by TensorBoard (logs warning)
-    # log_model: stored as a text note, weights not uploaded
+    # log_artifact: not supported (logs warning)
+    # log_model: stored as text note, weights not uploaded
 ```
 
----
+## CompositeTracker
 
-## CompositeTracker -- fan-out to multiple backends
-
-`CompositeTracker` extends `Tracker` and delegates every call to a list of
-child trackers. Exceptions from individual children are caught and logged so
-that a single failing backend does not abort the entire operation. The exception
-is re-raised only if all children fail.
+`CompositeTracker` extends `Tracker` and delegates every call to a list of child trackers. Exceptions from individual children are caught and logged so that a single failing backend does not abort the entire operation. The exception is re-raised only if all children fail.
 
 ```python
-from mindtrace.models.tracking import CompositeTracker, WandBTracker, MLflowTracker
+from mindtrace.models.tracking import CompositeTracker, MLflowTracker, WandBTracker
 
 tracker = CompositeTracker(trackers=[
     MLflowTracker(experiment_name="my-exp"),
     WandBTracker(project="my-project"),
 ])
 
-# All calls are forwarded to every child tracker
 with tracker.run("run-001", config={"lr": 3e-4}):
     tracker.log({"loss": 0.32}, step=0)
 ```
 
----
-
 ## RegistryBridge
 
-Adapter between any `Tracker` and the mindtrace `Registry`, exposing a minimal
-`save(model, name, version)` interface. Accepts any object that satisfies the
-`RegistryProtocol` (i.e. has a `save(key, model)` method).
+Adapter between any `Tracker` and the Mindtrace `Registry`, exposing a minimal `save(model, name, version)` interface. Accepts any object that satisfies the `RegistryProtocol` (i.e. has a `save(key, model)` method).
 
 ```python
 from mindtrace.models.tracking import RegistryBridge
 from mindtrace.registry import Registry
 
 registry = Registry("/tmp/my_registry")
-bridge   = RegistryBridge(registry)
+bridge = RegistryBridge(registry)
 
 key = bridge.save(model, name="my-model", version="v2")
 # key == "my-model:v2"
 # Internally calls registry.save("my-model:v2", model)
 ```
 
-If the provided registry object does not satisfy `RegistryProtocol`, a
-`TypeError` is raised at construction time.
+If the provided registry object does not satisfy `RegistryProtocol`, a `TypeError` is raised at construction time.
 
----
+## Framework Bridges
 
-## Framework bridges
+Bridges connect third-party training frameworks to the Mindtrace Tracker so metrics flow into your experiment tracking backend without custom glue code.
 
-Bridges connect third-party training frameworks to the mindtrace Tracker so
-metrics flow into your experiment tracking backend without custom glue code.
+### Bridge Comparison
+
+| Bridge | Framework | Integration method | Metrics forwarded |
+|--------|-----------|-------------------|-------------------|
+| `UltralyticsTrackerBridge` | Ultralytics YOLO | `on_fit_epoch_end`, `on_train_end` callbacks | box_loss, cls_loss, mAP |
+| `HuggingFaceTrackerBridge` | HuggingFace Transformers | `TrainerCallback.on_log` | all numeric values |
 
 ### UltralyticsTrackerBridge
 
-Registers `on_fit_epoch_end` and `on_train_end` callbacks on an Ultralytics
-YOLO model. Training metrics (box_loss, cls_loss, mAP, etc.) are forwarded
-to the tracker automatically each epoch.
-
 ```python
-from mindtrace.models.tracking import Tracker
 from mindtrace.models.tracking.bridges import UltralyticsTrackerBridge
 from ultralytics import YOLO
 
@@ -175,19 +198,13 @@ bridge.attach(yolo_model)
 
 with tracker.run("yolo-train", config={"epochs": 50}):
     yolo_model.train(data="dataset.yaml", epochs=50)
-    # Metrics are logged to MLflow each epoch automatically
 ```
 
 ### HuggingFaceTrackerBridge
 
-Implements the HuggingFace `TrainerCallback` interface (when `transformers` is
-installed) so it can be passed directly to a HuggingFace `Trainer`. Falls back
-to duck-typing when `transformers` is not installed.
-
-Forwards all numeric values from HF's `on_log` callback to `tracker.log()`.
+Implements the HuggingFace `TrainerCallback` interface (when `transformers` is installed). Falls back to duck-typing when `transformers` is not installed.
 
 ```python
-from mindtrace.models.tracking import Tracker
 from mindtrace.models.tracking.bridges import HuggingFaceTrackerBridge
 from transformers import Trainer as HFTrainer
 
@@ -199,14 +216,12 @@ with tracker.run("hf-finetune", config={"lr": 5e-5}):
         model=model,
         args=training_args,
         train_dataset=train_ds,
-        callbacks=[bridge],      # receives on_log calls
+        callbacks=[bridge],
     )
     hf_trainer.train()
 ```
 
----
-
-## Integration with Trainer
+## Trainer Integration
 
 Pass any tracker to `Trainer` to automatically log metrics every epoch:
 
@@ -217,33 +232,26 @@ trainer = Trainer(
     model=model,
     loss_fn=loss_fn,
     optimizer=optimizer,
-    tracker=tracker,          # receives log() calls each epoch
-    callbacks=[
-        LRMonitor(tracker=tracker),  # also logs LR
-    ],
+    tracker=tracker,
+    callbacks=[LRMonitor(tracker=tracker)],
 )
 
 with tracker.run("my-run", config={"epochs": 20}):
     trainer.fit(train_loader, val_loader, epochs=20)
 ```
 
----
+## Configuration
 
-## Backend feature matrix
+### Environment Variables
 
-| Feature | MLflow | WandB | TensorBoard |
-|---------|--------|-------|-------------|
-| `start_run` | Yes | Yes | Yes |
-| `log` (scalars) | Yes | Yes | Yes |
-| `log_params` | Yes | config update | text note |
-| `log_model` | Yes (state dict) | Yes (state dict) | text note only |
-| `log_artifact` | Yes | Yes | No (warning) |
-| Remote server | optional | required | optional |
-| Offline support | Yes | No | Yes |
+| Variable | Backend | Description |
+|----------|---------|-------------|
+| `MLFLOW_TRACKING_URI` | MLflow | Tracking server URI (default: local `./mlruns`) |
+| `WANDB_PROJECT` | WandB | Default project name |
+| `WANDB_ENTITY` | WandB | Default team/entity |
+| `WANDB_API_KEY` | WandB | Authentication key |
 
----
-
-## Public API reference
+## API Reference
 
 ```python
 from mindtrace.models.tracking import (
@@ -252,15 +260,15 @@ from mindtrace.models.tracking import (
     CompositeTracker,           # fan-out to multiple backends
 
     # Backends
-    MLflowTracker,
-    WandBTracker,
-    TensorBoardTracker,
+    MLflowTracker,              # MLflow backend
+    WandBTracker,               # Weights & Biases backend
+    TensorBoardTracker,         # TensorBoard backend
 
     # Registry adapter
-    RegistryBridge,
+    RegistryBridge,             # connect tracker to artifact registry
 
     # Framework bridges
-    UltralyticsTrackerBridge,
-    HuggingFaceTrackerBridge,
+    UltralyticsTrackerBridge,   # adapt Ultralytics training to Tracker
+    HuggingFaceTrackerBridge,   # adapt HF Transformers training to Tracker
 )
 ```
