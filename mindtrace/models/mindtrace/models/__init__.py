@@ -199,7 +199,45 @@ __all__ = [
     "VALID_TRANSITIONS",
     "promote",
     "demote",
+    # pipeline
+    "AutoSegmenter",
+    "AutoSegmenterInput",
+    "AutoSegmenterOutput",
+    "AutoSegmenterTaskSchema",
+    "BoundingBoxPrediction",
+    "Pipeline",
+    "PipelineLoadInput",
+    "PipelineLoadOutput",
+    "PipelineLoadTaskSchema",
+    "PipelineLoadedOutput",
+    "PipelineLoadedTaskSchema",
+    "PipelineUnloadInput",
+    "PipelineUnloadOutput",
+    "PipelineUnloadTaskSchema",
+    "SegmentationMaskPrediction",
 ]
+
+# -- Pipeline (core inference orchestration) --------------------------------
+from mindtrace.models.auto_segmenter import (
+    AutoSegmenter,
+    AutoSegmenterInput,
+    AutoSegmenterOutput,
+    AutoSegmenterTaskSchema,
+    BoundingBoxPrediction,
+    SegmentationMaskPrediction,
+)
+from mindtrace.models.pipeline import (
+    Pipeline,
+    PipelineLoadedOutput,
+    PipelineLoadedTaskSchema,
+    PipelineLoadInput,
+    PipelineLoadOutput,
+    PipelineLoadTaskSchema,
+    PipelineUnloadInput,
+    PipelineUnloadOutput,
+    PipelineUnloadTaskSchema,
+)
+
 
 # -- Archivers (ML-specific, self-register with Registry at import time) ------
 import mindtrace.models.archivers  # noqa: F401, E402

@@ -520,10 +520,15 @@ class TestConnectionManagerIntegration:
 
     def test_context_manager_usage(self):
         """Test using ConnectionManager as a context manager."""
-        with patch("mindtrace.services.core.connection_manager.requests.request") as mock_request:
+        with (
+            patch("mindtrace.services.core.connection_manager.requests.request") as mock_request,
+            patch("mindtrace.services.core.connection_manager.requests.post") as mock_post,
+        ):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_request.return_value = mock_response
+            # Simulate server being down after shutdown by raising ConnectionError
+            mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
             with ConnectionManager() as cm:
                 assert isinstance(cm, ConnectionManager)
