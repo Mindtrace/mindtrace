@@ -24,7 +24,7 @@ identifier at call time.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from transformers import AutoModel  # noqa: F401
+
     _HF_AVAILABLE = True
 except ImportError:
     _HF_AVAILABLE = False
@@ -41,8 +42,7 @@ except ImportError:
 def _require_hf() -> None:
     if not _HF_AVAILABLE:
         raise ImportError(
-            "transformers is required for generic HuggingFace backbones.  "
-            "Install it with: pip install transformers"
+            "transformers is required for generic HuggingFace backbones.  Install it with: pip install transformers"
         )
 
 
@@ -84,9 +84,7 @@ class HuggingFaceBackbone(nn.Module):
         self.model_name_or_path = model_name_or_path
 
         if pretrained:
-            self._hf_model = AutoModel.from_pretrained(
-                model_name_or_path, cache_dir=cache_dir
-            )
+            self._hf_model = AutoModel.from_pretrained(model_name_or_path, cache_dir=cache_dir)
         else:
             cfg = AutoConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir)
             self._hf_model = AutoModel.from_config(cfg)

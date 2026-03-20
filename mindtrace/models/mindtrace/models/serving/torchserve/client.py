@@ -57,10 +57,10 @@ class TorchServeModelService(ModelService):
         timeout_s: float = 30.0,
         **kwargs: Any,
     ) -> None:
-        self.ts_inference_url:  str = ts_inference_url.rstrip("/")
+        self.ts_inference_url: str = ts_inference_url.rstrip("/")
         self.ts_management_url: str = ts_management_url.rstrip("/")
-        self.ts_model_name:     str = ts_model_name or kwargs.get("model_name", "")
-        self.timeout_s:         float = timeout_s
+        self.ts_model_name: str = ts_model_name or kwargs.get("model_name", "")
+        self.timeout_s: float = timeout_s
 
         super().__init__(**kwargs)
 
@@ -76,9 +76,7 @@ class TorchServeModelService(ModelService):
         model is not found or the server is unreachable.
         """
         url = f"{self.ts_management_url}/models/{self.ts_model_name}"
-        self.logger.info(
-            "Verifying TorchServe model registration at %s", url
-        )
+        self.logger.info("Verifying TorchServe model registration at %s", url)
         try:
             with urllib.request.urlopen(url, timeout=self.timeout_s) as resp:
                 if resp.status // 100 != 2:
@@ -114,7 +112,7 @@ class TorchServeModelService(ModelService):
         Raises:
             RuntimeError: On HTTP errors or JSON decode failures.
         """
-        url     = f"{self.ts_inference_url}/predictions/{self.ts_model_name}"
+        url = f"{self.ts_inference_url}/predictions/{self.ts_model_name}"
         payload = request.model_dump_json().encode("utf-8")
 
         req = urllib.request.Request(
@@ -130,20 +128,15 @@ class TorchServeModelService(ModelService):
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
-                f"TorchServe inference returned HTTP {exc.code} for "
-                f"model '{self.ts_model_name}':\n{body}"
+                f"TorchServe inference returned HTTP {exc.code} for model '{self.ts_model_name}':\n{body}"
             ) from exc
         except urllib.error.URLError as exc:
-            raise RuntimeError(
-                f"Cannot reach TorchServe inference API at {url}: {exc.reason}"
-            ) from exc
+            raise RuntimeError(f"Cannot reach TorchServe inference API at {url}: {exc.reason}") from exc
 
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"TorchServe returned non-JSON response:\n{raw[:500]}"
-            ) from exc
+            raise RuntimeError(f"TorchServe returned non-JSON response:\n{raw[:500]}") from exc
 
         # TorchServe returns a list of results directly; wrap into PredictResponse
         if isinstance(data, list):
@@ -170,8 +163,8 @@ class TorchServeModelService(ModelService):
             task=base.task,
             extra={
                 **base.extra,
-                "ts_inference_url":  self.ts_inference_url,
+                "ts_inference_url": self.ts_inference_url,
                 "ts_management_url": self.ts_management_url,
-                "ts_model_name":     self.ts_model_name,
+                "ts_model_name": self.ts_model_name,
             },
         )

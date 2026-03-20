@@ -1,8 +1,8 @@
 # mindtrace.models.serving
 
 Model inference services with a uniform `predict()` interface.
-Three runtime backends are provided: ONNX (CPU/GPU via onnxruntime),
-TorchServe, and TensorRT.
+Two runtime backends are provided: ONNX (CPU/GPU via onnxruntime)
+and TorchServe.
 
 ```python
 # Base abstractions
@@ -13,14 +13,11 @@ from mindtrace.models.serving.onnx import OnnxModelService
 
 # TorchServe proxy
 from mindtrace.models.serving.torchserve import TorchServeModelService, TorchServeExporter
-
-# TensorRT (CUDA-only)
-from mindtrace.models.serving.tensorrt import TensorRTModelService, TensorRTEngine, TensorRTExporter
 ```
 
 ---
 
-## ModelService — abstract base
+## ModelService -- abstract base
 
 Subclass this when writing a custom inference backend.
 
@@ -46,7 +43,7 @@ svc = MyService(
     model_name="my-classifier",
     model_version="v1",
     device="auto",        # "auto" | "cuda" | "cuda:1" | "cpu"
-    registry=None,        # optional Registry — used in load_model if needed
+    registry=None,        # optional Registry -- used in load_model if needed
 )
 
 # Start as HTTP server (any subclass)
@@ -55,7 +52,7 @@ MyService.serve(host="0.0.0.0", port=8080)
 
 ---
 
-## ONNX — `OnnxModelService`
+## ONNX -- `OnnxModelService`
 
 ### Zero-subclass path (recommended)
 
@@ -75,7 +72,7 @@ svc = OnnxModelService(
 outputs = svc.predict_array({
     "pixel_values": np.random.randn(4, 3, 224, 224).astype(np.float32)
 })
-# → {"logits": ndarray (4, num_classes)}
+# -> {"logits": ndarray (4, num_classes)}
 ```
 
 ### Load from registry instead of file
@@ -134,7 +131,7 @@ torch.onnx.export(
 
 ---
 
-## TorchServe — `TorchServeModelService`
+## TorchServe -- `TorchServeModelService`
 
 HTTP proxy to a running TorchServe inference server.
 
@@ -155,33 +152,6 @@ resp = svc.predict(PredictRequest(images=["img.jpg"]))
 # Export to TorchServe .mar archive
 exporter = TorchServeExporter(model=model, model_name="weld-classifier")
 exporter.export(output_dir="/tmp/ts_models")
-```
-
----
-
-## TensorRT — `TensorRTModelService`
-
-TensorRT engine inference (CUDA-only).
-
-```python
-from mindtrace.models.serving.tensorrt import (
-    TensorRTModelService, TensorRTEngine, TensorRTExporter,
-)
-
-# Inference from saved engine
-svc = TensorRTModelService(
-    model_name="weld-classifier",
-    model_version="v3",
-    engine_path="model.trt",
-    fp16=True,                 # use FP16 precision
-)
-
-# Export PyTorch model → TensorRT engine
-exporter = TensorRTExporter(model=model, input_shape=(1, 3, 224, 224))
-engine   = exporter.export(output_path="model.trt", fp16=True)
-
-# Low-level engine wrapper
-engine = TensorRTEngine(engine_path="model.trt")
 ```
 
 ---
@@ -214,11 +184,11 @@ info = ModelInfo(
 
 ## Backend comparison
 
-| Feature | ONNX | TorchServe | TensorRT |
-|---------|------|------------|----------|
-| Hardware | CPU / GPU | CPU / GPU | GPU only |
-| Zero-subclass inference | ✓ | ✗ | ✗ |
-| Dynamic batch size | ✓ | ✓ | requires re-export |
-| HTTP serving | via `serve()` | native | via `serve()` |
-| FP16 | provider-dependent | ✓ | ✓ |
-| Python dependency | `onnxruntime` | TorchServe server | `tensorrt` |
+| Feature | ONNX | TorchServe |
+|---------|------|------------|
+| Hardware | CPU / GPU | CPU / GPU |
+| Zero-subclass inference | Yes | No |
+| Dynamic batch size | Yes | Yes |
+| HTTP serving | via `serve()` | native |
+| FP16 | provider-dependent | Yes |
+| Python dependency | `onnxruntime` | TorchServe server |

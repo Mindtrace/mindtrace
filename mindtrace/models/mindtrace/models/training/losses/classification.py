@@ -49,23 +49,16 @@ class FocalLoss(nn.Module):
     ) -> None:
         super().__init__()
         if reduction not in ("mean", "sum", "none"):
-            raise ValueError(
-                f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'")
         if alpha is None or not isinstance(alpha, (int, float)):
             raise TypeError(
-                f"FocalLoss: alpha must be a positive float, got {alpha!r}. "
-                "Use alpha=1.0 for uniform class weighting."
+                f"FocalLoss: alpha must be a positive float, got {alpha!r}. Use alpha=1.0 for uniform class weighting."
             )
         if alpha <= 0:
-            raise ValueError(
-                f"FocalLoss: alpha must be > 0, got {alpha}. "
-                "Use alpha=1.0 for uniform class weighting."
-            )
+            raise ValueError(f"FocalLoss: alpha must be > 0, got {alpha}. Use alpha=1.0 for uniform class weighting.")
         if gamma < 0:
             raise ValueError(
-                f"FocalLoss: gamma must be >= 0, got {gamma}. "
-                "Use gamma=0 to recover standard cross-entropy."
+                f"FocalLoss: gamma must be >= 0, got {gamma}. Use gamma=0 to recover standard cross-entropy."
             )
         self.alpha = alpha
         self.gamma = gamma
@@ -130,13 +123,9 @@ class LabelSmoothingCrossEntropy(nn.Module):
     def __init__(self, smoothing: float = 0.1, reduction: str = "mean") -> None:
         super().__init__()
         if not 0.0 <= smoothing < 1.0:
-            raise ValueError(
-                f"smoothing must be in [0, 1), got {smoothing}"
-            )
+            raise ValueError(f"smoothing must be in [0, 1), got {smoothing}")
         if reduction not in ("mean", "sum", "none"):
-            raise ValueError(
-                f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'")
         self.smoothing = smoothing
         self.reduction = reduction
 
@@ -155,9 +144,7 @@ class LabelSmoothingCrossEntropy(nn.Module):
 
         # Build smoothed target distribution
         with torch.no_grad():
-            smooth_targets = torch.full_like(
-                log_probs, fill_value=self.smoothing / num_classes
-            )
+            smooth_targets = torch.full_like(log_probs, fill_value=self.smoothing / num_classes)
             smooth_targets.scatter_(
                 1,
                 targets.unsqueeze(1),
@@ -245,10 +232,7 @@ class SupConLoss(nn.Module):
         """
         n = features.size(0)
         if labels.size(0) != n:
-            raise ValueError(
-                f"features and labels must have the same batch size, "
-                f"got {n} and {labels.size(0)}"
-            )
+            raise ValueError(f"features and labels must have the same batch size, got {n} and {labels.size(0)}")
         device = features.device
 
         # Similarity matrix: (N, N) — dot products of L2-normalised vectors
@@ -266,9 +250,7 @@ class SupConLoss(nn.Module):
         pos_mask = (labels_col == labels_row).float()  # (N, N)
 
         # Self-contrast mask: 1 everywhere except diagonal
-        self_contrast_mask = (
-            1.0 - torch.eye(n, dtype=torch.float32, device=device)
-        )
+        self_contrast_mask = 1.0 - torch.eye(n, dtype=torch.float32, device=device)
         # Remove self from positive set
         pos_mask = pos_mask * self_contrast_mask
 
@@ -292,7 +274,4 @@ class SupConLoss(nn.Module):
         return loss.mean()
 
     def extra_repr(self) -> str:
-        return (
-            f"temperature={self.temperature}, "
-            f"base_temperature={self.base_temperature}"
-        )
+        return f"temperature={self.temperature}, base_temperature={self.base_temperature}"

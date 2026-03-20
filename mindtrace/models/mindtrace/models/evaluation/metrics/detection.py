@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -205,9 +204,7 @@ def mean_average_precision(
         ValueError: If *predictions* and *targets* have different lengths.
     """
     if len(predictions) != len(targets):
-        raise ValueError(
-            f"predictions ({len(predictions)}) and targets ({len(targets)}) must have equal length."
-        )
+        raise ValueError(f"predictions ({len(predictions)}) and targets ({len(targets)}) must have equal length.")
 
     # Aggregate per-class scores, matched flags, and GT counts.
     class_scores: dict[int, list[np.ndarray]] = {c: [] for c in range(num_classes)}

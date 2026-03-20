@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -47,6 +46,33 @@ def _segmentation_confusion_matrix(
     flat = targets * num_classes + preds
     cm = np.bincount(flat, minlength=num_classes * num_classes).reshape(num_classes, num_classes)
     return cm.astype(np.int64)
+
+
+def _confusion_stats(
+    preds: np.ndarray,
+    targets: np.ndarray,
+    num_classes: int,
+    ignore_index: int = -1,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build confusion matrix and derive per-class TP, FP, FN arrays.
+
+    Args:
+        preds: (N, H, W) integer class index predictions.
+        targets: (N, H, W) integer class index ground-truth labels.
+        num_classes: Total number of classes.
+        ignore_index: Pixels whose *target* label equals this value are
+            excluded.
+
+    Returns:
+        Tuple ``(cm, tp, fp, fn)`` where *cm* is the ``(num_classes,
+        num_classes)`` float64 confusion matrix and *tp*, *fp*, *fn* are
+        1-D float64 arrays of length *num_classes*.
+    """
+    cm = _segmentation_confusion_matrix(preds, targets, num_classes, ignore_index).astype(np.float64)
+    tp = np.diag(cm)
+    fp = cm.sum(axis=0) - tp
+    fn = cm.sum(axis=1) - tp
+    return cm, tp, fp, fn
 
 
 # ---------------------------------------------------------------------------
@@ -106,11 +132,7 @@ def mean_iou(
         * ``"mIoU"`` — scalar mean IoU (float).
         * ``"iou_per_class"`` — list of per-class IoU values (float).
     """
-    cm = _segmentation_confusion_matrix(preds, targets, num_classes, ignore_index).astype(np.float64)
-
-    tp = np.diag(cm)
-    fp = cm.sum(axis=0) - tp
-    fn = cm.sum(axis=1) - tp
+    cm, tp, fp, fn = _confusion_stats(preds, targets, num_classes, ignore_index)
     denom = tp + fp + fn
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -155,11 +177,7 @@ def dice_score(
         * ``"mean_dice"`` — scalar mean Dice score (float).
         * ``"dice_per_class"`` — list of per-class Dice values (float).
     """
-    cm = _segmentation_confusion_matrix(preds, targets, num_classes, ignore_index).astype(np.float64)
-
-    tp = np.diag(cm)
-    fp = cm.sum(axis=0) - tp
-    fn = cm.sum(axis=1) - tp
+    cm, tp, fp, fn = _confusion_stats(preds, targets, num_classes, ignore_index)
     denom = 2.0 * tp + fp + fn
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -204,11 +222,7 @@ def frequency_weighted_iou(
     Returns:
         Frequency-weighted IoU scalar in [0.0, 1.0].
     """
-    cm = _segmentation_confusion_matrix(preds, targets, num_classes, ignore_index).astype(np.float64)
-
-    tp = np.diag(cm)
-    fp = cm.sum(axis=0) - tp
-    fn = cm.sum(axis=1) - tp
+    cm, tp, fp, fn = _confusion_stats(preds, targets, num_classes, ignore_index)
     denom = tp + fp + fn
 
     with np.errstate(divide="ignore", invalid="ignore"):

@@ -21,7 +21,7 @@ def mae(predictions: np.ndarray, targets: np.ndarray) -> float:
         Scalar MAE value.
     """
     preds = np.asarray(predictions, dtype=np.float64).ravel()
-    tgts  = np.asarray(targets,     dtype=np.float64).ravel()
+    tgts = np.asarray(targets, dtype=np.float64).ravel()
     return float(np.mean(np.abs(preds - tgts)))
 
 
@@ -36,7 +36,7 @@ def mse(predictions: np.ndarray, targets: np.ndarray) -> float:
         Scalar MSE value.
     """
     preds = np.asarray(predictions, dtype=np.float64).ravel()
-    tgts  = np.asarray(targets,     dtype=np.float64).ravel()
+    tgts = np.asarray(targets, dtype=np.float64).ravel()
     return float(np.mean((preds - tgts) ** 2))
 
 
@@ -72,8 +72,8 @@ def r2_score(predictions: np.ndarray, targets: np.ndarray) -> float:
     Returns:
         Scalar R² coefficient.
     """
-    preds  = np.asarray(predictions, dtype=np.float64).ravel()
-    tgts   = np.asarray(targets,     dtype=np.float64).ravel()
+    preds = np.asarray(predictions, dtype=np.float64).ravel()
+    tgts = np.asarray(targets, dtype=np.float64).ravel()
     ss_res = float(np.sum((tgts - preds) ** 2))
     ss_tot = float(np.sum((tgts - np.mean(tgts)) ** 2))
     if ss_tot == 0.0:

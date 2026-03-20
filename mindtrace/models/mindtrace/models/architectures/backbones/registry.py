@@ -12,7 +12,6 @@ from typing import Callable
 
 import torch.nn as nn
 
-
 # ---------------------------------------------------------------------------
 # Internal registry store
 # ---------------------------------------------------------------------------
@@ -46,11 +45,11 @@ def register_backbone(name: str) -> Callable:
         ... def _build_my_backbone(pretrained: bool = True) -> nn.Module:
         ...     ...
     """
+
     def decorator(fn: Callable[..., nn.Module]) -> Callable[..., nn.Module]:
         if name in _BACKBONE_REGISTRY:
             raise ValueError(
-                f"Backbone '{name}' is already registered. "
-                "Use a unique name or de-register the existing entry first."
+                f"Backbone '{name}' is already registered. Use a unique name or de-register the existing entry first."
             )
         _BACKBONE_REGISTRY[name] = fn
         return fn
@@ -81,10 +80,7 @@ def build_backbone(name: str, **kwargs: object) -> BackboneInfo:
     """
     if name not in _BACKBONE_REGISTRY:
         available = list_backbones()
-        raise KeyError(
-            f"Backbone '{name}' is not registered. "
-            f"Available backbones: {available}"
-        )
+        raise KeyError(f"Backbone '{name}' is not registered. Available backbones: {available}")
 
     model, num_features = _BACKBONE_REGISTRY[name](**kwargs)
     return BackboneInfo(name=name, num_features=num_features, model=model)

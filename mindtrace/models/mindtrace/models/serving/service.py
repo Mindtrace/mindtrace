@@ -4,6 +4,15 @@ Provides a standardised lifecycle for loading a model, running inference via
 a ``/predict`` endpoint, and exposing model metadata via ``/info``.  Concrete
 model services subclass ``ModelService`` and implement ``load_model`` and
 ``predict``.
+
+Environment Variables
+---------------------
+MINDTRACE_REGISTRY_URI
+    GCS registry URI (e.g. ``gs://bucket/registry``). Used when no
+    registry object is passed to the constructor.
+MINDTRACE_REGISTRY_PATH
+    Local filesystem registry path. Fallback when MINDTRACE_REGISTRY_URI
+    is not set.
 """
 
 from __future__ import annotations
@@ -13,9 +22,6 @@ import time
 from abc import abstractmethod
 from typing import Any
 
-from mindtrace.core import TaskSchema
-from mindtrace.services import Service
-
 from mindtrace.models.serving.schemas import (
     ModelInfo,
     PredictRequest,
@@ -23,6 +29,7 @@ from mindtrace.models.serving.schemas import (
     info_task,
     predict_task,
 )
+from mindtrace.services import Service
 
 # ---------------------------------------------------------------------------
 # Optional torch import -- torch is heavy and may not be installed in every
@@ -137,7 +144,8 @@ class ModelService(Service):
                     backend = GCPRegistryBackend(uri=registry_uri)
                     self.registry = Registry(backend=backend, use_cache=True)
                     self.logger.info(
-                        "Created GCS-backed Registry: uri=%s", registry_uri,
+                        "Created GCS-backed Registry: uri=%s",
+                        registry_uri,
                     )
                 except Exception:
                     self.logger.warning(
@@ -156,6 +164,13 @@ class ModelService(Service):
                         registry_path,
                         exc_info=True,
                     )
+
+        if self.registry is None:
+            self.logger.error(
+                "No registry available. Set MINDTRACE_REGISTRY_URI or "
+                "MINDTRACE_REGISTRY_PATH, or pass a registry object to the "
+                "constructor. Model loading will likely fail.",
+            )
 
         self.logger.info(
             "Initialising model service: name=%s version=%s device=%s",

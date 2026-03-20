@@ -10,7 +10,6 @@ Provides three plug-and-play heads suitable for pairing with any backbone:
 
 from __future__ import annotations
 
-import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -92,21 +91,21 @@ class MLPHead(nn.Module):
         num_layers: int = 2,
     ) -> None:
         if num_layers < 1:
-            raise ValueError(
-                f"num_layers must be >= 1, got {num_layers}."
-            )
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}.")
         super().__init__()
 
         layers: list[nn.Module] = []
         current_dim = in_features
 
         for _ in range(num_layers - 1):
-            layers.extend([
-                nn.Linear(current_dim, hidden_dim),
-                nn.BatchNorm1d(hidden_dim),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=dropout),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(current_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=dropout),
+                ]
+            )
             current_dim = hidden_dim
 
         # Output projection.

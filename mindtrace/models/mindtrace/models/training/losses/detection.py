@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -53,10 +52,8 @@ def _box_iou(boxes1: Tensor, boxes2: Tensor) -> tuple[Tensor, Tensor, Tensor, Te
     inter_area = inter_w * inter_h
 
     # Individual areas (clamped to 0 for degenerate boxes)
-    area1 = ((boxes1[:, 2] - boxes1[:, 0]).clamp(min=0.0)
-             * (boxes1[:, 3] - boxes1[:, 1]).clamp(min=0.0))
-    area2 = ((boxes2[:, 2] - boxes2[:, 0]).clamp(min=0.0)
-             * (boxes2[:, 3] - boxes2[:, 1]).clamp(min=0.0))
+    area1 = (boxes1[:, 2] - boxes1[:, 0]).clamp(min=0.0) * (boxes1[:, 3] - boxes1[:, 1]).clamp(min=0.0)
+    area2 = (boxes2[:, 2] - boxes2[:, 0]).clamp(min=0.0) * (boxes2[:, 3] - boxes2[:, 1]).clamp(min=0.0)
 
     union_area = area1 + area2 - inter_area
     iou = inter_area / (union_area + 1e-7)
@@ -98,9 +95,7 @@ class GIoULoss(nn.Module):
     def __init__(self, reduction: str = "mean") -> None:
         super().__init__()
         if reduction not in ("mean", "sum", "none"):
-            raise ValueError(
-                f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'")
         self.reduction = reduction
 
     def forward(self, pred_boxes: Tensor, target_boxes: Tensor) -> Tensor:
@@ -126,10 +121,7 @@ class GIoULoss(nn.Module):
         enc_x2 = torch.max(pred_boxes[:, 2], target_boxes[:, 2])
         enc_y2 = torch.max(pred_boxes[:, 3], target_boxes[:, 3])
 
-        enc_area = (
-            (enc_x2 - enc_x1).clamp(min=0.0)
-            * (enc_y2 - enc_y1).clamp(min=0.0)
-        )
+        enc_area = (enc_x2 - enc_x1).clamp(min=0.0) * (enc_y2 - enc_y1).clamp(min=0.0)
 
         giou = iou - (enc_area - union_area) / (enc_area + 1e-7)
         per_pair_loss = 1.0 - giou
@@ -182,9 +174,7 @@ class CIoULoss(nn.Module):
     def __init__(self, reduction: str = "mean") -> None:
         super().__init__()
         if reduction not in ("mean", "sum", "none"):
-            raise ValueError(
-                f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got '{reduction}'")
         self.reduction = reduction
 
     def forward(self, pred_boxes: Tensor, target_boxes: Tensor) -> Tensor:
@@ -225,9 +215,7 @@ class CIoULoss(nn.Module):
         gt_w = (target_boxes[:, 2] - target_boxes[:, 0]).clamp(min=1e-7)
         gt_h = (target_boxes[:, 3] - target_boxes[:, 1]).clamp(min=1e-7)
 
-        v = (4.0 / (math.pi ** 2)) * (
-            torch.atan(gt_w / gt_h) - torch.atan(pred_w / pred_h)
-        ) ** 2
+        v = (4.0 / (math.pi**2)) * (torch.atan(gt_w / gt_h) - torch.atan(pred_w / pred_h)) ** 2
 
         # Trade-off factor alpha (non-negative gradient stop on v)
         with torch.no_grad():

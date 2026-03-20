@@ -35,6 +35,7 @@ try:
         TorchvisionBackboneAdapter,
         build_backbone_adapter,
     )
+
     _ADAPTERS_AVAILABLE = True
 except Exception:
     _ADAPTERS_AVAILABLE = False
@@ -76,6 +77,7 @@ try:
         HuggingFaceDINOBackbone,
         LoRAConfig,
     )
+
     _HF_DINO_AVAILABLE = True
 except Exception:
     _HF_DINO_AVAILABLE = False
@@ -85,6 +87,7 @@ try:
     from mindtrace.models.architectures.backbones.hf_generic import (  # noqa: F401
         HuggingFaceBackbone,
     )
+
     _HF_GENERIC_AVAILABLE = True
 except Exception:
     _HF_GENERIC_AVAILABLE = False

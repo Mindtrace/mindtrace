@@ -84,22 +84,16 @@ class ComboLoss(nn.Module):
         elif isinstance(weights, list):
             if len(weights) != len(self._loss_names):
                 raise ValueError(
-                    f"weights list length ({len(weights)}) must match "
-                    f"losses dict length ({len(self._loss_names)})."
+                    f"weights list length ({len(weights)}) must match losses dict length ({len(self._loss_names)})."
                 )
             resolved = dict(zip(self._loss_names, weights))
         elif isinstance(weights, dict):
             unknown = set(weights.keys()) - set(self._loss_names)
             if unknown:
-                raise ValueError(
-                    f"Weight keys not found in losses: {unknown}. "
-                    f"Valid keys: {self._loss_names}."
-                )
+                raise ValueError(f"Weight keys not found in losses: {unknown}. Valid keys: {self._loss_names}.")
             resolved = {name: float(weights.get(name, 1.0)) for name in self._loss_names}
         else:
-            raise TypeError(
-                f"weights must be dict, list, or None; got {type(weights).__name__}"
-            )
+            raise TypeError(f"weights must be dict, list, or None; got {type(weights).__name__}")
 
         self._weights: dict[str, float] = resolved
 

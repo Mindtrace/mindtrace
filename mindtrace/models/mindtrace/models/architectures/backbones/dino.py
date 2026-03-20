@@ -23,7 +23,6 @@ import torch.nn as nn
 
 from mindtrace.models.architectures.backbones.registry import register_backbone
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

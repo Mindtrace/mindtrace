@@ -104,9 +104,7 @@ class SegmentationResult:
 
     def __post_init__(self) -> None:
         if self.data.ndim != 2:
-            raise ValueError(
-                f"SegmentationResult.data must be 2-D (H, W), got shape {self.data.shape}"
-            )
+            raise ValueError(f"SegmentationResult.data must be 2-D (H, W), got shape {self.data.shape}")
 
     @property
     def height(self) -> int:

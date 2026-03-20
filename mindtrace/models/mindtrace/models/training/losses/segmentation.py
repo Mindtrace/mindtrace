@@ -10,7 +10,6 @@ segmentation:
 
 from __future__ import annotations
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
@@ -63,9 +62,7 @@ class DiceLoss(nn.Module):
     def __init__(self, smooth: float = 1.0, reduction: str = "mean") -> None:
         super().__init__()
         if reduction not in ("mean", "none"):
-            raise ValueError(
-                f"reduction must be 'mean' or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean' or 'none', got '{reduction}'")
         self.smooth = smooth
         self.reduction = reduction
 
@@ -140,9 +137,7 @@ class TverskyLoss(nn.Module):
     ) -> None:
         super().__init__()
         if reduction not in ("mean", "none"):
-            raise ValueError(
-                f"reduction must be 'mean' or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean' or 'none', got '{reduction}'")
         self.alpha = alpha
         self.beta = beta
         self.smooth = smooth
@@ -163,13 +158,11 @@ class TverskyLoss(nn.Module):
         targets_oh = _one_hot_encode(targets, num_classes)  # (N, C, H, W)
 
         dims = (0, 2, 3)
-        tp = (probs * targets_oh).sum(dim=dims)                      # true positives
-        fp = (probs * (1.0 - targets_oh)).sum(dim=dims)              # false positives
-        fn = ((1.0 - probs) * targets_oh).sum(dim=dims)              # false negatives
+        tp = (probs * targets_oh).sum(dim=dims)  # true positives
+        fp = (probs * (1.0 - targets_oh)).sum(dim=dims)  # false positives
+        fn = ((1.0 - probs) * targets_oh).sum(dim=dims)  # false negatives
 
-        tversky = (tp + self.smooth) / (
-            tp + self.alpha * fp + self.beta * fn + self.smooth
-        )
+        tversky = (tp + self.smooth) / (tp + self.alpha * fp + self.beta * fn + self.smooth)
         loss_per_class = 1.0 - tversky
 
         if self.reduction == "mean":
@@ -177,10 +170,7 @@ class TverskyLoss(nn.Module):
         return loss_per_class
 
     def extra_repr(self) -> str:
-        return (
-            f"alpha={self.alpha}, beta={self.beta}, "
-            f"smooth={self.smooth}, reduction={self.reduction!r}"
-        )
+        return f"alpha={self.alpha}, beta={self.beta}, smooth={self.smooth}, reduction={self.reduction!r}"
 
 
 class IoULoss(nn.Module):
@@ -209,9 +199,7 @@ class IoULoss(nn.Module):
     def __init__(self, smooth: float = 1.0, reduction: str = "mean") -> None:
         super().__init__()
         if reduction not in ("mean", "none"):
-            raise ValueError(
-                f"reduction must be 'mean' or 'none', got '{reduction}'"
-            )
+            raise ValueError(f"reduction must be 'mean' or 'none', got '{reduction}'")
         self.smooth = smooth
         self.reduction = reduction
 

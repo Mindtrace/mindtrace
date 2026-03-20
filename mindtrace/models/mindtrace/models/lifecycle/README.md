@@ -17,28 +17,28 @@ from mindtrace.models.lifecycle import (
 ## Stage model
 
 ```
-  DEV ──────────────────► STAGING ──────────────────► PRODUCTION
-   │                        │  │                             │
-   └──────────────────────► │  └──────────────────────────► │
-                            │                               │
-                            └──────────────────────────────►│
-                                                            │
-                    ARCHIVED  ◄──────────────────────────── ┘
+  DEV --------------------------> STAGING -----------------------> PRODUCTION
+   |                                |  |                                 |
+   +------------------------------> |  +-------------------------------> |
+                                    |                                    |
+                                    +----------------------------------->|
+                                                                         |
+                    ARCHIVED  <-----------------------------------------+
 ```
 
 ```python
 from mindtrace.models.lifecycle import ModelStage, VALID_TRANSITIONS
 
-ModelStage.DEV         # "dev"        — active development
-ModelStage.STAGING     # "staging"    — validated, under review
-ModelStage.PRODUCTION  # "production" — live serving
-ModelStage.ARCHIVED    # "archived"   — retired, read-only
+ModelStage.DEV         # "dev"        -- active development
+ModelStage.STAGING     # "staging"    -- validated, under review
+ModelStage.PRODUCTION  # "production" -- live serving
+ModelStage.ARCHIVED    # "archived"   -- retired, read-only
 
 # Valid transitions
 VALID_TRANSITIONS[ModelStage.DEV]        # {STAGING, ARCHIVED}
 VALID_TRANSITIONS[ModelStage.STAGING]    # {PRODUCTION, DEV, ARCHIVED}
 VALID_TRANSITIONS[ModelStage.PRODUCTION] # {ARCHIVED}
-VALID_TRANSITIONS[ModelStage.ARCHIVED]   # set()  ← terminal
+VALID_TRANSITIONS[ModelStage.ARCHIVED]   # set()  -- terminal
 
 # Check before promoting
 ModelStage.DEV.can_promote_to(ModelStage.STAGING)   # True
@@ -56,13 +56,13 @@ Structured metadata container for a trained model version.
 from mindtrace.models.lifecycle import ModelCard, ModelStage
 
 card = ModelCard(
-    name="weld-classifier",            # str — matches registry key prefix
-    version="v3",                      # str — semantic version tag
+    name="weld-classifier",            # str -- matches registry key prefix
+    version="v3",                      # str -- semantic version tag
     stage=ModelStage.DEV,              # default: DEV
-    task="classification",             # str — e.g. "classification", "segmentation"
+    task="classification",             # str -- e.g. "classification", "segmentation"
     architecture="DINOv3-small+Linear",# str
-    framework="pytorch",               # str — default: "pytorch"
-    training_data="weld-dataset-2024", # str — dataset description or registry key
+    framework="pytorch",               # str -- default: "pytorch"
+    training_data="weld-dataset-2024", # str -- dataset description or registry key
     description="Classifies weld quality: good / bad / borderline.",
     known_limitations=["Low recall on rusty welds"],
     extra={"tags": ["production-candidate"]},  # arbitrary metadata
@@ -87,7 +87,7 @@ card.eval_results.append(result)
 ### Querying and summarising
 
 ```python
-card.get_metric("val/accuracy")        # 0.94  — most recent entry with that name
+card.get_metric("val/accuracy")        # 0.94  -- most recent entry with that name
 card.get_metric("val/accuracy", dataset="weld-test-2024")  # filtered by dataset
 card.summary()
 # {"val/accuracy": 0.94, "val/f1": 0.93, "test/accuracy": 0.91}
@@ -164,7 +164,8 @@ except PromotionError as exc:
 
 ### `demote()`
 
-Rollback or archival — no threshold checks, only validates the transition graph.
+Rollback or archival -- no threshold checks, only validates the transition graph.
+Requires a `reason` string for auditability.
 
 ```python
 from mindtrace.models.lifecycle import demote
@@ -218,5 +219,30 @@ demote(card, registry, to_stage=ModelStage.STAGING,
        reason="latency regression in v1.2 rollout")
 
 # 5. Retire old version
-demote(card, registry, to_stage=ModelStage.ARCHIVED)
+demote(card, registry, to_stage=ModelStage.ARCHIVED,
+       reason="superseded by v2")
+```
+
+---
+
+## Public API reference
+
+```python
+from mindtrace.models.lifecycle import (
+    # Stage definitions
+    ModelStage,             # enum: DEV, STAGING, PRODUCTION, ARCHIVED
+    VALID_TRANSITIONS,      # dict[ModelStage, set[ModelStage]]
+
+    # Metadata
+    EvalResult,             # metric name + value + dataset + split + timestamp
+    ModelCard,              # structured model metadata container
+
+    # Operations
+    promote,                # stage promotion with threshold gates
+    demote,                 # stage rollback with reason
+
+    # Errors / results
+    PromotionError,         # raised when promotion is blocked
+    PromotionResult,        # outcome of promote() or demote()
+)
 ```
