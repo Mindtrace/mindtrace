@@ -616,10 +616,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/92/88/b8527e1b00c1811db
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d3/25/79c98ebe12df31548ba4eaf44db11b7cad6b3e7b4203718335620939083c/caio-0.9.25-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:fb7ff95af4c31ad3f03179149aab61097a71fd85e05f89b4786de0359dffd044", size = 36983, upload_time = "2025-12-26T15:21:36.075Z" },
     { url = "https://files.pythonhosted.org/packages/a3/2b/21288691f16d479945968a0a4f2856818c1c5be56881d51d4dac9b255d26/caio-0.9.25-cp312-cp312-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:97084e4e30dfa598449d874c4d8e0c8d5ea17d2f752ef5e48e150ff9d240cd64", size = 82012, upload_time = "2025-12-26T15:22:20.983Z" },
+    { url = "https://files.pythonhosted.org/packages/03/c4/8a1b580875303500a9c12b9e0af58cb82e47f5bcf888c2457742a138273c/caio-0.9.25-cp312-cp312-manylinux_2_34_aarch64.whl", hash = "sha256:4fa69eba47e0f041b9d4f336e2ad40740681c43e686b18b191b6c5f4c5544bfb", size = 81502, upload_time = "2026-03-04T22:08:22.381Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/1c/0fe770b8ffc8362c48134d1592d653a81a3d8748d764bec33864db36319d/caio-0.9.25-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:6bebf6f079f1341d19f7386db9b8b1f07e8cc15ae13bfdaff573371ba0575d69", size = 80200, upload_time = "2026-03-04T22:08:23.382Z" },
     { url = "https://files.pythonhosted.org/packages/31/57/5e6ff127e6f62c9f15d989560435c642144aa4210882f9494204bc892305/caio-0.9.25-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:d6c2a3411af97762a2b03840c3cec2f7f728921ff8adda53d7ea2315a8563451", size = 36979, upload_time = "2025-12-26T15:21:35.484Z" },
     { url = "https://files.pythonhosted.org/packages/a3/9f/f21af50e72117eb528c422d4276cbac11fb941b1b812b182e0a9c70d19c5/caio-0.9.25-cp313-cp313-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0998210a4d5cd5cb565b32ccfe4e53d67303f868a76f212e002a8554692870e6", size = 81900, upload_time = "2025-12-26T15:22:21.919Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/12/c39ae2a4037cb10ad5eb3578eb4d5f8c1a2575c62bba675f3406b7ef0824/caio-0.9.25-cp313-cp313-manylinux_2_34_aarch64.whl", hash = "sha256:1a177d4777141b96f175fe2c37a3d96dec7911ed9ad5f02bac38aaa1c936611f", size = 81523, upload_time = "2026-03-04T22:08:25.187Z" },
+    { url = "https://files.pythonhosted.org/packages/22/59/f8f2e950eb4f1a5a3883e198dca514b9d475415cb6cd7b78b9213a0dd45a/caio-0.9.25-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:9ed3cfb28c0e99fec5e208c934e5c157d0866aa9c32aa4dc5e9b6034af6286b7", size = 80243, upload_time = "2026-03-04T22:08:26.449Z" },
     { url = "https://files.pythonhosted.org/packages/69/ca/a08fdc7efdcc24e6a6131a93c85be1f204d41c58f474c42b0670af8c016b/caio-0.9.25-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:fab6078b9348e883c80a5e14b382e6ad6aabbc4429ca034e76e730cf464269db", size = 36978, upload_time = "2025-12-26T15:21:41.055Z" },
     { url = "https://files.pythonhosted.org/packages/5e/6c/d4d24f65e690213c097174d26eda6831f45f4734d9d036d81790a27e7b78/caio-0.9.25-cp314-cp314-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:44a6b58e52d488c75cfaa5ecaa404b2b41cc965e6c417e03251e868ecd5b6d77", size = 81832, upload_time = "2025-12-26T15:22:22.757Z" },
+    { url = "https://files.pythonhosted.org/packages/87/a4/e534cf7d2d0e8d880e25dd61e8d921ffcfe15bd696734589826f5a2df727/caio-0.9.25-cp314-cp314-manylinux_2_34_aarch64.whl", hash = "sha256:628a630eb7fb22381dd8e3c8ab7f59e854b9c806639811fc3f4310c6bd711d79", size = 81565, upload_time = "2026-03-04T22:08:27.483Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/ed/bf81aeac1d290017e5e5ac3e880fd56ee15e50a6d0353986799d1bc5cfd5/caio-0.9.25-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:0ba16aa605ccb174665357fc729cf500679c2d94d5f1458a6f0d5ca48f2060a7", size = 80071, upload_time = "2026-03-04T22:08:28.751Z" },
     { url = "https://files.pythonhosted.org/packages/86/93/1f76c8d1bafe3b0614e06b2195784a3765bbf7b0a067661af9e2dd47fc33/caio-0.9.25-py3-none-any.whl", hash = "sha256:06c0bb02d6b929119b1cfbe1ca403c768b2013a369e2db46bfa2a5761cf82e40", size = 19087, upload_time = "2025-12-26T15:22:00.221Z" },
 ]
 
@@ -1002,7 +1008,7 @@ name = "cuda-bindings"
 version = "12.9.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder" },
+    { name = "cuda-pathfinder", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/c1/dabe88f52c3e3760d861401bb994df08f672ec893b8f7592dc91626adcf3/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fda147a344e8eaeca0c6ff113d2851ffca8f7dfc0a6c932374ee5c47caa649c8", size = 12151019, upload_time = "2025-10-21T14:51:43.167Z" },
@@ -2295,6 +2301,9 @@ name = "jsonpath-ng"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/32/58/250751940d75c8019659e15482d548a4aa3b6ce122c515102a4bfdac50e3/jsonpath_ng-1.8.0.tar.gz", hash = "sha256:54252968134b5e549ea5b872f1df1168bd7defe1a52fed5a358c194e1943ddc3", size = 74513, upload_time = "2026-02-24T14:42:06.182Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/03/99/33c7d78a3fb70d545fd5411ac67a651c81602cc09c9cf0df383733f068c5/jsonpath_ng-1.8.0-py3-none-any.whl", hash = "sha256:b8dde192f8af58d646fc031fac9c99fe4d00326afc4148f1f043c601a8cfe138", size = 67844, upload_time = "2026-02-28T00:53:19.637Z" },
+]
 
 [[package]]
 name = "jsonref"
@@ -2879,23 +2888,41 @@ cameras-basler = [
 cameras-genicam = [
     { name = "mindtrace-hardware", extra = ["cameras-genicam"] },
 ]
+cluster-torch = [
+    { name = "mindtrace-cluster", extra = ["torch"] },
+]
 hardware-all = [
     { name = "mindtrace-hardware", extra = ["hardware-all"] },
 ]
-registry-huggingface = [
-    { name = "mindtrace-registry", extra = ["huggingface"] },
+models-all = [
+    { name = "mindtrace-models", extra = ["all"] },
 ]
-registry-onnx = [
-    { name = "mindtrace-registry", extra = ["onnx"] },
+models-mlflow = [
+    { name = "mindtrace-models", extra = ["mlflow"] },
 ]
-registry-tensorrt-cu11 = [
-    { name = "mindtrace-registry", extra = ["tensorrt-cu11"] },
+models-onnx = [
+    { name = "mindtrace-models", extra = ["onnx"] },
 ]
-registry-tensorrt-cu12 = [
-    { name = "mindtrace-registry", extra = ["tensorrt-cu12"] },
+models-peft = [
+    { name = "mindtrace-models", extra = ["peft"] },
 ]
-registry-timm = [
-    { name = "mindtrace-registry", extra = ["timm"] },
+models-tensorboard = [
+    { name = "mindtrace-models", extra = ["tensorboard"] },
+]
+models-timm = [
+    { name = "mindtrace-models", extra = ["timm"] },
+]
+models-train = [
+    { name = "mindtrace-models", extra = ["train"] },
+]
+models-transformers = [
+    { name = "mindtrace-models", extra = ["transformers"] },
+]
+models-ultralytics = [
+    { name = "mindtrace-models", extra = ["ultralytics"] },
+]
+models-wandb = [
+    { name = "mindtrace-models", extra = ["wandb"] },
 ]
 stereo-all = [
     { name = "mindtrace-hardware", extra = ["stereo-all"] },
@@ -2915,6 +2942,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "pytest-timeout" },
+    { name = "setuptools" },
     { name = "tomlkit" },
     { name = "twine" },
 ]
@@ -2932,6 +2960,7 @@ requires-dist = [
     { name = "mindtrace-apps", editable = "mindtrace/apps" },
     { name = "mindtrace-automation", editable = "mindtrace/automation" },
     { name = "mindtrace-cluster", editable = "mindtrace/cluster" },
+    { name = "mindtrace-cluster", extras = ["torch"], marker = "extra == 'cluster-torch'", editable = "mindtrace/cluster" },
     { name = "mindtrace-core", editable = "mindtrace/core" },
     { name = "mindtrace-database", editable = "mindtrace/database" },
     { name = "mindtrace-datalake", editable = "mindtrace/datalake" },
@@ -2944,17 +2973,22 @@ requires-dist = [
     { name = "mindtrace-hardware", extras = ["stereo-basler"], marker = "extra == 'stereo-basler'", editable = "mindtrace/hardware" },
     { name = "mindtrace-jobs", editable = "mindtrace/jobs" },
     { name = "mindtrace-models", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["all"], marker = "extra == 'models-all'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["mlflow"], marker = "extra == 'models-mlflow'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["onnx"], marker = "extra == 'models-onnx'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["peft"], marker = "extra == 'models-peft'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["tensorboard"], marker = "extra == 'models-tensorboard'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["timm"], marker = "extra == 'models-timm'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["train"], marker = "extra == 'models-train'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["transformers"], marker = "extra == 'models-transformers'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["ultralytics"], marker = "extra == 'models-ultralytics'", editable = "mindtrace/models" },
+    { name = "mindtrace-models", extras = ["wandb"], marker = "extra == 'models-wandb'", editable = "mindtrace/models" },
     { name = "mindtrace-registry", editable = "mindtrace/registry" },
-    { name = "mindtrace-registry", extras = ["huggingface"], marker = "extra == 'registry-huggingface'", editable = "mindtrace/registry" },
-    { name = "mindtrace-registry", extras = ["onnx"], marker = "extra == 'registry-onnx'", editable = "mindtrace/registry" },
-    { name = "mindtrace-registry", extras = ["tensorrt-cu11"], marker = "extra == 'registry-tensorrt-cu11'", editable = "mindtrace/registry" },
-    { name = "mindtrace-registry", extras = ["tensorrt-cu12"], marker = "extra == 'registry-tensorrt-cu12'", editable = "mindtrace/registry" },
-    { name = "mindtrace-registry", extras = ["timm"], marker = "extra == 'registry-timm'", editable = "mindtrace/registry" },
     { name = "mindtrace-services", editable = "mindtrace/services" },
     { name = "mindtrace-storage", editable = "mindtrace/storage" },
     { name = "mindtrace-ui", editable = "mindtrace/ui" },
 ]
-provides-extras = ["cameras-basler", "cameras-genicam", "cameras-all", "stereo-basler", "stereo-all", "hardware-all", "registry-timm", "registry-huggingface", "registry-onnx", "registry-tensorrt-cu11", "registry-tensorrt-cu12"]
+provides-extras = ["cameras-basler", "cameras-genicam", "cameras-all", "stereo-basler", "stereo-all", "hardware-all", "models-train", "models-transformers", "models-timm", "models-peft", "models-mlflow", "models-wandb", "models-tensorboard", "models-onnx", "models-ultralytics", "models-all", "cluster-torch"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2967,6 +3001,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.1.1" },
     { name = "pytest-mock", specifier = ">=3.12.0" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
+    { name = "setuptools", specifier = ">=82.0.0" },
     { name = "tomlkit", specifier = ">=0.13.3" },
     { name = "twine", specifier = ">=6.1.0" },
 ]
@@ -3300,6 +3335,7 @@ all = [
     { name = "timm" },
     { name = "torchvision" },
     { name = "transformers" },
+    { name = "ultralytics" },
     { name = "wandb" },
 ]
 mlflow = [
@@ -3324,6 +3360,9 @@ train = [
 ]
 transformers = [
     { name = "transformers" },
+]
+ultralytics = [
+    { name = "ultralytics" },
 ]
 wandb = [
     { name = "wandb" },
@@ -3354,10 +3393,12 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'train'", specifier = ">=0.15" },
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.35" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.35" },
+    { name = "ultralytics", marker = "extra == 'all'", specifier = ">=8.0" },
+    { name = "ultralytics", marker = "extra == 'ultralytics'", specifier = ">=8.0" },
     { name = "wandb", marker = "extra == 'all'", specifier = ">=0.16" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.16" },
 ]
-provides-extras = ["mlflow", "wandb", "tensorboard", "train", "timm", "transformers", "onnx", "peft", "all"]
+provides-extras = ["mlflow", "wandb", "tensorboard", "train", "timm", "transformers", "onnx", "peft", "ultralytics", "all"]
 
 [[package]]
 name = "mindtrace-registry"
@@ -3372,46 +3413,15 @@ dependencies = [
     { name = "zenml" },
 ]
 
-[package.optional-dependencies]
-huggingface = [
-    { name = "peft" },
-    { name = "transformers" },
-]
-onnx = [
-    { name = "onnx" },
-    { name = "onnxruntime" },
-]
-tensorrt-cu11 = [
-    { name = "tensorrt-cu11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-]
-tensorrt-cu12 = [
-    { name = "tensorrt-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-]
-timm = [
-    { name = "timm" },
-]
-ultralytics = [
-    { name = "ultralytics" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "mindtrace-core", editable = "mindtrace/core" },
     { name = "mindtrace-storage", editable = "mindtrace/storage" },
     { name = "minio", specifier = "<7.2.19" },
-    { name = "onnx", marker = "extra == 'onnx'", specifier = ">=1.14" },
-    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.15" },
-    { name = "peft", marker = "extra == 'huggingface'", specifier = ">=0.5" },
     { name = "pydantic", specifier = ">=2.11.1" },
     { name = "pyyaml", specifier = ">=6.0.1" },
-    { name = "tensorrt-cu11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'tensorrt-cu11'", specifier = ">=8.6" },
-    { name = "tensorrt-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'tensorrt-cu12'", specifier = ">=10.0" },
-    { name = "timm", marker = "extra == 'timm'", specifier = ">=1.0" },
-    { name = "transformers", marker = "extra == 'huggingface'", specifier = ">=4.0" },
-    { name = "ultralytics", marker = "extra == 'ultralytics'", specifier = ">=8.0" },
     { name = "zenml", specifier = ">=0.82.1" },
 ]
-provides-extras = ["timm", "huggingface", "ultralytics", "onnx", "tensorrt-cu11", "tensorrt-cu12"]
 
 [[package]]
 name = "mindtrace-services"
@@ -4140,15 +4150,6 @@ wheels = [
 ]
 
 [[package]]
-name = "nvidia-cuda-runtime-cu11"
-version = "11.8.89"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/3e/84db02be49fe6d6df6e42f69fd64501c22d0f9ada9c9877f885612085d20/nvidia_cuda_runtime_cu11-11.8.89-py3-none-manylinux1_x86_64.whl", hash = "sha256:f587bd726eb2f7612cf77ce38a2c1e65cf23251ff49437f6161ce0d647f64f7c", size = 875585, upload_time = "2022-10-03T21:46:03.05Z" },
-    { url = "https://files.pythonhosted.org/packages/a6/ec/a540f28b31de7bc1ed49eecc72035d4cb77db88ead1d42f7bfa5ae407ac6/nvidia_cuda_runtime_cu11-11.8.89-py3-none-manylinux2014_x86_64.whl", hash = "sha256:92d04069a987e1fbc9213f8376d265df0f7bb42617d44f5eda1f496acea7f2d1", size = 875592, upload_time = "2024-08-16T23:56:18.774Z" },
-]
-
-[[package]]
 name = "nvidia-cuda-runtime-cu12"
 version = "12.8.90"
 source = { registry = "https://pypi.org/simple" }
@@ -4161,7 +4162,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/51/e123d997aa098c61d029f76663dedbfb9bc8dcf8c60cbd6adbe42f76d049/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:949452be657fa16687d0930933f032835951ef0892b37d2d53824d1a84dc97a8", size = 706758467, upload_time = "2025-06-06T21:54:08.597Z" },
@@ -4172,7 +4173,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.83"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1f/13/ee4e00f30e676b66ae65b4f08cb5bcbb8392c03f54f2d5413ea99a5d1c80/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:4d2dd21ec0b88cf61b62e6b43564355e5222e4a3fb394cac0db101f2dd0d4f74", size = 193118695, upload_time = "2025-03-07T01:45:27.821Z" },
@@ -4199,9 +4200,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.3.90"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
-    { name = "nvidia-cusparse-cu12" },
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform == 'linux'" },
+    { name = "nvidia-cusparse-cu12", marker = "sys_platform == 'linux'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/85/48/9a13d2975803e8cf2777d5ed57b87a0b6ca2cc795f9a4f59796a910bfb80/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:4376c11ad263152bd50ea295c05370360776f8c3427b30991df774f9fb26c450", size = 267506905, upload_time = "2025-03-07T01:47:16.273Z" },
@@ -4212,7 +4213,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.8.93"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/f5/e1854cb2f2bcd4280c44736c93550cc300ff4b8c95ebe370d0aa7d2b473d/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:1ec05d76bbbd8b61b06a80e1eaf8cf4959c3d4ce8e711b65ebd0443bb0ebb13b", size = 288216466, upload_time = "2025-03-07T01:48:13.779Z" },
@@ -6324,59 +6325,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tensorrt-cu11"
-version = "10.13.0.35"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tensorrt-cu11-bindings" },
-    { name = "tensorrt-cu11-libs" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d4/47/354c7742e78fe09c535f3627f19dd2428a410f4d74ccb9a2887d2567ba5e/tensorrt_cu11-10.13.0.35.tar.gz", hash = "sha256:14c45b5a57800c8bcd4df0794be6757e851c6387cb7259e5c8c0e7d775efdd2d", size = 18217, upload_time = "2025-07-22T19:59:53.491Z" }
-
-[[package]]
-name = "tensorrt-cu11-bindings"
-version = "10.13.0.35"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/85/0fc0be5b5a28e7012152298410fb56e7a73657d7dc2bf9623ef46a662d2c/tensorrt_cu11_bindings-10.13.0.35-cp312-none-manylinux_2_28_x86_64.whl", hash = "sha256:4c5f08dfb8686a83dc1ef741b33788aafa327022a98f5f2521787e0116082368", size = 1183410, upload_time = "2025-07-22T19:31:50.343Z" },
-    { url = "https://files.pythonhosted.org/packages/d9/cf/43a7e178cd8ef13d784ae2ba9be4dd2c3257ca9d56428bc71afbb9869011/tensorrt_cu11_bindings-10.13.0.35-cp313-none-manylinux_2_28_x86_64.whl", hash = "sha256:24fe16b01f15037c7f08b291fba174c99c2a8bf9a4c2bd31166145fa1d80497f", size = 1183384, upload_time = "2025-07-22T19:33:00.009Z" },
-]
-
-[[package]]
-name = "tensorrt-cu11-libs"
-version = "10.13.0.35"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-cuda-runtime-cu11" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b8/ea/0ed601f1fdcd06f748a3d8e517a1ae72bfecf12d500916b399750ad5749c/tensorrt_cu11_libs-10.13.0.35.tar.gz", hash = "sha256:7005d9d64d457a2f42db6e0371105d4e352fb33baa56e49630a54191076b2558", size = 709, upload_time = "2025-07-22T19:21:42.194Z" }
-
-[[package]]
-name = "tensorrt-cu12"
-version = "10.15.1.29"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tensorrt-cu12-bindings" },
-    { name = "tensorrt-cu12-libs" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/57/a7/c8d81de98428c7dd67b5b9df0e1ea21c497661b4703f946e8d84b39ad76e/tensorrt_cu12-10.15.1.29.tar.gz", hash = "sha256:d28acc4d14804cac0b50c0c1fc58c0d25cb974aa4c53cda5cfd8c4a4154c45fe", size = 19096, upload_time = "2026-01-30T07:44:47.652Z" }
-
-[[package]]
-name = "tensorrt-cu12-bindings"
-version = "10.15.1.29"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/a1/feb1b14806e9a5f486b2b69b41623b8eb15b18e86634c992f82a3a4bd3ae/tensorrt_cu12_bindings-10.15.1.29-cp312-none-manylinux_2_28_x86_64.whl", hash = "sha256:627533cc801209887173b28137eb571e1cf52ecf2afb4c92c6cf29c41711f580", size = 1140872, upload_time = "2026-01-29T21:15:11.309Z" },
-    { url = "https://files.pythonhosted.org/packages/6a/f4/96dfda7d2c1507cb4a52d5c439a91f8428053f068d3fffe003bfa58ac17f/tensorrt_cu12_bindings-10.15.1.29-cp313-none-manylinux_2_28_x86_64.whl", hash = "sha256:b83e218d540f629d3fbc82904170839fa97c8fbd7fc280e0439ae147ea29df7d", size = 1140759, upload_time = "2026-01-29T21:14:48.812Z" },
-]
-
-[[package]]
-name = "tensorrt-cu12-libs"
-version = "10.15.1.29"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/52/b0/2306f25ea0893d0080091c75b5df55d5e0580183293b4839d66f1fcab457/tensorrt_cu12_libs-10.15.1.29.tar.gz", hash = "sha256:b2a4ad7d46e6f1a43bb413cd8efc8ecd511a365beccd75515db5f65dacab6119", size = 681, upload_time = "2026-01-29T21:13:21.179Z" }
-
-[[package]]
 name = "threadpoolctl"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6481,6 +6429,11 @@ dependencies = [
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d3/54/a2ba279afcca44bbd320d4e73675b282fcee3d81400ea1b53934efca6462/torch-2.10.0-2-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:13ec4add8c3faaed8d13e0574f5cd4a323c11655546f91fbe6afa77b57423574", size = 79498202, upload_time = "2026-02-10T21:44:52.603Z" },
     { url = "https://files.pythonhosted.org/packages/ec/23/2c9fe0c9c27f7f6cb865abcea8a4568f29f00acaeadfc6a37f6801f84cb4/torch-2.10.0-2-cp313-none-macosx_11_0_arm64.whl", hash = "sha256:e521c9f030a3774ed770a9c011751fb47c4d12029a3d6522116e48431f2ff89e", size = 79498254, upload_time = "2026-02-10T21:44:44.095Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/7a/abada41517ce0011775f0f4eacc79659bc9bc6c361e6bfe6f7052a6b9363/torch-2.10.0-3-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:98c01b8bb5e3240426dcde1446eed6f40c778091c8544767ef1168fc663a05a6", size = 915622781, upload_time = "2026-03-11T14:17:11.354Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/c6/4dfe238342ffdcec5aef1c96c457548762d33c40b45a1ab7033bb26d2ff2/torch-2.10.0-3-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:80b1b5bfe38eb0e9f5ff09f206dcac0a87aadd084230d4a36eea5ec5232c115b", size = 915627275, upload_time = "2026-03-11T14:16:11.325Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/f0/72bf18847f58f877a6a8acf60614b14935e2f156d942483af1ffc081aea0/torch-2.10.0-3-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:46b3574d93a2a8134b3f5475cfb98e2eb46771794c57015f6ad1fb795ec25e49", size = 915523474, upload_time = "2026-03-11T14:17:44.422Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/39/590742415c3030551944edc2ddc273ea1fdfe8ffb2780992e824f1ebee98/torch-2.10.0-3-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:b1d5e2aba4eb7f8e87fbe04f86442887f9167a35f092afe4c237dfcaaef6e328", size = 915632474, upload_time = "2026-03-11T14:15:13.666Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/8e/34949484f764dde5b222b7fe3fede43e4a6f0da9d7f8c370bb617d629ee2/torch-2.10.0-3-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:0228d20b06701c05a8f978357f657817a4a63984b0c90745def81c18aedfa591", size = 915523882, upload_time = "2026-03-11T14:14:46.311Z" },
     { url = "https://files.pythonhosted.org/packages/cc/af/758e242e9102e9988969b5e621d41f36b8f258bb4a099109b7a4b4b50ea4/torch-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:5fd4117d89ffd47e3dcc71e71a22efac24828ad781c7e46aaaf56bf7f2796acf", size = 145996088, upload_time = "2026-01-21T16:24:44.171Z" },
     { url = "https://files.pythonhosted.org/packages/23/8e/3c74db5e53bff7ed9e34c8123e6a8bfef718b2450c35eefab85bb4a7e270/torch-2.10.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:787124e7db3b379d4f1ed54dd12ae7c741c16a4d29b49c0226a89bea50923ffb", size = 915711952, upload_time = "2026-01-21T16:23:53.503Z" },
     { url = "https://files.pythonhosted.org/packages/6e/01/624c4324ca01f66ae4c7cd1b74eb16fb52596dce66dbe51eff95ef9e7a4c/torch-2.10.0-cp312-cp312-win_amd64.whl", hash = "sha256:2c66c61f44c5f903046cc696d088e21062644cbe541c7f1c4eaae88b2ad23547", size = 113757972, upload_time = "2026-01-21T16:24:39.516Z" },
