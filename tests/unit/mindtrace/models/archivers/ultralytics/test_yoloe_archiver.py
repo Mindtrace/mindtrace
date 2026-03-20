@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ultralytics import YOLOE
 
-from mindtrace.registry.archivers.ultralytics.yoloe_archiver import YoloEArchiver
+from mindtrace.models.archivers.ultralytics.yoloe_archiver import YoloEArchiver
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def test_yoloe_archiver_load(yoloe_archiver):
     pt_file.write_bytes(b"dummy model data")
 
     # Mock YOLOE constructor to avoid actual model loading
-    with patch("mindtrace.registry.archivers.ultralytics.yoloe_archiver.YOLOE") as mock_yoloe:
+    with patch("mindtrace.models.archivers.ultralytics.yoloe_archiver.YOLOE") as mock_yoloe:
         mock_model_instance = MagicMock()
         mock_yoloe.return_value = mock_model_instance
 

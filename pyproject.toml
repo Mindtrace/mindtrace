@@ -35,11 +35,19 @@ cameras-all = ["mindtrace-hardware[cameras-all]>=0.8.0"]
 stereo-basler = ["mindtrace-hardware[stereo-basler]>=0.8.0"]
 stereo-all = ["mindtrace-hardware[stereo-all]>=0.8.0"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.8.0"]
-registry-timm = ["mindtrace-registry[timm]>=0.7.1"]
-registry-huggingface = ["mindtrace-registry[huggingface]>=0.7.1"]
-registry-onnx = ["mindtrace-registry[onnx]>=0.7.1"]
-registry-tensorrt-cu11 = ["mindtrace-registry[tensorrt-cu11]>=0.7.1"]
-registry-tensorrt-cu12 = ["mindtrace-registry[tensorrt-cu12]>=0.7.1"]
+# Models extras
+models-train = ["mindtrace-models[train]>=0.8.0"]
+models-transformers = ["mindtrace-models[transformers]>=0.8.0"]
+models-timm = ["mindtrace-models[timm]>=0.8.0"]
+models-peft = ["mindtrace-models[peft]>=0.8.0"]
+models-mlflow = ["mindtrace-models[mlflow]>=0.8.0"]
+models-wandb = ["mindtrace-models[wandb]>=0.8.0"]
+models-tensorboard = ["mindtrace-models[tensorboard]>=0.8.0"]
+models-onnx = ["mindtrace-models[onnx]>=0.8.0"]
+models-ultralytics = ["mindtrace-models[ultralytics]>=0.8.0"]
+models-all = ["mindtrace-models[all]>=0.8.0"]
+# Cluster extras
+cluster-torch = ["mindtrace-cluster[torch]>=0.8.0"]
 
 [dependency-groups]
 dev = [
@@ -54,6 +62,7 @@ dev = [
     "pre-commit>=4.2.0",
     "twine>=6.1.0",
     "tomlkit>=0.13.3",
+    "setuptools>=82.0.0",
 ]
 docs = [
     "mkdocs-material>=9.6.21",

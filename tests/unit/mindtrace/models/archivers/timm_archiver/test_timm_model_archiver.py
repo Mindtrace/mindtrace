@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from mindtrace.registry.archivers.timm.timm_model_archiver import (
+from mindtrace.models.archivers.timm.timm_model_archiver import (
     _TIMM_AVAILABLE,
     TimmModelArchiver,
 )

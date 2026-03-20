@@ -6,9 +6,9 @@ import urllib.request
 import pytest
 from ultralytics import SAM, YOLO, YOLOE
 
-from mindtrace.registry.archivers.ultralytics.sam_archiver import SamArchiver
-from mindtrace.registry.archivers.ultralytics.yolo_archiver import YoloArchiver
-from mindtrace.registry.archivers.ultralytics.yoloe_archiver import YoloEArchiver
+from mindtrace.models.archivers.ultralytics.sam_archiver import SamArchiver
+from mindtrace.models.archivers.ultralytics.yolo_archiver import YoloArchiver
+from mindtrace.models.archivers.ultralytics.yoloe_archiver import YoloEArchiver
 
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "minio-registry")
 

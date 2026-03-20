@@ -51,21 +51,27 @@ class TestArchiverDispatch:
         assert "HuggingFaceModelArchiver" in materializer
 
     @pytest.mark.skipif(not HAS_TIMM, reason="timm not installed")
-    def test_timm_model_dispatches_to_timm_archiver(self, registry):
-        """A timm model should be handled by TimmModelArchiver."""
+    def test_timm_model_dispatches_to_pytorch_materializer(self, registry):
+        """A timm model (nn.Module subclass) dispatches to PyTorchModuleMaterializer.
+
+        The TimmModelArchiver is not auto-registered against nn.Module to avoid
+        overwriting the generic PyTorchModuleMaterializer for non-timm nn.Module
+        subclasses.  Users who want TimmModelArchiver must pass it explicitly.
+        """
         import timm
 
         model = timm.create_model("resnet18", pretrained=False, num_classes=2)
 
         materializer = registry._find_materializer(model)
-        assert "TimmModelArchiver" in materializer
+        assert "PyTorchModuleMaterializer" in materializer
 
     @pytest.mark.skipif(not HAS_TIMM, reason="timm not installed")
-    def test_generic_nn_module_dispatches_to_timm_archiver(self, registry):
-        """A generic nn.Module falls back to TimmModelArchiver (nn.Module registration).
+    def test_generic_nn_module_dispatches_to_pytorch_materializer(self, registry):
+        """A generic nn.Module falls back to PyTorchModuleMaterializer.
 
-        The timm archiver's save() will reject it if it doesn't have
-        pretrained_cfg/default_cfg, but the dispatch itself should resolve.
+        The TimmModelArchiver is not auto-registered against nn.Module, so all
+        nn.Module subclasses (including timm models) resolve to the generic
+        PyTorchModuleMaterializer unless an explicit materializer is provided.
         """
 
         class SimpleModule(nn.Module):
@@ -78,7 +84,7 @@ class TestArchiverDispatch:
 
         model = SimpleModule()
         materializer = registry._find_materializer(model)
-        assert "TimmModelArchiver" in materializer
+        assert "PyTorchModuleMaterializer" in materializer
 
     @pytest.mark.skipif(not HAS_TRANSFORMERS or not HAS_TIMM, reason="transformers and timm required")
     def test_hf_model_not_dispatched_to_timm(self, registry):
@@ -116,7 +122,7 @@ class TestArchiverRoundtrip:
         """Test timm model save/load roundtrip."""
         import timm
 
-        from mindtrace.registry.archivers.timm.timm_model_archiver import TimmModelArchiver
+        from mindtrace.models.archivers.timm.timm_model_archiver import TimmModelArchiver
 
         archiver = TimmModelArchiver(uri=temp_dir)
         model = timm.create_model("resnet18", pretrained=False, num_classes=3)
@@ -139,7 +145,7 @@ class TestArchiverRoundtrip:
         """Test HuggingFace model save/load roundtrip."""
         from transformers import AutoConfig, AutoModel
 
-        from mindtrace.registry.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
+        from mindtrace.models.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
 
         archiver = HuggingFaceModelArchiver(uri=temp_dir)
         config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
@@ -159,7 +165,7 @@ class TestArchiverRoundtrip:
         """Test ONNX model save/load roundtrip."""
         from onnx import TensorProto, checker, helper
 
-        from mindtrace.registry.archivers.onnx.onnx_model_archiver import OnnxModelArchiver
+        from mindtrace.models.archivers.onnx.onnx_model_archiver import OnnxModelArchiver
 
         # Create a minimal valid ONNX model
         X = helper.make_tensor_value_info("X", TensorProto.FLOAT, [1, 2])
@@ -183,7 +189,7 @@ class TestArchiverRoundtrip:
     @pytest.mark.skipif(not HAS_TIMM, reason="timm not installed")
     def test_timm_save_rejects_generic_nn_module(self, temp_dir):
         """Saving a generic nn.Module through TimmModelArchiver should fail."""
-        from mindtrace.registry.archivers.timm.timm_model_archiver import TimmModelArchiver
+        from mindtrace.models.archivers.timm.timm_model_archiver import TimmModelArchiver
 
         class SimpleModule(nn.Module):
             def __init__(self):
@@ -197,7 +203,7 @@ class TestArchiverRoundtrip:
     @pytest.mark.skipif(not HAS_TIMM, reason="timm not installed")
     def test_timm_save_rejects_unknown_architecture(self, temp_dir):
         """Saving a timm model with unknown architecture should fail early."""
-        from mindtrace.registry.archivers.timm.timm_model_archiver import TimmModelArchiver
+        from mindtrace.models.archivers.timm.timm_model_archiver import TimmModelArchiver
 
         mock_model = MagicMock()
         mock_model.pretrained_cfg = {"architecture": ""}

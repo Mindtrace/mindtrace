@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ultralytics import SAM
 
-from mindtrace.registry.archivers.ultralytics.sam_archiver import SamArchiver
+from mindtrace.models.archivers.ultralytics.sam_archiver import SamArchiver
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def test_sam_archiver_save_success(sam_archiver):
     mock_model.model.state_dict = MagicMock(return_value={"layer1": "weights"})
 
     # Mock torch.save to verify it's called
-    with patch("mindtrace.registry.archivers.ultralytics.sam_archiver.torch.save") as mock_torch_save:
+    with patch("mindtrace.models.archivers.ultralytics.sam_archiver.torch.save") as mock_torch_save:
         sam_archiver.save(mock_model)
 
         # Verify torch.save was called with correct path
@@ -72,7 +72,7 @@ def test_sam_archiver_load_success(sam_archiver):
     pt_file.write_bytes(b"dummy model data")
 
     # Mock SAM constructor to avoid actual model loading
-    with patch("mindtrace.registry.archivers.ultralytics.sam_archiver.SAM") as mock_sam:
+    with patch("mindtrace.models.archivers.ultralytics.sam_archiver.SAM") as mock_sam:
         mock_model_instance = MagicMock()
         mock_sam.return_value = mock_model_instance
 
