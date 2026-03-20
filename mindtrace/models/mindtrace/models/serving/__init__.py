@@ -8,16 +8,8 @@ Optional subpackages (each requires additional dependencies):
 ``mindtrace.models.serving.onnx``
     :class:`~mindtrace.models.serving.onnx.OnnxModelService` — runs inference
     via ``onnxruntime``, loading the ``onnx.ModelProto`` directly from the
-    registry (via :class:`~mindtrace.registry.archivers.onnx.OnnxModelArchiver`).
+    registry (via :class:`~mindtrace.models.archivers.onnx.OnnxModelArchiver`).
     Requires: ``onnxruntime`` or ``onnxruntime-gpu``.
-
-``mindtrace.models.serving.tensorrt``
-    :class:`~mindtrace.models.serving.tensorrt.TensorRTModelService` — runs
-    inference via a TensorRT engine, loading the ``ICudaEngine`` from the
-    registry (via :class:`~mindtrace.registry.archivers.tensorrt.TensorRTEngineArchiver`).
-    :class:`~mindtrace.models.serving.tensorrt.TensorRTExporter` converts a
-    PyTorch/ONNX model to a TensorRT engine.
-    Requires: ``tensorrt``, ``pycuda``.
 
 ``mindtrace.models.serving.torchserve``
     :class:`~mindtrace.models.serving.torchserve.TorchServeModelService` — HTTP

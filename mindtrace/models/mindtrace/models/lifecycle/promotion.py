@@ -8,6 +8,7 @@ and registry persistence.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -60,6 +61,28 @@ class PromotionResult:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _validate_transition(from_stage: ModelStage, to_stage: ModelStage) -> None:
+    """Verify that a stage transition is permitted.
+
+    Args:
+        from_stage: The current lifecycle stage.
+        to_stage: The desired target stage.
+
+    Raises:
+        PromotionError: If the transition is not allowed by
+            :data:`mindtrace.models.lifecycle.stages.VALID_TRANSITIONS`.
+    """
+    if not from_stage.can_promote_to(to_stage):
+        from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS
+
+        allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
+        raise PromotionError(
+            f"Invalid stage transition: {from_stage.value!r} -> {to_stage.value!r}. "
+            f"Allowed targets from {from_stage.value!r}: {allowed}."
+        )
+
 
 def _check_requirements(
     card: ModelCard,
@@ -118,6 +141,7 @@ def _persist_to_registry(
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def promote(
     card: ModelCard,
     registry: Any,
@@ -162,14 +186,7 @@ def promote(
     from_stage = card.stage
 
     # --- validate transition ---
-    if not from_stage.can_promote_to(to_stage):
-        from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS
-
-        allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
-        raise PromotionError(
-            f"Invalid stage transition: {from_stage.value!r} -> {to_stage.value!r}. "
-            f"Allowed targets from {from_stage.value!r}: {allowed}."
-        )
+    _validate_transition(from_stage, to_stage)
 
     # --- check evaluation thresholds ---
     failures: dict[str, tuple[float, float]] = {}
@@ -187,12 +204,11 @@ def promote(
 
     if failures and not dry_run:
         details = "; ".join(
-            f"{metric}: actual={actual:.4g}, required={required:.4g}"
+            f"{metric}: actual={'missing' if math.isnan(actual) else f'{actual:.4g}'}, required={required:.4g}"
             for metric, (actual, required) in failures.items()
         )
         raise PromotionError(
-            f"Promotion of {card.name}:{card.version} to {to_stage.value!r} blocked "
-            f"by failed requirements: {details}"
+            f"Promotion of {card.name}:{card.version} to {to_stage.value!r} blocked by failed requirements: {details}"
         )
 
     if dry_run:
@@ -207,8 +223,7 @@ def promote(
 
     # --- apply promotion ---
     card.stage = to_stage
-    registry_key = f"{card.name}:{card.version}:{to_stage.value}"
-    _persist_to_registry(registry, registry_key, card)
+    _persist_to_registry(registry, card.registry_key(to_stage), card)
 
     logger.info(
         "Promoted %s:%s from %s to %s.",
@@ -263,10 +278,7 @@ def demote(
     from_stage = card.stage
 
     # --- validate transition ---
-    if not from_stage.can_promote_to(to_stage):
-        raise PromotionError(
-            f"Invalid stage transition: {from_stage.value!r} -> {to_stage.value!r}."
-        )
+    _validate_transition(from_stage, to_stage)
 
     result = PromotionResult(
         success=True,
@@ -292,8 +304,7 @@ def demote(
         card.extra["demotion_reason"] = reason
 
     card.stage = to_stage
-    registry_key = f"{card.name}:{card.version}:{to_stage.value}"
-    _persist_to_registry(registry, registry_key, card)
+    _persist_to_registry(registry, card.registry_key(to_stage), card)
 
     log_msg = "Demoted %s:%s from %s to %s."
     log_args: list[Any] = [card.name, card.version, from_stage.value, to_stage.value]

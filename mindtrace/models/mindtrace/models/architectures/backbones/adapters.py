@@ -67,10 +67,7 @@ class TimmBackboneAdapter(BackboneProtocol):
         **kwargs: Any,
     ) -> None:
         if not _TIMM_AVAILABLE:
-            raise ImportError(
-                "timm is required for TimmBackboneAdapter. "
-                "Install it with: pip install timm"
-            )
+            raise ImportError("timm is required for TimmBackboneAdapter. Install it with: pip install timm")
         super().__init__()
         import timm
 
@@ -82,9 +79,7 @@ class TimmBackboneAdapter(BackboneProtocol):
         )
         self._model_name = model_name
         self._embed_dim: int = self._model.num_features
-        self._has_patch_tokens = hasattr(self._model, "patch_embed") and hasattr(
-            self._model, "blocks"
-        )
+        self._has_patch_tokens = hasattr(self._model, "patch_embed") and hasattr(self._model, "blocks")
         self._model.to(device)
 
     @property
@@ -134,8 +129,7 @@ class TorchvisionBackboneAdapter(BackboneProtocol):
     ) -> None:
         if not _TORCHVISION_AVAILABLE:
             raise ImportError(
-                "torchvision is required for TorchvisionBackboneAdapter. "
-                "Install it with: pip install torchvision"
+                "torchvision is required for TorchvisionBackboneAdapter. Install it with: pip install torchvision"
             )
         super().__init__()
         import torchvision.models as tvm
@@ -143,8 +137,7 @@ class TorchvisionBackboneAdapter(BackboneProtocol):
         factory = getattr(tvm, model_name, None)
         if factory is None:
             raise ValueError(
-                f"'{model_name}' is not a recognised torchvision model. "
-                "Check torchvision.models for available names."
+                f"'{model_name}' is not a recognised torchvision model. Check torchvision.models for available names."
             )
 
         weights_arg: Any = "DEFAULT" if pretrained else None
@@ -313,10 +306,7 @@ def build_backbone_adapter(
     """
     if backbone_type not in _ADAPTER_REGISTRY:
         available = sorted(_ADAPTER_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown backbone_type '{backbone_type}'. "
-            f"Available types: {available}"
-        )
+        raise ValueError(f"Unknown backbone_type '{backbone_type}'. Available types: {available}")
 
     adapter_cls = _ADAPTER_REGISTRY[backbone_type]
 

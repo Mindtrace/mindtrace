@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
 
-
 # ---------------------------------------------------------------------------
 # Common base
 # ---------------------------------------------------------------------------

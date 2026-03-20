@@ -82,11 +82,9 @@ def _pull_from_registry(
     try:
         import torch  # noqa: PLC0415
     except ImportError as exc:
-        raise ImportError(
-            "PyTorch is required to save model weights before archiving."
-        ) from exc
+        raise ImportError("PyTorch is required to save model weights before archiving.") from exc
 
-    model_obj    = registry.load(f"{model_name}:{version}")
+    model_obj = registry.load(f"{model_name}:{version}")
     weights_path = tmp_dir / f"model{suffix}"
 
     if hasattr(model_obj, "state_dict"):
@@ -151,10 +149,7 @@ class TorchServeExporter:
         _check_archiver_available()
 
         if model_path is None and registry is None:
-            raise ValueError(
-                "Either 'model_path' or 'registry' must be provided to locate "
-                "the model weights."
-            )
+            raise ValueError("Either 'model_path' or 'registry' must be provided to locate the model weights.")
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,11 +172,16 @@ class TorchServeExporter:
 
             cmd: list[str] = [
                 "torch-model-archiver",
-                "--model-name", model_name,
-                "--version", version,
-                "--serialized-file", str(weights_path),
-                "--handler", handler_str,
-                "--export-path", str(output_dir),
+                "--model-name",
+                model_name,
+                "--version",
+                version,
+                "--serialized-file",
+                str(weights_path),
+                "--handler",
+                handler_str,
+                "--export-path",
+                str(output_dir),
             ]
             if extra_files:
                 cmd += ["--extra-files", ",".join(extra_files)]

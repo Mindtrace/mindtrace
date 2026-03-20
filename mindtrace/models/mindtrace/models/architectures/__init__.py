@@ -45,6 +45,9 @@ from mindtrace.models.architectures.backbones import (
     register_backbone,
 )
 
+# High-level factory
+from mindtrace.models.architectures.factory import ModelWrapper, build_model, build_model_from_hf
+
 # Heads
 from mindtrace.models.architectures.heads import (
     DetectionHead,
@@ -54,9 +57,6 @@ from mindtrace.models.architectures.heads import (
     MLPHead,
     MultiLabelHead,
 )
-
-# High-level factory
-from mindtrace.models.architectures.factory import ModelWrapper, build_model, build_model_from_hf
 
 __all__ = [
     # Backbone registry

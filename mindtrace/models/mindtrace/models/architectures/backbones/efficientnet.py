@@ -32,7 +32,6 @@ import torch.nn as nn
 
 from mindtrace.models.architectures.backbones.registry import register_backbone
 
-
 if _TORCHVISION_AVAILABLE:
     # -----------------------------------------------------------------------
     # Variant table:
@@ -118,6 +117,4 @@ if _TORCHVISION_AVAILABLE:
 
     # Register all variants at import time.
     for _name, _builder, _weights, _nf in _EFFICIENTNET_VARIANTS:
-        register_backbone(_name)(
-            _make_efficientnet_factory(_builder, _weights, _nf)
-        )
+        register_backbone(_name)(_make_efficientnet_factory(_builder, _weights, _nf))

@@ -6,10 +6,9 @@ used by all ModelService subclasses.
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from mindtrace.core import TaskSchema
-
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -26,6 +25,13 @@ class PredictRequest(BaseModel):
 
     images: list[str]
     params: dict[str, Any] = {}
+
+    @field_validator("images")
+    @classmethod
+    def validate_images_not_empty(cls, v):
+        if not v:
+            raise ValueError("At least one image path is required")
+        return v
 
 
 class PredictResponse(BaseModel):

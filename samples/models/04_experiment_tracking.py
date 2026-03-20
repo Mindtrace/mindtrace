@@ -206,6 +206,7 @@ print("=" * 60)
 class InMemoryTracker(Tracker):
     """Minimal tracker that stores logged values in a list."""
     def __init__(self):
+        super().__init__()
         self.logs: list[dict] = []
     def start_run(self, name, config):
         print(f"  [Tracker] start_run name={name!r}")

@@ -52,6 +52,7 @@ from mindtrace.models.serving.service import ModelService
 def _require_onnxruntime() -> Any:
     try:
         import onnxruntime as ort  # noqa: PLC0415
+
         return ort
     except ImportError as exc:
         raise ImportError(
@@ -106,13 +107,12 @@ class OnnxModelService(ModelService):
         self.model_path: Path | None = Path(model_path) if model_path else None
         self.providers: list[str] = providers or _default_providers()
         self.session_options: Any = session_options
-        self.session: Any = None        # onnxruntime.InferenceSession
+        self.session: Any = None  # onnxruntime.InferenceSession
         self._onnx_metadata: dict = {}  # populated from ModelProto when using registry
 
         if self.model_path is None and kwargs.get("registry") is None:
             raise ValueError(
-                "Either 'model_path' or 'registry' must be provided so that "
-                "load_model() can locate the ONNX model."
+                "Either 'model_path' or 'registry' must be provided so that load_model() can locate the ONNX model."
             )
 
         super().__init__(**kwargs)
@@ -149,12 +149,11 @@ class OnnxModelService(ModelService):
             )
             # Cache lightweight metadata from the proto
             self._onnx_metadata = {
-                "ir_version":      model_proto.ir_version,
-                "producer_name":   model_proto.producer_name,
+                "ir_version": model_proto.ir_version,
+                "producer_name": model_proto.producer_name,
                 "producer_version": model_proto.producer_version,
-                "opset_imports":   [
-                    {"domain": op.domain or "ai.onnx", "version": op.version}
-                    for op in model_proto.opset_import
+                "opset_imports": [
+                    {"domain": op.domain or "ai.onnx", "version": op.version} for op in model_proto.opset_import
                 ],
             }
         else:
@@ -297,11 +296,11 @@ class OnnxModelService(ModelService):
         """Return model metadata including ONNX-specific fields."""
         base = super().info()
         extra: dict[str, Any] = {
-            "model_path":    str(self.model_path) if self.model_path else None,
-            "providers":     self.providers,
-            "input_names":   self.input_names,
-            "output_names":  self.output_names,
-            "input_shapes":  self.input_shapes,
+            "model_path": str(self.model_path) if self.model_path else None,
+            "providers": self.providers,
+            "input_names": self.input_names,
+            "output_names": self.output_names,
+            "input_shapes": self.input_shapes,
             "output_shapes": self.output_shapes,
             **self._onnx_metadata,
         }

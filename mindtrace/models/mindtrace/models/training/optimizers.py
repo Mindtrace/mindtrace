@@ -16,7 +16,6 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-
 # ---------------------------------------------------------------------------
 # Custom scheduler
 # ---------------------------------------------------------------------------
@@ -59,9 +58,7 @@ class WarmupCosineScheduler(LRScheduler):
         if total_steps <= 0:
             raise ValueError(f"total_steps must be > 0, got {total_steps}")
         if warmup_steps > total_steps:
-            raise ValueError(
-                f"warmup_steps ({warmup_steps}) must be <= total_steps ({total_steps})"
-            )
+            raise ValueError(f"warmup_steps ({warmup_steps}) must be <= total_steps ({total_steps})")
 
         self.warmup_steps = warmup_steps
         self.total_steps = total_steps
@@ -86,10 +83,7 @@ class WarmupCosineScheduler(LRScheduler):
         progress = (step - self.warmup_steps) / max(1, decay_steps)
         cosine_factor = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
 
-        return [
-            self.eta_min + (base_lr - self.eta_min) * cosine_factor
-            for base_lr in self.base_lrs
-        ]
+        return [self.eta_min + (base_lr - self.eta_min) * cosine_factor for base_lr in self.base_lrs]
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +166,7 @@ def build_optimizer(
     key = name.lower()
     if key not in registry:
         supported = ", ".join(f'"{k}"' for k in sorted(registry))
-        raise ValueError(
-            f"Unknown optimizer '{name}'. Supported names: {supported}."
-        )
+        raise ValueError(f"Unknown optimizer '{name}'. Supported names: {supported}.")
 
     optimizer_cls = registry[key]
 
@@ -191,9 +183,7 @@ def build_optimizer(
             )
         base_lr: float | None = kwargs.get("lr")
         if base_lr is None:
-            raise ValueError(
-                "backbone_lr_multiplier requires 'lr' to be specified in kwargs."
-            )
+            raise ValueError("backbone_lr_multiplier requires 'lr' to be specified in kwargs.")
         backbone_lr = float(base_lr) * backbone_lr_multiplier
         param_groups: list[dict] = [
             {"params": model.backbone.parameters(), "lr": backbone_lr},
@@ -248,21 +238,14 @@ def build_scheduler(name: str, optimizer: Optimizer, **kwargs: Any) -> LRSchedul
     if key == "cosine":
         t_max = kwargs.pop("total_steps", kwargs.pop("T_max", None))
         if t_max is None:
-            raise TypeError(
-                "build_scheduler: 'cosine' requires 'total_steps' or 'T_max'."
-            )
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=t_max, **kwargs
-        )
+            raise TypeError("build_scheduler: 'cosine' requires 'total_steps' or 'T_max'.")
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, **kwargs)
 
     if key == "cosine_warmup":
         warmup_steps = kwargs.pop("warmup_steps", None)
         total_steps = kwargs.pop("total_steps", None)
         if warmup_steps is None or total_steps is None:
-            raise TypeError(
-                "build_scheduler: 'cosine_warmup' requires 'warmup_steps' and "
-                "'total_steps'."
-            )
+            raise TypeError("build_scheduler: 'cosine_warmup' requires 'warmup_steps' and 'total_steps'.")
         return WarmupCosineScheduler(
             optimizer,
             warmup_steps=int(warmup_steps),
@@ -274,20 +257,14 @@ def build_scheduler(name: str, optimizer: Optimizer, **kwargs: Any) -> LRSchedul
         step_size = kwargs.pop("step_size", None)
         gamma = kwargs.pop("gamma", None)
         if step_size is None or gamma is None:
-            raise TypeError(
-                "build_scheduler: 'step' requires 'step_size' and 'gamma'."
-            )
-        return torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=int(step_size), gamma=float(gamma), **kwargs
-        )
+            raise TypeError("build_scheduler: 'step' requires 'step_size' and 'gamma'.")
+        return torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(step_size), gamma=float(gamma), **kwargs)
 
     if key == "plateau":
         patience = kwargs.pop("patience", None)
         factor = kwargs.pop("factor", None)
         if patience is None or factor is None:
-            raise TypeError(
-                "build_scheduler: 'plateau' requires 'patience' and 'factor'."
-            )
+            raise TypeError("build_scheduler: 'plateau' requires 'patience' and 'factor'.")
         return torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, patience=int(patience), factor=float(factor), **kwargs
         )
@@ -296,20 +273,12 @@ def build_scheduler(name: str, optimizer: Optimizer, **kwargs: Any) -> LRSchedul
         max_lr = kwargs.pop("max_lr", None)
         total_steps = kwargs.pop("total_steps", None)
         if max_lr is None or total_steps is None:
-            raise TypeError(
-                "build_scheduler: 'onecycle' requires 'max_lr' and 'total_steps'."
-            )
-        return torch.optim.lr_scheduler.OneCycleLR(
-            optimizer, max_lr=max_lr, total_steps=int(total_steps), **kwargs
-        )
+            raise TypeError("build_scheduler: 'onecycle' requires 'max_lr' and 'total_steps'.")
+        return torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, total_steps=int(total_steps), **kwargs)
 
     if key == "constant":
         # Lambda scheduler that always returns a factor of 1.0 — LR never changes.
-        return torch.optim.lr_scheduler.LambdaLR(
-            optimizer, lr_lambda=lambda step: 1.0, **kwargs
-        )
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda step: 1.0, **kwargs)
 
     supported = '"cosine", "cosine_warmup", "step", "plateau", "onecycle", "constant"'
-    raise ValueError(
-        f"Unknown scheduler '{name}'. Supported names: {supported}."
-    )
+    raise ValueError(f"Unknown scheduler '{name}'. Supported names: {supported}.")

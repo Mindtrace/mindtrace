@@ -30,7 +30,6 @@ import torch.nn as nn
 
 from mindtrace.models.architectures.backbones.registry import register_backbone
 
-
 if _TORCHVISION_AVAILABLE:
     # -----------------------------------------------------------------------
     # Variant table: (registry_name, tv_builder, default_weights, num_features)

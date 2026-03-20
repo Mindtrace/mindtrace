@@ -53,7 +53,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Only for static analysis — no runtime import
-    from beanie import PydanticObjectId
     from mindtrace.datalake import Datalake, Datum
 
 
@@ -97,22 +96,16 @@ class DatalakeDataset:
         try:
             import torch.utils.data  # noqa: F401 — confirm torch is available
         except ImportError as exc:
-            raise ImportError(
-                "DatalakeDataset requires PyTorch. Install it with: uv add torch"
-            ) from exc
+            raise ImportError("DatalakeDataset requires PyTorch. Install it with: uv add torch") from exc
 
         self._datalake = datalake
         self._transform = transform
         self._prefetch = prefetch
 
         # Resolve datum ID rows synchronously
-        id_rows: list[dict[str, Any]] = asyncio.run(
-            datalake.query_data(query, datums_wanted=datums_wanted)
-        )
+        id_rows: list[dict[str, Any]] = asyncio.run(datalake.query_data(query, datums_wanted=datums_wanted))
         # Strip the MongoDB _id field injected by the aggregation pipeline
-        self._id_rows: list[dict[str, Any]] = [
-            {k: v for k, v in row.items() if k != "_id"} for row in id_rows
-        ]
+        self._id_rows: list[dict[str, Any]] = [{k: v for k, v in row.items() if k != "_id"} for row in id_rows]
         logger.info("DatalakeDataset: %d samples from query", len(self._id_rows))
 
         self._cache: dict[Any, "Datum"] = {}
@@ -125,9 +118,7 @@ class DatalakeDataset:
 
     def _prefetch_all(self) -> None:
         """Bulk-fetch all unique datum IDs and populate the cache."""
-        all_ids = list(
-            {v for row in self._id_rows for v in row.values() if v is not None}
-        )
+        all_ids = list({v for row in self._id_rows for v in row.values() if v is not None})
         data: list["Datum"] = asyncio.run(self._datalake.get_data(all_ids))
         self._cache = {d.id: d for d in data if d.id is not None}
         logger.info("DatalakeDataset: prefetched %d datums", len(self._cache))
@@ -143,9 +134,7 @@ class DatalakeDataset:
                 ids_to_fetch.append((col, datum_id))
 
         if ids_to_fetch:
-            fetched: list["Datum"] = asyncio.run(
-                self._datalake.get_data([did for _, did in ids_to_fetch])
-            )
+            fetched: list["Datum"] = asyncio.run(self._datalake.get_data([did for _, did in ids_to_fetch]))
             for (col, datum_id), datum in zip(ids_to_fetch, fetched):
                 datums[col] = datum
                 self._cache[datum_id] = datum  # cache for subsequent epochs
@@ -228,14 +217,11 @@ def build_datalake_loader(
     try:
         from torch.utils.data import DataLoader
     except ImportError as exc:
-        raise ImportError(
-            "build_datalake_loader requires PyTorch. Install it with: uv add torch"
-        ) from exc
+        raise ImportError("build_datalake_loader requires PyTorch. Install it with: uv add torch") from exc
 
     if not prefetch and num_workers > 0:
         logger.warning(
-            "num_workers=%d with prefetch=False: async fetching is not fork-safe. "
-            "Forcing num_workers=0.",
+            "num_workers=%d with prefetch=False: async fetching is not fork-safe. Forcing num_workers=0.",
             num_workers,
         )
         num_workers = 0

@@ -35,9 +35,10 @@ try:
     from mindtrace.models.architectures.backbones.hf_generic import (  # noqa: PLC0415
         HuggingFaceBackbone as _HFGenericBackbone,
     )
+
     _HF_GENERIC_AVAILABLE = True
 except Exception:
-    _HFGenericBackbone = None   # type: ignore[assignment,misc]
+    _HFGenericBackbone = None  # type: ignore[assignment,misc]
     _HF_GENERIC_AVAILABLE = False
 from mindtrace.models.architectures.heads.classification import (
     LinearHead,
@@ -54,18 +55,17 @@ try:
     from mindtrace.models.architectures.backbones.dino_hf import (  # noqa: PLC0415
         HuggingFaceDINOBackbone as _HFBackbone,
     )
+
     _HF_DINO_AVAILABLE = True
 except Exception:
-    _HFBackbone = None          # type: ignore[assignment,misc]
+    _HFBackbone = None  # type: ignore[assignment,misc]
     _HF_DINO_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Supported head type keys
 # ---------------------------------------------------------------------------
 
-_HEAD_TYPES: frozenset[str] = frozenset(
-    {"linear", "mlp", "multilabel", "linear_seg", "fpn_seg"}
-)
+_HEAD_TYPES: frozenset[str] = frozenset({"linear", "mlp", "multilabel", "linear_seg", "fpn_seg"})
 _SEG_HEAD_TYPES: frozenset[str] = frozenset({"linear_seg", "fpn_seg"})
 
 
@@ -103,8 +103,8 @@ class HFDINOSegWrapper(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """Spatial forward: extract patch map → head → upsample to input size."""
         H, W = x.shape[2], x.shape[3]
-        spatial = self.backbone.forward_spatial(x)   # (B, D, H_p, W_p)
-        logits  = self.head(spatial)                 # (B, C, H_p, W_p)
+        spatial = self.backbone.forward_spatial(x)  # (B, D, H_p, W_p)
+        logits = self.head(spatial)  # (B, C, H_p, W_p)
         return F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
 
 
@@ -160,6 +160,50 @@ class ModelWrapper(nn.Module):
         """
         features: Tensor = self.backbone(x)
         return self.head(features)
+
+
+# ---------------------------------------------------------------------------
+# Head builder (private helper)
+# ---------------------------------------------------------------------------
+
+
+def _build_head(
+    head: str,
+    in_features: int,
+    num_classes: int,
+    dropout: float,
+    hidden_dim: int,
+    num_layers: int,
+) -> nn.Module:
+    """Instantiate a classification head by type key.
+
+    This is an internal helper shared by :func:`build_model` and
+    :func:`build_model_from_hf` to avoid duplicating head-construction logic.
+
+    Segmentation heads (``"linear_seg"``, ``"fpn_seg"``) are handled inline in
+    :func:`build_model` because they require ``in_channels`` semantics rather
+    than ``in_features`` and accept a different kwarg set.
+    """
+    if head == "linear":
+        return LinearHead(
+            in_features=in_features,
+            num_classes=num_classes,
+            dropout=dropout,
+        )
+    if head == "mlp":
+        return MLPHead(
+            in_features=in_features,
+            hidden_dim=hidden_dim,
+            num_classes=num_classes,
+            dropout=dropout,
+            num_layers=num_layers,
+        )
+    # "multilabel"
+    return MultiLabelHead(
+        in_features=in_features,
+        num_classes=num_classes,
+        dropout=dropout,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -221,10 +265,7 @@ def build_model(
         2048
     """
     if head not in _HEAD_TYPES:
-        raise ValueError(
-            f"Unknown head type '{head}'. "
-            f"Supported types: {sorted(_HEAD_TYPES)}"
-        )
+        raise ValueError(f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}")
 
     # Extract head-specific kwargs before forwarding to backbone factory.
     hidden_dim_cls: int = int(backbone_kwargs.pop("hidden_dim", 512))
@@ -232,9 +273,7 @@ def build_model(
     hidden_dim_seg: int = hidden_dim_cls  # re-use same kwarg for seg heads
 
     # Build backbone.
-    backbone_info: BackboneInfo = build_backbone(
-        backbone, pretrained=pretrained, **backbone_kwargs
-    )
+    backbone_info: BackboneInfo = build_backbone(backbone, pretrained=pretrained, **backbone_kwargs)
     in_features: int = backbone_info.num_features
 
     # Optionally freeze backbone parameters.
@@ -244,40 +283,29 @@ def build_model(
 
     # Build head.
     head_module: nn.Module
-    if head == "linear":
-        head_module = LinearHead(
-            in_features=in_features,
-            num_classes=num_classes,
-            dropout=dropout,
-        )
-    elif head == "mlp":
-        head_module = MLPHead(
-            in_features=in_features,
-            hidden_dim=hidden_dim_cls,
-            num_classes=num_classes,
-            dropout=dropout,
-            num_layers=num_layers,
-        )
-    elif head == "multilabel":
-        head_module = MultiLabelHead(
-            in_features=in_features,
-            num_classes=num_classes,
-            dropout=dropout,
-        )
-    elif head == "linear_seg":
+    if head == "linear_seg":
         head_module = LinearSegHead(
             in_channels=in_features,
             num_classes=num_classes,
         )
-    else:  # "fpn_seg"
+    elif head == "fpn_seg":
         head_module = FPNSegHead(
             in_channels=in_features,
             num_classes=num_classes,
             hidden_dim=hidden_dim_seg,
         )
+    else:
+        head_module = _build_head(
+            head=head,
+            in_features=in_features,
+            num_classes=num_classes,
+            dropout=dropout,
+            hidden_dim=hidden_dim_cls,
+            num_layers=num_layers,
+        )
 
     # HF DINO + segmentation head → spatial patch-token path with auto-upsample
-    is_hf = _HF_DINO_AVAILABLE and isinstance(backbone_info.model, _HFBackbone)
+    is_hf = _HF_DINO_AVAILABLE and _HFBackbone is not None and isinstance(backbone_info.model, _HFBackbone)
     if is_hf and head in _SEG_HEAD_TYPES:
         return HFDINOSegWrapper(backbone_info=backbone_info, head=head_module)
 
@@ -344,8 +372,7 @@ def build_model_from_hf(
     """
     if not _HF_GENERIC_AVAILABLE:
         raise ImportError(
-            "transformers is required for build_model_from_hf().  "
-            "Install it with: pip install transformers"
+            "transformers is required for build_model_from_hf().  Install it with: pip install transformers"
         )
 
     if head in _SEG_HEAD_TYPES:
@@ -356,9 +383,7 @@ def build_model_from_hf(
         )
 
     if head not in _HEAD_TYPES:
-        raise ValueError(
-            f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}"
-        )
+        raise ValueError(f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}")
 
     backbone = _HFGenericBackbone(
         model_name_or_path=model_name_or_path,
@@ -377,18 +402,13 @@ def build_model_from_hf(
     hidden_dim: int = int(head_kwargs.pop("hidden_dim", 512))
     num_layers: int = int(head_kwargs.pop("num_layers", 2))
 
-    head_module: nn.Module
-    if head == "linear":
-        head_module = LinearHead(in_features=in_features, num_classes=num_classes, dropout=dropout)
-    elif head == "mlp":
-        head_module = MLPHead(
-            in_features=in_features,
-            hidden_dim=hidden_dim,
-            num_classes=num_classes,
-            dropout=dropout,
-            num_layers=num_layers,
-        )
-    else:  # "multilabel"
-        head_module = MultiLabelHead(in_features=in_features, num_classes=num_classes, dropout=dropout)
+    head_module = _build_head(
+        head=head,
+        in_features=in_features,
+        num_classes=num_classes,
+        dropout=dropout,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+    )
 
     return ModelWrapper(backbone_info=backbone_info, head=head_module)

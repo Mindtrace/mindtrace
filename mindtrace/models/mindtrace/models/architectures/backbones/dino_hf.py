@@ -69,7 +69,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Literal, Optional, Union
 
@@ -86,12 +86,15 @@ logger = logging.getLogger(__name__)
 
 try:
     from transformers import AutoImageProcessor, AutoModel  # noqa: F401
+
     _HF_AVAILABLE = True
 except ImportError:
     _HF_AVAILABLE = False
 
 try:
-    from peft import LoraConfig as _PeftLoraConfig, get_peft_model, PeftModel  # noqa: F401
+    from peft import LoraConfig as _PeftLoraConfig  # noqa: F401
+    from peft import PeftModel, get_peft_model  # noqa: F401
+
     _PEFT_AVAILABLE = True
 except ImportError:
     _PEFT_AVAILABLE = False
@@ -100,17 +103,13 @@ except ImportError:
 def _require_hf() -> None:
     if not _HF_AVAILABLE:
         raise ImportError(
-            "transformers is required for HuggingFace DINO backbones.  "
-            "Install it with: pip install transformers"
+            "transformers is required for HuggingFace DINO backbones.  Install it with: pip install transformers"
         )
 
 
 def _require_peft() -> None:
     if not _PEFT_AVAILABLE:
-        raise ImportError(
-            "peft is required for LoRA support.  "
-            "Install it with: pip install peft"
-        )
+        raise ImportError("peft is required for LoRA support.  Install it with: pip install peft")
 
 
 # ---------------------------------------------------------------------------
@@ -121,23 +120,38 @@ _TargetModulesPreset = Literal["qv", "qkv", "qkv_proj", "mlp", "all"]
 
 # Attention / MLP module names differ between DINOv2 and DINOv3
 _DINOV2_MODULES: dict[str, list[str]] = {
-    "qv":       ["attention.attention.query", "attention.attention.value"],
-    "qkv":      ["attention.attention.query", "attention.attention.key", "attention.attention.value"],
-    "qkv_proj": ["attention.attention.query", "attention.attention.key",
-                 "attention.attention.value", "attention.output.dense"],
-    "mlp":      ["mlp.fc1", "mlp.fc2"],
-    "all":      ["attention.attention.query", "attention.attention.key",
-                 "attention.attention.value", "attention.output.dense",
-                 "mlp.fc1", "mlp.fc2"],
+    "qv": ["attention.attention.query", "attention.attention.value"],
+    "qkv": ["attention.attention.query", "attention.attention.key", "attention.attention.value"],
+    "qkv_proj": [
+        "attention.attention.query",
+        "attention.attention.key",
+        "attention.attention.value",
+        "attention.output.dense",
+    ],
+    "mlp": ["mlp.fc1", "mlp.fc2"],
+    "all": [
+        "attention.attention.query",
+        "attention.attention.key",
+        "attention.attention.value",
+        "attention.output.dense",
+        "mlp.fc1",
+        "mlp.fc2",
+    ],
 }
 
 _DINOV3_MODULES: dict[str, list[str]] = {
-    "qv":       ["attention.q_proj", "attention.v_proj"],
-    "qkv":      ["attention.q_proj", "attention.k_proj", "attention.v_proj"],
+    "qv": ["attention.q_proj", "attention.v_proj"],
+    "qkv": ["attention.q_proj", "attention.k_proj", "attention.v_proj"],
     "qkv_proj": ["attention.q_proj", "attention.k_proj", "attention.v_proj", "attention.o_proj"],
-    "mlp":      ["mlp.up_proj", "mlp.down_proj"],
-    "all":      ["attention.q_proj", "attention.k_proj", "attention.v_proj", "attention.o_proj",
-                 "mlp.up_proj", "mlp.down_proj"],
+    "mlp": ["mlp.up_proj", "mlp.down_proj"],
+    "all": [
+        "attention.q_proj",
+        "attention.k_proj",
+        "attention.v_proj",
+        "attention.o_proj",
+        "mlp.up_proj",
+        "mlp.down_proj",
+    ],
 }
 
 
@@ -235,14 +249,13 @@ class HuggingFaceDINOBackbone(nn.Module):
         self.hf_model_name = hf_model_name
         self.lora_enabled = False
 
-        self.processor = AutoImageProcessor.from_pretrained(
-            hf_model_name, use_fast=True, cache_dir=cache_dir
-        )
+        self.processor = AutoImageProcessor.from_pretrained(hf_model_name, use_fast=True, cache_dir=cache_dir)
         self.model = AutoModel.from_pretrained(hf_model_name, cache_dir=cache_dir)
 
         if lora_config is not None:
             _require_peft()
-            from peft import LoraConfig as _PeftCfg, get_peft_model  # noqa: PLC0415
+            from peft import LoraConfig as _PeftCfg  # noqa: PLC0415
+            from peft import get_peft_model
 
             target_mods = lora_config.get_target_modules(hf_model_name)
             peft_cfg = _PeftCfg(
@@ -349,28 +362,25 @@ class HuggingFaceDINOBackbone(nn.Module):
             ``(B, D, H_p, W_p)`` spatial feature map ready for convolutional
             segmentation heads.
         """
-        import math as _math                                         # noqa: PLC0415
         B, C, H, W = pixel_values.shape
         outputs = self._forward_raw(pixel_values)
 
         if self.is_vit:
-            hidden = outputs.last_hidden_state              # (B, 1+reg+N, D)
-            start   = 1 + self._num_register_tokens
-            patches = hidden[:, start:, :]                  # (B, N, D)
+            hidden = outputs.last_hidden_state  # (B, 1+reg+N, D)
+            start = 1 + self._num_register_tokens
+            patches = hidden[:, start:, :]  # (B, N, D)
             H_p = H // self._patch_size
             W_p = W // self._patch_size
             return patches.permute(0, 2, 1).reshape(B, -1, H_p, W_p)
         else:
             # ConvNeXt: last_hidden_state is (B, H_p, W_p, C)
-            return outputs.last_hidden_state.permute(0, 3, 1, 2)    # (B, C, H_p, W_p)
+            return outputs.last_hidden_state.permute(0, 3, 1, 2)  # (B, C, H_p, W_p)
 
     # ------------------------------------------------------------------
     # Feature extraction helpers
     # ------------------------------------------------------------------
 
-    def get_features(
-        self, pixel_values: torch.Tensor
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def get_features(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Return ``(cls_token, patch_tokens)`` from a forward pass.
 
         For ViT models:
@@ -387,17 +397,17 @@ class HuggingFaceDINOBackbone(nn.Module):
         outputs = self._forward_raw(pixel_values)
 
         if self.is_vit:
-            hidden = outputs.last_hidden_state       # (B, 1+registers+N, D)
-            cls    = hidden[:, 0, :]                 # (B, D)
-            start  = 1 + self._num_register_tokens
-            patches = hidden[:, start:, :]           # (B, N, D)
+            hidden = outputs.last_hidden_state  # (B, 1+registers+N, D)
+            cls = hidden[:, 0, :]  # (B, D)
+            start = 1 + self._num_register_tokens
+            patches = hidden[:, start:, :]  # (B, N, D)
             return cls, patches
         else:
             # ConvNeXt: last_hidden_state is (B, H, W, C) → flatten spatial
-            hidden = outputs.last_hidden_state       # (B, H, W, C)
-            cls    = outputs.pooler_output           # (B, C)
+            hidden = outputs.last_hidden_state  # (B, H, W, C)
+            cls = outputs.pooler_output  # (B, C)
             b, h, w, c = hidden.shape
-            patches = hidden.reshape(b, h * w, c)   # (B, H*W, C)
+            patches = hidden.reshape(b, h * w, c)  # (B, H*W, C)
             return cls, patches
 
     def get_cls_tokens(self, pixel_values: torch.Tensor) -> torch.Tensor:
@@ -438,12 +448,11 @@ class HuggingFaceDINOBackbone(nn.Module):
         """
         if self._num_register_tokens == 0:
             raise ValueError(
-                f"Model '{self.hf_model_name}' has no register tokens.  "
-                "Use a DINOv2-with-registers or DINOv3 model."
+                f"Model '{self.hf_model_name}' has no register tokens.  Use a DINOv2-with-registers or DINOv3 model."
             )
         outputs = self._forward_raw(pixel_values)
-        hidden  = outputs.last_hidden_state  # (B, 1+registers+N, D)
-        return hidden[:, 1: 1 + self._num_register_tokens, :]
+        hidden = outputs.last_hidden_state  # (B, 1+registers+N, D)
+        return hidden[:, 1 : 1 + self._num_register_tokens, :]
 
     def get_intermediate_layers(
         self,
@@ -469,30 +478,28 @@ class HuggingFaceDINOBackbone(nn.Module):
             ValueError: If called on a ConvNeXt model (no transformer layers).
         """
         if not self.is_vit:
-            raise ValueError(
-                "get_intermediate_layers is only supported for ViT-based models."
-            )
+            raise ValueError("get_intermediate_layers is only supported for ViT-based models.")
 
         outputs = self.model(
             pixel_values=pixel_values.to(next(self.model.parameters()).device),
             output_hidden_states=True,
         )
-        hidden_states = outputs.hidden_states   # tuple of (num_layers+1) tensors
+        hidden_states = outputs.hidden_states  # tuple of (num_layers+1) tensors
 
-        num_layers = len(hidden_states) - 1     # index 0 is the patch embedding
+        num_layers = len(hidden_states) - 1  # index 0 is the patch embedding
         if isinstance(n, int):
             layer_indices = list(range(max(0, num_layers - n), num_layers))
         else:
             layer_indices = [i + 1 for i in n]  # +1 because [0] is embeddings
 
         start = 1 + self._num_register_tokens
-        cls_list:   list[Optional[torch.Tensor]] = []
-        patch_list: list[torch.Tensor]           = []
+        cls_list: list[Optional[torch.Tensor]] = []
+        patch_list: list[torch.Tensor] = []
 
         for idx in layer_indices:
             if idx >= len(hidden_states):
                 continue
-            hs = hidden_states[idx]              # (B, 1+registers+N, D)
+            hs = hidden_states[idx]  # (B, 1+registers+N, D)
             cls_list.append(hs[:, 0, :] if return_class_token else None)
             patch_list.append(hs[:, start:, :])
 
@@ -517,9 +524,7 @@ class HuggingFaceDINOBackbone(nn.Module):
             ValueError: If called on a ConvNeXt model.
         """
         if not self.is_vit:
-            raise ValueError(
-                "get_last_self_attention is only supported for ViT-based models."
-            )
+            raise ValueError("get_last_self_attention is only supported for ViT-based models.")
 
         dev = next(self.model.parameters()).device
         try:
@@ -541,13 +546,13 @@ class HuggingFaceDINOBackbone(nn.Module):
             logger.warning("Could not extract attention weights: %s — returning uniform fallback.", exc)
 
         # Fallback: uniform attention
-        cfg        = self.model.config
-        b          = pixel_values.shape[0]
-        h_patches  = pixel_values.shape[2] // self._patch_size
-        w_patches  = pixel_values.shape[3] // self._patch_size
-        n_tokens   = h_patches * w_patches + 1 + self._num_register_tokens
-        n_heads    = getattr(cfg, "num_attention_heads", 12)
-        attn       = torch.ones(b, n_heads, n_tokens, n_tokens, device=dev) / n_tokens
+        cfg = self.model.config
+        b = pixel_values.shape[0]
+        h_patches = pixel_values.shape[2] // self._patch_size
+        w_patches = pixel_values.shape[3] // self._patch_size
+        n_tokens = h_patches * w_patches + 1 + self._num_register_tokens
+        n_heads = getattr(cfg, "num_attention_heads", 12)
+        attn = torch.ones(b, n_heads, n_tokens, n_tokens, device=dev) / n_tokens
         return attn
 
     # ------------------------------------------------------------------
@@ -560,11 +565,8 @@ class HuggingFaceDINOBackbone(nn.Module):
             self.model.print_trainable_parameters()
         else:
             trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-            total     = sum(p.numel() for p in self.model.parameters())
-            logger.info(
-                "Trainable params: %s / %s  (%.2f%%)",
-                f"{trainable:,}", f"{total:,}", 100 * trainable / total
-            )
+            total = sum(p.numel() for p in self.model.parameters())
+            logger.info("Trainable params: %s / %s  (%.2f%%)", f"{trainable:,}", f"{total:,}", 100 * trainable / total)
 
     def merge_lora(self) -> None:
         """Merge LoRA adapter weights into the base model and remove adapters.
@@ -613,10 +615,10 @@ class HuggingFaceDINOBackbone(nn.Module):
         self.processor.save_pretrained(path)
 
         metadata = {
-            "hf_model_name":      self.hf_model_name,
-            "patch_size":         self._patch_size,
+            "hf_model_name": self.hf_model_name,
+            "patch_size": self._patch_size,
             "num_register_tokens": self._num_register_tokens,
-            "lora_state":         lora_state,
+            "lora_state": lora_state,
         }
         with open(path / "backbone_metadata.json", "w") as fh:
             json.dump(metadata, fh, indent=2)
@@ -647,8 +649,7 @@ class HuggingFaceDINOBackbone(nn.Module):
         meta_path = path / "backbone_metadata.json"
         if not meta_path.exists():
             raise ValueError(
-                f"No backbone metadata found at {path}.  "
-                "Was this saved with HuggingFaceDINOBackbone.save_pretrained()?"
+                f"No backbone metadata found at {path}.  Was this saved with HuggingFaceDINOBackbone.save_pretrained()?"
             )
         with open(meta_path) as fh:
             meta = json.load(fh)
@@ -658,16 +659,17 @@ class HuggingFaceDINOBackbone(nn.Module):
         instance = object.__new__(cls)
         super(HuggingFaceDINOBackbone, instance).__init__()
 
-        instance.hf_model_name        = meta["hf_model_name"]
-        instance._patch_size          = meta["patch_size"]
+        instance.hf_model_name = meta["hf_model_name"]
+        instance._patch_size = meta["patch_size"]
         instance._num_register_tokens = meta["num_register_tokens"]
-        instance._device              = device
-        instance.processor            = AutoImageProcessor.from_pretrained(path, use_fast=True)
+        instance._device = device
+        instance.processor = AutoImageProcessor.from_pretrained(path, use_fast=True)
 
         lora_state = meta.get("lora_state", "none")
         if lora_state == "lora":
             _require_peft()
             from peft import PeftModel  # noqa: PLC0415
+
             base = AutoModel.from_pretrained(meta["hf_model_name"])
             instance.model = PeftModel.from_pretrained(base, path)
             instance.lora_enabled = True
@@ -687,28 +689,28 @@ class HuggingFaceDINOBackbone(nn.Module):
 # DINOv2-with-registers (HuggingFace path — torch.hub doesn't have these)
 _DINOV2_REG_VARIANTS: dict[str, str] = {
     "dino_v2_small_reg": "facebook/dinov2-with-registers-small",
-    "dino_v2_base_reg":  "facebook/dinov2-with-registers-base",
+    "dino_v2_base_reg": "facebook/dinov2-with-registers-base",
     "dino_v2_large_reg": "facebook/dinov2-with-registers-large",
     "dino_v2_giant_reg": "facebook/dinov2-with-registers-giant",
 }
 
 # DINOv3 ViT variants
 _DINOV3_VIT_VARIANTS: dict[str, str] = {
-    "dino_v3_small":     "facebook/dinov3-vits16-pretrain-lvd1689m",
-    "dino_v3_small_plus":"facebook/dinov3-vits16plus-pretrain-lvd1689m",
-    "dino_v3_base":      "facebook/dinov3-vitb16-pretrain-lvd1689m",
-    "dino_v3_large":     "facebook/dinov3-vitl16-pretrain-lvd1689m",
+    "dino_v3_small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+    "dino_v3_small_plus": "facebook/dinov3-vits16plus-pretrain-lvd1689m",
+    "dino_v3_base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "dino_v3_large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
     "dino_v3_large_sat": "facebook/dinov3-vitl16-pretrain-sat493m",
     "dino_v3_huge_plus": "facebook/dinov3-vith16plus-pretrain-lvd1689m",
-    "dino_v3_7b":        "facebook/dinov3-vit7b16-pretrain-lvd1689m",
-    "dino_v3_7b_sat":    "facebook/dinov3-vit7b16-pretrain-sat493m",
+    "dino_v3_7b": "facebook/dinov3-vit7b16-pretrain-lvd1689m",
+    "dino_v3_7b_sat": "facebook/dinov3-vit7b16-pretrain-sat493m",
 }
 
 # DINOv3 ConvNeXt variants
 _DINOV3_CONVNEXT_VARIANTS: dict[str, str] = {
-    "dino_v3_convnext_tiny":  "facebook/dinov3-convnext-tiny-pretrain-lvd1689m",
+    "dino_v3_convnext_tiny": "facebook/dinov3-convnext-tiny-pretrain-lvd1689m",
     "dino_v3_convnext_small": "facebook/dinov3-convnext-small-pretrain-lvd1689m",
-    "dino_v3_convnext_base":  "facebook/dinov3-convnext-base-pretrain-lvd1689m",
+    "dino_v3_convnext_base": "facebook/dinov3-convnext-base-pretrain-lvd1689m",
     "dino_v3_convnext_large": "facebook/dinov3-convnext-large-pretrain-lvd1689m",
 }
 
@@ -749,21 +751,21 @@ def _make_hf_dino_factory(hf_model_name: str):
         """
         if not pretrained:
             from transformers import AutoConfig, AutoModel  # noqa: PLC0415
-            cfg   = AutoConfig.from_pretrained(hf_model_name, cache_dir=cache_dir)
+
+            cfg = AutoConfig.from_pretrained(hf_model_name, cache_dir=cache_dir)
             model = AutoModel.from_config(cfg)
             # Build a lightweight wrapper to read embed_dim without full loading
             backbone = HuggingFaceDINOBackbone.__new__(HuggingFaceDINOBackbone)
             nn.Module.__init__(backbone)
             from transformers import AutoImageProcessor  # noqa: PLC0415
-            backbone.processor            = AutoImageProcessor.from_pretrained(
-                hf_model_name, use_fast=True, cache_dir=cache_dir
-            )
-            backbone.model                = model
-            backbone.hf_model_name        = hf_model_name
-            backbone._patch_size          = getattr(cfg, "patch_size", 14)
+
+            backbone.processor = AutoImageProcessor.from_pretrained(hf_model_name, use_fast=True, cache_dir=cache_dir)
+            backbone.model = model
+            backbone.hf_model_name = hf_model_name
+            backbone._patch_size = getattr(cfg, "patch_size", 14)
             backbone._num_register_tokens = getattr(cfg, "num_register_tokens", 0)
-            backbone.lora_enabled         = False
-            backbone._device              = device
+            backbone.lora_enabled = False
+            backbone._device = device
             backbone.model.to(device)
         else:
             backbone = HuggingFaceDINOBackbone(

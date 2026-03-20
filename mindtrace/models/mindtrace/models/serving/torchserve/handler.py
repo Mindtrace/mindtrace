@@ -111,14 +111,13 @@ class MindtraceHandler(_TSBaseHandler):
         """
         if self.service_class is None:
             raise RuntimeError(
-                f"{type(self).__name__}.service_class is not set.  "
-                "Set it to a ModelService subclass before deploying."
+                f"{type(self).__name__}.service_class is not set.  Set it to a ModelService subclass before deploying."
             )
 
-        props    = context.system_properties
+        props = context.system_properties
         manifest = context.manifest
 
-        model_name    = manifest.get("model", {}).get("modelName", "unknown")
+        model_name = manifest.get("model", {}).get("modelName", "unknown")
         model_version = manifest.get("model", {}).get("modelVersion", "1.0")
 
         gpu_id = props.get("gpu_id")
@@ -174,7 +173,7 @@ class MindtraceHandler(_TSBaseHandler):
         """
         from mindtrace.models.serving.schemas import PredictRequest  # noqa: PLC0415
 
-        request  = PredictRequest(images=images)
+        request = PredictRequest(images=images)
         response = self.service.predict(request)
         return response
 
@@ -214,9 +213,9 @@ class MindtraceHandler(_TSBaseHandler):
             self.initialize(context)
 
         try:
-            images   = self.preprocess(data)
+            images = self.preprocess(data)
             response = self.inference(images)
-            return   self.postprocess(response)
+            return self.postprocess(response)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Handler error: %s", exc)
             return [{"error": str(exc)}]

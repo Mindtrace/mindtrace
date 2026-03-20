@@ -11,7 +11,6 @@ from typing import Any
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -261,7 +260,8 @@ def roc_auc_score(
         fpr = np.concatenate([[0.0], fpr])
 
         # Trapezoidal integration.
-        auc = float(np.trapz(tpr, fpr))
+        _trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
+        auc = float(_trapz(tpr, fpr))
         auc_per_class.append(auc)
 
     auc_array = np.array(auc_per_class, dtype=np.float64)
@@ -318,9 +318,7 @@ def classification_report(
             *num_classes*.
     """
     if class_names is not None and len(class_names) != num_classes:
-        raise ValueError(
-            f"class_names has {len(class_names)} entries but num_classes={num_classes}."
-        )
+        raise ValueError(f"class_names has {len(class_names)} entries but num_classes={num_classes}.")
 
     preds_arr = np.asarray(preds, dtype=np.int64).ravel()
     targets_arr = np.asarray(targets, dtype=np.int64).ravel()

@@ -66,9 +66,7 @@ class EvalResult:
             value=float(data["value"]),
             dataset=data.get("dataset", ""),
             split=data.get("split", "val"),
-            timestamp=datetime.fromisoformat(data["timestamp"])
-            if "timestamp" in data
-            else datetime.now(timezone.utc),
+            timestamp=datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.now(timezone.utc),
         )
 
 
@@ -138,10 +136,7 @@ class ModelCard:
             >>> card.get_metric("val/iou", dataset="coco-val")
             0.85
         """
-        candidates = [
-            r for r in self.eval_results
-            if r.metric == metric and (not dataset or r.dataset == dataset)
-        ]
+        candidates = [r for r in self.eval_results if r.metric == metric and (not dataset or r.dataset == dataset)]
         if not candidates:
             return None
         # Return the value of the last inserted (most recent) entry.
@@ -237,15 +232,9 @@ class ModelCard:
             ValueError: If the ``stage`` value is not a valid
                 :class:`ModelStage`.
         """
-        eval_results = [
-            EvalResult.from_dict(r) for r in data.get("eval_results", [])
-        ]
+        eval_results = [EvalResult.from_dict(r) for r in data.get("eval_results", [])]
         created_at_raw = data.get("created_at")
-        created_at = (
-            datetime.fromisoformat(created_at_raw)
-            if created_at_raw
-            else datetime.now(timezone.utc)
-        )
+        created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(timezone.utc)
         return cls(
             name=data["name"],
             version=data["version"],
