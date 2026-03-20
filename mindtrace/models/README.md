@@ -310,11 +310,17 @@ All metric functions accept NumPy arrays and have no framework dependencies.
 
 ```python
 import numpy as np
-from mindtrace.models import accuracy, mean_iou, dice_score, mean_average_precision
+from mindtrace.models import accuracy, mean_iou, dice_score
 
-acc = accuracy(y_true=np.array([0, 1, 2, 1]), y_pred=np.array([0, 1, 2, 0]))
-iou = mean_iou(pred_mask, true_mask, num_classes=19)
-mAP = mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5)
+# Classification
+preds = np.array([0, 1, 2, 0])
+targets = np.array([0, 1, 2, 1])
+acc = accuracy(preds, targets)  # 0.75
+
+# Segmentation
+pred_mask = np.array([[[0, 1, 2], [0, 1, 2]]])
+true_mask = np.array([[[0, 1, 2], [0, 1, 2]]])
+result = mean_iou(pred_mask, true_mask, num_classes=3)
 ```
 
 See [Evaluation Documentation](mindtrace/models/evaluation/README.md) for details.
