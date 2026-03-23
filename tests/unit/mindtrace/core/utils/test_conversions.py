@@ -7,11 +7,11 @@ import PIL
 import pytest
 from PIL.Image import Image
 
-from mindtrace.core import (
+from mindtrace.core import check_libs
+from mindtrace.core.utils.conversions import (
     ascii_to_pil,
     base64_to_pil,
     bytes_to_pil,
-    check_libs,
     cv2_to_pil,
     discord_file_to_pil,
     ndarray_to_pil,
