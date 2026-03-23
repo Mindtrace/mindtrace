@@ -48,6 +48,7 @@ class TestLauncher:
             "workers": 2,
             "worker_class": "uvicorn.workers.UvicornWorker",
             "pidfile": "/tmp/test.pid",
+            "timeout": mock_options.timeout,
         }
         assert launcher.gunicorn_options == expected_options
 
@@ -92,6 +93,7 @@ class TestLauncher:
             "workers": 1,
             "worker_class": "sync",
             "pidfile": None,
+            "timeout": options.timeout,
         }
         assert launcher.gunicorn_options == expected_options
 
