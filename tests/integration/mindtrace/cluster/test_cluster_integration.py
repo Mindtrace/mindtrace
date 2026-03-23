@@ -1,5 +1,6 @@
 import time
 import warnings
+from functools import partial
 
 import pytest
 from fastapi.exceptions import HTTPException
@@ -8,26 +9,27 @@ from pydantic import BaseModel
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.core.types import JobStatusEnum, WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
+from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 from .conftest import wait_for_job_status
+
+free_port = partial(get_free_port, start_port=8251, end_port=8350)
 
 
 @pytest.mark.integration
 def test_cluster_manager_as_gateway():
     echo_job = JobSchema(name="gateway_echo_job", input_schema=EchoInput, output_schema=EchoOutput)
 
-    # Launch Gateway service on port 8097
-    cluster_cm = ClusterManager.launch(port=8097, wait_for_launch=True, timeout=30)
-    # Launch EchoService on port 8098
-    echo_cm = EchoWorker.launch(port=8098, wait_for_launch=True, timeout=30)
+    cluster_cm = ClusterManager.launch(port=free_port(), wait_for_launch=True, timeout=30)
+    echo_cm = EchoWorker.launch(port=free_port(), wait_for_launch=True, timeout=30)
 
     try:
         # Register the EchoService with the Gateway
         cluster_cm.register_app(
             name="echo",
-            url="http://localhost:8098/",
+            url=str(echo_cm.url),
             connection_manager=echo_cm,
         )
         cluster_cm.register_job_to_endpoint(job_type="gateway_echo_job", endpoint="echo/run")
@@ -45,7 +47,7 @@ def test_cluster_manager_as_gateway():
 @pytest.mark.integration
 def test_cluster_manager_with_prelaunched_worker(cluster_cm):
     """Integration test for ClusterManager with a prelaunched EchoWorker."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8101, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="prelaunched_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
@@ -74,7 +76,7 @@ def test_cluster_manager_with_prelaunched_worker(cluster_cm):
 @pytest.mark.integration
 def test_cluster_manager_multiple_jobs_with_worker(cluster_cm):
     """Integration test for submitting multiple jobs to a prelaunched EchoWorker."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8103, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="multiple_jobs_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
@@ -100,7 +102,7 @@ def test_cluster_manager_multiple_jobs_with_worker(cluster_cm):
 @pytest.mark.integration
 def test_cluster_manager_worker_failure(cluster_cm):
     """Integration test for handling worker failure (simulate by shutting down worker before job submission)."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8105, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="worker_failure_echo", input_schema=EchoInput, output_schema=EchoOutput)
     cluster_cm.register_job_to_worker(job_type="worker_failure_echo", worker_url=str(worker_cm.url))
     # Shut down the worker before submitting the job
@@ -116,7 +118,7 @@ def test_cluster_manager_with_node(cluster_cm, node):
     cluster_cm.register_worker_type(
         worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}
     )
-    worker_url = "http://localhost:8108"
+    worker_url = f"http://localhost:{free_port()}"
     node.launch_worker(worker_type="echoworker", worker_url=worker_url)
     echo_job_schema = JobSchema(name="node_echo", input_schema=EchoInput, output_schema=EchoOutput)
     cluster_cm.register_job_to_worker(job_type="node_echo", worker_url=worker_url)
@@ -135,7 +137,7 @@ def test_cluster_manager_launch_worker(cluster_cm, node):
     )
 
     # Launch a worker using the cluster manager's launch_worker method
-    worker_url = "http://localhost:8110"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(
         node_url=str(node.url),
         worker_type="echoworker",
@@ -168,18 +170,18 @@ def test_cluster_manager_launch_worker_multiple_workers(cluster_cm, node):
         worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}
     )
 
-    # Launch multiple workers
-    worker_urls = ["http://localhost:8113", "http://localhost:8114", "http://localhost:8115"]
-
-    for worker_url in worker_urls:
+    # Launch multiple workers (allocate port and launch together so free_port() sees the bound port)
+    worker_urls = []
+    for _ in range(3):
+        worker_url = f"http://localhost:{free_port()}"
         cluster_cm.launch_worker(
             node_url=str(node.url),
             worker_type="echoworker",
             worker_url=worker_url,
             job_type=None,
         )
-        # Register each worker
         cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=worker_url)
+        worker_urls.append(worker_url)
 
     # Submit jobs to different workers
     echo_job_schema = JobSchema(name="multiple_workers_echo", input_schema=EchoInput, output_schema=EchoOutput)
@@ -210,7 +212,7 @@ def test_cluster_manager_launch_worker_node_failure(cluster_cm):
         cluster_cm.launch_worker(
             node_url="http://localhost:9999",  # Non-existent node
             worker_type="echoworker",
-            worker_url="http://localhost:8117",
+            worker_url=f"http://localhost:{free_port()}",
         )
 
 
@@ -226,7 +228,7 @@ def test_register_worker_type_with_job_schema_name(cluster_cm, node):
     )
 
     # Launch a worker - it should be automatically connected to the job schema
-    worker_url = "http://localhost:8120"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
     # Submit a job - it should be processed automatically without manual registration
@@ -255,7 +257,7 @@ def test_register_job_schema_to_worker_type(cluster_cm, node):
     cluster_cm.register_job_schema_to_worker_type(job_schema_name="manual_registration_echo", worker_type="echoworker")
 
     # Launch a worker - it should be automatically connected due to the registration
-    worker_url = "http://localhost:8123"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
     # Submit a job - it should be processed automatically
@@ -304,7 +306,7 @@ def test_launch_worker_with_auto_connect_database(cluster_cm, node):
     )
 
     # Launch a worker - it should be automatically connected due to auto-connect database
-    worker_url = "http://localhost:8127"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
     # Submit a job - it should be processed automatically without manual registration
@@ -333,7 +335,7 @@ def test_launch_worker_without_auto_connect_database(cluster_cm, node):
     )
 
     # Launch a worker - it should NOT be automatically connected
-    worker_url = "http://localhost:8130"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
     # Submit a job - it should fail because no targeting was created
@@ -378,12 +380,11 @@ def test_multiple_worker_types_with_auto_connect(cluster_cm, node):
         job_type="echo2",
     )
 
-    # Launch workers for both types
-    worker_url1 = "http://localhost:8133"
-    worker_url2 = "http://localhost:8134"
-
+    # Launch workers for both types (allocate port and launch together)
+    worker_url1 = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker1", worker_url=worker_url1)
 
+    worker_url2 = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker2", worker_url=worker_url2)
 
     # Submit jobs to both workers
@@ -420,7 +421,7 @@ def test_launch_worker_with_delay(cluster_cm, node):
     )
 
     # Launch a worker - it should be automatically connected due to auto-connect database
-    worker_url = "http://localhost:8135"
+    worker_url = f"http://localhost:{free_port()}"
     worker_id = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url
     ).worker_id
@@ -472,7 +473,7 @@ def test_launch_worker_with_delay(cluster_cm, node):
 @pytest.mark.integration
 def test_query_worker_status_integration(cluster_cm):
     """Integration test for query_worker_status method with real worker."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8141, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
 
     try:
@@ -509,7 +510,7 @@ def test_query_worker_status_integration(cluster_cm):
 @pytest.mark.integration
 def test_query_worker_status_by_url_integration(cluster_cm):
     """Integration test for query_worker_status_by_url method with real worker."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8143, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_url = str(worker_cm.url)
 
     try:
@@ -571,7 +572,7 @@ def test_query_worker_status_by_url_nonexistent_worker(cluster_cm):
 @pytest.mark.integration
 def test_query_worker_status_worker_shutdown(cluster_cm):
     """Integration test for query_worker_status when worker is shut down."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8147, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     worker_url = str(worker_cm.url)
 
@@ -602,8 +603,8 @@ def test_query_worker_status_worker_shutdown(cluster_cm):
 @pytest.mark.integration
 def test_query_worker_status_multiple_workers(cluster_cm):
     """Integration test for query_worker_status with multiple workers."""
-    worker1_cm = EchoWorker.launch(host="localhost", port=8149, wait_for_launch=True, timeout=30)
-    worker2_cm = EchoWorker.launch(host="localhost", port=8150, wait_for_launch=True, timeout=30)
+    worker1_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
+    worker2_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
 
     worker1_id = str(worker1_cm.heartbeat().heartbeat.server_id)
     worker2_id = str(worker2_cm.heartbeat().heartbeat.server_id)
@@ -668,7 +669,7 @@ def test_query_worker_status_multiple_workers(cluster_cm):
 @pytest.mark.integration
 def test_query_worker_status_vs_get_worker_status(cluster_cm):
     """Integration test comparing query_worker_status vs get_worker_status."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8152, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     worker_url = str(worker_cm.url)
 
@@ -722,7 +723,7 @@ def test_query_worker_status_vs_get_worker_status(cluster_cm):
 @pytest.mark.integration
 def test_query_worker_status_real_time_updates(cluster_cm):
     """Integration test for real-time worker status updates using query_worker_status."""
-    worker_cm = EchoWorker.launch(host="localhost", port=8154, wait_for_launch=True, timeout=30)
+    worker_cm = EchoWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
 
     try:
@@ -771,7 +772,7 @@ def test_node_shutdown_worker(cluster_cm, node):
         job_type="auto_connect_db_echo",
     )
 
-    worker_url = "http://localhost:8157"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
@@ -791,7 +792,7 @@ def test_node_shutdown_worker_by_id(cluster_cm, node):
         job_type="auto_connect_db_echo",
     )
 
-    worker_url = "http://localhost:8160"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
@@ -813,11 +814,12 @@ def test_node_shutdown_worker_by_port(cluster_cm, node):
         job_type="auto_connect_db_echo",
     )
 
-    worker_url = "http://localhost:8163"
+    worker_port = free_port()
+    worker_url = f"http://localhost:{worker_port}"
     cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker"
     )
-    node.shutdown_worker_by_port(worker_port=8163)
+    node.shutdown_worker_by_port(worker_port=worker_port)
     cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="echoworker", worker_url=worker_url, worker_name="echoworker2"
     )
@@ -856,7 +858,7 @@ class FailingInput(BaseModel):
 @pytest.mark.integration
 def test_dlq_job_failure_and_requeue(cluster_cm):
     """Integration test for DLQ: job fails, goes to DLQ, can be requeued."""
-    worker_cm = ErrorWorker.launch(host="localhost", port=8165, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -895,7 +897,7 @@ def test_dlq_job_failure_and_requeue(cluster_cm):
 @pytest.mark.integration
 def test_dlq_job_failure_and_discard(cluster_cm):
     """Integration test for DLQ: job fails, goes to DLQ, can be discarded."""
-    worker_cm = ErrorWorker.launch(host="localhost", port=8167, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_discard_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -928,7 +930,7 @@ def test_dlq_job_failure_and_discard(cluster_cm):
 @pytest.mark.integration
 def test_dlq_multiple_failed_jobs(cluster_cm):
     """Integration test for DLQ with multiple failed jobs."""
-    worker_cm = ErrorWorker.launch(host="localhost", port=8169, wait_for_launch=True, timeout=30)
+    worker_cm = ErrorWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_multiple_test_echo", input_schema=ErrorInput, output_schema=EchoOutput)
 
     try:
@@ -986,7 +988,7 @@ def test_dlq_discard_nonexistent_job(cluster_cm):
 @pytest.mark.integration
 def test_dlq_failed_job_adds_to_dlq(cluster_cm):
     """Integration test for DLQ: job with error status goes to DLQ."""
-    worker_cm = FailingWorker.launch(host="localhost", port=8173, wait_for_launch=True, timeout=30)
+    worker_cm = FailingWorker.launch(host="localhost", port=free_port(), wait_for_launch=True, timeout=30)
     echo_job_schema = JobSchema(name="dlq_failed_test_echo", input_schema=FailingInput, output_schema=EchoOutput)
 
     try:

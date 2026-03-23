@@ -18,9 +18,9 @@ def wait_for_job_status(cm, job_id, expected_status, timeout=10, poll_interval=0
     pytest.fail(f"Job {job_id} did not reach '{expected_status}' within {timeout}s. Last: {result.status}")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def cluster_cm():
-    """Function-scoped ClusterManager with dynamic port."""
+    """Session-scoped ClusterManager with dynamic port."""
     port = get_free_port()
     cm = ClusterManager.launch(host="localhost", port=port, wait_for_launch=True, timeout=30)
     try:
@@ -31,9 +31,9 @@ def cluster_cm():
         cm.shutdown()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def node(cluster_cm):
-    """Function-scoped Node connected to the test's ClusterManager."""
+    """Session-scoped Node connected to the test's ClusterManager."""
     port = get_free_port()
     n = Node.launch(
         host="localhost",
@@ -47,3 +47,13 @@ def node(cluster_cm):
     finally:
         n.shutdown_all_workers()
         n.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def _reset_cluster_state(request, cluster_cm):
+    """Reset cluster state between tests."""
+    yield
+    cluster_cm.clear_databases()
+    if "node" in request.fixturenames:
+        node = request.getfixturevalue("node")
+        node.shutdown_all_workers()
