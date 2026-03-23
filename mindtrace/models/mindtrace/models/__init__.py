@@ -240,7 +240,6 @@ from mindtrace.models.pipeline import (
     PipelineUnloadTaskSchema,
 )
 
-
 _AUTO_SEGMENTER_NAMES = frozenset(
     {
         "AutoSegmenter",
