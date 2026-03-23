@@ -570,7 +570,7 @@ class TestGitEnvironment:
         expected_prefix = ["uv", "run", "--project " + git_env.project]
         call_args = mock_popen.call_args[0][0]
         assert call_args[: len(expected_prefix)] == expected_prefix
-        assert call_args[len(expected_prefix):] == ["python", "train.py"]
+        assert call_args[len(expected_prefix) :] == ["python", "train.py"]
 
     @patch("subprocess.run")
     @patch("os.path.exists")
