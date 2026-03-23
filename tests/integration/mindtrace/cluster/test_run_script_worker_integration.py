@@ -1,10 +1,15 @@
+from functools import partial
+
 import pytest
 
 from mindtrace.cluster.workers.run_script_worker import RunScriptWorkerInput, RunScriptWorkerOutput
+from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
 
 from .conftest import wait_for_job_status
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
+
+free_port = partial(get_free_port, start_port=8371, end_port=8390)
 
 
 @pytest.mark.integration
@@ -26,7 +31,7 @@ def test_run_script_worker_simple(cluster_cm, node):
     )
 
     # Launch worker on the node
-    worker_url = "http://localhost:8211"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
 
     # Create a simple job that should fail due to missing environment config
@@ -66,7 +71,7 @@ def test_run_script_worker_git_environment(cluster_cm, node):
     )
 
     # Launch worker on the node
-    worker_url = "http://localhost:8215"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
 
     # Create job with Git environment
@@ -110,7 +115,7 @@ def test_run_script_worker_docker_environment(cluster_cm, node):
     )
 
     # Launch worker on the node
-    worker_url = "http://localhost:8216"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
 
     # Create job with Docker environment
@@ -156,7 +161,7 @@ def test_run_script_worker_both_environments(cluster_cm, node):
     )
 
     # Launch worker on the node
-    worker_url = "http://localhost:8217"
+    worker_url = f"http://localhost:{free_port()}"
     cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
 
     # Test 1: Git environment job
