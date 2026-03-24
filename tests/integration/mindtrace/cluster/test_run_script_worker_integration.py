@@ -6,7 +6,7 @@ from mindtrace.cluster.workers.run_script_worker import RunScriptWorkerInput, Ru
 from mindtrace.core import get_free_port
 from mindtrace.jobs import JobSchema, job_from_schema
 
-from .conftest import wait_for_job_status
+from .conftest import wait_for_job_status, wait_for_worker_launch
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
 free_port = partial(get_free_port, start_port=8371, end_port=8390)
@@ -32,7 +32,8 @@ def test_run_script_worker_simple(cluster_cm, node):
 
     # Launch worker on the node
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
 
     # Create a simple job that should fail due to missing environment config
     # This tests the error handling of the worker
@@ -72,7 +73,8 @@ def test_run_script_worker_git_environment(cluster_cm, node):
 
     # Launch worker on the node
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=120.0)
 
     # Create job with Git environment
     job = job_from_schema(
