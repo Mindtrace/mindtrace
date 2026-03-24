@@ -107,42 +107,6 @@ class Datalake(Mindtrace):
         inserted_datum = await self.datum_database.insert(datum)
         return inserted_datum
 
-    async def store_data(
-        self,
-        data: Any,
-        *,
-        metadata: Dict[str, Any] | None = None,
-        schema: str | None = None,
-        derived_from: Optional[PydanticObjectId] = None,
-        registry_uri: Optional[str] = None,
-    ) -> Datum:
-        """Store data in the datalake.
-
-        Convenience wrapper around :meth:`add_datum` for pipeline integration.
-        Accepts an optional *schema* identifier which is recorded in the
-        datum's metadata under the ``"schema"`` key.
-
-        Args:
-            data: The data to store (any serialisable value).
-            metadata: Optional metadata dict.  Merged with *schema* when
-                both are provided.
-            schema: Optional schema identifier recorded in metadata.
-            derived_from: Optional parent datum ID for provenance tracking.
-            registry_uri: Optional registry URI for external storage.
-
-        Returns:
-            The created :class:`Datum` with an assigned ID.
-        """
-        meta = dict(metadata or {})
-        if schema is not None:
-            meta["schema"] = schema
-        return await self.add_datum(
-            data=data,
-            metadata=meta,
-            derived_from=derived_from,
-            registry_uri=registry_uri,
-        )
-
     async def get_datum(self, datum_id: PydanticObjectId | None) -> Datum:
         """
         Retrieve a datum by its ID.
@@ -684,42 +648,3 @@ class Datalake(Mindtrace):
             return conditions[0]
         else:
             return {"$and": conditions}
-
-
-# ---------------------------------------------------------------------------
-# Standalone utilities
-# ---------------------------------------------------------------------------
-
-
-def compute_splits(
-    datum_ids: list[str],
-    train_ratio: float = 0.8,
-    val_ratio: float = 0.15,
-    test_ratio: float = 0.05,
-    seed: int = 42,
-) -> dict[str, list[str]]:
-    """Assign train / val / test splits to a list of datum IDs.
-
-    Args:
-        datum_ids: List of datum identifiers.
-        train_ratio: Fraction for the training set.
-        val_ratio: Fraction for the validation set.
-        test_ratio: Fraction for the test set.
-        seed: Random seed for reproducibility.
-
-    Returns:
-        Dict mapping split name to list of datum IDs.
-    """
-    rng = random.Random(seed)
-    shuffled = list(datum_ids)
-    rng.shuffle(shuffled)
-
-    n = len(shuffled)
-    n_train = int(n * train_ratio)
-    n_val = int(n * val_ratio)
-
-    return {
-        "train": shuffled[:n_train],
-        "val": shuffled[n_train : n_train + n_val],
-        "test": shuffled[n_train + n_val :],
-    }
