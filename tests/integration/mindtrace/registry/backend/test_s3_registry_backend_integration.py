@@ -175,17 +175,19 @@ def test_delete_object(s3_backend, sample_object_dir, s3_client, s3_test_bucket)
 
 
 def test_invalid_object_name(s3_backend, tmp_path):
-    """Test handling of invalid object names."""
-    # Create a dummy directory to push
+    """Test handling of invalid object names.
+
+    Underscores are now allowed in object names. Only truly invalid characters
+    (like @) or empty names should fail.
+    """
     test_dir = tmp_path / "test_obj"
     test_dir.mkdir()
     (test_dir / "file.txt").write_text("test")
 
-    # Backend returns failed OpResult for invalid names (doesn't raise)
-    results = s3_backend.push("invalid_name", "1.0.0", test_dir, metadata={"_files": ["file.txt"]})
+    # Underscores are valid -- should succeed
+    results = s3_backend.push("valid_name", "1.0.0", test_dir, metadata={"_files": ["file.txt"]})
     result = results.first()
-    assert result.is_error
-    assert "underscore" in result.message.lower()
+    assert result.ok
 
 
 def test_register_materializer(s3_backend, s3_client, s3_test_bucket):
