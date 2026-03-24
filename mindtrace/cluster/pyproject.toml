@@ -21,10 +21,6 @@ dependencies = [
     "docker>=7.1.0",
 ]
 
-[project.optional-dependencies]
-torch = ["torch>=2.0"]
-all = ["torch>=2.0"]
-
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/cluster"

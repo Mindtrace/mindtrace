@@ -1723,6 +1723,7 @@ wheels = [
 name = "griffelib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/06/eccbd311c9e2b3ca45dbc063b93134c57a1ccc7607c5e545264ad092c4a9/griffelib-2.0.0.tar.gz", hash = "sha256:e504d637a089f5cab9b5daf18f7645970509bf4f53eda8d79ed71cce8bd97934", size = 166312, upload_time = "2026-03-23T21:06:55.954Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/51/c936033e16d12b627ea334aaaaf42229c37620d0f15593456ab69ab48161/griffelib-2.0.0-py3-none-any.whl", hash = "sha256:01284878c966508b6d6f1dbff9b6fa607bc062d8261c5c7253cb285b06422a7f", size = 142004, upload_time = "2026-02-09T19:09:40.561Z" },
 ]
@@ -2931,7 +2932,7 @@ cameras-genicam = [
     { name = "mindtrace-hardware", extra = ["cameras-genicam"] },
 ]
 cluster-torch = [
-    { name = "mindtrace-cluster", extra = ["torch"] },
+    { name = "mindtrace-cluster" },
 ]
 hardware-all = [
     { name = "mindtrace-hardware", extra = ["hardware-all"] },
@@ -3160,14 +3161,6 @@ dependencies = [
     { name = "mindtrace-services" },
 ]
 
-[package.optional-dependencies]
-all = [
-    { name = "torch" },
-]
-torch = [
-    { name = "torch" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "docker", specifier = ">=7.1.0" },
@@ -3177,10 +3170,7 @@ requires-dist = [
     { name = "mindtrace-models", editable = "mindtrace/models" },
     { name = "mindtrace-registry", editable = "mindtrace/registry" },
     { name = "mindtrace-services", editable = "mindtrace/services" },
-    { name = "torch", marker = "extra == 'all'", specifier = ">=2.0" },
-    { name = "torch", marker = "extra == 'torch'", specifier = ">=2.0" },
 ]
-provides-extras = ["torch", "all"]
 
 [[package]]
 name = "mindtrace-core"
