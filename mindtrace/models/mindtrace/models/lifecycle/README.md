@@ -99,42 +99,42 @@ Structured metadata container for a trained model version.
 from mindtrace.models.lifecycle import ModelCard, ModelStage
 
 card = ModelCard(
-    name="weld-classifier",
+    name="image-classifier",
     version="v3",
     stage=ModelStage.DEV,
     task="classification",
     architecture="DINOv3-small+Linear",
-    training_data="weld-dataset-2024",
-    description="Classifies weld quality: good / bad / borderline.",
-    known_limitations=["Low recall on rusty welds"],
+    training_data="dataset-2024",
+    description="Binary image classification model.",
+    known_limitations=["May underperform on low-contrast inputs"],
 )
 ```
 
 ### Attaching Evaluation Results
 
 ```python
-card.add_result("val/accuracy", 0.94, dataset="weld-val-2024", split="val")
-card.add_result("val/f1", 0.93, dataset="weld-val-2024", split="val")
-card.add_result("test/accuracy", 0.91, dataset="weld-test-2024", split="test")
+card.add_result("val/accuracy", 0.94, dataset="val-2024", split="val")
+card.add_result("val/f1", 0.93, dataset="val-2024", split="val")
+card.add_result("test/accuracy", 0.91, dataset="test-2024", split="test")
 ```
 
 ### Querying and Summarizing
 
 ```python
 card.get_metric("val/accuracy")                                 # 0.94
-card.get_metric("val/accuracy", dataset="weld-test-2024")       # filtered by dataset
+card.get_metric("val/accuracy", dataset="test-2024")             # filtered by dataset
 card.summary()
 # {"val/accuracy": 0.94, "val/f1": 0.93, "test/accuracy": 0.91}
 
-card.registry_key()                                             # "weld-classifier:v3"
-card.registry_key(stage=ModelStage.STAGING)                     # "weld-classifier:v3:staging"
+card.registry_key()                                             # "image-classifier:v3"
+card.registry_key(stage=ModelStage.STAGING)                     # "image-classifier:v3:staging"
 ```
 
 ### Persistence
 
 ```python
-card.save("/models/weld_v3_card.json")
-card2 = ModelCard.load("/models/weld_v3_card.json")
+card.save("/models/model_v3_card.json")
+card2 = ModelCard.load("/models/model_v3_card.json")
 
 # JSON round-trip
 data = card.to_dict()

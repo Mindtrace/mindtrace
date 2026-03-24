@@ -309,12 +309,12 @@ Load training data directly from a Mindtrace Datalake query. Requires `mindtrace
 from mindtrace.models.training import DatalakeDataset, build_datalake_loader
 
 # torch.utils.data.Dataset backed by a Datalake query
-ds = DatalakeDataset(datalake=dl, query={"type": "weld_image"}, transform=tfm)
+ds = DatalakeDataset(datalake=dl, query={"type": "image"}, transform=tfm)
 
 # Or get a DataLoader directly
 loader = build_datalake_loader(
     datalake=dl,
-    query={"type": "weld_image"},
+    query={"type": "image"},
     transform=tfm,
     batch_size=32,
     shuffle=True,
