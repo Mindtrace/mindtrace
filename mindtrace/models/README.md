@@ -350,8 +350,8 @@ DEV --> STAGING --> PRODUCTION --> ARCHIVED
 ```python
 from mindtrace.models import ModelCard, ModelStage, promote, demote
 
-card = ModelCard(name="weld-classifier", version="v2", task="classification")
-card.add_result("val/accuracy", 0.94, dataset="weld-val-2024")
+card = ModelCard(name="image-classifier", version="v2", task="classification")
+card.add_result("val/accuracy", 0.94, dataset="val-2024")
 
 # DEV -> STAGING with threshold gate
 result = promote(card, registry, to_stage=ModelStage.STAGING,

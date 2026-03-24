@@ -103,7 +103,7 @@ from mindtrace.models.serving.onnx import OnnxModelService
 import numpy as np
 
 svc = OnnxModelService(
-    model_name="weld-classifier",
+    model_name="image-classifier",
     model_version="v3",
     model_path="model.onnx",
     providers=None,              # None = auto (CUDAExecutionProvider if available)
@@ -120,9 +120,9 @@ outputs = svc.predict_array({
 
 ```python
 svc = OnnxModelService(
-    model_name="weld-classifier",
+    model_name="image-classifier",
     model_version="v3",
-    registry=my_registry,        # calls registry.load("weld-classifier:v3")
+    registry=my_registry,        # calls registry.load("image-classifier:v3")
 )
 ```
 
@@ -149,7 +149,7 @@ svc.info()          # ModelInfo(name=..., version=..., device=..., ...)
 Use when you need full image loading / pre- and post-processing:
 
 ```python
-class WeldService(OnnxModelService):
+class MyClassifierService(OnnxModelService):
     _task = "classification"
 
     def predict(self, request: PredictRequest) -> PredictResponse:
@@ -188,11 +188,11 @@ HTTP proxy to a running TorchServe inference server.
 from mindtrace.models.serving.torchserve import TorchServeModelService
 
 svc = TorchServeModelService(
-    model_name="weld-classifier",
+    model_name="image-classifier",
     model_version="v3",
     ts_inference_url="http://localhost:8080",
     ts_management_url="http://localhost:8081",
-    ts_model_name="weld_v3",
+    ts_model_name="model_v3",
     timeout_s=30.0,
 )
 resp = svc.predict(PredictRequest(images=["img.jpg"]))
@@ -214,7 +214,7 @@ Export a model to TorchServe `.mar` archive format.
 ```python
 from mindtrace.models.serving.torchserve import TorchServeExporter
 
-exporter = TorchServeExporter(model=model, model_name="weld-classifier")
+exporter = TorchServeExporter(model=model, model_name="image-classifier")
 exporter.export(output_dir="/tmp/ts_models")
 ```
 
@@ -229,7 +229,7 @@ req = PredictRequest(
 )
 
 resp = PredictResponse(
-    results=[{"class": "weld_ok", "score": 0.97}],
+    results=[{"class": "class_a", "score": 0.97}],
     timing_s=0.012,
 )
 
