@@ -1972,6 +1972,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.network.get_free_ports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_free_ports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mindtrace.core.utils.network.wait_for_service" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3784,6 +3795,17 @@
     <span class="md-ellipsis">
       
         get_free_port
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.network.get_free_ports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_free_ports
       
     </span>
   </a>
@@ -11551,6 +11573,135 @@ forcing callers to handle error conditions explicitly.</p>
           </tr>
       </tbody>
     </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="NoFreePortError (mindtrace.core.utils.network.NoFreePortError)" href="#mindtrace.core.utils.network.NoFreePortError">NoFreePortError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If no free port is found in the range.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.network.get_free_ports" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_free_ports</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">get_free_ports</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;localhost&quot;</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">start_port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8000</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">end_port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">9000</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">ports_to_find</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Find a free port in the given range.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>host</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Host address to check.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;localhost&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>start_port</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Starting port number (inclusive).</p>
+              </div>
+            </td>
+            <td>
+                  <code>8000</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>end_port</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Ending port number (inclusive).</p>
+              </div>
+            </td>
+            <td>
+                  <code>9000</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>ports_to_find</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of ports to find.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+        <p>Returns:
+    List of available port numbers in the range.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
