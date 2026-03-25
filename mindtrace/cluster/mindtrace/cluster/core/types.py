@@ -14,6 +14,7 @@ class ProxyWorker(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
     worker_params: dict
 
 
@@ -169,12 +170,11 @@ class LaunchWorkerInput(BaseModel):
     worker_type: str
     worker_name: str | None = None
     worker_url: str | None = None
+    auto_connect_job_type: str | None = None
 
 
 class LaunchWorkerOutput(BaseModel):
-    worker_id: str
-    worker_name: str
-    worker_url: str
+    launch_id: str
 
 
 class RegisterNodeInput(BaseModel):
@@ -186,6 +186,11 @@ class RegisterNodeOutput(BaseModel):
     access_key: str
     secret_key: str
     bucket: str
+    minio_port: int
+    rabbitmq_host: str
+    rabbitmq_port: int
+    rabbitmq_username: str
+    rabbitmq_password: str
 
 
 class RegisterWorkerTypeInput(BaseModel):
@@ -198,6 +203,7 @@ class RegisterWorkerTypeInput(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
 
 
 class ClusterLaunchWorkerInput(BaseModel):
@@ -208,9 +214,41 @@ class ClusterLaunchWorkerInput(BaseModel):
 
 
 class ClusterLaunchWorkerOutput(BaseModel):
-    worker_id: str
-    worker_name: str
-    worker_url: str
+    launch_id: str
+
+
+class LaunchStatusEnum(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class LaunchWorkerStatusInput(BaseModel):
+    launch_id: str
+
+
+class LaunchWorkerStatusOutput(BaseModel):
+    launch_id: str
+    status: LaunchStatusEnum
+    worker_id: str | None = None
+    worker_name: str | None = None
+    worker_url: str | None = None
+    error: str | None = None
+
+
+class ClusterLaunchWorkerStatusInput(BaseModel):
+    node_url: str
+    launch_id: str
+
+
+class ClusterLaunchWorkerStatusOutput(LaunchWorkerStatusOutput):
+    launch_id: str
+    status: LaunchStatusEnum
+    worker_id: str | None = None
+    worker_name: str | None = None
+    worker_url: str | None = None
+    error: str | None = None
 
 
 class ClusterRegisterJobToWorkerInput(BaseModel):

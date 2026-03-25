@@ -21,10 +21,25 @@ from ..messages._parts import SystemPromptPart
 from ..models import Model, ModelRequestParameters, ModelResponse
 from ..prompts import UserContent, UserPromptPart
 from ..tools import RunContext, Tool
+from ..toolsets._toolset import AbstractToolset
+from ..toolsets.compound import CompoundToolset
 from ..toolsets.function import FunctionToolset
 from .abstract import AbstractMindtraceAgent, OutputDataT
 
 AgentDepsT = _AgentDepsT
+
+
+def _agent_to_tool(agent: AbstractMindtraceAgent) -> Tool:
+    """Convert an AbstractMindtraceAgent into a Tool callable by another agent."""
+    agent_name = agent.name or f"agent_{id(agent)}"
+    agent_desc = agent.description or f"Run the {agent_name} agent"
+
+    async def _run(ctx: RunContext, input: str) -> str:  # noqa: A002
+        return await agent.run(input, deps=ctx.deps)
+
+    _run.__name__ = agent_name
+    _run.__doc__ = agent_desc
+    return Tool(_run)
 
 
 class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
@@ -32,9 +47,11 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
         self,
         model: Model,
         *,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[Tool | AbstractMindtraceAgent] | None = None,
+        toolset: AbstractToolset | None = None,
         system_prompt: str | None = None,
         name: str | None = None,
+        description: str | None = None,
         deps_type: type = type(None),
         output_type: type = str,
         callbacks: AgentCallbacks | None = None,
@@ -43,19 +60,37 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
     ) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.tools = list(tools or [])
         self.system_prompt = system_prompt
         self._name = name
+        self._description = description
         self._deps_type = deps_type
         self._output_type = output_type
         self.callbacks = callbacks
         self.history = history
         self._entered_count = 0
         self._lock = asyncio.Lock()
-        toolset: FunctionToolset = FunctionToolset()
+
+        # Separate plain Tools from sub-agents; convert agents to Tools
+        resolved_tools: list[Tool] = []
+        for item in tools or []:
+            if isinstance(item, AbstractMindtraceAgent):
+                resolved_tools.append(_agent_to_tool(item))
+            else:
+                resolved_tools.append(item)
+        self.tools = resolved_tools
+
+        func_toolset: FunctionToolset = FunctionToolset()
         for tool in self.tools:
-            toolset.add_tool(tool)
-        self._tool_manager: ToolManager = ToolManager(toolset=toolset)
+            func_toolset.add_tool(tool)
+
+        if toolset is None:
+            effective_toolset: AbstractToolset = func_toolset
+        elif self.tools:
+            effective_toolset = CompoundToolset(func_toolset, toolset)
+        else:
+            effective_toolset = toolset
+
+        self._tool_manager: ToolManager = ToolManager(toolset=effective_toolset)
 
     @property
     def name(self) -> str | None:
@@ -64,6 +99,10 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
     @name.setter
     def name(self, value: str | None) -> None:
         self._name = value
+
+    @property
+    def description(self) -> str | None:
+        return self._description
 
     @property
     def deps_type(self) -> type:

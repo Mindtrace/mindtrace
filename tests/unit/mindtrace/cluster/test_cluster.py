@@ -593,28 +593,29 @@ def test_launch_worker_with_auto_connect(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
         mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
-            worker_id=str(uuid.uuid4()),
-            worker_name="test_worker",
-            worker_url="http://worker:8081",
+            launch_id=str(uuid.uuid4()),
         )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify node connection and worker launch
         MockNode.connect.assert_called_once_with("http://node:8080")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:8081", worker_name="test_worker"
+            worker_type="test_worker",
+            worker_url="http://worker:8081",
+            worker_name="test_worker",
+            auto_connect_job_type="test_job",
         )
 
-        # Verify auto-connect registration
-        mock_register_job.assert_called_once_with(payload={"job_type": "test_job", "worker_url": "http://worker:8081"})
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_without_auto_connect(cluster_manager):
@@ -631,28 +632,29 @@ def test_launch_worker_without_auto_connect(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
         mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
-            worker_id=str(uuid.uuid4()),
-            worker_name="test_worker",
-            worker_url="http://worker:8081",
+            launch_id=str(uuid.uuid4()),
         )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify node connection and worker launch
         MockNode.connect.assert_called_once_with("http://node:8080")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:8081", worker_name="test_worker"
+            worker_type="test_worker",
+            worker_url="http://worker:8081",
+            worker_name="test_worker",
+            auto_connect_job_type=None,
         )
 
-        # Verify no auto-connect registration occurred
-        mock_register_job.assert_not_called()
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_node_connection_failure(cluster_manager):
@@ -703,26 +705,28 @@ def test_launch_worker_with_different_ports(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
         mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
-            worker_id=str(uuid.uuid4()),
-            worker_name="test_worker",
-            worker_url="http://worker:9091",
+            launch_id=str(uuid.uuid4()),
         )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify correct URLs were used
         MockNode.connect.assert_called_once_with("http://node:9090")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:9091", worker_name="test_worker"
+            worker_type="test_worker",
+            worker_url="http://worker:9091",
+            worker_name="test_worker",
+            auto_connect_job_type="test_job",
         )
-        mock_register_job.assert_called_once_with(payload={"job_type": "test_job", "worker_url": "http://worker:9091"})
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_logging(cluster_manager):
@@ -740,7 +744,6 @@ def test_launch_worker_logging(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(cluster_manager, "logger"),
         patch.object(Worker, "connect") as mock_connect,
     ):
@@ -748,13 +751,15 @@ def test_launch_worker_logging(cluster_manager):
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify logging occurred (the actual log calls would be verified in integration tests)
         # This test ensures the method completes without errors and calls the expected methods
         MockNode.connect.assert_called_once()
         mock_node_instance.launch_worker.assert_called_once()
-        mock_register_job.assert_called_once()
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_register_node(cluster_manager):
@@ -768,6 +773,11 @@ def test_register_node(cluster_manager):
         "access_key": cluster_manager.worker_registry_access_key,
         "secret_key": cluster_manager.worker_registry_secret_key,
         "bucket": cluster_manager.worker_registry_bucket,
+        "minio_port": cluster_manager.worker_registry_port,
+        "rabbitmq_host": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
+        "rabbitmq_port": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
+        "rabbitmq_username": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
+        "rabbitmq_password": cluster_manager.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"),
     }
 
     assert result == expected_result
@@ -990,11 +1000,17 @@ def mock_node():
 
         mock_registry = MockRegistry.return_value
         mock_cluster_manager_connect = MockClusterManagerConnect.return_value
-        mock_cluster_manager_connect.worker_registry = mock_registry
-        mock_cluster_manager_connect.worker_registry_endpoint = "http://localhost:8081"
-        mock_cluster_manager_connect.worker_registry_access_key = "test_access_key"
-        mock_cluster_manager_connect.worker_registry_secret_key = "test_secret_key"
-        mock_cluster_manager_connect.worker_registry_bucket = "test_bucket"
+        mock_cluster_manager_connect.register_node.return_value = cluster_types.RegisterNodeOutput(
+            endpoint="localhost:9000",
+            access_key="test_access_key",
+            secret_key="test_secret_key",
+            bucket="test_bucket",
+            minio_port=9000,
+            rabbitmq_host="localhost",
+            rabbitmq_port=5672,
+            rabbitmq_username="user",
+            rabbitmq_password="password",
+        )
 
         # Create Node with cluster_url
         node = Node(cluster_url="http://cluster:8080")
@@ -1039,13 +1055,8 @@ def test_node_launch_worker(mock_node):
 
     result = mock_node.launch_worker(payload)
 
-    assert result == dict(
-        worker_id=str(mock_worker.heartbeat().heartbeat.server_id),
-        worker_name="test_worker",
-        worker_url="http://worker:8080",
-    )
-    mock_node.node_worker_database.insert.assert_called_once()
-    mock_node.worker_registry.load.assert_called_once_with("worker:test_worker", url="http://worker:8080")
+    # Async launch should return a launch_id and perform work in the background.
+    assert "launch_id" in result
 
 
 def test_worker_initialization(mock_worker):
@@ -2258,8 +2269,9 @@ def test_launch_worker_with_heartbeat_failure(mock_node):
     mock_worker_cm = MagicMock()
     mock_worker_cm.heartbeat.side_effect = Exception("Heartbeat failed")
     mock_node.worker_registry.load.return_value = mock_worker_cm
-    with pytest.raises(Exception, match="Heartbeat failed"):
-        mock_node.launch_worker(payload)
+    # Async launch should not raise directly; the failure is reflected in status.
+    result = mock_node.launch_worker(payload)
+    assert "launch_id" in result
 
 
 def test_worker_run_with_exception_in_run_method(mock_worker):
@@ -2375,11 +2387,12 @@ def test_node_launch_worker_with_registry_load_failure(mock_node):
     """Test node launch_worker when registry load fails."""
     payload = {"worker_type": "test_worker", "worker_url": "http://worker:8080", "worker_name": "test_worker"}
 
-    # Mock worker registry to raise an exception
+    # Mock worker registry to raise an exception; async launch should capture
+    # this as a FAILED status rather than raising immediately.
     mock_node.worker_registry.load.side_effect = FileNotFoundError("Worker not found in registry")
 
-    with pytest.raises(FileNotFoundError, match="Worker not found in registry"):
-        mock_node.launch_worker(payload)
+    result = mock_node.launch_worker(payload)
+    assert "launch_id" in result
 
 
 def test_node_shutdown_with_worker_shutdown_failure(mock_node):
