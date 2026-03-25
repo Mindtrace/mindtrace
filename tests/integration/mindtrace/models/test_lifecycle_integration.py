@@ -26,8 +26,6 @@ from mindtrace.models import (
     build_model,
     build_optimizer,
     build_scheduler,
-    demote,
-    promote,
 )
 from mindtrace.models.training.losses import (
     CIoULoss,
@@ -131,19 +129,19 @@ class TestBuildTrainEvaluatePromote:
         runner = EvaluationRunner(model=resnet_model, task="classification", num_classes=NUM_CLASSES, device="cpu")
         metrics = runner.run(val_loader)
 
-        card = ModelCard(name="test_model", version="v1", task="classification")
+        card = ModelCard(name="test_model", version="v1", task="classification", registry=registry)
         for k, v in metrics.items():
             if isinstance(v, float):
                 card.add_result(f"val/{k}", v)
 
         # Low threshold for synthetic data
-        promote(card, registry, to_stage=ModelStage.STAGING, require={"val/accuracy": 0.0})
+        card.promote(to_stage=ModelStage.STAGING, require={"val/accuracy": 0.0})
         assert card.stage == ModelStage.STAGING
 
-        promote(card, registry, to_stage=ModelStage.PRODUCTION, require={"val/accuracy": 0.0})
+        card.promote(to_stage=ModelStage.PRODUCTION, require={"val/accuracy": 0.0})
         assert card.stage == ModelStage.PRODUCTION
 
-        demote(card, registry, to_stage=ModelStage.ARCHIVED, reason="test cleanup")
+        card.demote(to_stage=ModelStage.ARCHIVED, reason="test cleanup")
         assert card.stage == ModelStage.ARCHIVED
 
 

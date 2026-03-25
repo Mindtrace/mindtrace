@@ -4,7 +4,7 @@ Tests cover:
 - ModelStage enum values and transition rules
 - EvalResult default fields and serialisation
 - ModelCard result tracking, serialisation, persistence, and registry key helpers
-- promote() and demote() with valid/invalid transitions, threshold enforcement,
+- card.promote() and card.demote() with valid/invalid transitions, threshold enforcement,
   dry-run mode, and registry persistence
 """
 
@@ -22,8 +22,6 @@ from mindtrace.models.lifecycle import (
     ModelCard,
     ModelStage,
     PromotionError,
-    demote,
-    promote,
 )
 
 # ---------------------------------------------------------------------------
@@ -35,8 +33,9 @@ def _make_card(
     name: str = "model",
     version: str = "v1",
     stage: ModelStage = ModelStage.DEV,
+    registry=None,
 ) -> ModelCard:
-    return ModelCard(name=name, version=version, stage=stage)
+    return ModelCard(name=name, version=version, stage=stage, registry=registry)
 
 
 # ---------------------------------------------------------------------------
@@ -145,23 +144,23 @@ class TestModelCard:
         card.add_result("val/f1", 0.92)
 
         save_path = tmp_path / "card.json"
-        card.save(save_path)
+        card.save_json(save_path)
 
         assert save_path.exists()
-        loaded = ModelCard.load(save_path)
+        loaded = ModelCard.load_json(save_path)
         assert loaded.name == "save-test"
         assert loaded.get_metric("val/f1") == pytest.approx(0.92)
 
     def test_save_creates_parent_dirs(self, tmp_path: Path):
         card = _make_card()
         nested_path = tmp_path / "sub" / "dir" / "card.json"
-        card.save(nested_path)
+        card.save_json(nested_path)
         assert nested_path.exists()
 
     def test_save_writes_valid_json(self, tmp_path: Path):
         card = _make_card(name="json-check", version="v1")
         path = tmp_path / "card.json"
-        card.save(path)
+        card.save_json(path)
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["name"] == "json-check"
 
@@ -181,29 +180,27 @@ class TestModelCard:
 
 class TestPromote:
     def test_promote_valid_transition(self):
-        card = _make_card(stage=ModelStage.DEV)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
 
-        result = promote(card, registry, to_stage=ModelStage.STAGING)
+        result = card.promote(to_stage=ModelStage.STAGING)
 
         assert result.success is True
         assert card.stage is ModelStage.STAGING
 
     def test_promote_invalid_transition_raises(self):
-        card = _make_card(stage=ModelStage.DEV)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
 
         with pytest.raises(PromotionError):
-            promote(card, registry, to_stage=ModelStage.PRODUCTION)
+            card.promote(to_stage=ModelStage.PRODUCTION)
 
     def test_promote_requirement_met(self):
-        card = _make_card(stage=ModelStage.DEV)
-        card.add_result("val/iou", 0.85)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
+        card.add_result("val/iou", 0.85)
 
-        result = promote(
-            card,
-            registry,
+        result = card.promote(
             to_stage=ModelStage.STAGING,
             require={"val/iou": 0.80},
         )
@@ -212,26 +209,22 @@ class TestPromote:
         assert card.stage is ModelStage.STAGING
 
     def test_promote_requirement_not_met(self):
-        card = _make_card(stage=ModelStage.DEV)
-        card.add_result("val/iou", 0.75)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
+        card.add_result("val/iou", 0.75)
 
         with pytest.raises(PromotionError):
-            promote(
-                card,
-                registry,
+            card.promote(
                 to_stage=ModelStage.STAGING,
                 require={"val/iou": 0.80},
             )
 
     def test_promote_dry_run_does_not_update_stage(self):
-        card = _make_card(stage=ModelStage.DEV)
-        card.add_result("val/iou", 0.90)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
+        card.add_result("val/iou", 0.90)
 
-        result = promote(
-            card,
-            registry,
+        result = card.promote(
             to_stage=ModelStage.STAGING,
             require={"val/iou": 0.80},
             dry_run=True,
@@ -243,10 +236,10 @@ class TestPromote:
         assert result.success is True
 
     def test_promote_saves_to_registry(self):
-        card = _make_card(name="reg-model", version="v1", stage=ModelStage.DEV)
         registry = MagicMock()
+        card = _make_card(name="reg-model", version="v1", stage=ModelStage.DEV, registry=registry)
 
-        promote(card, registry, to_stage=ModelStage.STAGING)
+        card.promote(to_stage=ModelStage.STAGING)
 
         registry.save.assert_called_once()
         # The key must contain the new stage name
@@ -256,14 +249,12 @@ class TestPromote:
 
     def test_promote_missing_required_metric_raises(self):
         """A required metric that was never recorded blocks promotion."""
-        card = _make_card(stage=ModelStage.DEV)
-        # No eval results recorded — metric is absent
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
+        # No eval results recorded — metric is absent
 
         with pytest.raises(PromotionError):
-            promote(
-                card,
-                registry,
+            card.promote(
                 to_stage=ModelStage.STAGING,
                 require={"val/iou": 0.80},
             )
@@ -276,45 +267,45 @@ class TestPromote:
 
 class TestDemote:
     def test_demote_production_to_archived(self):
-        card = _make_card(stage=ModelStage.PRODUCTION)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.PRODUCTION, registry=registry)
 
-        result = demote(card, registry, to_stage=ModelStage.ARCHIVED)
+        result = card.demote(to_stage=ModelStage.ARCHIVED)
 
         assert result.success is True
         assert card.stage is ModelStage.ARCHIVED
 
     def test_demote_invalid_raises(self):
         """Archived -> any transition is invalid."""
-        card = _make_card(stage=ModelStage.ARCHIVED)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.ARCHIVED, registry=registry)
 
         with pytest.raises(PromotionError):
-            demote(card, registry, to_stage=ModelStage.PRODUCTION)
+            card.demote(to_stage=ModelStage.PRODUCTION)
 
     def test_demote_dry_run_does_not_update_stage(self):
-        card = _make_card(stage=ModelStage.PRODUCTION)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.PRODUCTION, registry=registry)
 
-        result = demote(card, registry, to_stage=ModelStage.ARCHIVED, dry_run=True)
+        result = card.demote(to_stage=ModelStage.ARCHIVED, dry_run=True)
 
         assert card.stage is ModelStage.PRODUCTION
         assert result.success is True
         registry.save.assert_not_called()
 
     def test_demote_saves_to_registry(self):
-        card = _make_card(stage=ModelStage.STAGING)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.STAGING, registry=registry)
 
-        demote(card, registry, to_stage=ModelStage.DEV)
+        card.demote(to_stage=ModelStage.DEV)
 
         registry.save.assert_called_once()
 
     def test_demote_stores_reason_in_extra(self):
-        card = _make_card(stage=ModelStage.PRODUCTION)
         registry = MagicMock()
+        card = _make_card(stage=ModelStage.PRODUCTION, registry=registry)
         reason = "Regression detected in nightly eval"
 
-        demote(card, registry, to_stage=ModelStage.ARCHIVED, reason=reason)
+        card.demote(to_stage=ModelStage.ARCHIVED, reason=reason)
 
         assert card.extra.get("demotion_reason") == reason
