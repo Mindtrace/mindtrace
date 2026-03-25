@@ -27,9 +27,6 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
-    StreamStartRequest,
-    StreamStatusRequest,
-    StreamStopRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
 
@@ -250,7 +247,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             Current camera configuration
         """
         request = CameraQueryRequest(camera=camera)
-        response = await self.post("/cameras/config/get", request.model_dump())
+        response = await self.post("/cameras/configuration", request.model_dump())
         return response["data"]
 
     async def import_camera_config(self, camera: str, config_path: str) -> Dict[str, Any]:
@@ -409,64 +406,4 @@ class CameraManagerConnectionManager(ConnectionManager):
             Network diagnostics data
         """
         response = await self.get("/network/diagnostics")
-        return response["data"]
-
-    # Streaming Operations
-    async def start_stream(self, camera: str, quality: int = 85, fps: int = 30) -> Dict[str, Any]:
-        """Start MJPEG stream for a camera.
-
-        Args:
-            camera: Camera name in format 'Backend:device_name'
-            quality: JPEG quality (1-100)
-            fps: Frames per second
-
-        Returns:
-            Stream info including stream_url
-        """
-        request = StreamStartRequest(camera=camera, quality=quality, fps=fps)
-        response = await self.post("/cameras/stream/start", request.model_dump())
-        return response["data"]
-
-    async def stop_stream(self, camera: str) -> bool:
-        """Stop stream for a camera.
-
-        Args:
-            camera: Camera name
-
-        Returns:
-            True if successful
-        """
-        request = StreamStopRequest(camera=camera)
-        response = await self.post("/cameras/stream/stop", request.model_dump())
-        return response["data"]
-
-    async def get_stream_status(self, camera: str) -> Dict[str, Any]:
-        """Get stream status for a camera.
-
-        Args:
-            camera: Camera name
-
-        Returns:
-            Stream status info
-        """
-        request = StreamStatusRequest(camera=camera)
-        response = await self.post("/cameras/stream/status", request.model_dump())
-        return response["data"]
-
-    async def get_active_streams(self) -> List[str]:
-        """Get list of cameras with active streams.
-
-        Returns:
-            List of camera names currently streaming
-        """
-        response = await self.get("/cameras/stream/active")
-        return response["data"]
-
-    async def stop_all_streams(self) -> bool:
-        """Stop all active camera streams.
-
-        Returns:
-            True if successful
-        """
-        response = await self.post("/cameras/stream/stop/all", {})
         return response["data"]
