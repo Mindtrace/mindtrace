@@ -14,7 +14,6 @@ class MINDTRACE_API_KEYS(BaseModel):
     OPENAI: Optional[SecretStr]
     DISCORD: Optional[SecretStr]
     ROBOFLOW: Optional[SecretStr]
-    LabelStudio: Optional[SecretStr] = None
 
 
 class MINDTRACE_TESTING_API_KEYS(BaseModel):
@@ -39,7 +38,6 @@ class MINDTRACE_LOGGER(BaseModel):
 class MINDTRACE_DEFAULT_HOST_URLS(BaseModel):
     SERVICE: str
     CLUSTER_MANAGER: str
-    LabelStudio: str = "http://localhost:8080"
 
 
 class MINDTRACE_MINIO(BaseModel):
