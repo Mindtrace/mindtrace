@@ -1,13 +1,13 @@
-"""Model lifecycle management: ModelCard, ModelStage, promote, demote.
+"""Model lifecycle management: ModelCard, ModelStage, card.promote, card.demote.
 
 Demonstrates:
   1. ModelCard creation, add_result, summary, get_metric, registry_key.
   2. EvalResult dataclass used directly.
   3. ModelStage transitions: valid/invalid, next_stage property.
-  4. promote() with passing and failing metric thresholds.
-  5. promote() dry_run=True to validate without mutating state.
-  6. demote() with a reason string.
-  7. card.save() / card.load() round-trip (written to /tmp).
+  4. card.promote() with passing and failing metric thresholds.
+  5. card.promote() dry_run=True to validate without mutating state.
+  6. card.demote() with a reason string.
+  7. card.save_json() / ModelCard.load_json() round-trip (written to /tmp).
   8. Registry integration: saving card dict alongside model weights.
   9. PromotionError handling.
   10. Full journey: DEV → STAGING → PRODUCTION → ARCHIVED.
@@ -23,8 +23,6 @@ from mindtrace.models.lifecycle import (
     ModelStage,
     PromotionError,
     PromotionResult,
-    demote,
-    promote,
 )
 from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS
 
@@ -85,8 +83,8 @@ print(f"  ARCHIVED → DEV      : {ModelStage.ARCHIVED.can_promote_to(ModelStage
 
 print(f"  VALID_TRANSITIONS keys: {[s.value for s in VALID_TRANSITIONS]}")
 
-# ── Section: promote() passing thresholds ─────────────────────────────────
-print("\n── promote(): passing thresholds ──")
+# ── Section: card.promote() passing thresholds ───────────────────────────
+print("\n── card.promote(): passing thresholds ──")
 
 
 class _DummyRegistry:
@@ -104,10 +102,9 @@ class _DummyRegistry:
 
 
 registry = _DummyRegistry()
+card.registry = registry
 
-result: PromotionResult = promote(
-    card,
-    registry,
+result: PromotionResult = card.promote(
     to_stage=ModelStage.STAGING,
     require={"val/accuracy": 0.90, "val/f1": 0.88},
 )
@@ -117,26 +114,22 @@ print(f"  to_stage         : {result.to_stage}")
 print(f"  failed_requirements: {result.failed_requirements}")
 print(f"  card.stage now   : {card.stage}")
 
-# ── Section: promote() failing thresholds ─────────────────────────────────
-print("\n── promote(): failing thresholds (catches PromotionError) ──")
+# ── Section: card.promote() failing thresholds ───────────────────────────
+print("\n── card.promote(): failing thresholds (catches PromotionError) ──")
 
 try:
-    promote(
-        card,
-        registry,
+    card.promote(
         to_stage=ModelStage.PRODUCTION,
         require={"val/accuracy": 0.99},  # threshold too high
     )
 except PromotionError as e:
     print(f"  PromotionError caught: {e}")
 
-# ── Section: promote() dry_run ────────────────────────────────────────────
-print("\n── promote(): dry_run=True ──")
+# ── Section: card.promote() dry_run ──────────────────────────────────────
+print("\n── card.promote(): dry_run=True ──")
 
 card_pre_stage = card.stage
-dry = promote(
-    card,
-    registry,
+dry = card.promote(
     to_stage=ModelStage.PRODUCTION,
     require={"val/accuracy": 0.90},
     dry_run=True,
@@ -144,24 +137,20 @@ dry = promote(
 print(f"  dry_run result.success : {dry.success}")
 print(f"  card.stage unchanged   : {card.stage == card_pre_stage}")
 
-# ── Section: promote() to PRODUCTION ─────────────────────────────────────
-print("\n── promote(): STAGING → PRODUCTION ──")
+# ── Section: card.promote() to PRODUCTION ────────────────────────────────
+print("\n── card.promote(): STAGING → PRODUCTION ──")
 
-result_prod: PromotionResult = promote(
-    card,
-    registry,
+result_prod: PromotionResult = card.promote(
     to_stage=ModelStage.PRODUCTION,
     require={"val/accuracy": 0.90},
 )
 print(f"  success    : {result_prod.success}")
 print(f"  card.stage : {card.stage}")
 
-# ── Section: demote() ─────────────────────────────────────────────────────
-print("\n── demote(): PRODUCTION → ARCHIVED ──")
+# ── Section: card.demote() ────────────────────────────────────────────────
+print("\n── card.demote(): PRODUCTION → ARCHIVED ──")
 
-demote_result = demote(
-    card,
-    registry,
+demote_result = card.demote(
     to_stage=ModelStage.ARCHIVED,
     reason="Performance regression detected in v1 — retiring model.",
 )
@@ -170,14 +159,14 @@ print(f"  from_stage     : {demote_result.from_stage}")
 print(f"  to_stage       : {demote_result.to_stage}")
 print(f"  card.extra     : {card.extra.get('demotion_reason', '')[:60]}")
 
-# ── Section: card.save() / card.load() ────────────────────────────────────
-print("\n── card.save() / card.load() ──")
+# ── Section: card.save_json() / ModelCard.load_json() ─────────────────────
+print("\n── card.save_json() / ModelCard.load_json() ──")
 
 CARD_PATH = "/tmp/resnet50-cls-v1-card.json"
-card.save(CARD_PATH)
+card.save_json(CARD_PATH)
 print(f"  Saved to {CARD_PATH}")
 
-loaded = ModelCard.load(CARD_PATH)
+loaded = ModelCard.load_json(CARD_PATH)
 print(f"  Loaded name    : {loaded.name}")
 print(f"  Loaded version : {loaded.version}")
 print(f"  Loaded stage   : {loaded.stage}")
@@ -199,10 +188,10 @@ print(f"  Registry keys  : {list(registry._store.keys())}")
 # ── Section: Full lifecycle journey ───────────────────────────────────────
 print("\n── Full journey: DEV → STAGING → PRODUCTION → ARCHIVED ──")
 
-journey_card = ModelCard(name="journey-model", version="v2", task="detection")
+registry2 = _DummyRegistry()
+journey_card = ModelCard(name="journey-model", version="v2", task="detection", registry=registry2)
 journey_card.add_result("val/map50", 0.72)
 journey_card.add_result("val/map75", 0.65)
-registry2 = _DummyRegistry()
 
 stages = [
     (ModelStage.STAGING, {"val/map50": 0.65}),
@@ -210,7 +199,7 @@ stages = [
     (ModelStage.ARCHIVED, {}),
 ]
 for target, reqs in stages:
-    r = promote(journey_card, registry2, to_stage=target, require=reqs or None)
+    r = journey_card.promote(to_stage=target, require=reqs or None)
     status = "ok" if r.success else f"FAILED {r.failed_requirements}"
     print(f"  {r.from_stage.value:12} → {r.to_stage.value:12}  success={r.success}  {status}")
 

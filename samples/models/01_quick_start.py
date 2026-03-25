@@ -34,8 +34,6 @@ from mindtrace.models import (
     build_model,
     build_optimizer,
     build_scheduler,
-    demote,
-    promote,
 )
 from mindtrace.registry import Registry
 
@@ -139,6 +137,7 @@ card = ModelCard(
     task="classification",
     architecture="ResNet18 + LinearHead",
     description="Quick-start demo model trained on synthetic beans data.",
+    registry=registry,
 )
 card.add_result(metric="val/accuracy", value=results["accuracy"], dataset="beans-synthetic-val")
 card.add_result(metric="val/f1", value=results["f1"], dataset="beans-synthetic-val")
@@ -146,9 +145,7 @@ print(f"  card stage  : {card.stage.value}")
 print(f"  card summary: {card.summary()}")
 
 # Promote DEV -> STAGING (require val/accuracy > 0.0 — trivially passes with random data)
-staging_result = promote(
-    card,
-    registry,
+staging_result = card.promote(
     to_stage=ModelStage.STAGING,
     require={"val/accuracy": 0.0},
 )
@@ -158,9 +155,7 @@ print(
 )
 
 # Demote STAGING -> DEV (simulate a regression)
-demote_result = demote(
-    card,
-    registry,
+demote_result = card.demote(
     to_stage=ModelStage.DEV,
     reason="Regression detected in nightly eval — rolling back.",
 )
@@ -170,8 +165,8 @@ print(f"  demotion reason stored: {card.extra.get('demotion_reason', '')!r}")
 # Persist and reload card
 with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
     card_path = f.name
-card.save(card_path)
-card2 = ModelCard.load(card_path)
+card.save_json(card_path)
+card2 = ModelCard.load_json(card_path)
 print(f"  round-tripped card: name={card2.name}  version={card2.version}  stage={card2.stage.value}")
 
 # ── RegistryBridge ─────────────────────────────────────────────────────────────

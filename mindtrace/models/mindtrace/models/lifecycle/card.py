@@ -1,22 +1,51 @@
-"""ModelCard and EvalResult — structured model metadata.
+"""ModelCard — the lifecycle handle for a trained model.
 
-:class:`ModelCard` is intended to be saved alongside model weights in the
-registry so that every artifact carries a human-readable, machine-queryable
-description of its provenance, performance, and intended use.
+A :class:`ModelCard` ties together a model's weights in the registry, its
+evaluation metrics, and its lifecycle stage.  All lifecycle operations
+(save, load, promote, demote) go through the card, ensuring the model
+artifact and its metadata are always consistent.
 
-:class:`EvalResult` represents a single evaluation measurement attached to a
-card.
+Example::
+
+    from mindtrace.models.lifecycle import ModelCard, ModelStage
+    from mindtrace.registry import Registry
+
+    registry = Registry("/tmp/my_registry")
+
+    card = ModelCard(
+        name="image-classifier",
+        version="v1",
+        task="classification",
+        registry=registry,
+    )
+
+    # Save model weights through the card
+    card.save_model(trained_model)
+
+    # Record evaluation metrics
+    card.add_result("val/accuracy", 0.94)
+    card.add_result("val/f1", 0.93)
+
+    # Promote with metric gates
+    card.promote(to_stage=ModelStage.STAGING, require={"val/accuracy": 0.85})
+
+    # Load the model back
+    model = card.load_model()
 """
 
 from __future__ import annotations
 
 import json
+import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from mindtrace.models.lifecycle.stages import ModelStage
+from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS, ModelStage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -24,7 +53,7 @@ class EvalResult:
     """Single evaluation result entry.
 
     Attributes:
-        metric: Name of the evaluation metric (e.g. ``"val/iou"``).
+        metric: Name of the evaluation metric (e.g. ``"val/accuracy"``).
         value: Numeric value produced by the evaluation.
         dataset: Registry key or description of the evaluation dataset.
         split: Dataset split evaluated against (e.g. ``"val"``, ``"test"``).
@@ -38,11 +67,6 @@ class EvalResult:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a JSON-safe plain dict.
-
-        Returns:
-            Dictionary representation with ``timestamp`` as an ISO-8601 string.
-        """
         return {
             "metric": self.metric,
             "value": self.value,
@@ -53,53 +77,71 @@ class EvalResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EvalResult:
-        """Deserialize from a plain dict.
-
-        Args:
-            data: Dict previously produced by :meth:`to_dict`.
-
-        Returns:
-            A reconstructed :class:`EvalResult` instance.
-        """
         return cls(
             metric=data["metric"],
             value=float(data["value"]),
             dataset=data.get("dataset", ""),
             split=data.get("split", "val"),
-            timestamp=datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.now(timezone.utc),
+            timestamp=(
+                datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.now(timezone.utc)
+            ),
         )
+
+
+class PromotionError(Exception):
+    """Raised when a model fails to meet promotion requirements."""
+
+
+@dataclass
+class PromotionResult:
+    """Outcome of a promote or demote operation.
+
+    Attributes:
+        success: Whether the operation completed.
+        from_stage: Stage before the operation.
+        to_stage: Requested target stage.
+        model_name: Name of the model.
+        model_version: Version of the model.
+        failed_requirements: ``{metric: (actual, required)}`` for failed gates.
+        timestamp: When the operation was evaluated.
+    """
+
+    success: bool
+    from_stage: ModelStage
+    to_stage: ModelStage
+    model_name: str
+    model_version: str
+    failed_requirements: dict[str, tuple[float, float]] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
 class ModelCard:
-    """Structured metadata for a trained model.
+    """Lifecycle handle for a trained model.
 
-    Intended to be saved alongside model weights in the registry so that
-    every artifact carries a human-readable, machine-queryable description
-    of its provenance, performance, and intended use.
+    Ties together model weights, evaluation metrics, and lifecycle stage.
+    When ``registry`` is provided, all operations (save, load, promote,
+    demote) are persisted to the registry automatically.
 
     Attributes:
-        name: Model identifier matching the registry key (e.g. ``"sfz-segmenter"``).
-        version: Semantic version string (e.g. ``"v3"``).
+        name: Model identifier (e.g. ``"image-classifier"``).
+        version: Version string (e.g. ``"v1"``).
+        registry: A ``mindtrace.registry.Registry`` instance for persistence.
         stage: Current lifecycle stage.
-        task: ML task type (e.g. ``"classification"``, ``"detection"``,
-            ``"segmentation"``).
-        architecture: Model architecture description
-            (e.g. ``"DINOv2-B + LinearHead"``).
-        framework: Framework used (e.g. ``"pytorch"``, ``"huggingface"``,
-            ``"ultralytics"``).
-        training_data: Registry key or description of the training dataset.
-        eval_results: List of :class:`EvalResult` entries in chronological
-            insertion order.
-        known_limitations: List of known failure modes or limitations.
-        description: Human-readable description of the model and its purpose.
+        task: ML task type (e.g. ``"classification"``).
+        architecture: Architecture description (e.g. ``"ResNet50 + LinearHead"``).
+        framework: Framework used (default ``"pytorch"``).
+        training_data: Description of the training dataset.
+        eval_results: Evaluation metrics in insertion order.
+        known_limitations: Known failure modes or limitations.
+        description: Human-readable description.
         created_at: Creation timestamp (UTC).
-        extra: Arbitrary additional metadata that does not fit the structured
-            fields above.
+        extra: Arbitrary additional metadata.
     """
 
     name: str
     version: str
+    registry: Any = field(default=None, repr=False)
     stage: ModelStage = ModelStage.DEV
     task: str = ""
     architecture: str = ""
@@ -110,37 +152,77 @@ class ModelCard:
     description: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     extra: dict[str, Any] = field(default_factory=dict)
+    _model_saved: bool = field(default=False, init=False, repr=False)
 
     # ------------------------------------------------------------------
-    # Eval result helpers
+    # Registry key
     # ------------------------------------------------------------------
 
-    def get_metric(self, metric: str, dataset: str = "") -> float | None:
-        """Return the most recent value for a given metric name.
-
-        When ``dataset`` is provided, only results whose ``dataset`` field
-        matches are considered.
+    def registry_key(self, stage: ModelStage | None = None) -> str:
+        """Return the registry key for this model.
 
         Args:
-            metric: Metric name to look up (e.g. ``"val/iou"``).
-            dataset: Optional dataset filter.  When non-empty, only results
-                with a matching ``dataset`` field are considered.
+            stage: Optional stage suffix.
 
         Returns:
-            The most recently added matching :class:`EvalResult` value, or
-            ``None`` if no matching result exists.
-
-        Example:
-            >>> card.get_metric("val/iou")
-            0.87
-            >>> card.get_metric("val/iou", dataset="coco-val")
-            0.85
+            ``"name:version"`` or ``"name:version:stage"`` when stage is given.
         """
-        candidates = [r for r in self.eval_results if r.metric == metric and (not dataset or r.dataset == dataset)]
-        if not candidates:
-            return None
-        # Return the value of the last inserted (most recent) entry.
-        return candidates[-1].value
+        base = f"{self.name}:{self.version}"
+        if stage is not None:
+            return f"{base}:{stage.value}"
+        return base
+
+    # ------------------------------------------------------------------
+    # Model save / load
+    # ------------------------------------------------------------------
+
+    def save_model(self, model: Any) -> str:
+        """Save model weights to the registry.
+
+        Args:
+            model: The model object (e.g. ``nn.Module``) to persist.
+
+        Returns:
+            The registry key under which the model was saved.
+
+        Raises:
+            RuntimeError: If no registry is attached to this card.
+        """
+        self._require_registry("save_model")
+        key = self.registry_key()
+        self.registry.save(key, model)
+        self._model_saved = True
+        logger.info("ModelCard: saved model weights as '%s'.", key)
+        return key
+
+    def load_model(self) -> Any:
+        """Load model weights from the registry.
+
+        Returns:
+            The deserialized model object.
+
+        Raises:
+            RuntimeError: If no registry is attached to this card.
+        """
+        self._require_registry("load_model")
+        key = self.registry_key()
+        model = self.registry.load(key)
+        logger.info("ModelCard: loaded model from '%s'.", key)
+        return model
+
+    @property
+    def model_exists(self) -> bool:
+        """Check whether the model artifact exists in the registry."""
+        if self.registry is None:
+            return False
+        try:
+            return self.registry.has_object(self.registry_key())
+        except Exception:
+            return self._model_saved
+
+    # ------------------------------------------------------------------
+    # Eval results
+    # ------------------------------------------------------------------
 
     def add_result(
         self,
@@ -149,58 +231,183 @@ class ModelCard:
         dataset: str = "",
         split: str = "val",
     ) -> None:
-        """Append an :class:`EvalResult` entry.
+        """Record an evaluation metric."""
+        self.eval_results.append(EvalResult(metric=metric, value=value, dataset=dataset, split=split))
 
-        Args:
-            metric: Name of the evaluation metric.
-            value: Numeric result value.
-            dataset: Registry key or description of the evaluation dataset.
-            split: Dataset split (e.g. ``"val"``, ``"test"``).
-
-        Example:
-            >>> card.add_result("val/iou", 0.87, dataset="coco-val")
-        """
-        self.eval_results.append(
-            EvalResult(
-                metric=metric,
-                value=value,
-                dataset=dataset,
-                split=split,
-            )
-        )
+    def get_metric(self, metric: str, dataset: str = "") -> float | None:
+        """Return the most recent value for a metric, or None."""
+        candidates = [r for r in self.eval_results if r.metric == metric and (not dataset or r.dataset == dataset)]
+        return candidates[-1].value if candidates else None
 
     def summary(self) -> dict[str, float]:
-        """Return a mapping of metric name to its latest recorded value.
-
-        When the same metric appears multiple times, only the last recorded
-        value is retained.
-
-        Returns:
-            ``{metric_name: latest_value}`` for all tracked metrics.
-
-        Example:
-            >>> card.summary()
-            {'val/iou': 0.87, 'val/f1': 0.79}
-        """
+        """Return ``{metric: latest_value}`` for all tracked metrics."""
         result: dict[str, float] = {}
         for entry in self.eval_results:
             result[entry.metric] = entry.value
         return result
 
     # ------------------------------------------------------------------
-    # Serialisation
+    # Lifecycle: promote / demote
+    # ------------------------------------------------------------------
+
+    def promote(
+        self,
+        *,
+        to_stage: ModelStage,
+        require: dict[str, float] | None = None,
+        dry_run: bool = False,
+    ) -> PromotionResult:
+        """Promote this model to a new lifecycle stage.
+
+        Validates the transition, checks metric gates, updates the stage,
+        and persists the card metadata to the registry.
+
+        Args:
+            to_stage: Target stage.
+            require: ``{metric: minimum_value}`` thresholds.  Promotion is
+                blocked if any metric is below its threshold or missing.
+            dry_run: Validate without applying changes.
+
+        Returns:
+            :class:`PromotionResult` describing the outcome.
+
+        Raises:
+            PromotionError: If the transition is invalid or metrics fail.
+            RuntimeError: If no registry is attached.
+        """
+        self._require_registry("promote")
+        from_stage = self.stage
+
+        self._validate_transition(from_stage, to_stage)
+
+        failures = self._check_requirements(require) if require else {}
+
+        result = PromotionResult(
+            success=len(failures) == 0,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            model_name=self.name,
+            model_version=self.version,
+            failed_requirements=failures,
+        )
+
+        if failures and not dry_run:
+            details = "; ".join(
+                f"{m}: actual={'missing' if math.isnan(a) else f'{a:.4g}'}, required={r:.4g}"
+                for m, (a, r) in failures.items()
+            )
+            raise PromotionError(f"Promotion of {self.name}:{self.version} to {to_stage.value!r} blocked: {details}")
+
+        if dry_run:
+            return result
+
+        self.stage = to_stage
+        self._persist_card(to_stage)
+        logger.info(
+            "Promoted %s:%s from %s to %s.",
+            self.name,
+            self.version,
+            from_stage.value,
+            to_stage.value,
+        )
+        return result
+
+    def demote(
+        self,
+        *,
+        to_stage: ModelStage,
+        reason: str = "",
+        dry_run: bool = False,
+    ) -> PromotionResult:
+        """Demote this model to an earlier or archival stage.
+
+        Unlike :meth:`promote`, demotion does not check metric thresholds.
+
+        Args:
+            to_stage: Target stage.
+            reason: Human-readable reason for demotion.
+            dry_run: Validate without applying changes.
+
+        Returns:
+            :class:`PromotionResult` describing the outcome.
+
+        Raises:
+            PromotionError: If the transition is invalid.
+            RuntimeError: If no registry is attached.
+        """
+        self._require_registry("demote")
+        from_stage = self.stage
+
+        self._validate_transition(from_stage, to_stage)
+
+        result = PromotionResult(
+            success=True,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            model_name=self.name,
+            model_version=self.version,
+        )
+
+        if dry_run:
+            return result
+
+        if reason:
+            self.extra["demotion_reason"] = reason
+
+        self.stage = to_stage
+        self._persist_card(to_stage)
+
+        log_msg = "Demoted %s:%s from %s to %s."
+        log_args: list[Any] = [self.name, self.version, from_stage.value, to_stage.value]
+        if reason:
+            log_msg += " Reason: %s"
+            log_args.append(reason)
+        logger.info(log_msg, *log_args)
+        return result
+
+    # ------------------------------------------------------------------
+    # Card persistence
+    # ------------------------------------------------------------------
+
+    def persist(self) -> None:
+        """Save the card metadata to the registry.
+
+        Raises:
+            RuntimeError: If no registry is attached.
+        """
+        self._require_registry("persist")
+        key = f"{self.registry_key()}:card"
+        self.registry.save(key, self.to_dict())
+        logger.info("ModelCard: persisted metadata as '%s'.", key)
+
+    @classmethod
+    def from_registry(cls, registry: Any, name: str, version: str) -> ModelCard:
+        """Load a card from the registry.
+
+        Args:
+            registry: A ``mindtrace.registry.Registry`` instance.
+            name: Model name.
+            version: Model version.
+
+        Returns:
+            Reconstructed :class:`ModelCard` with the registry attached.
+
+        Raises:
+            KeyError: If no card metadata is found in the registry.
+        """
+        key = f"{name}:{version}:card"
+        data = registry.load(key)
+        card = cls.from_dict(data)
+        card.registry = registry
+        card._model_saved = True
+        return card
+
+    # ------------------------------------------------------------------
+    # JSON serialization
     # ------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a JSON-safe plain dict.
-
-        All nested objects are recursively converted; :class:`datetime` values
-        are represented as ISO-8601 strings and :class:`ModelStage` as its
-        string value.
-
-        Returns:
-            A JSON-serialisable dictionary representation of this card.
-        """
+        """Serialize to a JSON-safe dict."""
         return {
             "name": self.name,
             "version": self.version,
@@ -218,20 +425,7 @@ class ModelCard:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelCard:
-        """Deserialize from a plain dict.
-
-        Args:
-            data: Dict previously produced by :meth:`to_dict` or compatible
-                JSON payload.
-
-        Returns:
-            A reconstructed :class:`ModelCard` instance.
-
-        Raises:
-            KeyError: If required fields ``name`` or ``version`` are absent.
-            ValueError: If the ``stage`` value is not a valid
-                :class:`ModelStage`.
-        """
+        """Deserialize from a dict."""
         eval_results = [EvalResult.from_dict(r) for r in data.get("eval_results", [])]
         created_at_raw = data.get("created_at")
         created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(timezone.utc)
@@ -250,21 +444,8 @@ class ModelCard:
             extra=dict(data.get("extra", {})),
         )
 
-    def save(self, path: str | Path) -> None:
-        """Save the card as a JSON file.
-
-        Parent directories are created automatically if they do not exist.
-
-        Args:
-            path: Destination file path.  The file will be UTF-8 encoded with
-                two-space indentation for human readability.
-
-        Raises:
-            OSError: If the file cannot be written.
-
-        Example:
-            >>> card.save("/tmp/sfz-segmenter-v3.json")
-        """
+    def save_json(self, path: str | Path) -> None:
+        """Save the card as a JSON file."""
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(
@@ -273,50 +454,44 @@ class ModelCard:
         )
 
     @classmethod
-    def load(cls, path: str | Path) -> ModelCard:
-        """Load a card from a JSON file.
-
-        Args:
-            path: Path to a JSON file previously written by :meth:`save`.
-
-        Returns:
-            A reconstructed :class:`ModelCard` instance.
-
-        Raises:
-            FileNotFoundError: If the file does not exist.
-            json.JSONDecodeError: If the file is not valid JSON.
-            KeyError: If required fields are missing from the JSON payload.
-
-        Example:
-            >>> card = ModelCard.load("/tmp/sfz-segmenter-v3.json")
-        """
+    def load_json(cls, path: str | Path) -> ModelCard:
+        """Load a card from a JSON file."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls.from_dict(data)
 
     # ------------------------------------------------------------------
-    # Registry key helpers
+    # Internal helpers
     # ------------------------------------------------------------------
 
-    def registry_key(self, stage: ModelStage | None = None) -> str:
-        """Return the registry key for this card.
+    def _require_registry(self, operation: str) -> None:
+        if self.registry is None:
+            raise RuntimeError(f"ModelCard.{operation}() requires a registry. Pass registry= when creating the card.")
 
-        The base key format is ``"{name}:{version}"``.  When ``stage`` is
-        provided the key is extended to ``"{name}:{version}:{stage.value}"``.
+    @staticmethod
+    def _validate_transition(from_stage: ModelStage, to_stage: ModelStage) -> None:
+        if not from_stage.can_promote_to(to_stage):
+            allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
+            raise PromotionError(
+                f"Invalid transition: {from_stage.value!r} -> {to_stage.value!r}. "
+                f"Allowed from {from_stage.value!r}: {allowed}."
+            )
 
-        Args:
-            stage: Optional stage suffix.  If ``None``, the stage is omitted.
+    def _check_requirements(self, require: dict[str, float]) -> dict[str, tuple[float, float]]:
+        failures: dict[str, tuple[float, float]] = {}
+        for metric, threshold in require.items():
+            actual = self.get_metric(metric)
+            if actual is None:
+                failures[metric] = (float("nan"), threshold)
+            elif actual < threshold:
+                failures[metric] = (actual, threshold)
+        return failures
 
-        Returns:
-            A registry key string suitable for use with
-            :class:`mindtrace.registry.Registry`.
-
-        Example:
-            >>> card.registry_key()
-            'sfz-segmenter:v3'
-            >>> card.registry_key(ModelStage.PRODUCTION)
-            'sfz-segmenter:v3:production'
-        """
-        base = f"{self.name}:{self.version}"
-        if stage is not None:
-            return f"{base}:{stage.value}"
-        return base
+    def _persist_card(self, stage: ModelStage) -> None:
+        try:
+            self.registry.save(self.registry_key(stage), self.to_dict())
+        except Exception as exc:
+            logger.warning(
+                "Could not persist card to registry under '%s': %s",
+                self.registry_key(stage),
+                exc,
+            )

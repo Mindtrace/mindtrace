@@ -10,6 +10,7 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from mindtrace.core import Mindtrace
+from mindtrace.models.lifecycle.card import ModelCard
 
 if TYPE_CHECKING:
     from mindtrace.models.training.trainer import Trainer
@@ -110,6 +111,7 @@ class ModelCheckpoint(Callback):
         model_name: str = "checkpoint",
         version_prefix: str = "v",
         raise_on_save_failure: bool = False,
+        task: str = "",
     ) -> None:
         """Initialise the checkpoint callback.
 
@@ -144,9 +146,11 @@ class ModelCheckpoint(Callback):
         self.model_name = model_name
         self.version_prefix = version_prefix
         self.raise_on_save_failure = raise_on_save_failure
+        self.task = task
 
         self.best_value: float = math.inf if mode == "min" else -math.inf
         self.last_saved_key: str | None = None
+        self.card: ModelCard | None = None
         self.save_failures: int = 0
         self.last_error: Exception | None = None
 
@@ -182,13 +186,24 @@ class ModelCheckpoint(Callback):
         if improved:
             self.best_value = current
 
-        key = f"{self.model_name}:{self.version_prefix}{epoch}"
+        version = f"{self.version_prefix}{epoch}"
+        card = ModelCard(
+            name=self.model_name,
+            version=version,
+            task=self.task,
+            registry=self.registry,
+        )
+        for metric_name, metric_value in logs.items():
+            if isinstance(metric_value, (int, float)):
+                card.add_result(metric_name, float(metric_value))
+
         try:
-            self.registry.save(key, trainer.model)
-            self.last_saved_key = key
+            card.save_model(trainer.model)
+            self.last_saved_key = card.registry_key()
+            self.card = card
             self.logger.info(
                 "ModelCheckpoint: saved '%s' (epoch=%d, %s=%.6f).",
-                key,
+                card.registry_key(),
                 epoch,
                 self.monitor,
                 current,
@@ -198,7 +213,7 @@ class ModelCheckpoint(Callback):
             self.last_error = exc
             self.logger.error(
                 "ModelCheckpoint: failed to save '%s' (%d total failure%s): %s",
-                key,
+                card.registry_key(),
                 self.save_failures,
                 "s" if self.save_failures > 1 else "",
                 exc,

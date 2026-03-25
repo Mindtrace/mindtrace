@@ -113,8 +113,6 @@ from mindtrace.models.lifecycle import (
     ModelStage,
     PromotionError,
     PromotionResult,
-    demote,
-    promote,
 )
 
 __all__ = [
@@ -197,8 +195,6 @@ __all__ = [
     "PromotionResult",
     "PromotionError",
     "VALID_TRANSITIONS",
-    "promote",
-    "demote",
     # pipeline
     "AutoSegmenter",
     "AutoSegmenterInput",
