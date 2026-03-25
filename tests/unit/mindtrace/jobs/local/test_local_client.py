@@ -286,8 +286,8 @@ class TestLocalClient:
         """Test deleting a queue that doesn't exist - should succeed silently (idempotent)."""
         client = temp_local_client
         # Delete is idempotent - it succeeds even if the queue doesn't exist
-        result = client.delete_queue("does-not-exist")
-        assert result["status"] == "success"
+        with pytest.raises(RegistryObjectNotFound, match="Object does-not-exist does not exist"):
+            client.delete_queue("does-not-exist")
 
     def test_receive_empty_logs_debug(self, temp_local_client):
         client = temp_local_client
