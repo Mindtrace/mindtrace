@@ -348,17 +348,17 @@ DEV --> STAGING --> PRODUCTION --> ARCHIVED
 ### Basic Usage
 
 ```python
-from mindtrace.models import ModelCard, ModelStage, promote, demote
+from mindtrace.models import ModelCard, ModelStage
 
-card = ModelCard(name="image-classifier", version="v2", task="classification")
+card = ModelCard(name="image-classifier", version="v2", task="classification", registry=registry)
+card.save_model(model)
 card.add_result("val/accuracy", 0.94, dataset="val-2024")
 
 # DEV -> STAGING with threshold gate
-result = promote(card, registry, to_stage=ModelStage.STAGING,
-                 require={"val/accuracy": 0.85})
+card.promote(to_stage=ModelStage.STAGING, require={"val/accuracy": 0.85})
 
 # Rollback (no threshold checks on demotion)
-demote(card, registry, to_stage=ModelStage.STAGING, reason="production regression")
+card.demote(to_stage=ModelStage.DEV, reason="production regression")
 ```
 
 See [Lifecycle Documentation](mindtrace/models/lifecycle/README.md) for details.
@@ -549,11 +549,15 @@ from mindtrace.models import (
     ModelStage,                     # Enum: DEV, STAGING, PRODUCTION, ARCHIVED
     VALID_TRANSITIONS,              # Allowed stage transition graph
     ModelCard,                      # Structured model metadata
+                                    #   .save_model()    - save model artifact to registry
+                                    #   .load_model()    - load model artifact from registry
+                                    #   .promote()       - promote with metric threshold checks
+                                    #   .demote()        - demote (rollback / archive)
+                                    #   .persist()       - persist card metadata to registry
+                                    #   .from_registry() - class method to load card from registry
     EvalResult,                     # Single evaluation metric entry
     PromotionResult,                # Outcome of promote/demote call
     PromotionError,                 # Raised on failed promotion gate
-    promote,                        # Promote with metric threshold checks
-    demote,                         # Demote (rollback / archive)
 
     # -- Serving --
     ModelService,                   # Abstract base (extends mindtrace.services.Service)

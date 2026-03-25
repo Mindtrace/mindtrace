@@ -23,7 +23,7 @@ The lifecycle sub-package provides:
 - **ModelStage**: Enum defining the four lifecycle stages (DEV, STAGING, PRODUCTION, ARCHIVED)
 - **VALID_TRANSITIONS**: Directed graph of allowed stage transitions
 - **ModelCard**: Structured metadata container for a trained model version with evaluation results
-- **promote / demote**: Stage transition functions with optional metric threshold gates
+- **ModelCard.promote() / ModelCard.demote()**: Stage transition methods with optional metric threshold gates
 - **PromotionError**: Raised when a promotion is blocked by failed metric requirements
 
 ## Architecture
@@ -165,16 +165,19 @@ r2 = EvalResult.from_dict(d)
 
 ## Promotion and Demotion
 
-### `promote()`
+### `card.promote()`
 
-Validates stage transition, checks metric thresholds, updates `card.stage`, and persists the card to the registry under `{name}:{version}:{stage}`.
+Validates stage transition, checks metric thresholds, updates `card.stage`, and persists the card to the registry under `{name}:{version}:{stage}`. Called as a method on a `ModelCard` instance (the card must have a `registry` set).
 
 ```python
-from mindtrace.models.lifecycle import promote, PromotionResult, PromotionError
+from mindtrace.models.lifecycle import ModelCard, ModelStage, PromotionResult, PromotionError
 
-result: PromotionResult = promote(
-    card=card,
-    registry=registry,
+card = ModelCard(name="image-classifier", version="v2", task="classification", registry=registry)
+card.save_model(model)
+card.add_result("val/accuracy", 0.94, dataset="val-2024")
+card.add_result("val/f1", 0.93, dataset="val-2024")
+
+result: PromotionResult = card.promote(
     to_stage=ModelStage.STAGING,
     require={"val/accuracy": 0.85, "val/f1": 0.80},
     dry_run=False,
@@ -190,23 +193,18 @@ If any metric falls below the required threshold, `promote` raises `PromotionErr
 
 ```python
 try:
-    promote(card, registry, to_stage=ModelStage.PRODUCTION,
-            require={"val/accuracy": 0.99})
+    card.promote(to_stage=ModelStage.PRODUCTION, require={"val/accuracy": 0.99})
 except PromotionError as exc:
     print(exc)  # "Promotion blocked: val/accuracy=0.94 < required 0.99"
 ```
 
-### `demote()`
+### `card.demote()`
 
 Rollback or archival. No threshold checks, only validates the transition graph. Requires a `reason` string for auditability.
 
 ```python
-from mindtrace.models.lifecycle import demote
-
-result = demote(
-    card=card,
-    registry=registry,
-    to_stage=ModelStage.STAGING,
+result = card.demote(
+    to_stage=ModelStage.DEV,
     reason="regression detected in prod metrics",
     dry_run=False,
 )
@@ -227,31 +225,34 @@ result = demote(
 ## Typical Lifecycle Flow
 
 ```python
-from mindtrace.models.lifecycle import ModelCard, ModelStage, promote, demote, PromotionError
+from mindtrace.models.lifecycle import ModelCard, ModelStage, PromotionError
 
-# 1. Create card after training
-card = ModelCard(name="my-model", version="v1", task="classification")
+# 1. Create card after training and save model artifact
+card = ModelCard(name="my-model", version="v1", task="classification", registry=registry)
+card.save_model(model)
 card.add_result("val/accuracy", metrics["accuracy"])
 card.add_result("val/f1", metrics["f1"])
 
 # 2. Promote to STAGING with threshold gate
 try:
-    promote(card, registry, to_stage=ModelStage.STAGING,
-            require={"val/accuracy": 0.85})
+    card.promote(to_stage=ModelStage.STAGING, require={"val/accuracy": 0.85})
 except PromotionError:
     pass  # keep in DEV for re-training
 
 # 3. After A/B testing, promote to PRODUCTION
-promote(card, registry, to_stage=ModelStage.PRODUCTION,
-        require={"val/accuracy": 0.90, "val/f1": 0.88})
+card.promote(to_stage=ModelStage.PRODUCTION,
+             require={"val/accuracy": 0.90, "val/f1": 0.88})
 
 # 4. If production regression occurs, roll back
-demote(card, registry, to_stage=ModelStage.STAGING,
-       reason="latency regression in v1.2 rollout")
+card.demote(to_stage=ModelStage.STAGING,
+            reason="latency regression in v1.2 rollout")
 
 # 5. Retire old version
-demote(card, registry, to_stage=ModelStage.ARCHIVED,
-       reason="superseded by v2")
+card.demote(to_stage=ModelStage.ARCHIVED, reason="superseded by v2")
+
+# 6. Later, load a card from registry
+restored_card = ModelCard.from_registry("my-model", "v1", registry=registry)
+restored_model = restored_card.load_model()
 ```
 
 ## API Reference
@@ -265,10 +266,12 @@ from mindtrace.models.lifecycle import (
     # Metadata
     EvalResult,             # metric name + value + dataset + split + timestamp
     ModelCard,              # structured model metadata container
-
-    # Operations
-    promote,                # stage promotion with threshold gates
-    demote,                 # stage rollback with reason
+                            #   .save_model(model)          - save model artifact to registry
+                            #   .load_model()               - load model artifact from registry
+                            #   .promote(to_stage, require)  - promote with metric threshold checks
+                            #   .demote(to_stage, reason)    - demote (rollback / archive)
+                            #   .persist()                   - persist card metadata to registry
+                            #   .from_registry(name, ver)    - class method: load card from registry
 
     # Errors / results
     PromotionError,         # raised when promotion is blocked
