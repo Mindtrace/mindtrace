@@ -20,9 +20,14 @@ pip install mindtrace-agents
 | **Model** | `OpenAIChatModel` | Calls the LLM API (supports streaming) |
 | **Provider** | `OpenAIProvider` / `OllamaProvider` / `GeminiProvider` | Holds the authenticated client |
 | **Tool** | `Tool` | Wraps a Python function for LLM tool-calling |
+| **Toolset** | `FunctionToolset` / `CompoundToolset` / `MCPToolset` | Groups tools and controls which are exposed to the agent |
+| **ToolFilter** | `ToolFilter` | Predicate for selectively showing/hiding tools by name or description |
 | **Callbacks** | `AgentCallbacks` | Lifecycle hooks: before/after LLM call and tool call |
 | **History** | `AbstractHistoryStrategy` / `InMemoryHistory` | Persists conversation across runs |
 | **RunContext** | `RunContext[T]` | Injected into tools — carries deps, retry count, step |
+| **Memory** | `MemoryToolset` / `InMemoryStore` / `JsonFileStore` | Agent-controlled persistent memory exposed as tools |
+| **Task Queue** | `LocalTaskQueue` / `RabbitMQTaskQueue` | Distribute agent execution across processes or workers |
+| **DistributedAgent** | `DistributedAgent` | Transparent wrapper that routes `run()` through a task queue |
 
 ---
 
@@ -114,6 +119,134 @@ def lookup_user(ctx: RunContext[AppDeps], user_id: str) -> dict:
 
 deps = AppDeps(db_url="postgresql://...", api_key="secret")
 result = asyncio.run(agent.run("Find user 123", deps=deps))
+```
+
+---
+
+## Toolsets
+
+Toolsets are the primary way to supply tools to an agent. They group related tools together and give you control over which tools are visible to the model at runtime.
+
+### FunctionToolset
+
+`FunctionToolset` collects Python `Tool` objects and exposes them to the agent. Use it when you want to organise tools manually or share a toolset across multiple agents.
+
+```python
+from mindtrace.agents.toolsets import FunctionToolset
+from mindtrace.agents.tools import Tool
+
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+async def fetch(url: str) -> str:
+    """Fetch a URL."""
+    ...
+
+toolset = FunctionToolset(max_retries=2)
+toolset.add_tool(Tool(add))
+toolset.add_tool(Tool(fetch))
+
+agent = MindtraceAgent(model=model, toolset=toolset)
+```
+
+`max_retries` on the toolset is the default for every tool added to it. Override per-tool by setting `Tool(..., max_retries=N)` before calling `add_tool()`.
+
+### CompoundToolset
+
+`CompoundToolset` merges tools from multiple toolsets into one. Later toolsets win on name collisions — use `prefix` on `MCPToolset` to avoid conflicts.
+
+```python
+from mindtrace.agents.toolsets import CompoundToolset, FunctionToolset
+
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/"),
+        FunctionToolset(),   # local tools
+    ),
+)
+```
+
+### MCPToolset
+
+`MCPToolset` exposes tools from any remote MCP server. Requires `fastmcp`:
+
+```bash
+pip install 'mindtrace-agents[mcp]'
+```
+
+**Constructors**
+
+```python
+from mindtrace.agents.toolsets import MCPToolset
+
+# HTTP (streamable-http) — default for Mindtrace services
+ts = MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/")
+
+# SSE (legacy HTTP)
+ts = MCPToolset.from_sse("http://localhost:9000/sse")
+
+# stdio — local subprocess servers (e.g. npx)
+ts = MCPToolset.from_stdio(["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
+```
+
+**Prefix** — avoid name collisions when combining multiple MCP services:
+
+```python
+ts = MCPToolset.from_http("http://localhost:8002/mcp/", prefix="db")
+# tools are exposed as "db__query", "db__list_tables", etc.
+```
+
+---
+
+## Filtering tools
+
+Every toolset exposes shorthand methods that return a `FilteredToolset`. Chain them to control exactly which tools the agent sees.
+
+```python
+# Allow only named tools
+toolset.include("search", "summarise")
+
+# Block a specific tool
+toolset.exclude("drop_table")
+
+# Glob patterns
+toolset.include_pattern("read_*", "list_*")
+toolset.exclude_pattern("admin_*")
+
+# Compose via FilteredToolset.with_filter() for boolean logic
+from mindtrace.agents.toolsets import ToolFilter
+
+f = ToolFilter.include_pattern("read_*") & ~ToolFilter.include("read_credentials")
+toolset.with_filter(f)
+```
+
+Filtering applies at `get_tools()` time — the underlying toolset is unchanged.
+
+### ToolFilter API
+
+| Factory | Behaviour |
+|---------|-----------|
+| `ToolFilter.include(*names)` | Allow only tools whose name is in `names` |
+| `ToolFilter.exclude(*names)` | Block tools whose name is in `names` |
+| `ToolFilter.include_pattern(*globs)` | Allow tools matching any glob (e.g. `"read_*"`) |
+| `ToolFilter.exclude_pattern(*globs)` | Block tools matching any glob |
+| `ToolFilter.by_description(fn)` | Custom predicate on the tool description string |
+
+Filters compose with `&` (AND), `|` (OR), and `~` (NOT).
+
+### Combining filtering with CompoundToolset
+
+```python
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        MCPToolset.from_http("http://localhost:8001/mcp/").include("generate_image"),
+        MCPToolset.from_http("http://localhost:8002/mcp/").exclude_pattern("admin_*"),
+        FunctionToolset(),
+    ),
+)
 ```
 
 ---
@@ -288,6 +421,185 @@ agent.logger.info("Starting run", session_id="abc")
 
 ---
 
+---
+
+## Multi-Agent Coworking
+
+Agents are first-class tools. Pass any `MindtraceAgent` directly into `tools=[]` alongside regular `Tool` objects — the framework converts it automatically.
+
+```python
+researcher = MindtraceAgent(
+    model=model,
+    name="researcher",
+    description="Research a topic and return facts",  # shown to LLM as tool description
+    tools=[web_search_tool],
+)
+
+writer = MindtraceAgent(
+    model=model,
+    name="writer",
+    description="Write a structured report from given facts",
+    tools=[format_tool],
+)
+
+orchestrator = MindtraceAgent(
+    model=model,
+    tools=[researcher, writer, some_regular_tool],  # mix freely
+)
+
+result = await orchestrator.run("Write a report on climate change")
+```
+
+The `description` field is required when using an agent as a tool — it's what the LLM reads to decide when to call it. Parent `deps` are forwarded to sub-agents automatically via `RunContext`.
+
+### Context exchange between agents
+
+| Deployment | Mechanism |
+|---|---|
+| Same process | `deps` carries shared state directly — mutations visible across agents |
+| Distributed workers | `deps` carries a **client** (Redis, DB) — workers read/write through it, not raw data |
+
+`deps` is serialised when submitted to a task queue. Don't put live in-memory objects in deps for distributed use — put connection config and reconnect on the worker side.
+
+### HandoffPart
+
+Use `HandoffPart` to mark an explicit handoff boundary in an agent's message history. Useful for observability and keeping sub-agent history scoped:
+
+```python
+from mindtrace.agents import HandoffPart
+
+part = HandoffPart(
+    from_agent="orchestrator",
+    to_agent="writer",
+    summary="Researcher found: sea levels rose 20cm since 1980",
+)
+```
+
+---
+
+## Agent Memory
+
+`MemoryToolset` exposes persistent memory as LLM-callable tools. The agent decides what to save and when to recall — no code wiring needed.
+
+```python
+from mindtrace.agents import MindtraceAgent, MemoryToolset, JsonFileStore, CompoundToolset
+from mindtrace.agents.toolsets import FunctionToolset
+
+memory = JsonFileStore("./agent_memory.json")  # persists across restarts
+
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        FunctionToolset([my_tools]),
+        MemoryToolset(memory, namespace="user_123"),
+    ),
+)
+```
+
+**Tools exposed to the agent:**
+
+| Tool | Args | Effect |
+|---|---|---|
+| `save_memory` | `key, value` | Persist a fact |
+| `recall_memory` | `key` | Retrieve by key |
+| `search_memory` | `query, top_k=5` | Substring search across all memories |
+| `forget_memory` | `key` | Delete an entry |
+| `list_memories` | — | List all keys |
+
+The `namespace` parameter scopes entries per-user or per-session — two `MemoryToolset` instances on the same store with different namespaces never see each other's data.
+
+### Memory backends
+
+| Class | Persistence | `search()` |
+|---|---|---|
+| `InMemoryStore` | None (lost on restart) | Substring |
+| `JsonFileStore` | Local `.json` file | Substring |
+
+Implement `AbstractMemoryStore` for custom backends (Redis, vector DB, etc.). The only method that varies meaningfully is `search()` — simple backends use substring, vector backends use embeddings.
+
+```python
+from mindtrace.agents import AbstractMemoryStore, MemoryEntry
+
+class RedisMemoryStore(AbstractMemoryStore):
+    async def save(self, key, value, metadata=None): ...
+    async def get(self, key) -> MemoryEntry | None: ...
+    async def search(self, query, top_k=5) -> list[MemoryEntry]: ...
+    async def delete(self, key): ...
+    async def list_keys(self) -> list[str]: ...
+```
+
+Install optional extras for third-party backends:
+
+```bash
+pip install 'mindtrace-agents[memory-redis]'   # Redis
+pip install 'mindtrace-agents[memory-vector]'  # ChromaDB
+```
+
+---
+
+## Distributed Execution
+
+### Task queues
+
+`AbstractTaskQueue` decouples task submission from execution. Use `LocalTaskQueue` for single-process orchestration, `RabbitMQTaskQueue` for multi-worker deployments.
+
+```python
+from mindtrace.agents import LocalTaskQueue, AgentTask
+
+queue = LocalTaskQueue()
+queue.register(researcher)   # agents must be registered by name
+
+task_id = await queue.submit(AgentTask(
+    agent_name="researcher",
+    input="What caused the 2008 financial crisis?",
+    deps=my_deps,
+    session_id="s1",
+))
+result = await queue.get_result(task_id)
+```
+
+`TaskStatus` values: `PENDING → RUNNING → DONE | FAILED`
+
+### DistributedAgent
+
+`DistributedAgent` wraps any agent and routes `run()` through a task queue. The API is identical to `MindtraceAgent` — callers don't need to change.
+
+```python
+from mindtrace.agents import DistributedAgent
+
+distributed_researcher = DistributedAgent(researcher, task_queue=queue)
+result = await distributed_researcher.run("Research topic")  # executes via queue
+```
+
+### RabbitMQ
+
+Requires `aio-pika`:
+
+```bash
+pip install 'mindtrace-agents[distributed-rabbitmq]'
+```
+
+**Caller side** (submit tasks):
+
+```python
+from mindtrace.agents.execution.rabbitmq import RabbitMQTaskQueue
+
+queue = RabbitMQTaskQueue(url="amqp://guest:guest@localhost/")
+distributed = DistributedAgent(researcher, task_queue=queue)
+result = await distributed.run("Research topic")
+```
+
+**Worker side** (consume and execute):
+
+```python
+queue = RabbitMQTaskQueue(url="amqp://guest:guest@localhost/")
+await queue.serve(researcher)  # blocks; run N replicas for parallelism
+```
+
+RabbitMQ round-robins tasks across replicas automatically. `AgentTask` is serialised with `pickle` — `deps` must be pickle-serialisable. For cross-process use, put connection config in `deps` (not live connections).
+
+---
+
 ## Package layout
 
 ```
@@ -299,12 +611,14 @@ mindtrace/agents/
 ├── prompts.py           # UserPromptPart, BinaryContent, ImageUrl
 ├── profiles/            # ModelProfile capability flags
 ├── events/              # streaming event types
-├── messages/            # ModelMessage, parts, builder
+├── messages/            # ModelMessage, parts (incl. HandoffPart), builder
 ├── tools/               # Tool, ToolDefinition
-├── toolsets/            # AbstractToolset, FunctionToolset
+├── toolsets/            # AbstractToolset, FunctionToolset, CompoundToolset, MCPToolset, ToolFilter, FilteredToolset
 ├── providers/           # Provider ABC + OpenAI, Ollama, Gemini
 ├── models/              # Model ABC + OpenAIChatModel
 ├── callbacks/           # AgentCallbacks + _invoke helper
 ├── history/             # AbstractHistoryStrategy + InMemoryHistory
-└── core/                # AbstractMindtraceAgent, MindtraceAgent, WrapperAgent
+├── memory/              # AbstractMemoryStore, InMemoryStore, JsonFileStore, MemoryToolset
+├── execution/           # AbstractTaskQueue, AgentTask, LocalTaskQueue, RabbitMQTaskQueue
+└── core/                # AbstractMindtraceAgent, MindtraceAgent, WrapperAgent, DistributedAgent
 ```
