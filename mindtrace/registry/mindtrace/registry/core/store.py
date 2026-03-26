@@ -194,8 +194,7 @@ class Store(Mindtrace):
         if len(hits) > 1:
             mounts = ", ".join(hits)
             raise StoreAmbiguousObjectError(
-                f"Object '{name}' found in multiple mounts: {mounts}. "
-                f"Use an explicit key, e.g. '{hits[0]}/{name}'."
+                f"Object '{name}' found in multiple mounts: {mounts}. Use an explicit key, e.g. '{hits[0]}/{name}'."
             )
 
         mount = hits[0]
@@ -302,7 +301,9 @@ class Store(Mindtrace):
 
         if mount is not None:
             store_mount = self.get_mount(mount)
-            obj = store_mount.registry.load(name, version=resolved_version, output_dir=output_dir, verify=verify, **kwargs)
+            obj = store_mount.registry.load(
+                name, version=resolved_version, output_dir=output_dir, verify=verify, **kwargs
+            )
             self.cache_update_location(name, mount)
             return obj
 
@@ -484,7 +485,9 @@ class Store(Mindtrace):
         sections = ["Store"]
         for mount_name, store_mount in self._mounts.items():
             marker = "*" if mount_name == self.default_mount else ""
-            sections.append(f"[{marker}{mount_name}]\n{store_mount.registry.__str__(color=color, latest_only=latest_only)}")
+            sections.append(
+                f"[{marker}{mount_name}]\n{store_mount.registry.__str__(color=color, latest_only=latest_only)}"
+            )
         sections.append(f"Default Mount: `{self.default_mount}`")
         return "\n\n".join(sections)
 
@@ -537,7 +540,11 @@ class Store(Mindtrace):
                     for name, versions in mapping.get_mount(mount).registry.list_objects_and_versions().items():
                         target_key = self.build_key(self.default_mount, name)
                         for version in versions:
-                            self.save(target_key, mapping.load(mapping.build_key(mount, name), version=version), version=version)
+                            self.save(
+                                target_key,
+                                mapping.load(mapping.build_key(mount, name), version=version),
+                                version=version,
+                            )
                 return
 
             for mount in mapping.list_mounts():
