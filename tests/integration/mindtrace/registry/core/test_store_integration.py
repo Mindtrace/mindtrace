@@ -127,6 +127,8 @@ def test_store_integration_info_copy_move_pop_setdefault_get_and_dunders(store_w
     assert store.pop("moved:item") == {"payload": True}
     assert store.pop("missing:item", "fallback") == "fallback"
     with pytest.raises(RegistryObjectNotFound):
+        store.pop("missing:item")
+    with pytest.raises(RegistryObjectNotFound):
         store.load("alpha/moved:item")
 
     del store["alpha/source:item"]
