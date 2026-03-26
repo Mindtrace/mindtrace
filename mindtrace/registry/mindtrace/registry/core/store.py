@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Dict, List, Type
 
 from zenml.materializers.base_materializer import BaseMaterializer
@@ -80,6 +81,12 @@ class Store(Mindtrace):
         if len(self._mounts) == 1:
             raise ValueError("Cannot remove last mount")
         del self._mounts[location]
+        for name, locations in list(self._name_location_cache.items()):
+            remaining = [loc for loc in locations if loc != location]
+            if remaining:
+                self._name_location_cache[name] = remaining
+            else:
+                self._name_location_cache.pop(name, None)
         if self.default_location == location:
             self.default_location = next(iter(self._mounts.keys()))
 
@@ -102,6 +109,7 @@ class Store(Mindtrace):
                 "backend": str(mount.registry.backend.uri),
                 "version_objects": mount.registry.version_objects,
                 "mutable": mount.registry.mutable,
+                "version_digits": mount.registry.version_digits,
             }
             for name, mount in self._mounts.items()
         }
@@ -207,7 +215,7 @@ class Store(Mindtrace):
     ) -> str | None:
         location, name, key_version = self.parse_key(key)
         if location is None:
-            raise StoreKeyFormatError("save requires qualified key: <location>/<name>")
+            location = self.default_location
         mount = self.get_mount(location)
         if mount.read_only:
             raise PermissionError(f"Location '{location}' is read-only")
@@ -342,7 +350,7 @@ class Store(Mindtrace):
     def _single_delete(self, key: str, version: str | None = None) -> None:
         location, name, key_version = self.parse_key(key)
         if location is None:
-            raise StoreKeyFormatError("delete requires qualified key: <location>/<name>")
+            location = self.default_location
         mount = self.get_mount(location)
         if mount.read_only:
             raise PermissionError(f"Location '{location}' is read-only")
@@ -474,7 +482,7 @@ class Store(Mindtrace):
     def get(self, key: str, default: Any = None) -> Any:
         try:
             return self[key]
-        except Exception:
+        except RegistryObjectNotFound:
             return default
 
     def keys(self, location: str | None = None) -> list[str]:
@@ -488,27 +496,49 @@ class Store(Mindtrace):
         return [(k, self.load(k)) for k in keys]
 
     def pop(self, key: str, default: Any = None) -> Any:
-        try:
-            value = self.load(key)
-            self.delete(key)
-            return value
-        except Exception:
-            if default is not None:
-                return default
-            raise
+        location, name, key_version = self.parse_key(key)
+        delete_key = key
+        load_version = key_version or "latest"
+
+        if location is None:
+            try:
+                location = self._resolve_load_location(name, key_version or "latest")
+            except RegistryObjectNotFound:
+                if default is not None:
+                    return default
+                raise
+            delete_key = self.build_key(location, name, key_version)
+
+        value = self.load(key, version=load_version)
+        self.delete(delete_key, version=key_version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         try:
             return self.load(key)
-        except Exception:
+        except RegistryObjectNotFound:
             if default is not None:
                 self.save(key, default)
             return default
 
     def update(self, mapping, *, sync_all_versions: bool = True) -> None:
         if isinstance(mapping, Store):
-            for key in mapping.keys():
-                self[key] = mapping[key]
+            if sync_all_versions:
+                for location in mapping.list_mounts():
+                    for name, versions in mapping.get_mount(location).registry.list_objects_and_versions().items():
+                        target_key = self.build_key(self.default_location, name)
+                        for version in versions:
+                            self.save(target_key, mapping.load(mapping.build_key(location, name), version=version), version=version)
+                return
+
+            for location in mapping.list_mounts():
+                for name in mapping.get_mount(location).registry.list_objects():
+                    target_key = self.build_key(self.default_location, name)
+                    self.save(target_key, mapping.load(mapping.build_key(location, name)), on_conflict="overwrite")
             return
+
+        if not isinstance(mapping, Mapping):
+            raise TypeError("mapping must be a mapping or Store")
+
         for key, value in mapping.items():
             self[key] = value

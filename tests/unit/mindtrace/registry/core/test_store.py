@@ -7,7 +7,6 @@ from mindtrace.registry import Registry, Store
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
-    StoreKeyFormatError,
 )
 
 
@@ -27,14 +26,16 @@ def test_store_default_mount_uses_config_store_dir():
     assert mount.registry.backend.uri == expected
 
 
-def test_save_requires_qualified_key(two_mount_store):
-    with pytest.raises(StoreKeyFormatError):
-        two_mount_store.save("my_obj", 1)
+def test_unqualified_save_uses_default_location(two_mount_store):
+    two_mount_store.save("my:obj", 1)
+    assert two_mount_store.load("a/my:obj") == 1
 
 
-def test_delete_requires_qualified_key(two_mount_store):
-    with pytest.raises(StoreKeyFormatError):
-        two_mount_store.delete("my_obj")
+def test_unqualified_delete_uses_default_location(two_mount_store):
+    two_mount_store.save("my:obj", 1)
+    two_mount_store.delete("my:obj")
+    with pytest.raises(RegistryObjectNotFound):
+        two_mount_store.load("a/my:obj")
 
 
 def test_qualified_save_and_load(two_mount_store):
@@ -87,3 +88,82 @@ def test_info_for_unqualified_name_uses_discovery(two_mount_store):
     two_mount_store.save("a/info:obj", {"k": 1})
     payload = two_mount_store.info("info:obj")
     assert payload
+
+
+def test_pop_unqualified_resolves_and_deletes(two_mount_store):
+    two_mount_store.save("b/pop:item", {"v": 1})
+    assert two_mount_store.pop("pop:item") == {"v": 1}
+    with pytest.raises(RegistryObjectNotFound):
+        two_mount_store.load("b/pop:item")
+
+
+def test_pop_unqualified_ambiguous_raises(two_mount_store):
+    two_mount_store.save("a/shared:item", 1)
+    two_mount_store.save("b/shared:item", 2)
+    with pytest.raises(StoreAmbiguousObjectError):
+        two_mount_store.pop("shared:item")
+
+
+def test_setdefault_unqualified_uses_default_location(two_mount_store):
+    assert two_mount_store.setdefault("new:item", {"ok": True}) == {"ok": True}
+    assert two_mount_store.load("a/new:item") == {"ok": True}
+
+
+def test_get_does_not_swallow_ambiguity(two_mount_store):
+    two_mount_store.save("a/dup:item", 1)
+    two_mount_store.save("b/dup:item", 2)
+    with pytest.raises(StoreAmbiguousObjectError):
+        two_mount_store.get("dup:item")
+
+
+def test_remove_mount_evicts_location_cache(two_mount_store):
+    two_mount_store.save("b/cache:item", "v")
+    assert two_mount_store.load("cache:item") == "v"
+    assert two_mount_store.cache_lookup_locations("cache:item") == ["b"]
+    two_mount_store.remove_mount("b")
+    assert two_mount_store.cache_lookup_locations("cache:item") == []
+
+
+def test_list_mount_info_includes_version_digits(two_mount_store):
+    info = two_mount_store.list_mount_info()
+    assert info["a"]["version_digits"] == two_mount_store.get_mount("a").registry.version_digits
+
+
+def test_update_mapping_unqualified_uses_default_location(two_mount_store):
+    two_mount_store.update({"mapped:item": 5})
+    assert two_mount_store.load("a/mapped:item") == 5
+
+
+def test_update_store_sync_all_versions_copies_all_versions_to_default_location():
+    with TemporaryDirectory() as src1, TemporaryDirectory() as src2, TemporaryDirectory() as dst:
+        source = Store(
+            mounts={
+                "a": Registry(backend=src1, version_objects=True, mutable=True),
+                "b": Registry(backend=src2, version_objects=True, mutable=True),
+            },
+            default_location="a",
+        )
+        target = Store(mounts={"default": Registry(backend=dst, version_objects=True, mutable=True)})
+
+        source.save("a/versioned:item", 1)
+        source.save("a/versioned:item", 2)
+
+        target.update(source, sync_all_versions=True)
+
+        assert target.list_versions("default/versioned:item") == ["1.0.0", "1.0.1"]
+        assert target.load("default/versioned:item", version="1.0.0") == 1
+        assert target.load("default/versioned:item", version="1.0.1") == 2
+
+
+def test_update_store_latest_only_copies_latest_value_to_default_location():
+    with TemporaryDirectory() as src, TemporaryDirectory() as dst:
+        source = Store(mounts={"a": Registry(backend=src, version_objects=True, mutable=True)}, default_location="a")
+        target = Store(mounts={"default": Registry(backend=dst, version_objects=True, mutable=True)})
+
+        source.save("a/latest:item", 1)
+        source.save("a/latest:item", 2)
+
+        target.update(source, sync_all_versions=False)
+
+        assert target.load("default/latest:item") == 2
+        assert target.list_versions("default/latest:item") == ["1.0.0"]

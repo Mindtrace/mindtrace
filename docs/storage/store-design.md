@@ -26,6 +26,8 @@ This increases coupling and duplication, and makes it easy to write/read from th
 2. Preserve one-backend-per-registry policy.
 3. Support both **explicitly routed** keys and **location-discovery** reads.
 4. Mirror existing `Registry` ergonomics for save/load/delete/list/get/contains/dict-style usage.
+   - Unqualified reads perform discovery across mounts.
+   - Unqualified writes use the Store's `default_location`.
 5. Support single and batch operations with deterministic partial-failure reporting.
 6. Add a local **name→location cache** to speed mount resolution during load.
 
@@ -110,21 +112,8 @@ class Store(Mindtrace):
         default_location: str | None = None,
         create_default_local_mount: bool = True,
         enable_location_cache: bool = True,
-        location_cache_ttl: float = 300.0,
         **kwargs,
     ) -> None: ...
-
-    @classmethod
-    def from_mounts(
-        cls,
-        mounts: list[StoreMount] | dict[str, Registry],
-        *,
-        default_location: str | None = None,
-        create_default_local_mount: bool = True,
-        enable_location_cache: bool = True,
-        location_cache_ttl: float = 300.0,
-        **kwargs,
-    ) -> "Store": ...
 
     # ---- mount management ----
     def add_mount(self, location: str, registry: Registry, *, read_only: bool = False) -> None: ...
@@ -258,8 +247,9 @@ Example message:
 
 ## 9) Write/Delete Semantics
 
-- `save` and `delete` require qualified keys (`<location>/<name>`).
-- This avoids accidental writes/deletes in wrong mount.
+- Qualified writes target the specified mount.
+- Unqualified writes use `default_location`.
+- Unqualified reads still perform discovery across mounts.
 - On successful save/delete, location cache is updated/evicted accordingly.
 
 ## 10) Batch behavior
@@ -375,9 +365,9 @@ To meet 100% coverage:
 
 ## 18) Open Questions
 
-1. Should unqualified `has_object()` also perform cross-mount discovery (likely yes)?
-2. Should location cache persist to disk or remain in-memory only for v1?
-3. Should `Store.info()` expose cache hit/miss metrics by mount?
+1. Unqualified `has_object()` performs existence checks across mounts and may return `True` even when `load()` would be ambiguous.
+2. Location cache remains in-memory only for v1.
+3. `Store.info()` does not currently expose cache hit/miss metrics by mount.
 
 ---
 
