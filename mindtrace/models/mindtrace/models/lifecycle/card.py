@@ -45,7 +45,7 @@ from typing import Any
 
 from mindtrace.models.lifecycle.stages import (
     VALID_DEMOTIONS,
-    VALID_TRANSITIONS,
+    VALID_PROMOTIONS,
     ModelStage,
 )
 
@@ -264,7 +264,7 @@ class ModelCard:
     ) -> PromotionResult:
         """Promote this model to a new lifecycle stage.
 
-        Validates the transition against ``VALID_TRANSITIONS``, checks metric
+        Validates the transition against ``VALID_PROMOTIONS``, checks metric
         gates, persists the card to the registry, then updates the stage.
         The stage is only updated after a successful persist.
 
@@ -284,7 +284,7 @@ class ModelCard:
         from_stage = self.stage
 
         if not from_stage.can_promote_to(to_stage):
-            allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
+            allowed = sorted(s.value for s in VALID_PROMOTIONS.get(from_stage, set()))
             raise PromotionError(f"Invalid promotion: {from_stage.value!r} -> {to_stage.value!r}. Allowed: {allowed}.")
 
         failures = self._check_requirements(require) if require else {}

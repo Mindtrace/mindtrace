@@ -107,7 +107,7 @@ from mindtrace.models.evaluation import (
 
 # -- Lifecycle ---------------------------------------------------------------
 from mindtrace.models.lifecycle import (
-    VALID_TRANSITIONS,
+    VALID_PROMOTIONS,
     EvalResult,
     ModelCard,
     ModelStage,
@@ -194,7 +194,7 @@ __all__ = [
     "EvalResult",
     "PromotionResult",
     "PromotionError",
-    "VALID_TRANSITIONS",
+    "VALID_PROMOTIONS",
     # pipeline
     "AutoSegmenter",
     "AutoSegmenterInput",

@@ -21,7 +21,7 @@ Model lifecycle management with structured metadata cards, stage definitions, an
 The lifecycle sub-package provides:
 
 - **ModelStage**: Enum defining the four lifecycle stages (DEV, STAGING, PRODUCTION, ARCHIVED)
-- **VALID_TRANSITIONS**: Directed graph of allowed forward promotions
+- **VALID_PROMOTIONS**: Directed graph of allowed forward promotions
 - **VALID_DEMOTIONS**: Directed graph of allowed backward demotions
 - **ModelCard**: Structured metadata container for a trained model version with evaluation results
 - **ModelCard.promote() / ModelCard.demote()**: Stage transition methods with optional metric threshold gates
@@ -32,9 +32,8 @@ The lifecycle sub-package provides:
 ```
 lifecycle/
 ├── __init__.py              # Public API exports
-├── stages.py                # ModelStage enum, VALID_TRANSITIONS, VALID_DEMOTIONS
-├── card.py                  # ModelCard, EvalResult
-└── promotion.py             # promote, demote, PromotionResult, PromotionError
+├── stages.py                # ModelStage enum, VALID_PROMOTIONS, VALID_DEMOTIONS
+└── card.py                  # ModelCard, EvalResult, PromotionResult, PromotionError
 ```
 
 ## Stage Graph
@@ -74,7 +73,7 @@ Demotion (backward):              DEV <-- STAGING <-- PRODUCTION
 ### Stage Helpers
 
 ```python
-from mindtrace.models.lifecycle import ModelStage, VALID_TRANSITIONS, VALID_DEMOTIONS
+from mindtrace.models.lifecycle import ModelStage, VALID_PROMOTIONS, VALID_DEMOTIONS
 
 ModelStage.DEV.can_promote_to(ModelStage.STAGING)      # True
 ModelStage.DEV.can_promote_to(ModelStage.PRODUCTION)    # False
@@ -271,7 +270,7 @@ restored_model = restored_card.load_model()
 from mindtrace.models.lifecycle import (
     # Stage definitions
     ModelStage,             # enum: DEV, STAGING, PRODUCTION, ARCHIVED
-    VALID_TRANSITIONS,      # dict[ModelStage, set[ModelStage]] -- forward promotions
+    VALID_PROMOTIONS,      # dict[ModelStage, set[ModelStage]] -- forward promotions
     VALID_DEMOTIONS,        # dict[ModelStage, set[ModelStage]] -- backward demotions
 
     # Metadata

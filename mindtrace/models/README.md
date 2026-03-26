@@ -545,7 +545,7 @@ from mindtrace.models import (
 
     # -- Lifecycle --
     ModelStage,                     # Enum: DEV, STAGING, PRODUCTION, ARCHIVED
-    VALID_TRANSITIONS,              # Allowed forward promotion graph
+    VALID_PROMOTIONS,              # Allowed forward promotion graph
     VALID_DEMOTIONS,                # Allowed backward demotion graph
     ModelCard,                      # Structured model metadata
                                     #   .save_model()    - save model artifact to registry
