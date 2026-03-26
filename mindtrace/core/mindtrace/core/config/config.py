@@ -310,14 +310,14 @@ class Config(dict):
             extra_list = [extra_settings]
 
         for override in extra_list:
-            default_config = self._deep_update(default_config, override)
+            default_config = self._deep_update_dict(default_config, override)
 
         # Only apply environment variable overrides if we have some base configuration
         # or if explicitly requested. This prevents empty Config() from picking up random env vars.
         # Check if any of the provided settings actually contain data
         has_any_data = any(len(item) > 0 for item in extra_list) if extra_list else False
         if apply_env_overrides and (has_any_data or len(default_config) > 0):
-            default_config = self._apply_env_overrides(default_config)
+            default_config = self._apply_env_overrides_static(default_config)
 
         # Coerce everything to string and mask secrets by default
         default_config = self._stringify_and_mask(default_config)
@@ -652,17 +652,6 @@ class Config(dict):
         """Return dotted paths of fields considered secrets."""
         return sorted([".".join(p) for p in self._secret_paths])
 
-    def _deep_update(self, base: dict, override: dict) -> dict:
-        """
-        Recursively update nested dictionaries.
-        """
-        for k, v in override.items():
-            if isinstance(v, dict) and isinstance(base.get(k), dict):
-                base[k] = self._deep_update(base.get(k, {}), v)
-            else:
-                base[k] = v
-        return base
-
     @staticmethod
     def _deep_update_dict(base: dict, override: dict) -> dict:
         for k, v in (override or {}).items():
@@ -705,9 +694,6 @@ class Config(dict):
                     result[env_key] = Config._coerce_env_value(env_value)
 
         return result
-
-    def _apply_env_overrides(self, base: dict, delimiter: str = "__") -> dict:
-        return Config._apply_env_overrides_static(base, delimiter)
 
     @staticmethod
     def _coerce_env_value(value: str) -> Any:
@@ -806,6 +792,30 @@ class Config(dict):
         return None
 
 
+_core_settings_cache: CoreSettings | None = None
+
+
+def get_core_settings() -> CoreSettings:
+    """Return the cached CoreSettings singleton.
+
+    CoreSettings reads config.ini from disk and scans environment variables on
+    every instantiation.  This function ensures that work happens only once.
+    """
+    global _core_settings_cache
+    if _core_settings_cache is None:
+        _core_settings_cache = CoreSettings()
+    return _core_settings_cache
+
+
+def invalidate_core_settings() -> None:
+    """Discard the cached CoreSettings so the next call re-reads from disk.
+
+    Useful in tests or after programmatic environment variable changes.
+    """
+    global _core_settings_cache
+    _core_settings_cache = None
+
+
 class CoreConfig(Config):
     """
     Configuration wrapper that automatically includes CoreSettings with environment variable support.
@@ -855,11 +865,11 @@ class CoreConfig(Config):
 
     def __init__(self, extra_settings: SettingsLike = None):
         if extra_settings is None:
-            extras: List[Any] = [CoreSettings()]
+            extras: List[Any] = [get_core_settings()]
         elif isinstance(extra_settings, list):
-            extras = [CoreSettings()] + extra_settings
+            extras = [get_core_settings()] + extra_settings
         else:
-            extras = [CoreSettings(), extra_settings]
+            extras = [get_core_settings(), extra_settings]
         # Do not re-apply env here; CoreSettings already applied env and
         # we want provided overrides to remain highest precedence
         super().__init__(extra_settings=extras, apply_env_overrides=False)

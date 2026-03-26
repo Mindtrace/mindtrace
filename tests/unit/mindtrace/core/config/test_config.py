@@ -58,8 +58,7 @@ class TestConfig:
         """Test deep update functionality."""
         base = {"a": {"b": 1, "c": 2}}
         override = {"a": {"b": 3, "d": 4}}
-        config = Config()
-        result = config._deep_update(base, override)
+        result = Config._deep_update_dict(base, override)
         assert result["a"]["b"] == 3
         assert result["a"]["c"] == 2
         assert result["a"]["d"] == 4
@@ -120,11 +119,10 @@ class TestConfig:
             assert result["section"]["key"] == "original"  # Should remain unchanged
 
     def test_config_apply_env_overrides_instance(self):
-        """Test instance method for environment overrides."""
-        config = Config()
+        """Test static method for environment overrides."""
         base = {"section": {"key": "original"}}
         with patch.dict(os.environ, {"section__key": "override"}):
-            result = config._apply_env_overrides(base)
+            result = Config._apply_env_overrides_static(base)
             assert result["section"]["key"] == "override"
 
     def test_config_apply_env_overrides_disabled(self):
@@ -514,10 +512,9 @@ class TestConfigEdgeCases:
 class TestConfigUtils:
     def test_config_deep_update_nested_merge(self):
         """Test _deep_update with nested dictionary merging."""
-        config = Config()
         base = {"level1": {"level2": {"key": "original"}}}
         override = {"level1": {"level2": {"new_key": "new_value"}}}
-        result = config._deep_update(base, override)
+        result = Config._deep_update_dict(base, override)
         assert result["level1"]["level2"]["key"] == "original"
         assert result["level1"]["level2"]["new_key"] == "new_value"
 

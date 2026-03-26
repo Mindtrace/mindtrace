@@ -198,6 +198,9 @@ class TestMindtrace:
 
     def test_config_with_environment_variables(self, monkeypatch):
         monkeypatch.setenv("MINDTRACE_TEST_PARAM", "test_1234")
+        from mindtrace.core.config import invalidate_core_settings
+
+        invalidate_core_settings()
         instance = Mindtrace()
         assert instance.config["MINDTRACE_TEST_PARAM"] == "test_1234"
 

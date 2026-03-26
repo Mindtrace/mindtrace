@@ -20,7 +20,9 @@ def _set_minimal_env(monkeypatch):
     monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
     # Reload class-level config each test to pick up env
     from mindtrace.core import CoreConfig
+    from mindtrace.core.config import invalidate_core_settings
 
+    invalidate_core_settings()
     Service.config = CoreConfig()
 
 
@@ -495,7 +497,9 @@ class TestServiceUrlBuilding:
         monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
         # Force reload of class-level config to pick up new env
         from mindtrace.core import CoreConfig
+        from mindtrace.core.config import invalidate_core_settings
 
+        invalidate_core_settings()
         Service.config = CoreConfig()
         result = Service.default_url()
         assert str(result) == "http://service.example.com:8080"
@@ -1243,7 +1247,9 @@ class TestServiceInterruption:
             # Ensure SERVICE host matches expected in assertion
             monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
             from mindtrace.core import CoreConfig
+            from mindtrace.core.config import invalidate_core_settings
 
+            invalidate_core_settings()
             Service.config = CoreConfig()
 
             with patch("mindtrace.services.core.service.Timeout") as mock_timeout_class:

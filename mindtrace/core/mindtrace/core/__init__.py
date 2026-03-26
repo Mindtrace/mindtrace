@@ -1,6 +1,6 @@
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
-from mindtrace.core.config import Config, CoreConfig
-from mindtrace.core.logging.logger import setup_logger
+from mindtrace.core.config import Config, CoreConfig, get_core_settings, invalidate_core_settings
+from mindtrace.core.logging.logger import get_logger, setup_logger, track_operation
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
@@ -27,8 +27,6 @@ from mindtrace.core.utils.network import (
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
-setup_logger()  # Initialize the default logger
-
 __all__ = [
     "check_libs",
     "check_port_available",
@@ -36,6 +34,11 @@ __all__ = [
     "ContextListener",
     "Config",
     "CoreConfig",
+    "get_core_settings",
+    "get_logger",
+    "invalidate_core_settings",
+    "setup_logger",
+    "track_operation",
     "EchoInput",
     "EchoOutput",
     "echo_task",

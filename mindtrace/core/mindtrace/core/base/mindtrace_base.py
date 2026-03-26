@@ -111,6 +111,23 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
+    _LOGGER_PARAM_NAMES = frozenset({
+        "log_dir",
+        "logger_level",
+        "stream_level",
+        "file_level",
+        "file_mode",
+        "propagate",
+        "max_bytes",
+        "backup_count",
+        "use_structlog",
+        "structlog_json",
+        "structlog_pre_chain",
+        "structlog_processors",
+        "structlog_renderer",
+        "structlog_bind",
+    })
+
     def __init__(self, suppress: bool = False, *, config_overrides: SettingsLike | None = None, **kwargs):
         """
         Initialize the Mindtrace object.
@@ -122,56 +139,19 @@ class Mindtrace(metaclass=MindtraceMeta):
                 Valid logger kwargs: log_dir, logger_level, stream_level, file_level,
                 file_mode, propagate, max_bytes, backup_count
         """
-        # Initialize parent classes first (cooperative inheritance)
         self.config = CoreConfig(config_overrides)
+
+        # Separate logger kwargs from remaining kwargs before passing to super
+        logger_kwargs = {k: v for k, v in kwargs.items() if k in self._LOGGER_PARAM_NAMES}
+        remaining_kwargs = {k: v for k, v in kwargs.items() if k not in self._LOGGER_PARAM_NAMES}
+
+        # Initialize parent classes (cooperative inheritance)
         try:
-            super().__init__(**kwargs)
+            super().__init__(**remaining_kwargs)
         except TypeError:
-            # If parent classes don't accept some kwargs, try without logger-specific ones
-            logger_param_names = {
-                "log_dir",
-                "logger_level",
-                "stream_level",
-                "file_level",
-                "file_mode",
-                "propagate",
-                "max_bytes",
-                "backup_count",
-                "use_structlog",
-                "structlog_json",
-                "structlog_pre_chain",
-                "structlog_processors",
-                "structlog_renderer",
-                "structlog_bind",
-            }
-            remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
-            try:
-                super().__init__(**remaining_kwargs)
-            except TypeError:
-                # If that still fails, try with no kwargs
-                super().__init__()
+            super().__init__()
 
-        # Set Mindtrace-specific attributes
         self.suppress = suppress
-
-        # Filter logger-specific kwargs for logger setup
-        logger_param_names = {
-            "log_dir",
-            "logger_level",
-            "stream_level",
-            "file_level",
-            "file_mode",
-            "propagate",
-            "max_bytes",
-            "backup_count",
-            "use_structlog",
-            "structlog_json",
-            "structlog_pre_chain",
-            "structlog_processors",
-            "structlog_renderer",
-            "structlog_bind",
-        }
-        logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
 
         # Store logger kwargs in the class for class-level logger
         type(self)._logger_kwargs = logger_kwargs
@@ -222,79 +202,11 @@ class Mindtrace(metaclass=MindtraceMeta):
 
         Args:
             log_level: The log_level passed to logger.log().
-            prefix_formatter: The formatter used to log the command before the wrapped method runs. The prefix_formatter
-                will be given (and must accept) three arguments, in the following order:
-                - function: The function being wrapped.
-                - args: The args passed into the function.
-                - kwargs: The kwargs passed into the function.
-            suffix_formatter: The formatter used to log the command after the wrapped method runs. The suffix_formatter
-                will be given (and must accept) two arguments, in the following order:
-                - function: The function being wrapped.
-                - result: The result returned from the wrapped method.
-            exception_formatter: The formatter used to log any errors. The exception_formatter will be given (and must
-                accept) three arguments, in the following order:
-                - function: The function being wrapped.
-                - error: The caught Exception.
-                - stack trace: The stack trace, as provided by traceback.format_exc().
+            prefix_formatter: The formatter used to log the command before the wrapped method runs.
+            suffix_formatter: The formatter used to log the command after the wrapped method runs.
+            exception_formatter: The formatter used to log any errors.
             self: The instance of the class that the method is being called on. Self only needs to be passed in if the
-                wrapped method does not have self as the first argument. Refer to the example below for more details.
-
-        Usage:
-            ```python
-            from mindtrace.core import Mindtrace
-
-                class MyClass(Mindtrace):
-                    def __init__(self):
-                        super().__init__()
-
-                    @Mindtrace.autolog()
-                    def divide(self, arg1, arg2):
-                        self.logger.info("We are about to divide")
-                        result = arg1 / arg2
-                        self.logger.info("We have divided")
-                        return result
-
-                my_instance = MyClass()
-                my_instance.divide(1, 2)
-                my_instance.divide(1, 0)
-            ```
-        The resulting log file should contain something similar to the following:
-
-        ```text
-
-            MyClass - DEBUG - Calling divide with args: (1, 2) and kwargs: {}
-            MyClass - INFO - We are about to divide
-            MyClass - INFO - We have divided
-            MyClass - DEBUG - Finished divide with result: 0.5
-            MyClass - DEBUG - Calling divide with args: (1, 0) and kwargs: {}
-            MyClass - INFO - We are about to divide
-            MyClass - ERROR - division by zero
-            Traceback (most recent call last):
-            ...
-        ```
-        If the wrapped method does not have self as the first argument, self must be passed in as an argument to the
-        autolog decorator.
-
-        Usage:
-            ```python
-                from fastapi import FastAPI
-                from mindtrace.core import Mindtrace
-
-                class MyClass(Mindtrace):
-                    def __init__():
-                        super().__init__()
-
-                    def create_app(self):
-                        app_ = FastAPI()
-
-                        @Mindtrace.autolog(self=self)  # self must be passed in as an argument as it is not captured in status()
-                        @app_.post("/status")
-                        def status():
-                            return {"status": "Available"}
-
-                        return app_
-
-            ```
+                wrapped method does not have self as the first argument (e.g., FastAPI route decorators).
         """
         prefix_formatter = ifnone(
             prefix_formatter,
@@ -315,37 +227,9 @@ class Mindtrace(metaclass=MindtraceMeta):
         def decorator(function):
             is_async = inspect.iscoroutinefunction(function)
 
-            if self is None:
+            if self is not None:
+                # Logger source is the captured `self` from the decorator argument
                 if is_async:
-
-                    @wraps(function)
-                    async def wrapper(self, *args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = await function(self, *args, **kwargs)
-                        except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
-                            return result
-                else:
-
-                    @wraps(function)
-                    def wrapper(self, *args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = function(self, *args, **kwargs)
-                        except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
-                            return result
-
-            else:
-                if is_async:
-
                     @wraps(function)
                     async def wrapper(*args, **kwargs):
                         self.logger.log(log_level, prefix_formatter(function, args, kwargs))
@@ -354,11 +238,9 @@ class Mindtrace(metaclass=MindtraceMeta):
                         except Exception as e:
                             self.logger.error(exception_formatter(function, e, traceback.format_exc()))
                             raise
-                        else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
-                            return result
+                        self.logger.log(log_level, suffix_formatter(function, result))
+                        return result
                 else:
-
                     @wraps(function)
                     def wrapper(*args, **kwargs):
                         self.logger.log(log_level, prefix_formatter(function, args, kwargs))
@@ -367,9 +249,32 @@ class Mindtrace(metaclass=MindtraceMeta):
                         except Exception as e:
                             self.logger.error(exception_formatter(function, e, traceback.format_exc()))
                             raise
-                        else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
-                            return result
+                        self.logger.log(log_level, suffix_formatter(function, result))
+                        return result
+            else:
+                # Logger source is the first argument (self) of the bound method
+                if is_async:
+                    @wraps(function)
+                    async def wrapper(instance, *args, **kwargs):
+                        instance.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        try:
+                            result = await function(instance, *args, **kwargs)
+                        except Exception as e:
+                            instance.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            raise
+                        instance.logger.log(log_level, suffix_formatter(function, result))
+                        return result
+                else:
+                    @wraps(function)
+                    def wrapper(instance, *args, **kwargs):
+                        instance.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        try:
+                            result = function(instance, *args, **kwargs)
+                        except Exception as e:
+                            instance.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            raise
+                        instance.logger.log(log_level, suffix_formatter(function, result))
+                        return result
 
             return wrapper
 
@@ -380,12 +285,7 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     """Metaclass that combines MindtraceMeta and ABC metaclasses.
 
     This metaclass resolves metaclass conflicts when creating classes that need to be both
-    abstract (using ABC) and have MindtraceMeta functionality. Python only allows a class to
-    have one metaclass, so this combined metaclass allows classes to inherit from both
-    Mindtrace class and ABC simultaneously.
-
-    Without this combined metaclass, trying to create a class that inherits from both Mindtrace class
-    and ABC would raise a metaclass conflict error since they each have different metaclasses.
+    abstract (using ABC) and have MindtraceMeta functionality.
     """
 
     pass
@@ -412,10 +312,6 @@ class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
                 '''Must be implemented by concrete subclasses.'''
                 pass
         ```
-
-    Note:
-        Without this class, attempting to create a class that inherits from both Mindtrace class and ABC
-        would fail due to metaclass conflicts. MindtraceABC resolves this by using the CombinedABCMeta.
     """
 
     def __init__(self, *args, **kwargs):
