@@ -15,12 +15,12 @@ def two_mount_store():
         yield Store(mounts={"a": r1, "b": r2}, default_mount="a")
 
 
-def test_store_always_has_local_mount_uses_config_store_dir():
+def test_store_always_has_tmp_mount_uses_temp_dir():
     store = Store()
-    assert store.default_mount == "local"
-    mount = store.get_mount("local")
-    expected = Path(store.config["MINDTRACE_DIR_PATHS"]["STORE_DIR"]).expanduser().resolve()
-    assert mount.registry.backend.uri == expected
+    assert store.default_mount == "tmp"
+    mount = store.get_mount("tmp")
+    assert mount.registry.backend.uri.exists()
+    assert mount.registry.backend.uri.name.startswith("mindtrace-store-")
 
 
 def test_store_requires_configured_default_mount():
@@ -91,7 +91,7 @@ def test_list_objects_and_versions(two_mount_store):
     two_mount_store.save("a/obj", 2)
     keys = two_mount_store.list_objects()
     assert "a/obj" in keys
-    assert "local" in two_mount_store.list_mounts()
+    assert "tmp" in two_mount_store.list_mounts()
 
     versions = two_mount_store.list_versions("a/obj")
     assert versions == ["1.0.0", "1.0.1"]
@@ -142,15 +142,15 @@ def test_remove_mount_evicts_location_cache(two_mount_store):
     assert two_mount_store.cache_lookup_locations("cache:item") == []
 
 
-def test_remove_mount_cannot_remove_local(two_mount_store):
+def test_remove_mount_cannot_remove_tmp(two_mount_store):
     with pytest.raises(ValueError):
-        two_mount_store.remove_mount("local")
+        two_mount_store.remove_mount("tmp")
 
 
-def test_remove_default_mount_resets_to_local(two_mount_store):
+def test_remove_default_mount_resets_to_tmp(two_mount_store):
     two_mount_store.set_default_mount("b")
     two_mount_store.remove_mount("b")
-    assert two_mount_store.default_mount == "local"
+    assert two_mount_store.default_mount == "tmp"
 
 
 def test_list_mount_info_includes_version_digits(two_mount_store):
@@ -172,30 +172,30 @@ def test_update_store_sync_all_versions_copies_all_versions_to_default_mount():
             },
             default_mount="a",
         )
-        target = Store(mounts={"local": Registry(backend=dst, version_objects=True, mutable=True)})
+        target = Store(mounts={"tmp": Registry(backend=dst, version_objects=True, mutable=True)})
 
         source.save("a/versioned:item", 1)
         source.save("a/versioned:item", 2)
 
         target.update(source, sync_all_versions=True)
 
-        assert target.list_versions("local/versioned:item") == ["1.0.0", "1.0.1"]
-        assert target.load("local/versioned:item", version="1.0.0") == 1
-        assert target.load("local/versioned:item", version="1.0.1") == 2
+        assert target.list_versions("tmp/versioned:item") == ["1.0.0", "1.0.1"]
+        assert target.load("tmp/versioned:item", version="1.0.0") == 1
+        assert target.load("tmp/versioned:item", version="1.0.1") == 2
 
 
 def test_update_store_latest_only_copies_latest_value_to_default_mount():
     with TemporaryDirectory() as src, TemporaryDirectory() as dst:
         source = Store(mounts={"a": Registry(backend=src, version_objects=True, mutable=True)}, default_mount="a")
-        target = Store(mounts={"local": Registry(backend=dst, version_objects=True, mutable=True)})
+        target = Store(mounts={"tmp": Registry(backend=dst, version_objects=True, mutable=True)})
 
         source.save("a/latest:item", 1)
         source.save("a/latest:item", 2)
 
         target.update(source, sync_all_versions=False)
 
-        assert target.load("local/latest:item") == 2
-        assert target.list_versions("local/latest:item") == ["1.0.0"]
+        assert target.load("tmp/latest:item") == 2
+        assert target.list_versions("tmp/latest:item") == ["1.0.0"]
 
 
 def test_store_str_marks_default_mount(two_mount_store):

@@ -24,7 +24,7 @@ Without a `Store` abstraction, callers must manually:
 2. Preserve one-backend-per-registry policy.
 3. Support both explicitly routed keys and discovery-based reads.
 4. Standardize Store terminology around **mounts**.
-5. Always provide a local mount and a configurable default mount.
+5. Always provide a temporary `tmp` mount and a configurable default mount.
 6. Support single and batch operations with deterministic partial-failure reporting.
 7. Add a local name→mount cache to speed mount resolution during load.
 
@@ -33,28 +33,22 @@ Without a `Store` abstraction, callers must manually:
 `Store` is a router + facade over many named mounts:
 
 - A **mount** is `(mount_name -> Registry)`.
-- The Store always has a `local` mount.
-- The Store always has a `default_mount`, which initially points to `local` unless configured otherwise.
+- The Store always has a `tmp` mount.
+- The Store always has a `default_mount`, which initially points to `tmp` unless configured otherwise.
 - A key may be either:
   - **Qualified**: `"<mount>/<object_name>[@<version>]"`
   - **Unqualified**: `"<object_name>[@<version>]"`
 
-Examples:
+## 4) Defaults
 
-- Qualified: `"raw/images/cam1/frame_001"`
-- Qualified+version: `"models/resnet50@3.0.0"`
-- Unqualified: `"images/cam1/frame_001"`
+`Store()` always creates a temporary mount:
 
-## 4) Defaults & Configuration
-
-`Store()` always creates a local mount:
-
-- `mount = "local"`
-- backend path = `~/.cache/mindtrace/store`
+- `mount = "tmp"`
+- backend path = a fresh temporary directory for that Store instance
 
 `default_mount` always exists and must point to a configured mount. By default:
 
-- `default_mount = "local"`
+- `default_mount = "tmp"`
 
 A Store may change its default mount at runtime with:
 
@@ -88,12 +82,13 @@ class Store(Mindtrace):
         self,
         mounts: dict[str, Registry] | None = None,
         *,
-        default_mount: str = "local",
+        default_mount: str = "tmp",
         enable_location_cache: bool = True,
         **kwargs,
     ) -> None: ...
 
     def set_default_mount(self, mount: str) -> None: ...
+    def get_registry(self, key_or_mount: str) -> Registry: ...
 
     def add_mount(self, mount: str, registry: Registry, *, read_only: bool = False) -> None: ...
     def remove_mount(self, mount: str) -> None: ...
@@ -153,10 +148,10 @@ class Store(Mindtrace):
 
 ### 7.3 Default mount
 
-- The Store always has `local`.
+- The Store always has `tmp`.
 - `default_mount` always points to one of the configured mounts.
-- Removing the current default mount resets the default back to `local`.
-- The required `local` mount cannot be removed.
+- Removing the current default mount resets the default back to `tmp`.
+- The required `tmp` mount cannot be removed.
 
 ### 7.4 Existence checks
 
@@ -168,7 +163,7 @@ class Store(Mindtrace):
 When printing a Store:
 
 - each mount is shown in its own section
-- the default mount is marked with `*`
+- the default mount is marked with `*` before the mount name
 - the rendered output ends with `Default Mount: `...``
 
 Example sketch:
@@ -176,13 +171,13 @@ Example sketch:
 ```text
 Store
 
-[local*]
+[*tmp]
 ...
 
 [models]
 ...
 
-Default Mount: `local`
+Default Mount: `tmp`
 ```
 
 ## 9) Error Model
@@ -199,8 +194,9 @@ Common errors:
 
 Current unit coverage focuses on:
 
-- required local mount + default mount behavior
+- required tmp mount + default mount behavior
 - `set_default_mount()`
+- `get_registry()` convenience access
 - unqualified writes using `default_mount`
 - discovery-based unqualified reads
 - ambiguity behavior
