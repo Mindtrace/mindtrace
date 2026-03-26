@@ -24,6 +24,7 @@ class MINDTRACE_DIR_PATHS(BaseModel):
     ROOT: str
     TEMP_DIR: str
     REGISTRY_DIR: str
+    STORE_DIR: str = "~/.cache/mindtrace/store"
     LOGGER_DIR: str
     STRUCT_LOGGER_DIR: str
     CLUSTER_REGISTRY_DIR: str

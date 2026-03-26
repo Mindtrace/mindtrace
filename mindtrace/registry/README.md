@@ -250,3 +250,59 @@ logging.basicConfig(level=logging.DEBUG)
 registry = Registry()
 # Operations will now show detailed logs
 ```
+
+## Store (Multi-Registry Facade)
+
+The `Store` class composes multiple `Registry` instances behind a single API. Where a `Registry` maps to exactly one backend, a `Store` lets you read and write across multiple physical stores with deterministic routing.
+
+### Mounts
+
+A Store organises registries as named **mounts**. Every Store always has a `temp` mount (backed by a fresh temporary directory) and a configurable `default_mount` that controls where unqualified writes go.
+
+```python
+from mindtrace.registry import Registry, Store
+
+# A bare Store — just the temp mount
+store = Store()
+
+# Add named mounts
+store.add_mount("models", Registry(backend=gcp_backend))
+store.add_mount("datasets", Registry(backend=s3_backend), read_only=True)
+
+# Change the default write target
+store.set_default_mount("models")
+```
+
+### Key Format
+
+Keys can be **qualified** (routed to a specific mount) or **unqualified** (routed automatically):
+
+```python
+# Qualified — targets the "models" mount explicitly
+store.save("models/my_model", obj)
+model = store.load("models/my_model@1.0.0")
+
+# Unqualified — writes go to default_mount, reads discover across all mounts
+store.save("my_model", obj)          # -> saves to default_mount
+model = store.load("my_model")       # -> searches all mounts
+```
+
+### Read and Write Routing
+
+- **Writes**: Qualified writes target the specified mount. Unqualified writes go to `default_mount`.
+- **Reads**: Qualified reads target the specified mount. Unqualified reads discover across all mounts — if the object exists in exactly one mount it loads; if found in multiple mounts a `StoreAmbiguousObjectError` is raised.
+
+### Default Mount Behaviour
+
+- `default_mount` always points to a configured mount (initially `temp`).
+- Removing the current default mount resets it back to `temp`.
+- The `temp` mount cannot be removed.
+
+### Store Errors
+
+In addition to the standard Registry exceptions, Store introduces:
+
+- `StoreLocationNotFound` — unknown mount
+- `StoreKeyFormatError` — invalid key format
+- `StoreAmbiguousObjectError` — unqualified load matched multiple mounts
+- `PermissionError` — write to a read-only mount

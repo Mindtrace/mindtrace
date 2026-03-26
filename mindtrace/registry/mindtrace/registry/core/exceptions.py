@@ -29,3 +29,21 @@ class RegistryCleanupRequired(Exception):
     """Raised when an operation succeeds but follow-up cleanup is still required."""
 
     pass
+
+
+class StoreLocationNotFound(Exception):
+    """Raised when a store location/mount is unknown."""
+
+    pass
+
+
+class StoreKeyFormatError(ValueError):
+    """Raised when a store key format is invalid for the requested operation."""
+
+    pass
+
+
+class StoreAmbiguousObjectError(Exception):
+    """Raised when an unqualified load finds an object in multiple locations."""
+
+    pass
