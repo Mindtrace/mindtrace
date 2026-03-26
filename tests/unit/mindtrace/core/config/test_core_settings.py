@@ -53,7 +53,8 @@ class TestCoreSettings:
                 "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
                 "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_ENDPOINT": "localhost:9000",
+                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
+                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
                 "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
@@ -98,7 +99,8 @@ class TestCoreSettings:
                 "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
                 "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_ENDPOINT": "localhost:9000",
+                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
+                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
                 "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
@@ -157,7 +159,8 @@ class TestCoreSettings:
                 "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
                 "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_ENDPOINT": "localhost:9000",
+                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
+                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
                 "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
                 "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
@@ -214,7 +217,8 @@ MINIO_SECRET_KEY = minioadmin
 [MINDTRACE_CLUSTER]
 DEFAULT_REDIS_URL = redis://localhost:6379
 MINIO_REGISTRY_URI = http://localhost:9000
-MINIO_ENDPOINT = localhost:9000
+MINIO_HOST = localhost
+MINIO_PORT = 9000
 MINIO_ACCESS_KEY = minioadmin
 MINIO_SECRET_KEY = minioadmin
 MINIO_BUCKET = mindtrace

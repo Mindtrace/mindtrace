@@ -9,7 +9,8 @@ from mindtrace.core.config import CoreConfig, SettingsLike
 
 class MINDTRACE_CLUSTER(BaseModel):
     DEFAULT_REDIS_URL: str
-    MINIO_ENDPOINT: str
+    MINIO_HOST: str
+    MINIO_PORT: int
     MINIO_ACCESS_KEY: SecretStr
     MINIO_SECRET_KEY: SecretStr
     MINIO_BUCKET: str
@@ -51,13 +52,15 @@ if __name__ == "__main__":
     cluster = Cluster()
     print("Core Settings", cluster.config.MINDTRACE_DIR_PATHS.REGISTRY_DIR)
     print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.DEFAULT_REDIS_URL)
-    print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_ENDPOINT)
+    print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_HOST)
+    print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_PORT)
     print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_ACCESS_KEY)
     print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_SECRET_KEY)
     print("Cluster Settings from Cluster instance", cluster.config.MINDTRACE_CLUSTER.MINIO_BUCKET)
     clusterconfig = ClusterConfig()
     print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.DEFAULT_REDIS_URL)
-    print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_ENDPOINT)
+    print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_HOST)
+    print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_PORT)
     print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_ACCESS_KEY)
     print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_SECRET_KEY)
     print("Cluster Settings from ClusterConfig instance", clusterconfig.MINDTRACE_CLUSTER.MINIO_BUCKET)
