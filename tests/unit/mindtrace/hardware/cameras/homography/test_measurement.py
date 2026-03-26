@@ -69,6 +69,11 @@ class TestHomographyMeasurer:
         with pytest.raises(CameraConfigurationError, match="Invalid homography matrix shape"):
             HomographyMeasurer(invalid_calib)
 
+    def test_measurer_singular_homography_raises(self):
+        singular = np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        with pytest.raises(CameraConfigurationError, match="singular"):
+            HomographyMeasurer(CalibrationData(H=singular))
+
     def test_unit_scale_conversion(self):
         """Test unit scaling conversion factors."""
         # Test all supported unit conversions
@@ -422,3 +427,16 @@ class TestHomographyMeasurer:
         assert measured.width_world > 0
         assert measured.height_world > 0
         assert measured.unit == "mm"
+
+    def test_measure_distance_returns_expected_and_target_unit(self):
+        distance_mm, unit_mm = self.measurer.measure_distance((100.0, 50.0), (200.0, 50.0))
+        assert unit_mm == "mm"
+        assert distance_mm == pytest.approx(50.0)
+
+        distance_cm, unit_cm = self.measurer.measure_distance((100.0, 50.0), (200.0, 50.0), target_unit="cm")
+        assert unit_cm == "cm"
+        assert distance_cm == pytest.approx(5.0)
+
+    def test_measure_distance_validates_point_shape(self):
+        with pytest.raises(ValueError):
+            self.measurer.measure_distance((1.0, 2.0, 3.0), (2.0, 3.0))
