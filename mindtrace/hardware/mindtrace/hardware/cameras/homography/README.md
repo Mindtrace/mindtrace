@@ -46,7 +46,7 @@ calibration.save("camera_calibration.json")
 
 ```python
 from mindtrace.hardware import HomographyMeasurer
-from mindtrace.core.types import BoundingBox
+from mindtrace.core.types.bounding_box import BoundingBox
 
 # Load calibration
 calibration = CalibrationData.load("camera_calibration.json")
@@ -770,7 +770,7 @@ yolo = YOLO("yolov8n.pt")
 results = yolo(frame)
 
 # Convert to BoundingBox format
-from mindtrace.core.types import BoundingBox
+from mindtrace.core.types.bounding_box import BoundingBox
 
 boxes = [
     BoundingBox(
