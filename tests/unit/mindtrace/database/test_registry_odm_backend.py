@@ -402,10 +402,10 @@ class TestRegistryMindtraceODM:
         # The registry should have been created with the mock backend
         # This is tested indirectly through the registry initialization
 
-    def test_default_backend_integration(self):
+    def test_default_backend_integration(self, tmp_path):
         """Test integration with default Registry backend."""
-        # Create backend with default settings
-        backend = RegistryMindtraceODM()
+        # Create backend with an isolated tmp_path to avoid conflicts with existing registry metadata
+        backend = RegistryMindtraceODM(backend=tmp_path)
 
         # Test that the registry was initialized
         assert backend.registry is not None
