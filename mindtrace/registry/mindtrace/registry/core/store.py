@@ -147,6 +147,9 @@ class Store(Mindtrace):
             raise StoreLocationNotFound("No mount specified")
         return self._mounts[mount].registry
 
+    def get_registry(self, key_or_mount: str) -> Registry:
+        return self.resolve_registry(key_or_mount)
+
     def cache_lookup_locations(self, name: str) -> list[str]:
         if not self._enable_location_cache:
             return []
