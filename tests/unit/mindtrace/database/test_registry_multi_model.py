@@ -16,10 +16,11 @@ class AddressDoc(BaseModel):
     city: str
 
 
-def test_registry_multi_model_initialization():
+def test_registry_multi_model_initialization(tmp_path):
     """Test Registry ODM initialization with multiple models."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     assert db._models == {"user": UserDoc, "address": AddressDoc}
@@ -30,10 +31,11 @@ def test_registry_multi_model_initialization():
     assert db._model_odms["address"].model_cls == AddressDoc
 
 
-def test_registry_multi_model_attribute_access():
+def test_registry_multi_model_attribute_access(tmp_path):
     """Test attribute-based access to models in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     # Test attribute access
@@ -44,30 +46,33 @@ def test_registry_multi_model_attribute_access():
     assert address_odm.model_cls == AddressDoc
 
 
-def test_registry_multi_model_invalid_attribute():
+def test_registry_multi_model_invalid_attribute(tmp_path):
     """Test that accessing invalid attribute raises AttributeError."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(AttributeError):
         _ = db.invalid_model
 
 
-def test_registry_multi_model_cannot_use_direct_insert():
+def test_registry_multi_model_cannot_use_direct_insert(tmp_path):
     """Test that direct insert() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use insert\\(\\) in multi-model mode"):
         db.insert(UserDoc(name="Test", email="test@test.com"))
 
 
-def test_registry_multi_model_backward_compatibility():
+def test_registry_multi_model_backward_compatibility(tmp_path):
     """Test that single model mode still works (backward compatibility)."""
     db = RegistryMindtraceODM(
         model_cls=UserDoc,
+        backend=tmp_path,
     )
 
     assert db.model_cls == UserDoc
@@ -75,10 +80,11 @@ def test_registry_multi_model_backward_compatibility():
     assert len(db._model_odms) == 0
 
 
-def test_registry_multi_model_shared_registry():
+def test_registry_multi_model_shared_registry(tmp_path):
     """Test that all model ODMs share the same registry instance."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     assert db.user.registry == db.registry
@@ -86,77 +92,85 @@ def test_registry_multi_model_shared_registry():
     assert db.user.registry == db.address.registry
 
 
-def test_registry_multi_model_both_model_cls_and_models_error():
+def test_registry_multi_model_both_model_cls_and_models_error(tmp_path):
     """Test that specifying both model_cls and models raises ValueError."""
     with pytest.raises(ValueError, match="Cannot specify both model_cls and models"):
         RegistryMindtraceODM(
             model_cls=UserDoc,
             models={"user": UserDoc},
+            backend=tmp_path,
         )
 
 
-def test_registry_multi_model_empty_models_error():
+def test_registry_multi_model_empty_models_error(tmp_path):
     """Test that empty models dict raises ValueError."""
     with pytest.raises(ValueError, match="models must be a non-empty dictionary"):
         RegistryMindtraceODM(
             models={},
+            backend=tmp_path,
         )
 
 
-def test_registry_multi_model_cannot_use_direct_get():
+def test_registry_multi_model_cannot_use_direct_get(tmp_path):
     """Test that direct get() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use get\\(\\) in multi-model mode"):
         db.get("some_id")
 
 
-def test_registry_multi_model_cannot_use_direct_update():
+def test_registry_multi_model_cannot_use_direct_update(tmp_path):
     """Test that direct update() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use update\\(\\) in multi-model mode"):
         db.update(UserDoc(name="Test", email="test@test.com"))
 
 
-def test_registry_multi_model_cannot_use_direct_delete():
+def test_registry_multi_model_cannot_use_direct_delete(tmp_path):
     """Test that direct delete() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use delete\\(\\) in multi-model mode"):
         db.delete("some_id")
 
 
-def test_registry_multi_model_cannot_use_direct_all():
+def test_registry_multi_model_cannot_use_direct_all(tmp_path):
     """Test that direct all() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use all\\(\\) in multi-model mode"):
         db.all()
 
 
-def test_registry_multi_model_cannot_use_direct_find():
+def test_registry_multi_model_cannot_use_direct_find(tmp_path):
     """Test that direct find() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use find\\(\\) in multi-model mode"):
         db.find({"name": "Test"})
 
 
-def test_registry_multi_model_cannot_use_direct_get_raw_model():
+def test_registry_multi_model_cannot_use_direct_get_raw_model(tmp_path):
     """Test that direct get_raw_model() raises ValueError in multi-model mode."""
     db = RegistryMindtraceODM(
         models={"user": UserDoc, "address": AddressDoc},
+        backend=tmp_path,
     )
 
     with pytest.raises(ValueError, match="Cannot use get_raw_model\\(\\) in multi-model mode"):
