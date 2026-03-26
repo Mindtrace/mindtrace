@@ -9,7 +9,7 @@ from typing import Any, Union
 
 import numpy as np
 
-from mindtrace.core import cv2_to_pil
+from mindtrace.core.utils.conversions import cv2_to_pil
 
 
 def convert_image_format(image: np.ndarray, output_format: str) -> Union[np.ndarray, Any]:

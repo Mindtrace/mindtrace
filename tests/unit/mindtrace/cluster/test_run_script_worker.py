@@ -39,6 +39,7 @@ class TestRunScriptWorker:
                     "branch": "main",
                     "commit": "abc123",
                     "working_dir": "src",
+                    "project": "our-project",
                 }
             },
             "command": "python script.py",
@@ -77,7 +78,11 @@ class TestRunScriptWorker:
 
         # Verify GitEnvironment was created with correct parameters
         mock_git_env_class.assert_called_once_with(
-            repo_url="https://github.com/test-owner/test-repo.git", branch="main", commit="abc123", working_dir="src"
+            repo_url="https://github.com/test-owner/test-repo.git",
+            branch="main",
+            commit="abc123",
+            working_dir="src",
+            project="our-project",
         )
 
         # Verify setup was called

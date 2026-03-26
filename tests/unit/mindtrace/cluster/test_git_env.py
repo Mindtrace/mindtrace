@@ -33,13 +33,18 @@ class TestGitEnvironment:
     def test_initialization(self):
         """Test GitEnvironment initialization with all parameters."""
         env = GitEnvironment(
-            repo_url="https://github.com/test-owner/test-repo.git", branch="main", commit="abc123", working_dir="src"
+            repo_url="https://github.com/test-owner/test-repo.git",
+            branch="main",
+            commit="abc123",
+            working_dir="src",
+            project="our-project",
         )
 
         assert env.repo_url == "https://github.com/test-owner/test-repo.git"
         assert env.branch == "main"
         assert env.commit == "abc123"
         assert env.working_dir == "src"
+        assert env.project == "our-project"
         assert env.temp_dir is None
         assert env.repo is None
         assert env.allowed_owners == ["Mindtrace"]
@@ -52,6 +57,7 @@ class TestGitEnvironment:
         assert env.branch is None
         assert env.commit is None
         assert env.working_dir is None
+        assert env.project is None
         assert env.temp_dir is None
         assert env.repo is None
 
@@ -180,12 +186,26 @@ class TestGitEnvironment:
         mock_repo.git.checkout = Mock()
         mock_clone.return_value = mock_repo
 
+        # Ensure we start from a clean git-config env to make assertions deterministic
+        os.environ.pop("GIT_CONFIG_COUNT", None)
+        for key in list(os.environ.keys()):
+            if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_"):
+                del os.environ[key]
+
         git_env._clone_repository()
 
-        # Verify clone was called with token
-        expected_url = "https://test_token@github.com/test-owner/test-repo.git"
-        mock_clone.assert_called_once_with(expected_url, "/tmp/test-repo-123")
+        # With token-based auth we now configure git via GIT_CONFIG_* and call clone_from
+        # with the plain GitHub URL, allowing all subsequent git commands (including
+        # those spawned by tools like `uv`) to reuse the same tokenized mapping.
+        mock_clone.assert_called_once_with("https://github.com/test-owner/test-repo.git", "/tmp/test-repo-123")
         assert git_env.repo == mock_repo
+        # Verify that token-based mapping was injected into git config environment
+        assert os.environ.get("GIT_CONFIG_COUNT") == "3"
+        # The exact numbered keys depend on prior environment, but at least one mapping
+        # should target the https GitHub URL.
+        assert any(
+            os.environ[k].endswith("github.com/.insteadOf") for k in os.environ if k.startswith("GIT_CONFIG_KEY_")
+        )
 
     @patch("git.Repo.clone_from")
     def test_clone_repository_without_token(self, mock_clone, git_env):
@@ -316,7 +336,27 @@ class TestGitEnvironment:
         git_env._sync_dependencies("/tmp/test-repo-123")
 
         mock_run.assert_called_once_with(
-            ["uv", "sync"], cwd="/tmp/test-repo-123", capture_output=True, text=True, check=True
+            ["uv", "sync"], cwd="/tmp/test-repo-123", capture_output=False, text=True, check=True
+        )
+
+    @patch("subprocess.run")
+    def test_sync_dependencies_with_project(self, mock_run, git_env):
+        """Test dependency synchronization with a specific uv project."""
+        git_env.project = "our-project"
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        git_env._sync_dependencies("/tmp/test-repo-123")
+
+        mock_run.assert_called_once_with(
+            ["uv", "sync", "--project", "our-project"],
+            cwd="/tmp/test-repo-123",
+            capture_output=False,
+            text=True,
+            check=True,
         )
 
     @patch("subprocess.run")
@@ -368,6 +408,7 @@ class TestGitEnvironment:
     def test_execute_success(self, mock_exists, mock_run, git_env):
         """Test successful command execution."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -388,6 +429,7 @@ class TestGitEnvironment:
     def test_execute_list_command(self, mock_exists, mock_run, git_env):
         """Test command execution with list command."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -410,6 +452,7 @@ class TestGitEnvironment:
     def test_execute_without_uv_prefix(self, mock_exists, mock_run, git_env):
         """Test command execution without uv prefix."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -429,6 +472,7 @@ class TestGitEnvironment:
     def test_execute_with_uv_prefix(self, mock_exists, mock_run, git_env):
         """Test command execution with uv prefix."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -448,6 +492,7 @@ class TestGitEnvironment:
     def test_execute_with_custom_environment(self, mock_exists, mock_run, git_env):
         """Test command execution with custom environment variables."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
         mock_exists.return_value = True
 
         mock_result = Mock()
@@ -467,6 +512,7 @@ class TestGitEnvironment:
     def test_execute_with_custom_working_directory(self, mock_run, git_env):
         """Test command execution with custom working directory."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
 
         mock_result = Mock()
         mock_result.returncode = 0
@@ -485,6 +531,7 @@ class TestGitEnvironment:
     def test_execute_subprocess_exception(self, mock_run, mock_exists, git_env):
         """Test command execution with subprocess exception."""
         git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = None
 
         mock_exists.return_value = True
         mock_run.side_effect = Exception("Subprocess error")
@@ -501,3 +548,51 @@ class TestGitEnvironment:
 
         with pytest.raises(RuntimeError, match="Git environment not initialized"):
             git_env.execute("python script.py")
+
+    @patch("subprocess.Popen")
+    @patch("os.path.exists")
+    def test_execute_detach_with_project_and_list_command(self, mock_exists, mock_popen, git_env):
+        """Test detached execution with project flag and list command."""
+        git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = "apps/chiron/backend/chiron/trainingcluster"
+        mock_exists.return_value = True
+
+        mock_process = Mock()
+        mock_process.pid = 1234
+        mock_popen.return_value = mock_process
+
+        pid, stdout, stderr = git_env.execute(["python", "train.py"], detach=True)
+
+        assert pid == 1234
+        assert stdout == ""
+        assert stderr == ""
+        # Expect uv run with --project prefix added as separate list elements
+        expected_prefix = ["uv", "run", "--project " + git_env.project]
+        call_args = mock_popen.call_args[0][0]
+        assert call_args[: len(expected_prefix)] == expected_prefix
+        assert call_args[len(expected_prefix) :] == ["python", "train.py"]
+
+    @patch("subprocess.run")
+    @patch("os.path.exists")
+    def test_execute_non_detach_with_project_and_string_command(self, mock_exists, mock_run, git_env):
+        """Test non-detached execution with project flag and string command."""
+        git_env.temp_dir = "/tmp/test-repo-123"
+        git_env.project = "apps/chiron/backend/chiron/trainingcluster"
+        mock_exists.return_value = True
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Output"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        exit_code, stdout, stderr = git_env.execute("python script.py")
+
+        assert exit_code == 0
+        assert stdout == "Output"
+        assert stderr == ""
+        # Verify the generated shell command includes uv run --project and the original command
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert cmd.startswith(f"uv run --project {git_env.project} ")
+        assert cmd.endswith("python script.py")
