@@ -41,7 +41,7 @@ class Store(Mindtrace):
         self,
         mounts: dict[str, Registry] | None = None,
         *,
-        default_mount: str = "tmp",
+        default_mount: str = "temp",
         enable_location_cache: bool = True,
         **kwargs,
     ):
@@ -52,12 +52,12 @@ class Store(Mindtrace):
         self._enable_location_cache = enable_location_cache
 
         temp_store_dir = Path(mkdtemp(prefix="mindtrace-store-"))
-        self.add_mount("tmp", Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs))
+        self.add_mount("temp", Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs))
 
         mounts = mounts or {}
         for mount_name, registry in mounts.items():
-            if mount_name == "tmp":
-                self._mounts["tmp"] = StoreMount(name="tmp", registry=registry, read_only=False)
+            if mount_name == "temp":
+                self._mounts["temp"] = StoreMount(name="temp", registry=registry, read_only=False)
             else:
                 self.add_mount(mount_name, registry)
 
@@ -76,8 +76,8 @@ class Store(Mindtrace):
         self._mounts[mount] = StoreMount(name=mount, registry=registry, read_only=read_only)
 
     def remove_mount(self, mount: str) -> None:
-        if mount == "tmp":
-            raise ValueError("Cannot remove required tmp mount")
+        if mount == "temp":
+            raise ValueError("Cannot remove required temp mount")
         if mount not in self._mounts:
             raise StoreLocationNotFound(mount)
         del self._mounts[mount]
@@ -88,7 +88,7 @@ class Store(Mindtrace):
             else:
                 self._name_location_cache.pop(name, None)
         if self.default_mount == mount:
-            self.default_mount = "tmp"
+            self.default_mount = "temp"
 
     def get_mount(self, mount: str) -> StoreMount:
         store_mount = self._mounts.get(mount)
