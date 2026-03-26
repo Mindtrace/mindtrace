@@ -5,8 +5,14 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
-from mindtrace.registry.core.exceptions import LockTimeoutError
+from mindtrace.registry.core.exceptions import (
+    LockTimeoutError,
+    StoreAmbiguousObjectError,
+    StoreKeyFormatError,
+    StoreLocationNotFound,
+)
 from mindtrace.registry.core.registry import Registry
+from mindtrace.registry.core.store import Store, StoreMount
 
 __all__ = [
     "Archiver",
@@ -19,6 +25,11 @@ __all__ = [
     "S3RegistryBackend",
     "Registry",
     "RegistryBackend",
+    "Store",
+    "StoreMount",
+    "StoreLocationNotFound",
+    "StoreKeyFormatError",
+    "StoreAmbiguousObjectError",
 ]
 
 register_default_materializers()

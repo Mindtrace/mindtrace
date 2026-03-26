@@ -119,6 +119,28 @@ class TestRunScriptWorker:
         assert worker.env_manager == mock_docker_env
         assert worker.container_id == "test-container-id"
 
+    @patch("mindtrace.cluster.workers.run_script_worker.DockerEnvironment")
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/host/creds.json"})
+    def test_setup_environment_docker_maps_gcp_credentials_volume(self, mock_docker_env_class, worker):
+        docker_job = {
+            "environment": {
+                "docker": {
+                    "image": "python:3.11",
+                    "volumes": {"GCP_CREDENTIALS": {"bind": "/creds.json", "mode": "ro"}},
+                }
+            }
+        }
+
+        mock_docker_env = Mock()
+        mock_docker_env.setup.return_value = "container-123"
+        mock_docker_env_class.return_value = mock_docker_env
+
+        worker.setup_environment(docker_job["environment"])
+
+        passed_volumes = mock_docker_env_class.call_args.kwargs["volumes"]
+        assert "GCP_CREDENTIALS" not in passed_volumes
+        assert passed_volumes["/host/creds.json"] == {"bind": "/creds.json", "mode": "ro"}
+
     def test_setup_environment_invalid_config(self, worker):
         """Test environment setup with invalid configuration."""
         job_dict = {"environment": {"invalid_env": {"some": "config"}}}
