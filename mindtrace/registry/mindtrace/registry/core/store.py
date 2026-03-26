@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Any, Dict, List, Type
 
 from zenml.materializers.base_materializer import BaseMaterializer
@@ -40,7 +41,7 @@ class Store(Mindtrace):
         self,
         mounts: dict[str, Registry] | None = None,
         *,
-        default_mount: str = "local",
+        default_mount: str = "tmp",
         enable_location_cache: bool = True,
         **kwargs,
     ):
@@ -50,13 +51,13 @@ class Store(Mindtrace):
         self._name_location_cache: dict[str, list[str]] = {}
         self._enable_location_cache = enable_location_cache
 
-        store_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["STORE_DIR"]).expanduser().resolve()
-        self.add_mount("local", Registry(backend=LocalRegistryBackend(uri=store_dir), **kwargs))
+        temp_store_dir = Path(mkdtemp(prefix="mindtrace-store-"))
+        self.add_mount("tmp", Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs))
 
         mounts = mounts or {}
         for mount_name, registry in mounts.items():
-            if mount_name == "local":
-                self._mounts["local"] = StoreMount(name="local", registry=registry, read_only=False)
+            if mount_name == "tmp":
+                self._mounts["tmp"] = StoreMount(name="tmp", registry=registry, read_only=False)
             else:
                 self.add_mount(mount_name, registry)
 
@@ -75,8 +76,8 @@ class Store(Mindtrace):
         self._mounts[mount] = StoreMount(name=mount, registry=registry, read_only=read_only)
 
     def remove_mount(self, mount: str) -> None:
-        if mount == "local":
-            raise ValueError("Cannot remove required local mount")
+        if mount == "tmp":
+            raise ValueError("Cannot remove required tmp mount")
         if mount not in self._mounts:
             raise StoreLocationNotFound(mount)
         del self._mounts[mount]
@@ -87,7 +88,7 @@ class Store(Mindtrace):
             else:
                 self._name_location_cache.pop(name, None)
         if self.default_mount == mount:
-            self.default_mount = "local"
+            self.default_mount = "tmp"
 
     def get_mount(self, mount: str) -> StoreMount:
         store_mount = self._mounts.get(mount)
