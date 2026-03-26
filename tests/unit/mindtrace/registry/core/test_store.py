@@ -33,6 +33,11 @@ def test_set_default_mount_updates_default(two_mount_store):
     assert two_mount_store.default_mount == "b"
 
 
+def test_get_registry_returns_mount_registry(two_mount_store):
+    assert two_mount_store.get_registry("a") is two_mount_store.get_mount("a").registry
+    assert two_mount_store.get_registry("a/example:item") is two_mount_store.get_mount("a").registry
+
+
 def test_unqualified_save_uses_default_mount(two_mount_store):
     two_mount_store.save("my:obj", 1)
     assert two_mount_store.load("a/my:obj") == 1
