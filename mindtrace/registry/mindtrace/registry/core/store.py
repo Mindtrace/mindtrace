@@ -473,7 +473,7 @@ class Store(Mindtrace):
         sections = ["Store"]
         for mount_name, store_mount in self._mounts.items():
             marker = "*" if mount_name == self.default_mount else ""
-            sections.append(f"[{mount_name}{marker}]\n{store_mount.registry.__str__(color=color, latest_only=latest_only)}")
+            sections.append(f"[{marker}{mount_name}]\n{store_mount.registry.__str__(color=color, latest_only=latest_only)}")
         sections.append(f"Default Mount: `{self.default_mount}`")
         return "\n\n".join(sections)
 
