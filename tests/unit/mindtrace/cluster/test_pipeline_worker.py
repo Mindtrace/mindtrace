@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.cluster import PipelineWorker
+from mindtrace.cluster.core.pipeline_worker import PipelineWorker
 from mindtrace.cluster.core.types import JobStatusEnum
 from mindtrace.models import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
