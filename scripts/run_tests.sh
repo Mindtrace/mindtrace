@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
             RUN_ALL=false
             shift
             ;;
-        apps | automation | cluster | core | database | datalake | hardware | jobs | models | registry | services | storage | ui)
+        apps | automation | cluster | core | database | datalake | hardware | jobs | models | registry | services | storage | ui | agents)
             # Specific modules provided
             MODULES+=("$1")
             shift

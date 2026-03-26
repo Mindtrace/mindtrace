@@ -1,6 +1,6 @@
-"""Auto-segmentation Brain built from Ultralytics YOLO + SAM.
+"""Auto-segmentation Pipeline built from Ultralytics YOLO + SAM.
 
-This Brain runs object detection first, then uses detection boxes as prompts for
+This Pipeline runs object detection first, then uses detection boxes as prompts for
 SAM segmentation.
 """
 
@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.models.brain import Brain, BrainLoadInput, BrainUnloadInput
+from mindtrace.models.pipeline import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
 try:
     from ultralytics import SAM, YOLO
@@ -72,8 +72,8 @@ AutoSegmenterTaskSchema = TaskSchema(
 )
 
 
-class AutoSegmenter(Brain):
-    """Brain that combines YOLO detection with SAM segmentation.
+class AutoSegmenter(Pipeline):
+    """Pipeline that combines YOLO detection with SAM segmentation.
 
     Defaults:
     - YOLO model: yolov10m.pt
@@ -95,7 +95,7 @@ class AutoSegmenter(Brain):
 
         self.add_endpoint(path="/auto_segment", func=self.auto_segment, schema=AutoSegmenterTaskSchema)
 
-    def on_load(self, payload: BrainLoadInput) -> None:
+    def on_load(self, payload: PipelineLoadInput) -> None:
         """Load YOLO and SAM models."""
         if _ULTRALYTICS_IMPORT_ERROR is not None:
             raise RuntimeError("Ultralytics import failed; cannot load AutoSegmenter.") from _ULTRALYTICS_IMPORT_ERROR
@@ -105,7 +105,7 @@ class AutoSegmenter(Brain):
         if self._sam is None:
             self._sam = SAM(self.sam_model_name)
 
-    def on_unload(self, payload: BrainUnloadInput) -> None:
+    def on_unload(self, payload: PipelineUnloadInput) -> None:
         """Unload YOLO and SAM models."""
         self._yolo = None
         self._sam = None
