@@ -195,5 +195,5 @@ def test_update_store_latest_only_copies_latest_value_to_default_mount():
 
 def test_store_str_marks_default_mount(two_mount_store):
     text = str(two_mount_store)
-    assert "[a*]" in text
+    assert "[*a]" in text
     assert "Default Mount: `a`" in text
