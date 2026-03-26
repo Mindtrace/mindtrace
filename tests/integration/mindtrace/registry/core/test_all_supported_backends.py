@@ -621,7 +621,7 @@ def test_object_discovery(registry):
     registry.save(f"{test_prefix}object:1", "data1_v2", version="2.0.0")
     versions = registry.list_versions(f"{test_prefix}object:1")
     assert len(versions) == 2
-    assert "1" in versions  # Auto-generated version
+    assert "1.0.0" in versions  # Auto-generated canonical version
     assert "2.0.0" in versions
 
 
@@ -639,19 +639,12 @@ def test_metadata_operations(registry):
     # Get object info
     info = registry.info("test:metadata")
 
-    # Handle different metadata structures between backends
-    if isinstance(info, dict) and "1" in info:
-        # GCP backend returns versioned structure
-        version_info = info["1"]
-        assert "metadata" in version_info
-        assert "description" in version_info["metadata"]
-        assert version_info["metadata"]["description"] == "Test object"
-        assert version_info["metadata"]["tags"] == ["test", "integration"]
-    else:
-        # Other backends return direct metadata
-        assert "description" in info
-        assert info["description"] == "Test object"
-        assert info["tags"] == ["test", "integration"]
+    # Handle versioned metadata structure
+    version_info = info["1.0.0"]
+    assert "metadata" in version_info
+    assert "description" in version_info["metadata"]
+    assert version_info["metadata"]["description"] == "Test object"
+    assert version_info["metadata"]["tags"] == ["test", "integration"]
 
 
 def test_object_existence(registry):
