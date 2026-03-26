@@ -51,7 +51,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata exists in S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 1
 
     # Fetch metadata and verify contents
@@ -68,7 +68,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata is deleted
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 0
 
 
@@ -82,7 +82,7 @@ def test_delete_metadata(s3_backend, sample_metadata, s3_client, s3_test_bucket)
     assert result.first().ok
 
     # Verify metadata is deleted from S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
     assert len(objects) == 0
 
 
@@ -124,7 +124,7 @@ def test_list_versions_uses_metadata_prefix(s3_backend, sample_metadata, s3_clie
     s3_backend.save_metadata("test:object:with:colons", "2.0.0", sample_metadata)
 
     # Verify the metadata prefix is correctly generated (colons should be replaced with underscores)
-    expected_prefix = "_meta_test_object_with_colons@"
+    expected_prefix = "_meta_test%3Aobject%3Awith%3Acolons@"
     assert s3_backend._object_metadata_prefix("test:object:with:colons") == expected_prefix
 
     # List versions - returns Dict[str, List[str]]
@@ -175,17 +175,19 @@ def test_delete_object(s3_backend, sample_object_dir, s3_client, s3_test_bucket)
 
 
 def test_invalid_object_name(s3_backend, tmp_path):
-    """Test handling of invalid object names."""
-    # Create a dummy directory to push
+    """Test handling of invalid object names.
+
+    Underscores are now allowed in object names. Only truly invalid characters
+    (like @) or empty names should fail.
+    """
     test_dir = tmp_path / "test_obj"
     test_dir.mkdir()
     (test_dir / "file.txt").write_text("test")
 
-    # Backend returns failed OpResult for invalid names (doesn't raise)
-    results = s3_backend.push("invalid_name", "1.0.0", test_dir, metadata={"_files": ["file.txt"]})
+    # Underscores are valid -- should succeed
+    results = s3_backend.push("valid_name", "1.0.0", test_dir, metadata={"_files": ["file.txt"]})
     result = results.first()
-    assert result.is_error
-    assert "underscore" in result.message.lower()
+    assert result.ok
 
 
 def test_register_materializer(s3_backend, s3_client, s3_test_bucket):

@@ -714,7 +714,6 @@ def test_error_handling_invalid_names(registry):
     """Test error handling for invalid object names."""
     # Test invalid object names
     invalid_names = [
-        "invalid_name",  # Contains underscore
         "invalid@name",  # Contains @
         "",  # Empty name
     ]
