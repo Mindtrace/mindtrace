@@ -1,9 +1,12 @@
-from pathlib import Path
-
 import pytest
 
 from mindtrace.registry import Registry, Store
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreAmbiguousObjectError, StoreKeyFormatError, StoreLocationNotFound
+from mindtrace.registry.core.exceptions import (
+    RegistryObjectNotFound,
+    StoreAmbiguousObjectError,
+    StoreKeyFormatError,
+    StoreLocationNotFound,
+)
 
 
 @pytest.fixture
@@ -179,7 +182,9 @@ def test_store_integration_update_and_mount_management(temp_dir):
     assert target.list_versions("dest/versioned:item") == ["1.0.0", "1.0.1"]
     assert target.load("dest/other:item") == {"k": "v"}
 
-    target2 = Store(mounts={"dest": Registry(backend=temp_dir / "dst2", version_objects=True, mutable=True)}, default_mount="dest")
+    target2 = Store(
+        mounts={"dest": Registry(backend=temp_dir / "dst2", version_objects=True, mutable=True)}, default_mount="dest"
+    )
     target2.update(source, sync_all_versions=False)
     assert target2.list_versions("dest/versioned:item") == ["1.0.0"]
     assert target2.load("dest/versioned:item") == "v2"

@@ -1,4 +1,3 @@
-from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -44,13 +43,11 @@ def test_add_mount_invalid_name_raises(two_mount_store):
             two_mount_store.add_mount("bad@name", registry)
 
 
-
 def test_add_mount_duplicate_raises(two_mount_store):
     with TemporaryDirectory() as d:
         registry = Registry(backend=d, version_objects=True, mutable=True)
         with pytest.raises(ValueError):
             two_mount_store.add_mount("a", registry)
-
 
 
 def test_set_default_mount_updates_default(two_mount_store):
@@ -63,11 +60,9 @@ def test_get_registry_returns_mount_registry(two_mount_store):
     assert two_mount_store.get_registry("a/example:item") is two_mount_store.get_mount("a").registry
 
 
-
 def test_get_mount_missing_raises(two_mount_store):
     with pytest.raises(StoreLocationNotFound):
         two_mount_store.get_mount("missing")
-
 
 
 def test_unqualified_save_uses_default_mount(two_mount_store):
@@ -92,13 +87,11 @@ def test_unqualified_load_discovers_object(two_mount_store):
     assert two_mount_store.load("obj1") == "hello"
 
 
-
 def test_parse_key_invalid_forms(two_mount_store):
     with pytest.raises(StoreKeyFormatError):
         two_mount_store.parse_key("@1.0.0")
     with pytest.raises(StoreKeyFormatError):
         two_mount_store.parse_key("a/")
-
 
 
 def test_unqualified_load_not_found(two_mount_store):
@@ -120,14 +113,12 @@ def test_cache_updates_on_discovered_load(two_mount_store):
     assert two_mount_store.cache_lookup_locations("name1")[0] == "b"
 
 
-
 def test_cache_disabled_noops():
     with TemporaryDirectory() as d:
         registry = Registry(backend=d, version_objects=True, mutable=True)
         store = Store(mounts={"a": registry}, default_mount="a", enable_location_cache=False)
         store.cache_update_location("name1", "a")
         assert store.cache_lookup_locations("name1") == []
-
 
 
 def test_has_object_qualified_and_unqualified(two_mount_store):
@@ -156,11 +147,9 @@ def test_list_objects_and_versions(two_mount_store):
     assert all_versions["b/other"] == ["1.0.0"]
 
 
-
 def test_list_versions_requires_qualified_key(two_mount_store):
     with pytest.raises(StoreKeyFormatError):
         two_mount_store.list_versions("obj")
-
 
 
 def test_info_for_unqualified_name_uses_discovery(two_mount_store):
@@ -208,11 +197,9 @@ def test_remove_mount_evicts_location_cache(two_mount_store):
     assert two_mount_store.cache_lookup_locations("cache:item") == []
 
 
-
 def test_remove_mount_missing_raises(two_mount_store):
     with pytest.raises(StoreLocationNotFound):
         two_mount_store.remove_mount("missing")
-
 
 
 def test_remove_mount_retains_remaining_cache_entries(two_mount_store):
@@ -220,7 +207,6 @@ def test_remove_mount_retains_remaining_cache_entries(two_mount_store):
     two_mount_store.cache_update_location("shared:item", "b")
     two_mount_store.remove_mount("b")
     assert two_mount_store.cache_lookup_locations("shared:item") == ["a"]
-
 
 
 def test_remove_mount_cannot_remove_temp(two_mount_store):
