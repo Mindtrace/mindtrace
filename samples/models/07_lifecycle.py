@@ -24,7 +24,7 @@ from mindtrace.models.lifecycle import (
     PromotionError,
     PromotionResult,
 )
-from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS
+from mindtrace.models.lifecycle.stages import VALID_PROMOTIONS
 
 # ── Section: ModelCard creation ───────────────────────────────────────────
 print("\n── ModelCard: create & populate ──")
@@ -81,7 +81,7 @@ print(f"  DEV → PRODUCTION    : {ModelStage.DEV.can_promote_to(ModelStage.PROD
 print(f"  STAGING → DEV       : {ModelStage.STAGING.can_promote_to(ModelStage.DEV)}")
 print(f"  ARCHIVED → DEV      : {ModelStage.ARCHIVED.can_promote_to(ModelStage.DEV)}")
 
-print(f"  VALID_TRANSITIONS keys: {[s.value for s in VALID_TRANSITIONS]}")
+print(f"  VALID_PROMOTIONS keys: {[s.value for s in VALID_PROMOTIONS]}")
 
 # ── Section: card.promote() passing thresholds ───────────────────────────
 print("\n── card.promote(): passing thresholds ──")

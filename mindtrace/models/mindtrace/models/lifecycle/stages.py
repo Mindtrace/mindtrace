@@ -34,7 +34,7 @@ class ModelStage(str, Enum):
             STAGING    -> PRODUCTION
             DEV, STAGING, PRODUCTION -> ARCHIVED
         """
-        return target in VALID_TRANSITIONS.get(self, set())
+        return target in VALID_PROMOTIONS.get(self, set())
 
     def can_demote_to(self, target: ModelStage) -> bool:
         """Return True if backward demotion to *target* is valid.
@@ -58,7 +58,7 @@ class ModelStage(str, Enum):
         return _next.get(self)
 
 
-VALID_TRANSITIONS: dict[ModelStage, set[ModelStage]] = {
+VALID_PROMOTIONS: dict[ModelStage, set[ModelStage]] = {
     ModelStage.DEV: {ModelStage.STAGING, ModelStage.ARCHIVED},
     ModelStage.STAGING: {ModelStage.PRODUCTION, ModelStage.ARCHIVED},
     ModelStage.PRODUCTION: {ModelStage.ARCHIVED},
