@@ -873,10 +873,10 @@ def test_str_value_load_error(registry, color):
 
 
 def test_next_version_first_version(registry):
-    """Test _next_version returns "1" for the first version of an object."""
+    """Test _next_version returns first canonical version for a new object."""
     # Test with a new object name that has no versions
     next_version = registry._next_version("new:object")
-    assert next_version == "1"
+    assert next_version == "1.0.0"
 
     # Verify that _latest returns None for a non-existent object
     assert registry._latest("new:object") is None
@@ -959,22 +959,22 @@ def test_dict_like_interface_basic(registry):
     assert registry["test:str"] == "hello"
     assert "test:str" in registry
 
-    # Test with specific version
-    registry["test:str@1.0.0"] = "hello v1"
-    assert registry["test:str@1.0.0"] == "hello v1"
-    assert "test:str@1.0.0" in registry
+    # Test with a newer explicit version
+    registry["test:str@2.0.0"] = "hello v2"
+    assert registry["test:str@2.0.0"] == "hello v2"
+    assert "test:str@2.0.0" in registry
 
     # Test that latest version is now the specific version
-    assert registry["test:str"] == "hello v1"
+    assert registry["test:str"] == "hello v2"
     assert "test:str" in registry
 
     # Test __len__ (should count unique names only)
     assert len(registry) == 1
 
     # Test __delitem__ with specific version
-    del registry["test:str@1.0.0"]
-    assert "test:str@1.0.0" not in registry
-    assert "test:str" in registry  # Latest version should still exist
+    del registry["test:str@2.0.0"]
+    assert "test:str@2.0.0" not in registry
+    assert "test:str" in registry  # Earlier version should still exist
 
     # Test __delitem__ with latest version
     del registry["test:str"]
@@ -994,9 +994,9 @@ def test_dict_like_interface_get(registry):
     assert registry.get("test:str", "default") == "hello"
 
     # Test with version
-    registry["test:str@1.0.0"] = "hello v1"
-    assert registry.get("test:str@1.0.0") == "hello v1"
-    assert registry.get("test:str@1.0.0", "default") == "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
+    assert registry.get("test:str@2.0.0") == "hello v2"
+    assert registry.get("test:str@2.0.0", "default") == "hello v2"
 
     # Test with invalid version
     assert registry.get("test:str@invalid") is None
@@ -1008,7 +1008,7 @@ def test_dict_like_interface_keys_values_items(registry):
     # Add some test data
     registry["test:str"] = "hello"
     registry["test:int"] = 42
-    registry["test:str@1.0.0"] = "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
 
     # Test keys()
     keys = registry.keys()
@@ -1019,14 +1019,14 @@ def test_dict_like_interface_keys_values_items(registry):
     values = registry.values()
     assert isinstance(values, list)
     assert len(values) == 2
-    assert "hello v1" in values  # Latest version of test:str
+    assert "hello v2" in values  # Latest version of test:str
     assert 42 in values  # Latest version of test:int
 
     # Test items() - should only return latest versions
     items = registry.items()
     assert isinstance(items, list)
     assert len(items) == 2
-    assert ("test:str", "hello v1") in items  # Latest version of test:str
+    assert ("test:str", "hello v2") in items  # Latest version of test:str
     assert ("test:int", 42) in items  # Latest version of test:int
 
 
@@ -1057,7 +1057,7 @@ def test_dict_like_interface_clear(registry):
     # Add some test data
     registry["test:str"] = "hello"
     registry["test:int"] = 42
-    registry["test:str@1.0.0"] = "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
 
     # Clear the registry
     registry.clear()
@@ -1068,7 +1068,7 @@ def test_dict_like_interface_clear(registry):
     assert list(registry.values()) == []
     assert list(registry.items()) == []
     assert "test:str" not in registry
-    assert "test:str@1.0.0" not in registry
+    assert "test:str@2.0.0" not in registry
 
 
 def test_dict_like_interface_pop(registry):
@@ -1109,9 +1109,9 @@ def test_dict_like_interface_setdefault(registry):
     assert registry.setdefault("test:str", "new default") == "default"
     assert registry["test:str"] == "default"
 
-    # Test with version
-    assert registry.setdefault("test:str@1.0.0", "v1") == "v1"
-    assert registry["test:str@1.0.0"] == "v1"
+    # Test with explicit newer version
+    assert registry.setdefault("test:str@2.0.0", "v2") == "v2"
+    assert registry["test:str@2.0.0"] == "v2"
 
     # Test with None default
     assert registry.setdefault("test:none") is None
@@ -1144,7 +1144,7 @@ def test_dict_like_interface_error_handling(registry):
 def test_dict_like_interface_version_handling(registry):
     """Test version handling in dictionary-like interface."""
     # Test saving multiple versions
-    registry["test:str"] = "test string"  # Saves a "1"
+    registry["test:str"] = "test string"  # Saves canonical first version
     registry["test:str@1.0.2"] = "v1.0.2"
     registry["test:str@1.0.1"] = "v1.0.1"
 
@@ -1152,12 +1152,12 @@ def test_dict_like_interface_version_handling(registry):
     assert registry["test:str"] == "v1.0.2"
 
     # Test accessing specific versions
-    assert registry["test:str@1"] == "test string"
+    assert registry["test:str@1.0.0"] == "test string"
     assert registry["test:str@1.0.1"] == "v1.0.1"
 
     # Test deleting specific version
-    del registry["test:str@1"]
-    assert "test:str@1" not in registry
+    del registry["test:str@1.0.0"]
+    assert "test:str@1.0.0" not in registry
     assert registry["test:str@1.0.1"] == "v1.0.1"
 
     # Test deleting all versions
@@ -1309,12 +1309,12 @@ def test_dict_batch_setitem_auto_increments_on_versioned_mutable(mutable_registr
     assert mutable_registry["test:b"] == 20
 
     # v1 still exists with original values
-    assert mutable_registry["test:a@1"] == 1
-    assert mutable_registry["test:b@1"] == 2
+    assert mutable_registry["test:a@1.0.0"] == 1
+    assert mutable_registry["test:b@1.0.0"] == 2
 
     # v2 (auto-incremented from 1) has the new values
-    assert mutable_registry["test:a@2"] == 10
-    assert mutable_registry["test:b@2"] == 20
+    assert mutable_registry["test:a@1.0.1"] == 10
+    assert mutable_registry["test:b@1.0.1"] == 20
 
 
 def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_registry):
@@ -1332,23 +1332,23 @@ def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_regist
 def test_dict_single_setitem_overwrite_explicit_version(mutable_registry):
     """Single __setitem__ with explicit version overwrites in-place on mutable registry."""
     mutable_registry["testmutable:a"] = 1
-    mutable_registry["testmutable:a@1"] = 10
+    mutable_registry["testmutable:a@1.0.0"] = 10
 
-    assert mutable_registry["testmutable:a@1"] == 10
-    assert mutable_registry.list_versions("testmutable:a") == ["1"]
+    assert mutable_registry["testmutable:a@1.0.0"] == 10
+    assert mutable_registry.list_versions("testmutable:a") == ["1.0.0"]
 
 
 def test_dict_batch_setitem_overwrite_explicit_version(mutable_registry):
     """Batch __setitem__ with explicit versions overwrites in-place on mutable registry."""
     mutable_registry[["testbatch:a", "testbatch:b"]] = [1, 2]
-    mutable_registry[["testbatch:a@1", "testbatch:b@1"]] = [10, 20]
+    mutable_registry[["testbatch:a@1.0.0", "testbatch:b@1.0.0"]] = [10, 20]
 
     assert mutable_registry["testbatch:a"] == 10
     assert mutable_registry["testbatch:b"] == 20
-    assert mutable_registry["testbatch:a@1"] == 10
-    assert mutable_registry["testbatch:b@1"] == 20
-    assert mutable_registry.list_versions("testbatch:a") == ["1"]
-    assert mutable_registry.list_versions("testbatch:b") == ["1"]
+    assert mutable_registry["testbatch:a@1.0.0"] == 10
+    assert mutable_registry["testbatch:b@1.0.0"] == 20
+    assert mutable_registry.list_versions("testbatch:a") == ["1.0.0"]
+    assert mutable_registry.list_versions("testbatch:b") == ["1.0.0"]
 
 
 def test_dict_batch_delitem(mutable_registry):
@@ -1593,7 +1593,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Verify only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load object
     loaded_config = non_versioned_registry.load("test:config")
@@ -1606,7 +1606,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Verify still only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load should get new value
     loaded_config = non_versioned_registry.load("test:config")
@@ -1619,8 +1619,8 @@ def test_non_versioned_delete(non_versioned_registry, test_config):
     non_versioned_registry.save("test:config", test_config)
 
     # Delete should work with version string as well
-    non_versioned_registry.delete("test:config", "1")
-    assert not non_versioned_registry.has_object("test:config", "1")
+    non_versioned_registry.delete("test:config", "1.0.0")
+    assert not non_versioned_registry.has_object("test:config", "1.0.0")
 
     # Save again
     non_versioned_registry.save("test:config", test_config)
@@ -1660,10 +1660,10 @@ def test_dict_api_non_versioned_batch_overwrite(non_versioned_registry):
     non_versioned_registry[["test:a", "test:b"]] = [1, 2]
     non_versioned_registry[["test:a", "test:b"]] = [10, 20]
 
-    assert non_versioned_registry["test:a@1"] == 10
-    assert non_versioned_registry["test:b@1"] == 20
-    assert non_versioned_registry.list_versions("test:a") == ["1"]
-    assert non_versioned_registry.list_versions("test:b") == ["1"]
+    assert non_versioned_registry["test:a@1.0.0"] == 10
+    assert non_versioned_registry["test:b@1.0.0"] == 20
+    assert non_versioned_registry.list_versions("test:a") == ["1.0.0"]
+    assert non_versioned_registry.list_versions("test:b") == ["1.0.0"]
 
 
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
@@ -1671,18 +1671,18 @@ def test_non_versioned_version_handling(non_versioned_registry, test_config):
     # Save with explicit version
     non_versioned_registry.save("test:config", test_config, version="v2")
 
-    # Verify version is always "1"
+    # Verify version is always canonical first version
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load with explicit version should still work
     loaded_config = non_versioned_registry.load("test:config", version="v2")
     assert loaded_config == test_config
 
     # Delete with explicit version should work
-    non_versioned_registry.delete("test:config", version="1")
-    assert not non_versioned_registry.has_object("test:config", "1")
+    non_versioned_registry.delete("test:config", version="1.0.0")
+    assert not non_versioned_registry.has_object("test:config", "1.0.0")
 
 
 def test_download_basic(registry, test_config):
@@ -1859,7 +1859,7 @@ def test_download_non_versioned(registry, non_versioned_registry, test_config):
     # Verify object exists in non-versioned registry
     print(non_versioned_registry.list_versions("test:config"))
     print(non_versioned_registry)
-    assert non_versioned_registry.has_object("test:config", "1")
+    assert non_versioned_registry.has_object("test:config", "1.0.0")
 
     # Verify object content
     loaded_config = non_versioned_registry.load("test:config")
@@ -1940,14 +1940,15 @@ def test_update_with_registry(registry):
         registry.update(source_reg)
 
         # Verify all objects and versions were transferred
-        assert registry.has_object("config1", "1")
-        assert registry.has_object("config2", "1")
-        assert registry.has_object("config2", "2")
+        assert registry.has_object("config1", "1.0.0")
+        assert registry.has_object("config2", "1.0.0")
+        # Download without target_version uses target auto-versioning
+        assert registry.has_object("config2", "1.0.1")
 
         # Verify object contents
-        assert registry.load("config1", version="1") == config1
-        assert registry.load("config2", version="1") == config2
-        assert registry.load("config2", version="2") == config2
+        assert registry.load("config1", version="1.0.0") == config1
+        assert registry.load("config2", version="1.0.0") == config2
+        assert registry.load("config2", version="1.0.1") == config2
 
 
 def test_update_with_existing_objects(registry):
@@ -3799,9 +3800,9 @@ def test_batch_save_auto_version(registry):
     assert isinstance(results, BatchResult)
     assert len(results) == 2
     assert results.all_succeeded
-    # Auto-increment starts at 1
-    assert results.results[0] == "1"
-    assert results.results[1] == "1"
+    # Auto-increment starts at first canonical version
+    assert results.results[0] == "1.0.0"
+    assert results.results[1] == "1.0.0"
 
 
 def test_batch_save_mixed_skip(registry):
