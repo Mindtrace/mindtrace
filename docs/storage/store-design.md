@@ -24,7 +24,7 @@ Without a `Store` abstraction, callers must manually:
 2. Preserve one-backend-per-registry policy.
 3. Support both explicitly routed keys and discovery-based reads.
 4. Standardize Store terminology around **mounts**.
-5. Always provide a temporary `tmp` mount and a configurable default mount.
+5. Always provide a temporary `temp` mount and a configurable default mount.
 6. Support single and batch operations with deterministic partial-failure reporting.
 7. Add a local name→mount cache to speed mount resolution during load.
 
@@ -33,8 +33,8 @@ Without a `Store` abstraction, callers must manually:
 `Store` is a router + facade over many named mounts:
 
 - A **mount** is `(mount_name -> Registry)`.
-- The Store always has a `tmp` mount.
-- The Store always has a `default_mount`, which initially points to `tmp` unless configured otherwise.
+- The Store always has a `temp` mount.
+- The Store always has a `default_mount`, which initially points to `temp` unless configured otherwise.
 - A key may be either:
   - **Qualified**: `"<mount>/<object_name>[@<version>]"`
   - **Unqualified**: `"<object_name>[@<version>]"`
@@ -43,12 +43,12 @@ Without a `Store` abstraction, callers must manually:
 
 `Store()` always creates a temporary mount:
 
-- `mount = "tmp"`
+- `mount = "temp"`
 - backend path = a fresh temporary directory for that Store instance
 
 `default_mount` always exists and must point to a configured mount. By default:
 
-- `default_mount = "tmp"`
+- `default_mount = "temp"`
 
 A Store may change its default mount at runtime with:
 
@@ -82,7 +82,7 @@ class Store(Mindtrace):
         self,
         mounts: dict[str, Registry] | None = None,
         *,
-        default_mount: str = "tmp",
+        default_mount: str = "temp",
         enable_location_cache: bool = True,
         **kwargs,
     ) -> None: ...
@@ -148,10 +148,10 @@ class Store(Mindtrace):
 
 ### 7.3 Default mount
 
-- The Store always has `tmp`.
+- The Store always has `temp`.
 - `default_mount` always points to one of the configured mounts.
-- Removing the current default mount resets the default back to `tmp`.
-- The required `tmp` mount cannot be removed.
+- Removing the current default mount resets the default back to `temp`.
+- The required `temp` mount cannot be removed.
 
 ### 7.4 Existence checks
 
@@ -171,13 +171,13 @@ Example sketch:
 ```text
 Store
 
-[*tmp]
+[*temp]
 ...
 
 [models]
 ...
 
-Default Mount: `tmp`
+Default Mount: `temp`
 ```
 
 ## 9) Error Model
@@ -194,7 +194,7 @@ Common errors:
 
 Current unit coverage focuses on:
 
-- required tmp mount + default mount behavior
+- required temp mount + default mount behavior
 - `set_default_mount()`
 - `get_registry()` convenience access
 - unqualified writes using `default_mount`
