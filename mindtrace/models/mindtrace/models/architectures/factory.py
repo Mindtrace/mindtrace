@@ -392,7 +392,7 @@ def build_model_from_hf(
     )
 
     in_features = embed_dim if embed_dim is not None else backbone.embed_dim
-    backbone_info = BackboneInfo(model=backbone, num_features=in_features)
+    backbone_info = BackboneInfo(name=model_name_or_path, model=backbone, num_features=in_features)
 
     if freeze_backbone:
         for param in backbone.parameters():

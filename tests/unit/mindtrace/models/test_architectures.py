@@ -7,10 +7,6 @@ Tests cover:
 - Segmentation heads (LinearSegHead, FPNSegHead)
 - Factory functions (build_model, build_model_from_hf, _build_head)
 - Wrapper modules (ModelWrapper, HFDINOSegWrapper)
-
-Known defects documented:
-- build_model_from_hf() creates BackboneInfo without required `name` argument
-  (factory.py line 403). Tests for the happy path are marked xfail until fixed.
 """
 
 from __future__ import annotations
@@ -770,13 +766,7 @@ class TestBuildModel:
 
 
 class TestBuildModelFromHF:
-    """Tests for build_model_from_hf factory function.
-
-    NOTE: Three tests are marked xfail because factory.py:403 constructs
-    BackboneInfo(model=..., num_features=...) without the required `name`
-    argument.  This is a production bug.  Remove xfail once the factory
-    is fixed to pass name= (e.g. name=model_name_or_path).
-    """
+    """Tests for build_model_from_hf factory function."""
 
     def test_seg_head_raises_value_error(self) -> None:
         """Segmentation heads should be rejected regardless of HF availability."""
@@ -813,35 +803,6 @@ class TestBuildModelFromHF:
                     num_classes=NUM_CLASSES,
                 )
 
-    def test_backbone_info_missing_name_bug(self) -> None:
-        """Document the production bug: BackboneInfo() called without name=.
-
-        factory.py:403 reads:
-            backbone_info = BackboneInfo(model=backbone, num_features=in_features)
-        but BackboneInfo requires a `name` field.  This test proves the defect
-        exists so it can be tracked and verified when fixed.
-        """
-        mock_backbone = nn.Sequential(nn.Flatten(), nn.Linear(3 * 32 * 32, 128))
-        mock_backbone.embed_dim = 128
-        mock_cls = MagicMock(return_value=mock_backbone)
-
-        with (
-            patch("mindtrace.models.architectures.factory._HF_GENERIC_AVAILABLE", True),
-            patch("mindtrace.models.architectures.factory._HFGenericBackbone", mock_cls),
-        ):
-            with pytest.raises(TypeError, match="missing 1 required positional argument"):
-                build_model_from_hf(
-                    "mock/model",
-                    head="linear",
-                    num_classes=NUM_CLASSES,
-                    pretrained=False,
-                )
-
-    @pytest.mark.xfail(
-        reason="BUG: factory.py:403 BackboneInfo() missing name= arg",
-        raises=TypeError,
-        strict=True,
-    )
     def test_with_mock_hf_backbone(self) -> None:
         """Simulate a successful HF backbone build using mocks.
 
@@ -866,11 +827,6 @@ class TestBuildModelFromHF:
             out = model(x)
             assert out.shape == (BATCH, NUM_CLASSES)
 
-    @pytest.mark.xfail(
-        reason="BUG: factory.py:403 BackboneInfo() missing name= arg",
-        raises=TypeError,
-        strict=True,
-    )
     def test_embed_dim_override(self) -> None:
         """embed_dim kwarg should override backbone.embed_dim.
 
@@ -895,11 +851,6 @@ class TestBuildModelFromHF:
             )
             assert model.backbone_info.num_features == override_dim
 
-    @pytest.mark.xfail(
-        reason="BUG: factory.py:403 BackboneInfo() missing name= arg",
-        raises=TypeError,
-        strict=True,
-    )
     def test_freeze_backbone_from_hf(self) -> None:
         """freeze_backbone should freeze all backbone params.
 
