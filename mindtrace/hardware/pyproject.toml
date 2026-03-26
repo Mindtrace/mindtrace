@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.9.4"
+version = "0.10.0"
 description = "Hardware integration for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,9 +12,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core>=0.9.4",
-    "mindtrace-services>=0.9.4",
-    "mindtrace-storage>=0.9.4",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-services>=0.10.0",
+    "mindtrace-storage>=0.10.0",
     "opencv-python>=4.8.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
@@ -46,12 +46,12 @@ mindtrace-scanner-photoneo = "mindtrace.hardware.scanners_3d.setup.setup_photone
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
 cameras-genicam = ["harvesters>=1.4.0", "genicam>=1.5.0"]
-cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]>=0.9.4"]
+cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]>=0.10.0"]
 stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
-stereo-all = ["mindtrace-hardware[stereo-basler]>=0.9.4"]
+stereo-all = ["mindtrace-hardware[stereo-basler]>=0.10.0"]
 scanners-photoneo = ["harvesters>=1.4.0", "plyfile>=1.0.0"]
-scanners-all = ["mindtrace-hardware[scanners-photoneo]>=0.9.4"]
-hardware-all = ["mindtrace-hardware[cameras-all,stereo-all,scanners-all]>=0.9.4"]
+scanners-all = ["mindtrace-hardware[scanners-photoneo]>=0.10.0"]
+hardware-all = ["mindtrace-hardware[cameras-all,stereo-all,scanners-all]>=0.10.0"]
 setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",

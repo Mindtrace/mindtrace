@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-datalake"
-version = "0.9.4"
+version = "0.10.0"
 description = "Datalake functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,10 +12,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core>=0.9.4",
-    "mindtrace-registry>=0.9.4",
-    "mindtrace-database>=0.9.4",
-    "mindtrace-services>=0.9.4",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-registry>=0.10.0",
+    "mindtrace-database>=0.10.0",
+    "mindtrace-services>=0.10.0",
 ]
 
 [project.urls]
