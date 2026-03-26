@@ -53,12 +53,22 @@ class TestModelStage:
     def test_can_promote_to_valid(self):
         assert ModelStage.DEV.can_promote_to(ModelStage.STAGING) is True
         assert ModelStage.STAGING.can_promote_to(ModelStage.PRODUCTION) is True
+        assert ModelStage.DEV.can_promote_to(ModelStage.ARCHIVED) is True
 
     def test_can_promote_to_invalid(self):
-        # dev -> production skips staging — not allowed
         assert ModelStage.DEV.can_promote_to(ModelStage.PRODUCTION) is False
-        # production -> staging is a demotion but not in allowed transitions
         assert ModelStage.PRODUCTION.can_promote_to(ModelStage.STAGING) is False
+        assert ModelStage.ARCHIVED.can_promote_to(ModelStage.DEV) is False
+
+    def test_can_demote_to_valid(self):
+        assert ModelStage.STAGING.can_demote_to(ModelStage.DEV) is True
+        assert ModelStage.PRODUCTION.can_demote_to(ModelStage.STAGING) is True
+        assert ModelStage.PRODUCTION.can_demote_to(ModelStage.DEV) is True
+        assert ModelStage.PRODUCTION.can_demote_to(ModelStage.ARCHIVED) is True
+
+    def test_can_demote_to_invalid(self):
+        assert ModelStage.DEV.can_demote_to(ModelStage.STAGING) is False
+        assert ModelStage.ARCHIVED.can_demote_to(ModelStage.DEV) is False
 
     def test_next_stage(self):
         assert ModelStage.DEV.next_stage is ModelStage.STAGING
@@ -242,10 +252,10 @@ class TestPromote:
         card.promote(to_stage=ModelStage.STAGING)
 
         registry.save.assert_called_once()
-        # The key must contain the new stage name
+        # persist() saves under "name:version:card"
         call_args = registry.save.call_args
         key_arg = call_args[0][0]
-        assert "staging" in key_arg
+        assert key_arg == "reg-model:v1:card:staging"
 
     def test_promote_missing_required_metric_raises(self):
         """A required metric that was never recorded blocks promotion."""
@@ -266,6 +276,15 @@ class TestPromote:
 
 
 class TestDemote:
+    def test_demote_production_to_staging(self):
+        registry = MagicMock()
+        card = _make_card(stage=ModelStage.PRODUCTION, registry=registry)
+
+        result = card.demote(to_stage=ModelStage.STAGING)
+
+        assert result.success is True
+        assert card.stage is ModelStage.STAGING
+
     def test_demote_production_to_archived(self):
         registry = MagicMock()
         card = _make_card(stage=ModelStage.PRODUCTION, registry=registry)
@@ -282,6 +301,14 @@ class TestDemote:
 
         with pytest.raises(PromotionError):
             card.demote(to_stage=ModelStage.PRODUCTION)
+
+    def test_demote_dev_cannot_go_lower(self):
+        """DEV has no valid demotions."""
+        registry = MagicMock()
+        card = _make_card(stage=ModelStage.DEV, registry=registry)
+
+        with pytest.raises(PromotionError):
+            card.demote(to_stage=ModelStage.ARCHIVED)
 
     def test_demote_dry_run_does_not_update_stage(self):
         registry = MagicMock()

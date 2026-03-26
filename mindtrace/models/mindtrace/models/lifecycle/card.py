@@ -43,7 +43,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS, ModelStage
+from mindtrace.models.lifecycle.stages import (
+    VALID_DEMOTIONS,
+    VALID_TRANSITIONS,
+    ModelStage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +93,7 @@ class EvalResult:
 
 
 class PromotionError(Exception):
-    """Raised when a model fails to meet promotion requirements."""
+    """Raised when a promotion or demotion transition is invalid or fails."""
 
 
 @dataclass
@@ -179,6 +183,9 @@ class ModelCard:
     def save_model(self, model: Any) -> str:
         """Save model weights to the registry.
 
+        Uses ``registry.save(name, model, version=version)`` so that
+        the registry manages name and version separately.
+
         Args:
             model: The model object (e.g. ``nn.Module``) to persist.
 
@@ -189,11 +196,10 @@ class ModelCard:
             RuntimeError: If no registry is attached to this card.
         """
         self._require_registry("save_model")
-        key = self.registry_key()
-        self.registry.save(key, model)
+        self.registry.save(self.name, model, version=self.version)
         self._model_saved = True
-        logger.info("ModelCard: saved model weights as '%s'.", key)
-        return key
+        logger.info("ModelCard: saved model weights as '%s'.", self.registry_key())
+        return self.registry_key()
 
     def load_model(self) -> Any:
         """Load model weights from the registry.
@@ -205,9 +211,8 @@ class ModelCard:
             RuntimeError: If no registry is attached to this card.
         """
         self._require_registry("load_model")
-        key = self.registry_key()
-        model = self.registry.load(key)
-        logger.info("ModelCard: loaded model from '%s'.", key)
+        model = self.registry.load(self.name, version=self.version)
+        logger.info("ModelCard: loaded model from '%s'.", self.registry_key())
         return model
 
     @property
@@ -216,7 +221,7 @@ class ModelCard:
         if self.registry is None:
             return False
         try:
-            return self.registry.has_object(self.registry_key())
+            return self.registry.has_object(self.name, self.version)
         except Exception:
             return self._model_saved
 
@@ -259,13 +264,13 @@ class ModelCard:
     ) -> PromotionResult:
         """Promote this model to a new lifecycle stage.
 
-        Validates the transition, checks metric gates, updates the stage,
-        and persists the card metadata to the registry.
+        Validates the transition against ``VALID_TRANSITIONS``, checks metric
+        gates, persists the card to the registry, then updates the stage.
+        The stage is only updated after a successful persist.
 
         Args:
             to_stage: Target stage.
-            require: ``{metric: minimum_value}`` thresholds.  Promotion is
-                blocked if any metric is below its threshold or missing.
+            require: ``{metric: minimum_value}`` thresholds.
             dry_run: Validate without applying changes.
 
         Returns:
@@ -278,7 +283,9 @@ class ModelCard:
         self._require_registry("promote")
         from_stage = self.stage
 
-        self._validate_transition(from_stage, to_stage)
+        if not from_stage.can_promote_to(to_stage):
+            allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
+            raise PromotionError(f"Invalid promotion: {from_stage.value!r} -> {to_stage.value!r}. Allowed: {allowed}.")
 
         failures = self._check_requirements(require) if require else {}
 
@@ -301,8 +308,15 @@ class ModelCard:
         if dry_run:
             return result
 
+        # Persist BEFORE updating stage -- if persist fails, stage stays unchanged.
+        old_stage = self.stage
         self.stage = to_stage
-        self._persist_card(to_stage)
+        try:
+            self.persist()
+        except Exception:
+            self.stage = old_stage
+            raise
+
         logger.info(
             "Promoted %s:%s from %s to %s.",
             self.name,
@@ -321,7 +335,8 @@ class ModelCard:
     ) -> PromotionResult:
         """Demote this model to an earlier or archival stage.
 
-        Unlike :meth:`promote`, demotion does not check metric thresholds.
+        Validates the transition against ``VALID_DEMOTIONS``. Unlike
+        :meth:`promote`, demotion does not check metric thresholds.
 
         Args:
             to_stage: Target stage.
@@ -338,7 +353,9 @@ class ModelCard:
         self._require_registry("demote")
         from_stage = self.stage
 
-        self._validate_transition(from_stage, to_stage)
+        if not from_stage.can_demote_to(to_stage):
+            allowed = sorted(s.value for s in VALID_DEMOTIONS.get(from_stage, set()))
+            raise PromotionError(f"Invalid demotion: {from_stage.value!r} -> {to_stage.value!r}. Allowed: {allowed}.")
 
         result = PromotionResult(
             success=True,
@@ -354,11 +371,22 @@ class ModelCard:
         if reason:
             self.extra["demotion_reason"] = reason
 
+        # Persist BEFORE updating stage.
+        old_stage = self.stage
         self.stage = to_stage
-        self._persist_card(to_stage)
+        try:
+            self.persist()
+        except Exception:
+            self.stage = old_stage
+            raise
 
         log_msg = "Demoted %s:%s from %s to %s."
-        log_args: list[Any] = [self.name, self.version, from_stage.value, to_stage.value]
+        log_args: list[Any] = [
+            self.name,
+            self.version,
+            from_stage.value,
+            to_stage.value,
+        ]
         if reason:
             log_msg += " Reason: %s"
             log_args.append(reason)
@@ -376,26 +404,30 @@ class ModelCard:
             RuntimeError: If no registry is attached.
         """
         self._require_registry("persist")
-        key = f"{self.registry_key()}:card"
+        key = f"{self.registry_key()}:card:{self.stage.value}"
         self.registry.save(key, self.to_dict())
         logger.info("ModelCard: persisted metadata as '%s'.", key)
 
     @classmethod
-    def from_registry(cls, registry: Any, name: str, version: str) -> ModelCard:
+    def from_registry(
+        cls,
+        registry: Any,
+        name: str,
+        version: str,
+        stage: ModelStage = ModelStage.DEV,
+    ) -> ModelCard:
         """Load a card from the registry.
 
         Args:
             registry: A ``mindtrace.registry.Registry`` instance.
             name: Model name.
             version: Model version.
+            stage: Stage of the card to load (default DEV).
 
         Returns:
             Reconstructed :class:`ModelCard` with the registry attached.
-
-        Raises:
-            KeyError: If no card metadata is found in the registry.
         """
-        key = f"{name}:{version}:card"
+        key = f"{name}:{version}:card:{stage.value}"
         data = registry.load(key)
         card = cls.from_dict(data)
         card.registry = registry
@@ -467,15 +499,6 @@ class ModelCard:
         if self.registry is None:
             raise RuntimeError(f"ModelCard.{operation}() requires a registry. Pass registry= when creating the card.")
 
-    @staticmethod
-    def _validate_transition(from_stage: ModelStage, to_stage: ModelStage) -> None:
-        if not from_stage.can_promote_to(to_stage):
-            allowed = sorted(s.value for s in VALID_TRANSITIONS.get(from_stage, set()))
-            raise PromotionError(
-                f"Invalid transition: {from_stage.value!r} -> {to_stage.value!r}. "
-                f"Allowed from {from_stage.value!r}: {allowed}."
-            )
-
     def _check_requirements(self, require: dict[str, float]) -> dict[str, tuple[float, float]]:
         failures: dict[str, tuple[float, float]] = {}
         for metric, threshold in require.items():
@@ -485,13 +508,3 @@ class ModelCard:
             elif actual < threshold:
                 failures[metric] = (actual, threshold)
         return failures
-
-    def _persist_card(self, stage: ModelStage) -> None:
-        try:
-            self.registry.save(self.registry_key(stage), self.to_dict())
-        except Exception as exc:
-            logger.warning(
-                "Could not persist card to registry under '%s': %s",
-                self.registry_key(stage),
-                exc,
-            )
