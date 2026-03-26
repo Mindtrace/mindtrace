@@ -86,7 +86,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Verify metadata file exists
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     assert meta_path.exists()
 
     # Fetch metadata - returns OpResults with OpResult for each (name, version)
@@ -102,7 +102,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
 def test_fetch_metadata_empty_file_single(backend):
     """Test that fetch_metadata returns failed result for empty metadata files."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     meta_path.touch()  # Create empty file
 
     # Also create the object directory so the path update doesn't fail
@@ -118,7 +118,7 @@ def test_fetch_metadata_empty_file_single(backend):
 def test_fetch_metadata_empty_file_batch(backend, sample_metadata):
     """Test that fetch_metadata returns failed result for empty metadata files in batch."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     meta_path.touch()  # Create empty file
 
     # Also create the object directory so the path update doesn't fail

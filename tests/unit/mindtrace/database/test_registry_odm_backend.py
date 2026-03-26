@@ -404,13 +404,14 @@ class TestRegistryMindtraceODM:
 
     def test_default_backend_integration(self, tmp_path):
         """Test integration with default Registry backend."""
-        # Create backend with an isolated tmp_path to avoid conflicts with existing registry metadata
-        backend = RegistryMindtraceODM(backend=tmp_path)
+        from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+
+        # Use isolated temp directory to avoid mutable conflicts with other tests
+        local_backend = LocalRegistryBackend(uri=str(tmp_path / "registry"))
+        backend = RegistryMindtraceODM(backend=local_backend)
 
         # Test that the registry was initialized
         assert backend.registry is not None
-        # The registry should have been created with default settings
-        # This is tested indirectly through the registry initialization
 
     # Tests for find() method
     def test_find_no_criteria(self, registry_odm):

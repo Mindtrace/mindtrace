@@ -390,8 +390,6 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         for n in names:
             if not n or not n.strip():
                 raise ValueError("Object names cannot be empty.")
-            elif "_" in n:
-                raise ValueError(f"Object name '{n}' cannot contain underscores. Use colons (':') for namespacing.")
             elif "@" in n:
                 raise ValueError(f"Object name '{n}' cannot contain '@'.")
 

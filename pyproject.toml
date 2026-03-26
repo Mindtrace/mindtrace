@@ -44,9 +44,20 @@ scanners-photoneo = [
 ]
 scanners-all = ["mindtrace-hardware[scanners-all]>=0.9.4"]
 hardware-all = ["mindtrace-hardware[hardware-all]>=0.9.4"]
-registry-timm = ["mindtrace-registry[timm]>=0.9.4"]
-registry-huggingface = ["mindtrace-registry[huggingface]>=0.9.4"]
-registry-onnx = ["mindtrace-registry[onnx]>=0.9.4"]
+# Models extras
+models-train = ["mindtrace-models[train]>=0.9.4"]
+models-transformers = ["mindtrace-models[transformers]>=0.9.4"]
+models-timm = ["mindtrace-models[timm]>=0.9.4"]
+models-peft = ["mindtrace-models[peft]>=0.9.4"]
+models-mlflow = ["mindtrace-models[mlflow]>=0.9.4"]
+models-wandb = ["mindtrace-models[wandb]>=0.9.4"]
+models-tensorboard = ["mindtrace-models[tensorboard]>=0.9.4"]
+models-onnx = ["mindtrace-models[onnx]>=0.9.4"]
+models-ultralytics = ["mindtrace-models[ultralytics]>=0.9.4"]
+models-all = ["mindtrace-models[all]>=0.9.4"]
+# Cluster extras
+cluster-torch = ["mindtrace-cluster[torch]>=0.9.4"]
+
 
 [dependency-groups]
 dev = [
@@ -61,6 +72,7 @@ dev = [
     "pre-commit>=4.2.0",
     "twine>=6.1.0",
     "tomlkit>=0.13.3",
+    "setuptools>=82.0.0",
 ]
 docs = [
     "mkdocs-material>=9.6.21",
@@ -213,6 +225,7 @@ target-version = "py312"
 # McCabe complexity (`C901`) by default.
 select = ["E4", "E7", "E9", "F", "I001"]
 ignore = []
+per-file-ignores = {"tests/**" = ["E402"], "samples/**" = ["E402", "E731"]}
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

@@ -81,78 +81,67 @@ def register_default_materializers():
         "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.nn.Module",
+        "torch.nn.modules.module.Module",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.jit.ScriptModule",
+        "torch.jit._script.ScriptModule",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )
 
     # ── ML framework archivers (string-based for lazy loading) ──────────
-    # These override ZenML defaults from above. The archiver classes are only
-    # imported when instantiate_target() resolves them during save/load.
+    # These override ZenML defaults from above. The archiver classes live in
+    # mindtrace.models.archivers and are only imported when instantiate_target()
+    # resolves them during save/load.
 
     # Ultralytics
     Registry.register_default_materializer(
         "ultralytics.models.sam.model.SAM",
-        "mindtrace.registry.archivers.ultralytics.sam_archiver.SamArchiver",
+        "mindtrace.models.archivers.ultralytics.sam_archiver.SamArchiver",
     )
     Registry.register_default_materializer(
         "ultralytics.models.yolo.model.YOLO",
-        "mindtrace.registry.archivers.ultralytics.yolo_archiver.YoloArchiver",
+        "mindtrace.models.archivers.ultralytics.yolo_archiver.YoloArchiver",
     )
     Registry.register_default_materializer(
         "ultralytics.models.yolo.model.YOLOWorld",
-        "mindtrace.registry.archivers.ultralytics.yolo_archiver.YoloArchiver",
+        "mindtrace.models.archivers.ultralytics.yolo_archiver.YoloArchiver",
     )
     Registry.register_default_materializer(
         "ultralytics.models.yolo.model.YOLOE",
-        "mindtrace.registry.archivers.ultralytics.yoloe_archiver.YoloEArchiver",
+        "mindtrace.models.archivers.ultralytics.yoloe_archiver.YoloEArchiver",
     )
 
     # HuggingFace models
     Registry.register_default_materializer(
         "transformers.modeling_utils.PreTrainedModel",
-        "mindtrace.registry.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
+        "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
     )
     Registry.register_default_materializer(
         "peft.peft_model.PeftModel",
-        "mindtrace.registry.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
+        "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
     )
 
     # HuggingFace processors
     Registry.register_default_materializer(
         "transformers.tokenization_utils_base.PreTrainedTokenizerBase",
-        "mindtrace.registry.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
+        "mindtrace.models.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
     )
     Registry.register_default_materializer(
         "transformers.processing_utils.ProcessorMixin",
-        "mindtrace.registry.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
+        "mindtrace.models.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
     )
     Registry.register_default_materializer(
         "transformers.image_processing_base.ImageProcessingMixin",
-        "mindtrace.registry.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
+        "mindtrace.models.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
     )
     Registry.register_default_materializer(
         "transformers.feature_extraction_utils.FeatureExtractionMixin",
-        "mindtrace.registry.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
-    )
-
-    # timm (nn.Module fallback)
-    Registry.register_default_materializer(
-        "torch.nn.modules.module.Module",
-        "mindtrace.registry.archivers.timm.timm_model_archiver.TimmModelArchiver",
+        "mindtrace.models.archivers.huggingface.hf_processor_archiver.HuggingFaceProcessorArchiver",
     )
 
     # ONNX
     Registry.register_default_materializer(
         "onnx.onnx_ml_pb2.ModelProto",
-        "mindtrace.registry.archivers.onnx.onnx_model_archiver.OnnxModelArchiver",
-    )
-
-    # TensorRT
-    Registry.register_default_materializer(
-        "tensorrt.ICudaEngine",
-        "mindtrace.registry.archivers.tensorrt.tensorrt_engine_archiver.TensorRTEngineArchiver",
+        "mindtrace.models.archivers.onnx.onnx_model_archiver.OnnxModelArchiver",
     )
