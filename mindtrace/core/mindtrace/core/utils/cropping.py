@@ -29,7 +29,8 @@ class CropExtractor:
 
     Usage:
         ```python
-        from mindtrace.core import CropExtractor, BoundingBox
+        from mindtrace.core.utils.cropping import CropExtractor
+        from mindtrace.core.types.bounding_box import BoundingBox
 
         extractor = CropExtractor(padding=0.1, square=True)
 

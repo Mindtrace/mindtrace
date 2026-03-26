@@ -36,7 +36,7 @@ class LetterBox:
     Usage:
         ```python
         import cv2
-        from mindtrace.core import LetterBox
+        from mindtrace.core.utils.letterbox import LetterBox
 
         letterbox = LetterBox(new_shape=(640, 640))
         image = cv2.imread("image.jpg")

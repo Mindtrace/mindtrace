@@ -42,7 +42,7 @@ class MaskProcessor:
 
     Usage:
         ```python
-        from mindtrace.core import MaskProcessor
+        from mindtrace.core.utils.masks import MaskProcessor
 
         # Convert model logits to a class mask
         mask = MaskProcessor.logits_to_mask(logits, target_size=(512, 512))

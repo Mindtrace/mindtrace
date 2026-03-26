@@ -35,7 +35,7 @@ class ImageLoader(Mindtrace):
 
     Usage:
         ```python
-        from mindtrace.core import ImageLoader
+        from mindtrace.core.utils.image_io import ImageLoader
 
         loader = ImageLoader(num_workers=4, color_mode="rgb")
 
