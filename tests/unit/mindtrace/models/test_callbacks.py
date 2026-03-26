@@ -218,7 +218,7 @@ class TestModelCheckpoint:
 
         cp.on_epoch_end(trainer, epoch=5, logs={"val/loss": 0.2})
         assert cp.last_saved_key == "resnet50:epoch_5"
-        registry.save.assert_called_once_with("resnet50:epoch_5", trainer.model)
+        registry.save.assert_called_once_with("resnet50", trainer.model, version="epoch_5")
 
     def test_save_best_only_false(self):
         """When save_best_only=False, save every epoch even without improvement."""

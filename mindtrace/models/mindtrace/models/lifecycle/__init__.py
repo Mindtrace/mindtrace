@@ -31,11 +31,12 @@ from mindtrace.models.lifecycle.card import (
     PromotionError,
     PromotionResult,
 )
-from mindtrace.models.lifecycle.stages import VALID_TRANSITIONS, ModelStage
+from mindtrace.models.lifecycle.stages import VALID_DEMOTIONS, VALID_TRANSITIONS, ModelStage
 
 __all__ = [
     "ModelStage",
     "VALID_TRANSITIONS",
+    "VALID_DEMOTIONS",
     "EvalResult",
     "ModelCard",
     "PromotionError",

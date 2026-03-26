@@ -330,10 +330,8 @@ See [Evaluation Documentation](mindtrace/models/evaluation/README.md) for detail
 ### Stage Graph
 
 ```
-DEV --> STAGING --> PRODUCTION --> ARCHIVED
-                       |              ^
-                       +--------------+
-                  (demote / archive)
+Promotion (forward):   DEV --> STAGING --> PRODUCTION --> ARCHIVED
+Demotion (backward):              DEV <-- STAGING <-- PRODUCTION
 ```
 
 ### Valid Transitions
@@ -547,7 +545,8 @@ from mindtrace.models import (
 
     # -- Lifecycle --
     ModelStage,                     # Enum: DEV, STAGING, PRODUCTION, ARCHIVED
-    VALID_TRANSITIONS,              # Allowed stage transition graph
+    VALID_TRANSITIONS,              # Allowed forward promotion graph
+    VALID_DEMOTIONS,                # Allowed backward demotion graph
     ModelCard,                      # Structured model metadata
                                     #   .save_model()    - save model artifact to registry
                                     #   .load_model()    - load model artifact from registry
