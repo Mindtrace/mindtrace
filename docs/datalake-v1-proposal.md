@@ -13,7 +13,7 @@ The intended shape is:
 - `DatasetBuilder` is mutable and used to derive new dataset versions
 - Datalake exposes a service API for storage, assets, datasets, and annotations
 
-This design is meant to support Chiron first, but should be framed as a reusable Mindtrace module rather than a Chiron-specific subsystem.
+This design is intended to be a reusable Mindtrace module rather than an application-specific subsystem.
 
 ---
 
@@ -390,14 +390,14 @@ Example response:
     {
       "name": "nas",
       "read_only": false,
-      "backend": "s3://minio/chiron",
+      "backend": "s3://minio/datalake",
       "version_objects": true,
       "mutable": true
     },
     {
       "name": "gcp",
       "read_only": false,
-      "backend": "gs://my-bucket/chiron",
+      "backend": "gs://my-bucket/datalake",
       "version_objects": true,
       "mutable": true
     }
@@ -607,19 +607,19 @@ Delete an annotation record.
 
 ---
 
-## Chiron integration notes
+## Integration notes
 
-This proposal is intended to support Chiron as an early client without making the Datalake model Chiron-specific.
+This proposal is intentionally framed as a public Mindtrace design rather than an application-specific integration plan.
 
-In a Datalake-backed Chiron flow:
+A consumer of the Datalake module should be able to:
 
-- image payloads would be stored through the storage / asset APIs
-- image records in Chiron could point at canonical Datalake asset IDs
-- label CRUD could move to the Datalake annotation APIs when desired
-- dataset exports could be generated from canonical assets and annotation records
-- NAS / GCP promotion could happen through storage copy endpoints
+- store payloads through the storage / asset APIs
+- reference canonical Datalake asset IDs from higher-level application records
+- use the annotation APIs for live label CRUD when appropriate
+- generate dataset exports from canonical assets and annotation records
+- promote objects across mounts through storage copy endpoints
 
-This allows Chiron to become a Datalake client rather than the long-term owner of the canonical annotation persistence model.
+This keeps Datalake positioned as the canonical persistence and access layer while allowing downstream applications to remain thin clients over that data model.
 
 ---
 
@@ -658,4 +658,4 @@ A practical first implementation should:
 - keep the service API small and explicit
 - avoid overpromising advanced lifecycle mechanics in the first cut
 
-In short: build the Datalake as a canonical data layer with a narrow, clear contract, not as a one-off Chiron storage helper and not as a giant platform on day one.
+In short: build the Datalake as a canonical data layer with a narrow, clear contract, not as a one-off app-specific storage helper and not as a giant platform on day one.
