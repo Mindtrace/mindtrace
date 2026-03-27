@@ -27,7 +27,7 @@ The Mindtrace Hardware module provides a unified interface for managing industri
 
 The hardware module consists of five main subsystems:
 
-- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control
+- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control and liquid lens autofocus
 - **Stereo Camera System**: 3D vision with depth measurement and point cloud generation (Basler Stereo ace)
 - **3D Scanner System**: Industrial 3D scanning with multi-component capture (Photoneo)
 - **PLC System**: Industrial PLC integration (Allen-Bradley) with tag-based operations
@@ -158,6 +158,32 @@ CameraManagerService.launch(port=8002, block=True)
 | GenICam | harvesters | GenICam-compliant cameras |
 | OpenCV | opencv-python | USB cameras, webcams |
 | Mock | Built-in | Testing, CI/CD |
+
+### Liquid Lens & Autofocus
+
+For Basler cameras with a connected liquid lens, the system provides hardware-level focus control:
+
+```python
+from mindtrace.hardware.cameras.core.camera import Camera
+
+camera = Camera(name="Basler:ace2_001")
+
+# Check lens support
+status = camera.get_lens_status()
+if status["connected"]:
+    # Manual focus
+    camera.set_optical_power(5.0)  # diopters
+
+    # One-shot autofocus
+    camera.trigger_autofocus(accuracy="Accurate")
+
+    # Configure autofocus behavior
+    camera.set_focus_config(roi_size="Size64", edge_detection=True)
+
+camera.close()
+```
+
+Auto-detection is exposed via `get_capabilities()` (`supports_liquid_lens` field) and the REST API at `POST /cameras/capabilities`.
 
 ### Homography Measurement
 
