@@ -519,3 +519,34 @@ class TestHomographyCalibrator:
             assert isinstance(calib_data, CalibrationData)
             assert calib_data.world_unit == "mm"
             assert calib_data.H.shape == (3, 3)
+
+    def test_calibrate_checkerboard_multi_view_validates_lengths(self):
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        with pytest.raises(CameraConfigurationError, match="must match number of positions"):
+            self.calibrator.calibrate_checkerboard_multi_view(images=[image], positions=[])
+
+    @patch("cv2.findChessboardCorners")
+    @patch.object(HomographyCalibrator, "calibrate_from_correspondences")
+    def test_calibrate_checkerboard_multi_view_combines_points(self, mock_from_correspondences, mock_find_corners):
+        image = np.zeros((80, 80, 3), dtype=np.uint8)
+        corners = np.array([[[1.0, 1.0]], [[2.0, 2.0]], [[3.0, 3.0]], [[4.0, 4.0]]], dtype=np.float32)
+        mock_find_corners.return_value = (True, corners)
+        mock_from_correspondences.return_value = CalibrationData(H=np.eye(3))
+
+        result = self.calibrator.calibrate_checkerboard_multi_view(
+            images=[image],
+            positions=[(10.0, 20.0)],
+            board_size=(2, 2),
+            square_width=5.0,
+            square_height=7.0,
+            refine_corners=False,
+            world_unit="mm",
+        )
+
+        assert isinstance(result, CalibrationData)
+        kwargs = mock_from_correspondences.call_args.kwargs
+        np.testing.assert_array_equal(
+            kwargs["world_points"], np.array([[10.0, 20.0], [15.0, 20.0], [10.0, 27.0], [15.0, 27.0]])
+        )
+        np.testing.assert_array_equal(kwargs["image_points"], corners.reshape(-1, 2))
+        assert kwargs["world_unit"] == "mm"

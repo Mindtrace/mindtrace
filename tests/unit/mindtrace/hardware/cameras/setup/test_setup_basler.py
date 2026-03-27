@@ -114,6 +114,34 @@ class TestPylonSDKInstaller:
         assert isinstance(installer.logger, logging.Logger)
 
 
+class TestInstallerInternals:
+    """More targeted tests for installer internals to improve branch coverage."""
+
+    def test_validate_package_rejects_small_file(self, tmp_path):
+        installer = PylonSDKInstaller()
+        package = tmp_path / "pylon_small.tar.gz"
+        package.write_bytes(b"x" * 1024)
+
+        info = {"min_size_mb": 100, "file_description": "x", "search_term": "x", "file_pattern": "x"}
+        assert installer._validate_package(package, info) is False
+
+    def test_validate_package_rejects_non_pylon_name(self, tmp_path):
+        installer = PylonSDKInstaller()
+        package = tmp_path / "camera_sdk.tar.gz"
+        package.write_bytes(b"x" * (120 * 1024 * 1024))
+
+        info = {"min_size_mb": 100, "file_description": "x", "search_term": "x", "file_pattern": "x"}
+        assert installer._validate_package(package, info) is False
+
+    def test_install_from_package_unsupported_platform(self, tmp_path):
+        installer = PylonSDKInstaller()
+        installer.platform = "Darwin"
+        package = tmp_path / "pylon.pkg"
+        package.write_text("dummy")
+
+        assert installer._install_from_package(package) is False
+
+
 class TestTyperCommands:
     """Test Typer CLI commands."""
 

@@ -777,25 +777,13 @@ class RedisMindtraceODM(MindtraceODM):
 
         # After saving, ensure the index is working - if it has 0 docs, recreate it
         # This handles the case where index was created before documents were inserted
+        # NOTE: Do NOT run Migrator().run() here. It can detect a schema hash mismatch
+        # (e.g. if test cleanup deleted the hash key) and DROP+CREATE the index after
+        # the doc was saved, causing a race where find()/all() returns empty before
+        # re-indexing completes. _do_initialize() (via self.initialize()) and
+        # _ensure_index_has_documents() are sufficient.
         try:
             self._ensure_index_has_documents(self.model_cls)
-            # After ensuring index, try running Migrator to make redis-om aware of it
-            # This ensures redis-om's find() method can use the index
-            try:
-                import os
-
-                original_redis_url = os.environ.get("REDIS_OM_URL", None)
-                if self.redis_url:
-                    os.environ["REDIS_OM_URL"] = self.redis_url
-                try:
-                    Migrator().run()
-                finally:
-                    if original_redis_url:
-                        os.environ["REDIS_OM_URL"] = original_redis_url
-                    elif "REDIS_OM_URL" in os.environ:
-                        del os.environ["REDIS_OM_URL"]
-            except Exception:
-                pass  # Don't fail if Migrator fails
         except Exception:
             pass  # Don't fail insert if index check fails
 

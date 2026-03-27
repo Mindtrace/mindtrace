@@ -32,6 +32,7 @@ class TestProxyWorker:
             "git_branch": None,
             "git_commit": None,
             "git_working_dir": None,
+            "git_project": None,
         }
         assert result == expected
 
@@ -65,6 +66,7 @@ class TestStandardWorkerLauncher:
             git_branch="main",
             git_commit="abc123",
             git_working_dir="/app",
+            git_project="our-project",
         )
 
     def test_launcher_initialization(self, temp_dir):
@@ -93,6 +95,7 @@ class TestStandardWorkerLauncher:
             "git_branch": None,
             "git_commit": None,
             "git_working_dir": None,
+            "git_project": None,
         }
         assert saved_data == expected_data
 
@@ -252,7 +255,11 @@ class TestStandardWorkerLauncher:
 
             # Verify GitEnvironment was created with correct parameters
             mock_git_env_class.assert_called_once_with(
-                repo_url="https://github.com/test/repo.git", branch="main", commit="abc123", working_dir="/app"
+                repo_url="https://github.com/test/repo.git",
+                branch="main",
+                commit="abc123",
+                working_dir="/app",
+                project="our-project",
             )
 
             # Verify environment setup was called
@@ -497,7 +504,11 @@ class TestStandardWorkerLauncher:
 
             # Verify GitEnvironment was created with None values
             mock_git_env_class.assert_called_once_with(
-                repo_url="https://github.com/test/repo.git", branch=None, commit=None, working_dir=None
+                repo_url="https://github.com/test/repo.git",
+                branch=None,
+                commit=None,
+                working_dir=None,
+                project=None,
             )
 
             # Verify the result
