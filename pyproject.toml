@@ -51,9 +51,7 @@ models-timm = ["mindtrace-models[timm]>=0.10.0"]
 models-peft = ["mindtrace-models[peft]>=0.10.0"]
 models-mlflow = ["mindtrace-models[mlflow]>=0.10.0"]
 models-wandb = ["mindtrace-models[wandb]>=0.10.0"]
-models-tensorboard = ["mindtrace-models[tensorboard]>=0.10.0"]
 models-onnx = ["mindtrace-models[onnx]>=0.10.0"]
-models-ultralytics = ["mindtrace-models[ultralytics]>=0.10.0"]
 models-all = ["mindtrace-models[all]>=0.10.0"]
 
 
