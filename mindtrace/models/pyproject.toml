@@ -28,7 +28,7 @@ mlflow = ["mlflow>=2.0"]
 wandb  = ["wandb>=0.16"]
 
 # Training extras
-train = ["torchvision>=0.15"]
+train = ["torchvision>=0.15", "optuna>=4.8.0"]
 
 # Architecture extras
 timm         = ["timm>=0.9"]
@@ -43,6 +43,7 @@ all = [
     "mlflow>=2.0",
     "wandb>=0.16",
     "torchvision>=0.15",
+    "optuna>=4.8.0",
     "timm>=0.9",
     "transformers>=4.35",
     "onnxruntime>=1.16",
