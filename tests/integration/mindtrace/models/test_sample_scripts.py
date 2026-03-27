@@ -23,6 +23,7 @@ _SAMPLES_DIR = Path(__file__).resolve().parents[4] / "samples" / "models"
 _SCRIPTS = sorted(_SAMPLES_DIR.glob("*.py"))
 _REPO_ROOT = str(_SAMPLES_DIR.parents[1])
 _TIMEOUT = 120
+_MAX_WORKERS = 4
 
 # Skip the ~2-3 s CUDA probe per subprocess on GPU-less CI runners.
 _ENV: dict[str, str] | None = None
@@ -46,7 +47,7 @@ def test_sample_scripts() -> None:
     """Run all sample scripts concurrently and assert they exit cleanly."""
     failures: list[str] = []
 
-    with ThreadPoolExecutor(max_workers=len(_SCRIPTS)) as pool:
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         futures = {pool.submit(_run_script, s): s for s in _SCRIPTS}
         for fut in as_completed(futures):
             script, result = fut.result()
