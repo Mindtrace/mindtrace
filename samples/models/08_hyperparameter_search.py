@@ -140,7 +140,7 @@ if _OPTUNA:
             raise optuna.TrialPruned()
         return trainer.history["val/loss"][-1]
 
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=2, n_warmup_steps=1)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=1, n_warmup_steps=1)
     pruning_study = optuna.create_study(direction="minimize", pruner=pruner)
     pruning_study.optimize(pruning_objective, n_trials=N_TRIALS_PRUNING, show_progress_bar=False)
 
