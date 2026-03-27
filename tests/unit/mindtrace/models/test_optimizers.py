@@ -142,6 +142,7 @@ class TestWarmupCosineScheduler:
         lrs = []
         for _ in range(5):
             lrs.append(scheduler.get_lr()[0])
+            tiny_optimizer.step()
             scheduler.step()
         # LR should be monotonically non-decreasing during warm-up
         for i in range(1, len(lrs)):
@@ -152,10 +153,12 @@ class TestWarmupCosineScheduler:
         scheduler = WarmupCosineScheduler(tiny_optimizer, warmup_steps=2, total_steps=10, eta_min=0.0)
         # Advance past warm-up
         for _ in range(2):
+            tiny_optimizer.step()
             scheduler.step()
         lr_after_warmup = scheduler.get_lr()[0]
 
         for _ in range(7):
+            tiny_optimizer.step()
             scheduler.step()
         lr_near_end = scheduler.get_lr()[0]
 
