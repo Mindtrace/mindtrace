@@ -176,11 +176,11 @@ class GCPRegistryBackend(RegistryBackend):
 
     def _object_metadata_path(self, name: str, version: str) -> str:
         """Generate the metadata file path for an object version."""
-        return self._prefixed(f"_meta_{name.replace(':', '_')}@{version}.json")
+        return self._prefixed(f"_meta_{name.replace(':', '%3A')}@{version}.json")
 
     def _object_metadata_prefix(self, name: str) -> str:
         """Generate the metadata file prefix for listing versions."""
-        return self._prefixed(f"_meta_{name.replace(':', '_')}@")
+        return self._prefixed(f"_meta_{name.replace(':', '%3A')}@")
 
     def _lock_path(self, key: str) -> str:
         """Get the path for a write lock file."""
@@ -1191,7 +1191,7 @@ class GCPRegistryBackend(RegistryBackend):
                 # Extract just the filename part after prefix
                 filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
                 name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
-                name = name_part.replace("_", ":")
+                name = name_part.replace("%3A", ":")
                 objects.add(name)
         return sorted(list(objects))
 

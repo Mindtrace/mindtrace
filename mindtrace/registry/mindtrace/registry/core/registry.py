@@ -81,6 +81,7 @@ class Registry(Mindtrace):
         backend: str | Path | RegistryBackend | None = None,
         version_objects: bool | None = None,
         mutable: bool | None = None,
+        version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
         use_cache: bool = True,
         **kwargs,
@@ -115,6 +116,7 @@ class Registry(Mindtrace):
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
+                version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
@@ -123,6 +125,7 @@ class Registry(Mindtrace):
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
                 mutable=True,  # cache is always mutable for updates
+                version_digits=self._remote.version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
@@ -134,6 +137,7 @@ class Registry(Mindtrace):
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
+                version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
@@ -162,6 +166,10 @@ class Registry(Mindtrace):
     @property
     def mutable(self) -> bool:
         return self._core.mutable
+
+    @property
+    def version_digits(self) -> int:
+        return self._core.version_digits
 
     # ─────────────────────────────────────────────────────────────────────────
     # Class-level materializer registry (delegates to _RegistryCore)

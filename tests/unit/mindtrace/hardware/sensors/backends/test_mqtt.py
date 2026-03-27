@@ -349,6 +349,40 @@ class TestMQTTSensorBackendCoverage:
     """Additional tests to improve MQTT backend coverage."""
 
     @pytest.mark.asyncio
+    async def test_message_listener_stores_raw_payload_when_decoding_raises(self, sample_mqtt_config):
+        class BadPayload:
+            def decode(self, _encoding):
+                raise UnicodeDecodeError("utf-8", b"x", 0, 1, "bad")
+
+            def __str__(self):
+                return "bad-payload"
+
+        class OneMessageIterator:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if hasattr(self, "_done"):
+                    raise StopAsyncIteration
+                self._done = True
+                msg = MagicMock()
+                msg.topic = "test/topic"
+                msg.payload = BadPayload()
+                return msg
+
+        with patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt") as mock_aiomqtt:
+            backend = MQTTSensorBackend(**sample_mqtt_config)
+            mock_client = AsyncMock()
+            mock_client.messages = OneMessageIterator()
+            mock_aiomqtt.Client.return_value = mock_client
+            backend._client = mock_client
+            backend._is_connected = True
+
+            await backend._message_listener()
+
+            assert backend._message_cache["test/topic"]["raw"] == "bad-payload"
+
+    @pytest.mark.asyncio
     async def test_subscription_error_handling(self, sample_mqtt_config):
         """Test subscription error scenarios."""
         with patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt") as mock_aiomqtt:
