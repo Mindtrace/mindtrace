@@ -17,7 +17,6 @@ dependencies = [
     "mindtrace-registry>=0.10.0",
     "mindtrace-database>=0.10.0",
     "mindtrace-services>=0.10.0",
-    "mindtrace-models>=0.10.0",
     "docker>=7.1.0",
 ]
 
