@@ -56,7 +56,7 @@ if _OPTUNA:
         dropout = trial.suggest_float("dropout", 0.0, 0.4, step=0.1)
 
         model = build_model(
-            "resnet50",
+            "resnet18",
             "mlp",
             num_classes=NUM_CLASSES,
             hidden_dim=hidden,
@@ -71,12 +71,12 @@ if _OPTUNA:
             callbacks=[OptunaCallback(trial, monitor="val/loss")],
             device="auto",
         )
-        trainer.fit(train_loader, val_loader, epochs=3)
+        trainer.fit(train_loader, val_loader, epochs=2)
         final_val_loss = trainer.history["val/loss"][-1]
         return final_val_loss
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=4, show_progress_bar=False)
+    study.optimize(objective, n_trials=2, show_progress_bar=False)
 
     print(f"  Trials completed : {len(study.trials)}")
     print(f"  Best val/loss    : {study.best_value:.4f}")
@@ -103,7 +103,7 @@ if _OPTUNA:
         trial.suggest_categorical("hidden_dim", [256, 512])
 
         model = build_model(
-            "resnet50",
+            "resnet18",
             "linear",
             num_classes=NUM_CLASSES,
             pretrained=False,
@@ -119,7 +119,7 @@ if _OPTUNA:
         )
         # OptunaCallback reports val/loss each epoch and prunes weak trials.
         try:
-            trainer.fit(train_loader, val_loader, epochs=5)
+            trainer.fit(train_loader, val_loader, epochs=3)
         except optuna.TrialPruned:
             pass  # Trainer sets stop_training=True before raise; history is intact.
 
@@ -127,9 +127,9 @@ if _OPTUNA:
             raise optuna.TrialPruned()
         return trainer.history["val/loss"][-1]
 
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=2, n_warmup_steps=1)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=1, n_warmup_steps=1)
     pruning_study = optuna.create_study(direction="minimize", pruner=pruner)
-    pruning_study.optimize(pruning_objective, n_trials=6, show_progress_bar=False)
+    pruning_study.optimize(pruning_objective, n_trials=4, show_progress_bar=False)
 
     pruned = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.PRUNED]
     complete = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
@@ -150,7 +150,7 @@ if _OPTUNA:
     print(f"  Using best params: {best}")
 
     final_model = build_model(
-        "resnet50",
+        "resnet18",
         "mlp",
         num_classes=NUM_CLASSES,
         hidden_dim=best.get("hidden_dim", 512),
@@ -169,14 +169,14 @@ if _OPTUNA:
         optimizer=final_opt,
         device="auto",
     )
-    history = final_trainer.fit(train_loader, val_loader, epochs=5)
+    history = final_trainer.fit(train_loader, val_loader, epochs=3)
     print(f"  Final train/loss history : {[round(v, 4) for v in history['train/loss']]}")
     print(f"  Final val/loss history   : {[round(v, 4) for v in history['val/loss']]}")
     print(f"  Best val/loss achieved   : {min(history['val/loss']):.4f}")
 else:
     # Fallback: just train a default model to show the pattern
     print("  Training fallback model (optuna not available)")
-    fallback_model = build_model("resnet50", "mlp", num_classes=NUM_CLASSES, pretrained=False)
+    fallback_model = build_model("resnet18", "mlp", num_classes=NUM_CLASSES, pretrained=False)
     fallback_opt = build_optimizer("adamw", fallback_model, lr=3e-4, weight_decay=1e-2)
     fallback_trainer = Trainer(
         model=fallback_model,
@@ -213,7 +213,7 @@ class DuckTrial:
 duck_trial = DuckTrial()
 duck_cb = OptunaCallback(duck_trial, monitor="val/loss")
 
-duck_model = build_model("resnet50", "linear", num_classes=NUM_CLASSES, pretrained=False)
+duck_model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
 duck_opt = build_optimizer("adam", duck_model, lr=1e-3)
 duck_trainer = Trainer(
     model=duck_model,
