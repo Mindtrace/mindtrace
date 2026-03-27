@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.cluster.core.pipeline_worker import PipelineWorker
+from mindtrace.automation.workers.pipeline_worker import PipelineWorker
 from mindtrace.cluster.core.types import JobStatusEnum
 from mindtrace.models import Pipeline, PipelineLoadInput, PipelineUnloadInput
 
@@ -51,7 +51,7 @@ def test_pipeline_worker_from_pipeline_class_without_service_init(monkeypatch):
         # Pipeline-specific kwargs are consumed by PipelineWorker.__init__ before super().__init__
         self.pipeline = None
 
-    monkeypatch.setattr("mindtrace.cluster.core.pipeline_worker.Worker.__init__", fake_worker_init)
+    monkeypatch.setattr("mindtrace.automation.workers.pipeline_worker.Worker.__init__", fake_worker_init)
 
     worker = PipelineWorker.from_pipeline_class(
         DemoPipeline,
@@ -135,7 +135,7 @@ async def test_shutdown_cleanup_unloads_pipeline_and_swallows_errors(monkeypatch
     async def fake_super_shutdown(self):
         called["super"] += 1
 
-    monkeypatch.setattr("mindtrace.cluster.core.pipeline_worker.Worker.shutdown_cleanup", fake_super_shutdown)
+    monkeypatch.setattr("mindtrace.automation.workers.pipeline_worker.Worker.shutdown_cleanup", fake_super_shutdown)
 
     await worker.shutdown_cleanup()
     assert called["super"] == 1
