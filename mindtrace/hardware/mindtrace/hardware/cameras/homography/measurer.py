@@ -44,7 +44,7 @@ class HomographyMeasurer(Mindtrace):
     Usage::
 
         from mindtrace.hardware import HomographyCalibrator, HomographyMeasurer
-        from mindtrace.core.types import BoundingBox
+        from mindtrace.core.types.bounding_box import BoundingBox
 
         # One-time calibration
         calibrator = HomographyCalibrator()

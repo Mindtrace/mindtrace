@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-jobs"
-version = "0.8.0"
+version = "0.10.0"
 description = "Job management for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,8 +12,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core>=0.8.0",
-    "mindtrace-registry>=0.8.0",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-registry>=0.10.0",
     "pika>=1.3.2",
     "pydantic>=2.11.1",
     "redis>=5.3.0",

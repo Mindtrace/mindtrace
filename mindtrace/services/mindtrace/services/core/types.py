@@ -78,6 +78,13 @@ class ServerIDOutput(BaseModel):
 ServerIDSchema = TaskSchema(name="server_id", output_schema=ServerIDOutput)
 
 
+class ClassNameOutput(BaseModel):
+    class_name: str
+
+
+ClassNameSchema = TaskSchema(name="class_name", output_schema=ClassNameOutput)
+
+
 class PIDFileOutput(BaseModel):
     pid_file: str
 

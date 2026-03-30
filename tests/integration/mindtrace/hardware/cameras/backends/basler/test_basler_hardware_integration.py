@@ -5,12 +5,19 @@ when they are connected. They test full initialization, capture, configuration, 
 management with real hardware.
 
 Note: These tests will be skipped if no Basler cameras are detected.
+Skip with: pytest -m "not hardware" or set SKIP_HARDWARE_TESTS=1
 """
+
+import os
 
 import numpy as np
 import pytest
 
 from mindtrace.core.utils.checks import check_libs
+
+# Skip all tests if SKIP_HARDWARE_TESTS is set
+if os.environ.get("SKIP_HARDWARE_TESTS", "0") == "1":
+    pytest.skip("Hardware tests disabled via SKIP_HARDWARE_TESTS env var", allow_module_level=True)
 
 # Skip all tests in this module if pypylon is not available
 missing_libs = check_libs(["pypylon"])
@@ -37,6 +44,9 @@ connected_cameras = get_connected_cameras()
 if not connected_cameras:
     pytest.skip("No Basler cameras detected. Skipping Basler hardware integration tests.", allow_module_level=True)
 
+# Mark all tests in this module as hardware tests
+pytestmark = pytest.mark.hardware
+
 
 @pytest.fixture
 def camera_name():
@@ -44,16 +54,35 @@ def camera_name():
     return connected_cameras[0]
 
 
+def _is_camera_in_use_error(error: Exception) -> bool:
+    """Check if the error indicates the camera is in use by another client."""
+    error_str = str(error).lower()
+    return any(
+        msg in error_str
+        for msg in [
+            "controlled by another",
+            "exclusively opened by another",
+            "device is busy",
+            "resource busy",
+        ]
+    )
+
+
 @pytest.fixture
 async def basler_camera(camera_name):
     """Fixture providing an initialized Basler camera."""
     from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+    from mindtrace.hardware.core.exceptions import CameraConnectionError
 
     camera = BaslerCameraBackend(camera_name)
-    success, cam_obj, remote_obj = await camera.initialize()
-
-    if not success:
-        pytest.skip(f"Failed to initialize camera {camera_name}")
+    try:
+        success, cam_obj, remote_obj = await camera.initialize()
+        if not success:
+            pytest.skip(f"Failed to initialize camera {camera_name}")
+    except CameraConnectionError as e:
+        if _is_camera_in_use_error(e):
+            pytest.skip(f"Camera {camera_name} is in use by another application")
+        raise
 
     yield camera
 
@@ -161,8 +190,8 @@ class TestHardwareInitialization:
             success2, _, _ = await camera.initialize()
             assert success2 is True
         except CameraConnectionError as e:
-            if "controlled by another application" in str(e):
-                pytest.skip(f"Camera {camera_name} is controlled by another application")
+            if _is_camera_in_use_error(e):
+                pytest.skip(f"Camera {camera_name} is in use by another application")
             else:
                 raise
         finally:

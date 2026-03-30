@@ -296,9 +296,11 @@ async def test_discover_opencv_details_with_device_dict(monkeypatch):
         OpenCVCameraBackend,
         "get_available_cameras",
         staticmethod(
-            lambda include_details=False: {"opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}}
-            if include_details
-            else ["opencv_camera_0"]
+            lambda include_details=False: (
+                {"opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}}
+                if include_details
+                else ["opencv_camera_0"]
+            )
         ),
     )
 
