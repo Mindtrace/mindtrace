@@ -83,7 +83,7 @@ class Registry(Mindtrace):
         mutable: bool | None = None,
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
-        default_materializer: Type[BaseMaterializer] | None = None,
+        default_materializer: Type[BaseMaterializer] | str | None = None,
         use_cache: bool = True,
         **kwargs,
     ):
