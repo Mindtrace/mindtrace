@@ -186,6 +186,10 @@ db = UnifiedMindtraceODM(
     redis_url="redis://localhost:6379",
     preferred_backend=BackendType.MONGO,
 )
+
+inserted = db.insert(User(name="Alice", email="alice@example.com"))
+fetched = db.get(inserted.id)
+print(fetched)
 ```
 
 ### Jobs
