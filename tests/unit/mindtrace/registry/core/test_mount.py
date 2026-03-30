@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from mindtrace.registry import (
+    AmbientAuth,
     GCPMountConfig,
     GCPServiceAccountFileAuth,
     LocalMountConfig,
@@ -69,12 +70,32 @@ class DummyGCPBackend(DummyRemoteBackend):
     pass
 
 
+def test_mount_rejects_invalid_name():
+    with pytest.raises(ValueError):
+        Mount(name="bad/name", backend="local", config=LocalMountConfig(uri="/tmp/test"))
+
+
 def test_mount_rejects_invalid_local_auth():
     with pytest.raises(TypeError):
         Mount(
             name="local",
             backend="local",
             config=LocalMountConfig(uri="/tmp/test"),
+            auth=S3AccessKeyAuth(access_key="a", secret_key="b"),
+        )
+
+
+def test_mount_rejects_invalid_s3_config_type():
+    with pytest.raises(TypeError):
+        Mount(name="nas", backend="s3", config=LocalMountConfig(uri="/tmp/test"), auth=AmbientAuth())
+
+
+def test_mount_rejects_invalid_gcp_auth_type():
+    with pytest.raises(TypeError):
+        Mount(
+            name="gcp",
+            backend="gcp",
+            config=GCPMountConfig(bucket_name="bucket-a", project_id="proj-1"),
             auth=S3AccessKeyAuth(access_key="a", secret_key="b"),
         )
 
@@ -161,6 +182,24 @@ def test_registry_from_gcp_mount_builds_gcp_backend(monkeypatch):
     assert registry.mutable is True
 
 
+def test_registry_mount_property_round_trips_local_registry():
+    with TemporaryDirectory() as d:
+        registry = Registry(backend=d, version_objects=True, mutable=True)
+        mount = registry.mount
+        assert mount.backend == "local"
+        assert isinstance(mount.config, LocalMountConfig)
+        assert mount.registry_options["version_objects"] is True
+        assert mount.registry_options["mutable"] is True
+
+
+def test_mount_can_be_initialized_from_registry_instance():
+    with TemporaryDirectory() as d:
+        registry = Registry(backend=d, version_objects=True, mutable=False)
+        mount = Mount(registry)
+        assert mount.backend == "local"
+        assert mount.registry_options["mutable"] is False
+
+
 def test_store_add_mount_accepts_mount_instance():
     with TemporaryDirectory() as d:
         store = Store()
@@ -177,6 +216,21 @@ def test_store_add_mount_accepts_mount_instance():
         added = store.get_mount("local2")
         assert added.read_only is True
         assert isinstance(added.registry.backend, LocalRegistryBackend)
+
+
+def test_store_add_mount_rejects_registry_argument_with_mount():
+    with TemporaryDirectory() as d1, TemporaryDirectory() as d2:
+        store = Store()
+        mount = Mount(name="local2", backend="local", config=LocalMountConfig(uri=d1))
+        registry = Registry(backend=d2)
+        with pytest.raises(TypeError):
+            store.add_mount(mount, registry)
+
+
+def test_store_add_mount_requires_registry_for_string_mount_name():
+    store = Store()
+    with pytest.raises(TypeError):
+        store.add_mount("missing-registry")
 
 
 def test_store_from_mounts_uses_is_default_flag():
@@ -211,14 +265,19 @@ def test_mount_display_uri_for_remote_mounts():
         name="nas",
         backend="s3",
         config=S3MountConfig(bucket="datasets", prefix="mindtrace"),
-        auth=NoAuth(),
+        auth=AmbientAuth(),
     )
     gcp_mount = Mount(
         name="gcp",
         backend="gcp",
         config=GCPMountConfig(bucket_name="bucket-a", project_id="proj-1", prefix="exports"),
-        auth=NoAuth(),
+        auth=AmbientAuth(),
     )
 
     assert s3_mount.display_uri() == "s3://datasets/mindtrace"
     assert gcp_mount.display_uri() == "gs://bucket-a/exports"
+
+
+def test_noauth_still_supported_for_local_mounts():
+    mount = Mount(name="local", backend="local", config=LocalMountConfig(uri="/tmp/test"), auth=NoAuth())
+    assert mount.auth.mode == "none"

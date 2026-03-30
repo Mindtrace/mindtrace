@@ -6,6 +6,7 @@ from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.mount import (
+    AmbientAuth,
     GCPMountConfig,
     GCPServiceAccountFileAuth,
     LocalMountConfig,
@@ -22,10 +23,13 @@ from mindtrace.registry.core.exceptions import (
     StoreLocationNotFound,
 )
 from mindtrace.registry.core.registry import Registry
-from mindtrace.registry.core.store import Store, StoreMount
+from mindtrace.registry.core.store import MountedRegistry, Store
+
+StoreMount = MountedRegistry
 
 __all__ = [
     "Archiver",
+    "AmbientAuth",
     "ConfigArchiver",
     "PathArchiver",
     "LocalRegistryBackend",
@@ -44,6 +48,7 @@ __all__ = [
     "Registry",
     "RegistryBackend",
     "Store",
+    "MountedRegistry",
     "StoreMount",
     "StoreLocationNotFound",
     "StoreKeyFormatError",

@@ -24,7 +24,7 @@ from mindtrace.registry.core.types import BatchResult, VerifyLevel
 
 
 @dataclass(frozen=True)
-class StoreMount:
+class MountedRegistry:
     name: str
     registry: Registry
     read_only: bool = False
@@ -70,7 +70,7 @@ class Store(Mindtrace):
     ):
         super().__init__(**kwargs)
 
-        self._mounts: dict[str, StoreMount] = {}
+        self._mounts: dict[str, MountedRegistry] = {}
         self._name_location_cache: dict[str, list[str]] = {}
         self._enable_location_cache = enable_location_cache
 
@@ -80,7 +80,7 @@ class Store(Mindtrace):
         mounts = mounts or {}
         for mount_name, registry in mounts.items():
             if mount_name == "temp":
-                self._mounts["temp"] = StoreMount(name="temp", registry=registry, read_only=False)
+                self._mounts["temp"] = MountedRegistry(name="temp", registry=registry, read_only=False)
             else:
                 self.add_mount(mount_name, registry)
 
@@ -108,7 +108,7 @@ class Store(Mindtrace):
             raise ValueError("Invalid mount name")
         if mount_name in self._mounts:
             raise ValueError(f"Mount '{mount_name}' already exists")
-        self._mounts[mount_name] = StoreMount(name=mount_name, registry=registry, read_only=resolved_read_only)
+        self._mounts[mount_name] = MountedRegistry(name=mount_name, registry=registry, read_only=resolved_read_only)
 
     def remove_mount(self, mount: str) -> None:
         if mount == "temp":
@@ -125,7 +125,7 @@ class Store(Mindtrace):
         if self.default_mount == mount:
             self.default_mount = "temp"
 
-    def get_mount(self, mount: str) -> StoreMount:
+    def get_mount(self, mount: str) -> MountedRegistry:
         store_mount = self._mounts.get(mount)
         if store_mount is None:
             raise StoreLocationNotFound(mount)

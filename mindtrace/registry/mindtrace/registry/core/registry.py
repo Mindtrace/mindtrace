@@ -15,6 +15,17 @@ from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.mount import (
+    AmbientAuth,
+    GCPMountConfig,
+    GCPServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    NoAuth,
+    S3AccessKeyAuth,
+    S3MountConfig,
+)
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
@@ -176,33 +187,16 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_mount(cls, mount, **kwargs) -> "Registry":
-        """Construct a Registry from a declarative ``Mount`` definition."""
+    def _backend_from_mount(cls, mount: Mount) -> RegistryBackend:
+        """Build a concrete backend instance from a declarative mount."""
         from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
         from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
-        from mindtrace.registry.core.mount import (
-            GCPMountConfig,
-            GCPServiceAccountFileAuth,
-            LocalMountConfig,
-            Mount,
-            MountBackendKind,
-            NoAuth,
-            S3AccessKeyAuth,
-            S3MountConfig,
-        )
-
-        if not isinstance(mount, Mount):
-            raise TypeError("mount must be a Mount")
-
-        registry_kwargs = dict(mount.registry_options)
-        registry_kwargs.update(kwargs)
 
         if mount.backend is MountBackendKind.LOCAL:
             cfg = mount.config
             if not isinstance(cfg, LocalMountConfig):
                 raise TypeError("local mounts require LocalMountConfig")
-            backend = LocalRegistryBackend(uri=cfg.uri)
-            return cls(backend=backend, **registry_kwargs)
+            return LocalRegistryBackend(uri=cfg.uri)
 
         if mount.backend is MountBackendKind.S3:
             cfg = mount.config
@@ -216,16 +210,10 @@ class Registry(Mindtrace):
                 "secure": cfg.secure,
             }
             if isinstance(auth, S3AccessKeyAuth):
-                backend_kwargs.update(
-                    {
-                        "access_key": auth.access_key,
-                        "secret_key": auth.secret_key,
-                    }
-                )
-            elif not isinstance(auth, NoAuth):
-                raise TypeError("s3 mounts require NoAuth or S3AccessKeyAuth")
-            backend = S3RegistryBackend(**backend_kwargs)
-            return cls(backend=backend, **registry_kwargs)
+                backend_kwargs.update({"access_key": auth.access_key, "secret_key": auth.secret_key})
+            elif not isinstance(auth, AmbientAuth):
+                raise TypeError("s3 mounts require AmbientAuth or S3AccessKeyAuth")
+            return S3RegistryBackend(**backend_kwargs)
 
         if mount.backend is MountBackendKind.GCP:
             cfg = mount.config
@@ -240,12 +228,26 @@ class Registry(Mindtrace):
             }
             if isinstance(auth, GCPServiceAccountFileAuth):
                 backend_kwargs["credentials_path"] = auth.path
-            elif not isinstance(auth, NoAuth):
-                raise TypeError("gcp mounts require NoAuth or GCPServiceAccountFileAuth")
-            backend = GCPRegistryBackend(**backend_kwargs)
-            return cls(backend=backend, **registry_kwargs)
+            elif not isinstance(auth, AmbientAuth):
+                raise TypeError("gcp mounts require AmbientAuth or GCPServiceAccountFileAuth")
+            return GCPRegistryBackend(**backend_kwargs)
 
         raise ValueError(f"Unsupported mount backend: {mount.backend}")
+
+    @classmethod
+    def from_mount(cls, mount, **kwargs) -> "Registry":
+        """Construct a Registry from a declarative ``Mount`` definition."""
+        if not isinstance(mount, Mount):
+            raise TypeError("mount must be a Mount")
+        registry_kwargs = dict(mount.registry_options)
+        registry_kwargs.update(kwargs)
+        backend = cls._backend_from_mount(mount)
+        return cls(backend=backend, **registry_kwargs)
+
+    @property
+    def mount(self) -> Mount:
+        """Best-effort declarative mount derived from this registry."""
+        return Mount.from_registry(self)
 
     @classmethod
     def register_default_materializer(cls, object_class: str | type, materializer_class: str):
