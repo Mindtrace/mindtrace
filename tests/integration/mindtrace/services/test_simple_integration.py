@@ -8,7 +8,14 @@ from mcp.client.streamable_http import streamablehttp_client
 from urllib3.util.url import parse_url
 
 from mindtrace.services import generate_connection_manager
-from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput
+from mindtrace.services.core.types import (
+    ClassNameOutput,
+    EndpointsOutput,
+    HeartbeatOutput,
+    PIDFileOutput,
+    ServerIDOutput,
+    StatusOutput,
+)
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput, EchoService
 
 
@@ -99,7 +106,15 @@ class TestServiceIntegration:
         assert "echo" in endpoints_result.endpoints  # Our custom endpoint
 
         # Default endpoints should also be present
-        default_endpoint_names = ["endpoints", "status", "heartbeat", "server_id", "pid_file", "shutdown"]
+        default_endpoint_names = [
+            "endpoints",
+            "status",
+            "heartbeat",
+            "server_id",
+            "class_name",
+            "pid_file",
+            "shutdown",
+        ]
         for endpoint_name in default_endpoint_names:
             assert endpoint_name in endpoints_result.endpoints, f"Missing default endpoint: {endpoint_name}"
 
@@ -138,6 +153,16 @@ class TestServiceIntegration:
         aserver_id_result = await echo_service_manager.aserver_id()
         assert isinstance(aserver_id_result, ServerIDOutput)
         assert aserver_id_result.server_id == server_id_result.server_id
+
+        # Test class_name endpoint (sync)
+        class_name_result = echo_service_manager.class_name()
+        assert isinstance(class_name_result, ClassNameOutput)
+        assert class_name_result.class_name == "EchoService"
+
+        # Test class_name endpoint (async)
+        aclass_name_result = await echo_service_manager.aclass_name()
+        assert isinstance(aclass_name_result, ClassNameOutput)
+        assert aclass_name_result.class_name == class_name_result.class_name
 
         # Test pid_file endpoint (sync)
         pid_file_result = echo_service_manager.pid_file()
