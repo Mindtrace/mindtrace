@@ -4,11 +4,22 @@
 
 # Mindtrace
 
-A modular Python framework for building ML infrastructure: microservices, artifact registries, job orchestration, hardware integrations, and more.
+Mindtrace is a modular Python framework for building ML and AI infrastructure: typed microservices, artifact registries, object storage, database abstractions, job orchestration, distributed workers, hardware integrations, agents, and more.
 
 📖 [Docs](https://mindtrace.github.io/mindtrace/) · 💡 [Samples](samples/) · 🤝 [Contributing](CONTRIBUTING.md)
 
-## 📦 Installation
+## Features
+
+- **Modular infrastructure framework** with installable subpackages
+- **Typed microservices** with auto-generated clients and MCP support
+- **Artifact and object storage** through Registry and Storage layers
+- **Database abstractions** for MongoDB, Redis, and Registry-backed persistence
+- **Job queues and distributed execution** through Jobs and Cluster
+- **LLM agents** with tools, memory, callbacks, and MCP toolsets
+- **Hardware integration** for cameras, scanners, PLCs, and sensors
+- **Composable architecture** where modules build naturally on top of one another
+
+## Installation
 
 ```bash
 pip install mindtrace
@@ -19,142 +30,187 @@ uv add mindtrace
 Or install only what you need:
 
 ```bash
-pip install mindtrace-services  # Microservices
-pip install mindtrace-registry  # Artifact storage
-pip install mindtrace-cluster   # Distributed workers
+pip install mindtrace-services   # Typed microservices
+pip install mindtrace-registry   # Versioned artifact storage
+pip install mindtrace-storage    # Object storage backends
+pip install mindtrace-database   # ODM layer for MongoDB / Redis / Registry
+pip install mindtrace-jobs       # Typed job queues
+pip install mindtrace-cluster    # Distributed workers and routing
+pip install mindtrace-agents     # LLM agents with tools and memory
+pip install mindtrace-hardware   # Cameras, scanners, PLCs, sensors
 ```
 
-## 🚀 Getting Started
+## Quick Tour
 
-### Config & Logging
+The Mindtrace ecosystem is designed so that you can start small and compose modules as your system grows.
+
+### Core foundations
+
+`mindtrace-core` gives you the shared building blocks used across the rest of the framework: configuration, logging, base classes, observables, and typed task schemas.
 
 ```python
 from mindtrace.core import Mindtrace
 
+
 class MyProcessor(Mindtrace):
     def run(self):
-        # self.config and self.logger are provided automatically
-        self.logger.error(f"Cache dir: {self.config.MINDTRACE_DIR_PATHS.ROOT}")
+        self.logger.info(f"Temp dir: {self.config.MINDTRACE_DIR_PATHS.TEMP_DIR}")
 
-processor = MyProcessor()
-processor.run()
-# [2026-01-08 10:39:42] ERROR: MyProcessor: Cache dir: ~/.cache/mindtrace
+
+with MyProcessor() as processor:
+    processor.run()
 ```
 
-### Deploy a Microservice
+### Build a service
+
+`mindtrace-services` lets you define typed endpoints once and get a service plus a generated client.
 
 ```python
 from mindtrace.services.samples.echo_service import EchoService
 
-# Launch service and get auto-generated client
-client = EchoService.launch(port=8080)
 
-result = client.echo(message="Hello, world!")
-print(result.echoed)  # "Hello, world!"
-
-client.shutdown()
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
+print(cm.echo(message="Hello, world!").echoed)
+cm.shutdown()
 ```
 
-Define your own service (must be in an importable module):
+While the service is running, you can inspect the generated API docs at:
+
+- `http://localhost:8080/docs`
+
+### Save and load artifacts
+
+`mindtrace-registry` is the versioned artifact layer.
 
 ```python
-# mypackage/predictor.py
-from pydantic import BaseModel
-from mindtrace.services import Service
-from mindtrace.core import TaskSchema
-
-class PredictInput(BaseModel):
-    text: str
-
-class PredictOutput(BaseModel):
-    label: str
-    confidence: float
-
-predict_schema = TaskSchema(
-    name="predict",
-    input_schema=PredictInput,
-    output_schema=PredictOutput,
-)
-
-class PredictorService(Service):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.add_endpoint("predict", self.predict, schema=predict_schema)
-
-    def predict(self, payload: PredictInput) -> PredictOutput:
-        return PredictOutput(label="positive", confidence=0.95)
-```
-
-### Save & Load Artifacts
-
-```python
-from mindtrace.registry import Registry
 import numpy as np
 
-registry = Registry()
+from mindtrace.registry import Registry
 
-# Save anything: arrays, datasets, configs, dicts
+
+registry = Registry()
 embeddings = np.random.rand(100, 768).astype(np.float32)
 registry.save("data:embeddings:v1", embeddings)
-
-# Load it back (with automatic versioning)
 loaded = registry.load("data:embeddings:v1")
-print(f"Loaded: {loaded.shape}, {loaded.dtype}")
-# Loaded: (100, 768), float32
+print(loaded.shape)
 ```
 
-### Reactive State with Observables
+### Work with object storage
+
+`mindtrace-storage` gives you a common interface over GCS and S3-compatible object stores.
 
 ```python
-from mindtrace.core import ObservableContext
+from mindtrace.storage import S3StorageHandler
 
-@ObservableContext(vars=["status", "progress"])
-class Pipeline:
-    def __init__(self):
-        self.status = "idle"
-        self.progress = 0
 
-def on_change(source, var, old, new):
-    print(f"{var}: {old} → {new}")
+storage = S3StorageHandler(
+    bucket_name="my-bucket",
+    endpoint="localhost:9000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    secure=False,
+)
 
-pipeline = Pipeline()
-pipeline.subscribe(on_change, "context_updated")
-
-pipeline.status = "running"   # prints: status: idle → running
-pipeline.progress = 50        # prints: progress: 0 → 50
+print(storage.exists("docs/example.txt"))
 ```
 
-## 📚 Modules
+### Run typed background jobs
+
+`mindtrace-jobs` gives you typed job schemas plus local, Redis, and RabbitMQ backends.
+
+```python
+from pydantic import BaseModel
+
+from mindtrace.jobs import Consumer, JobSchema, LocalClient, Orchestrator
+
+
+class EchoInput(BaseModel):
+    message: str
+
+
+echo_schema = JobSchema(name="echo_job", input_schema=EchoInput)
+orchestrator = Orchestrator(LocalClient())
+orchestrator.register(echo_schema)
+
+
+class EchoConsumer(Consumer):
+    def run(self, job_dict: dict) -> dict:
+        return {"echoed": job_dict["payload"]["message"]}
+```
+
+### Build LLM agents
+
+`mindtrace-agents` provides agents with tools, memory, callbacks, and MCP toolsets.
+
+```python
+from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider
+
+
+provider = OpenAIProvider()
+model = OpenAIChatModel("gpt-4o-mini", provider=provider)
+agent = MindtraceAgent(model=model, name="assistant")
+
+result = agent.run_sync("What is 2 + 2?")
+print(result)
+```
+
+## Modules
 
 | Module | Description |
 |--------|-------------|
-| [`core`](mindtrace/core) | Config, logging, observables, base classes |
-| [`services`](mindtrace/services) | Microservice framework with auto-generated clients |
-| [`registry`](mindtrace/registry) | Versioned artifact storage (models, datasets, configs) |
-| [`database`](mindtrace/database) | Redis & MongoDB ODM with async support |
-| [`cluster`](mindtrace/cluster) | Distributed worker orchestration |
-| [`jobs`](mindtrace/jobs) | Job schemas and execution backends |
-| [`hardware`](mindtrace/hardware) | Camera, PLC, and sensor integrations |
+| [`core`](mindtrace/core) | Foundational abstractions, config, logging, observables, and typed schemas |
+| [`services`](mindtrace/services) | Typed microservice framework with generated clients and MCP support |
+| [`registry`](mindtrace/registry) | Versioned artifact storage for models, datasets, configs, and more |
+| [`storage`](mindtrace/storage) | Object storage backends for GCS and S3-compatible services |
+| [`database`](mindtrace/database) | Unified ODM layer for MongoDB, Redis, and Registry-backed persistence |
+| [`jobs`](mindtrace/jobs) | Typed job schemas and queue backends |
+| [`cluster`](mindtrace/cluster) | Service-based distributed workers, routing, and DLQ handling |
+| [`agents`](mindtrace/agents) | LLM agents with tools, memory, streaming, callbacks, and MCP integration |
+| [`hardware`](mindtrace/hardware) | Cameras, stereo cameras, 3D scanners, PLCs, sensors, and hardware services |
 | [`datalake`](mindtrace/datalake) | Query and manage datasets, models, labels, and datums |
-| [`models`](mindtrace/models) | Model definitions, inference, and leaderboards |
-| [`storage`](mindtrace/storage) | Cloud storage interfaces (GCS, S3) |
-| [`automation`](mindtrace/automation) | Pipeline orchestration and Label Studio integration |
-| [`ui`](mindtrace/ui) | UI components and visualization |
+| [`models`](mindtrace/models) | Model definitions, inference workflows, and related utilities |
+| [`automation`](mindtrace/automation) | Pipeline orchestration and workflow integrations |
+| [`ui`](mindtrace/ui) | UI components and visualisation tools |
 | [`apps`](mindtrace/apps) | End-user applications and demos |
 
-## 🏗️ Layered Architecture
+## Choose the Right Module
 
-Modules are organized into levels based on dependency direction. Each layer only depends on modules in lower levels.
+If you are not sure where to start:
 
-| Level | Modules |
+- **Need config, logging, base utilities, or typed schemas?** → [`core`](mindtrace/core)
+- **Need a deployable API or MCP-capable service?** → [`services`](mindtrace/services)
+- **Need versioned artifact storage?** → [`registry`](mindtrace/registry)
+- **Need object storage access?** → [`storage`](mindtrace/storage)
+- **Need a document/database abstraction?** → [`database`](mindtrace/database)
+- **Need queue-backed background jobs?** → [`jobs`](mindtrace/jobs)
+- **Need distributed workers across machines?** → [`cluster`](mindtrace/cluster)
+- **Need LLM agents with tools and memory?** → [`agents`](mindtrace/agents)
+- **Need industrial hardware/device integration?** → [`hardware`](mindtrace/hardware)
+- **Need data/model/label management?** → [`datalake`](mindtrace/datalake)
+
+Many real systems combine several modules. Common combinations include:
+
+- `core` + `services`
+- `registry` + `storage`
+- `database` + `services`
+- `jobs` + `cluster`
+- `agents` + `services`
+- `hardware` + `services`
+
+## Architecture
+
+Mindtrace is intentionally layered so higher-level modules build on lower-level ones rather than duplicating shared concerns.
+
+| Layer | Modules |
 |-------|---------|
-| **1. Foundation** | `core` |
-| **2. Core Consumers** | `jobs`, `registry`, `database`, `services`, `storage`, `ui` |
-| **3. Infrastructure** | `hardware`, `cluster`, `datalake`, `models` |
-| **4. Automation** | `automation` |
-| **5. Applications** | `apps` |
+| **Foundation** | `core` |
+| **Core infrastructure** | `services`, `registry`, `storage`, `database`, `jobs` |
+| **Higher-level systems** | `cluster`, `agents`, `hardware`, `datalake`, `models` |
+| **Orchestration and apps** | `automation`, `ui`, `apps` |
 
-## 📖 Documentation
+You do not need to adopt every module at once. Most projects start with just one or two and grow from there.
+
+## Documentation
 
 - [Full Documentation](https://mindtrace.github.io/mindtrace/)
 - [Samples](samples/)
