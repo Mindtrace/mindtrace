@@ -97,7 +97,7 @@ In practice:
 - use `Config` for generic application or component configuration
 - use `CoreConfig` when you want the normal Mindtrace core sections already present, such as `MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, and `MINDTRACE_MCP`
 
-Example:
+Example with `Config`:
 
 ```python
 from mindtrace.core import Config
@@ -105,15 +105,15 @@ from mindtrace.core import Config
 
 config = Config(
     {
-        "MINDTRACE_DIR_PATHS": {
-            "TEMP_DIR": "~/tmp",
-            "REGISTRY_DIR": "~/registry",
+        "MY_APP": {
+            "DEBUG": "true",
+            "CACHE_DIR": "~/my-app-cache",
         }
     }
 )
 
-print(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
-print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+print(config.MY_APP.DEBUG)
+print(config.MY_APP.CACHE_DIR)
 ```
 
 Example with `CoreConfig`:
@@ -124,14 +124,18 @@ from mindtrace.core import CoreConfig
 
 config = CoreConfig(
     {
-        "MINDTRACE_DIR_PATHS": {
-            "TEMP_DIR": "/tmp/mindtrace"
+        "MY_APP": {
+            "DEBUG": "true",
         }
     }
 )
 
-print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
+# Your own settings are still present
+print(config.MY_APP.DEBUG)
+
+# But CoreConfig also includes the standard Mindtrace core sections
 print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
 ```
 
 ## TaskSchema
