@@ -271,19 +271,19 @@ print(result)
 
 | Module | Description |
 |--------|-------------|
-| [`core`](mindtrace/core) | Foundational abstractions, config, logging, observables, and typed schemas |
-| [`services`](mindtrace/services) | Typed microservice framework with generated clients and MCP support |
-| [`registry`](mindtrace/registry) | Versioned artifact storage for models, datasets, configs, and more |
-| [`storage`](mindtrace/storage) | Object storage backends for GCS and S3-compatible services |
+| [`core`](mindtrace/core) | Foundational abstractions for config, logging, observables, and typed schemas |
+| [`services`](mindtrace/services) | Typed service framework with generated clients, launch helpers, and MCP support |
+| [`registry`](mindtrace/registry) | Versioned artifact registry with local and remote backends |
+| [`storage`](mindtrace/storage) | Lower-level object storage backends for GCS and S3-compatible services |
 | [`database`](mindtrace/database) | Unified ODM layer for MongoDB, Redis, and Registry-backed persistence |
-| [`jobs`](mindtrace/jobs) | Typed job schemas and queue backends |
-| [`cluster`](mindtrace/cluster) | Service-based distributed workers, routing, and DLQ handling |
-| [`agents`](mindtrace/agents) | LLM agents with tools, memory, streaming, callbacks, and MCP integration |
-| [`hardware`](mindtrace/hardware) | Cameras, stereo cameras, 3D scanners, PLCs, sensors, and hardware services |
-| [`datalake`](mindtrace/datalake) | Query and manage datasets, models, labels, and datums |
-| [`models`](mindtrace/models) | Model definitions, inference workflows, and related utilities |
+| [`jobs`](mindtrace/jobs) | Unified job manager/orchestrator for typed jobs across multiple queue backends |
+| [`cluster`](mindtrace/cluster) | Worker, node, and cluster resource management on top of queued jobs |
+| [`agents`](mindtrace/agents) | LLM agents with tools, memory, callbacks, streaming, and MCP integration |
+| [`hardware`](mindtrace/hardware) | Hardware interfaces and service tooling for cameras, scanners, PLCs, and sensors |
+| [`datalake`](mindtrace/datalake) | Dataset, model, label, and datum management |
+| [`models`](mindtrace/models) | Model definitions, inference workflows, and related evaluation utilities |
 | [`automation`](mindtrace/automation) | Pipeline orchestration and workflow integrations |
-| [`ui`](mindtrace/ui) | UI components and visualisation tools |
+| [`ui`](mindtrace/ui) | UI components and visualization tools |
 | [`apps`](mindtrace/apps) | End-user applications and demos |
 
 ## Module Dependencies
@@ -292,24 +292,33 @@ print(result)
 <summary>Show module dependency diagram</summary>
 
 ```mermaid
-graph TD
-    core[core]
+%%{init: {'flowchart': {'curve': 'stepAfter'}}}%%
+flowchart TB
+    subgraph L1[Foundation]
+        core[core]
+    end
 
-    services[services]
-    registry[registry]
-    storage[storage]
-    database[database]
-    jobs[jobs]
+    subgraph L2[Core infrastructure]
+        services[services]
+        registry[registry]
+        storage[storage]
+        database[database]
+        jobs[jobs]
+    end
 
-    cluster[cluster]
-    agents[agents]
-    hardware[hardware]
-    datalake[datalake]
-    models[models]
+    subgraph L3[Higher-level systems]
+        cluster[cluster]
+        agents[agents]
+        hardware[hardware]
+        datalake[datalake]
+        models[models]
+    end
 
-    automation[automation]
-    ui[ui]
-    apps[apps]
+    subgraph L4[Orchestration and apps]
+        automation[automation]
+        ui[ui]
+        apps[apps]
+    end
 
     core --> services
     core --> registry
@@ -317,15 +326,22 @@ graph TD
     core --> database
     core --> jobs
 
-    registry --> database
     storage --> registry
-    core --> agents
-    core --> hardware
+    registry --> database
 
     services --> cluster
     jobs --> cluster
     registry --> cluster
     database --> cluster
+
+    core --> agents
+    services --> agents
+    database --> agents
+
+    core --> hardware
+    services --> hardware
+    database --> hardware
+    registry --> hardware
 
     core --> datalake
     registry --> datalake
@@ -334,15 +350,8 @@ graph TD
 
     core --> models
     registry --> models
-    services --> models
     database --> models
-
-    services --> hardware
-    database --> hardware
-    registry --> hardware
-
-    services --> agents
-    database --> agents
+    services --> models
 
     cluster --> automation
     services --> automation
@@ -350,8 +359,8 @@ graph TD
     datalake --> automation
     models --> automation
 
-    services --> ui
     core --> ui
+    services --> ui
 
     automation --> apps
     ui --> apps
@@ -375,18 +384,7 @@ If you are not sure where to start:
 - **Need industrial hardware/device integration?** → [`hardware`](mindtrace/hardware)
 - **Need data/model/label management?** → [`datalake`](mindtrace/datalake)
 
-## Architecture
-
-Mindtrace is intentionally layered so higher-level modules build on lower-level ones rather than duplicating shared concerns.
-
-| Layer | Modules |
-|-------|---------|
-| **Foundation** | `core` |
-| **Core infrastructure** | `services`, `registry`, `storage`, `database`, `jobs` |
-| **Higher-level systems** | `cluster`, `agents`, `hardware`, `datalake`, `models` |
-| **Orchestration and apps** | `automation`, `ui`, `apps` |
-
-You do not need to adopt every module at once. Most projects start with just one or two and grow from there.
+Mindtrace is intentionally layered so higher-level modules build on lower-level ones rather than duplicating shared concerns. You do not need to adopt every module at once; most projects start with just one or two and grow from there.
 
 ## Documentation
 
