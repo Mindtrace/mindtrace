@@ -323,6 +323,13 @@ $ docker run -d --name rabbitmq \
     rabbitmq:3-management
 ```
 
+## Examples
+
+Related examples in the repo:
+
+- [Simple orchestrator example](../../samples/jobs/orchestrator_simple.py)
+- [Jobs demo sample](../../samples/jobs/sample_jobs_demo.py)
+
 ## Testing
 
 If you are working in the full Mindtrace repo, run tests for this module specifically:
