@@ -214,6 +214,13 @@ orchestrator.register(echo_schema)
 class EchoConsumer(Consumer):
     def run(self, job_dict: dict) -> dict:
         return {"echoed": job_dict["payload"]["message"]}
+
+
+consumer = EchoConsumer()
+consumer.connect_to_orchestrator(orchestrator, "echo_job")
+
+orchestrator.publish("echo_job", EchoInput(message="Hello jobs"))
+consumer.consume(num_messages=1)
 ```
 
 ### Cluster
