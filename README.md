@@ -107,7 +107,7 @@ While the service is running, you can inspect the generated API docs at:
 
 ### Registry
 
-`mindtrace-registry` is the versioned artifact layer.
+`mindtrace-registry` is the versioned artifact layer and supports local, S3-compatible, and GCS-backed registries.
 
 ```python
 import numpy as np
@@ -115,11 +115,38 @@ import numpy as np
 from mindtrace.registry import Registry
 
 
+# Registry() defaults to the local registry at ~/.cache/mindtrace/registry
 registry = Registry()
 embeddings = np.random.rand(100, 768).astype(np.float32)
 registry.save("data:embeddings:v1", embeddings)
 loaded = registry.load("data:embeddings:v1")
 print(loaded.shape)
+```
+
+```python
+from mindtrace.registry import GCPRegistryBackend, Registry, S3RegistryBackend
+
+
+# S3-compatible backend
+s3_registry = Registry(
+    backend=S3RegistryBackend(
+        endpoint="localhost:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket="mindtrace-registry",
+        secure=False,
+    )
+)
+
+# Google Cloud Storage backend
+gcs_registry = Registry(
+    backend=GCPRegistryBackend(
+        uri="gs://my-registry-bucket",
+        project_id="my-project",
+        bucket_name="my-registry-bucket",
+        credentials_path="/path/to/service-account.json",
+    )
+)
 ```
 
 ### Database
