@@ -375,15 +375,6 @@ If you are not sure where to start:
 - **Need industrial hardware/device integration?** → [`hardware`](mindtrace/hardware)
 - **Need data/model/label management?** → [`datalake`](mindtrace/datalake)
 
-Many real systems combine several modules. Common combinations include:
-
-- `core` + `services`
-- `registry` + `storage`
-- `database` + `services`
-- `jobs` + `cluster`
-- `agents` + `services`
-- `hardware` + `services`
-
 ## Architecture
 
 Mindtrace is intentionally layered so higher-level modules build on lower-level ones rather than duplicating shared concerns.
