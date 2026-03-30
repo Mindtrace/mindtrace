@@ -4,9 +4,9 @@
 
 # Mindtrace Services
 
-`mindtrace-services` is Mindtrace’s typed microservice framework. Define a `Service` once with `TaskSchema` endpoint contracts, then launch it as a process, connect to it through an auto-generated client, and optionally expose those endpoints as MCP tools.
+The `Services` module provides Mindtrace’s typed microservice framework. It enables you to define a `Service` once with `TaskSchema` endpoint contracts, launch it as a process, connect to it through an auto-generated client, and optionally expose those endpoints as MCP tools.
 
-## What this package provides
+## Features
 
 - **Typed service definition** with `Service` + `TaskSchema`
 - **FastAPI-backed HTTP services** with standard lifecycle endpoints
@@ -16,81 +16,7 @@
 - **Service composition utilities** such as `Gateway` and proxy connection managers
 - **Concrete integrations** such as Discord service wrappers and sample services
 
-## Core concepts
-
-### `Service`
-
-`Service` is the server-side abstraction. A service instance:
-
-- builds a FastAPI app
-- tracks registered endpoints and their schemas
-- mounts an MCP server
-- provides standard lifecycle endpoints
-- can be launched in a separate process with `Service.launch()`
-
-### `TaskSchema`
-
-`TaskSchema` is the typed contract for an endpoint. It defines:
-
-- the endpoint name
-- the input schema
-- the output schema
-
-That same schema is reused across the package for:
-
-- FastAPI request validation
-- generated connection manager methods
-- output parsing on the client side
-- MCP tool exposure
-
-### `ConnectionManager`
-
-`ConnectionManager` is the client-side abstraction for talking to a running service over HTTP. It provides common lifecycle methods such as:
-
-- `status()` / `astatus()`
-- `shutdown()` / `ashutdown()`
-- `mcp_client` for talking to the same service via MCP
-
-### Auto-generated connection managers
-
-If a service does not register a custom client class, Mindtrace generates one automatically from the service’s registered endpoint schemas. Each endpoint becomes:
-
-- a synchronous client method
-- an asynchronous client method prefixed with `a`
-
-For example, an `echo` endpoint becomes:
-
-- `cm.echo(...)`
-- `await cm.aecho(...)`
-
-### MCP integration
-
-Each service mounts a FastMCP app alongside its HTTP routes. Endpoints can be exposed as tools with `as_tool=True`, and services can also register MCP-only tools with `add_tool()`.
-
-### Launcher
-
-`Service.launch()` starts a real service process via `mindtrace.services.core.launcher`.
-
-- On Linux/macOS this uses **Gunicorn + Uvicorn workers**
-- On Windows this uses **Uvicorn directly**
-
-This means `launch()` is process-oriented, not just an in-memory constructor.
-
-## Service lifecycle
-
-The usual flow is:
-
-1. Define Pydantic input/output models
-2. Wrap them in a `TaskSchema`
-3. Subclass `Service`
-4. Register endpoints with `add_endpoint()`
-5. Launch the service with `MyService.launch()`
-6. Receive a connected `ConnectionManager`
-7. Call service methods as normal Python methods
-
-## Quick start
-
-### Define and launch a service
+## Quick Start
 
 ```python
 import time
@@ -134,20 +60,67 @@ print(cm.echo(message="Hello"))
 cm.shutdown()
 ```
 
-## Built-in endpoints
+## Service
 
-Every `Service` automatically registers a standard set of lifecycle and introspection endpoints:
+`Service` is the server-side abstraction. A service instance:
 
-- `endpoints` — list registered endpoint names
-- `status` — current service status
-- `heartbeat` — structured health/liveness payload
-- `server_id` — unique server ID
-- `pid_file` — PID file path for the launched process
-- `shutdown` — stop the running service
+- builds a FastAPI app
+- tracks registered endpoints and their schemas
+- mounts an MCP server
+- provides standard lifecycle endpoints
+- can be launched in a separate process with `Service.launch()`
 
-These endpoints are available over HTTP, and some are also exposed as MCP tools.
+A minimal service subclass looks like this:
 
-## Defining endpoints
+```python
+from mindtrace.services import Service
+
+
+class EchoService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_endpoint("echo", self.echo, schema=echo_task)
+```
+
+## TaskSchema
+
+`TaskSchema` is the typed contract for an endpoint. It defines:
+
+- the endpoint name
+- the input schema
+- the output schema
+
+That same schema is reused across the package for:
+
+- FastAPI request validation
+- generated connection manager methods
+- output parsing on the client side
+- MCP tool exposure
+
+Example:
+
+```python
+from pydantic import BaseModel
+
+from mindtrace.core import TaskSchema
+
+
+class EchoInput(BaseModel):
+    message: str
+
+
+class EchoOutput(BaseModel):
+    echoed: str
+
+
+echo_task = TaskSchema(
+    name="echo",
+    input_schema=EchoInput,
+    output_schema=EchoOutput,
+)
+```
+
+## Defining Endpoints
 
 Register endpoints with `add_endpoint()`:
 
@@ -167,7 +140,57 @@ Important behavior:
 - the function is wrapped with service logging/instrumentation
 - setting `as_tool=True` exposes the same function as an MCP tool
 
-## Client generation details
+## Built-in Endpoints
+
+Every `Service` automatically registers a standard set of lifecycle and introspection endpoints:
+
+- `endpoints` — list registered endpoint names
+- `status` — current service status
+- `heartbeat` — structured health/liveness payload
+- `server_id` — unique server ID
+- `pid_file` — PID file path for the launched process
+- `shutdown` — stop the running service
+
+These endpoints are available over HTTP, and some are also exposed as MCP tools.
+
+## ConnectionManager
+
+`ConnectionManager` is the client-side abstraction for talking to a running service over HTTP. It provides common lifecycle methods such as:
+
+- `status()` / `astatus()`
+- `shutdown()` / `ashutdown()`
+- `mcp_client` for talking to the same service via MCP
+
+Example:
+
+```python
+from mindtrace.services import Service
+
+
+cm = Service.connect("http://localhost:8080")
+print(cm.status())
+cm.shutdown(block=False)
+```
+
+## Auto-Generated Connection Managers
+
+If a service does not register a custom client class, Mindtrace generates one automatically from the service’s registered endpoint schemas. Each endpoint becomes:
+
+- a synchronous client method
+- an asynchronous client method prefixed with `a`
+
+For example, an `echo` endpoint becomes:
+
+- `cm.echo(...)`
+- `await cm.aecho(...)`
+
+For a generated client, this means you can write:
+
+```python
+cm = EchoService.launch(wait_for_launch=True)
+result = cm.echo(message="Hello")
+print(result.echoed)
+```
 
 If no custom connection manager is registered, `generate_connection_manager()` creates one dynamically from the service definition.
 
@@ -203,7 +226,7 @@ A custom connection manager is worth using when you want:
 
 Otherwise, the generated client is usually enough.
 
-## Launching and connecting
+## Launching and Connecting
 
 ### `launch()`
 
@@ -228,7 +251,15 @@ Common arguments:
 
 `Service.connect()` attaches to an already-running service and returns the appropriate connection manager.
 
-## URL and configuration behavior
+Example:
+
+```python
+cm = EchoService.connect("http://localhost:8080")
+print(cm.status())
+print(cm.echo(message="Connected"))
+```
+
+## URL and Configuration Behavior
 
 Service URLs are resolved with the following priority:
 
@@ -243,7 +274,7 @@ MCP paths are also configuration-driven. Services derive:
 
 from `MINDTRACE_MCP` config values.
 
-## MCP integration
+## MCP Integration
 
 Every service creates and mounts a FastMCP app.
 
@@ -292,7 +323,7 @@ cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
 client = cm.mcp_client
 ```
 
-## Gateway and proxy routing
+## Gateway and Proxy Routing
 
 The package includes service-composition helpers.
 
@@ -312,7 +343,7 @@ It supports:
 
 This is useful when a service needs to be accessed indirectly through a central gateway.
 
-## Package layout
+## Package Layout
 
 Key modules in this package include:
 
@@ -345,7 +376,7 @@ ds test --unit
 
 Depending on your workflow, broader suites may also be available.
 
-## Practical notes and caveats
+## Practical Notes and Caveats
 
 - Generated endpoint methods use **POST** requests.
 - Protected client methods such as `status` and `shutdown` are not overwritten by generated endpoint methods.
@@ -353,7 +384,7 @@ Depending on your workflow, broader suites may also be available.
 - Endpoint names should be chosen with both route readability and Python client naming in mind.
 - `launch()` manages subprocesses and PID files, so it should be treated as a service runtime tool, not just object instantiation.
 
-## Minimal MCP example
+## Minimal MCP Example
 
 ```python
 import asyncio
