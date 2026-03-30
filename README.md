@@ -1,9 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mindtrace-logo-horizontal-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mindtrace-logo-horizontal-light.png">
-    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-horizontal-light.png" width="100%">
-  </picture>
+  <img alt="Mindtrace" src="docs/assets/mindtrace-logo-horizontal-light.png" width="100%">
 </p>
 
 <p align="center">
@@ -14,7 +10,7 @@
 
 <h1 align="center">An Open Source Framework for AI Orchestration</h1>
 
-Mindtrace is a modular Python framework for building ML and AI infrastructure: typed microservices, artifact registries, object storage, database abstractions, job orchestration, distributed workers, hardware integrations, agents, and more.
+Mindtrace is an open source Python framework for building, deploying, and operating end-to-end AI systems in production.
 
 [Docs](https://mindtrace.github.io/mindtrace/) · [Samples](samples/) · [Contributing](CONTRIBUTING.md)
 
