@@ -225,7 +225,7 @@ consumer.consume(num_messages=1)
 
 ### Cluster
 
-`mindtrace-cluster` builds on jobs and services to route work across worker services and nodes.
+`mindtrace-cluster` builds on `mindtrace-jobs` to add worker, compute-node, and resource management for queued jobs across services and machines.
 
 ```python
 from mindtrace.cluster import ClusterManager, Node
