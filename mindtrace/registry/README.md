@@ -229,6 +229,28 @@ result = registry.save(
 result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 ```
 
+## Dict-Like API
+
+The `Registry` also supports simple dict-like access for common operations:
+
+```python
+from mindtrace.registry import Registry
+
+registry = Registry()
+
+# Save
+registry["my:config"] = {"threshold": 0.8}
+
+# Load
+config = registry["my:config"]
+print(config)
+
+# Delete
+del registry["my:config"]
+```
+
+This is convenient for unversioned or latest-version style access when you want a compact interface.
+
 ## Backend Comparison
 
 | Feature | Local | S3 / MinIO | GCP |
