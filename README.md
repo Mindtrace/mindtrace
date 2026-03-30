@@ -288,6 +288,9 @@ print(result)
 
 ## Module Dependencies
 
+<details>
+<summary>Show module dependency diagram</summary>
+
 ```mermaid
 graph TD
     core[core]
@@ -355,6 +358,8 @@ graph TD
     services --> apps
     agents --> apps
 ```
+
+</details>
 
 ## Choose the Right Module
 
