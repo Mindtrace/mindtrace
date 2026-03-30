@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-registry)](https://pypi.org/project/mindtrace-registry/)
+[![License](https://img.shields.io/pypi/l/mindtrace-registry)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-registry)](https://pepy.tech/projects/mindtrace-registry)
+
 # Registry Module
 
 The Registry module provides a distributed, versioned object storage system with support for multiple backends. It enables storing, versioning, and retrieving objects with automatic serialization and lock-free concurrency for objects. 
