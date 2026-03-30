@@ -194,7 +194,7 @@ print(fetched)
 
 ### Jobs
 
-`mindtrace-jobs` gives you typed job schemas plus local, Redis, and RabbitMQ backends.
+`mindtrace-jobs` gives you a unified job manager/orchestrator for typed jobs, with swappable local, Redis, and RabbitMQ backends.
 
 ```python
 from pydantic import BaseModel
