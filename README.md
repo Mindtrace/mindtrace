@@ -136,8 +136,7 @@ s3_backend = S3RegistryBackend(
 )
 registry = Registry(s3_backend)
 
-# Registry also supports a convenient dict-like API
-registry["data:embeddings"] = embeddings
+registry["data:embeddings"] = embeddings  # Registry also supports a convenient dict-like API
 loaded = registry["data:embeddings"]
 ```
 
