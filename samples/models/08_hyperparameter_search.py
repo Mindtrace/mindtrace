@@ -1,5 +1,8 @@
 """Hyperparameter search with Optuna and OptunaCallback.
 
+Uses ResNet18 and small trial/epoch/dataset settings so the script stays quick to run
+(including in CI). Increase the constants below for a heavier demo.
+
 Demonstrates:
   1. Single-objective Optuna study (minimize val/loss) with OptunaCallback.
   2. Pruning with MedianPruner — multi-epoch intermediate reporting.
@@ -27,13 +30,23 @@ except ImportError:
     _OPTUNA = False
     print("SKIPPING optuna sections: pip install optuna")
 
-# ── Synthetic data ─────────────────────────────────────────────────────────
+# ── Synthetic data & small-scale training knobs ───────────────────────────
+# Defaults are intentionally tiny so this sample (and integration tests) stay fast.
 NUM_CLASSES = 3
 IN_CH = 3
 IMG_SIZE = 32
-N_TRAIN = 256
-N_VAL = 64
+N_TRAIN = 128
+N_VAL = 32
 BATCH = 32
+
+BACKBONE = "resnet18"
+EPOCHS_OBJECTIVE = 1
+N_TRIALS_STUDY1 = 2
+EPOCHS_PRUNING = 2
+N_TRIALS_PRUNING = 3
+EPOCHS_FINAL = 2
+EPOCHS_FALLBACK = 2
+EPOCHS_DUCK_MAX = 4
 
 X_train = torch.randn(N_TRAIN, IN_CH, IMG_SIZE, IMG_SIZE)
 Y_train = torch.randint(0, NUM_CLASSES, (N_TRAIN,))
@@ -52,11 +65,11 @@ if _OPTUNA:
     def objective(trial: "optuna.Trial") -> float:
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
         wd = trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True)
-        hidden = trial.suggest_categorical("hidden_dim", [256, 512])
+        hidden = trial.suggest_categorical("hidden_dim", [64, 128])
         dropout = trial.suggest_float("dropout", 0.0, 0.4, step=0.1)
 
         model = build_model(
-            "resnet50",
+            BACKBONE,
             "mlp",
             num_classes=NUM_CLASSES,
             hidden_dim=hidden,
@@ -71,12 +84,12 @@ if _OPTUNA:
             callbacks=[OptunaCallback(trial, monitor="val/loss")],
             device="auto",
         )
-        trainer.fit(train_loader, val_loader, epochs=3)
+        trainer.fit(train_loader, val_loader, epochs=EPOCHS_OBJECTIVE)
         final_val_loss = trainer.history["val/loss"][-1]
         return final_val_loss
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=4, show_progress_bar=False)
+    study.optimize(objective, n_trials=N_TRIALS_STUDY1, show_progress_bar=False)
 
     print(f"  Trials completed : {len(study.trials)}")
     print(f"  Best val/loss    : {study.best_value:.4f}")
@@ -100,10 +113,10 @@ if _OPTUNA:
 
     def pruning_objective(trial: "optuna.Trial") -> float:
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-        trial.suggest_categorical("hidden_dim", [256, 512])
+        trial.suggest_categorical("hidden_dim", [64, 128])
 
         model = build_model(
-            "resnet50",
+            BACKBONE,
             "linear",
             num_classes=NUM_CLASSES,
             pretrained=False,
@@ -119,7 +132,7 @@ if _OPTUNA:
         )
         # OptunaCallback reports val/loss each epoch and prunes weak trials.
         try:
-            trainer.fit(train_loader, val_loader, epochs=5)
+            trainer.fit(train_loader, val_loader, epochs=EPOCHS_PRUNING)
         except optuna.TrialPruned:
             pass  # Trainer sets stop_training=True before raise; history is intact.
 
@@ -127,9 +140,9 @@ if _OPTUNA:
             raise optuna.TrialPruned()
         return trainer.history["val/loss"][-1]
 
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=2, n_warmup_steps=1)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=1, n_warmup_steps=1)
     pruning_study = optuna.create_study(direction="minimize", pruner=pruner)
-    pruning_study.optimize(pruning_objective, n_trials=6, show_progress_bar=False)
+    pruning_study.optimize(pruning_objective, n_trials=N_TRIALS_PRUNING, show_progress_bar=False)
 
     pruned = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.PRUNED]
     complete = [t for t in pruning_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
@@ -150,10 +163,10 @@ if _OPTUNA:
     print(f"  Using best params: {best}")
 
     final_model = build_model(
-        "resnet50",
+        BACKBONE,
         "mlp",
         num_classes=NUM_CLASSES,
-        hidden_dim=best.get("hidden_dim", 512),
+        hidden_dim=best.get("hidden_dim", 128),
         pretrained=False,
         dropout=best.get("dropout", 0.1),
     )
@@ -169,14 +182,14 @@ if _OPTUNA:
         optimizer=final_opt,
         device="auto",
     )
-    history = final_trainer.fit(train_loader, val_loader, epochs=5)
+    history = final_trainer.fit(train_loader, val_loader, epochs=EPOCHS_FINAL)
     print(f"  Final train/loss history : {[round(v, 4) for v in history['train/loss']]}")
     print(f"  Final val/loss history   : {[round(v, 4) for v in history['val/loss']]}")
     print(f"  Best val/loss achieved   : {min(history['val/loss']):.4f}")
 else:
     # Fallback: just train a default model to show the pattern
     print("  Training fallback model (optuna not available)")
-    fallback_model = build_model("resnet50", "mlp", num_classes=NUM_CLASSES, pretrained=False)
+    fallback_model = build_model(BACKBONE, "mlp", num_classes=NUM_CLASSES, pretrained=False)
     fallback_opt = build_optimizer("adamw", fallback_model, lr=3e-4, weight_decay=1e-2)
     fallback_trainer = Trainer(
         model=fallback_model,
@@ -184,7 +197,7 @@ else:
         optimizer=fallback_opt,
         device="auto",
     )
-    history = fallback_trainer.fit(train_loader, val_loader, epochs=3)
+    history = fallback_trainer.fit(train_loader, val_loader, epochs=EPOCHS_FALLBACK)
     print(f"  val/loss history: {[round(v, 4) for v in history['val/loss']]}")
 
 # ── Section 4: Duck-typed trial (no optuna needed) ────────────────────────
@@ -196,7 +209,7 @@ class DuckTrial:
 
     def __init__(self):
         self.reports: list[tuple[float, int]] = []
-        self._prune_after = 3  # simulate pruning after step 3
+        self._prune_after = 2  # simulate pruning once val/loss has been reported enough
 
     def report(self, value: float, step: int) -> None:
         self.reports.append((value, step))
@@ -213,7 +226,7 @@ class DuckTrial:
 duck_trial = DuckTrial()
 duck_cb = OptunaCallback(duck_trial, monitor="val/loss")
 
-duck_model = build_model("resnet50", "linear", num_classes=NUM_CLASSES, pretrained=False)
+duck_model = build_model(BACKBONE, "linear", num_classes=NUM_CLASSES, pretrained=False)
 duck_opt = build_optimizer("adam", duck_model, lr=1e-3)
 duck_trainer = Trainer(
     model=duck_model,
@@ -225,7 +238,7 @@ duck_trainer = Trainer(
 
 # Trainer will call OptunaCallback.on_epoch_end each epoch;
 # when should_prune() returns True, stop_training is set and training halts.
-duck_trainer.fit(train_loader, val_loader, epochs=6)
+duck_trainer.fit(train_loader, val_loader, epochs=EPOCHS_DUCK_MAX)
 
 print(f"  Epochs run before prune : {len(duck_trial.reports)}")
 print(f"  Reports logged          : {[(round(v, 4), s) for v, s in duck_trial.reports]}")

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.9.4"
+version = "0.10.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,50 +13,46 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.9.4",
-  "mindtrace-agents>=0.9.4",
-  "mindtrace-jobs>=0.9.4",
-  "mindtrace-registry>=0.9.4",
-  "mindtrace-database>=0.9.4",
-  "mindtrace-services>=0.9.4",
-  "mindtrace-hardware>=0.9.4",
-  "mindtrace-cluster>=0.9.4",
-  "mindtrace-models>=0.9.4",
-  "mindtrace-automation>=0.9.4",
-  "mindtrace-apps>=0.9.4",
-  "mindtrace-ui>=0.9.4",
-  "mindtrace-datalake>=0.9.4",
-  "mindtrace-storage>=0.9.4",
+  "mindtrace-core>=0.10.0",
+  "mindtrace-agents>=0.10.0",
+  "mindtrace-jobs>=0.10.0",
+  "mindtrace-registry>=0.10.0",
+  "mindtrace-database>=0.10.0",
+  "mindtrace-services>=0.10.0",
+  "mindtrace-hardware>=0.10.0",
+  "mindtrace-cluster>=0.10.0",
+  "mindtrace-models>=0.10.0",
+  "mindtrace-automation>=0.10.0",
+  "mindtrace-apps>=0.10.0",
+  "mindtrace-ui>=0.10.0",
+  "mindtrace-datalake>=0.10.0",
+  "mindtrace-storage>=0.10.0",
 ]
 
 [project.optional-dependencies]
-cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.9.4"]
-cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.9.4"]
-cameras-all = ["mindtrace-hardware[cameras-all]>=0.9.4"]
+cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.10.0"]
+cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.10.0"]
+cameras-all = ["mindtrace-hardware[cameras-all]>=0.10.0"]
 stereo-basler = [
-    "mindtrace-hardware[stereo-basler]>=0.9.4",
+    "mindtrace-hardware[stereo-basler]>=0.10.0",
     "plyfile>=1.1.3",
 ]
-stereo-all = ["mindtrace-hardware[stereo-all]>=0.9.4"]
+stereo-all = ["mindtrace-hardware[stereo-all]>=0.10.0"]
 scanners-photoneo = [
-    "mindtrace-hardware[scanners-photoneo]>=0.9.4",
+    "mindtrace-hardware[scanners-photoneo]>=0.10.0",
     "plyfile>=1.1.3",
 ]
-scanners-all = ["mindtrace-hardware[scanners-all]>=0.9.4"]
-hardware-all = ["mindtrace-hardware[hardware-all]>=0.9.4"]
+scanners-all = ["mindtrace-hardware[scanners-all]>=0.10.0"]
+hardware-all = ["mindtrace-hardware[hardware-all]>=0.10.0"]
 # Models extras
-models-train = ["mindtrace-models[train]>=0.9.4"]
-models-transformers = ["mindtrace-models[transformers]>=0.9.4"]
-models-timm = ["mindtrace-models[timm]>=0.9.4"]
-models-peft = ["mindtrace-models[peft]>=0.9.4"]
-models-mlflow = ["mindtrace-models[mlflow]>=0.9.4"]
-models-wandb = ["mindtrace-models[wandb]>=0.9.4"]
-models-tensorboard = ["mindtrace-models[tensorboard]>=0.9.4"]
-models-onnx = ["mindtrace-models[onnx]>=0.9.4"]
-models-ultralytics = ["mindtrace-models[ultralytics]>=0.9.4"]
-models-all = ["mindtrace-models[all]>=0.9.4"]
-# Cluster extras
-cluster-torch = ["mindtrace-cluster[torch]>=0.9.4"]
+models-train = ["mindtrace-models[train]>=0.10.0"]
+models-transformers = ["mindtrace-models[transformers]>=0.10.0"]
+models-timm = ["mindtrace-models[timm]>=0.10.0"]
+models-peft = ["mindtrace-models[peft]>=0.10.0"]
+models-mlflow = ["mindtrace-models[mlflow]>=0.10.0"]
+models-wandb = ["mindtrace-models[wandb]>=0.10.0"]
+models-onnx = ["mindtrace-models[onnx]>=0.10.0"]
+models-all = ["mindtrace-models[all]>=0.10.0"]
 
 
 [dependency-groups]

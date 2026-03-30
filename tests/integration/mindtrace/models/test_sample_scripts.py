@@ -11,32 +11,51 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import pytest
+import torch
 
 _SAMPLES_DIR = Path(__file__).resolve().parents[4] / "samples" / "models"
 _SCRIPTS = sorted(_SAMPLES_DIR.glob("*.py"))
+_REPO_ROOT = str(_SAMPLES_DIR.parents[1])
+_TIMEOUT = 120
+_MAX_WORKERS = 4
+
+# Skip the ~2-3 s CUDA probe per subprocess on GPU-less CI runners.
+_ENV: dict[str, str] | None = None
+if not torch.cuda.is_available():
+    _ENV = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
 
 
-@pytest.mark.parametrize(
-    "script",
-    _SCRIPTS,
-    ids=[s.stem for s in _SCRIPTS],
-)
-def test_sample_script(script: Path) -> None:
-    """Run a single sample script and assert it exits cleanly."""
+def _run_script(script: Path) -> tuple[Path, subprocess.CompletedProcess[str]]:
     result = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True,
         text=True,
-        timeout=120,
-        cwd=str(_SAMPLES_DIR.parents[1]),  # repo root
+        timeout=_TIMEOUT,
+        env=_ENV,
+        cwd=_REPO_ROOT,
     )
-    assert result.returncode == 0, (
-        f"{script.name} failed (exit {result.returncode}):\n"
-        f"--- STDOUT ---\n{result.stdout[-2000:]}\n"
-        f"--- STDERR ---\n{result.stderr[-2000:]}"
-    )
+    return script, result
+
+
+def test_sample_scripts() -> None:
+    """Run all sample scripts concurrently and assert they exit cleanly."""
+    failures: list[str] = []
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {pool.submit(_run_script, s): s for s in _SCRIPTS}
+        for fut in as_completed(futures):
+            script, result = fut.result()
+            if result.returncode != 0:
+                failures.append(
+                    f"{script.name} (exit {result.returncode}):\n"
+                    f"--- STDOUT ---\n{result.stdout[-2000:]}\n"
+                    f"--- STDERR ---\n{result.stderr[-2000:]}"
+                )
+
+    assert not failures, f"{len(failures)} sample script(s) failed:\n\n" + "\n\n".join(failures)

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-models"
-version = "0.9.4"
+version = "0.10.0"
 description = "Models for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -12,25 +12,23 @@ classifiers = [
 ]
 dependencies = [
     "dill>=0.4.0",
-    "mindtrace-core>=0.9.4",
-    "mindtrace-registry>=0.9.4",
-    "mindtrace-services>=0.9.4",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-registry>=0.10.0",
+    "mindtrace-services>=0.10.0",
     "numpy>=2.3.1",
     "pydantic>=2.0",
     "torch>=2.0",
+    "tensorboard>=2.14",
+    "ultralytics>=8.0",
 ]
 
 [project.optional-dependencies]
 # Experiment tracking backends
-mlflow      = ["mlflow>=2.0"]
-wandb       = ["wandb>=0.16"]
-tensorboard = ["tensorboard>=2.14"]
+mlflow = ["mlflow>=2.0"]
+wandb  = ["wandb>=0.16"]
 
 # Training extras
-train = [
-    "torch>=2.0",
-    "torchvision>=0.15",
-]
+train = ["torchvision>=0.15", "optuna>=4.8.0"]
 
 # Architecture extras
 timm         = ["timm>=0.9"]
@@ -40,21 +38,17 @@ transformers = ["transformers>=4.35"]
 onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
 peft = ["peft>=0.6"]
 
-# Archiver extras
-ultralytics = ["ultralytics>=8.0"]
-
 # Install everything
 all = [
     "mlflow>=2.0",
     "wandb>=0.16",
-    "tensorboard>=2.14",
     "torchvision>=0.15",
+    "optuna>=4.8.0",
     "timm>=0.9",
     "transformers>=4.35",
     "onnxruntime>=1.16",
     "onnx>=1.14",
     "peft>=0.6",
-    "ultralytics>=8.0",
 ]
 
 [project.urls]
