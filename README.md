@@ -6,7 +6,7 @@
 
 Mindtrace is a modular Python framework for building ML and AI infrastructure: typed microservices, artifact registries, object storage, database abstractions, job orchestration, distributed workers, hardware integrations, agents, and more.
 
-📖 [Docs](https://mindtrace.github.io/mindtrace/) · 💡 [Samples](samples/) · 🤝 [Contributing](CONTRIBUTING.md)
+[Docs](https://mindtrace.github.io/mindtrace/) · [Samples](samples/) · [Contributing](CONTRIBUTING.md)
 
 ## Features
 
