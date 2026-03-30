@@ -50,6 +50,7 @@ class MINDTRACE_MINIO(BaseModel):
 
 class MINDTRACE_CLUSTER(BaseModel):
     DEFAULT_REDIS_URL: str
+    ADVERTISE_URL: str = ""
     MINIO_REGISTRY_URI: str
     MINIO_HOST: str
     MINIO_PORT: int

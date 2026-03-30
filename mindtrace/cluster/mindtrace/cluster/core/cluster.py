@@ -50,8 +50,9 @@ class ClusterManager(Gateway):
                 from all workers (e.g. workers on a different host or network).
         """
         super().__init__(**kwargs)
-        if advertise_url:
-            self._advertise_url = advertise_url
+        resolved_advertise_url = advertise_url or self.config.get("MINDTRACE_CLUSTER", {}).get("ADVERTISE_URL") or None
+        if resolved_advertise_url:
+            self._advertise_url = resolved_advertise_url
         if kwargs.get("live_service", True):
             rabbitmq_password = (
                 self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD")
@@ -828,7 +829,7 @@ class Node(Service):
             parsed_cluster_url = urllib.parse.urlparse(cluster_url)
             cluster_host = parsed_cluster_url.hostname or "localhost"
 
-            # Prefer the explicit endpoint from the cluster response; fall back to
+            # Use the endpoint returned by the cluster manager. Fall back to
             # deriving from the cluster URL host for backward compatibility.
             node_minio_endpoint = (
                 getattr(register_output, "endpoint", None) or f"{cluster_host}:{register_output.minio_port}"
