@@ -155,7 +155,7 @@ store.set_default_mount("local")
 store["data:embeddings"] = embeddings  # Saves to the default mount
 store["remote/data:embeddings"] = embeddings  # Qualify with mount name to target another mount
 
-local_embeddings = store["data:embeddings"]
+local_embeddings = store["local/data:embeddings"]
 remote_embeddings = store["remote/data:embeddings"]
 ```
 
