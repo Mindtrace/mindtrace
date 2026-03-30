@@ -72,7 +72,7 @@ curl -X POST http://localhost:8080/echo \
   -d '{"message": "Hello from curl", "delay": 0.0}'
 ```
 
-And you can connect to the same running service later to get a `cm`:
+If you are working in Python, you usually do not need to make raw `curl` requests at all. You can connect to the same running service and get a convenient `cm` instead:
 
 ```python
 cm = EchoService.connect("http://localhost:8080")
