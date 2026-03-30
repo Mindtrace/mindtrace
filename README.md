@@ -125,15 +125,14 @@ print(loaded.shape)
 from mindtrace.registry import Registry, S3RegistryBackend
 
 
-registry = Registry(
-    backend=S3RegistryBackend(
-        endpoint="localhost:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        bucket="mindtrace-registry",
-        secure=False,
-    )
+backend = S3RegistryBackend(
+    endpoint="localhost:9000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    bucket="mindtrace-registry",
+    secure=False,
 )
+registry = Registry(backend)
 
 registry.save("data:embeddings", embeddings)
 loaded = registry.load("data:embeddings")
