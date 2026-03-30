@@ -121,7 +121,7 @@ loaded = registry.load("data:embeddings")
 print(loaded.shape)
 ```
 
-You can also point the same `Registry` API at a remote S3-compatible backend.
+You can also link the same `Registry` to a remote S3-compatible (AWS/Minio) or GCS backend.
 
 ```python
 from mindtrace.registry import Registry, S3RegistryBackend
