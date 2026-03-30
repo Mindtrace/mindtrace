@@ -368,7 +368,6 @@ If you are not sure where to start:
 - **Need config, logging, base utilities, or typed schemas?** → [`core`](mindtrace/core)
 - **Need a deployable API or MCP-capable service?** → [`services`](mindtrace/services)
 - **Need versioned artifact storage?** → [`registry`](mindtrace/registry)
-- **Need object storage access?** → [`storage`](mindtrace/storage)
 - **Need a document/database abstraction?** → [`database`](mindtrace/database)
 - **Need queue-backed background jobs?** → [`jobs`](mindtrace/jobs)
 - **Need distributed workers across machines?** → [`cluster`](mindtrace/cluster)
