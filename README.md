@@ -101,9 +101,7 @@ print(cm.echo(message="Hello, world!").echoed)
 cm.shutdown()
 ```
 
-While the service is running, you can inspect the generated API docs at:
-
-- `http://localhost:8080/docs`
+While the service is running, you can inspect the generated API docs at `http://localhost:8080/docs`.
 
 ### Registry
 
