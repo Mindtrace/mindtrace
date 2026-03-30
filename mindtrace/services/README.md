@@ -365,7 +365,9 @@ MCP paths are also configuration-driven, so the mounted MCP endpoint is built fr
 
 ## MCP Integration
 
-Every service creates and mounts a FastMCP app.
+MCP (Model Context Protocol) is a standard way to expose application functionality as structured tools for AI clients. If you are familiar with FastAPI, you can think of MCP as a tool-oriented interface sitting alongside your normal HTTP routes: instead of calling REST endpoints directly, an MCP client can discover available tools and invoke them with structured inputs.
+
+In `mindtrace-services`, every service creates and mounts a FastMCP app alongside its normal FastAPI routes.
 
 ### Expose an endpoint as a tool
 
