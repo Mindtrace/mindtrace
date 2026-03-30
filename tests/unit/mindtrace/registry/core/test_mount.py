@@ -20,7 +20,12 @@ from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 class DummyRemoteBackend(RegistryBackend):
     def __init__(self, uri="dummy://backend", **kwargs):
+        self._uri = uri
         super().__init__(uri=uri, **kwargs)
+
+    @property
+    def uri(self):
+        return self._uri
 
     def push(self, *args, **kwargs):  # pragma: no cover - not used in these tests
         raise NotImplementedError
