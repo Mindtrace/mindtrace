@@ -298,18 +298,18 @@ class Mindtrace(metaclass=MindtraceMeta):
         """
         prefix_formatter = ifnone(
             prefix_formatter,
-            default=lambda function,
-            args,
-            kwargs: f"Calling {function.__name__} with args: {args} and kwargs: {kwargs}",
+            default=lambda function, args, kwargs: (
+                f"Calling {function.__name__} with args: {args} and kwargs: {kwargs}"
+            ),
         )
         suffix_formatter = ifnone(
             suffix_formatter, default=lambda function, result: f"Finished {function.__name__} with result: {result}"
         )
         exception_formatter = ifnone(
             exception_formatter,
-            default=lambda function,
-            e,
-            stack_trace: f"{function.__name__} failed to complete with the following error: {e}\n{stack_trace}",
+            default=lambda function, e, stack_trace: (
+                f"{function.__name__} failed to complete with the following error: {e}\n{stack_trace}"
+            ),
         )
 
         def decorator(function):

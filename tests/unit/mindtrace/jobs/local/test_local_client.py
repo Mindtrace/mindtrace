@@ -229,7 +229,7 @@ class TestLocalClient:
     def test_receive_from_nonexistent_queue(self, temp_local_client):
         """Test receiving from a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(RegistryObjectNotFound, match="Object nonexistent-queue@1 not found"):
+        with pytest.raises(RegistryObjectNotFound, match=r"Object nonexistent-queue@1\.0\.0 not found"):
             client.receive_message("nonexistent-queue")
 
     def test_receive_message_json_decode_error(self, temp_local_client):
@@ -246,7 +246,7 @@ class TestLocalClient:
     def test_clean_nonexistent_queue(self, temp_local_client):
         """Test cleaning a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(RegistryObjectNotFound, match="Object nonexistent-queue@1 not found"):
+        with pytest.raises(RegistryObjectNotFound, match=r"Object nonexistent-queue@1\.0\.0 not found"):
             client.clean_queue("nonexistent-queue")
 
     def test_count_nonexistent_queue(self, temp_local_client):

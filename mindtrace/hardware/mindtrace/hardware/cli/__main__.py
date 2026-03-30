@@ -9,6 +9,7 @@ from typing_extensions import Annotated
 
 from mindtrace.hardware.cli.commands.camera import app as camera_app
 from mindtrace.hardware.cli.commands.plc import app as plc_app
+from mindtrace.hardware.cli.commands.scanner import app as scanner_app
 from mindtrace.hardware.cli.commands.status import status_command
 from mindtrace.hardware.cli.commands.stereo import app as stereo_app
 from mindtrace.hardware.cli.core.logger import RichLogger, setup_logger
@@ -26,6 +27,7 @@ app = typer.Typer(
 # Add subcommand apps
 app.add_typer(camera_app, name="camera", help="Manage camera services")
 app.add_typer(plc_app, name="plc", help="Manage PLC services")
+app.add_typer(scanner_app, name="scanner", help="Manage 3D scanner services")
 app.add_typer(stereo_app, name="stereo", help="Manage stereo camera services")
 
 
@@ -77,15 +79,20 @@ def stop():
     # Show what will be stopped
     camera_services = [s for s in running_services if "camera_api" in s or "configurator" in s]
     plc_services = [s for s in running_services if "plc" in s]
+    scanner_services = [s for s in running_services if "scanner" in s]
     stereo_services = [s for s in running_services if "stereo" in s]
     other_services = [
-        s for s in running_services if s not in camera_services and s not in plc_services and s not in stereo_services
+        s
+        for s in running_services
+        if s not in camera_services and s not in plc_services and s not in scanner_services and s not in stereo_services
     ]
 
     if camera_services:
         logger.info(f"Stopping camera services: {', '.join(camera_services)}")
     if plc_services:
         logger.info(f"Stopping PLC services: {', '.join(plc_services)}")
+    if scanner_services:
+        logger.info(f"Stopping 3D scanner services: {', '.join(scanner_services)}")
     if stereo_services:
         logger.info(f"Stopping stereo camera services: {', '.join(stereo_services)}")
     if other_services:
@@ -99,13 +106,13 @@ def stop():
 
 @app.command()
 def logs(
-    service: Annotated[str, typer.Argument(help="Service name (camera, plc, stereo, all)")],
+    service: Annotated[str, typer.Argument(help="Service name (camera, plc, scanner, stereo, all)")],
     follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output")] = False,
 ):
     """View service logs."""
     logger = RichLogger()
 
-    valid_services = ["camera", "plc", "stereo", "all"]
+    valid_services = ["camera", "plc", "scanner", "stereo", "all"]
     if service not in valid_services:
         logger.error(f"Invalid service: {service}. Must be one of: {', '.join(valid_services)}")
         raise typer.Exit(1)
@@ -116,6 +123,10 @@ def logs(
             "App logs: mindtrace/hardware/apps/camera_configurator/app.log",
         ]
     elif service == "plc":
+        log_locations = [
+            "API logs: Check console output where service was started",
+        ]
+    elif service == "scanner":
         log_locations = [
             "API logs: Check console output where service was started",
         ]

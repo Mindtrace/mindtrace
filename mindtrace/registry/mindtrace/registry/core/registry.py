@@ -81,6 +81,7 @@ class Registry(Mindtrace):
         backend: str | Path | RegistryBackend | None = None,
         version_objects: bool | None = None,
         mutable: bool | None = None,
+        version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
         default_materializer: Type[BaseMaterializer] | None = None,
         use_cache: bool = True,
@@ -104,6 +105,10 @@ class Registry(Mindtrace):
                 Default ``True``.
             **kwargs: Additional arguments forwarded to the backend.
         """
+        # Registry is a library-facing API; avoid leaking debug records into
+        # globally configured root handlers (e.g. ZenML import-time logging).
+        kwargs.setdefault("propagate", False)
+
         super().__init__(**kwargs)
 
         is_remote = backend is not None and not isinstance(backend, (str, Path, LocalRegistryBackend))
@@ -114,6 +119,7 @@ class Registry(Mindtrace):
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
+                version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 default_materializer=default_materializer,
                 **kwargs,
@@ -123,6 +129,7 @@ class Registry(Mindtrace):
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
                 mutable=True,  # cache is always mutable for updates
+                version_digits=self._remote.version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 default_materializer=default_materializer,
                 **kwargs,
@@ -135,6 +142,7 @@ class Registry(Mindtrace):
                 backend=backend,
                 version_objects=version_objects,
                 mutable=mutable,
+                version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
                 default_materializer=default_materializer,
                 **kwargs,
@@ -164,6 +172,10 @@ class Registry(Mindtrace):
     @property
     def mutable(self) -> bool:
         return self._core.mutable
+
+    @property
+    def version_digits(self) -> int:
+        return self._core.version_digits
 
     # ─────────────────────────────────────────────────────────────────────────
     # Class-level materializer registry (delegates to _RegistryCore)

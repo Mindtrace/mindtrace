@@ -55,7 +55,7 @@ def pil_to_ascii(image: Image) -> str:
     Example:
         ```python
         import PIL
-        from mindtrace.core import pil_to_ascii, ascii_to_pil
+        from mindtrace.core.utils.conversions import pil_to_ascii, ascii_to_pil
 
         image = PIL.Image.open('tests/resources/hopper.png')
         ascii_image = pil_to_ascii(image)
@@ -76,7 +76,7 @@ def ascii_to_pil(ascii_image: str) -> Image:
         ```python
 
         import PIL
-        from mindtrace.core import pil_to_ascii, ascii_to_pil
+        from mindtrace.core.utils.conversions import pil_to_ascii, ascii_to_pil
 
         image = PIL.Image.open('tests/resources/hopper.png')
         ascii_image = pil_to_ascii(image)
@@ -93,7 +93,7 @@ def pil_to_bytes(image: Image) -> bytes:
         ```python
 
         import PIL
-        from mindtrace.core import pil_to_bytes, bytes_to_pil
+        from mindtrace.core.utils.conversions import pil_to_bytes, bytes_to_pil
 
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
@@ -113,7 +113,7 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
         ```python
 
         import PIL
-        from mindtrace.core import pil_to_bytes, bytes_to_pil
+        from mindtrace.core.utils.conversions import pil_to_bytes, bytes_to_pil
 
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
@@ -130,7 +130,7 @@ def pil_to_tensor(image: Image) -> "torch.Tensor":
         ```python
 
         from PIL import Image
-        from mindtrace.core import pil_to_tensor
+        from mindtrace.core.utils.conversions import pil_to_tensor
 
         image = Image.open('tests/resources/hopper.png')
         tensor = pil_to_tensor(image)
@@ -161,7 +161,7 @@ def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) 
         ```python
 
         from PIL import Image
-        from mindtrace.core import pil_to_tensor, tensor_to_pil
+        from mindtrace.core.utils.conversions import pil_to_tensor, tensor_to_pil
 
         image = Image.open('tests/resources/hopper.png')
         tensor_image = pil_to_tensor(image)
@@ -232,7 +232,7 @@ def ndarray_to_pil(image: "np.ndarray", image_format: str = "RGB"):
     Example:
         ```python
         from matplotlib import image, pyplot as plt
-        from mindtrace.core import ndarray_to_pil
+        from mindtrace.core.utils.conversions import ndarray_to_pil
 
         ndarray_image = image.imread('tests/resources/hopper.png')
         pil_image = ndarray_to_pil(ndarray_image, image_format='RGB')
@@ -278,7 +278,7 @@ def pil_to_cv2(image: Image) -> "np.ndarray":
 
         ```python
         import PIL
-        from mindtrace.core import pil_to_cv2
+        from mindtrace.core.utils.conversions import pil_to_cv2
 
         pil_image = PIL.Image.open('tests/resources/hopper.png')
         cv2_image = pil_to_cv2(pil_image)
@@ -307,7 +307,7 @@ def cv2_to_pil(image: "np.ndarray") -> Image:
         ```python
 
         import cv2
-        from mindtrace.core import cv2_to_pil
+        from mindtrace.core.utils.conversions import cv2_to_pil
 
         cv2_image = cv2.imread('tests/resources/hopper.png')
         pil_image = cv2_to_pil(cv2_image)
@@ -332,7 +332,7 @@ def pil_to_base64(image: Image) -> str:
     Example:
         ```python
         from PIL import Image
-        from mindtrace.core import pil_to_base64
+        from mindtrace.core.utils.conversions import pil_to_base64
 
         image = Image.open("path_to_image.png")
         encoded_image = pil_to_base64(image)
@@ -354,7 +354,7 @@ def base64_to_pil(base64_str: str) -> Image:
 
     Example:
         ```python
-        from mindtrace.core import base64_to_pil
+        from mindtrace.core.utils.conversions import base64_to_pil
 
         base64_str = "..."  # Base64 string obtained earlier
         image = base64_to_pil(base64_str)
@@ -378,7 +378,7 @@ def pil_to_discord_file(image: Image, filename: str = "image.png") -> "File":
     Example:
         ```python
         from PIL import Image
-        from mindtrace.core import pil_to_discord_file
+        from mindtrace.core.utils.conversions import pil_to_discord_file
         from discord import File
 
         image = Image.open("path_to_image.png")

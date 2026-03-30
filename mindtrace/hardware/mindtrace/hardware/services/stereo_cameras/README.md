@@ -59,7 +59,6 @@ export MINDTRACE_HW_STEREO_CAMERA_BUFFER_COUNT=25
 export MINDTRACE_HW_STEREO_CAMERA_RETRIEVE_RETRY_COUNT=3
 export MINDTRACE_HW_STEREO_CAMERA_MAX_CONCURRENT_CAPTURES=1
 export MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS=true
-export MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS=false
 export MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR=1
 
 # Backend configuration
@@ -90,7 +89,6 @@ Create `hardware_config.json` in your project directory:
     "retrieve_retry_count": 3,
     "max_concurrent_captures": 1,
     "enable_colors": true,
-    "remove_outliers": false,
     "downsample_factor": 1
   },
   "stereo_backends": {
@@ -146,7 +144,6 @@ Environment Variables > JSON File > Default Values > Runtime API Changes
 - `retrieve_retry_count`: Retry attempts (default: 3)
 - `max_concurrent_captures`: Max concurrent captures (default: 1)
 - `enable_colors`: Include color info in point clouds (default: true)
-- `remove_outliers`: Remove statistical outliers (default: false)
 - `downsample_factor`: Point cloud downsampling (default: 1)
 
 ## Supported Stereo Camera Backends
@@ -210,7 +207,6 @@ Capture options:
 
 Point cloud options:
 - `include_colors`: Include color information from intensity (default: true)
-- `remove_outliers`: Remove statistical outliers (default: false)
 - `downsample_factor`: Downsampling factor (default: 1, no downsampling)
 - `save_path`: Optional path to save point cloud (.ply format)
 
@@ -328,7 +324,6 @@ curl -X POST http://localhost:8004/stereocameras/capture/pointcloud \
     "camera": "BaslerStereoAce:40644640",
     "save_path": "/tmp/pointcloud.ply",
     "include_colors": true,
-    "remove_outliers": false,
     "downsample_factor": 1
   }'
 ```
@@ -481,8 +476,7 @@ curl -X POST http://localhost:8004/stereocameras/capture/pointcloud \
   -d '{
     "camera": "BaslerStereoAce:40644640",
     "save_path": "/tmp/high_quality.ply",
-    "include_colors": true,
-    "remove_outliers": true
+    "include_colors": true
   }'
 ```
 

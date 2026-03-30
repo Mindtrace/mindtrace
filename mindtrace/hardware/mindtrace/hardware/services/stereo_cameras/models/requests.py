@@ -96,7 +96,6 @@ class PointCloudCaptureRequest(BaseModel):
     camera: str = Field(..., description="Camera name")
     save_path: Optional[str] = Field(None, description="Path to save point cloud (.ply)")
     include_colors: bool = Field(True, description="Include color information from intensity")
-    remove_outliers: bool = Field(False, description="Remove statistical outliers")
     downsample_factor: int = Field(1, description="Downsampling factor (1 = no downsampling)")
     output_format: str = Field("numpy", description="Output format for points/colors (numpy)")
 

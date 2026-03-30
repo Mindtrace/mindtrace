@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from mindtrace.services.core.types import (
+    ClassNameOutput,
     EndpointsOutput,
     Heartbeat,
     HeartbeatOutput,
@@ -209,6 +210,13 @@ class TestOutputModels:
 
         assert output.server_id == server_id
         assert isinstance(output.server_id, UUID)
+
+    def test_class_name_output(self):
+        """Test ClassNameOutput model."""
+        output = ClassNameOutput(class_name="EchoService")
+
+        assert output.class_name == "EchoService"
+        assert isinstance(output.class_name, str)
 
     def test_pid_file_output(self):
         """Test PIDFileOutput model."""

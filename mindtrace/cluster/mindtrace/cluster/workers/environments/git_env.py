@@ -19,15 +19,22 @@ class GitEnvironment(Mindtrace):
         branch: Optional[str] = None,
         commit: Optional[str] = None,
         working_dir: Optional[str] = None,
+        project: Optional[str] = None,
     ):
         super().__init__()
         self.repo_url = repo_url
         self.branch = branch  # Use provided branch or get default from config
         self.commit = commit
         self.working_dir = working_dir
+        self.project = project
         self.temp_dir: str = None  # type: ignore
         self.repo = None
-        self.allowed_owners = ["Mindtrace"]  # private allowed repos  TODO: get from env or config
+        allowed_owners_env = os.environ.get("GIT_ALLOWED_OWNERS")
+        if allowed_owners_env:
+            self.allowed_owners = [owner.strip() for owner in allowed_owners_env.split(",") if owner.strip()]
+        else:
+            # Default to Mindtrace org; can be overridden via GIT_ALLOWED_OWNERS.
+            self.allowed_owners = ["Mindtrace"]
 
     def _extract_repo_owner(self, url: str) -> str:
         """Extracts the repository identifier (owner/repo) from a GitHub URL.
@@ -81,6 +88,33 @@ class GitEnvironment(Mindtrace):
         os.environ["GIT_CONFIG_GLOBAL"] = "0"
         os.environ["GIT_CONFIG_SYSTEM"] = "0"
 
+    def _configure_git_token(self, token: str) -> None:
+        """Configure git to inject the token into all GitHub HTTPS URLs.
+
+        This uses git's GIT_CONFIG_* environment variables to add a temporary
+        config entries so that common GitHub URL forms are rewritten:
+
+            url.https://<token>@github.com/.insteadOf = https://github.com/
+            url.https://<token>@github.com/.insteadOf = ssh://git@github.com/
+            url.https://<token>@github.com/.insteadOf = git@github.com:
+
+        Any git process that inherits this environment (including those
+        spawned by tools like `uv`) will transparently rewrite GitHub URLs
+        to include the token.
+        """
+        current_count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+        mappings = [
+            "https://github.com/",
+            "ssh://git@github.com/",
+            "git@github.com:",
+        ]
+        for index, source in enumerate(mappings):
+            key_var = f"GIT_CONFIG_KEY_{current_count + index}"
+            value_var = f"GIT_CONFIG_VALUE_{current_count + index}"
+            os.environ[key_var] = f"url.https://{token}@github.com/.insteadOf"
+            os.environ[value_var] = source
+        os.environ["GIT_CONFIG_COUNT"] = str(current_count + len(mappings))
+
     def _get_token(self):
         """
         Priority:
@@ -93,7 +127,8 @@ class GitEnvironment(Mindtrace):
         if repo_owner in self.allowed_owners:
             token = os.environ.get("GIT_FINE_GRAINED_TOKEN")
             if token:
-                self.logger.info(f"Using token: {token}")
+                # Do not log the raw token to avoid leaking secrets.
+                self.logger.info("Using fine-grained GitHub token for authenticated clone")
                 return token
         return None
 
@@ -107,12 +142,13 @@ class GitEnvironment(Mindtrace):
         try:
             self._remove_git_auth_methods()
             if token:
-                if "github.com" in self.repo_url:
-                    repo_name = self.repo_url.split("github.com/")[1]
-                    repo_url_with_pat = f"https://{token}@github.com/{repo_name}"
-                else:
-                    raise RuntimeError(f"Unsupported repository URL: {self.repo_url}")
-                self.repo = git.Repo.clone_from(repo_url_with_pat, self.temp_dir)
+                if "github.com" not in self.repo_url:
+                    raise RuntimeError(f"Unsupported repository URL for token-based auth: {self.repo_url}")
+                # Configure git so that all GitHub HTTPS URLs (including those
+                # used by tools like `uv` for dependency fetches) are rewritten
+                # to include the fine-grained token.
+                self._configure_git_token(token)
+                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
                 self.logger.info("Successfully cloned repository with token")
             else:
                 self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
@@ -152,7 +188,10 @@ class GitEnvironment(Mindtrace):
     def _sync_dependencies(self, working_dir: str):
         """Sync Python dependencies using uv."""
         self.logger.info(f"Running 'uv sync' in {working_dir}")
-        result = subprocess.run(["uv", "sync"], cwd=working_dir, capture_output=True, text=True, check=True)
+        command = ["uv", "sync"]
+        if self.project:
+            command.extend(["--project", self.project])
+        result = subprocess.run(command, cwd=working_dir, capture_output=False, text=True, check=True)
         if result.returncode != 0:
             raise RuntimeError(f"'uv sync' failed: {result.stderr}")
         self.logger.info("Dependencies synced successfully")
@@ -188,16 +227,38 @@ class GitEnvironment(Mindtrace):
         if detach:
             if isinstance(command, list):
                 if not command[0].startswith("uv"):
-                    command = ["uv", "run"] + command
+                    if self.project:
+                        command = ["uv", "run", "--project " + self.project] + command
+                    else:
+                        command = ["uv", "run"] + command
+                else:
+                    self.logger.warning(
+                        "Don't know how to handle project when uv is already in the command, running command as-is"
+                    )
             else:
                 if not command.startswith("uv"):
-                    command = ["uv run " + command]
+                    if self.project:
+                        command = ["uv run --project " + self.project + " " + command]
+                    else:
+                        command = ["uv run " + command]
+                else:
+                    if self.project:
+                        self.logger.warning(
+                            "Don't know how to handle project when uv is already in the command, running command as-is"
+                        )
         else:
             if isinstance(command, list):
                 command = " ".join(command)
 
             if not command.startswith("uv"):
-                command = "uv run " + command
+                if self.project:
+                    command = "uv run --project " + self.project + " " + command
+                else:
+                    command = "uv run " + command
+            else:
+                self.logger.warning(
+                    "Don't know how to handle project when uv is already in the command, running command as-is"
+                )
 
         working_dir = cwd or self._get_working_dir()
         environment_vars = {**os.environ, **(env or {})}
@@ -205,7 +266,7 @@ class GitEnvironment(Mindtrace):
         try:
             if not detach:
                 result = subprocess.run(
-                    command, shell=True, cwd=working_dir, env=environment_vars, capture_output=False, text=True
+                    command, shell=True, cwd=working_dir, env=environment_vars, capture_output=True, text=True
                 )
                 return result.returncode, result.stdout, result.stderr
             else:

@@ -65,6 +65,14 @@ class BoundingBox:
         return (self.x, self.y, self.width, self.height)
 
     # --- OpenCV-friendly tuple conversions
+    def to_xcycwh(self) -> Tuple[float, float, float, float]:
+        """Convert to center-x, center-y, width, height format.
+
+        Returns:
+            Tuple of (center_x, center_y, width, height).
+        """
+        return (self.x + self.width / 2, self.y + self.height / 2, self.width, self.height)
+
     def to_opencv_xywh(self, as_int: bool = True) -> Tuple[int | float, int | float, int | float, int | float]:
         if as_int:
             return (int(round(self.x)), int(round(self.y)), int(round(self.width)), int(round(self.height)))
@@ -84,6 +92,21 @@ class BoundingBox:
     def from_opencv_xyxy(x1: float, y1: float, x2: float, y2: float) -> "BoundingBox":
         return BoundingBox(x1, y1, x2 - x1, y2 - y1)
 
+    @staticmethod
+    def from_xcycwh(xc: float, yc: float, w: float, h: float) -> "BoundingBox":
+        """Create a BoundingBox from center-x, center-y, width, height format.
+
+        Args:
+            xc: X coordinate of the center.
+            yc: Y coordinate of the center.
+            w: Width of the bounding box.
+            h: Height of the bounding box.
+
+        Returns:
+            A new BoundingBox with top-left (x, y) derived from the center.
+        """
+        return BoundingBox(xc - w / 2, yc - h / 2, w, h)
+
     # --- ROI slicing for NumPy/cv2 images
     def to_roi_slices(self) -> Tuple[slice, slice]:
         """Return (rows_slice, cols_slice) for NumPy image indexing: img[rows, cols]."""
@@ -92,6 +115,44 @@ class BoundingBox:
         y2 = int(max(y1, round(self.y2)))
         x2 = int(max(x1, round(self.x2)))
         return (slice(y1, y2), slice(x1, x2))
+
+    def crop_from_image(self, image: "np.ndarray", padding: float = 0.0) -> "np.ndarray":  # type: ignore[name-defined]
+        """Extract the bounding box region from a numpy image array.
+
+        Optionally applies fractional padding around the bounding box before
+        cropping. The padded region is clipped to image bounds.
+
+        Args:
+            image: Source image as a numpy array (H, W, C) or (H, W).
+            padding: Fractional padding to add (0.1 = 10% of bbox dimensions).
+
+        Returns:
+            A copy of the cropped region as a numpy array.
+
+        Raises:
+            ImportError: If numpy is not installed.
+        """
+        if not _HAS_NUMPY:
+            raise ImportError(
+                "crop_from_image needs numpy, but it was not installed. Install it with `pip install numpy`"
+            )
+        h_img, w_img = image.shape[:2]
+
+        if padding > 0.0:
+            pad_w = self.width * padding
+            pad_h = self.height * padding
+            padded = BoundingBox(
+                x=self.x - pad_w,
+                y=self.y - pad_h,
+                width=self.width + 2 * pad_w,
+                height=self.height + 2 * pad_h,
+            )
+        else:
+            padded = self
+
+        clipped = padded.clip_to_image((w_img, h_img))
+        rows, cols = clipped.to_roi_slices()
+        return image[rows, cols].copy()
 
     # --- Drawing helpers for PIL
     def draw_on_pil(

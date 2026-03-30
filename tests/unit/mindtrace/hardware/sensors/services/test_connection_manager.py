@@ -514,3 +514,9 @@ class TestSensorConnectionManager:
 
             # Verify all calls were made
             assert manager.call_endpoint.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_call_endpoint_base_method_raises_not_implemented(self):
+        manager = SensorConnectionManager()
+        with pytest.raises(NotImplementedError):
+            await manager.call_endpoint("any", SensorStatusRequest(sensor_id="s1"))
