@@ -72,8 +72,8 @@ class DataProcessor(Mindtrace):
         return [value * 2 for value in values]
 
 
-processor = DataProcessor()
-print(processor.process([1, 2, 3]))
+with DataProcessor() as processor:
+    print(processor.process([1, 2, 3]))
 ```
 
 If you need an abstract base class with the same Mindtrace behavior, use `MindtraceABC`.
