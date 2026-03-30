@@ -63,7 +63,8 @@ As you work:
 
 - keep changes scoped to a clear purpose
 - use clear names and type hints
-- add docstrings for new public functions and classes
+- follow [Google's Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+- add docstrings for new public functions and classes using Google-style Python docstrings
 - update relevant tests
 - update relevant README files when behavior or public interfaces change
 - add or update samples in `samples/[module]/` when new functionality needs example usage
@@ -73,6 +74,7 @@ For documentation work specifically:
 - keep top-level READMEs as practical guides, not full API references
 - use module READMEs for deeper walkthroughs
 - prefer human-readable example links over raw file paths when possible
+- keep examples and prose aligned with [Google's Python Style Guide](https://google.github.io/styleguide/pyguide.html) where applicable
 
 ## Code Quality
 
