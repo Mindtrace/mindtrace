@@ -4,6 +4,14 @@
 
 # Mindtrace
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mindtrace-logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mindtrace-logo-light.png">
+    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-light.png" width="420">
+  </picture>
+</p>
+
 Mindtrace is a modular Python framework for building ML and AI infrastructure: typed microservices, artifact registries, object storage, database abstractions, job orchestration, distributed workers, hardware integrations, agents, and more.
 
 [Docs](https://mindtrace.github.io/mindtrace/) · [Samples](samples/) · [Contributing](CONTRIBUTING.md)
