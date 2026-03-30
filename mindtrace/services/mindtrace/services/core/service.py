@@ -27,6 +27,7 @@ from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
+    ClassNameSchema,
     EndpointsSchema,
     Heartbeat,
     HeartbeatSchema,
@@ -153,6 +154,7 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
         )
+        self.add_endpoint(path="/class_name", func=self.class_name_func, schema=ClassNameSchema)
         self.add_endpoint(
             path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
         )
@@ -172,6 +174,10 @@ class Service(Mindtrace):
     def status_func(self):
         """Get the current status of the service."""
         return {"status": self.status.value}
+
+    def class_name_func(self):
+        """Return the name of the concrete class of this service instance."""
+        return {"class_name": self.__class__.__name__}
 
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
