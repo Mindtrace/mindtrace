@@ -234,6 +234,24 @@ Generated methods support:
 
 These can be disabled when raw payload handling is needed.
 
+Examples:
+
+```python
+# Default behavior: validate kwargs against the input schema
+# and parse the response into the output schema
+result = cm.echo(message="Hello")
+print(result.echoed)
+```
+
+```python
+# Skip input validation and send the payload as-is
+result = cm.echo(validate_input=False, message="Hello", delay=0.0)
+
+# Skip output validation to receive the raw response dict
+raw_result = cm.echo(message="Hello", validate_output=False)
+print(raw_result)
+```
+
 ### When to write a custom connection manager
 
 A custom connection manager is worth using when you want:
