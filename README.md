@@ -136,8 +136,9 @@ backend = S3RegistryBackend(
 )
 registry = Registry(backend)
 
-registry.save("data:embeddings", embeddings)
-loaded = registry.load("data:embeddings")
+# Registry also supports a convenient dict-like API
+registry["data:embeddings"] = embeddings
+loaded = registry["data:embeddings"]
 ```
 
 For multi-registry workflows, use `Store` to mount several registries behind one interface.
