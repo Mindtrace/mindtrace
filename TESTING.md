@@ -1,6 +1,6 @@
 # Testing Guide
 
-This guide covers the standard way to run tests in the [Mindtrace](https://github.com/Mindtrace/mindtrace) repo using `ds`.
+This guide covers the standard way to run tests in the [mindtrace](https://github.com/Mindtrace/mindtrace) repo using `ds`.
 
 ## Requirements
 
