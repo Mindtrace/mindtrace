@@ -8,6 +8,8 @@
   <a href="https://pepy.tech/projects/mindtrace"><img alt="Downloads" src="https://static.pepy.tech/badge/mindtrace"></a>
 </p>
 
+<br />
+
 <h1 align="center">An Open Source Framework for AI Orchestration</h1>
 
 <p align="center">Mindtrace is an open source Python framework for building, deploying, and operating end-to-end AI systems in production.</p>
