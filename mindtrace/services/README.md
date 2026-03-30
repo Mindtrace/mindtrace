@@ -416,7 +416,7 @@ client = cm.mcp_client
 
 ## Gateway and Proxy Routing
 
-The package includes service-composition helpers.
+The package includes service-composition helpers for routing traffic through a central gateway.
 
 ### `Gateway`
 
@@ -434,38 +434,55 @@ It supports:
 
 This is useful when a service needs to be accessed indirectly through a central gateway.
 
-## Package Layout
+Example:
 
-Key modules in this package include:
+```python
+from mindtrace.services import EchoService, Gateway
 
-- `mindtrace.services.core.service` — base `Service` implementation
-- `mindtrace.services.core.connection_manager` — base client abstraction
-- `mindtrace.services.core.utils` — connection manager generation helpers
-- `mindtrace.services.core.launcher` — subprocess launcher
-- `mindtrace.services.core.mcp_client_manager` — MCP client helper
-- `mindtrace.services.gateway.*` — gateway and proxy support
-- `mindtrace.services.discord.*` — Discord integration
-- `mindtrace.services.samples.*` — sample services
+
+# Launch a normal service
+backend_cm = EchoService.launch(host="localhost", port=8081, wait_for_launch=True)
+
+# Launch the gateway
+gateway_cm = Gateway.launch(host="localhost", port=8080, wait_for_launch=True)
+
+# Register the service with the gateway and attach a proxy client
+gateway_cm.register_app(
+    name="echo",
+    url="http://localhost:8081",
+    connection_manager=backend_cm,
+)
+
+# Calls are now forwarded through the gateway
+print(gateway_cm.echo.echo(message="Hello through gateway"))
+```
 
 ## Examples in this package
 
 See the sample implementations in this package for end-to-end reference:
 
-- `mindtrace/services/mindtrace/services/samples/echo_service.py`
-- `mindtrace/services/mindtrace/services/samples/echo_mcp.py`
-- `mindtrace/services/mindtrace/services/discord/README.md`
+- [Basic Echo service sample](mindtrace/services/samples/echo_service.py)
+- [Echo service with MCP tools](mindtrace/services/samples/echo_mcp.py)
+- [Discord service documentation](mindtrace/services/discord/README.md)
 
 ## Testing
 
-Typical local test commands:
+If you are working in the full Mindtrace repo, run tests for this module specifically:
 
 ```bash
-# Run unit tests
-# (preferred default local path)
-ds test --unit
+# Run the services test suite
+ds test: services
+
+# Run only unit tests for services
+ds test: --unit services
 ```
 
-Depending on your workflow, broader suites may also be available.
+If you need a fresh checkout first:
+
+```bash
+git clone https://github.com/Mindtrace/mindtrace.git
+cd mindtrace
+```
 
 ## Practical Notes and Caveats
 
