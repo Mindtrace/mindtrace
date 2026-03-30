@@ -121,6 +121,8 @@ loaded = registry.load("data:embeddings")
 print(loaded.shape)
 ```
 
+You can also point the same `Registry` API at a remote S3-compatible backend.
+
 ```python
 from mindtrace.registry import Registry, S3RegistryBackend
 
@@ -136,6 +138,20 @@ registry = Registry(backend)
 
 registry.save("data:embeddings", embeddings)
 loaded = registry.load("data:embeddings")
+```
+
+For multi-registry workflows, use `Store` to mount several registries behind one interface.
+
+```python
+from mindtrace.registry import Registry, Store
+
+
+store = Store()
+store.add_mount("models", Registry())
+store.add_mount("datasets", Registry())
+
+store.save("models:classifier", model)
+dataset = store.load("datasets:training-set")
 ```
 
 ### Database
