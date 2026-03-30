@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mindtrace-logo-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mindtrace-logo-light.png">
-    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-light.png" width="100%">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mindtrace-logo-horizontal-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mindtrace-logo-horizontal-light.png">
+    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-horizontal-light.png" width="100%">
   </picture>
 </p>
 
