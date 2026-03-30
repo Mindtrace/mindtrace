@@ -317,16 +317,6 @@ $ git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
 $ uv sync --dev --all-extras
 ```
 
-## Examples
-
-This README includes practical examples for:
-
-- Google Cloud Storage
-- S3-compatible storage
-- string uploads/downloads
-- batch and folder operations
-- result handling
-
 ## Testing
 
 If you are working in the full Mindtrace repo, run tests for this module specifically:
