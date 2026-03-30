@@ -242,18 +242,13 @@ print(node.status())
 `mindtrace-hardware` provides interfaces and service tooling for cameras, scanners, PLCs, and sensors.
 
 ```python
-import asyncio
-
-from mindtrace.hardware import CameraManager
+from mindtrace.hardware.cameras import Camera
 
 
-async def main():
-    async with CameraManager() as manager:
-        cameras = manager.discover()
-        print(cameras)
-
-
-asyncio.run(main())
+camera = Camera(name="Basler:basler_camera_0")
+image = camera.capture()
+print(type(image))
+camera.close()
 ```
 
 ### Agents
