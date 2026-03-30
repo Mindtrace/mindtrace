@@ -142,11 +142,11 @@ async def dual_unified_backend():
         pass
 
     redis_backend = backend.get_redis_backend()
-    redis = redis_backend.redis
-    pattern = f"{RedisUserDoc.Meta.global_key_prefix}:*"
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    try:
+        for user in redis_backend.all():
+            redis_backend.delete(user.pk)
+    except Exception:
+        pass
 
     yield backend
 
@@ -158,10 +158,11 @@ async def dual_unified_backend():
     except Exception:
         pass
 
-    # Clean up Redis
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    try:
+        for user in redis_backend.all():
+            redis_backend.delete(user.pk)
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -191,10 +192,11 @@ async def unified_model_backend():
 
     if backend.has_redis_backend():
         redis_backend = backend.get_redis_backend()
-        pattern = f"{IntegrationUnifiedUserDoc.get_meta().global_key_prefix}:*"
-        keys = redis_backend.redis.keys(pattern)
-        if keys:
-            redis_backend.redis.delete(*keys)
+        try:
+            for user in redis_backend.all():
+                redis_backend.delete(user.pk)
+        except Exception:
+            pass
 
     yield backend
 
@@ -208,13 +210,13 @@ async def unified_model_backend():
     except Exception:
         pass
 
-    # Clean up Redis
     if backend.has_redis_backend():
         redis_backend = backend.get_redis_backend()
-        pattern = f"{IntegrationUnifiedUserDoc.get_meta().global_key_prefix}:*"
-        keys = redis_backend.redis.keys(pattern)
-        if keys:
-            redis_backend.redis.delete(*keys)
+        try:
+            for user in redis_backend.all():
+                redis_backend.delete(user.pk)
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio

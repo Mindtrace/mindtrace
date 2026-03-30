@@ -98,6 +98,37 @@ def get_free_port(
     raise NoFreePortError(f"No free port found in range {start_port}-{end_port} on {host}")
 
 
+def get_free_ports(
+    host: str = "localhost",
+    start_port: int = 8000,
+    end_port: int = 9000,
+    ports_to_find: int = 1,
+) -> list[int]:
+    """Find a free port in the given range.
+
+    Args:
+        host: Host address to check.
+        start_port: Starting port number (inclusive).
+        end_port: Ending port number (inclusive).
+        ports_to_find: Number of ports to find.
+    Returns:
+        List of available port numbers in the range.
+
+    Raises:
+        NoFreePortError: If no free port is found in the range.
+    """
+    ports = []
+    for port in range(start_port, end_port + 1):
+        if is_port_available(host, port):
+            ports.append(port)
+            if len(ports) == ports_to_find:
+                return ports
+
+    raise NoFreePortError(
+        f"Not enough free ports found in range {start_port}-{end_port} on {host}, found {len(ports)} ports instead of {ports_to_find}"
+    )
+
+
 def wait_for_service(
     host: str,
     port: int,

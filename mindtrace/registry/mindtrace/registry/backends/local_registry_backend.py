@@ -110,7 +110,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file path (e.g., Path("_meta_object_name@1.0.0.yaml")).
         """
-        return self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+        return self.uri / f"_meta_{name.replace(':', '%3A')}@{version}.yaml"
 
     def _object_metadata_prefix(self, name: str) -> str:
         """Generate the metadata file prefix for listing versions of an object.
@@ -121,7 +121,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file prefix (e.g., "_meta_object_name@").
         """
-        return f"_meta_{name.replace(':', '_')}@"
+        return f"_meta_{name.replace(':', '%3A')}@"
 
     def _lock_dir(self, key: str) -> Path:
         """Get the directory for lock files for a given key."""
@@ -807,7 +807,7 @@ class LocalRegistryBackend(RegistryBackend):
             # Remove '_meta_' prefix and split at '@' to get the object name part
             name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
             # Convert back from filesystem-safe format to original object name
-            name = name_part.replace("_", ":")
+            name = name_part.replace("%3A", ":")
             objects.add(name)
 
         return sorted(list(objects))

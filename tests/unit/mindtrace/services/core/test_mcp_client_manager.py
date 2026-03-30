@@ -69,11 +69,14 @@ class TestMCPClientManagerLaunch:
 
 
 class TestMCPClientManagerGetDescriptor:
-    def test_get_descriptor_from_class_returns_new_manager(self):
-        """Test that accessing mcp from class returns new MCPClientManager."""
-        # When accessing from class (obj is None), should return new manager
+    def test_get_descriptor_from_class_returns_self_manager(self):
         manager = MyService.mcp
-        # Accessing from class should return a new manager instance
         class_access = MCPClientManager.__get__(manager, None, MyService)
-        assert isinstance(class_access, MCPClientManager)
-        assert class_access.service_cls is MyService
+        assert class_access is manager
+
+    def test_get_descriptor_from_instance_returns_instance_class_manager(self):
+        service = MyService()
+        manager_from_instance = MyService.mcp.__get__(service, MyService)
+
+        assert isinstance(manager_from_instance, MCPClientManager)
+        assert manager_from_instance.service_cls is MyService
