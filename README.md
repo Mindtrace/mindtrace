@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mindtrace-logo-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/mindtrace-logo-light.png">
-    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-light.png" width="420">
+    <img alt="Mindtrace" src="docs/assets/mindtrace-logo-light.png" width="100%">
   </picture>
 </p>
 
@@ -12,7 +12,7 @@
   <a href="https://pepy.tech/projects/mindtrace"><img alt="Downloads" src="https://static.pepy.tech/badge/mindtrace"></a>
 </p>
 
-# The Open Source AI Orchestration Layer
+<h1 align="center">The Open Source AI Orchestration Layer</h1>
 
 Mindtrace is a modular Python framework for building ML and AI infrastructure: typed microservices, artifact registries, object storage, database abstractions, job orchestration, distributed workers, hardware integrations, agents, and more.
 
