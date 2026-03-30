@@ -123,27 +123,16 @@ print(loaded.shape)
 ```
 
 ```python
-from mindtrace.registry import GCPRegistryBackend, Registry, S3RegistryBackend
+from mindtrace.registry import Registry, S3RegistryBackend
 
 
-# S3-compatible backend
-s3_registry = Registry(
+registry = Registry(
     backend=S3RegistryBackend(
         endpoint="localhost:9000",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket="mindtrace-registry",
         secure=False,
-    )
-)
-
-# Google Cloud Storage backend
-gcs_registry = Registry(
-    backend=GCPRegistryBackend(
-        uri="gs://my-registry-bucket",
-        project_id="my-project",
-        bucket_name="my-registry-bucket",
-        credentials_path="/path/to/service-account.json",
     )
 )
 ```
