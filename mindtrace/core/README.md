@@ -219,16 +219,31 @@ class DataProcessor(Mindtrace):
 
 ### `track_operation`
 
-Use `track_operation()` when you want explicit operation-level logging, including duration and optional system metrics.
+Use `track_operation()` when you want explicit operation-level logging around a specific unit of work. It is useful for things like:
+
+- measuring how long an operation took
+- attaching structured context such as a batch ID or file name
+- recording optional system metrics alongside the operation
+- producing start / completed / failed log events in a consistent format
 
 ```python
 from mindtrace.core.logging.logger import track_operation
 
 
-@track_operation("load_data")
+@track_operation("load_data", include_system_metrics=True, dataset="train")
 def load_data() -> list[int]:
     return [1, 2, 3]
 ```
+
+With this pattern, the logs can include fields such as:
+
+- the operation name
+- whether it started, completed, or failed
+- duration / duration_ms
+- any extra context you bound, such as `dataset="train"`
+- optional system metrics, such as CPU or memory usage
+
+That makes `track_operation()` a good fit when you care about observability of a specific workflow step, not just generic function logging.
 
 ## Observables
 
