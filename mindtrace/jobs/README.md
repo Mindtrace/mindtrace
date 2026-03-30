@@ -323,16 +323,6 @@ $ docker run -d --name rabbitmq \
     rabbitmq:3-management
 ```
 
-## Examples
-
-This README includes practical examples for:
-
-- defining schemas and jobs
-- publishing with an orchestrator
-- implementing a consumer
-- switching between local, Redis, and RabbitMQ
-- working with priority queues
-
 ## Testing
 
 If you are working in the full Mindtrace repo, run tests for this module specifically:
