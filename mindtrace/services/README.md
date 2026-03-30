@@ -319,6 +319,18 @@ Common arguments:
 - `block` — keep the calling process blocked while the service runs
 - `num_workers` — worker count for the launched service
 
+Example:
+
+```python
+cm = EchoService.launch(
+    host="localhost",
+    port=8080,
+    wait_for_launch=True,
+    timeout=30,
+)
+print(cm.status())
+```
+
 ### `connect()`
 
 `Service.connect()` attaches to an already-running service and returns the appropriate connection manager.
