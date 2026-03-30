@@ -150,9 +150,13 @@ from mindtrace.registry import Registry, Store
 store = Store()
 store.add_mount("local", Registry("~/.cache/mindtrace/temp/my_local_registry"))
 store.add_mount("remote", Registry(s3_backend))
+store.set_default_mount("local")
 
-store.save("local:classifier", model)
-remote_dataset = store.load("remote:training-set")
+store["data:embeddings"] = embeddings  # Saves to the default mount
+store["remote/data:embeddings"] = embeddings  # Qualify with mount name to target another mount
+
+local_embeddings = store["data:embeddings"]
+remote_embeddings = store["remote/data:embeddings"]
 ```
 
 ### Database
