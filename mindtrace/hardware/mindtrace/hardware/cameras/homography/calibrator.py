@@ -12,7 +12,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from mindtrace.core import Mindtrace, pil_to_cv2
+from mindtrace.core import Mindtrace
+from mindtrace.core.utils.conversions import pil_to_cv2
 from mindtrace.hardware.cameras.homography.data import CalibrationData
 from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (

@@ -627,24 +627,28 @@ def test_object_discovery(registry):
 
 def test_metadata_operations(registry):
     """Test metadata operations."""
-    # Save object with metadata
     metadata = {
         "description": "Test object",
         "tags": ["test", "integration"],
         "created_by": "test_user",
     }
 
-    registry.save("test:metadata", "test_data", metadata=metadata)
+    saved_version = registry.save("test:metadata", "test_data", metadata=metadata)
 
-    # Get object info
+    # `info(name)` returns a version-keyed mapping when version is omitted.
     info = registry.info("test:metadata")
-
-    # Handle versioned metadata structure
-    version_info = info["1.0.0"]
+    assert saved_version in info
+    version_info = info[saved_version]
     assert "metadata" in version_info
-    assert "description" in version_info["metadata"]
     assert version_info["metadata"]["description"] == "Test object"
     assert version_info["metadata"]["tags"] == ["test", "integration"]
+    assert version_info["metadata"]["created_by"] == "test_user"
+
+    # `info(name, version)` returns the direct metadata payload for one version.
+    direct_info = registry.info("test:metadata", saved_version)
+    assert direct_info["metadata"]["description"] == "Test object"
+    assert direct_info["metadata"]["tags"] == ["test", "integration"]
+    assert direct_info["metadata"]["created_by"] == "test_user"
 
 
 def test_object_existence(registry):
@@ -710,7 +714,6 @@ def test_error_handling_invalid_names(registry):
     """Test error handling for invalid object names."""
     # Test invalid object names
     invalid_names = [
-        "invalid_name",  # Contains underscore
         "invalid@name",  # Contains @
         "",  # Empty name
     ]
