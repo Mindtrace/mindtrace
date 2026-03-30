@@ -80,7 +80,9 @@ If you need an abstract base class with the same Mindtrace behavior, use `Mindtr
 
 ## Config
 
-`Config` is the general-purpose configuration container in `mindtrace-core`. It can merge configuration from dictionaries, Pydantic models, and Pydantic settings objects while supporting:
+`Config` is the general-purpose configuration container in `mindtrace-core`. Use it when you want a flexible config object built from your own dictionaries, Pydantic models, or Pydantic settings objects.
+
+It supports:
 
 - dict-style access
 - attribute-style access
@@ -88,7 +90,12 @@ If you need an abstract base class with the same Mindtrace behavior, use `Mindtr
 - masking of secret fields by default
 - cloning and JSON save/load helpers
 
-`CoreConfig` is a convenience wrapper that starts from Mindtrace’s default core settings and then layers your overrides on top.
+`CoreConfig` uses the same underlying configuration system, but starts from Mindtrace’s standard core settings first and then layers your overrides on top.
+
+In practice:
+
+- use `Config` for generic application or component configuration
+- use `CoreConfig` when you want the normal Mindtrace core sections already present, such as `MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, and `MINDTRACE_MCP`
 
 Example:
 
