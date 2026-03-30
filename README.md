@@ -134,6 +134,9 @@ registry = Registry(
         secure=False,
     )
 )
+
+registry.save("data:embeddings", embeddings)
+loaded = registry.load("data:embeddings")
 ```
 
 ### Database
