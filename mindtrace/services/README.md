@@ -345,18 +345,23 @@ print(cm.echo(message="Connected"))
 
 ## URL and Configuration Behavior
 
-Service URLs are resolved with the following priority:
+In most cases, you can either provide an explicit URL or let the service use its configured defaults.
 
-1. explicit `url`
-2. explicit `host` / `port`
-3. configured default URL for that service type
+Examples:
 
-MCP paths are also configuration-driven. Services derive:
+```python
+# Explicit full URL
+cm = EchoService.connect("http://localhost:8080")
+```
 
-- the MCP mount path
-- the MCP HTTP app path
+```python
+# Host/port convenience when launching
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
+```
 
-from `MINDTRACE_MCP` config values.
+If you do not pass either, the service falls back to its configured default URL.
+
+MCP paths are also configuration-driven, so the mounted MCP endpoint is built from the service URL plus the configured MCP mount and app paths.
 
 ## MCP Integration
 
