@@ -316,7 +316,10 @@ ctx.progress = 50
 from mindtrace.core import instantiate_target
 
 
-instance = instantiate_target("my_package.my_module.MyClass", name="demo")
+instance = instantiate_target(
+    "my_package.my_module.MyClass",
+    **{"config_path": "settings.json", "debug": True},
+)
 ```
 
 ### Network helpers
