@@ -1307,7 +1307,20 @@ class Worker(Service, Consumer):
         queue_name = payload["queue_name"]
         cluster_url = payload["cluster_url"]
 
-        # Set the cluster URL so the worker can report back
+        # Override RabbitMQ connection with local config if available. Ensures
+        # remote nodes use their own MINDTRACE_CLUSTER__RABBITMQ_HOST/PORT
+        # instead of compose-internal values from the cluster manager.
+        cluster_cfg = self.config.get("MINDTRACE_CLUSTER", {})
+        local_rmq_host = cluster_cfg.get("RABBITMQ_HOST")
+        local_rmq_port = cluster_cfg.get("RABBITMQ_PORT")
+        if local_rmq_host and "kwargs" in backend_args:
+            backend_args = dict(backend_args)
+            backend_args["kwargs"] = {
+                **backend_args["kwargs"],
+                "host": local_rmq_host,
+                **({"port": int(local_rmq_port)} if local_rmq_port else {}),
+            }
+
         self._cluster_url = cluster_url
 
         self.start()
