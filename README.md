@@ -113,9 +113,9 @@ import numpy as np
 from mindtrace.registry import Registry
 
 
-registry = Registry()  # Defaults to the local registry at ~/.cache/mindtrace/registry
-
 embeddings = np.random.rand(100, 768).astype(np.float32)
+
+registry = Registry()  # Defaults to the local registry at ~/.cache/mindtrace/registry
 registry.save("data:embeddings", embeddings)
 loaded = registry.load("data:embeddings")
 print(loaded.shape)
