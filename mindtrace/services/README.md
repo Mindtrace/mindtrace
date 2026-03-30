@@ -263,6 +263,41 @@ A custom connection manager is worth using when you want:
 
 Otherwise, the generated client is usually enough.
 
+Example:
+
+```python
+import requests
+
+from mindtrace.services import ConnectionManager, Service
+
+
+class EchoConnectionManager(ConnectionManager):
+    def echo(self, message: str, delay: float = 0.0):
+        response = requests.post(
+            f"{str(self.url).rstrip('/')}/echo",
+            json={"message": message, "delay": delay},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def echo_twice(self, message: str):
+        first = self.echo(message)
+        second = self.echo(message)
+        return [first["echoed"], second["echoed"]]
+
+
+class EchoService(Service):
+    pass
+
+
+EchoService.register_connection_manager(EchoConnectionManager)
+cm = EchoService.connect("http://localhost:8080")
+print(cm.echo_twice("Hello"))
+```
+
+After registering the custom connection manager, `EchoService.connect(...)` or `EchoService.launch(...)` returns an `EchoConnectionManager` instead of an auto-generated one.
+
 ## Launching and Connecting
 
 ### `launch()`
