@@ -127,14 +127,14 @@ You can also point the same `Registry` API at a remote S3-compatible backend.
 from mindtrace.registry import Registry, S3RegistryBackend
 
 
-backend = S3RegistryBackend(
+s3_backend = S3RegistryBackend(
     endpoint="localhost:9000",
     access_key="minioadmin",
     secret_key="minioadmin",
     bucket="mindtrace-registry",
     secure=False,
 )
-registry = Registry(backend)
+registry = Registry(s3_backend)
 
 # Registry also supports a convenient dict-like API
 registry["data:embeddings"] = embeddings
@@ -148,11 +148,11 @@ from mindtrace.registry import Registry, Store
 
 
 store = Store()
-store.add_mount("models", Registry())
-store.add_mount("datasets", Registry())
+store.add_mount("local", Registry("~/.cache/mindtrace/temp/my_local_registry"))
+store.add_mount("remote", Registry(s3_backend))
 
-store.save("models:classifier", model)
-dataset = store.load("datasets:training-set")
+store.save("local:classifier", model)
+remote_dataset = store.load("remote:training-set")
 ```
 
 ### Database
