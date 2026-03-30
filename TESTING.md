@@ -97,6 +97,19 @@ ds test: tests/unit
 ds test: tests/integration/mindtrace/services
 ```
 
+You can also target specific tests within a file using the pytest `::` syntax:
+
+```bash
+ds test: tests/unit/mindtrace/core/test_logger.py::MyLoggerTestSuite
+ds test: tests/unit/mindtrace/core/test_logger.py::MyLoggerTestSuite::test_basic_logging
+```
+
+Any extra arguments are passed through to pytest. For example:
+
+```bash
+ds test: tests/unit/mindtrace/core/test_logger.py --durations=20
+```
+
 This is especially useful when iterating on a single failing test or a small test group.
 
 ## Available Test Scopes
