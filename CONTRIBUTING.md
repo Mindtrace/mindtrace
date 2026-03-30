@@ -1,6 +1,6 @@
 # Contributing to Mindtrace
 
-Thanks for your interest in contributing to Mindtrace.
+Thanks for your interest in contributing to Mindtrace!
 
 Mindtrace is a modular project, so contributions should respect module boundaries and dependency direction. The main modules include:
 
