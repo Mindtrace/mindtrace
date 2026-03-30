@@ -332,3 +332,38 @@ In addition to the standard Registry exceptions, Store introduces:
 - `StoreKeyFormatError` — invalid key format
 - `StoreAmbiguousObjectError` — unqualified load matched multiple mounts
 - `PermissionError` — write to a read-only mount
+
+## Examples
+
+See these examples and related docs in the repo for more end-to-end reference:
+
+- [Registry quick-start and backend examples](README.md)
+- [Store multi-registry facade section](README.md#store-multi-registry-facade)
+
+## Testing
+
+If you are working in the full Mindtrace repo, run tests for this module specifically:
+
+```bash
+# Run the registry test suite
+ds test: registry
+
+# Run only unit tests for registry
+ds test: --unit registry
+```
+
+If you need a fresh checkout first:
+
+```bash
+git clone https://github.com/Mindtrace/mindtrace.git
+cd mindtrace
+```
+
+## Practical Notes and Caveats
+
+- Remote backends typically benefit from cache usage, but cache verification level affects correctness/performance trade-offs.
+- Versioned and unversioned registries behave differently; choose the mode that matches your object lifecycle.
+- Overwrite behavior depends on registry mutability and conflict policy.
+- Batch operations are convenient, but partial failures should be handled explicitly through the returned batch result.
+- The dict-like API is compact, but explicit `save()` / `load()` calls are often clearer when versioning behavior matters.
+- `Store` reads with unqualified keys can become ambiguous if the same object exists in multiple mounts.
