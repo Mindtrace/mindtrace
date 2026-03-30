@@ -26,6 +26,7 @@ from mindtrace.core.utils.network import (
 )
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
+from mindtrace.registry.core.types import Version
 
 setup_logger()  # Initialize the default logger
 
@@ -65,5 +66,6 @@ __all__ = [
     "TimerCollection",
     "Timeout",
     "SystemMetricsCollector",
+    "Version",
     "wait_for_service",
 ]
