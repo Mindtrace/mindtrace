@@ -54,10 +54,27 @@ class EchoService(Service):
         return EchoOutput(echoed=payload.message)
 
 
-cm = EchoService.launch(wait_for_launch=True)
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
 print(cm.status())
 print(cm.echo(message="Hello"))
 cm.shutdown()
+```
+
+You can inspect the generated FastAPI docs at <http://localhost:8080/docs> while the service is running.
+
+You can also call the service directly over HTTP:
+
+```bash
+curl -X POST http://localhost:8080/echo \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello from curl", "delay": 0.0}'
+```
+
+And you can connect to the same running service later to get a `cm`:
+
+```python
+cm = EchoService.connect("http://localhost:8080")
+print(cm.echo(message="Hello again"))
 ```
 
 ## Service
