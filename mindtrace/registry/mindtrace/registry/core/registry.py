@@ -176,6 +176,78 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
+    def from_mount(cls, mount, **kwargs) -> "Registry":
+        """Construct a Registry from a declarative ``Mount`` definition."""
+        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
+        from mindtrace.registry.core.mount import (
+            GCPMountConfig,
+            GCPServiceAccountFileAuth,
+            LocalMountConfig,
+            Mount,
+            MountBackendKind,
+            NoAuth,
+            S3AccessKeyAuth,
+            S3MountConfig,
+        )
+
+        if not isinstance(mount, Mount):
+            raise TypeError("mount must be a Mount")
+
+        registry_kwargs = dict(mount.registry_options)
+        registry_kwargs.update(kwargs)
+
+        if mount.backend is MountBackendKind.LOCAL:
+            cfg = mount.config
+            if not isinstance(cfg, LocalMountConfig):
+                raise TypeError("local mounts require LocalMountConfig")
+            backend = LocalRegistryBackend(uri=cfg.uri)
+            return cls(backend=backend, **registry_kwargs)
+
+        if mount.backend is MountBackendKind.S3:
+            cfg = mount.config
+            if not isinstance(cfg, S3MountConfig):
+                raise TypeError("s3 mounts require S3MountConfig")
+            auth = mount.auth
+            backend_kwargs = {
+                "bucket": cfg.bucket,
+                "prefix": cfg.prefix or "",
+                "endpoint": cfg.endpoint,
+                "secure": cfg.secure,
+            }
+            if isinstance(auth, S3AccessKeyAuth):
+                backend_kwargs.update(
+                    {
+                        "access_key": auth.access_key,
+                        "secret_key": auth.secret_key,
+                    }
+                )
+            elif not isinstance(auth, NoAuth):
+                raise TypeError("s3 mounts require NoAuth or S3AccessKeyAuth")
+            backend = S3RegistryBackend(**backend_kwargs)
+            return cls(backend=backend, **registry_kwargs)
+
+        if mount.backend is MountBackendKind.GCP:
+            cfg = mount.config
+            if not isinstance(cfg, GCPMountConfig):
+                raise TypeError("gcp mounts require GCPMountConfig")
+            auth = mount.auth
+            backend_kwargs = {
+                "bucket_name": cfg.bucket_name,
+                "project_id": cfg.project_id,
+                "prefix": cfg.prefix or "",
+                "credentials_path": cfg.credentials_path,
+            }
+            if isinstance(auth, GCPServiceAccountFileAuth):
+                backend_kwargs["credentials_path"] = auth.path
+            elif not isinstance(auth, NoAuth):
+                raise TypeError("gcp mounts require NoAuth or GCPServiceAccountFileAuth")
+            backend = GCPRegistryBackend(**backend_kwargs)
+            return cls(backend=backend, **registry_kwargs)
+
+        raise ValueError(f"Unsupported mount backend: {mount.backend}")
+
+    @classmethod
     def register_default_materializer(cls, object_class: str | type, materializer_class: str):
         """Register a default materializer at the class level."""
         _RegistryCore.register_default_materializer(object_class, materializer_class)

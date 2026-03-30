@@ -5,6 +5,16 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
+from mindtrace.registry.core.mount import (
+    GCPMountConfig,
+    GCPServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    NoAuth,
+    S3AccessKeyAuth,
+    S3MountConfig,
+)
 from mindtrace.registry.core.exceptions import (
     LockTimeoutError,
     StoreAmbiguousObjectError,
@@ -20,8 +30,16 @@ __all__ = [
     "PathArchiver",
     "LocalRegistryBackend",
     "LockTimeoutError",
+    "GCPMountConfig",
     "GCPRegistryBackend",
+    "GCPServiceAccountFileAuth",
+    "LocalMountConfig",
     "MinioRegistryBackend",
+    "Mount",
+    "MountBackendKind",
+    "NoAuth",
+    "S3AccessKeyAuth",
+    "S3MountConfig",
     "S3RegistryBackend",
     "Registry",
     "RegistryBackend",

@@ -12,6 +12,7 @@ from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
@@ -36,6 +37,28 @@ class Store(Mindtrace):
       - Qualified: ``<mount>/<name>[@<version>]``
       - Unqualified: ``<name>[@<version>]``
     """
+
+    @classmethod
+    def from_mounts(
+        cls,
+        mounts: list[Mount],
+        *,
+        default_mount: str | None = None,
+        enable_location_cache: bool = True,
+        **kwargs,
+    ) -> "Store":
+        """Construct a Store from declarative mount definitions."""
+        store = cls(default_mount="temp", enable_location_cache=enable_location_cache, **kwargs)
+
+        explicit_default: str | None = default_mount
+        for mount in mounts:
+            store.add_mount(mount)
+            if explicit_default is None and mount.is_default:
+                explicit_default = mount.name
+
+        if explicit_default is not None:
+            store.set_default_mount(explicit_default)
+        return store
 
     def __init__(
         self,
@@ -68,12 +91,24 @@ class Store(Mindtrace):
             raise StoreLocationNotFound(f"Default mount '{mount}' is not configured")
         self.default_mount = mount
 
-    def add_mount(self, mount: str, registry: Registry, *, read_only: bool = False) -> None:
-        if not mount or "/" in mount or "@" in mount:
+    def add_mount(self, mount: str | Mount, registry: Registry | None = None, *, read_only: bool | None = None) -> None:
+        if isinstance(mount, Mount):
+            if registry is not None:
+                raise TypeError("Do not pass registry when adding a Mount")
+            mount_name = mount.name
+            registry = Registry.from_mount(mount)
+            resolved_read_only = mount.read_only if read_only is None else read_only
+        else:
+            mount_name = mount
+            if registry is None:
+                raise TypeError("registry is required when mount is a string")
+            resolved_read_only = False if read_only is None else read_only
+
+        if not mount_name or "/" in mount_name or "@" in mount_name:
             raise ValueError("Invalid mount name")
-        if mount in self._mounts:
-            raise ValueError(f"Mount '{mount}' already exists")
-        self._mounts[mount] = StoreMount(name=mount, registry=registry, read_only=read_only)
+        if mount_name in self._mounts:
+            raise ValueError(f"Mount '{mount_name}' already exists")
+        self._mounts[mount_name] = StoreMount(name=mount_name, registry=registry, read_only=resolved_read_only)
 
     def remove_mount(self, mount: str) -> None:
         if mount == "temp":
