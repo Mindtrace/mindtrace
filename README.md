@@ -10,9 +10,9 @@
 
 <h1 align="center">An Open Source Framework for AI Orchestration</h1>
 
-Mindtrace is an open source Python framework for building, deploying, and operating end-to-end AI systems in production.
+<p align="center">Mindtrace is an open source Python framework for building, deploying, and operating end-to-end AI systems in production.</p>
 
-[Docs](https://mindtrace.github.io/mindtrace/) · [Samples](samples/) · [Contributing](CONTRIBUTING.md)
+<p align="center">[Docs](https://mindtrace.github.io/mindtrace/) · [Samples](samples/) · [Contributing](CONTRIBUTING.md)</p>
 
 ## Features
 
