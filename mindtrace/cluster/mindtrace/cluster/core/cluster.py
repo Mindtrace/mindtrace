@@ -829,10 +829,17 @@ class Node(Service):
             parsed_cluster_url = urllib.parse.urlparse(cluster_url)
             cluster_host = parsed_cluster_url.hostname or "localhost"
 
-            # Use the endpoint returned by the cluster manager. Fall back to
-            # deriving from the cluster URL host for backward compatibility.
+            # Resolve MinIO endpoint. Local config (MINIO_HOST/MINIO_PORT) takes
+            # precedence — essential for remote nodes where the cluster response
+            # contains compose-internal DNS names. Falls back to the cluster
+            # response, then to cluster URL derivation.
+            cluster_cfg = self.config.get("MINDTRACE_CLUSTER", {})
+            local_minio_host = cluster_cfg.get("MINIO_HOST")
+            local_minio_port = cluster_cfg.get("MINIO_PORT")
             node_minio_endpoint = (
-                getattr(register_output, "endpoint", None) or f"{cluster_host}:{register_output.minio_port}"
+                f"{local_minio_host}:{local_minio_port}"
+                if local_minio_host
+                else getattr(register_output, "endpoint", None) or f"{cluster_host}:{register_output.minio_port}"
             )
 
             minio_backend = MinioRegistryBackend(
@@ -845,8 +852,12 @@ class Node(Service):
             )
             self.worker_registry = Registry(backend=minio_backend)
 
+            # Resolve RabbitMQ host. Same precedence: local config, then cluster
+            # response, then cluster URL derivation.
             self.rabbitmq_config = {
-                "host": getattr(register_output, "rabbitmq_host", None) or cluster_host,
+                "host": cluster_cfg.get("RABBITMQ_HOST")
+                or getattr(register_output, "rabbitmq_host", None)
+                or cluster_host,
                 "port": register_output.rabbitmq_port,
                 "username": register_output.rabbitmq_username,
                 "password": register_output.rabbitmq_password,
