@@ -106,9 +106,9 @@ camera_cm = CameraManagerConnectionManager("http://localhost:8002")
 For operational workflows, use `mindtrace-hw` and the setup entry points to start services and install backend-specific dependencies.
 
 ```bash
-mindtrace-hw camera start --open-docs
-mindtrace-hw camera status
-curl http://localhost:8002/docs
+$ mindtrace-hw camera start --open-docs
+$ mindtrace-hw camera status
+$ curl http://localhost:8002/docs
 ```
 
 ## Cameras
@@ -233,9 +233,9 @@ camera.close()
 For operational usage, the CLI includes stereo service management commands:
 
 ```bash
-mindtrace-hw stereo start --open-docs
-mindtrace-hw stereo status
-mindtrace-hw stereo stop
+$ mindtrace-hw stereo start --open-docs
+$ mindtrace-hw stereo status
+$ mindtrace-hw stereo stop
 ```
 
 ## 3D Scanners
@@ -276,9 +276,9 @@ A dedicated scanner README exists in this package:
 CLI example:
 
 ```bash
-mindtrace-hw scanner start --open-docs
-mindtrace-hw scanner status
-mindtrace-hw scanner stop
+$ mindtrace-hw scanner start --open-docs
+$ mindtrace-hw scanner status
+$ mindtrace-hw scanner stop
 ```
 
 ## PLCs
@@ -312,9 +312,9 @@ asyncio.run(plc_example())
 CLI example:
 
 ```bash
-mindtrace-hw plc start
-mindtrace-hw plc status
-mindtrace-hw plc stop
+$ mindtrace-hw plc start
+$ mindtrace-hw plc status
+$ mindtrace-hw plc stop
 ```
 
 ## Sensors
@@ -373,9 +373,9 @@ plc_cm = PLCManagerConnectionManager("http://localhost:8003")
 Example with the docs UI and a direct HTTP request:
 
 ```bash
-mindtrace-hw plc start
+$ mindtrace-hw plc start
 # Visit http://localhost:8003/docs
-curl http://localhost:8003/status
+$ curl http://localhost:8003/status
 ```
 
 If you are already using the Mindtrace services layer, the hardware module fits naturally into that pattern.
@@ -422,16 +422,16 @@ Example workflow:
 
 ```bash
 # Start a camera service and open its docs
-mindtrace-hw camera start --open-docs
+$ mindtrace-hw camera start --open-docs
 
 # Check overall hardware service status
-mindtrace-hw status
+$ mindtrace-hw status
 
 # Show service-specific status
-mindtrace-hw camera status
+$ mindtrace-hw camera status
 
 # Stop the service again
-mindtrace-hw camera stop
+$ mindtrace-hw camera stop
 ```
 
 A dedicated CLI README exists in this package:
