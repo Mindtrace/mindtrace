@@ -39,13 +39,19 @@ def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str,
 
 
 class ClusterManager(Gateway):
-    def __init__(self, minio_endpoint=None, **kwargs):
+    def __init__(self, minio_endpoint=None, advertise_url=None, **kwargs):
         """
         Args:
             minio_endpoint: str | None: the location of the minio server to use for the registry.
                 If None, use MINDTRACE_CLUSTER.MINIO_HOST and MINDTRACE_CLUSTER.MINIO_PORT
+            advertise_url: str | None: externally routable URL for this cluster manager.
+                Passed to workers so they can report job status back. Defaults to the
+                bind URL (self._url). Set this when the bind address is not reachable
+                from all workers (e.g. workers on a different host or network).
         """
         super().__init__(**kwargs)
+        if advertise_url:
+            self._advertise_url = advertise_url
         if kwargs.get("live_service", True):
             rabbitmq_password = (
                 self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD")
@@ -423,10 +429,11 @@ class ClusterManager(Gateway):
             self.logger.warning(f"Worker {worker_url} is down, not registering to cluster")
             return
 
+        cluster_url = str(getattr(self, "_advertise_url", None) or self._url)
         worker_cm.connect_to_cluster(
             backend_args=self.orchestrator.backend.consumer_backend_args,
             queue_name=job_type,
-            cluster_url=str(self._url),
+            cluster_url=cluster_url,
         )
         worker_id = str(heartbeat.server_id)
         worker_status_list = self.worker_status_database.find(
@@ -816,21 +823,16 @@ class Node(Service):
         self.worker_registry: Registry = None  # type: ignore
         self.cluster_url = cluster_url
         if cluster_url is not None:
-            # Connect to the cluster and register this node. The response contains
-            # Minio and RabbitMQ configuration details (keys, ports, etc.). The
-            # externally reachable host is inferred from the cluster_url rather than
-            # trusting the cluster manager to know its own hostname.
             self.cluster_cm = ClusterManager.connect(cluster_url)
             register_output = self.cluster_cm.register_node(node_url=str(self._url))
             parsed_cluster_url = urllib.parse.urlparse(cluster_url)
             cluster_host = parsed_cluster_url.hostname or "localhost"
 
-            # Use the Minio port provided by the cluster, but always pair it with the
-            # host derived from cluster_url so that nodes work correctly in dockerised
-            # environments where the cluster's own hostname may not be externally
-            # reachable.
-            minio_port = register_output.minio_port
-            node_minio_endpoint = f"{cluster_host}:{minio_port}"
+            # Prefer the explicit endpoint from the cluster response; fall back to
+            # deriving from the cluster URL host for backward compatibility.
+            node_minio_endpoint = (
+                getattr(register_output, "endpoint", None) or f"{cluster_host}:{register_output.minio_port}"
+            )
 
             minio_backend = MinioRegistryBackend(
                 uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}",
@@ -842,10 +844,8 @@ class Node(Service):
             )
             self.worker_registry = Registry(backend=minio_backend)
 
-            # Derive RabbitMQ host from the cluster URL and take the remaining
-            # connection details from the cluster response.
             self.rabbitmq_config = {
-                "host": cluster_host,
+                "host": getattr(register_output, "rabbitmq_host", None) or cluster_host,
                 "port": register_output.rabbitmq_port,
                 "username": register_output.rabbitmq_username,
                 "password": register_output.rabbitmq_password,
