@@ -4,264 +4,350 @@
 
 # Mindtrace Jobs
 
-A job queue system that works with different backends (local, Redis, RabbitMQ).
+The `Jobs` module provides Mindtrace’s backend-agnostic job queue system for publishing typed jobs, consuming them with Python workers, and switching between local, Redis, and RabbitMQ backends with minimal application changes.
 
-## Backends
-- Local
-- Redis
-- RabbitMQ
+## Features
 
-**Setup Redis:**
-```bash
-# Local installation
-redis-server
+- **Typed job definitions** with `JobSchema` and Pydantic models
+- **Backend-agnostic orchestration** through `Orchestrator`
+- **Consumer workers** built by subclassing `Consumer`
+- **Multiple backends** for local, Redis, and RabbitMQ execution
+- **Queue variants** including FIFO, stack, and priority queues
+- **Convenient job creation** with `job_from_schema()`
 
-# Using Docker
-docker run -d --name redis -p 6379:6379 redis:latest
-
-# Test connection
-redis-cli ping 
-```
-
-### RabbitMQ Backend
-
-**Setup RabbitMQ:**
-```bash
-# Using Docker (recommended)
-docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=user -e RABBITMQ_DEFAULT_PASS=password rabbitmq:3-management
-```
-
-**Core Components:**
-- `Consumer` - Base class for processing jobs
-- `Orchestrator` - Manages job queues and routing
-- `Job`, `JobSchema` - Job data structures
-- `LocalClient`, `RedisClient`, `RabbitMQClient` - Backend implementations
-
-
-## Architecture 
-
-```mermaid
-graph TD
-    Consumer["Your Consumer<br/>MathsConsumer('maths_operations')"] 
-    Orchestrator["Orchestrator"]
-    Schema["Job Schema<br/>(maths_operations)"]
-    Job["Job Instance"]
-    Queue["Queue<br/>(maths_operations)"]
-    
-    LocalClient["LocalClient"]
-    RedisClient["RedisClient<br/>(requires Redis server)"] 
-    RabbitMQClient["RabbitMQClient<br/>(requires RabbitMQ server)"]
-    
-    Consumer --> Orchestrator
-    Schema --> Orchestrator
-    Job --> Orchestrator
-    Orchestrator --> Queue
-    
-    Orchestrator -.-> LocalClient
-    Orchestrator -.-> RedisClient
-    Orchestrator -.-> RabbitMQClient
-    
-    Queue --> Consumer
-```
-
-## Basic Example
+## Quick Start
 
 ```python
-from mindtrace.jobs import Orchestrator, LocalClient, Consumer, JobSchema, job_from_schema
 from pydantic import BaseModel
 
-# Set up the orchestrator with local backend
-orchestrator = Orchestrator(LocalClient())
+from mindtrace.jobs import Consumer, JobSchema, LocalClient, Orchestrator, job_from_schema
 
-# Define your job input/output models (inherit from BaseModel directly)
+
 class MathsInput(BaseModel):
     operation: str = "add"
     a: float = 2.0
     b: float = 1.0
 
+
 class MathsOutput(BaseModel):
     result: float = 0.0
     operation_performed: str = ""
 
-schema = JobSchema(name="maths_operations", input_schema=MathsInput, output_schema=MathsOutput)
+
+schema = JobSchema(
+    name="maths_operations",
+    input_schema=MathsInput,
+    output_schema=MathsOutput,
+)
+
+orchestrator = Orchestrator(LocalClient())
 orchestrator.register(schema)
 
-# Create a consumer
+
 class MathsConsumer(Consumer):
     def run(self, job_dict: dict) -> dict:
-        # Access input data from the dict
-        input_data = job_dict.get('input_data', {})
-        operation = input_data.get('operation', 'add')
-        a = input_data.get('a')
-        b = input_data.get('b')
-        
-        # Your processing logic here
+        payload = job_dict.get("payload", {})
+        operation = payload.get("operation", "add")
+        a = payload.get("a")
+        b = payload.get("b")
+
         if operation == "add":
             result = a + b
         elif operation == "multiply":
             result = a * b
-        elif operation == "power":
-            result = a ** b
         else:
             raise ValueError(f"Unknown operation: {operation}")
-        
+
         return {
             "result": result,
-            "operation_performed": f"{operation}({a}, {b}) = {result}"
+            "operation_performed": f"{operation}({a}, {b}) = {result}",
         }
 
-# Connect and consume jobs
-consumer = MathsConsumer("maths_operations")
-consumer.connect(orchestrator)
 
-# Add a job to the queue
-job = job_from_schema(schema, MathsInput(
-    operation="multiply",
-    a=7.0,
-    b=3.0
-))
+consumer = MathsConsumer()
+consumer.connect_to_orchestrator(orchestrator, "maths_operations")
+
+job = job_from_schema(schema, MathsInput(operation="multiply", a=7.0, b=3.0))
 orchestrator.publish("maths_operations", job)
-
-# Process jobs
 consumer.consume(num_messages=1)
 ```
 
-## Using Different Backends
+In practice, the jobs package is built around four concepts:
 
-### Redis Backend
+- a **schema** describing the job payload
+- an **orchestrator** that owns queues and publishing
+- a **backend** that stores/transports messages
+- a **consumer** that processes jobs from one or more queues
+
+## JobSchema and Job
+
+`JobSchema` is currently an alias of `TaskSchema` from `mindtrace-core`. It gives a queue/job type a name plus typed input/output models.
+
 ```python
-from mindtrace.jobs import RedisClient
+from pydantic import BaseModel
 
-redis_backend = RedisClient(host="localhost", port=6379, db=0)
-orchestrator = Orchestrator(redis_backend)
+from mindtrace.jobs import JobSchema
 
-consumer = MathsConsumer("maths_operations")
-consumer.connect(orchestrator)
-consumer.consume()
-```
 
-### RabbitMQ Backend
-```python
-from mindtrace.jobs import RabbitMQClient
+class ReportInput(BaseModel):
+    report_id: str
+    include_charts: bool = True
 
-rabbitmq_backend = RabbitMQClient(
-    host="localhost", 
-    port=5672, 
-    username="user", 
-    password="password"
+
+class ReportOutput(BaseModel):
+    path: str
+
+
+schema = JobSchema(
+    name="build_report",
+    input_schema=ReportInput,
+    output_schema=ReportOutput,
 )
-orchestrator = Orchestrator(rabbitmq_backend)
-
-consumer = MathsConsumer("maths_operations")
-consumer.connect(orchestrator)
-consumer.consume()
 ```
 
-## Backend Switching
-
-The job system supports seamless switching between backends without changing your consumer code:
+A `Job` is the executable instance that gets queued. In most cases you do not construct it by hand; you use `job_from_schema()`.
 
 ```python
-# Development: Use local backend
+from mindtrace.jobs import job_from_schema
+
+
+job = job_from_schema(schema, {"report_id": "rpt-123", "include_charts": True})
+print(job.id)
+print(job.schema_name)
+```
+
+## Orchestrator
+
+`Orchestrator` is the publishing and queue-management layer. It owns a backend and handles things like:
+
+- registering schemas
+- declaring queues
+- publishing jobs
+- counting queue messages
+- cleaning or deleting queues
+
+```python
+from mindtrace.jobs import LocalClient, Orchestrator
+
+
+orchestrator = Orchestrator(LocalClient())
+queue_name = orchestrator.register(schema)
+print(queue_name)
+```
+
+### Publishing typed input directly
+
+If a schema has been registered for a queue, you can publish either:
+
+- a full `Job`
+- or a matching Pydantic input model
+
+```python
+orchestrator.publish("build_report", ReportInput(report_id="rpt-001"))
+```
+
+That convenience is often nicer than manually creating the `Job` every time.
+
+## Consumer
+
+Subclass `Consumer` and implement `run(job_dict: dict) -> dict`.
+
+```python
+from mindtrace.jobs import Consumer
+
+
+class ReportConsumer(Consumer):
+    def run(self, job_dict: dict) -> dict:
+        payload = job_dict.get("payload", {})
+        report_id = payload.get("report_id")
+        return {"path": f"/tmp/{report_id}.pdf"}
+```
+
+Then connect the consumer to an orchestrator and start consuming:
+
+```python
+consumer = ReportConsumer()
+consumer.connect_to_orchestrator(orchestrator, "build_report")
+consumer.consume(num_messages=1)
+```
+
+### Consuming until empty
+
+```python
+consumer.consume_until_empty()
+```
+
+That is useful for local scripts, test runs, or backlog-draining workflows.
+
+## Backends
+
+The package supports three backend families.
+
+### Local backend
+
+`LocalClient` is the simplest backend and a good default for local development or single-process workflows.
+
+```python
+from mindtrace.jobs import LocalClient, Orchestrator
+
+
+backend = LocalClient()
+orchestrator = Orchestrator(backend)
+```
+
+Internally, the local backend stores queues through the registry-backed local implementation and also supports local queue variants such as:
+
+- `LocalQueue`
+- `LocalStack`
+- `LocalPriorityQueue`
+
+### Redis backend
+
+Use `RedisClient` when you want Redis-backed queues.
+
+```python
+from mindtrace.jobs import Orchestrator, RedisClient
+
+
+backend = RedisClient(host="localhost", port=6379, db=0)
+orchestrator = Orchestrator(backend)
+```
+
+Redis is a good fit when you want a lightweight shared broker across multiple processes or machines.
+
+### RabbitMQ backend
+
+Use `RabbitMQClient` when you want RabbitMQ-backed routing and queueing.
+
+```python
+from mindtrace.jobs import Orchestrator, RabbitMQClient
+
+
+backend = RabbitMQClient(
+    host="localhost",
+    port=5672,
+    username="user",
+    password="password",
+)
+orchestrator = Orchestrator(backend)
+```
+
+RabbitMQ is a better fit when you want broker-oriented messaging behavior, exchanges, and mature queue features such as max-priority support.
+
+## Switching Backends
+
+One of the main design goals of the jobs package is that your job schema and consumer logic should not need major changes when switching backends.
+
+```python
+# Development
 backend = LocalClient()
 
-# Testing: Switch to Redis
+# Shared test environment
 backend = RedisClient(host="localhost", port=6379, db=0)
 
-# Production: Switch to RabbitMQ  
+# Production / broker-oriented setup
 backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
 
-# Same orchestrator and consumer code works with any backend
 orchestrator = Orchestrator(backend)
-consumer = MathsConsumer("maths_operations")
-consumer.connect(orchestrator)
-consumer.consume()
+consumer = ReportConsumer()
+consumer.connect_to_orchestrator(orchestrator, "build_report")
 ```
 
-## Automatic Backend Detection
+The core publishing and consuming flow stays largely the same.
 
-When you connect a consumer, the orchestrator automatically detects the backend type and creates the appropriate consumer backend:
+## Queue Types and Priority
+
+The local and Redis backends expose queue-type selection when declaring a queue.
+
+### FIFO queue
 
 ```python
-consumer = MathsConsumer("maths_operations")
-consumer.connect(orchestrator)  # Automatically detects backend type
+orchestrator.register(schema, queue_type="fifo")
 ```
 
-**Implementation:**
-
-1. The `Orchestrator` detects its backend type using `type(self.backend).__name__`
-2. Creates the corresponding consumer backend:
-   - `LocalClient` → `LocalConsumerBackend`
-   - `RedisClient` → `RedisConsumerBackend`  
-   - `RabbitMQClient` → `RabbitMQConsumerBackend`
+### Stack / LIFO queue
 
 ```python
-def create_consumer_backend_for_schema(self, schema: JobSchema) -> ConsumerBackendBase:
-    backend_type = type(self.backend).__name__
-    if backend_type == "LocalClient":
-        return LocalConsumerBackend(queue_name, self)
-    elif backend_type == "RedisClient":
-        return RedisConsumerBackend(queue_name, self, poll_timeout=5)
-    elif backend_type == "RabbitMQClient":
-        return RabbitMQConsumerBackend(queue_name, self, prefetch_count=1)
+backend.declare_queue("stack_tasks", queue_type="stack")
 ```
 
-## Priority Queues
+### Priority queue
 
-### Local Priority Queue
 ```python
-# Declare priority queue
-backend = LocalClient()
-orchestrator = Orchestrator(backend)
 backend.declare_queue("priority_tasks", queue_type="priority")
-
-# Publish with different priorities (higher numbers = higher priority)
-orchestrator.publish("priority_tasks", urgent_job, priority=10)
-orchestrator.publish("priority_tasks", normal_job, priority=5)
-orchestrator.publish("priority_tasks", background_job, priority=1)
+orchestrator.publish("priority_tasks", priority_job, priority=100)
+orchestrator.publish("priority_tasks", background_job, priority=10)
 ```
 
-### Redis Priority Queue
+### RabbitMQ priority queues
+
+RabbitMQ does not use the same `queue_type` argument. Instead, you declare a queue with `max_priority`.
+
 ```python
-# REQUIRES: Redis server running
-redis_backend = RedisClient(host="localhost", port=6379, db=0)
-orchestrator = Orchestrator(redis_backend)
-redis_backend.declare_queue("redis_priority", queue_type="priority")
-
-# Higher priority jobs processed first
-orchestrator.publish("redis_priority", critical_job, priority=100)
-orchestrator.publish("redis_priority", normal_job, priority=50)
+backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+backend.declare_queue("rabbitmq_priority", max_priority=255)
 ```
 
-### RabbitMQ Priority Queue
+Then publish with a priority value:
+
 ```python
-# REQUIRES: RabbitMQ server running
-rabbitmq_backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
-orchestrator = Orchestrator(rabbitmq_backend)
-# RabbitMQ supports max priority 0-255
-rabbitmq_backend.declare_queue("rabbitmq_priority", max_priority=255)
-
-orchestrator.publish("rabbitmq_priority", critical_job, priority=255)
-orchestrator.publish("rabbitmq_priority", normal_job, priority=128)
+orchestrator = Orchestrator(backend)
+orchestrator.publish("rabbitmq_priority", job, priority=255)
 ```
 
-## API Reference
+## Redis Setup
 
-### Consumer
-```python
-class Consumer:
-    def __init__(self, job_type_name: str)
-    def connect(self, orchestrator: Orchestrator)
-    def consume(self, num_messages: Optional[int] = None)
-    def run(self, job_dict: dict) -> dict  # Implement this method
+For Redis-backed jobs, start a Redis server first.
+
+```bash
+$ redis-server
 ```
 
-### Orchestrator
-```python
-class Orchestrator:
-    def __init__(self, backend)
-    def register(self, schema: JobSchema) -> str
-    def publish(self, queue_name: str, job: Job, **kwargs) -> str
-    def receive_message(self, queue_name: str) -> Optional[dict]
-    def count_queue_messages(self, queue_name: str) -> int
+Or with Docker:
+
+```bash
+$ docker run -d --name redis -p 6379:6379 redis:latest
+$ redis-cli ping
 ```
+
+## RabbitMQ Setup
+
+For RabbitMQ-backed jobs, start a RabbitMQ server first.
+
+```bash
+$ docker run -d --name rabbitmq \
+    -p 5672:5672 \
+    -p 15672:15672 \
+    -e RABBITMQ_DEFAULT_USER=user \
+    -e RABBITMQ_DEFAULT_PASS=password \
+    rabbitmq:3-management
+```
+
+## Examples
+
+This README includes practical examples for:
+
+- defining schemas and jobs
+- publishing with an orchestrator
+- implementing a consumer
+- switching between local, Redis, and RabbitMQ
+- working with priority queues
+
+## Testing
+
+If you are working in the full Mindtrace repo, run tests for this module specifically:
+
+```bash
+$ git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+$ uv sync --dev --all-extras
+$ ds test: jobs
+$ ds test: --unit jobs
+```
+
+## Practical Notes and Caveats
+
+- `JobSchema` is currently an alias of `TaskSchema`, so older naming in the jobs package may reflect that transition.
+- Consumers operate on `job_dict` payloads, so your `run()` implementation should be defensive about the shape it expects.
+- Local, Redis, and RabbitMQ backends expose similar high-level workflows, but their queue semantics and operational requirements differ.
+- Redis and RabbitMQ require external services; the local backend is the simplest place to start.
+- Priority queue support exists across backends, but the declaration model differs for RabbitMQ vs. local/Redis backends.
