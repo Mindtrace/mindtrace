@@ -53,17 +53,63 @@ Most hardware subsystems follow a layered pattern.
 
 Use this when you want to work with one device in a local script.
 
+```python
+from mindtrace.hardware.cameras import Camera
+
+
+camera = Camera(name="OpenCV:opencv_camera_0")
+image = camera.capture()
+camera.close()
+```
+
 ### Manager-level access
 
 Use managers when you want discovery, multiple devices, async orchestration, or shared lifecycle handling.
+
+```python
+import asyncio
+
+from mindtrace.hardware import CameraManager
+
+
+async def main():
+    async with CameraManager() as manager:
+        cameras = manager.discover()
+        if not cameras:
+            return
+        camera = await manager.open(cameras[0])
+        image = await camera.capture()
+        print(type(image))
+
+
+asyncio.run(main())
+```
 
 ### Service access
 
 For remote control, automation pipelines, or agent/tool use, the hardware package can be exposed through Mindtrace services.
 
+```python
+from mindtrace.hardware.services import CameraManagerConnectionManager, CameraManagerService
+
+
+# Launch a camera service
+cm = CameraManagerService.launch(port=8002, wait_for_launch=True)
+print(cm.status())
+
+# Or connect to an already-running service
+camera_cm = CameraManagerConnectionManager("http://localhost:8002")
+```
+
 ### CLI access
 
 For operational workflows, use `mindtrace-hw` and the setup entry points to start services and install backend-specific dependencies.
+
+```bash
+mindtrace-hw camera start --open-docs
+mindtrace-hw camera status
+curl http://localhost:8002/docs
+```
 
 ## Cameras
 
@@ -136,16 +182,58 @@ The top-level hardware package also exposes planar calibration helpers:
 - `PlanarHomographyMeasurer`
 - `MeasuredBox`
 
+Example:
+
+```python
+from mindtrace.hardware import HomographyCalibrator, PlanarHomographyMeasurer
+
+
+calibrator = HomographyCalibrator()
+calibration = calibrator.calibrate_checkerboard(
+    image=checkerboard_image,
+    board_size=(8, 6),
+    square_size=25.0,
+    world_unit="mm",
+)
+
+measurer = PlanarHomographyMeasurer(calibration)
+measured = measurer.measure_bounding_box(detection_bbox, target_unit="cm")
+print(measured)
+```
+
 ## Stereo Cameras
 
 The stereo camera subsystem is intended for 3D vision workflows where you want depth-aware capture and stereo-specific device control.
 
-The package exports a dedicated `stereo_cameras` module, and the hardware README treats it as a separate subsystem alongside 2D cameras.
+The package exports a dedicated `stereo_cameras` module with:
+
+- `StereoCamera`
+- `AsyncStereoCamera`
+- `StereoGrabResult`
+- `StereoCalibrationData`
+- `PointCloudData`
+- `BaslerStereoAceBackend`
+
+Example:
+
+```python
+from mindtrace.hardware.stereo_cameras import StereoCamera
+
+
+camera = StereoCamera()
+result = camera.capture()
+print(result.intensity.shape)
+print(result.disparity.shape)
+
+point_cloud = camera.capture_point_cloud()
+point_cloud.save_ply("output.ply")
+camera.close()
+```
 
 For operational usage, the CLI includes stereo service management commands:
 
 ```bash
-mindtrace-hw stereo start
+mindtrace-hw stereo start --open-docs
 mindtrace-hw stereo status
 mindtrace-hw stereo stop
 ```
@@ -154,15 +242,41 @@ mindtrace-hw stereo stop
 
 The 3D scanner subsystem focuses on async capture workflows and industrial structured-light scanning.
 
+Top-level scanner exports include:
+
+- `Scanner3D`
+- `AsyncScanner3D`
+- `ScanResult`
+- `PointCloudData`
+- `PhotoneoBackend`
+
+Example:
+
+```python
+import asyncio
+
+from mindtrace.hardware.scanners_3d import AsyncScanner3D
+
+
+async def capture_scan():
+    async with await AsyncScanner3D.open() as scanner:
+        result = await scanner.capture()
+        print(result.range_shape)
+
+        point_cloud = await scanner.capture_point_cloud()
+        point_cloud.save_ply("output.ply")
+
+
+asyncio.run(capture_scan())
+```
+
 A dedicated scanner README exists in this package:
 - [3D scanner subsystem documentation](mindtrace/hardware/scanners_3d/README.md)
-
-At the top level, the hardware package presents scanners as one of its supported hardware domains, with service and CLI support layered on top.
 
 CLI example:
 
 ```bash
-mindtrace-hw scanner start
+mindtrace-hw scanner start --open-docs
 mindtrace-hw scanner status
 mindtrace-hw scanner stop
 ```
@@ -242,6 +356,28 @@ In practice, that means a hardware subsystem can often be run as a service and t
 - generated API docs at `/docs`
 - MCP-compatible tool endpoints for agent workflows
 
+Example:
+
+```python
+from mindtrace.hardware.services import PLCManagerConnectionManager, PLCManagerService
+
+
+# Launch a PLC service and wait for a usable client
+cm = PLCManagerService.launch(port=8003, wait_for_launch=True)
+print(cm.status())
+
+# Or connect later from another Python process
+plc_cm = PLCManagerConnectionManager("http://localhost:8003")
+```
+
+Example with the docs UI and a direct HTTP request:
+
+```bash
+mindtrace-hw plc start
+# Visit http://localhost:8003/docs
+curl http://localhost:8003/status
+```
+
 If you are already using the Mindtrace services layer, the hardware module fits naturally into that pattern.
 
 For service lifecycle management, the main operational interface is the hardware CLI.
@@ -280,6 +416,22 @@ mindtrace-hw plc stop
 # Global status
 mindtrace-hw status
 mindtrace-hw stop
+```
+
+Example workflow:
+
+```bash
+# Start a camera service and open its docs
+mindtrace-hw camera start --open-docs
+
+# Check overall hardware service status
+mindtrace-hw status
+
+# Show service-specific status
+mindtrace-hw camera status
+
+# Stop the service again
+mindtrace-hw camera stop
 ```
 
 A dedicated CLI README exists in this package:
