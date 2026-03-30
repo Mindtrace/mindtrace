@@ -62,6 +62,8 @@ cm.shutdown()
 
 You can inspect the generated FastAPI docs at <http://localhost:8080/docs> while the service is running.
 
+![EchoService FastAPI docs](docs/images/echo-service-docs.png)
+
 You can also call the service directly over HTTP:
 
 ```bash
