@@ -84,6 +84,12 @@ def main() -> None:
         reconstructed = Mount(registry)
         print("Reconstructed mount backend ->", reconstructed.backend)
 
+        # A live Registry can also be mounted directly; Store derives a stable
+        # non-conflicting name from its backend location when none is supplied.
+        extra_store = Store()
+        extra_store.add_mount(registry)
+        print("Derived mount names from Registry ->", extra_store.list_mounts())
+
         # Show the underlying directories just so it's obvious where data landed.
         print("Primary dir:", Path(dir_a))
         print("Archive dir:", Path(dir_b))

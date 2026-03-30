@@ -205,6 +205,11 @@ def test_mount_can_be_initialized_from_registry_instance():
         assert mount.registry_options["mutable"] is False
 
 
+def test_mount_name_can_be_omitted():
+    mount = Mount(name=None, backend="local", config=LocalMountConfig(uri="/tmp/test"))
+    assert mount.name is None
+
+
 def test_store_add_mount_accepts_mount_instance():
     with TemporaryDirectory() as d:
         store = Store()
@@ -223,19 +228,40 @@ def test_store_add_mount_accepts_mount_instance():
         assert isinstance(added.registry.backend, LocalRegistryBackend)
 
 
-def test_store_add_mount_rejects_registry_argument_with_mount():
+def test_store_add_mount_accepts_name_override_for_mount():
+    with TemporaryDirectory() as d:
+        store = Store()
+        mount = Mount(name="local2", backend="local", config=LocalMountConfig(uri=d))
+        store.add_mount(mount, name="override")
+        assert store.has_mount("override")
+
+
+def test_store_add_mount_accepts_registry_instance_with_name():
+    with TemporaryDirectory() as d:
+        store = Store()
+        registry = Registry(backend=d)
+        store.add_mount(registry, name="named-registry")
+        assert store.has_mount("named-registry")
+
+
+def test_store_add_mount_derives_name_for_nameless_mount():
+    with TemporaryDirectory() as d:
+        store = Store()
+        mount = Mount(name=None, backend="local", config=LocalMountConfig(uri=d))
+        store.add_mount(mount)
+        derived = [m for m in store.list_mounts() if m != "temp"]
+        assert len(derived) == 1
+        assert derived[0] != "registry"
+
+
+def test_store_add_mount_derives_distinct_names_for_multiple_registries():
     with TemporaryDirectory() as d1, TemporaryDirectory() as d2:
         store = Store()
-        mount = Mount(name="local2", backend="local", config=LocalMountConfig(uri=d1))
-        registry = Registry(backend=d2)
-        with pytest.raises(TypeError):
-            store.add_mount(mount, registry)
-
-
-def test_store_add_mount_requires_registry_for_string_mount_name():
-    store = Store()
-    with pytest.raises(TypeError):
-        store.add_mount("missing-registry")
+        store.add_mount(Registry(backend=d1))
+        store.add_mount(Registry(backend=d2))
+        derived = [m for m in store.list_mounts() if m != "temp"]
+        assert len(derived) == 2
+        assert derived[0] != derived[1]
 
 
 def test_store_from_mounts_uses_is_default_flag():

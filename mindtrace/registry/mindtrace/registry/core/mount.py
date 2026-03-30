@@ -86,7 +86,7 @@ class Mount:
     ``Registry.from_mount(...)``. It is not itself a live runtime mount.
     """
 
-    name: str
+    name: str | None
     backend: MountBackendKind | str
     config: MountConfig
     read_only: bool = False
@@ -97,7 +97,7 @@ class Mount:
 
     def __init__(
         self,
-        name: str | "Registry",
+        name: str | "Registry" | None = None,
         backend: MountBackendKind | str | None = None,
         config: MountConfig | None = None,
         read_only: bool = False,
@@ -134,12 +134,12 @@ class Mount:
         return hasattr(obj, "backend") and hasattr(obj, "version_objects") and hasattr(obj, "mutable")
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str):
-            raise TypeError("Mount name must be a string")
+        if self.name is not None and not isinstance(self.name, str):
+            raise TypeError("Mount name must be a string or None")
         backend = MountBackendKind(self.backend)
         object.__setattr__(self, "backend", backend)
 
-        if not self.name or "/" in self.name or "@" in self.name:
+        if isinstance(self.name, str) and self.name and ("/" in self.name or "@" in self.name):
             raise ValueError("Invalid mount name")
         if self.config is None:
             raise TypeError("config is required")
@@ -167,7 +167,7 @@ class Mount:
         cls,
         registry: "Registry",
         *,
-        name: str = "registry",
+        name: str | None = None,
         read_only: bool = False,
         is_default: bool = False,
         metadata: dict[str, Any] | None = None,

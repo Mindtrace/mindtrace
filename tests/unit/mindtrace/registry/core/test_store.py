@@ -36,18 +36,16 @@ def test_add_mount_invalid_name_raises(two_mount_store):
     with TemporaryDirectory() as d:
         registry = Registry(backend=d, version_objects=True, mutable=True)
         with pytest.raises(ValueError):
-            two_mount_store.add_mount("", registry)
+            two_mount_store.add_mount(registry, name="bad/name")
         with pytest.raises(ValueError):
-            two_mount_store.add_mount("bad/name", registry)
-        with pytest.raises(ValueError):
-            two_mount_store.add_mount("bad@name", registry)
+            two_mount_store.add_mount(registry, name="bad@name")
 
 
 def test_add_mount_duplicate_raises(two_mount_store):
     with TemporaryDirectory() as d:
         registry = Registry(backend=d, version_objects=True, mutable=True)
         with pytest.raises(ValueError):
-            two_mount_store.add_mount("a", registry)
+            two_mount_store.add_mount(registry, name="a")
 
 
 def test_set_default_mount_updates_default(two_mount_store):

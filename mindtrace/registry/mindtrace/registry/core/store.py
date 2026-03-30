@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import hashlib
+import re
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Dict, List, Type
@@ -75,14 +77,14 @@ class Store(Mindtrace):
         self._enable_location_cache = enable_location_cache
 
         temp_store_dir = Path(mkdtemp(prefix="mindtrace-store-"))
-        self.add_mount("temp", Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs))
+        self.add_mount(Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs), name="temp")
 
         mounts = mounts or {}
         for mount_name, registry in mounts.items():
             if mount_name == "temp":
                 self._mounts["temp"] = MountedRegistry(name="temp", registry=registry, read_only=False)
             else:
-                self.add_mount(mount_name, registry)
+                self.add_mount(registry, name=mount_name)
 
         self.set_default_mount(default_mount)
 
@@ -91,20 +93,41 @@ class Store(Mindtrace):
             raise StoreLocationNotFound(f"Default mount '{mount}' is not configured")
         self.default_mount = mount
 
-    def add_mount(self, mount: str | Mount, registry: Registry | None = None, *, read_only: bool | None = None) -> None:
-        if isinstance(mount, Mount):
-            if registry is not None:
-                raise TypeError("Do not pass registry when adding a Mount")
-            mount_name = mount.name
-            registry = Registry.from_mount(mount)
-            resolved_read_only = mount.read_only if read_only is None else read_only
-        else:
-            mount_name = mount
-            if registry is None:
-                raise TypeError("registry is required when mount is a string")
-            resolved_read_only = False if read_only is None else read_only
+    @staticmethod
+    def _sanitize_mount_name(name: str) -> str:
+        candidate = re.sub(r"[^a-zA-Z0-9._-]+", "-", name.strip()).strip("-._")
+        return candidate or "mount"
 
-        if not mount_name or "/" in mount_name or "@" in mount_name:
+    def _derive_mount_name(self, source: Mount | Registry) -> str:
+        if isinstance(source, Mount):
+            location = source.display_uri()
+        else:
+            location = str(source.backend.uri)
+        base = self._sanitize_mount_name(location.split("://", 1)[-1].replace("/", "-"))[:48]
+        digest = hashlib.sha1(location.encode()).hexdigest()[:8]
+        candidate = f"{base}-{digest}" if base else f"mount-{digest}"
+        if candidate not in self._mounts:
+            return candidate
+        idx = 2
+        while f"{candidate}-{idx}" in self._mounts:
+            idx += 1
+        return f"{candidate}-{idx}"
+
+    def add_mount(self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None) -> None:
+        if isinstance(mount_or_registry, Mount):
+            mount_name = name if name is not None else mount_or_registry.name
+            registry = Registry.from_mount(mount_or_registry)
+            resolved_read_only = mount_or_registry.read_only if read_only is None else read_only
+        elif isinstance(mount_or_registry, Registry):
+            mount_name = name if name is not None else mount_or_registry.mount.name
+            registry = mount_or_registry
+            resolved_read_only = False if read_only is None else read_only
+        else:
+            raise TypeError("add_mount expects a Mount or Registry")
+
+        if not mount_name:
+            mount_name = self._derive_mount_name(mount_or_registry)
+        if "/" in mount_name or "@" in mount_name:
             raise ValueError("Invalid mount name")
         if mount_name in self._mounts:
             raise ValueError(f"Mount '{mount_name}' already exists")
