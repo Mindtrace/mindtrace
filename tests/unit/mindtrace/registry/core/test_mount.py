@@ -103,7 +103,7 @@ def test_registry_from_s3_mount_builds_s3_backend(monkeypatch):
         captured.update(kwargs)
         return DummyS3Backend(uri=f"s3://{kwargs['bucket']}/{kwargs.get('prefix', '').strip('/')}")
 
-    monkeypatch.setattr("mindtrace.registry.core.registry.S3RegistryBackend", fake_s3_backend)
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3RegistryBackend", fake_s3_backend)
 
     mount = Mount(
         name="nas",
@@ -137,7 +137,7 @@ def test_registry_from_gcp_mount_builds_gcp_backend(monkeypatch):
         captured.update(kwargs)
         return DummyGCPBackend(uri=f"gs://{kwargs['bucket_name']}/{kwargs.get('prefix', '').strip('/')}")
 
-    monkeypatch.setattr("mindtrace.registry.core.registry.GCPRegistryBackend", fake_gcp_backend)
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend", fake_gcp_backend)
 
     mount = Mount(
         name="gcp",
