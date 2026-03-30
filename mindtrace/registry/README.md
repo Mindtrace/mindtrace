@@ -355,8 +355,8 @@ ds test: --unit registry
 If you need a fresh checkout first:
 
 ```bash
-git clone https://github.com/Mindtrace/mindtrace.git
-cd mindtrace
+git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+uv sync --dev --all-extras
 ```
 
 ## Practical Notes and Caveats
