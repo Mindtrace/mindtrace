@@ -244,6 +244,76 @@ print(result)
 | [`ui`](mindtrace/ui) | UI components and visualisation tools |
 | [`apps`](mindtrace/apps) | End-user applications and demos |
 
+## Module Dependencies
+
+```mermaid
+graph TD
+    core[core]
+
+    services[services]
+    registry[registry]
+    storage[storage]
+    database[database]
+    jobs[jobs]
+
+    cluster[cluster]
+    agents[agents]
+    hardware[hardware]
+    datalake[datalake]
+    models[models]
+
+    automation[automation]
+    ui[ui]
+    apps[apps]
+
+    core --> services
+    core --> registry
+    core --> storage
+    core --> database
+    core --> jobs
+
+    registry --> database
+    storage --> registry
+    core --> agents
+    core --> hardware
+
+    services --> cluster
+    jobs --> cluster
+    registry --> cluster
+    database --> cluster
+
+    core --> datalake
+    registry --> datalake
+    database --> datalake
+    services --> datalake
+
+    core --> models
+    registry --> models
+    services --> models
+    database --> models
+
+    services --> hardware
+    database --> hardware
+    registry --> hardware
+
+    services --> agents
+    database --> agents
+
+    cluster --> automation
+    services --> automation
+    agents --> automation
+    datalake --> automation
+    models --> automation
+
+    services --> ui
+    core --> ui
+
+    automation --> apps
+    ui --> apps
+    services --> apps
+    agents --> apps
+```
+
 ## Choose the Right Module
 
 If you are not sure where to start:
