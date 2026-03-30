@@ -279,6 +279,7 @@ class TestServiceProperties:
         assert "test_task" in endpoints
         assert "echo" in endpoints
         assert "status" in endpoints
+        assert "class_name" in endpoints
 
     def test_status_property(self):
         """Test status property returns current status."""
@@ -316,6 +317,14 @@ class TestServiceProperties:
         assert isinstance(result, dict)
         assert "status" in result
         assert result["status"] == service.status.value
+
+    def test_class_name_func(self):
+        """Test class_name_func returns the concrete service class name."""
+        service = SampleService()
+        result = service.class_name_func()
+
+        assert isinstance(result, dict)
+        assert result == {"class_name": "SampleService"}
 
     def test_heartbeat_func(self):
         """Test heartbeat_func method."""
