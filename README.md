@@ -44,7 +44,7 @@ pip install mindtrace-hardware   # Cameras, scanners, PLCs, sensors
 
 The Mindtrace ecosystem is designed so that you can start small and compose modules as your system grows.
 
-### Core foundations
+### Core
 
 `mindtrace-core` gives you the shared building blocks used across the rest of the framework: configuration, logging, base classes, observables, and typed task schemas.
 
@@ -61,7 +61,7 @@ with MyProcessor() as processor:
     processor.run()
 ```
 
-### Build a service
+### Services
 
 `mindtrace-services` lets you define typed endpoints once and get a service plus a generated client.
 
@@ -78,7 +78,7 @@ While the service is running, you can inspect the generated API docs at:
 
 - `http://localhost:8080/docs`
 
-### Save and load artifacts
+### Registry
 
 `mindtrace-registry` is the versioned artifact layer.
 
@@ -95,26 +95,37 @@ loaded = registry.load("data:embeddings:v1")
 print(loaded.shape)
 ```
 
-### Work with object storage
+### Database
 
-`mindtrace-storage` gives you a common interface over GCS and S3-compatible object stores.
+`mindtrace-database` provides a unified ODM layer over MongoDB, Redis, and Registry-backed storage.
 
 ```python
-from mindtrace.storage import S3StorageHandler
+from pydantic import Field
+
+from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
 
 
-storage = S3StorageHandler(
-    bucket_name="my-bucket",
-    endpoint="localhost:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    secure=False,
+class User(UnifiedMindtraceDocument):
+    name: str = Field(description="User name")
+    email: str = Field(description="Email")
+
+    class Meta:
+        collection_name = "users"
+        global_key_prefix = "myapp"
+        indexed_fields = ["email"]
+        unique_fields = ["email"]
+
+
+db = UnifiedMindtraceODM(
+    unified_model_cls=User,
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="myapp",
+    redis_url="redis://localhost:6379",
+    preferred_backend=BackendType.MONGO,
 )
-
-print(storage.exists("docs/example.txt"))
 ```
 
-### Run typed background jobs
+### Jobs
 
 `mindtrace-jobs` gives you typed job schemas plus local, Redis, and RabbitMQ backends.
 
@@ -138,7 +149,40 @@ class EchoConsumer(Consumer):
         return {"echoed": job_dict["payload"]["message"]}
 ```
 
-### Build LLM agents
+### Cluster
+
+`mindtrace-cluster` builds on jobs and services to route work across worker services and nodes.
+
+```python
+from mindtrace.cluster import ClusterManager, Node
+
+
+cluster = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
+node = Node.launch(host="localhost", port=8003, cluster_url=str(cluster.url), wait_for_launch=True)
+print(cluster.status())
+print(node.status())
+```
+
+### Hardware
+
+`mindtrace-hardware` provides interfaces and service tooling for cameras, scanners, PLCs, and sensors.
+
+```python
+import asyncio
+
+from mindtrace.hardware import CameraManager
+
+
+async def main():
+    async with CameraManager() as manager:
+        cameras = manager.discover()
+        print(cameras)
+
+
+asyncio.run(main())
+```
+
+### Agents
 
 `mindtrace-agents` provides agents with tools, memory, callbacks, and MCP toolsets.
 
