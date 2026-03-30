@@ -16,14 +16,14 @@
 
 ## Features
 
-- **Modular infrastructure framework** with installable subpackages
-- **Typed microservices** with auto-generated clients and MCP support
-- **Artifact and object storage** through Registry and Storage layers
-- **Database abstractions** for MongoDB, Redis, and Registry-backed persistence
-- **Job queues and distributed execution** through Jobs and Cluster
-- **LLM agents** with tools, memory, callbacks, and MCP toolsets
-- **Hardware integration** for cameras, scanners, PLCs, and sensors
-- **Composable architecture** where modules build naturally on top of one another
+- **Composable by design** — use one package or the whole stack, depending on what you need
+- **Typed service framework** — build APIs with generated Python clients and built-in MCP support
+- **Versioned artifact registry** — store models, datasets, configs, and outputs with reproducible versioning across local and cloud backends
+- **Unified data backends** — work with MongoDB, Redis, or Registry-backed persistence through one consistent ODM
+- **Queue-backed execution** — run typed background jobs locally or on Redis/RabbitMQ without changing your application model
+- **Cluster orchestration** — add worker, node, and resource management for distributed compute workloads
+- **Agent runtime** — build tool-using LLM agents with memory, callbacks, streaming, and MCP toolsets
+- **Hardware integration** — connect cameras, scanners, PLCs, and sensors to the same service and orchestration stack
 
 ## Installation
 
