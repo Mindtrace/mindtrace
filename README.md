@@ -66,7 +66,34 @@ with MyProcessor() as processor:
 `mindtrace-services` lets you define typed endpoints once and get a service plus a generated client.
 
 ```python
-from mindtrace.services.samples.echo_service import EchoService
+from pydantic import BaseModel
+
+from mindtrace.core import TaskSchema
+from mindtrace.services import Service
+
+
+class EchoInput(BaseModel):
+    message: str
+
+
+class EchoOutput(BaseModel):
+    echoed: str
+
+
+echo_schema = TaskSchema(
+    name="echo",
+    input_schema=EchoInput,
+    output_schema=EchoOutput,
+)
+
+
+class EchoService(Service):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_endpoint("echo", self.echo, schema=echo_schema)
+
+    def echo(self, payload: EchoInput) -> EchoOutput:
+        return EchoOutput(echoed=payload.message)
 
 
 cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
