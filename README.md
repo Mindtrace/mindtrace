@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Mindtrace" src="docs/assets/mindtrace-logo-horizontal-light.png" width="100%">
+  <img alt="Mindtrace" src="docs/assets/mindtrace-logo-horizontal.png" width="100%">
 </p>
 
 <p align="center">
