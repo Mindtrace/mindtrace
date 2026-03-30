@@ -414,6 +414,49 @@ cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
 client = cm.mcp_client
 ```
 
+### Minimal MCP example
+
+```python
+import asyncio
+
+from mindtrace.services.samples.echo_mcp import EchoService
+
+
+async def main():
+    client = EchoService.mcp.launch(
+        host="localhost",
+        port=8080,
+        wait_for_launch=True,
+        timeout=30,
+    )
+    async with client:
+        tools = await client.list_tools()
+        print([tool.name for tool in tools])
+        result = await client.call_tool("echo", {"payload": {"message": "Hello"}})
+        print(result)
+
+
+asyncio.run(main())
+```
+
+### Remote MCP usage
+
+Any Mindtrace service exposing MCP tools can also be used from MCP-capable clients such as Cursor by pointing the client at the service’s mounted MCP endpoint.
+
+Example configuration:
+
+```json
+{
+  "mcpServers": {
+    "mindtrace_echo": {
+      "url": "http://localhost:8080/mcp-server/mcp/"
+    }
+  }
+}
+```
+
+Once configured, the client can list and invoke tools exposed by the service.
+
 ## Gateway and Proxy Routing
 
 The package includes service-composition helpers for routing traffic through a central gateway.
@@ -491,46 +534,3 @@ cd mindtrace
 - A lightweight service instance may be created during client generation in order to inspect registered endpoints.
 - Endpoint names should be chosen with both route readability and Python client naming in mind.
 - `launch()` manages subprocesses and PID files, so it should be treated as a service runtime tool, not just object instantiation.
-
-## Minimal MCP Example
-
-```python
-import asyncio
-
-from mindtrace.services.samples.echo_mcp import EchoService
-
-
-async def main():
-    client = EchoService.mcp.launch(
-        host="localhost",
-        port=8080,
-        wait_for_launch=True,
-        timeout=30,
-    )
-    async with client:
-        tools = await client.list_tools()
-        print([tool.name for tool in tools])
-        result = await client.call_tool("echo", {"payload": {"message": "Hello"}})
-        print(result)
-
-
-asyncio.run(main())
-```
-
-## Remote MCP usage
-
-Any Mindtrace service exposing MCP tools can also be used from MCP-capable clients such as Cursor by pointing the client at the service’s mounted MCP endpoint.
-
-Example configuration:
-
-```json
-{
-  "mcpServers": {
-    "mindtrace_echo": {
-      "url": "http://localhost:8080/mcp-server/mcp/"
-    }
-  }
-}
-```
-
-Once configured, the client can list and invoke tools exposed by the service.
