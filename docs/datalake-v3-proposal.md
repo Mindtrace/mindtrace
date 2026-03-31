@@ -42,6 +42,7 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
 - [V3 Design](#v3-design)
   - [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
   - [Canonical V3 entities](#canonical-v3-entities)
+  - [DatasetBuilder as a separate Datalake API concept](#datasetbuilder-as-a-separate-datalake-api-concept)
   - [Canonical semantic rule](#canonical-semantic-rule)
   - [Proposed minimal V3 API](#proposed-minimal-v3-api)
 - [Appendix](#appendix)
