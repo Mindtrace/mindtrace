@@ -1175,9 +1175,14 @@ The `jobs` module should remain usable without a hard dependency on the Datalake
 ```mermaid
 flowchart TD
     JS[JobSchema] --> J[Job]
-    J --> JM[JobManager]
+    J --> JM[JobManager / Orchestrator]
     JM --> JR[JobRun]
     JR -->|validated by| JS
+
+    JM --> JB[Job Backend]
+    JB --> L[Local Backend]
+    JB --> R[Redis Backend]
+    JB --> MQ[RabbitMQ Backend]
 ```
 
 ### The `datalake` module
