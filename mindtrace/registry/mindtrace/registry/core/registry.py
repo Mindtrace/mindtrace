@@ -83,6 +83,7 @@ class Registry(Mindtrace):
         mutable: bool | None = None,
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
+        default_materializer: Type[BaseMaterializer] | str | None = None,
         use_cache: bool = True,
         **kwargs,
     ):
@@ -98,6 +99,8 @@ class Registry(Mindtrace):
             mutable: Whether to allow overwriting existing versions. If ``None``
                 (default), uses the stored setting, or ``False`` for a new registry.
             versions_cache_ttl: TTL in seconds for the in-memory versions cache.
+            default_materializer: Optional fallback materializer used when no
+                type-specific materializer is registered.
             use_cache: Whether to maintain a local cache for remote backends.
                 Default ``True``.
             **kwargs: Additional arguments forwarded to the backend.
@@ -118,6 +121,7 @@ class Registry(Mindtrace):
                 mutable=mutable,
                 version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                default_materializer=default_materializer,
                 **kwargs,
             )
             cache_dir = self._get_cache_dir(self._remote.backend.uri)
@@ -127,6 +131,7 @@ class Registry(Mindtrace):
                 mutable=True,  # cache is always mutable for updates
                 version_digits=self._remote.version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                default_materializer=default_materializer,
                 **kwargs,
             )
             self._core = self._remote
@@ -139,6 +144,7 @@ class Registry(Mindtrace):
                 mutable=mutable,
                 version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                default_materializer=default_materializer,
                 **kwargs,
             )
             self._remote = None  # type: ignore

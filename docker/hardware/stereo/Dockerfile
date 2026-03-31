@@ -74,7 +74,7 @@ COPY mindtrace/services/pyproject.toml ./mindtrace/services/
 COPY mindtrace/hardware/pyproject.toml ./mindtrace/hardware/
 COPY mindtrace/storage/pyproject.toml ./mindtrace/storage/
 
-RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
+RUN for pkg in apps agents automation cluster database datalake jobs models registry ui; do \
     mkdir -p mindtrace/$pkg && \
     printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
@@ -100,7 +100,7 @@ COPY mindtrace/hardware/mindtrace/hardware/stereo_cameras ./mindtrace/hardware/m
 COPY mindtrace/hardware/mindtrace/hardware/services/__init__.py ./mindtrace/hardware/mindtrace/hardware/services/
 COPY mindtrace/hardware/mindtrace/hardware/services/stereo_cameras ./mindtrace/hardware/mindtrace/hardware/services/stereo_cameras
 
-RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
+RUN for pkg in apps agents automation cluster database datalake jobs models registry ui; do \
     mkdir -p mindtrace/$pkg && \
     printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done

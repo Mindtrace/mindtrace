@@ -4,284 +4,391 @@
 
 # Mindtrace Core
 
-The foundational module of the Mindtrace ML framework, providing essential utilities, base classes, and core abstractions used across all other Mindtrace modules.
+The `Core` module provides the foundational abstractions, configuration, logging, observability, typing, and utility helpers used across the Mindtrace ecosystem.
 
-## Purpose
+## Features
 
-`mindtrace-core` serves as the foundation layer (Level 1) in the Mindtrace architecture, offering:
+- **Base abstractions** with `Mindtrace`, `MindtraceABC`, and shared metaclass behavior
+- **Configuration management** with `Config` and `CoreConfig`
+- **Task typing** with `TaskSchema`
+- **Logging and operation tracking** with standard and structured logging support
+- **Observability primitives** with `EventBus`, `ObservableContext`, and `ContextListener`
+- **Shared utility helpers** for dynamic loading, networking, timing, hashing, and metrics
 
-- **Base Classes**: Abstract base classes and metaclasses for consistent architecture
-- **Configuration Management**: Centralized configuration handling
-- **Event System**: Observable patterns and event bus for inter-component communication
-- **Utilities**: Common utility functions for dynamic imports, type checking, and more
-- **Logging**: Structured logging capabilities
-
-## Installation
-
-```bash
-# Install as standalone package
-uv add mindtrace-core
-
-# Or install as part of full Mindtrace
-uv add mindtrace
-```
-
-## Architecture
-
-The core module is organized into several submodules:
-
-### Base Classes (`base/`)
-- `MindtraceABC`: Abstract base class for all Mindtrace components
-- `MindtraceMeta`: Metaclass providing common functionality
-- `Mindtrace`: Main base class with core functionality
-
-### Configuration (`config/`)
-- `Config`: Centralized configuration management system
-
-### Observables (`observables/`)
-- `EventBus`: Publish-subscribe event system
-- `ObservableContext`: Context management with observation capabilities
-- `ContextListener`: Event listening and handling
-
-### Utilities (`utils/`)
-- `checks`: Type checking and validation utilities
-- `dynamic`: Dynamic class instantiation and import helpers
-
-### Logging (`logging/`)
-- Structured logging configuration and utilities
-
-
-
-### Core Classes
-
-#### `Mindtrace`
-Base class for all Mindtrace components.
+## Quick Start
 
 ```python
-class MyProcessor(Mindtrace):
-    def __init__(self):
-        super().__init__()
-```
+from pydantic import BaseModel
 
-#### `Config`
-The Config class in Mindtrace provides a configuration layer designed to unify various sources of configuration— Pydantic models, Settings, Dict objects in a single, easy-to-use object with attribute access, and dynamic overrides.
+from mindtrace.core import Mindtrace, TaskSchema, ifnone
 
-```python
-from mindtrace.core.config import Config
 
-# Pass a dictionary
-config = Config({"MINDTRACE_DIR_PATHS":{"TEMP":"~/tmp"}})
+class EchoInput(BaseModel):
+    message: str
 
-# Access config values
-print(config["MINDTRACE_DIR_PATHS"]["TEMP"])      
-# Attribute-style access
-print(config.MINDTRACE_DIR_PATHS.TEMP)
-```
 
-For detailed usage of the Config class—including how it's used within the Mindtrace class—refer to the [Usage documentation](https://github.com/Mindtrace/mindtrace/tree/dev/samples/core/config)
+class EchoOutput(BaseModel):
+    echoed: str
 
-#### `Logging`
-The `get_logger` function provides a unified way to configure logging across your application. It can return either a standard Python logger or a structlog
- logger, based on user-defined arguments or below [CoreConfig](../core/mindtrace/core/config/config.ini) settings (lower priority).
-```
-[MINDTRACE_DIR_PATHS]
-STRUCT_LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/structlogs
-LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/logs
-[MINDTRACE_LOGGER]
-USE_STRUCTLOG = False
-```
 
-##### Basic Logger
-
-Setup basic logger to produce logs in `~/.cache/mindtrace/logs`. 
-Here, by default propogation is set to true, and you should be able to see logs in `tail -f ~/.cache/mindtrace/logs/mindtrace.log` and `tail -f ~/.cache/mindtrace/logs/modules/mindtrace.core.module.log` files
-
-```python
-from mindtrace.core.logging.logger import get_logger
-
-# Create a standard logger
-logger = get_logger("core.module")
-logger.info("Logger configured with custom settings.")
-```
-
-##### Structured Logger
-Setup structlog to log structured events: dictionaries of key-value pairs that can later be searched, filtered, or transformed (e.g., into JSON).
-Here, by default propogation is set to true, and you should be able to see structured logs in `tail -f ~/.cache/mindtrace/structlogs/mindtrace.log` and `tail -f ~/.cache/mindtrace/structlogs/modules/mindtrace.core.module.log` files
-```python
-from mindtrace.core.logging.logger import get_logger
-
-# Create a structlog logger with custom bindings
-slogger = get_logger(
-    "core.module",
-    use_structlog=True,
-    structlog_bind={"service": "my-service"},
+echo_task = TaskSchema(
+    name="echo",
+    input_schema=EchoInput,
+    output_schema=EchoOutput,
 )
 
-slogger.info("Structured log", user_id="123")
-```
-In above example, we illustrate structlog’s ability to 
-- bind context to a logger, which ensures that certain fields are automatically included in every log message. This is especially useful for adding consistent metadata like service name, environment, or version without repeating it in every log call.
-- Extra fields like user_id="123" can be passed per log call, allowing dynamic, event-specific data to be added.
 
-##### Mindtrace autolog
-`Mindtrace.autolog` automatically logs function execution (start, end, duration, exceptions, and optional system metrics).
-It supports sync, async, and static functions with both standard and structured logging formats. See a full usage example [here](/samples/core/logging/using_autologger.py)
+class EchoComponent(Mindtrace):
+    def echo(self, payload: EchoInput) -> EchoOutput:
+        return EchoOutput(echoed=ifnone(payload.message, ""))
+
+
+component = EchoComponent()
+print(component.echo(EchoInput(message="Hello")))
+print(component.config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+component.logger.info("Core component ready")
+```
+
+This example shows the typical role of `mindtrace-core`: it gives you a common base class, typed task contracts, configuration access, logging, and small utility helpers that other Mindtrace modules build on.
+
+## Mindtrace
+
+`Mindtrace` is the main base class for shared Mindtrace components. It provides:
+
+- a consistent logger on both instances and classes
+- access to `CoreConfig`
+- context-manager support
+- the `autolog()` decorator for automatic execution logging
+
+Example:
 
 ```python
 from mindtrace.core import Mindtrace
 
+
 class DataProcessor(Mindtrace):
-    @Mindtrace.autolog()
-    def process_data(self, data_list, batch_size=100):
-        # Function automatically logged
-        return [item * 2 for item in data_list]
+    def process(self, values: list[int]) -> list[int]:
+        self.logger.info("Processing values")
+        return [value * 2 for value in values]
+
+
+with DataProcessor() as processor:
+    print(processor.process([1, 2, 3]))
 ```
 
-### Observables
+If you need an abstract base class with the same Mindtrace behavior, use `MindtraceABC`.
 
-The Observables module enables lightweight observability and reactivity for class objects, automatically turning selected properties into observable variables. This framework allows external components (listeners) to be notified whenever specific values change, without hard-coding the coupling between the source and observers.
+## Config
 
-There are three main classes included in the `observables` module:
+`Config` is the general-purpose configuration container in `mindtrace-core`. Use it when you want a flexible config object built from your own dictionaries, Pydantic models, or Pydantic settings objects.
 
----
+It supports:
 
-### 1. `EventBus`
+- dict-style access
+- attribute-style access
+- environment-variable overrides
+- masking of secret fields by default
+- cloning and JSON save/load helpers
 
-The `EventBus` is a lightweight internal publish-subscribe system for event dispatching. 
+`CoreConfig` uses the same underlying configuration system, but starts from Mindtrace’s standard core settings first and then layers your overrides on top.
 
-**API:**
+In practice:
 
-Event buses expose three main methods, which may be used to `subscribe`/`unsubscribe` individual listeners and `emit` event messages.
+- use `Config` for generic application or component configuration
+- use `CoreConfig` when you want the normal Mindtrace core sections already present, such as `MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, and `MINDTRACE_MCP`
+
+Example with `Config`:
 
 ```python
-subscribe(handler: Callable, event_name: str) -> str
-unsubscribe(handler_or_id: Union[str, Callable], event_name: str)
-emit(event_name: str, **kwargs)
+from mindtrace.core import Config
+
+
+config = Config(
+    {
+        "MY_APP": {
+            "DEBUG": "true",
+            "CACHE_DIR": "~/my-app-cache",
+        }
+    }
+)
+
+print(config.MY_APP.DEBUG)
+print(config.MY_APP.CACHE_DIR)
 ```
 
-**Example Usage:**
-To use an event bus, subscribe a handler to the bus with an associated event name. The handler will be called any time the event name is emitted. 
+Example with `CoreConfig`:
+
+```python
+from mindtrace.core import CoreConfig
+
+
+config = CoreConfig(
+    {
+        "MY_APP": {
+            "DEBUG": "true",
+        }
+    }
+)
+
+# Your own settings are still present
+print(config.MY_APP.DEBUG)
+
+# But CoreConfig also includes the standard Mindtrace core sections
+print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
+```
+
+## TaskSchema
+
+`TaskSchema` is the small but important typed contract used across the Mindtrace ecosystem. It describes:
+
+- the task name
+- the input model
+- the output model
+
+This is especially useful in higher-level packages such as `mindtrace-services`, where the same schema is used for endpoint validation and client generation.
+
+Example:
+
+```python
+from pydantic import BaseModel
+
+from mindtrace.core import TaskSchema
+
+
+class SummarizeInput(BaseModel):
+    text: str
+
+
+class SummarizeOutput(BaseModel):
+    summary: str
+
+
+summarize_task = TaskSchema(
+    name="summarize",
+    input_schema=SummarizeInput,
+    output_schema=SummarizeOutput,
+)
+```
+
+## Logging
+
+`mindtrace-core` provides both standard logging and structured logging support.
+
+### Standard logger
+
+Use `get_logger()` when you want a ready-to-use logger with Mindtrace defaults.
+
+```python
+from mindtrace.core.logging.logger import get_logger
+
+
+logger = get_logger("core.example")
+logger.info("Logger configured")
+```
+
+### Structured logger
+
+If enabled, the same logging helpers can produce structured logs using `structlog`.
+
+```python
+from mindtrace.core.logging.logger import get_logger
+
+
+logger = get_logger(
+    "core.example",
+    use_structlog=True,
+    structlog_bind={"service": "demo"},
+)
+logger.info("Structured log event", user_id="123")
+```
+
+### `Mindtrace.autolog`
+
+Use `Mindtrace.autolog()` when you want to automatically log function execution, completion, and failures.
+
+```python
+from mindtrace.core import Mindtrace
+
+
+class DataProcessor(Mindtrace):
+    @Mindtrace.autolog()
+    def double(self, values: list[int]) -> list[int]:
+        return [value * 2 for value in values]
+```
+
+### `track_operation`
+
+Use `track_operation()` when you want explicit operation-level logging around a specific unit of work. It is useful for things like:
+
+- measuring how long an operation took
+- attaching structured context such as a batch ID or file name
+- recording optional system metrics alongside the operation
+- producing start / completed / failed log events in a consistent format
+
+```python
+from mindtrace.core.logging.logger import track_operation
+
+
+@track_operation("load_data", include_system_metrics=True, dataset="train")
+def load_data() -> list[int]:
+    return [1, 2, 3]
+```
+
+With this pattern, the logs can include fields such as:
+
+- the operation name
+- whether it started, completed, or failed
+- duration / duration_ms
+- any extra context you bound, such as `dataset="train"`
+- optional system metrics, such as CPU or memory usage
+
+That makes `track_operation()` a good fit when you care about observability of a specific workflow step, not just generic function logging.
+
+## Observables
+
+The observables utilities support lightweight eventing and reactive state updates.
+
+## `EventBus`
+
+`EventBus` is a simple publish-subscribe mechanism for dispatching events by name.
 
 ```python
 from mindtrace.core import EventBus
 
-bus = EventBus()    
+
+bus = EventBus()
+
 
 def handler(**kwargs):
     print(kwargs)
 
-bus.subscribe(handler, "event")
-bus.emit("event", x="1", y="2")  # {'x': '1', 'y': '2'}
 
-bus.unsubscribe(handler, "event")
-bus.emit("event", x="1", y="2")  # No output
+bus.subscribe(handler, "data_loaded")
+bus.emit("data_loaded", records=3)
+bus.unsubscribe(handler, "data_loaded")
 ```
 
----
+## `ObservableContext`
 
-### 2. `ObservableContext`
-
-The `ObservableContext` class decorator automatically turns specified properties into observable fields and wires up listener support.
-
-The `ObservableContext` class supports two specific event types, with associated event names:
-
-1. `context_updated(source: str, var: str, old: any, new: any)`: May be used when _any_ observed variable changes. The name of the variable will be given as the `var` argument, with associated old and new values.
-2. `{var}_updated(source: str, old: any, new: any)`: May be used to listen to specific variables. 
-
-**API:**
-
-The `ObservableContext` decorator adds `subscribe` and `unsubscribe` methods onto a wrapped class, which may be used directly analogously to with the `EventBus`.
-
-```python
-subscribe(handler, event_name)
-unsubscribe(handler_or_id, event_name)
-```
-
-**Example Usage:**
-
-When subscribing a class-derived listener, define a `context_updated` method which will be notified anytime any observable variable is updated, or specific `{var}_updated` methods, which will be notified when the associated variable is updated.
-
-```python
-class MyListener:
-    def context_updated(self, source, var, old, new):  # May be omitted, `{var}_updated` methods will be called automatically
-        if var == "x":
-            return self.x_updated(source, old, new)
-        elif var == "y":
-            return self.y_updated(source, old, new)
-    def x_updated(...): ...
-    def y_updated(...): ...
-```
-
-Listeners may subscribe to any class that has been decorated with the `ObservableContext` decorator, listening to any of the listed `vars` in the decorator.
+`ObservableContext` is a class decorator that turns selected attributes into observable fields.
 
 ```python
 from mindtrace.core import ObservableContext
 
-@ObservableContext(vars=["x", "y"])
-class MyContext:
+
+@ObservableContext(vars=["status"])
+class JobContext:
     def __init__(self):
-        self.x = 0
-        self.y = 0
+        self.status = "created"
 
-class MyListener:
-    def x_changed(self, source, old, new):
-        print(f"[{source}] x changed from {old} to {new}")
 
-my_context = MyContext()
-my_context.subscribe(MyListener())
-
-my_context.x = 1  # [MyContext] x changed from 0 to 1
+ctx = JobContext()
+ctx.status = "running"
 ```
 
----
+## `ContextListener`
 
-### 3. `ContextListener(Mindtrace)`
+`ContextListener` is a Mindtrace-aware helper for listening to observable context changes.
 
-The `ContextListener` class is a helper class for defining observers that respond to context changes. This class is meant to provide two benefits: (1) deriving from the `Mindtrace` base class, it provides for uniform logging of events and (2) the default ContextListener class can be used to automatically log changes to variables, optionally with a custom logger.
-
-**Example usage:**
 ```python
 from mindtrace.core import ContextListener, ObservableContext
 
-@ObservableContext(vars={"x": int, "y": int})
-class MyContext:
+
+@ObservableContext(vars={"progress": int})
+class JobContext:
     def __init__(self):
-        self.x = 0
-        self.y = 0
+        self.progress = 0
 
-my_context = MyContext()
-my_context.subscribe(ContextListener(autolog=["x", "y"], logger=...))  # May provide custom logger if desired
 
-my_context.x = 1
-my_context.y = 2
-
-# Logs:
-# [MyContext] x changed: 0 → 1
-# [MyContext] y changed: 0 → 2  
+ctx = JobContext()
+ctx.subscribe(ContextListener(autolog=["progress"]))
+ctx.progress = 50
 ```
 
-### Utility Functions
+## Utility Helpers
 
-#### `check_libs(*libs)`
-Verify required libraries are installed.
+`mindtrace-core` also provides a collection of lower-level helpers used across the ecosystem.
 
-```python
-from mindtrace.core import check_libs
-check_libs("numpy", "pandas")  # Raises ImportError if missing
-```
-
-#### `ifnone(value, default)`
-Return default if value is None.
-
-```python
-from mindtrace.core import ifnone
-result = ifnone(potentially_none_value, "default")
-```
-
-#### `instantiate_target(target, **kwargs)`
-Dynamically instantiate a class from string reference.
+### Dynamic loading
 
 ```python
 from mindtrace.core import instantiate_target
-instance = instantiate_target("my.module.MyClass", param="value")
+
+
+instance = instantiate_target(
+    "my_package.my_module.MyClass",
+    **{"config_path": "settings.json", "debug": True},
+)
 ```
+
+### Network helpers
+
+```python
+from mindtrace.core import get_free_port, wait_for_service
+
+
+port = get_free_port(start_port=8000, end_port=8100)
+print(port)
+
+# Wait for something to start listening on that port
+wait_for_service("localhost", port, timeout=5.0)
+```
+
+### Timers and timeout helpers
+
+```python
+from mindtrace.core import Timeout
+
+
+def eventually_ready():
+    return "ready"
+
+
+timeout = Timeout(timeout=5)
+print(timeout.run(eventually_ready))
+```
+
+### Hashing and metrics
+
+```python
+from mindtrace.core import SystemMetricsCollector, compute_dir_hash
+
+
+collector = SystemMetricsCollector()
+print(collector())
+print(compute_dir_hash("./some-directory"))
+```
+
+## Examples
+
+See these examples and related docs in the repo for more end-to-end reference:
+
+- [Core echo task sample](mindtrace/core/mindtrace/core/samples/echo_task.py)
+- [Core configuration examples](samples/core/config)
+- [Core logging / autolog examples](samples/core/logging)
+
+## Testing
+
+If you are working in the full Mindtrace repo, run tests for this module specifically:
+
+```bash
+git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+uv sync --dev --all-extras
+```
+
+```bash
+# Run the core test suite
+ds test: core
+
+# Run only unit tests for core
+ds test: --unit core
+```
+
+## Practical Notes and Caveats
+
+- `CoreConfig` includes Mindtrace’s default core settings; plain `Config` is the more generic configuration container.
+- Secret configuration values are masked by default; use explicit secret access helpers when you need the real value.
+- `TaskSchema` is a typed contract, not an execution engine by itself.
+- `Mindtrace.autolog()` and `track_operation()` overlap conceptually, but they are useful at different levels of abstraction.
+- Many helpers in `core` are intentionally low-level building blocks; the README should help you discover them, while the code docs remain the detailed reference.
