@@ -718,6 +718,10 @@ Supporting a native Mindtrace data model while providing conversion to / from Hu
 
 ### Canonical V3 entities
 
+The following entities define the proposed canonical V3 model.
+
+
+
 <details>
 <summary>Expand the canonical V3 entity model and relationships</summary>
 
@@ -835,21 +839,6 @@ Relationship summary:
 - `DatasetBuilder` is treated separately as a Datalake helper/API concept rather than a canonical persisted entity.
 
 </details>
-
-### Canonical entity summary table
-
-| Entity | Description |
-|---|---|
-| `Collection` | A logical workspace or organizational boundary that groups assets and related work without implying ownership of the underlying payload bytes. |
-| `CollectionItem` | A membership record connecting a collection to an asset, allowing collections to share assets without coupling membership to deletion semantics. |
-| `AssetRetention` | A retention/stewardship record describing why an asset should continue to exist independently of current collection membership. |
-| `StorageRef` | A physical storage reference describing where a payload lives in backing storage. |
-| `Asset` | The canonical logical record for a payload-bearing object such as an image, mask, artifact, or embedding. |
-| `AnnotationSource` | A structured, queryable provenance model describing where an annotation came from, such as a human annotator, model, or derived process. |
-| `AnnotationRecord` | The atomic unit of annotation/label persistence. |
-| `AnnotationSet` | A grouping of related annotation records, typically by source, purpose, or review state. |
-| `Datum` | The reusable unit of dataset membership/composition, linking assets, metadata, and annotations. |
-| `DatasetVersion` | An immutable dataset view/version built over canonical datums, assets, and annotation sets. |
 
 ### 1. `Collection`
 
