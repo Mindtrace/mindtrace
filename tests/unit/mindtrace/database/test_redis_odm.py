@@ -6019,7 +6019,7 @@ def test_redis_do_initialize_exception_connection_type():
 # Additional edge case tests for Redis ODM backend
 
 
-class TestModel(MindtraceRedisDocument):
+class SampleModel(MindtraceRedisDocument):
     name: str = Field(index=True)
     age: int = Field(index=True)
 
@@ -6138,13 +6138,13 @@ def test_redis_do_initialize_database_assignment():
         mock_get_redis.return_value = mock_redis
         mock_redis.ping.return_value = True
 
-        backend = RedisMindtraceODM(TestModel, "redis://localhost:6379")
+        backend = RedisMindtraceODM(SampleModel, "redis://localhost:6379")
         backend.logger = MagicMock()
 
         # Ensure models_to_migrate is not empty
         # In single-model mode, model_cls is added to models_to_migrate. Then loops through models_to_migrate
         # sets model.Meta.database = self.redis
-        TestModel.Meta.database = None  # Reset to ensure it executes
+        SampleModel.Meta.database = None  # Reset to ensure it executes
 
         with patch("mindtrace.database.backends.redis_odm.Migrator") as mock_migrator_class:
             mock_migrator = MagicMock()
@@ -6152,7 +6152,7 @@ def test_redis_do_initialize_database_assignment():
 
             backend._do_initialize()
 
-            assert TestModel.Meta.database == mock_redis
+            assert SampleModel.Meta.database == mock_redis
 
 
 def test_redis_do_initialize_database_reassignment():
@@ -6318,10 +6318,10 @@ def test_redis_do_initialize_lines_env_var_deletion():
         mock_get_redis.return_value = mock_redis
         mock_redis.ping.return_value = True
 
-        backend = RedisMindtraceODM(TestModel, "redis://localhost:6379")
+        backend = RedisMindtraceODM(SampleModel, "redis://localhost:6379")
         backend.logger = MagicMock()
         backend.redis_url = "redis://localhost:6379"
-        TestModel.Meta.database = mock_redis
+        SampleModel.Meta.database = mock_redis
 
         # Ensure original_redis_url is None (REDIS_OM_URL not set initially)
         original_env = os.environ.get("REDIS_OM_URL", None)
@@ -6379,10 +6379,10 @@ def test_redis_do_initialize_connection_error_pass():
         mock_get_redis.return_value = mock_redis
         mock_redis.ping.return_value = True
 
-        backend = RedisMindtraceODM(TestModel, "redis://localhost:6379")
+        backend = RedisMindtraceODM(SampleModel, "redis://localhost:6379")
         backend.logger = MagicMock()
         backend._is_initialized = False  # Ensure it starts as False
-        TestModel.Meta.database = mock_redis
+        SampleModel.Meta.database = mock_redis
 
         # Create exception class with "Connection" in name
         class ConnectionErrorType(Exception):
