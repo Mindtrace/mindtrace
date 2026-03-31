@@ -740,7 +740,6 @@ erDiagram
     ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "contains"
     DATUM ||--o{ ANNOTATION_RECORD : "annotated by"
     ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
-    DATASET_VERSION ||--o| DATASET_VERSION : "derived from"
 
     STORAGE_REF {
         string mount
