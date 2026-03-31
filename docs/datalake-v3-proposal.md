@@ -337,6 +337,44 @@ The `add_datum(...)` path allows a datum to be stored either:
 
 The aggregation-based `query_data(...)` is a meaningful improvement over purely application-side chained lookups.
 
+#### The V2 `Dataset` class
+
+The current V2 branch also introduces a `Dataset` document model that is worth calling out explicitly.
+
+This `Dataset` class is best understood as a **row/column dataset view over datum references**. In the current design:
+
+- a dataset stores rows as dictionaries of `column -> datum_id`
+- each column is associated with a `contract`
+- rows are loaded by resolving datum IDs through the Datalake
+- the dataset can be converted into a Hugging Face `IterableDataset`
+
+This is a meaningful step forward compared with V1 because it:
+
+- replaces package-directory assumptions with a persisted document model
+- makes datasets feel more data-centric and query-oriented
+- introduces typed column contracts
+- provides a practical bridge into Hugging Face workflows
+
+At the same time, it is still best viewed as part of the V2 transitional architecture rather than the final V3 canonical model.
+
+The current `Dataset` class is strong as:
+
+- a tabular/materialized view over Datalake-backed data
+- a convenient persisted document for assembling rows
+- an HF interoperability layer
+
+But it is still limited by the broader V2 assumptions:
+
+- it remains heavily datum-centric
+- it represents datasets primarily as rows of datum references
+- it does not yet express richer canonical entities such as assets, annotation sets, or immutable dataset-version lineage cleanly enough on its own
+
+So in the V1 -> V2 -> V3 evolution, the current `Dataset` class is best interpreted as:
+
+- **more modern than V1’s package/manifest-first model**
+- **useful and worth preserving in spirit**
+- but ultimately better treated in V3 as a dataset view/materialization layer rather than the entire canonical dataset model
+
 #### Limitations of V2
 
 ##### 1. `Datum` is doing too much
