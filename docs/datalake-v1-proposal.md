@@ -37,6 +37,292 @@ This design is intended to be a reusable Mindtrace module rather than an applica
 
 ---
 
+## Review of the previous `mtrix` Datalake
+
+The previous `mtrix` package included a `datalake` module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary.
+
+### What the previous Datalake was
+
+The `mtrix` Datalake was primarily a dataset lifecycle and synchronization system.
+
+At a high level it combined:
+
+- a thin top-level `Datalake` facade
+- a `ServiceRegistry` for dependency wiring
+- service classes for discovery, provisioning, synchronization, loading, and manifest handling
+- manifest-driven dataset versioning
+- local filesystem dataset layouts
+- Hugging Face as a registry / discovery plane
+- GCP as blob storage
+- Arrow / Hugging Face dataset cache building for loading
+
+In other words, the prior design was less a generalized canonical datalake and more a dataset packaging, synchronization, and loading framework.
+
+### What it did
+
+The previous Datalake supported a concrete end-to-end workflow:
+
+1. **Create a dataset locally** from a source directory.
+2. **Validate it** by attempting to build cache through a Hugging Face `GeneratorBasedBuilder`.
+3. **Store it locally** under a conventional directory structure with manifest files, split subdirectories, data files, masks, annotation JSON, and item metadata JSON.
+4. **Publish it remotely** by splitting responsibilities across:
+   - Hugging Face for dataset repository / manifest / README style coordination
+   - GCP for actual data and annotation file blobs
+5. **Fetch it back locally** by downloading a manifest first and then lazily filling in missing files.
+6. **Load it** by materializing a Hugging Face dataset through a builder and Arrow cache.
+7. **Update it incrementally** by comparing against previous versions and copying / merging changed files and annotations.
+
+This gave `mtrix` a practical dataset distribution pipeline with local-first and offline-aware behavior.
+
+### What it did well
+
+The previous Datalake had several real strengths.
+
+#### 1. Good service decomposition
+
+The split into:
+
+- discovery
+- provisioning
+- synchronization
+- loading
+- manifest management
+
+was clean and maintainable. The top-level `Datalake` class remained fairly thin while operational complexity lived in focused service classes.
+
+#### 2. Strong dataset-version packaging model
+
+The manifest-driven dataset-version model was well suited to shipping and loading versioned datasets. It gave a clear package boundary for:
+
+- dataset name
+- semantic version
+- data type
+- split structure
+- output definitions
+- annotation files
+- item metadata files
+
+#### 3. Thoughtful local/offline workflow
+
+The explicit `offline_mode` was operationally useful and reflected real needs. The system was clearly designed around:
+
+- local availability
+- remote synchronization when needed
+- explicit failure when offline constraints prevented an operation
+
+#### 4. Practical incremental update support
+
+The previous design did support version-to-version update flows, including:
+
+- comparing previous and current versions
+- uploading only newly introduced files in some cases
+- merging annotation content
+- applying removals
+
+That is a meaningful capability and should not be dismissed.
+
+#### 5. Strong Hugging Face integration
+
+If the main consumer abstraction is a Hugging Face dataset, the old design was coherent. The builder/cache flow was aligned with a real consumer story.
+
+### Where it breaks down
+
+The limitations of the previous design are structural rather than cosmetic.
+
+#### 1. It is dataset-package centric, not canonical-data centric
+
+The previous design treats the world primarily as:
+
+- dataset names
+- dataset versions
+- manifests
+- split directories
+- files inside those directories
+
+That is enough for dataset shipping, but not enough for a reusable canonical data layer.
+
+It does not make the following concepts first-class:
+
+- assets
+- storage references independent of local layout
+- datums as reusable units of membership
+- annotation sets
+- atomic annotation records
+- multiple storage locations for the same payload
+
+This is the biggest architectural limitation.
+
+#### 2. Annotations are file-based, not first-class records
+
+Annotations in the old system are largely handled as JSON files per split and per dataset version. They can be merged and copied, but they are not modeled as queryable, canonical records.
+
+That creates several limitations:
+
+- weak support for live annotation CRUD
+- poor provenance at the per-annotation level
+- difficulty representing multiple overlapping annotation layers
+- difficulty querying across annotations independently of dataset package boundaries
+- difficulty reusing annotation data outside a specific packaged dataset version
+
+This is one of the primary reasons a new version is needed.
+
+#### 3. Local filesystem layout is doing too much work
+
+The old Datalake is heavily coupled to a particular on-disk representation:
+
+- root dataset directories
+- `manifest_v*.json`
+- `splits/<split>/...`
+- images / meshes / point clouds directories
+- masks directories
+- annotation and item metadata JSON files
+
+This is practical for one packaging format, but too rigid for a general platform. It makes the local layout feel canonical when it should instead be one materialization strategy among several possible representations.
+
+#### 4. Remote storage topology is fixed and overly opinionated
+
+The previous design effectively assumes:
+
+- Hugging Face for registry / discovery / repository concerns
+- GCP for blob storage
+
+That hardcodes vendor roles into the design. It does not provide a generalized mount or multi-storage abstraction and cannot naturally support broader deployment patterns such as:
+
+- local scratch + NAS + cloud
+- multiple object stores with equivalent roles
+- durable on-prem object storage with optional cloud promotion
+- storage backends selected by policy rather than by hardcoded class role
+
+This is a major scalability and portability constraint.
+
+#### 5. No generalized storage namespace or mount abstraction
+
+There is no equivalent of a multi-mount `Store` or unified storage facade. The old design has fixed infrastructure roles, not a composable storage model.
+
+That means it cannot naturally express ideas like:
+
+- default mount vs archive mount
+- promotion from one backend to another
+- object-level location awareness across multiple backends
+- later introduction of additional stores without service-level rewrites
+
+#### 6. Reuse and composability are limited
+
+Because the main unit is a packaged dataset version, it is difficult to treat:
+
+- an image asset
+- a derived artifact
+- a label snapshot
+- a shared annotation layer
+
+as reusable canonical pieces that can participate in multiple datasets or workflows.
+
+The previous architecture makes datasets easy to ship, but makes underlying data harder to reuse compositionally.
+
+### Why it cannot scale as the long-term architecture
+
+The prior Datalake can scale operationally to a point, but it does not scale conceptually into a broader Mindtrace data layer.
+
+It breaks down as requirements expand toward:
+
+- multi-backend storage flexibility
+- reusable canonical asset identities
+- live structured annotation CRUD
+- multiple annotation layers and provenance
+- dataset derivation by metadata and annotation queries
+- multiple downstream applications sharing the same canonical data layer
+- clear separation between canonical persistence and export/package forms
+
+In particular, the following become increasingly expensive or awkward in the old design:
+
+#### 1. Querying and editing annotations as data rather than files
+
+When annotations are primarily versioned files inside split directories, operations that should be simple data queries become package manipulation tasks.
+
+#### 2. Treating storage locations as replaceable infrastructure
+
+The old design assumes role-specific backends rather than a generalized storage abstraction. That makes backend evolution more invasive than it should be.
+
+#### 3. Building multiple downstream views over the same canonical data
+
+The old system is optimized for one specific representation: a dataset package that can be loaded into HF datasets. It is much less well suited to producing many different consumers from the same underlying canonical records.
+
+#### 4. Separating logical identity from physical layout
+
+A long-lived datalake should let assets and annotations have stable logical identity independent of the current filesystem or object-store materialization. The previous design does not fully achieve that.
+
+### Why a V2 must be built
+
+A V2 is needed because the next Datalake should be more than a dataset shipping system. It needs to become a canonical persistence and access layer for Mindtrace data.
+
+Concretely, V2 must support:
+
+- object storage that is mount-based rather than hardcoded to fixed remote roles
+- canonical asset records separated from physical location
+- structured annotation persistence as first-class records
+- immutable dataset versions built from reusable lower-level entities
+- queryable datums and annotation sets
+- export/package formats as derived representations rather than the canonical source of truth
+
+The old `mtrix` Datalake is a useful predecessor, but it is not sufficient as the long-term foundation.
+
+### What V2 needs that the previous design did not have
+
+The proposed V2 direction adds several necessary capabilities.
+
+#### 1. A generalized storage abstraction
+
+V2 needs a storage facade over multiple backends, such as the newer `Store` / mount model, so that storage becomes configurable and composable rather than fixed.
+
+#### 2. Canonical payload identity
+
+V2 needs explicit `StorageRef` and `Asset` entities so payload-bearing objects can be tracked independently of a particular local directory layout.
+
+#### 3. Canonical annotation model
+
+V2 needs first-class annotation entities:
+
+- `AnnotationSource`
+- `AnnotationRecord`
+- `AnnotationSet`
+
+This is essential for live editing, queryability, provenance, and reuse.
+
+#### 4. Canonical dataset membership unit
+
+V2 needs `Datum` as the reusable unit of dataset membership rather than treating split file listings as the only durable structure.
+
+#### 5. Immutable dataset versions over reusable canonical entities
+
+V2 should keep immutable dataset versions, but they should be built from references to canonical datums, assets, and annotation sets rather than being defined primarily by directory trees and packaged JSON files.
+
+#### 6. Separation between canonical state and export forms
+
+V2 should treat HF datasets, Arrow caches, manifests, packaged split directories, and training exports as materialized views or export forms, not as the canonical persistence model.
+
+### Summary of the retrospective
+
+The previous `mtrix` Datalake solved a real and useful problem:
+
+- provisioning versioned datasets
+- synchronizing them between local and remote storage
+- building HF-compatible caches
+- loading them reliably
+
+That remains valuable.
+
+However, it is best understood as a dataset lifecycle system rather than a complete canonical datalake architecture.
+
+The V2 direction proposed in this document keeps the strongest operational ideas from `mtrix` — service decomposition, versioning, synchronization, offline awareness, and interoperability — while replacing the rigid parts with a more general and durable model based on:
+
+- generalized storage mounts
+- canonical asset records
+- atomic annotation records and annotation sets
+- reusable datums
+- immutable dataset versions built as views over canonical entities
+
+---
+
 ## Strongest parts of the existing design
 
 ### 1. Split payload storage from metadata storage
