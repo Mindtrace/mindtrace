@@ -16,6 +16,25 @@ The intended shape is:
 This design is intended to be a reusable Mindtrace module rather than an application-specific subsystem.
 
 ---
+## Table of Contents
+
+- [Goals](#goals)
+- [Non-goals](#non-goals)
+- [Version History](#version-history)
+  - [V1: The `mtrix` Datalake](#v1-the-mtrix-datalake)
+  - [V2: The current `mindtrace.datalake` module](#v2-the-current-mindtracedatalake-module)
+  - [V3: Expanding the current Datalake to match our data needs](#v3-expanding-the-current-datalake-to-match-our-data-needs)
+- [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
+- [Design risks and ambiguities to resolve in V3](#design-risks-and-ambiguities-to-resolve-in-v3)
+- [Canonical V3 entities](#canonical-v3-entities)
+- [Canonical semantic rule](#canonical-semantic-rule)
+- [Proposed minimal V3 API](#proposed-minimal-v3-api)
+- [Integration notes](#integration-notes)
+- [How `datalake`, `jobs`, and `cluster` should work together](#how-datalake-jobs-and-cluster-should-work-together)
+- [Open questions](#open-questions)
+- [Recommended V3 implementation stance](#recommended-v3-implementation-stance)
+
+---
 
 ## Goals
 
@@ -984,6 +1003,152 @@ A consumer of the Datalake module should be able to:
 This keeps Datalake positioned as the canonical persistence and access layer while allowing downstream applications to remain thin clients over that data model.
 
 ---
+
+## How `datalake`, `jobs`, and `cluster` should work together
+
+The V3 Datalake should be designed in a way that allows clean interoperability with the `jobs` and `cluster` modules without collapsing those modules into each other.
+
+The intended relationship is:
+
+- **`datalake`** owns canonical persisted data models and storage semantics
+- **`jobs`** owns execution semantics, job schemas, queueing, retries, and run lifecycle
+- **`cluster`** owns distributed orchestration and acts as the integration layer between execution and persisted data
+
+### Separation of responsibilities
+
+#### `datalake`
+
+The Datalake module should own:
+
+- canonical data entities such as `Asset`, `StorageRef`, `Datum`, `AnnotationSet`, `AnnotationRecord`, and `DatasetVersion`
+- storage and retrieval semantics
+- metadata persistence and query semantics
+- provenance fields on canonical entities
+- mount-aware and registry/store-aware payload access
+
+The Datalake should **not** need to know how jobs are queued, retried, scheduled, or assigned to workers.
+
+#### `jobs`
+
+The Jobs module should own:
+
+- job definitions
+- job input and output schemas
+- job run lifecycle
+- retries, failure handling, and queue state
+- logs and execution metadata
+
+The Jobs module should be able to stand alone without a hard dependency on the Datalake module.
+
+That means Jobs should not require canonical Datalake entity internals in order to function.
+
+#### `cluster`
+
+The Cluster module should act as the layer that binds computation to data.
+
+It should be responsible for:
+
+- resolving Datalake references into worker-usable job inputs
+- dispatching jobs to workers
+- collecting outputs from workers
+- persisting outputs back into Datalake using explicit persistence adapters
+- making placement and locality decisions where data location matters
+
+### Why Jobs and Datalake should not share identical schemas
+
+A key design principle for V3 is that **job/task I/O schemas are not the same thing as canonical persisted Datalake schemas**.
+
+For example:
+
+- a detection job may emit a `DetectionJobOutput`
+- but the Datalake should persist those results as one `AnnotationSet` plus many atomic `AnnotationRecord`s
+
+That means:
+
+- job output schemas may be optimized for execution and worker ergonomics
+- Datalake schemas should be optimized for long-term storage, queryability, provenance, and interoperability
+
+The two should map cleanly to each other, but they should not be forced to be identical.
+
+### Recommended integration model
+
+The cleanest model is:
+
+1. **Jobs defines executable task schemas**
+2. **Datalake defines canonical persisted schemas**
+3. **Cluster registers explicit adapters between them**
+
+In practice, this means:
+
+- job inputs should mostly use references such as `datum_id`, `asset_id`, `dataset_version_id`, or `annotation_set_id`
+- job outputs should be task-oriented structures
+- Cluster should resolve inputs from Datalake before execution and persist outputs into Datalake after execution
+
+### Runtime schema registration
+
+The Jobs module does not need one permanent, static schema equivalent for every Datalake entity.
+
+Instead, a good design is for Jobs to support runtime-registered schemas, while Cluster or higher-level integrations register domain-specific task types.
+
+This allows:
+
+- Jobs to remain generic and reusable
+- Datalake to remain the owner of canonical persisted data structures
+- Cluster to install the task types, input resolvers, and output persistence adapters required for a specific deployment
+
+### Canonical outputs vs run artifacts
+
+V3 should distinguish between:
+
+#### Canonical outputs
+
+These are outputs that should become first-class Datalake entities, such as:
+
+- `AnnotationSet` / `AnnotationRecord`
+- derived `Asset`s
+- new `Datum`s
+- `DatasetVersion`s
+
+#### Run artifacts
+
+These are outputs that should be stored for debugging, reproducibility, or audit, but which are not the canonical data model, such as:
+
+- raw model output JSON
+- logs
+- evaluation reports
+- temporary artifacts
+- profiling traces
+
+Both may be stored in the same MongoDB deployment and registry/store infrastructure, but they should remain conceptually distinct.
+
+### Provenance requirements
+
+To integrate cleanly with Jobs and Cluster, canonical Datalake entities should be able to record provenance such as:
+
+- `produced_by_job_run_id`
+- `source_job_type`
+- `input_refs`
+- model and version information
+- timestamps
+
+This allows Datalake to answer questions like:
+
+- which run produced these annotations?
+- which model created this derived asset?
+- which source datum or dataset version was used?
+
+### Recommended architectural stance
+
+The intended architecture should be:
+
+- **Jobs** = execution system
+- **Datalake** = canonical persistence system
+- **Cluster** = orchestration and integration layer
+
+This keeps the boundaries clean while still allowing tight practical integration.
+
+In short, V3 should make it easy for jobs to consume and produce Datalake-backed data without making the Datalake module itself depend on the Jobs module.
+
 
 ## Open questions
 
