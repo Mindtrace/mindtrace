@@ -22,7 +22,7 @@ class TestRunScriptWorker:
     @pytest.fixture
     def worker(self):
         """Create a RunScriptWorker instance for testing."""
-        with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+        with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
             MockDatabase.return_value = create_mock_database()
             worker = RunScriptWorker()
 
@@ -39,6 +39,7 @@ class TestRunScriptWorker:
                     "branch": "main",
                     "commit": "abc123",
                     "working_dir": "src",
+                    "project": "our-project",
                 }
             },
             "command": "python script.py",
@@ -77,7 +78,11 @@ class TestRunScriptWorker:
 
         # Verify GitEnvironment was created with correct parameters
         mock_git_env_class.assert_called_once_with(
-            repo_url="https://github.com/test-owner/test-repo.git", branch="main", commit="abc123", working_dir="src"
+            repo_url="https://github.com/test-owner/test-repo.git",
+            branch="main",
+            commit="abc123",
+            working_dir="src",
+            project="our-project",
         )
 
         # Verify setup was called
@@ -113,6 +118,28 @@ class TestRunScriptWorker:
         # Verify worker attributes were set
         assert worker.env_manager == mock_docker_env
         assert worker.container_id == "test-container-id"
+
+    @patch("mindtrace.cluster.workers.run_script_worker.DockerEnvironment")
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/host/creds.json"})
+    def test_setup_environment_docker_maps_gcp_credentials_volume(self, mock_docker_env_class, worker):
+        docker_job = {
+            "environment": {
+                "docker": {
+                    "image": "python:3.11",
+                    "volumes": {"GCP_CREDENTIALS": {"bind": "/creds.json", "mode": "ro"}},
+                }
+            }
+        }
+
+        mock_docker_env = Mock()
+        mock_docker_env.setup.return_value = "container-123"
+        mock_docker_env_class.return_value = mock_docker_env
+
+        worker.setup_environment(docker_job["environment"])
+
+        passed_volumes = mock_docker_env_class.call_args.kwargs["volumes"]
+        assert "GCP_CREDENTIALS" not in passed_volumes
+        assert passed_volumes["/host/creds.json"] == {"bind": "/creds.json", "mode": "ro"}
 
     def test_setup_environment_invalid_config(self, worker):
         """Test environment setup with invalid configuration."""

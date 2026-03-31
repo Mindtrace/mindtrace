@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mindtrace.hardware.sensors.backends.mqtt import MQTTSensorBackend
+# Skip all tests if aiomqtt is not available
+try:
+    import aiomqtt  # noqa: F401
+
+    from mindtrace.hardware.sensors.backends.mqtt import MQTTSensorBackend
+except ImportError:
+    pytest.skip("aiomqtt is required for MQTT tests", allow_module_level=True)
 
 
 class TestMQTTSensorBackend:
@@ -343,6 +349,40 @@ class TestMQTTSensorBackendCoverage:
     """Additional tests to improve MQTT backend coverage."""
 
     @pytest.mark.asyncio
+    async def test_message_listener_stores_raw_payload_when_decoding_raises(self, sample_mqtt_config):
+        class BadPayload:
+            def decode(self, _encoding):
+                raise UnicodeDecodeError("utf-8", b"x", 0, 1, "bad")
+
+            def __str__(self):
+                return "bad-payload"
+
+        class OneMessageIterator:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if hasattr(self, "_done"):
+                    raise StopAsyncIteration
+                self._done = True
+                msg = MagicMock()
+                msg.topic = "test/topic"
+                msg.payload = BadPayload()
+                return msg
+
+        with patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt") as mock_aiomqtt:
+            backend = MQTTSensorBackend(**sample_mqtt_config)
+            mock_client = AsyncMock()
+            mock_client.messages = OneMessageIterator()
+            mock_aiomqtt.Client.return_value = mock_client
+            backend._client = mock_client
+            backend._is_connected = True
+
+            await backend._message_listener()
+
+            assert backend._message_cache["test/topic"]["raw"] == "bad-payload"
+
+    @pytest.mark.asyncio
     async def test_subscription_error_handling(self, sample_mqtt_config):
         """Test subscription error scenarios."""
         with patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt") as mock_aiomqtt:
@@ -624,3 +664,68 @@ class TestMQTTSensorBackendCoverage:
             # Verify string payload was processed correctly
             assert "test/topic" in backend._message_cache
             assert backend._message_cache["test/topic"]["temperature"] == 22.0
+
+    @patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt")
+    @pytest.mark.asyncio
+    async def test_read_data_invalid_address_none(self, mock_aiomqtt):
+        """Test read_data with None address raises ValueError."""
+        backend = MQTTSensorBackend("mqtt://localhost:1883")
+
+        mock_client = AsyncMock()
+        mock_aiomqtt.Client.return_value = mock_client
+
+        await backend.connect()
+
+        with pytest.raises(ValueError, match="Topic name must be a non-empty string"):
+            await backend.read_data(None)
+
+    @patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt")
+    @pytest.mark.asyncio
+    async def test_read_data_invalid_address_non_string(self, mock_aiomqtt):
+        """Test read_data with non-string address raises ValueError."""
+        backend = MQTTSensorBackend("mqtt://localhost:1883")
+
+        mock_client = AsyncMock()
+        mock_aiomqtt.Client.return_value = mock_client
+
+        await backend.connect()
+
+        # Test with integer
+        with pytest.raises(ValueError, match="Topic name must be a non-empty string"):
+            await backend.read_data(123)
+
+        # Test with list
+        with pytest.raises(ValueError, match="Topic name must be a non-empty string"):
+            await backend.read_data(["test", "topic"])
+
+    @patch("mindtrace.hardware.sensors.backends.mqtt.aiomqtt")
+    @pytest.mark.asyncio
+    async def test_read_data_empty_topic(self, mock_aiomqtt):
+        """Test read_data with empty or whitespace-only topic raises ValueError."""
+        backend = MQTTSensorBackend("mqtt://localhost:1883")
+
+        mock_client = AsyncMock()
+        mock_aiomqtt.Client.return_value = mock_client
+
+        await backend.connect()
+
+        # Test with empty string - caught by first validation check
+        with pytest.raises(ValueError, match="Topic name must be a non-empty string"):
+            await backend.read_data("")
+
+        # Test with whitespace only - caught by second validation check after strip
+        with pytest.raises(ValueError, match="Topic name cannot be empty"):
+            await backend.read_data("   ")
+
+        # Test with newlines and tabs - caught by second validation check after strip
+        with pytest.raises(ValueError, match="Topic name cannot be empty"):
+            await backend.read_data("\t\n  ")
+
+    @pytest.mark.asyncio
+    async def test_subscribe_to_topic_not_connected(self):
+        """Test _subscribe_to_topic raises ConnectionError when not connected."""
+        backend = MQTTSensorBackend("mqtt://localhost:1883")
+
+        # Should raise ConnectionError when not connected
+        with pytest.raises(ConnectionError, match="Not connected to MQTT broker"):
+            await backend._subscribe_to_topic("test/topic")

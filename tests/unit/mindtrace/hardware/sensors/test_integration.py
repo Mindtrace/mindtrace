@@ -14,18 +14,18 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mindtrace.hardware.api.sensors.models import (
+from mindtrace.hardware.sensors.backends.base import SensorBackend
+from mindtrace.hardware.sensors.core.factory import create_simulator_backend
+from mindtrace.hardware.sensors.core.manager import SensorManager
+from mindtrace.hardware.sensors.core.simulator import SensorSimulator
+from mindtrace.hardware.services.sensors.models import (
     SensorConnectionRequest,
     SensorConnectionStatus,
     SensorDataRequest,
     SensorListRequest,
     SensorStatusRequest,
 )
-from mindtrace.hardware.api.sensors.service import SensorManagerService
-from mindtrace.hardware.sensors.backends.base import SensorBackend
-from mindtrace.hardware.sensors.core.factory import create_simulator_backend
-from mindtrace.hardware.sensors.core.manager import SensorManager
-from mindtrace.hardware.sensors.core.simulator import SensorSimulator
+from mindtrace.hardware.services.sensors.service import SensorManagerService
 
 
 class TestSensorSystemIntegration:

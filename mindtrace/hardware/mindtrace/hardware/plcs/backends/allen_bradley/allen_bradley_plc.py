@@ -204,8 +204,6 @@ class AllenBradleyPLC(BasePLC):
                         f"Failed to connect to Allen Bradley PLC at {self.ip_address} after {self.retry_count} attempts"
                     )
 
-        return False
-
     async def disconnect(self) -> bool:
         """
         Disconnect from the Allen Bradley PLC.
@@ -1026,6 +1024,18 @@ class AllenBradleyPLC(BasePLC):
 
         except Exception:
             return []
+
+    @classmethod
+    async def discover_async(cls) -> List[str]:
+        """Async wrapper for get_available_plcs() - runs discovery in threadpool.
+
+        Use this instead of get_available_plcs() when calling from async context
+        to avoid blocking the event loop during PLC network discovery.
+
+        Returns:
+            List[str]: List of discovered PLC IP addresses.
+        """
+        return await asyncio.to_thread(cls.get_available_plcs)
 
     @staticmethod
     def get_backend_info() -> Dict[str, Any]:

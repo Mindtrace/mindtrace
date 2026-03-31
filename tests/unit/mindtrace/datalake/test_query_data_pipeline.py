@@ -39,7 +39,7 @@ def datalake(mock_database: MagicMock, mock_registry: MagicMock) -> Datalake:
             self.__dict__.update(kwargs)
 
     with (
-        patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+        patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
         patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
         patch("mindtrace.datalake.datalake.Datum", _MockDatum),
     ):

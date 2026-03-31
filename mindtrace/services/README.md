@@ -4,105 +4,44 @@
 
 # Mindtrace Services
 
-[Purpose](#purpose)<br>
-[Installation](#installation)<br>
-[Architecture](#architecture)<br>
-[Auto-generation for Connection Managers](#auto-generation-for-connection-managers)<br>
-[Usage Example](#usage-example)<br>
-[Testing & Coverage](#testing--coverage)<br>
-[API Reference](#api-reference)<br>
-[MCP Integration: Exposing Service Endpoints as Tools](#mcp-integration-exposing-service-endpoints-as-tools)<br>
-[Remote MCP Server Usage with Cursor](#remote-mcp-server-usage-with-cursor)
+The `Services` module provides Mindtrace’s typed microservice framework. It enables you to define a `Service` once with `TaskSchema` endpoint contracts, launch it as a process, connect to it through an auto-generated client, and optionally expose those endpoints as MCP tools.
 
-The `mindtrace-services` module provides the core microservice framework for the Mindtrace ecosystem. It enables rapid development, deployment, and management of distributed services with robust and auto generated connection management, and comprehensive testing support.
+## Features
 
-## Purpose
+- **Typed service definition** with `Service` + `TaskSchema`
+- **FastAPI-backed HTTP services** with standard lifecycle endpoints
+- **Auto-generated clients** via `ConnectionManager` generation
+- **Built-in launch/connect workflow** for local service processes
+- **First-class MCP support** through FastMCP
+- **Service composition utilities** such as `Gateway` and proxy connection managers
+- **Concrete integrations** such as Discord service wrappers and sample services
 
-- **Service Class**: Unified base for all Mindtrace microservices, inspired by the ServerBase component from the mtrix package (now renamed to `Service`).
-- **Auto-Generated Connection Managers**: Connect to services with auto-generated client interfaces.
-- **Endpoint Management**: Strongly-typed, schema-driven endpoint registration and validation.
-- **Stress Testing**: Built-in support for stress, integration, and unit testing.
-
-## Installation
-
-```bash
-uv add mindtrace-services
-```
-
-## Architecture
-
-- **Service (`Service`)**: Base class for all services, providing endpoint registration, FastAPI integration, and lifecycle management.
-- **ConnectionManager**: Client-side helper for communicating with any Mindtrace service. Auto-generated if not explicitly registered.
-- **Endpoint Schemas**: All endpoints require a `TaskSchema` for input/output validation.
-- **Launcher**: Gunicorn-based launcher for production deployment.
-
-## Auto-generation for Connection Managers
-
-When calling a service's `connect` method, the following logic is used:
+## Quick Start
 
 ```python
-if cls._client_interface is None:
-    return generate_connection_manager(cls)(url=url)
-else:
-    return cls._client_interface(url=url)
-```
+import time
 
-- If a `ConnectionManager` is not explicitly registered, one is auto-generated for the service, exposing all endpoints as methods.
-- If a `ConnectionManager` is registered, it is used as before.
-
-### Updated `add_endpoint` Method
-
-- `Service.add_endpoint()` now requires a `schema: TaskSchema`, which is stored in the service's `endpoints` dictionary.
-- The auto-generator uses these schemas to add type validation and define the returned ConnectionManager's methods with the correct arguments.
-- All endpoints (except `shutdown`) are exposed as methods on the connection manager.
-
-### Both `GET` and `POST` Requests Default to Connection Manager Methods
-
-All generated endpoints are now methods in the returned connection manager. Naked properties are not currently supported:
-
-```python
-from mindtrace.services import Service
-cm = Service.launch()
-cm.status  # no longer supported
-cm.status()  # now generated as a method
-```
-
-## Usage Example
-
-See [`mindtrace/services/sample/echo_service.py`](./mindtrace/services/sample/echo_service.py) for a full example. Basic usage:
-
-```python
-from mindtrace.services import Service
-
-cm = Service.launch()
-
-cm.status()      # StatusOutput(status=<ServerStatus.Available: 'Available'>)
-cm.heartbeat()   # HeartbeatOutput(...)
-cm.endpoints()   # EndpointsOutput(endpoints=[...])
-cm.server_id()   # ServerIDOutput(...)
-cm.pid_file()    # PIDFileOutput(...)
-cm.shutdown(block=True)  # ShutdownOutput(shutdown=True)
-```
-
-### Defining a Custom Service
-
-```python
 from pydantic import BaseModel
+
 from mindtrace.core import TaskSchema
 from mindtrace.services import Service
+
 
 class EchoInput(BaseModel):
     message: str
     delay: float = 0.0
 
+
 class EchoOutput(BaseModel):
     echoed: str
+
 
 echo_task = TaskSchema(
     name="echo",
     input_schema=EchoInput,
     output_schema=EchoOutput,
 )
+
 
 class EchoService(Service):
     def __init__(self, *args, **kwargs):
@@ -113,138 +52,375 @@ class EchoService(Service):
         if payload.delay > 0:
             time.sleep(payload.delay)
         return EchoOutput(echoed=payload.message)
+
+
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
+print(cm.status())
+print(cm.echo(message="Hello"))
+cm.shutdown()
 ```
 
-## Testing & Coverage
+You can inspect the generated FastAPI docs at <http://localhost:8080/docs> while the service is running.
 
-The test runner supports unit, integration, and stress tests:
+![EchoService FastAPI docs](docs/images/echo-service-docs.png)
+
+You can also call the service directly over HTTP:
 
 ```bash
-# Run all test suites
-ds test
-
-# Run specific suites
-ds test --unit --stress
+curl -X POST http://localhost:8080/echo \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello from curl", "delay": 0.0}'
 ```
 
-- Test suites are run individually, but coverage is appended for later suites.
-- The stress test suite provides verbose output (e.g., tqdm progress bars).
-- Example suite times:
+If you are working in Python, you usually do not need to make raw `curl` requests at all. You can connect to the same running service and get a convenient `cm` instead:
 
-```
-unit:        522 passed, 5 skipped in 4.56s
-unit+torch:  527 passed in 9.69s
-integration: 58 passed in 41.78s
-stress:      7 passed in 208.89s (0:03:28)
-```
-
-- All test suites should pass, with `ds test --unit` yielding ~97% coverage, and `ds test --unit --integration` yielding 100%.
-
-## API Reference
-
-### Service
-- Base class for all Mindtrace services. Provides endpoint registration, FastAPI app, and lifecycle management.
-
-### ConnectionManager
-- Client-side helper for communicating with Mindtrace services. Auto-generated if not registered.
-
-### generate_connection_manager
-- Dynamically creates a ConnectionManager for a given Service, exposing all endpoints as methods.
-
-### add_endpoint
-- Register a new endpoint with a schema for input/output validation. Set `as_tool = true` for MCP tool registration.
-
-### add_tool
-- Register a new tool to the MCP HTTP app mounted on FastAPI app.
-
-### TaskSchema
-- Used to define input/output types for endpoints.
-
-## MCP Integration: Exposing Service Endpoints as Tools
-
-### What is MCP?
-The Model Context Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
-
-### How MCP is Integrated
-- **FastMCP SDK is used to create a MCP compliant server:**
-  [FastMCP](https://gofastmcp.com/getting-started/welcome) automatically handles a standard Python function to be used as a tool:
-    - Tool Name: It uses the function name (add) as the tool’s name.
-    - Description: It uses the function’s docstring as the tool’s description for the LLM.
-    - Schema: It inspects the type hints (a: int, b: int) to generate a JSON schema for the inputs.
-- **Mounting MCP on FastAPI:**
-  Each `Service` instance mounts an MCP server on the FastAPI app. This allows the same service to be accessed both via REST endpoints and as MCP tools.
-- **Exposing Endpoints as Tools:**
-  When adding an endpoint using `add_endpoint`, you can set `as_tool=True` to expose that endpoint as an MCP tool:
-  ```python
-  self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
-  ```
-  This makes the `echo` function available both as a REST endpoint and as an MCP tool.
-
-### Example: EchoService with MCP
-See [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py):
 ```python
-from mindtrace.services.samples.echo_mcp import EchoService
-
-# Launch the service
-connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
-
-# Synchronous call via connection manager
-result = connection_manager.echo(message="Hello, World!")
-print(result.echoed)
+cm = EchoService.connect("http://localhost:8080")
+print(cm.echo(message="Hello again"))
 ```
 
-### Adding Tools Directly with `add_tool`
-In addition to exposing same class methods as endpoints and tools, you can register standalone functions as MCP tools using `self.add_tool`. These tools will be available via the MCP interface but not as HTTP endpoints.
+## Service
 
-Example:
+`Service` is the server-side abstraction. A service instance:
+
+- builds a FastAPI app
+- tracks registered endpoints and their schemas
+- mounts an MCP server
+- provides standard lifecycle endpoints
+- can be launched in a separate process with `Service.launch()`
+
+A minimal service subclass looks like this:
+
 ```python
-# Define a tool function
-def reverse_message(payload: EchoInput) -> EchoOutput:
-    """A demo tool that reverses the input message."""
-    reversed_msg = payload.message[::-1]
-    return EchoOutput(echoed=reversed_msg)
+from mindtrace.services import Service
+
 
 class EchoService(Service):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
-        # Register the reverse_message tool directly
-        self.add_tool("reverse_message", reverse_message)
+        self.add_endpoint("echo", self.echo, schema=echo_task)
 ```
 
-Now, both `echo` and `reverse_message` are available as MCP tools.
+## TaskSchema
 
-### MCP Client Manager (Service.mcp)
+`TaskSchema` is the typed contract for an endpoint. It defines:
 
-Each `Service` subclass automatically receives a class-level `mcp` helper (MCPClientManager) for creating FastMCP clients:
+- the endpoint name
+- the input schema
+- the output schema
 
-- Connect to an existing service instance
-- Launch a new service instance and return a connected client
-- Access a cached client from a running connection manager instance
+That same schema is reused across the package for:
 
-Connect to a running service:
+- FastAPI request validation
+- generated connection manager methods
+- output parsing on the client side
+- MCP tool exposure
+
+Example:
 
 ```python
-from mindtrace.services.samples.echo_mcp import EchoService
-import asyncio
+from pydantic import BaseModel
 
-async def main():
-    # Explicit URL (trailing slash optional)
-    client = EchoService.mcp.connect("http://localhost:8080/")
-    async with client:
-        tools = await client.list_tools()
-        print([t.name for t in tools])
-        result = await client.call_tool("echo", {"payload": {"message": "Hello"}})
-        print(result)
+from mindtrace.core import TaskSchema
 
-asyncio.run(main())
+
+class EchoInput(BaseModel):
+    message: str
+
+
+class EchoOutput(BaseModel):
+    echoed: str
+
+
+echo_task = TaskSchema(
+    name="echo",
+    input_schema=EchoInput,
+    output_schema=EchoOutput,
+)
 ```
 
-Launch a new service and get a connected client:
+## Defining Endpoints
+
+Register endpoints with `add_endpoint()`:
 
 ```python
-from mindtrace.services.samples.echo_mcp import EchoService
+self.add_endpoint(
+    path="echo",
+    func=self.echo,
+    schema=echo_task,
+    as_tool=True,
+)
+```
+
+Important behavior:
+
+- routes are registered as **POST** endpoints by default
+- the endpoint schema is stored in the service for later client generation
+- the function is wrapped with service logging/instrumentation
+- setting `as_tool=True` exposes the same function as an MCP tool
+
+## Built-in Endpoints
+
+Every `Service` automatically registers a standard set of lifecycle and introspection endpoints:
+
+- `endpoints` — list registered endpoint names
+- `status` — current service status
+- `heartbeat` — structured health/liveness payload
+- `server_id` — unique server ID
+- `pid_file` — PID file path for the launched process
+- `shutdown` — stop the running service
+
+These endpoints are available over HTTP, and some are also exposed as MCP tools.
+
+## ConnectionManager
+
+`ConnectionManager` is the client-side abstraction for talking to a running service over HTTP. It provides common lifecycle methods such as:
+
+- `status()` / `astatus()`
+- `shutdown()` / `ashutdown()`
+- `mcp_client` for talking to the same service via MCP
+
+Example:
+
+```python
+from mindtrace.services import Service
+
+
+cm = Service.connect("http://localhost:8080")
+print(cm.status())
+cm.shutdown(block=False)
+```
+
+## Auto-Generated Connection Managers
+
+If a service does not register a custom client class, Mindtrace generates one automatically from the service’s registered endpoint schemas. Each endpoint becomes:
+
+- a synchronous client method
+- an asynchronous client method prefixed with `a`
+
+For example, an `echo` endpoint becomes:
+
+- `cm.echo(...)`
+- `await cm.aecho(...)`
+
+For a generated client, this means you can write:
+
+```python
+cm = EchoService.launch(wait_for_launch=True)
+result = cm.echo(message="Hello")
+print(result.echoed)
+```
+
+If no custom connection manager is registered, `generate_connection_manager()` creates one dynamically from the service definition.
+
+For each registered endpoint:
+
+- a sync method is generated
+- an async method is generated
+- input kwargs are validated against the endpoint input schema
+- HTTP responses are parsed into the endpoint output schema
+
+### Method naming
+
+- endpoint `echo` → `echo()` and `aecho()`
+- dotted endpoint names are converted to valid Python method names by replacing `.` with `_`
+
+### Validation controls
+
+Generated methods support:
+
+- `validate_input=True`
+- `validate_output=True`
+
+These can be disabled when raw payload handling is needed.
+
+Examples:
+
+```python
+# Default behavior: validate kwargs against the input schema
+# and parse the response into the output schema
+result = cm.echo(message="Hello")
+print(result.echoed)
+```
+
+```python
+# Skip input validation and send the payload as-is
+result = cm.echo(validate_input=False, message="Hello", delay=0.0)
+
+# Skip output validation to receive the raw response dict
+raw_result = cm.echo(message="Hello", validate_output=False)
+print(raw_result)
+```
+
+### When to write a custom connection manager
+
+A custom connection manager is worth using when you want:
+
+- richer convenience methods than one-method-per-endpoint
+- custom retry or caching behavior
+- special authentication flows
+- a more domain-specific client surface
+
+Otherwise, the generated client is usually enough.
+
+Example:
+
+```python
+import requests
+
+from mindtrace.services import ConnectionManager, Service
+
+
+class EchoConnectionManager(ConnectionManager):
+    def echo(self, message: str, delay: float = 0.0):
+        response = requests.post(
+            f"{str(self.url).rstrip('/')}/echo",
+            json={"message": message, "delay": delay},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def echo_twice(self, message: str):
+        first = self.echo(message)
+        second = self.echo(message)
+        return [first["echoed"], second["echoed"]]
+
+
+class EchoService(Service):
+    pass
+
+
+EchoService.register_connection_manager(EchoConnectionManager)
+cm = EchoService.connect("http://localhost:8080")
+print(cm.echo_twice("Hello"))
+```
+
+After registering the custom connection manager, `EchoService.connect(...)` or `EchoService.launch(...)` returns an `EchoConnectionManager` instead of an auto-generated one.
+
+## Launching and Connecting
+
+### `launch()`
+
+`Service.launch()`:
+
+- resolves the target URL
+- checks that no service is already running there
+- spawns a subprocess launcher
+- optionally waits for the service to become reachable
+- returns a connection manager when `wait_for_launch=True`
+
+Common arguments:
+
+- `url` — explicit full service URL
+- `host` / `port` — host and port override
+- `wait_for_launch` — wait until the service is available
+- `timeout` — startup timeout in seconds
+- `block` — keep the calling process blocked while the service runs
+- `num_workers` — worker count for the launched service
+
+Example:
+
+```python
+cm = EchoService.launch(
+    host="localhost",
+    port=8080,
+    wait_for_launch=True,
+    timeout=30,
+)
+print(cm.status())
+```
+
+### `connect()`
+
+`Service.connect()` attaches to an already-running service and returns the appropriate connection manager.
+
+Example:
+
+```python
+cm = EchoService.connect("http://localhost:8080")
+print(cm.status())
+print(cm.echo(message="Connected"))
+```
+
+## URL and Configuration Behavior
+
+In most cases, you can either provide an explicit URL or let the service use its configured defaults.
+
+Examples:
+
+```python
+# Explicit full URL
+cm = EchoService.connect("http://localhost:8080")
+```
+
+```python
+# Host/port convenience when launching
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
+```
+
+If you do not pass either, the service falls back to its configured default URL.
+
+MCP paths are also configuration-driven, so the mounted MCP endpoint is built from the service URL plus the configured MCP mount and app paths.
+
+## MCP Integration
+
+MCP (Model Context Protocol) is a standard way to expose application functionality as structured tools for AI clients. If you are familiar with FastAPI, you can think of MCP as a tool-oriented interface sitting alongside your normal HTTP routes: instead of calling REST endpoints directly, an MCP client can discover available tools and invoke them with structured inputs.
+
+In `mindtrace-services`, every service creates and mounts a FastMCP app alongside its normal FastAPI routes.
+
+### Expose an endpoint as a tool
+
+```python
+self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+```
+
+This makes the same function available:
+
+- as an HTTP endpoint
+- as an MCP tool
+
+### Register an MCP-only tool
+
+```python
+def reverse_message(payload: EchoInput) -> EchoOutput:
+    """Reverse the input message."""
+    return EchoOutput(echoed=payload.message[::-1])
+
+
+self.add_tool("reverse_message", reverse_message)
+```
+
+### MCP client access
+
+You can connect to a service over MCP in three common ways.
+
+#### Class-level connect
+
+```python
+client = EchoService.mcp.connect("http://localhost:8080")
+```
+
+#### Class-level launch
+
+```python
+client = EchoService.mcp.launch(host="localhost", port=8080, wait_for_launch=True)
+```
+
+#### From an existing connection manager
+
+```python
+cm = EchoService.launch(host="localhost", port=8080, wait_for_launch=True)
+client = cm.mcp_client
+```
+
+### Minimal MCP example
+
+```python
 import asyncio
+
+from mindtrace.services.samples.echo_mcp import EchoService
+
 
 async def main():
     client = EchoService.mcp.launch(
@@ -255,82 +431,106 @@ async def main():
     )
     async with client:
         tools = await client.list_tools()
-        print([t.name for t in tools])
-        result = await client.call_tool("echo", {"payload": {"message": "Launched"}})
+        print([tool.name for tool in tools])
+        result = await client.call_tool("echo", {"payload": {"message": "Hello"}})
         print(result)
+
 
 asyncio.run(main())
 ```
 
-Get the MCP client from a connection manager instance:
+### Remote MCP usage
+
+Any Mindtrace service exposing MCP tools can also be used from MCP-capable clients such as Cursor by pointing the client at the service’s mounted MCP endpoint.
+
+Example configuration:
+
+```json
+{
+  "mcpServers": {
+    "mindtrace_echo": {
+      "url": "http://localhost:8080/mcp-server/mcp/"
+    }
+  }
+}
+```
+
+Once configured, the client can list and invoke tools exposed by the service.
+
+## Gateway and Proxy Routing
+
+The package includes service-composition helpers for routing traffic through a central gateway.
+
+### `Gateway`
+
+`Gateway` is a service that can register downstream FastAPI apps and forward requests to them.
+
+It supports:
+
+- dynamic app registration
+- HTTP request forwarding
+- enhanced connection behavior for registered apps
+
+### `ProxyConnectionManager`
+
+`ProxyConnectionManager` routes endpoint calls through a gateway instead of calling a service directly. It uses service endpoint metadata to create proxy methods matching the downstream service surface.
+
+This is useful when a service needs to be accessed indirectly through a central gateway.
+
+Example:
 
 ```python
-from mindtrace.services.samples.echo_mcp import EchoService
-import asyncio
+from mindtrace.services import EchoService, Gateway
 
-async def main():
-    cm = EchoService.launch(host="localhost", port=8081, wait_for_launch=True, timeout=30)
-    client = cm.mcp_client  # lazily created and cached per manager instance
-    async with client:
-        tools = await client.list_tools()
-        print([t.name for t in tools])
-        result = await client.call_tool("echo", {"payload": {"message": "From manager"}})
-        print(result)
 
-asyncio.run(main())
+# Launch a normal service
+backend_cm = EchoService.launch(host="localhost", port=8081, wait_for_launch=True)
+
+# Launch the gateway
+gateway_cm = Gateway.launch(host="localhost", port=8080, wait_for_launch=True)
+
+# Register the service with the gateway and attach a proxy client
+gateway_cm.register_app(
+    name="echo",
+    url="http://localhost:8081",
+    connection_manager=backend_cm,
+)
+
+# Calls are now forwarded through the gateway
+print(gateway_cm.echo.echo(message="Hello through gateway"))
 ```
 
-### Key Points
-- Endpoints added with `as_tool=True` are available as both HTTP endpoints and MCP tools.
-- The sample EchoService demonstrates both REST and MCP tool usage.
-- The MCP client allows you to list and call tools programmatically.
+## Examples in this package
 
-For trial purposes, see the sample files:
-- [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py)
-- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
-- [`samples/services/mcp/mcp_client.py`](../../samples/services/mcp/mcp_client.py)
+See the sample implementations in this package for end-to-end reference:
 
+- [Basic Echo service sample](mindtrace/services/samples/echo_service.py)
+- [Echo service with MCP tools](mindtrace/services/samples/echo_mcp.py)
+- [Discord service documentation](mindtrace/services/discord/README.md)
 
-## Remote MCP Server Usage with Cursor
+## Testing
 
-You can use Cursor's UI to interact directly with any Mindtrace service that exposes its endpoints as MCP tools. This allows you to call your service's functions from within Cursor chat, making development and testing seamless.
+If you are working in the full Mindtrace repo, run tests for this module specifically:
 
-### How to Connect Cursor to a Remote MCP Server
+```bash
+# Run the services test suite
+ds test: services
 
-Follow these steps to set up and use a remote MCP server with Cursor:
+# Run only unit tests for services
+ds test: --unit services
+```
 
-1. **Launch the MCP Server**
-   
-   Start your Mindtrace service with MCP enabled. For example, to launch the EchoService:
+If you need a fresh checkout first:
 
-   ```python
-   from mindtrace.services.samples.echo_mcp import EchoService
-   connection_manager = EchoService.launch(port=8080, host="localhost")
-   ```
+```bash
+git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+uv sync --dev --all-extras
+```
 
-2. **Configure Cursor to Use the MCP Server**
-   
-   - Open Cursor settings: Press `Ctrl+Shift+J` (or open the Command Palette and search for "Settings").
-   - Navigate to **Tools & Integrations**.
-   - Find and select **Add Custom MCP**.
-   - In the configuration, add your MCP server details. For example, in your `mcp.json`:
+## Practical Notes and Caveats
 
-     ```json
-     {
-       "mcpServers": {
-         "mindtrace_echo": {
-           "url": "http://localhost:8080/mcp-server/mcp/"
-         }
-       }
-     }
-     ```
-
-   - Save the configuration. Cursor will now recognize your MCP server and list its available tools.
-
-3. **Interact with Your Service via Cursor Chat**
-   
-   - Start a new chat session in Cursor.
-   - You can now use natural language prompts to call your service's MCP tools. For example:
-     - `Could you reverse the message 'POP' using mindtrace_echo tool?`
-     - `Can you check the status of echo service using mindtrace_echo tool?`
-   - Cursor will route these requests to your MCP server and display the results in the chat.
+- Generated endpoint methods use **POST** requests.
+- Protected client methods such as `status` and `shutdown` are not overwritten by generated endpoint methods.
+- A lightweight service instance may be created during client generation in order to inspect registered endpoints.
+- Endpoint names should be chosen with both route readability and Python client naming in mind.
+- `launch()` manages subprocesses and PID files, so it should be treated as a service runtime tool, not just object instantiation.

@@ -1,0 +1,86 @@
+# =============================================================================
+# Mindtrace Monorepo - Docker Ignore (repo root)
+# =============================================================================
+# Keeps build context lean when building from repo root:
+#   docker build -f docker/hardware/*/Dockerfile .
+# =============================================================================
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD & tooling
+.github/
+.gitlab-ci.yml
+.claude/
+.ruff_cache/
+.pre-commit-config.yaml
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Lockfile (not committed — library monorepo)
+uv.lock
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Documentation
+docs/
+*.md
+
+# Samples (not needed in production images)
+samples/
+
+# Development & application data
+*.log
+*.pid
+*.seed
+*.pid.lock
+logs/
+data/
+*.db
+*.sqlite
+tmp/
+temp/
+*.tmp
+
+# Config files (use env vars instead)
+.env
+.env.local
+*.local
+
+# Media artifacts
+uploaded_files/
+*.jpg
+*.png
+*.mp4
+*.avi

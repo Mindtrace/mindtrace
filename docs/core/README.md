@@ -1,0 +1,1 @@
+../../mindtrace/core/README.md

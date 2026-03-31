@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.database import UnifiedMindtraceDocument
+from mindtrace.jobs import Job
 
 
 class ProxyWorker(BaseModel):
@@ -13,17 +14,40 @@ class ProxyWorker(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
     worker_params: dict
+
+
+class JobStatusEnum(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ERROR = "error"
 
 
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")
     worker_id: str = Field(description="Worker's id")
-    status: str = Field(description="Job's status")
+    status: JobStatusEnum = Field(description="Job's status")
     output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
 
     class Meta:
         collection_name = "job_status"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["job_id"]
+        unique_fields = ["job_id"]
+
+
+class DLQJobStatus(UnifiedMindtraceDocument):
+    job_id: str = Field(description="Job's id")
+    output: Any = Field(description="Job's output")
+    job: Job = Field(description="Job's instance")
+
+    class Meta:
+        collection_name = "dlq_job_status"
         global_key_prefix = "cluster"
         use_cache = False
         indexed_fields = ["job_id"]
@@ -78,6 +102,21 @@ class WorkerStatus(UnifiedMindtraceDocument):
         unique_fields = ["worker_id"]
 
 
+class NodeWorker(UnifiedMindtraceDocument):
+    worker_type: str = Field(description="Worker type")
+    worker_port: int = Field(description="Worker port")
+    worker_id: str = Field(description="Worker id")
+    worker_name: str = Field(description="Worker name")
+    worker_url: str = Field(description="Worker url")
+
+    class Meta:
+        collection_name = "node_worker"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_port", "worker_id", "worker_name"]
+        unique_fields = ["worker_id"]
+
+
 class WorkerStatusLocal(UnifiedMindtraceDocument):
     worker_id: str = Field(description="Worker id")
     status: WorkerStatusEnum = Field(description="Worker status")
@@ -129,7 +168,13 @@ class WorkerAlertCompletedJobInput(BaseModel):
 
 class LaunchWorkerInput(BaseModel):
     worker_type: str
-    worker_url: str
+    worker_name: str | None = None
+    worker_url: str | None = None
+    auto_connect_job_type: str | None = None
+
+
+class LaunchWorkerOutput(BaseModel):
+    launch_id: str
 
 
 class RegisterNodeInput(BaseModel):
@@ -141,6 +186,11 @@ class RegisterNodeOutput(BaseModel):
     access_key: str
     secret_key: str
     bucket: str
+    minio_port: int
+    rabbitmq_host: str
+    rabbitmq_port: int
+    rabbitmq_username: str
+    rabbitmq_password: str
 
 
 class RegisterWorkerTypeInput(BaseModel):
@@ -153,21 +203,69 @@ class RegisterWorkerTypeInput(BaseModel):
     git_branch: str | None = None
     git_commit: str | None = None
     git_working_dir: str | None = None
+    git_project: str | None = None
 
 
 class ClusterLaunchWorkerInput(BaseModel):
     node_url: str
     worker_type: str
-    worker_url: str
+    worker_name: str | None = None
+    worker_url: str | None = None
 
 
 class ClusterLaunchWorkerOutput(BaseModel):
-    worker_id: str
+    launch_id: str
+
+
+class LaunchStatusEnum(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class LaunchWorkerStatusInput(BaseModel):
+    launch_id: str
+
+
+class LaunchWorkerStatusOutput(BaseModel):
+    launch_id: str
+    status: LaunchStatusEnum
+    worker_id: str | None = None
+    worker_name: str | None = None
+    worker_url: str | None = None
+    error: str | None = None
+
+
+class ClusterLaunchWorkerStatusInput(BaseModel):
+    node_url: str
+    launch_id: str
+
+
+class ClusterLaunchWorkerStatusOutput(LaunchWorkerStatusOutput):
+    launch_id: str
+    status: LaunchStatusEnum
+    worker_id: str | None = None
+    worker_name: str | None = None
+    worker_url: str | None = None
+    error: str | None = None
 
 
 class ClusterRegisterJobToWorkerInput(BaseModel):
     job_type: str
     worker_url: str
+
+
+class RequeueFromDLQInput(BaseModel):
+    job_id: str
+
+
+class DiscardFromDLQInput(BaseModel):
+    job_id: str
+
+
+class GetDLQJobsOutput(BaseModel):
+    jobs: list[DLQJobStatus]
 
 
 class RegisterJobSchemaToWorkerTypeInput(BaseModel):
@@ -193,3 +291,15 @@ class QueryWorkerStatusByUrlInput(BaseModel):
 
 class ClearJobSchemaQueueInput(BaseModel):
     job_schema_name: str
+
+
+class ShutdownWorkerInput(BaseModel):
+    worker_name: str
+
+
+class ShutdownWorkerByIdInput(BaseModel):
+    worker_id: str
+
+
+class ShutdownWorkerByPortInput(BaseModel):
+    worker_port: int

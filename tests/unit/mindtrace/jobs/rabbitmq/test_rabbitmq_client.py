@@ -247,6 +247,110 @@ def test_move_to_dlq_logs():
 
 
 def test_count_queue_messages_delegates():
+    """count_queue_messages uses create_connection() and channel.queue_declare(passive=True)."""
     client = make_client()
+    # Channel from create_connection(); replace queue_declare so it returns method.message_count
+    channel = client.create_connection.return_value
+    channel.queue_declare = MagicMock(return_value=MagicMock(method=MagicMock(message_count=42)))
     result = client.count_queue_messages("q")
     assert result == 42
+
+
+def test_channel_property_exchange_declare_raises_channel_closed():
+    """Test channel property when exchange_declare raises ChannelClosedByBroker."""
+    dc = DummyChannel()
+    with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.connect"):
+        with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.get_channel", return_value=dc):
+            client = RabbitMQClient(host="localhost", port=5671, username="user", password="password")
+            client.logger = MagicMock()
+            # Set _channel to None to trigger the property logic
+            client._channel = None
+            # Make exchange_declare raise ChannelClosedByBroker on first call, then succeed
+            dc.exchange_declare = MagicMock(side_effect=[ChannelClosedByBroker(406, "closed"), None])
+            # Accessing channel property should handle the exception and retry
+            channel = client.channel
+            assert channel is not None
+            # get_channel: once from __init__ (declare_exchange -> create_connection), twice from channel property
+            assert client.connection.get_channel.call_count == 3
+            # Should have called exchange_declare twice (once with passive=True, once with full args)
+            assert dc.exchange_declare.call_count == 2
+            # First call should be with passive=True
+            dc.exchange_declare.assert_any_call(exchange="default", passive=True)
+            # Second call should be with full arguments
+            dc.exchange_declare.assert_any_call(
+                exchange="default", exchange_type="direct", durable=True, auto_delete=False
+            )
+
+
+def test_create_connection():
+    """Test create_connection method."""
+    dc = DummyChannel()
+    mock_connection = MagicMock()
+    mock_connection.get_channel.return_value = dc
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection") as mock_connection_class:
+        mock_connection_class.return_value = mock_connection
+        client = RabbitMQClient(host="localhost", port=5672, username="test_user", password="test_pass")
+        result = client.create_connection()
+
+        # RabbitMQConnection created twice: once in __init__ (declare_exchange), once in create_connection()
+        assert mock_connection_class.call_count == 2
+        mock_connection_class.assert_any_call(host="localhost", port=5672, username="test_user", password="test_pass")
+        # Verify connect and get_channel were called (twice total, once per create_connection path)
+        assert mock_connection.connect.call_count == 2
+        assert mock_connection.get_channel.call_count == 2
+        assert result == dc
+
+
+def test_consumer_backend_args_property():
+    """Test consumer_backend_args property."""
+    with patch.object(RabbitMQClient, "create_connection", MagicMock(return_value=DummyChannel())):
+        client = RabbitMQClient(host="localhost", port=5672, username="user", password="pass")
+    args = client.consumer_backend_args
+
+    assert isinstance(args, dict)
+    assert args["cls"] == "mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend"
+    assert "kwargs" in args
+    assert args["kwargs"]["host"] == "localhost"
+    assert args["kwargs"]["port"] == 5672
+    assert args["kwargs"]["username"] == "user"
+    assert args["kwargs"]["password"] == "pass"
+
+
+def test_create_consumer_backend():
+    """Test create_consumer_backend method."""
+    mock_consumer = MagicMock()
+    mock_backend = MagicMock()
+
+    with patch.object(RabbitMQClient, "create_connection", MagicMock(return_value=DummyChannel())):
+        with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConsumerBackend") as mock_backend_class:
+            mock_backend_class.return_value = mock_backend
+            client = RabbitMQClient(host="localhost", port=5672, username="user", password="pass")
+            result = client.create_consumer_backend(mock_consumer, "test_queue")
+
+        # Verify RabbitMQConsumerBackend was created with correct arguments
+        mock_backend_class.assert_called_once_with(
+            "test_queue",
+            mock_consumer,
+            host="localhost",
+            port=5672,
+            username="user",
+            password="pass",
+        )
+        assert result == mock_backend
+
+
+def test_declare_queue_with_queue_type_warning():
+    """Test declare_queue with queue_type parameter triggers warning."""
+    client = make_client()
+    client.channel.queue_declare = MagicMock(return_value=None)
+    client.logger.warning = MagicMock()
+
+    result = client.declare_queue("q", queue_type="FIFO")
+
+    # Verify warning was logged
+    client.logger.warning.assert_called_once_with(
+        "queue_type is not available for RabbitMQClient. Creating a FIFO queue."
+    )
+    # Queue should still be declared successfully
+    assert result["status"] == "success"

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-automation"
-version = "0.5.0"
+version = "0.10.0"
 description = "Automation for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -11,13 +11,13 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core",
-    "mindtrace-registry",
-    "mindtrace-database",
-    "mindtrace-services",
-    "mindtrace-datalake",
-    "mindtrace-models",
-    "mindtrace-cluster",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-registry>=0.10.0",
+    "mindtrace-database>=0.10.0",
+    "mindtrace-services>=0.10.0",
+    "mindtrace-datalake>=0.10.0",
+    "mindtrace-models>=0.10.0",
+    "mindtrace-cluster>=0.10.0",
     "label-studio-sdk>=2.0.4"
 ]
 

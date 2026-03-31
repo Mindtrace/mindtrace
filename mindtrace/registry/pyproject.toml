@@ -1,7 +1,8 @@
 [project]
 name = "mindtrace-registry"
-version = "0.5.0"
+version = "0.10.0"
 description = "Registry functionality for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
@@ -11,9 +12,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mindtrace-core",
-    "minio>=7.2.15",
+    "mindtrace-core>=0.10.0",
+    "mindtrace-storage>=0.10.0",
+    "minio<7.2.19",
     "pydantic>=2.11.1",
+    "pyyaml>=6.0.1",
     "zenml>=0.82.1",
 ]
 

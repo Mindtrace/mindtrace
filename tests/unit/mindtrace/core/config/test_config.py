@@ -818,3 +818,156 @@ class TestConfigUtils:
         with patch.dict(os.environ, {"section__key": "value"}):
             result = Config._apply_env_overrides_static(base)
             assert result == base  # Should remain unchanged
+
+    def test_attr_view_getitem_with_list(self):
+        """Test _AttrView.__getitem__ with list values.
+
+        Tests that list items are wrapped in _AttrView if they are dicts.
+        """
+        data = {"items": [{"name": "item1"}, {"name": "item2"}, "plain_string"]}
+        view = _AttrView(data)
+        items = view["items"]
+        assert len(items) == 3
+        assert isinstance(items[0], _AttrView)
+        assert items[0]["name"] == "item1"
+        assert isinstance(items[1], _AttrView)
+        assert items[1]["name"] == "item2"
+        assert items[2] == "plain_string"  # Non-dict items remain unchanged
+
+    def test_config_attr_access_with_list(self):
+        """Test Config.__getattr__ with list values.
+
+        Tests that list items are wrapped in _AttrView if they are dicts.
+        """
+        data = {"item_list": [{"name": "item1", "value": 1}, {"name": "item2", "value": 2}, "plain_string"]}
+        config = Config(data)
+        # Use attribute access to test __getattr__ (can't use "items" as key name due to dict.items() method)
+        items = config.item_list
+        assert len(items) == 3
+        assert isinstance(items[0], _AttrView)
+        assert items[0].name == "item1"
+        assert isinstance(items[1], _AttrView)
+        assert items[1].name == "item2"
+        assert items[2] == "plain_string"  # Non-dict items remain unchanged
+
+    def test_config_load_with_base_settings_overrides(self):
+        """Test Config.load with BaseSettings as overrides.
+
+        Tests that overrides.model_dump() is called for BaseSettings/BaseModel.
+        """
+        from pydantic_settings import BaseSettings
+
+        class TestSettings(BaseSettings):
+            override_key: str = "override_value"
+
+        defaults = {"key": "original"}
+        config = Config.load(defaults=defaults, overrides=TestSettings())
+        assert config["override_key"] == "override_value"
+
+    def test_config_load_with_list_base_model_overrides(self):
+        """Test Config.load with list containing BaseModel as overrides.
+
+        Tests that o.model_dump() is called for BaseSettings/BaseModel in a list.
+        """
+
+        class TestModel1(BaseModel):
+            key1: str = "value1"
+
+        class TestModel2(BaseModel):
+            key2: str = "value2"
+
+        defaults = {"key": "original"}
+        overrides = [TestModel1(), TestModel2()]
+        config = Config.load(defaults=defaults, overrides=overrides)
+        assert config["key1"] == "value1"
+        assert config["key2"] == "value2"
+
+    def test_config_to_revealed_strings_with_nested_lists(self):
+        """Test to_revealed_strings with nested lists containing dicts.
+
+        Tests that nested lists with dicts are properly handled when revealing secrets.
+        """
+        from pydantic import SecretStr
+
+        class TestModel(BaseModel):
+            secret_field: SecretStr
+            nested_list: list
+
+        model = TestModel(secret_field=SecretStr("secret123"), nested_list=[{"item": "value1"}, {"item": "value2"}])
+        config = Config(model)
+
+        # Get revealed strings
+        revealed = config.to_revealed_strings()
+
+        # Secret should be revealed
+        assert revealed["secret_field"] == "secret123"
+
+        # Nested list should be preserved
+        assert isinstance(revealed["nested_list"], list)
+        assert len(revealed["nested_list"]) == 2
+        assert revealed["nested_list"][0]["item"] == "value1"
+        assert revealed["nested_list"][1]["item"] == "value2"
+
+    def test_config_coerce_env_value_exception_handling(self):
+        """Test _coerce_env_value exception handling.
+
+        Tests that exceptions during int/float conversion are caught and handled gracefully.
+        """
+
+        # Create a mock string that raises exceptions on isdigit/startswith
+        class MockString:
+            def __init__(self, value):
+                self._value = str(value)
+
+            def lower(self):
+                return self._value.lower()
+
+            def isdigit(self):
+                raise Exception("isdigit raised")
+
+            def startswith(self, prefix):
+                raise Exception("startswith raised")
+
+            def __getitem__(self, index):
+                return self._value[index]
+
+            def __str__(self):
+                return self._value
+
+        # Test that exception in isdigit/startswith is caught
+        problematic = MockString("123")
+        # Should catch exception and fall through to float conversion
+        result = Config._coerce_env_value(problematic)
+        # After exceptions in both try blocks, should return the original value
+        # (which is the MockString object, not converted to string/float)
+        assert result is problematic
+
+    def test_config_extract_model_class_exception_handling(self):
+        """Test _extract_model_class exception handling.
+
+        Tests that TypeError exceptions are caught during issubclass checks.
+        """
+        from typing import Union
+
+        # Create a type that will raise TypeError when checked with issubclass
+        # This simulates edge cases like abstract base classes or special types
+        class ProblematicMeta(type):
+            def __subclasscheck__(self, subclass):
+                raise TypeError("Cannot check subclass")
+
+        class ProblematicType(metaclass=ProblematicMeta):
+            pass
+
+        config = Config()
+
+        # Test direct type check that raises TypeError
+        # The isinstance check will pass, but issubclass will raise
+        result = config._extract_model_class(ProblematicType)
+        # Should return None if TypeError is caught
+        assert result is None
+
+        # Test with Union containing types that might raise
+        # One type in the Union will raise TypeError
+        result = config._extract_model_class(Union[str, ProblematicType, BaseModel])
+        # Should handle gracefully - might return BaseModel or None
+        assert result is None or result == BaseModel

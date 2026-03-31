@@ -2,603 +2,463 @@
 [![License](https://img.shields.io/pypi/l/mindtrace-database)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/database/LICENSE)
 [![Downloads](https://static.pepy.tech/badge/mindtrace-database)](https://pepy.tech/projects/mindtrace-database)
 
-# Mindtrace Database Module
+# Mindtrace Database
 
-A powerful, flexible Object-Document Mapping (ODM) system that provides a **unified interface** for working with multiple database backends in the Mindtrace project. Write once, run on MongoDB, Redis, or both!
+The `Database` module provides Mindtrace’s object-document mapping layer for MongoDB, Redis, Registry-backed storage, and unified multi-backend workflows.
 
-## Key Features
+## Features
 
-- **Unified Backend System** - One interface for multiple databases
-- **Dynamic Backend Switching** - Switch between MongoDB and Redis at runtime
-- **Simplified Document Models** - Define once, use everywhere
-- **Async/Sync Support** - Choose your preferred programming style
-- **Advanced Querying** - Rich query capabilities across all backends
-- **Comprehensive Error Handling** - Clear, actionable error messages
-- **Full Test Coverage** - Thoroughly tested with unit and integration tests
+- **Unified ODM interface** through `UnifiedMindtraceODM`
+- **Backend-specific ODMs** for MongoDB, Redis, and Registry-backed storage
+- **Single-model and multi-model operation** in the same API style
+- **Sync and async access patterns** across all supported backends
+- **Unified document models** that can target both MongoDB and Redis
+- **Consistent exceptions** such as `DocumentNotFoundError` and `DuplicateInsertError`
 
 ## Quick Start
 
-### The Simple Way: Unified Documents
-
-Define your document model once and use it with any backend:
-
 ```python
-from mindtrace.database import UnifiedMindtraceDocument, UnifiedMindtraceODMBackend, BackendType
+import asyncio
+
 from pydantic import Field
 
-# 1. Define your document model (works with both MongoDB and Redis!)
+from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODM
+
+
 class User(UnifiedMindtraceDocument):
-    name: str = Field(description="User's full name")
-    age: int = Field(ge=0, description="User's age")
-    email: str = Field(description="User's email address")
-    skills: list[str] = Field(default_factory=list)
-    
+    name: str = Field(description="User name")
+    email: str = Field(description="Email address")
+    age: int = Field(ge=0)
+
     class Meta:
         collection_name = "users"
         global_key_prefix = "myapp"
         indexed_fields = ["email", "name"]
         unique_fields = ["email"]
 
-# 2. Create backend (supports both MongoDB and Redis)
-backend = UnifiedMindtraceODMBackend(
+
+async def main():
+    db = UnifiedMindtraceODM(
+        unified_model_cls=User,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="myapp",
+        redis_url="redis://localhost:6379",
+        preferred_backend=BackendType.MONGO,
+    )
+
+    user = User(name="Alice", email="alice@example.com", age=30)
+    inserted = await db.insert_async(user)
+    fetched = await db.get_async(inserted.id)
+    print(fetched)
+
+
+asyncio.run(main())
+```
+
+In practice, the database module gives you a common way to define document models and CRUD workflows while choosing the backend that best fits your application.
+
+## Core Concepts
+
+The package revolves around four main ODM styles:
+
+- **`UnifiedMindtraceODM`** — one API over MongoDB and/or Redis
+- **`MongoMindtraceODM`** — MongoDB-specific ODM built on Beanie
+- **`RedisMindtraceODM`** — Redis-specific ODM built on redis-om
+- **`RegistryMindtraceODM`** — Registry-backed ODM for simpler local or storage-backed document persistence
+
+The package also provides matching document model bases:
+
+- `UnifiedMindtraceDocument`
+- `MindtraceDocument`
+- `MindtraceRedisDocument`
+
+## UnifiedMindtraceODM
+
+`UnifiedMindtraceODM` is the recommended starting point when you want one API that can work across MongoDB and Redis.
+
+### Unified document model
+
+```python
+from pydantic import Field
+
+from mindtrace.database import UnifiedMindtraceDocument
+
+
+class User(UnifiedMindtraceDocument):
+    name: str = Field(description="User name")
+    email: str = Field(description="Email")
+    age: int = Field(ge=0)
+
+    class Meta:
+        collection_name = "users"
+        global_key_prefix = "myapp"
+        indexed_fields = ["email", "name"]
+        unique_fields = ["email"]
+```
+
+### Unified ODM setup
+
+```python
+from mindtrace.database import BackendType, UnifiedMindtraceODM
+
+
+db = UnifiedMindtraceODM(
     unified_model_cls=User,
     mongo_db_uri="mongodb://localhost:27017",
     mongo_db_name="myapp",
     redis_url="redis://localhost:6379",
-    preferred_backend=BackendType.MONGO  # Start with MongoDB
+    preferred_backend=BackendType.MONGO,
 )
-
-# 3. Initialize
-await backend.initialize_async()  # For async operations
-# or
-backend.initialize_sync()  # For sync operations
-
-# 4. Use it! (Same API regardless of backend)
-user = User(name="Alice", age=30, email="alice@example.com", skills=["Python"])
-
-# Insert
-inserted_user = await backend.insert_async(user)
-# or: inserted_user = backend.insert(user)
-
-# Get by ID
-retrieved_user = await backend.get_async(inserted_user.id)
-
-# Find with filters
-python_users = await backend.find_async({"skills": "Python"})
-
-# Switch backends on the fly!
-backend.switch_backend(BackendType.REDIS)
-redis_user = backend.insert(user)  # Now using Redis
-
-# Get all users
-all_users = await backend.all_async()
 ```
 
-### Traditional Way: Backend-Specific Models
-
-If you prefer more control, you can still define backend-specific models:
+### Common operations
 
 ```python
-from mindtrace.database import (
-    MongoMindtraceODMBackend, 
-    RedisMindtraceODMBackend,
-    MindtraceDocument,
-    MindtraceRedisDocument
+# Async operations
+inserted_user = await db.insert_async(User(name="Alice", email="alice@example.com", age=30))
+retrieved_user = await db.get_async(inserted_user.id)
+retrieved_user.age = 31
+updated_user = await db.update_async(retrieved_user)
+all_users = await db.all_async()
+python_users = await db.find_async({"name": "Alice"})
+```
+
+```python
+# Sync operations
+inserted_user = db.insert(User(name="Bob", email="bob@example.com", age=25))
+retrieved_user = db.get(inserted_user.id)
+retrieved_user.age = 26
+updated_user = db.update(retrieved_user)
+all_users = db.all()
+```
+
+### Switching backends
+
+```python
+db.switch_backend(BackendType.REDIS)
+redis_user = db.insert(User(name="Carol", email="carol@example.com", age=28))
+
+current_backend = db.get_current_backend_type()
+print(current_backend)
+```
+
+### Multi-model mode
+
+All ODMs in this package support multi-model mode.
+
+```python
+class Address(UnifiedMindtraceDocument):
+    street: str
+    city: str
+
+    class Meta:
+        collection_name = "addresses"
+        global_key_prefix = "myapp"
+
+
+db = UnifiedMindtraceODM(
+    unified_models={"user": User, "address": Address},
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="myapp",
+    redis_url="redis://localhost:6379",
 )
-from beanie import Indexed
-from redis_om import Field as RedisField
+
+address = await db.address.insert_async(Address(street="123 Main St", city="NYC"))
+user = await db.user.insert_async(User(name="Alice", email="alice@example.com", age=30))
+users = await db.user.all_async()
+```
+
+In multi-model mode, use attribute-based access like `db.user.insert_async(...)` rather than `db.insert_async(...)`.
+
+## MongoMindtraceODM
+
+Use `MongoMindtraceODM` when you want MongoDB-specific document models and Beanie features.
+
+### Mongo document model
+
+```python
 from typing import Annotated
 
-# MongoDB model
+from beanie import Indexed
+
+from mindtrace.database import MindtraceDocument
+
+
 class MongoUser(MindtraceDocument):
     name: str
     email: Annotated[str, Indexed(unique=True)]
     age: int
-    
+
     class Settings:
         name = "users"
+        use_cache = False
+```
 
-# Redis model
-class RedisUser(MindtraceRedisDocument):
-    name: str = RedisField(index=True)
-    email: str = RedisField(index=True)
-    age: int = RedisField(index=True)
-    
-    class Meta:
-        global_key_prefix = "myapp"
+### Mongo ODM setup
 
-# Use them separately
-mongo_backend = MongoMindtraceODMBackend(
+```python
+from mindtrace.database import MongoMindtraceODM
+
+
+db = MongoMindtraceODM(
     model_cls=MongoUser,
     db_uri="mongodb://localhost:27017",
-    db_name="myapp"
-)
-
-redis_backend = RedisMindtraceODMBackend(
-    model_cls=RedisUser,
-    redis_url="redis://localhost:6379"
+    db_name="myapp",
 )
 ```
 
-## Available Backends
+### Async-first behavior
 
-### 1. UnifiedMindtraceODMBackend (Recommended)
+MongoDB is natively async in this package.
 
-The flagship backend that provides a unified interface for multiple databases:
-
-**Key Features:**
-- **Single Interface**: One API for all backends
-- **Runtime Switching**: Change backends without code changes
-- **Automatic Model Generation**: Converts unified models to backend-specific formats
-- **Flexible Configuration**: Use one or multiple backends
-
-**Configuration Options:**
 ```python
-# Option 1: Unified model (recommended)
-backend = UnifiedMindtraceODMBackend(
-    unified_model_cls=MyUnifiedDoc,
-    mongo_db_uri="mongodb://localhost:27017",
-    mongo_db_name="mydb",
-    redis_url="redis://localhost:6379",
-    preferred_backend=BackendType.MONGO
-)
-
-# Option 2: Separate models
-backend = UnifiedMindtraceODMBackend(
-    mongo_model_cls=MyMongoDoc,
-    redis_model_cls=MyRedisDoc,
-    mongo_db_uri="mongodb://localhost:27017",
-    mongo_db_name="mydb",
-    redis_url="redis://localhost:6379",
-    preferred_backend=BackendType.REDIS
-)
-
-# Option 3: Single backend
-backend = UnifiedMindtraceODMBackend(
-    unified_model_cls=MyUnifiedDoc,
-    mongo_db_uri="mongodb://localhost:27017",
-    mongo_db_name="mydb",
-    preferred_backend=BackendType.MONGO
-)
+inserted = await db.insert(MongoUser(name="Alice", email="alice@example.com", age=30))
+fetched = await db.get(inserted.id)
+results = await db.find(MongoUser.name == "Alice")
 ```
 
-### 2. MongoMindtraceODMBackend
-
-Specialized MongoDB backend using Beanie ODM:
+### Sync wrappers
 
 ```python
-from mindtrace.database import MongoMindtraceODMBackend, MindtraceDocument
+inserted = db.insert_sync(MongoUser(name="Bob", email="bob@example.com", age=25))
+fetched = db.get_sync(inserted.id)
+all_users = db.all_sync()
+```
 
-class User(MindtraceDocument):
+### Linked documents
+
+MongoDB supports Beanie `Link` fields.
+
+```python
+from typing import Optional
+
+from mindtrace.database import Link, MindtraceDocument, MongoMindtraceODM
+
+
+class Address(MindtraceDocument):
+    street: str
+    city: str
+
+    class Settings:
+        name = "addresses"
+        use_cache = False
+
+
+class UserWithAddress(MindtraceDocument):
     name: str
-    email: str
-    
+    address: Optional[Link[Address]] = None
+
     class Settings:
         name = "users"
         use_cache = False
 
-backend = MongoMindtraceODMBackend(
-    model_cls=User,
+
+db = MongoMindtraceODM(
+    models={"user": UserWithAddress, "address": Address},
     db_uri="mongodb://localhost:27017",
-    db_name="myapp"
+    db_name="myapp",
 )
 
-# Supports MongoDB-specific features
-pipeline = [{"$match": {"age": {"$gte": 18}}}]
-results = await backend.aggregate(pipeline)
+address = await db.address.insert(Address(street="123 Main St", city="NYC"))
+user = await db.user.insert(UserWithAddress(name="Alice", address=address))
+user_with_links = await db.user.get(user.id, fetch_links=True)
 ```
 
-### 3. RedisMindtraceODMBackend
-
-High-performance Redis backend with JSON support:
+### Aggregation
 
 ```python
-from mindtrace.database import RedisMindtraceODMBackend, MindtraceRedisDocument
+pipeline = [
+    {"$match": {"age": {"$gte": 18}}},
+    {"$group": {"_id": "$age", "count": {"$sum": 1}}},
+]
+results = await db.aggregate(pipeline)
+```
+
+## RedisMindtraceODM
+
+Use `RedisMindtraceODM` when you want Redis-backed JSON documents and indexed Redis OM queries.
+
+### Redis document model
+
+```python
 from redis_om import Field
 
-class User(MindtraceRedisDocument):
+from mindtrace.database import MindtraceRedisDocument
+
+
+class RedisUser(MindtraceRedisDocument):
     name: str = Field(index=True)
     email: str = Field(index=True)
     age: int = Field(index=True)
-    
+
     class Meta:
         global_key_prefix = "myapp"
-
-backend = RedisMindtraceODMBackend(
-    model_cls=User,
-    redis_url="redis://localhost:6379"
-)
-
-# Initialize Redis OM
-await backend.initialize()
-
-# Supports Redis-specific queries
-users = backend.find(User.age >= 18)
 ```
 
-### 4. LocalMindtraceODMBackend
-
-In-memory backend for testing and development:
+### Redis ODM setup
 
 ```python
-from mindtrace.database import LocalMindtraceODMBackend
+from mindtrace.database import RedisMindtraceODM
+
+
+db = RedisMindtraceODM(
+    model_cls=RedisUser,
+    redis_url="redis://localhost:6379",
+)
+```
+
+### Sync-first behavior
+
+Redis is natively sync in this package.
+
+```python
+inserted = db.insert(RedisUser(name="Alice", email="alice@example.com", age=30))
+fetched = db.get(inserted.id)
+results = db.find(RedisUser.age >= 18)
+all_users = db.all()
+```
+
+### Async wrappers
+
+```python
+inserted = await db.insert_async(RedisUser(name="Bob", email="bob@example.com", age=25))
+fetched = await db.get_async(inserted.id)
+all_users = await db.all_async()
+```
+
+### Notes on Redis IDs
+
+Redis OM uses `pk` internally, but `MindtraceRedisDocument` exposes a consistent `id` property so code can treat MongoDB and Redis documents more similarly.
+
+## RegistryMindtraceODM
+
+Use `RegistryMindtraceODM` when you want a simpler registry-backed ODM using Mindtrace’s Registry layer instead of a database server.
+
+```python
 from pydantic import BaseModel
+
+from mindtrace.database import RegistryMindtraceODM
+
 
 class User(BaseModel):
     name: str
     email: str
 
-backend = LocalMindtraceODMBackend(model_cls=User)
-# No initialization needed - works immediately!
+
+db = RegistryMindtraceODM(model_cls=User)
+inserted = db.insert(User(name="John Doe", email="john@example.com"))
+retrieved = db.get(inserted.id)
+retrieved.name = "John Smith"
+updated = db.update(retrieved)
+all_users = db.all()
 ```
 
-## API Reference
+This backend is useful when you want the ODM interface but prefer Registry-backed storage semantics.
 
-### Core Operations
+## Sync and Async Interfaces
 
-All backends support these essential operations:
+All ODMs expose the same broad CRUD shape, but their native execution mode differs.
+
+- **MongoMindtraceODM** — native async, with sync wrappers
+- **RedisMindtraceODM** — native sync, with async wrappers
+- **UnifiedMindtraceODM** — routes to the active backend and adapts accordingly
+- **RegistryMindtraceODM** — sync-oriented
+
+That means you can often keep the same mental model while fitting your application’s execution style.
+
+## Initialization
+
+ODMs support automatic or explicit initialization.
 
 ```python
-# Insert a document
-inserted_doc = await backend.insert_async(doc)
-# or: inserted_doc = backend.insert(doc)
+from mindtrace.database import BackendType, InitMode, UnifiedMindtraceDocument, UnifiedMindtraceODM
 
-# Get document by ID
-doc = await backend.get_async("doc_id")
-# or: doc = backend.get("doc_id")
 
-# Delete document
-await backend.delete_async("doc_id")
-# or: backend.delete("doc_id")
-
-# Get all documents
-all_docs = await backend.all_async()
-# or: all_docs = backend.all()
-
-# Find documents with filters
-results = await backend.find_async({"name": "Alice"})
-# or: results = backend.find({"name": "Alice"})
+db = UnifiedMindtraceODM(
+    unified_model_cls=User,
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="myapp",
+    redis_url="redis://localhost:6379",
+    preferred_backend=BackendType.MONGO,
+    auto_init=True,
+    init_mode=InitMode.SYNC,
+)
 ```
 
-### Unified Backend Specific
+### Init modes
 
-Additional methods for the unified backend:
+- `InitMode.SYNC`
+- `InitMode.ASYNC`
 
-```python
-# Backend management
-backend.switch_backend(BackendType.REDIS)
-current_type = backend.get_current_backend_type()
-is_async = backend.is_async()
+Defaults differ by backend:
 
-# Backend availability
-has_mongo = backend.has_mongo_backend()
-has_redis = backend.has_redis_backend()
-
-# Direct backend access
-mongo_backend = backend.get_mongo_backend()
-redis_backend = backend.get_redis_backend()
-
-# Model access
-raw_model = backend.get_raw_model()
-unified_model = backend.get_unified_model()
-```
-
-### Advanced Querying
-
-#### MongoDB (through Unified Backend)
-```python
-# MongoDB-style queries
-users = await backend.find_async({"age": {"$gte": 18}})
-users = await backend.find_async({"skills": {"$in": ["Python", "JavaScript"]}})
-
-# Aggregation pipelines (when using MongoDB)
-if backend.get_current_backend_type() == BackendType.MONGO:
-    pipeline = [
-        {"$match": {"age": {"$gte": 18}}},
-        {"$group": {"_id": "$department", "count": {"$sum": 1}}}
-    ]
-    results = await backend.get_mongo_backend().aggregate(pipeline)
-```
-
-#### Redis (through Unified Backend)
-```python
-# Switch to Redis for these queries
-backend.switch_backend(BackendType.REDIS)
-
-# Redis OM expressions
-Model = backend.get_raw_model()
-users = backend.find(Model.age >= 18)
-users = backend.find(Model.name == "Alice")
-users = backend.find(Model.skills << "Python")  # Contains
-```
+- MongoDB defaults to `ASYNC`
+- Redis defaults to `SYNC`
+- Registry is sync-oriented
 
 ## Error Handling
 
-The module provides comprehensive error handling:
+The package provides a consistent exception surface across backends.
 
 ```python
 from mindtrace.database import DocumentNotFoundError, DuplicateInsertError
 
+
 try:
-    user = await backend.get_async("non_existent_id")
+    user = await db.get_async("missing-id")
 except DocumentNotFoundError as e:
-    print(f"User not found: {e}")
+    print(f"Not found: {e}")
 
 try:
-    await backend.insert_async(duplicate_user)
+    await db.insert_async(User(name="Alice", email="alice@example.com", age=30))
 except DuplicateInsertError as e:
-    print(f"User already exists: {e}")
+    print(f"Duplicate insert: {e}")
 ```
 
-## Testing
+In multi-model mode, calling direct methods like `db.insert(...)` instead of `db.user.insert(...)` raises a `ValueError` to prevent ambiguity.
 
-The database module includes comprehensive test coverage with both unit and integration tests.
+## Installation
 
-### Test Structure
+If you are working from the full Mindtrace repo:
 
-```
-tests/
-├── unit/mindtrace/database/          # Unit tests (no DB required)
-│   ├── test_mongo_unit.py
-│   ├── test_redis_unit.py
-│   └── test_unified_unit.py
-└── integration/mindtrace/database/   # Integration tests (DB required)
-    ├── test_mongo.py
-    ├── test_redis_odm.py
-    └── test_unified.py
-```
-
-### Running Tests
-
-#### Quick Start - All Tests
 ```bash
-# Use the test script (handles everything automatically)
-./scripts/run_tests.sh tests/unit/mindtrace/database tests/integration/mindtrace/database
+$ git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+$ uv sync --dev --all-extras
 ```
 
-#### Unit Tests Only (No Database Required)
-```bash
-# From project root
-PYTHONPATH=mindtrace/core:mindtrace/database:$PYTHONPATH \
-python -m pytest tests/unit/mindtrace/database/ -v
-```
-
-#### Integration Tests (Requires Databases)
-```bash
-# Start test databases
-docker compose -f tests/docker-compose.yml up -d
-
-# Run integration tests
-PYTHONPATH=mindtrace/core:mindtrace/database:$PYTHONPATH \
-python -m pytest tests/integration/mindtrace/database/ -v
-
-# Stop test databases
-docker compose -f tests/docker-compose.yml down
-```
-
-#### Targeted Testing
-```bash
-# Test only unified backend
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_unified.py
-
-# Test only MongoDB
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_mongo.py
-
-# Test only Redis
-./scripts/run_tests.sh --integration tests/integration/mindtrace/database/test_redis_odm.py
-```
-
-### Test Coverage
-
-The test suite covers:
-
-- **CRUD Operations** - Create, Read, Update, Delete
-- **Query Operations** - Find, filter, search
-- **Error Handling** - All exception scenarios
-- **Backend Switching** - Dynamic backend changes
-- **Async/Sync Compatibility** - Both programming styles
-- **Model Conversion** - Unified to backend-specific models
-- **Edge Cases** - Duplicate keys, missing documents, invalid queries
+The database package depends on backend libraries such as Beanie, Motor, PyMongo, and Redis OM.
 
 ## Examples
 
-### Complete Example: User Management System
+Related examples in the repo:
 
-```python
-import asyncio
-from mindtrace.database import (
-    UnifiedMindtraceODMBackend,
-    UnifiedMindtraceDocument,
-    BackendType,
-    DocumentNotFoundError
-)
-from pydantic import Field
-from typing import List
+- [Unified ODM example](../../samples/database/unified_example.py)
+- [MongoDB example](../../samples/database/mongo_example.py)
+- [Redis example](../../samples/database/redis_example.py)
+- [Registry example](../../samples/database/registry_example.py)
+- [Database samples README](../../samples/database/README.md)
 
-class User(UnifiedMindtraceDocument):
-    name: str = Field(description="Full name")
-    email: str = Field(description="Email address")  
-    age: int = Field(ge=0, le=150, description="Age")
-    department: str = Field(description="Department")
-    skills: List[str] = Field(default_factory=list)
-    
-    class Meta:
-        collection_name = "employees"
-        global_key_prefix = "company"
-        indexed_fields = ["email", "department", "skills"]
-        unique_fields = ["email"]
+## Testing
 
-async def main():
-    # Setup backend with both MongoDB and Redis
-    backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=User,
-        mongo_db_uri="mongodb://localhost:27017",
-        mongo_db_name="company",
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.MONGO
-    )
-    
-    await backend.initialize_async()
-    
-    # Create some users
-    users = [
-        User(
-            name="Alice Johnson",
-            email="alice@company.com",
-            age=30,
-            department="Engineering",
-            skills=["Python", "MongoDB", "Docker"]
-        ),
-        User(
-            name="Bob Smith", 
-            email="bob@company.com",
-            age=25,
-            department="Engineering",
-            skills=["JavaScript", "Redis", "React"]
-        ),
-        User(
-            name="Carol Davis",
-            email="carol@company.com", 
-            age=35,
-            department="Marketing",
-            skills=["Analytics", "SQL"]
-        )
-    ]
-    
-    # Insert users
-    print("Creating users...")
-    for user in users:
-        try:
-            inserted = await backend.insert_async(user)
-            print(f"Created: {inserted.name} (ID: {inserted.id})")
-        except Exception as e:
-            print(f"Failed to create {user.name}: {e}")
-    
-    # Find engineers
-    print("\nFinding engineers...")
-    engineers = await backend.find_async({"department": "Engineering"})
-    for eng in engineers:
-        print(f"{eng.name} - Skills: {', '.join(eng.skills)}")
-    
-    # Switch to Redis for fast lookups
-    print("\n Switching to Redis for fast operations...")
-    backend.switch_backend(BackendType.REDIS)
-    
-    # Insert more users in Redis
-    redis_user = User(
-        name="Dave Wilson",
-        email="dave@company.com",
-        age=28,
-        department="DevOps",
-        skills=["Kubernetes", "Redis", "Monitoring"]
-    )
-    
-    redis_inserted = backend.insert(redis_user)
-    print(f"Redis user created: {redis_inserted.name}")
-    
-    # Demonstrate backend isolation
-    print(f"\n MongoDB users: {len(await backend.get_mongo_backend().all())}")
-    print(f"Redis users: {len(backend.get_redis_backend().all())}")
-    
-    # Switch back to MongoDB
-    backend.switch_backend(BackendType.MONGO)
-    print(f"Back to MongoDB - Users: {len(await backend.all_async())}")
+If you are working in the full Mindtrace repo, run tests for this module specifically:
 
-if __name__ == "__main__":
-    asyncio.run(main())
+```bash
+$ git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+$ uv sync --dev --all-extras
+$ ds test: database
+$ ds test: --unit database
 ```
 
-### More Examples
+If you want backend-specific integration coverage as well:
 
-Check out the `samples/database/` directory for additional examples:
-
-- **`using_unified_backend.py`** - Comprehensive unified backend usage
-- **Advanced querying patterns**
-- **Backend switching strategies**
-- **Error handling best practices**
-
-## Best Practices
-
-### 1. Model Design
-```python
-# Good: Clear, descriptive models
-class Product(UnifiedMindtraceDocument):
-    name: str = Field(description="Product name", min_length=1)
-    price: float = Field(ge=0, description="Price in USD")
-    category: str = Field(description="Product category")
-    
-    class Meta:
-        collection_name = "products"
-        indexed_fields = ["category", "name"]
-        unique_fields = ["name"]
-
-# Avoid: Unclear models without validation
-class Product(UnifiedMindtraceDocument):
-    n: str
-    p: float
-    c: str
+```bash
+$ ds test: database --integration
 ```
 
-### 2. Error Handling
-```python
-# Always handle database exceptions
-try:
-    user = await backend.get_async(user_id)
-    print(f"Found user: {user.name}")
-except DocumentNotFoundError:
-    print("User not found - creating new user")
-    user = await backend.insert_async(User(name="New User", email="new@example.com"))
-except Exception as e:
-    logger.error(f"Database error: {e}")
-    # Handle appropriately
-```
+## Practical Notes and Caveats
 
-### 3. Backend Selection
-```python
-# Choose backends based on use case
-if high_frequency_reads:
-    backend.switch_backend(BackendType.REDIS)  # Fast reads
-else:
-    backend.switch_backend(BackendType.MONGO)  # Complex queries
-```
-
-### 4. Initialization
-```python
-# Initialize once at application startup
-class DatabaseService:
-    def __init__(self):
-        self.backend = UnifiedMindtraceODMBackend(...)
-    
-    async def initialize(self):
-        await self.backend.initialize_async()
-        self.backend.initialize_sync()  # If you need both
-    
-    async def cleanup(self):
-        # Cleanup if needed
-        pass
-```
-
-## Contributing
-
-When adding new features:
-
-1. **Add tests** - Both unit and integration tests
-2. **Update documentation** - Keep README and docstrings current
-3. **Follow patterns** - Use existing code style and patterns
-4. **Test thoroughly** - Run the full test suite
-
-## Requirements
-
-- **Python 3.9+**
-- **MongoDB 4.4+** (for MongoDB backend)
-- **Redis 6.0+** (for Redis backend)
-- **Core dependencies**: `pydantic`, `beanie`, `redis-om-python`
-
-## Need Help?
-
-- Check the `samples/database/` directory for working examples
-- Look at the test files for usage patterns
-- Review the docstrings in the source code for detailed API documentation
-
-The Mindtrace Database Module makes it easy to work with multiple databases through a single, powerful interface. Start simple with the unified backend, then customize as your needs grow!
-
+- `UnifiedMindtraceODM` only exposes the overlap of capabilities that make sense across MongoDB and Redis; backend-specific features still live on the backend-specific ODMs.
+- Multi-model mode changes the calling style: use attribute-based access like `db.user.get(...)`.
+- MongoDB supports linked documents and aggregation; Redis does not provide the same feature set.
+- Redis and MongoDB differ in native execution style, so some methods are wrappers around the backend’s natural sync/async mode.
+- `RegistryMindtraceODM` is useful for simpler or storage-backed workflows, but its query capabilities are intentionally simpler than MongoDB or Redis.

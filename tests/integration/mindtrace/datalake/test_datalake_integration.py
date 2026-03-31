@@ -191,6 +191,7 @@ class TestDatalakeIntegration:
         assert child_datum.id in all_descendants
         assert grandchild_datum.id in all_descendants
 
+    @pytest.mark.asyncio
     async def test_complex_data_types_database_storage(self, datalake: Datalake):
         """Test storing and retrieving complex data types in database."""
         complex_data = {
@@ -216,6 +217,7 @@ class TestDatalakeIntegration:
         assert retrieved_datum.data == complex_data
         assert retrieved_datum.metadata == metadata
 
+    @pytest.mark.asyncio
     async def test_large_data_registry_storage(self, datalake: Datalake, temp_registry_dir: str):
         """Test storing and retrieving large data in registry."""
         registry_uri = temp_registry_dir
@@ -239,6 +241,7 @@ class TestDatalakeIntegration:
         assert retrieved_datum.metadata == metadata
         assert retrieved_datum.registry_uri == registry_uri
 
+    @pytest.mark.asyncio
     async def test_registry_cache_and_reuse(self, datalake: Datalake, temp_registry_dir: str):
         """Test that registry instances are cached and reused."""
         registry_uri = temp_registry_dir
@@ -259,6 +262,7 @@ class TestDatalakeIntegration:
         assert retrieved1.data == {"test": "data1"}
         assert retrieved2.data == {"test": "data2"}
 
+    @pytest.mark.asyncio
     async def test_mixed_storage_strategies(self, datalake: Datalake, temp_registry_dir: str):
         """Test mixing database and registry storage in the same datalake."""
         registry_uri = temp_registry_dir
@@ -282,6 +286,7 @@ class TestDatalakeIntegration:
         assert retrieved_large.data == large_data
         assert retrieved_large.registry_uri == registry_uri
 
+    @pytest.mark.asyncio
     async def test_error_handling_nonexistent_datum(self, datalake: Datalake):
         """Test error handling when retrieving nonexistent datum."""
         nonexistent_id = PydanticObjectId("0123456789abcdef01234567")
@@ -289,6 +294,7 @@ class TestDatalakeIntegration:
         with pytest.raises(DocumentNotFoundError):
             await datalake.get_datum(nonexistent_id)
 
+    @pytest.mark.asyncio
     async def test_data_persistence_across_operations(self, datalake: Datalake):
         """Test that data persists across multiple operations."""
         # Add initial data
@@ -312,6 +318,7 @@ class TestDatalakeIntegration:
         final_retrieved = await datalake.get_datum(datum.id)
         assert final_retrieved.data == initial_data
 
+    @pytest.mark.asyncio
     async def test_metadata_preservation(self, datalake: Datalake):
         """Test that metadata is preserved correctly across operations."""
         complex_metadata = {
@@ -333,6 +340,7 @@ class TestDatalakeIntegration:
         assert retrieved_datum.metadata["nested"]["config"]["setting1"] == "value1"
         assert retrieved_datum.metadata["boolean_flags"]["enabled"] is True
 
+    @pytest.mark.asyncio
     async def test_concurrent_operations_simulation(self, datalake: Datalake):
         """Test handling multiple operations in sequence (simulating concurrency)."""
         datum_ids = []

@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
@@ -26,6 +27,7 @@ from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
+    ClassNameSchema,
     EndpointsSchema,
     Heartbeat,
     HeartbeatSchema,
@@ -60,6 +62,7 @@ class Service(Mindtrace):
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
         live_service: bool = True,
+        pid_file: str | None = None,
         **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
@@ -82,7 +85,7 @@ class Service(Mindtrace):
         super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
-        self.id, self.pid_file = self._generate_id_and_pid_file()
+        self.id, self.pid_file = self._generate_id_and_pid_file(pid_file=pid_file)
 
         # Build URL with the following priority:
         # 1. Explicit URL parameter
@@ -151,6 +154,7 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
         )
+        self.add_endpoint(path="/class_name", func=self.class_name_func, schema=ClassNameSchema)
         self.add_endpoint(
             path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
         )
@@ -170,6 +174,10 @@ class Service(Mindtrace):
     def status_func(self):
         """Get the current status of the service."""
         return {"status": self.status.value}
+
+    def class_name_func(self):
+        """Return the name of the concrete class of this service instance."""
+        return {"class_name": self.__class__.__name__}
 
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
@@ -220,7 +228,7 @@ class Service(Mindtrace):
         url = parse_url(url) if isinstance(url, str) else url
         try:
             response = requests.request("POST", str(url) + "/status", timeout=timeout)
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             return ServerStatus.DOWN
         if response.status_code != 200:
             return ServerStatus.DOWN
@@ -238,7 +246,10 @@ class Service(Mindtrace):
                 raise KeyboardInterrupt("Service terminated by SIGINT.")
             else:
                 raise RuntimeError(f"Server exited with code {process.returncode}")
-        return cls.connect(url=url)
+        # Use a short per-request timeout so the Timeout handler can retry
+        # instead of a single request consuming the entire launch timeout
+        per_request_timeout = min(5, timeout)
+        return cls.connect(url=url, timeout=per_request_timeout)
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
@@ -347,8 +358,10 @@ class Service(Mindtrace):
 
         # Create launch command
         server_id = uuid.uuid1()
+        pid_file = cls._server_id_to_pid_file(server_id)
+        Path(pid_file).parent.mkdir(parents=True, exist_ok=True)
         launch_command = [
-            "python",
+            sys.executable,
             "-m",
             "mindtrace.services.core.launcher",
             "-s",
@@ -358,7 +371,7 @@ class Service(Mindtrace):
             "-b",
             f"{launch_url.host}:{launch_url.port}",
             "-p",
-            cls._server_id_to_pid_file(server_id),
+            pid_file,
             "-k",
             "uvicorn.workers.UvicornWorker",
             "--init-params",
@@ -384,7 +397,12 @@ class Service(Mindtrace):
         if wait_for_launch:
             timeout_handler = Timeout(
                 timeout=timeout,
-                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                exceptions=(
+                    ConnectionRefusedError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout,
+                    HTTPException,
+                ),
                 progress_bar=progress_bar,
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )

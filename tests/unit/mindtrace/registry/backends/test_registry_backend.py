@@ -70,22 +70,50 @@ def concrete_backend():
         def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
             pass
 
+        def save_registry_metadata(self, metadata: dict):
+            """Test implementation of save_registry_metadata."""
+            if not hasattr(self, "_registry_metadata"):
+                self._registry_metadata = {}
+            self._registry_metadata.update(metadata)
+
+        def fetch_registry_metadata(self) -> dict:
+            """Test implementation of fetch_registry_metadata."""
+            if not hasattr(self, "_registry_metadata"):
+                return {}
+            return self._registry_metadata.copy()
+
     with tempfile.TemporaryDirectory() as temp_dir:
         yield ConcreteBackend(temp_dir)
 
 
 def test_validate_object_name_valid(concrete_backend):
     # Test valid object names
-    valid_names = ["object", "namespace:object", "deep:namespace:object", "object-with-hyphens", "object123"]
+    valid_names = [
+        "object",
+        "namespace:object",
+        "deep:namespace:object",
+        "object-with-hyphens",
+        "object123",
+        "object_name",
+        "my_model_v1",
+    ]
 
     for name in valid_names:
         concrete_backend.validate_object_name(name)  # Should not raise any exception
 
 
+def test_validate_object_name_with_underscores(concrete_backend):
+    # Underscores are allowed in object names
+    names_with_underscores = ["object_name", "namespace:object_name", "object_with_multiple_underscores"]
+
+    for name in names_with_underscores:
+        concrete_backend.validate_object_name(name)  # Should not raise
+
+
 def test_validate_object_name_invalid(concrete_backend):
-    # Test invalid object names (with underscores)
-    invalid_names = ["object_name", "namespace:object_name", "object_with_multiple_underscores"]
+    # Test invalid object names (with @ symbol)
+    invalid_names = ["object@name", "namespace@object"]
 
     for name in invalid_names:
-        with pytest.raises(ValueError, match="Object names cannot contain underscores"):
+        with pytest.raises(ValueError, match="cannot contain '@'"):
             concrete_backend.validate_object_name(name)

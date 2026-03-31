@@ -79,7 +79,7 @@ class TestErrorHandling:
                 self.project_id = project_id
                 self.line_id = line_id
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         db_patcher.start()

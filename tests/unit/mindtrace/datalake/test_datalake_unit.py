@@ -128,17 +128,7 @@ class TestDatalakeUnit:
                 self.project_id = project_id
                 self.line_id = line_id
 
-        # Create a callable that returns the appropriate mock based on call count
-        call_count = [0]
-
-        def mock_backend_factory(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return mock_database
-            else:
-                return mock_dataset_database
-
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", side_effect=mock_backend_factory)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
@@ -617,7 +607,7 @@ class TestDatalakeUnit:
         MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -672,7 +662,7 @@ class TestDatalakeUnit:
         MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -735,7 +725,7 @@ class TestDatalakeUnit:
                 return mock_dataset_database
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", side_effect=mock_backend_factory),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -785,7 +775,7 @@ class TestDatalakeUnit:
         MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -872,7 +862,7 @@ class TestDatalakeUnit:
                 return mock_backend_factory(*args, **kwargs)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):

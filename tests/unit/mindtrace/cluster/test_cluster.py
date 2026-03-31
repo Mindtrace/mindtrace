@@ -1,7 +1,8 @@
 import json
 import uuid
 from datetime import datetime
-from unittest.mock import ANY, MagicMock, patch
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,9 @@ from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
-from mindtrace.services import ServerStatus, Service
+from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.types import OnConflict
+from mindtrace.services import ServerStatus
 
 
 def create_mock_database():
@@ -29,11 +32,12 @@ def create_mock_database():
 def cluster_manager():
     # Patch Database to avoid file I/O
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase,
+        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
         patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient,
         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend,
     ):
         MockDatabase.side_effect = [
+            create_mock_database(),
             create_mock_database(),
             create_mock_database(),
             create_mock_database(),
@@ -43,12 +47,18 @@ def cluster_manager():
         mock_rabbitmq_client = MockRabbitMQClient.return_value
         mock_rabbitmq_client.publish = MagicMock()
         mock_rabbitmq_client.register = MagicMock()
-        mock_minio_backend = MockMinioBackend.return_value
+        # Use Mock with spec=RegistryBackend so it passes isinstance checks
+        mock_minio_backend = Mock(spec=RegistryBackend)
+        mock_minio_backend.uri = Path("/tmp/test_registry")
         mock_minio_backend.load = MagicMock()
         mock_minio_backend.save = MagicMock()
         mock_minio_backend.delete = MagicMock()
         mock_minio_backend.list = MagicMock()
         mock_minio_backend.get = MagicMock()
+        mock_minio_backend.registered_materializers = MagicMock(return_value={})
+        # Mock fetch_registry_metadata to return empty dict (no existing metadata)
+        mock_minio_backend.fetch_registry_metadata = MagicMock(return_value={})
+        MockMinioBackend.return_value = mock_minio_backend
         mock_logger = MagicMock()
         mock_logger.error = MagicMock()
         mock_logger.info = MagicMock()
@@ -74,7 +84,7 @@ def mock_worker():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -148,9 +158,9 @@ def test_submit_job_success(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -162,9 +172,9 @@ def test_submit_job_registry_reload(cluster_manager):
     ]
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
+        mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
-        assert result.status == "success"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {"result": 42}
         mock_post.assert_called_once()
 
@@ -173,7 +183,7 @@ def test_submit_job_failure(cluster_manager):
     job = make_job(schema_name="unknown_job")
     cluster_manager.job_schema_targeting_database.find.return_value = []
     result = cluster_manager.submit_job(job)
-    assert result.status == "error"
+    assert result.status == cluster_types.JobStatusEnum.ERROR
     assert result.output == {"error": "No job schema targeting found for job type unknown_job"}
 
 
@@ -190,7 +200,7 @@ def test_submit_job_to_orchestrator(cluster_manager):
         # Verify orchestrator was called
         mock_publish.assert_called_once_with("test_job", job)
         # Verify job status was created with queued status
-        assert result.status == "queued"
+        assert result.status == cluster_types.JobStatusEnum.QUEUED
         assert result.worker_id == ""
 
 
@@ -215,7 +225,7 @@ def test_submit_job_to_endpoint_json_error(cluster_manager):
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.side_effect = Exception("bad json")
         result = cluster_manager._submit_job_to_endpoint(job, "/test/test")
-        assert result.status == "completed"
+        assert result.status == cluster_types.JobStatusEnum.COMPLETED
         assert result.output == {}  # fallback on JSON error
 
 
@@ -313,7 +323,11 @@ def test_get_job_status_success(cluster_manager):
     """Test get_job_status when job exists."""
     job_id = "test-job-123"
     expected_job_status = cluster_types.JobStatus(
-        job_id=job_id, status="running", output={"result": "test"}, worker_id="worker-123"
+        job_id=job_id,
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={"result": "test"},
+        worker_id="worker-123",
+        job=make_job(),
     )
 
     cluster_manager.job_status_database.find.return_value = [expected_job_status]
@@ -344,7 +358,9 @@ def test_worker_alert_started_job(cluster_manager):
     worker_id = "worker-456"
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="queued", output={}, worker_id="")
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -361,7 +377,7 @@ def test_worker_alert_started_job(cluster_manager):
     cluster_manager.worker_alert_started_job(payload)
 
     # Verify job status was updated and saved
-    assert existing_job_status.status == "running"
+    assert existing_job_status.status == cluster_types.JobStatusEnum.RUNNING
     assert existing_job_status.worker_id == worker_id
     cluster_manager.job_status_database.insert.assert_called_with(existing_job_status)
 
@@ -386,7 +402,9 @@ def test_worker_alert_completed_job(cluster_manager):
     output = {"result": "success"}
 
     # Mock existing job status
-    existing_job_status = cluster_types.JobStatus(job_id=job_id, status="running", output={}, worker_id="worker-123")
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=make_job()
+    )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     cluster_manager.worker_status_database.find.return_value = [
         cluster_types.WorkerStatus(
@@ -447,7 +465,7 @@ def test_register_worker_type(cluster_manager):
             git_working_dir=None,
         )
         # Verify worker was saved
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
 
 def test_register_worker_type_with_default_materializer(cluster_manager):
@@ -478,7 +496,7 @@ def test_register_worker_type_with_default_materializer(cluster_manager):
             git_working_dir=None,
         )
         # Verify worker was saved
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
 
 def test_register_worker_type_with_job_schema_name(cluster_manager):
@@ -510,7 +528,7 @@ def test_register_worker_type_with_job_schema_name(cluster_manager):
             git_commit=None,
             git_working_dir=None,
         )
-        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker)
+        mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 
         # Verify job schema was registered to worker type
         mock_register_job_schema.assert_called_once_with({"job_schema_name": "test_job", "worker_type": "test_worker"})
@@ -562,7 +580,12 @@ def test_register_job_schema_to_worker_type_worker_not_found(cluster_manager):
 
 def test_launch_worker_with_auto_connect(cluster_manager):
     """Test launch_worker when worker is in auto-connect database."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -570,56 +593,78 @@ def test_launch_worker_with_auto_connect(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            launch_id=str(uuid.uuid4()),
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify node connection and worker launch
         MockNode.connect.assert_called_once_with("http://node:8080")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:8081"
+            worker_type="test_worker",
+            worker_url="http://worker:8081",
+            worker_name="test_worker",
+            auto_connect_job_type="test_job",
         )
 
-        # Verify auto-connect registration
-        mock_register_job.assert_called_once_with(payload={"job_type": "test_job", "worker_url": "http://worker:8081"})
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_without_auto_connect(cluster_manager):
     """Test launch_worker when worker is not in auto-connect database."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock no auto-connect entries
     cluster_manager.worker_auto_connect_database.find.return_value = []
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            launch_id=str(uuid.uuid4()),
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify node connection and worker launch
         MockNode.connect.assert_called_once_with("http://node:8080")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:8081"
+            worker_type="test_worker",
+            worker_url="http://worker:8081",
+            worker_name="test_worker",
+            auto_connect_job_type=None,
         )
 
-        # Verify no auto-connect registration occurred
-        mock_register_job.assert_not_called()
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_node_connection_failure(cluster_manager):
     """Test launch_worker when node connection fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
         MockNode.connect.side_effect = Exception("Connection failed")
@@ -630,7 +675,12 @@ def test_launch_worker_node_connection_failure(cluster_manager):
 
 def test_launch_worker_node_launch_failure(cluster_manager):
     """Test launch_worker when node worker launch fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
         mock_node_instance = MockNode.connect.return_value
@@ -642,7 +692,12 @@ def test_launch_worker_node_launch_failure(cluster_manager):
 
 def test_launch_worker_with_different_ports(cluster_manager):
     """Test launch_worker with different node and worker ports."""
-    payload = {"node_url": "http://node:9090", "worker_type": "test_worker", "worker_url": "http://worker:9091"}
+    payload = {
+        "node_url": "http://node:9090",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:9091",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -650,26 +705,38 @@ def test_launch_worker_with_different_ports(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
+        mock_node_instance.launch_worker.return_value = cluster_types.LaunchWorkerOutput(
+            launch_id=str(uuid.uuid4()),
+        )
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify correct URLs were used
         MockNode.connect.assert_called_once_with("http://node:9090")
         mock_node_instance.launch_worker.assert_called_once_with(
-            worker_type="test_worker", worker_url="http://worker:9091"
+            worker_type="test_worker",
+            worker_url="http://worker:9091",
+            worker_name="test_worker",
+            auto_connect_job_type="test_job",
         )
-        mock_register_job.assert_called_once_with(payload={"job_type": "test_job", "worker_url": "http://worker:9091"})
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_launch_worker_logging(cluster_manager):
     """Test launch_worker logging behavior."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8081"}
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8081",
+        "worker_name": "test_worker",
+    }
 
     # Mock auto-connect entry
     auto_connect_entry = cluster_types.WorkerAutoConnect(worker_type="test_worker", schema_name="test_job")
@@ -677,7 +744,6 @@ def test_launch_worker_logging(cluster_manager):
 
     with (
         patch("mindtrace.cluster.core.cluster.Node") as MockNode,
-        patch.object(cluster_manager, "register_job_to_worker") as mock_register_job,
         patch.object(cluster_manager, "logger"),
         patch.object(Worker, "connect") as mock_connect,
     ):
@@ -685,13 +751,15 @@ def test_launch_worker_logging(cluster_manager):
         mock_connect.return_value = MagicMock()
         mock_connect.return_value.heartbeat.return_value = MagicMock(server_id=uuid.uuid4())
 
-        cluster_manager.launch_worker(payload)
+        result = cluster_manager.launch_worker(payload)
 
         # Verify logging occurred (the actual log calls would be verified in integration tests)
         # This test ensures the method completes without errors and calls the expected methods
         MockNode.connect.assert_called_once()
         mock_node_instance.launch_worker.assert_called_once()
-        mock_register_job.assert_called_once()
+        # For async launch we only get a launch_id back and auto-connect will
+        # be handled when the worker is ready.
+        assert "launch_id" in result
 
 
 def test_register_node(cluster_manager):
@@ -705,6 +773,11 @@ def test_register_node(cluster_manager):
         "access_key": cluster_manager.worker_registry_access_key,
         "secret_key": cluster_manager.worker_registry_secret_key,
         "bucket": cluster_manager.worker_registry_bucket,
+        "minio_port": cluster_manager.worker_registry_port,
+        "rabbitmq_host": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
+        "rabbitmq_port": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
+        "rabbitmq_username": cluster_manager.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
+        "rabbitmq_password": cluster_manager.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"),
     }
 
     assert result == expected_result
@@ -716,19 +789,25 @@ def test_clear_databases_empty_databases(cluster_manager):
     # Mock empty databases
     cluster_manager.job_schema_targeting_database.all.return_value = []
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was never called since databases are empty
     cluster_manager.job_schema_targeting_database.delete.assert_not_called()
     cluster_manager.job_status_database.delete.assert_not_called()
+    cluster_manager.dlq_database.delete.assert_not_called()
     cluster_manager.worker_auto_connect_database.delete.assert_not_called()
+    cluster_manager.worker_status_database.delete.assert_not_called()
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -743,17 +822,25 @@ def test_clear_databases_with_entries(cluster_manager):
     mock_entry2.pk = "pk2"
     mock_entry3 = MagicMock()
     mock_entry3.pk = "pk3"
+    mock_entry4 = MagicMock()
+    mock_entry4.pk = "pk4"
+    mock_entry5 = MagicMock()
+    mock_entry5.pk = "pk5"
 
     cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry1]
     cluster_manager.job_status_database.all.return_value = [mock_entry2]
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = [mock_entry3]
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called for each entry
     cluster_manager.job_schema_targeting_database.delete.assert_called_once_with("pk1")
@@ -770,26 +857,36 @@ def test_clear_databases_multiple_entries_per_database(cluster_manager):
     mock_entries1 = [MagicMock(pk=f"pk1_{i}") for i in range(3)]
     mock_entries2 = [MagicMock(pk=f"pk2_{i}") for i in range(2)]
     mock_entries3 = [MagicMock(pk=f"pk3_{i}") for i in range(4)]
+    mock_entries4 = [MagicMock(pk=f"pk4_{i}") for i in range(2)]
+    mock_entries5 = [MagicMock(pk=f"pk5_{i}") for i in range(1)]
 
     cluster_manager.job_schema_targeting_database.all.return_value = mock_entries1
     cluster_manager.job_status_database.all.return_value = mock_entries2
+    cluster_manager.dlq_database.all.return_value = mock_entries4
     cluster_manager.worker_auto_connect_database.all.return_value = mock_entries3
+    cluster_manager.worker_status_database.all.return_value = mock_entries5
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called for each entry
     expected_calls1 = [((f"pk1_{i}",),) for i in range(3)]
     expected_calls2 = [((f"pk2_{i}",),) for i in range(2)]
     expected_calls3 = [((f"pk3_{i}",),) for i in range(4)]
+    expected_calls4 = [((f"pk4_{i}",),) for i in range(2)]
+    expected_calls5 = [((f"pk5_{i}",),) for i in range(1)]
 
     assert cluster_manager.job_schema_targeting_database.delete.call_args_list == expected_calls1
     assert cluster_manager.job_status_database.delete.call_args_list == expected_calls2
+    assert cluster_manager.dlq_database.delete.call_args_list == expected_calls4
     assert cluster_manager.worker_auto_connect_database.delete.call_args_list == expected_calls3
+    assert cluster_manager.worker_status_database.delete.call_args_list == expected_calls5
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -802,14 +899,18 @@ def test_clear_databases_mixed_empty_and_populated(cluster_manager):
 
     cluster_manager.job_schema_targeting_database.all.return_value = mock_entries
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
-    # Verify all() was called on each database
+    # Verify all() was called on each database including DLQ
     cluster_manager.job_schema_targeting_database.all.assert_called_once()
     cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
     cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
 
     # Verify delete was called only for entries in the first database
     cluster_manager.job_schema_targeting_database.delete.assert_any_call("pk1")
@@ -818,7 +919,9 @@ def test_clear_databases_mixed_empty_and_populated(cluster_manager):
 
     # Verify delete was not called for empty databases
     cluster_manager.job_status_database.delete.assert_not_called()
+    cluster_manager.dlq_database.delete.assert_not_called()
     cluster_manager.worker_auto_connect_database.delete.assert_not_called()
+    cluster_manager.worker_status_database.delete.assert_not_called()
 
     # Verify logging
     cluster_manager.logger.info.assert_called_once_with("Cleared all cluster manager databases")
@@ -829,7 +932,9 @@ def test_clear_databases_database_error_handling(cluster_manager):
     # Mock database that raises an exception during all() call
     cluster_manager.job_schema_targeting_database.all.side_effect = Exception("Database connection error")
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     # Should raise the exception
     with pytest.raises(Exception, match="Database connection error"):
@@ -837,7 +942,9 @@ def test_clear_databases_database_error_handling(cluster_manager):
 
     # Verify other databases were not processed due to the exception
     cluster_manager.job_status_database.all.assert_not_called()
+    cluster_manager.dlq_database.all.assert_not_called()
     cluster_manager.worker_auto_connect_database.all.assert_not_called()
+    cluster_manager.worker_status_database.all.assert_not_called()
 
 
 def test_clear_databases_delete_error_handling(cluster_manager):
@@ -847,7 +954,9 @@ def test_clear_databases_delete_error_handling(cluster_manager):
     cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry]
     cluster_manager.job_schema_targeting_database.delete.side_effect = Exception("Delete failed")
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     # Should raise the exception
     with pytest.raises(Exception, match="Delete failed"):
@@ -863,7 +972,9 @@ def test_clear_databases_logging_verification(cluster_manager):
     # Mock empty databases
     cluster_manager.job_schema_targeting_database.all.return_value = []
     cluster_manager.job_status_database.all.return_value = []
+    cluster_manager.dlq_database.all.return_value = []
     cluster_manager.worker_auto_connect_database.all.return_value = []
+    cluster_manager.worker_status_database.all.return_value = []
 
     cluster_manager.clear_databases()
 
@@ -875,7 +986,7 @@ def test_clear_databases_logging_verification(cluster_manager):
 def mock_node():
     """Create a mock node for testing."""
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase,
+        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend"),
         patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry,
         patch("mindtrace.cluster.core.cluster.ClusterManager.connect") as MockClusterManagerConnect,
@@ -889,16 +1000,23 @@ def mock_node():
 
         mock_registry = MockRegistry.return_value
         mock_cluster_manager_connect = MockClusterManagerConnect.return_value
-        mock_cluster_manager_connect.worker_registry = mock_registry
-        mock_cluster_manager_connect.worker_registry_endpoint = "http://localhost:8081"
-        mock_cluster_manager_connect.worker_registry_access_key = "test_access_key"
-        mock_cluster_manager_connect.worker_registry_secret_key = "test_secret_key"
-        mock_cluster_manager_connect.worker_registry_bucket = "test_bucket"
+        mock_cluster_manager_connect.register_node.return_value = cluster_types.RegisterNodeOutput(
+            endpoint="localhost:9000",
+            access_key="test_access_key",
+            secret_key="test_secret_key",
+            bucket="test_bucket",
+            minio_port=9000,
+            rabbitmq_host="localhost",
+            rabbitmq_port=5672,
+            rabbitmq_username="user",
+            rabbitmq_password="password",
+        )
 
         # Create Node with cluster_url
         node = Node(cluster_url="http://cluster:8080")
         node.id = uuid4()
         node.worker_registry = mock_registry
+        node.node_worker_database = mock_database
         object.__setattr__(node, "_url", "http://localhost:8081")
 
         return node
@@ -909,12 +1027,11 @@ def test_node_initialization_with_cluster(mock_node):
     assert mock_node.cluster_url == "http://cluster:8080"
     assert mock_node.cluster_cm is not None
     assert mock_node.worker_registry is not None
-    assert mock_node.workers == []
 
 
 def test_node_initialization_without_cluster():
     """Test Node initialization without cluster_url."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -926,12 +1043,11 @@ def test_node_initialization_without_cluster():
         assert node.cluster_url is None
         assert node.cluster_cm is None
         assert node.worker_registry is None
-        assert node.workers == []
 
 
 def test_node_launch_worker(mock_node):
     """Test Node launch_worker method."""
-    payload = {"worker_type": "test_worker", "worker_url": "http://worker:8080"}
+    payload = {"worker_type": "test_worker", "worker_url": "http://worker:8080", "worker_name": "test_worker"}
 
     mock_worker = MagicMock()
     mock_worker.url = "http://worker:8080"
@@ -939,26 +1055,8 @@ def test_node_launch_worker(mock_node):
 
     result = mock_node.launch_worker(payload)
 
-    assert result is None
-    assert mock_worker in mock_node.workers
-    mock_node.worker_registry.load.assert_called_once_with("worker:test_worker", url="http://worker:8080")
-
-
-def test_node_shutdown(mock_node):
-    """Test Node shutdown method."""
-    # Add some mock workers
-    mock_worker1 = MagicMock()
-    mock_worker2 = MagicMock()
-    mock_node.workers = [mock_worker1, mock_worker2]
-
-    with patch.object(Service, "shutdown") as mock_shutdown:
-        _ = mock_node.shutdown()
-
-        # Verify all workers were shutdown
-        mock_worker1.shutdown.assert_called_once()
-        mock_worker2.shutdown.assert_called_once()
-        # Verify super().shutdown() was called
-        assert mock_shutdown.call_count == 1
+    # Async launch should return a launch_id and perform work in the background.
+    assert "launch_id" in result
 
 
 def test_worker_initialization(mock_worker):
@@ -1092,7 +1190,7 @@ def test_worker_connect_to_cluster(mock_worker):
 
 def test_worker_abstract_run_method():
     """Test that Worker abstract _run method raises NotImplementedError."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         MockDatabase.return_value = create_mock_database()
         worker = Worker()
 
@@ -1432,7 +1530,7 @@ def test_worker_concrete_implementation():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -2095,7 +2193,7 @@ def test_submit_job_to_endpoint_with_partial_response(cluster_manager):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use provided status but default output
-        assert result.status == "running"
+        assert result.status == cluster_types.JobStatusEnum.RUNNING
         assert result.output == {}
 
 
@@ -2158,41 +2256,22 @@ def test_register_job_to_worker_with_connect_to_cluster_failure(cluster_manager)
             cluster_manager.register_job_to_worker(payload)
 
 
-def test_launch_worker_with_worker_connection_failure(cluster_manager):
-    """Test launch_worker when Worker.connect fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8080"}
-
-    # Mock Node.connect and related methods
-    mock_node_cm = MagicMock()
-    mock_node_cm.launch_worker.return_value = None
-
-    # Mock Worker.connect to raise an exception
-    with (
-        patch("mindtrace.cluster.core.cluster.Node.connect", return_value=mock_node_cm),
-        patch("mindtrace.cluster.core.cluster.Worker.connect", side_effect=ConnectionError("Worker connection failed")),
-    ):
-        with pytest.raises(ConnectionError, match="Worker connection failed"):
-            cluster_manager.launch_worker(payload)
-
-
-def test_launch_worker_with_heartbeat_failure(cluster_manager):
+def test_launch_worker_with_heartbeat_failure(mock_node):
     """Test launch_worker when worker heartbeat() fails."""
-    payload = {"node_url": "http://node:8080", "worker_type": "test_worker", "worker_url": "http://worker:8080"}
-
-    # Mock Node.connect and related methods
-    mock_node_cm = MagicMock()
-    mock_node_cm.launch_worker.return_value = None
+    payload = {
+        "node_url": "http://node:8080",
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8080",
+        "worker_name": "test_worker",
+    }
 
     # Mock Worker.connect and heartbeat
     mock_worker_cm = MagicMock()
     mock_worker_cm.heartbeat.side_effect = Exception("Heartbeat failed")
-
-    with (
-        patch("mindtrace.cluster.core.cluster.Node.connect", return_value=mock_node_cm),
-        patch("mindtrace.cluster.core.cluster.Worker.connect", return_value=mock_worker_cm),
-    ):
-        with pytest.raises(Exception, match="Heartbeat failed"):
-            cluster_manager.launch_worker(payload)
+    mock_node.worker_registry.load.return_value = mock_worker_cm
+    # Async launch should not raise directly; the failure is reflected in status.
+    result = mock_node.launch_worker(payload)
+    assert "launch_id" in result
 
 
 def test_worker_run_with_exception_in_run_method(mock_worker):
@@ -2306,13 +2385,14 @@ def test_worker_shutdown_with_process_kill_failure(mock_worker):
 
 def test_node_launch_worker_with_registry_load_failure(mock_node):
     """Test node launch_worker when registry load fails."""
-    payload = {"worker_type": "test_worker", "worker_url": "http://worker:8080"}
+    payload = {"worker_type": "test_worker", "worker_url": "http://worker:8080", "worker_name": "test_worker"}
 
-    # Mock worker registry to raise an exception
+    # Mock worker registry to raise an exception; async launch should capture
+    # this as a FAILED status rather than raising immediately.
     mock_node.worker_registry.load.side_effect = FileNotFoundError("Worker not found in registry")
 
-    with pytest.raises(FileNotFoundError, match="Worker not found in registry"):
-        mock_node.launch_worker(payload)
+    result = mock_node.launch_worker(payload)
+    assert "launch_id" in result
 
 
 def test_node_shutdown_with_worker_shutdown_failure(mock_node):
@@ -2385,9 +2465,10 @@ def test_register_worker_type_with_job_schema_registration_failure(cluster_manag
         "job_type": "test_job",
     }
 
-    # Mock the registry to avoid IndexError and test job schema registration failure
+    # Mock save to bypass push path (which returns Mock objects from the mock backend),
+    # and mock register_job_schema_to_worker_type to test its failure path
     with (
-        patch.object(cluster_manager.worker_registry, "list_versions", return_value=[]),
+        patch.object(cluster_manager.worker_registry, "save", return_value="1"),
         patch.object(
             cluster_manager,
             "register_job_schema_to_worker_type",
@@ -2412,7 +2493,13 @@ def test_clear_databases_with_partial_failure(cluster_manager):
 def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
     """Test worker_alert_completed_job when worker ID doesn't match stored worker ID."""
     # Create a job status with a different worker ID
-    job_status = cluster_types.JobStatus(job_id="job-123", status="running", output={}, worker_id="different-worker")
+    job_status = cluster_types.JobStatus(
+        job_id="job-123",
+        status=cluster_types.JobStatusEnum.RUNNING,
+        output={},
+        worker_id="different-worker",
+        job=make_job(),
+    )
 
     # Mock database to return this job status for job lookup
     cluster_manager.job_status_database.find.return_value = [job_status]
@@ -2445,3 +2532,254 @@ def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
         "Worker actual-worker alerted cluster manager that job job-123 has completed, but the worker id does not match the stored worker id different-worker"
         in warning_message
     )
+
+
+def test_worker_alert_completed_job_adds_to_dlq_on_failure(cluster_manager):
+    """Test worker_alert_completed_job adds failed jobs to DLQ."""
+    job_id = "failed-job-123"
+    job = make_job()
+
+    # Mock existing job status
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
+    )
+    cluster_manager.job_status_database.find.return_value = [existing_job_status]
+    cluster_manager.worker_status_database.find.return_value = [
+        cluster_types.WorkerStatus(
+            worker_id="worker-123",
+            worker_type="",
+            worker_url="",
+            status=cluster_types.WorkerStatusEnum.RUNNING,
+            last_heartbeat=None,
+            job_id=job_id,
+        )
+    ]
+
+    payload = {
+        "job_id": job_id,
+        "status": "failed",
+        "output": {"error": "Job failed"},
+        "worker_id": "worker-123",
+    }
+
+    cluster_manager.worker_alert_completed_job(payload)
+
+    # Verify job was added to DLQ
+    cluster_manager.dlq_database.insert.assert_called_once()
+    dlq_call_args = cluster_manager.dlq_database.insert.call_args[0][0]
+    assert dlq_call_args.job_id == job_id
+    assert dlq_call_args.output == {"error": "Job failed"}
+    assert dlq_call_args.job == job
+
+    # Verify warning was logged
+    cluster_manager.logger.error.assert_called_once()
+
+
+def test_worker_alert_completed_job_adds_to_dlq_on_error(cluster_manager):
+    """Test worker_alert_completed_job adds error jobs to DLQ."""
+    job_id = "error-job-123"
+    job = make_job()
+
+    # Mock existing job status
+    existing_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id="worker-123", job=job
+    )
+    cluster_manager.job_status_database.find.return_value = [existing_job_status]
+    cluster_manager.worker_status_database.find.return_value = [
+        cluster_types.WorkerStatus(
+            worker_id="worker-123",
+            worker_type="",
+            worker_url="",
+            status=cluster_types.WorkerStatusEnum.RUNNING,
+            last_heartbeat=None,
+            job_id=job_id,
+        )
+    ]
+
+    payload = {
+        "job_id": job_id,
+        "status": "error",
+        "output": {"error": "Job error"},
+        "worker_id": "worker-123",
+    }
+
+    cluster_manager.worker_alert_completed_job(payload)
+
+    # Verify job was added to DLQ
+    cluster_manager.dlq_database.insert.assert_called_once()
+    dlq_call_args = cluster_manager.dlq_database.insert.call_args[0][0]
+    assert dlq_call_args.job_id == job_id
+    assert dlq_call_args.output == {"error": "Job error"}
+    assert dlq_call_args.job == job
+
+
+def test_get_dlq_jobs(cluster_manager):
+    """Test get_dlq_jobs method."""
+    # Mock DLQ database to return some jobs
+    dlq_job1 = cluster_types.DLQJobStatus(job_id="job-1", output={"error": "Error 1"}, job=make_job())
+    dlq_job2 = cluster_types.DLQJobStatus(job_id="job-2", output={"error": "Error 2"}, job=make_job())
+    cluster_manager.dlq_database.all.return_value = [dlq_job1, dlq_job2]
+
+    result = cluster_manager.get_dlq_jobs()
+
+    # Verify all() was called on DLQ database
+    cluster_manager.dlq_database.all.assert_called_once()
+    assert result["jobs"] == [dlq_job1, dlq_job2]
+
+
+def test_get_dlq_jobs_empty(cluster_manager):
+    """Test get_dlq_jobs when DLQ is empty."""
+    cluster_manager.dlq_database.all.return_value = []
+
+    result = cluster_manager.get_dlq_jobs()
+
+    assert result["jobs"] == []
+    cluster_manager.dlq_database.all.assert_called_once()
+
+
+def test_requeue_from_dlq(cluster_manager):
+    """Test requeue_from_dlq method."""
+    job_id = "job-123"
+    job = make_job()
+
+    # Mock DLQ database to return a job
+    dlq_job_status = MagicMock()
+    dlq_job_status.job_id = job_id
+    dlq_job_status.output = {"error": "Failed"}
+    dlq_job_status.job = job
+    dlq_job_status.pk = "dlq-pk-123"
+    cluster_manager.dlq_database.find.return_value = [dlq_job_status]
+
+    # Mock submit_job to return a new job status
+    new_job_status = cluster_types.JobStatus(
+        job_id=job_id, status=cluster_types.JobStatusEnum.QUEUED, output={}, worker_id="", job=job
+    )
+    cluster_manager.submit_job = MagicMock(return_value=new_job_status)
+
+    payload = {"job_id": job_id}
+    result = cluster_manager.requeue_from_dlq(payload)
+
+    # Verify job was removed from DLQ
+    cluster_manager.dlq_database.find.assert_called_once()
+    cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
+
+    # Verify job was requeued
+    cluster_manager.submit_job.assert_called_once_with(job)
+    assert result == new_job_status
+
+    # Verify logging
+    cluster_manager.logger.info.assert_called_with(f"Requeued job {job_id} from DLQ")
+
+
+def test_requeue_from_dlq_job_not_found(cluster_manager):
+    """Test requeue_from_dlq when job is not in DLQ."""
+    job_id = "nonexistent-job"
+    cluster_manager.dlq_database.find.return_value = []
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.requeue_from_dlq(payload)
+
+
+def test_requeue_from_dlq_multiple_jobs(cluster_manager):
+    """Test requeue_from_dlq when multiple jobs with same ID exist (should raise error)."""
+    job_id = "job-123"
+    dlq_job1 = MagicMock()
+    dlq_job1.job_id = job_id
+    dlq_job2 = MagicMock()
+    dlq_job2.job_id = job_id
+    cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.requeue_from_dlq(payload)
+
+
+def test_discard_from_dlq(cluster_manager):
+    """Test discard_from_dlq method."""
+    job_id = "job-123"
+
+    # Mock DLQ database to return a job
+    dlq_job_status = MagicMock()
+    dlq_job_status.job_id = job_id
+    dlq_job_status.output = {"error": "Failed"}
+    dlq_job_status.job = make_job()
+    dlq_job_status.pk = "dlq-pk-123"
+    cluster_manager.dlq_database.find.return_value = [dlq_job_status]
+
+    payload = {"job_id": job_id}
+    cluster_manager.discard_from_dlq(payload)
+
+    # Verify job was removed from DLQ
+    cluster_manager.dlq_database.find.assert_called_once()
+    cluster_manager.dlq_database.delete.assert_called_once_with("dlq-pk-123")
+
+    # Verify logging
+    cluster_manager.logger.info.assert_called_with(f"Discarded job {job_id} from DLQ")
+
+
+def test_discard_from_dlq_job_not_found(cluster_manager):
+    """Test discard_from_dlq when job is not in DLQ."""
+    job_id = "nonexistent-job"
+    cluster_manager.dlq_database.find.return_value = []
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.discard_from_dlq(payload)
+
+
+def test_discard_from_dlq_multiple_jobs(cluster_manager):
+    """Test discard_from_dlq when multiple jobs with same ID exist (should raise error)."""
+    job_id = "job-123"
+    dlq_job1 = MagicMock()
+    dlq_job1.job_id = job_id
+    dlq_job2 = MagicMock()
+    dlq_job2.job_id = job_id
+    cluster_manager.dlq_database.find.return_value = [dlq_job1, dlq_job2]
+
+    payload = {"job_id": job_id}
+
+    with pytest.raises(ValueError, match=f"Job not found in DLQ for job id {job_id}"):
+        cluster_manager.discard_from_dlq(payload)
+
+
+def test_clear_databases_includes_dlq(cluster_manager):
+    """Test clear_databases includes dlq_database."""
+    # Mock entries in all databases including DLQ
+    mock_entry1 = MagicMock()
+    mock_entry1.pk = "pk1"
+    mock_entry2 = MagicMock()
+    mock_entry2.pk = "pk2"
+    mock_entry3 = MagicMock()
+    mock_entry3.pk = "pk3"
+    mock_entry4 = MagicMock()
+    mock_entry4.pk = "pk4"
+    mock_entry5 = MagicMock()
+    mock_entry5.pk = "pk5"
+    mock_entry6 = MagicMock()
+    mock_entry6.pk = "pk6"
+
+    cluster_manager.job_schema_targeting_database.all.return_value = [mock_entry1]
+    cluster_manager.job_status_database.all.return_value = [mock_entry2]
+    cluster_manager.dlq_database.all.return_value = [mock_entry3]
+    cluster_manager.worker_auto_connect_database.all.return_value = [mock_entry4]
+    cluster_manager.worker_status_database.all.return_value = [mock_entry5, mock_entry6]
+
+    cluster_manager.clear_databases()
+
+    # Verify all() was called on each database including DLQ
+    cluster_manager.job_schema_targeting_database.all.assert_called_once()
+    cluster_manager.job_status_database.all.assert_called_once()
+    cluster_manager.dlq_database.all.assert_called_once()
+    cluster_manager.worker_auto_connect_database.all.assert_called_once()
+    cluster_manager.worker_status_database.all.assert_called_once()
+
+    # Verify delete was called for all entries including DLQ
+    assert cluster_manager.job_schema_targeting_database.delete.call_count == 1
+    assert cluster_manager.job_status_database.delete.call_count == 1
+    assert cluster_manager.dlq_database.delete.call_count == 1
+    assert cluster_manager.worker_auto_connect_database.delete.call_count == 1
+    assert cluster_manager.worker_status_database.delete.call_count == 2

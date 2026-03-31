@@ -1,1191 +1,752 @@
-import shutil
-import threading
-import uuid
-from contextlib import contextmanager, nullcontext
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any, Dict, List, Type
+"""Public Registry facade.
 
-from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
+This module provides the ``Registry`` class — the single public entry point for all
+registry operations. It delegates to ``_RegistryCore`` for the actual implementation
+and transparently adds local caching when a remote backend is used.
+"""
+
+import hashlib
+from pathlib import Path
+from typing import Any, Dict, List, Type, overload
+
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, Timeout, first_not_none, ifnone, instantiate_target
+from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError
+from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
 class Registry(Mindtrace):
-    """A distributed concurrency-safe registry for storing and versioning objects.
+    """A registry for storing and versioning objects.
 
-    This class provides a distributed concurrency-safe interface for storing, loading, and managing objects
-    with versioning support. All operations are protected by distributed locks to ensure
-    safety across multiple processes and machines while allowing recursive lock acquisition.
+    This class provides an interface for storing, loading, and managing objects
+    with versioning support. When a remote backend is used with ``use_cache=True``
+    (the default), a local cache is transparently maintained to speed up reads.
 
-    The registry uses a backend for actual storage operations and maintains an artifact
-    store for temporary storage during save/load operations. It also manages materializers
-    for different object types and provides both a high-level API and a dictionary-like
-    interface.
     Example::
 
         from mindtrace.registry import Registry
 
-        registry = Registry("~/.cache/mindtrace/my_registry")  # Uses the default registry directory in ~/.cache/mindtrace/registry
+        registry = Registry("~/.cache/mindtrace/my_registry")
 
-        # Save some objects to the registry
         registry.save("test:int", 42)
-        registry.save("test:float", 3.14)
-        registry.save("test:list", [1, 2, 3])
-        registry.save("test:dict", {"a": 1, "b": 2})
-        registry.save("test:str", "Hello, World!", metadata={"description": "A helpful comment"})
+        registry.save("test:str", "Hello, World!", metadata={"description": "A greeting"})
 
-        # Print the contents of the registry
-        print(registry)
+        obj = registry.load("test:int")
 
-        # Load an object from the registry
-        object = registry.load("test:int")
-
-        # Using dictionary-style syntax, the following is equivalent to the above:
-        registry["test:int"] = object
-        object = registry["test:int"]
-
-        # Display the registry contents
-        print(registry)
-
-                          Registry at ~/.cache/mindtrace/my_registry
-        ┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-        ┃ Object     ┃ Class          ┃ Value         ┃ Metadata                      ┃
-        ┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-        │ test:dict  │ builtins.dict  │ <dict>        │ (none)                        │
-        │ test:float │ builtins.float │ 3.14          │ (none)                        │
-        │ test:int   │ builtins.int   │ 42            │ (none)                        │
-        │ test:list  │ builtins.list  │ <list>        │ (none)                        │
-        │ test:str   │ builtins.str   │ Hello, World! │ description=A helpful comment │
-        └────────────┴────────────────┴───────────────┴───────────────────────────────┘
-
-        # Get information about an object
-        registry.info("test:int")
-
-        # Delete an object
-        del registry["test:int"]  # equivalent to registry.delete("test:int")
-
-    Example: Using a local directory as the registry store::
-
-        from mindtrace.registry import Registry
-
-        registry = Registry(registry_dir="~/.cache/mindtrace/my_registry")
+        # Dictionary-style access
+        registry["test:int"] = 42
+        obj = registry["test:int"]
 
     Example: Using Minio as the registry store::
 
         from mindtrace.registry import Registry, MinioRegistryBackend
 
-        # Connect to a remote MinIO registry (expected to be non-local in practice)
         minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry",
             endpoint="localhost:9000",
             access_key="minioadmin",
             secret_key="minioadmin",
             bucket="minio-registry",
-            secure=False
+            secure=False,
         )
         registry = Registry(backend=minio_backend)
 
+    Example: Using GCP as the registry store::
+
+        from mindtrace.registry import Registry, GCPRegistryBackend
+
+        gcp_backend = GCPRegistryBackend(
+            project_id="your-project-id",
+            bucket_name="your-bucket-name",
+            prefix="your-prefix",
+            credentials_path="path/to/service-account.json",
+            max_workers=4,
+            lock_timeout=5,
+        )
+        registry = Registry(backend=gcp_backend)
+
     Example: Using versioning::
 
-        from mindtrace.registry import Registry
-
-        # Versioning follows semantic versioning conventions
-        registry = Registry(version_objects=True, registry_dir="~/.cache/mindtrace/my_registry")
-        registry.save("test:int", 42)  # version = "1"
-        registry.save("test:int", 43)  # version = "2"  # auto-increments version number
+        registry = Registry("~/.cache/mindtrace/my_registry", version_objects=True)
+        registry.save("test:int", 42)           # version = "1"
+        registry.save("test:int", 43)           # version = "2"
         registry.save("test:int", 44, version="2.1")  # version = "2.1"
-        registry.save("test:int", 45)  # version = "2.2"  # auto-increments version number
-        registry.save("test:int", 46, version="2.2")  # Error: version "2.2" already exists
-
-        # Use the "@" symbol in the name to specify a version when using dictionary-style syntax
-        object = registry["test:int@2.1"]
-        registry["test:int@2.3"] = 47
-        registry["test:int"] = 48  # auto-increments version number
-
-        print(registry.__str__(latest_only=False))  # prints all versions
-
-                    ~/.cache/mindtrace/my_registry
-        ┏━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━┓
-        ┃ Object   ┃ Version ┃ Class        ┃ Value ┃ Metadata ┃
-        ┡━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━┩
-        │ test:int │ v1      │ builtins.int │ 42    │ (none)   │
-        │ test:int │ v2      │ builtins.int │ 43    │ (none)   │
-        │ test:int │ v2.1    │ builtins.int │ 44    │ (none)   │
-        │ test:int │ v2.2    │ builtins.int │ 45    │ (none)   │
-        │ test:int │ v2.3    │ builtins.int │ 47    │ (none)   │
-        │ test:int │ v2.4    │ builtins.int │ 48    │ (none)   │
-        └──────────┴─────────┴──────────────┴───────┴──────────┘
-
-    Example: Registering your own materializers::
-
-        # In order to use the Registry with a custom class, define an Archiver for your custom class:
-
-        import json
-        from pathlib import Path
-        from typing import Any, ClassVar, Tuple, Type
-
-        from zenml.enums import ArtifactType
-
-        from mindtrace.registry import Archiver
-        from zenml.materializers.base_materializer import BaseMaterializer
-
-        class MyObject:
-            def __init__(self, name: str, age: int):
-                self.name = name
-                self.age = age
-
-            def __str__(self):
-                return f"MyObject(name={self.name}, age={self.age})"
-
-        class MyObjectArchiver(Archiver):  # May also derive from zenml.BaseMaterializer
-            ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (MyObject,)
-            ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
-            def __init__(self, uri: str, **kwargs):
-                super().__init__(uri=uri, **kwargs)
-
-            def save(self, my_object: MyObject):
-                with open(Path(self.uri) / "my_object.json", "w") as f:
-                    json.dump(my_object, f)
-
-            def load(self, data_type: Type[Any]) -> MyObject:
-                with open(Path(self.uri) / "my_object.json", "r") as f:
-                    return MyObject(**json.load(f))
-
-        # Then register the archiver with the Registry:
-        Registry.register_materializer(MyObject, MyObjectArchiver)
-
-
-        # Put the above into a single file, then when your class is imported it will be compatible with the Registry
-
-        from mindtrace.registry import Registry
-        from my_lib import MyObject  # Registers your custom Archiver to the Registry class here
-
-        registry = Registry()
-        my_obj = MyObject(name="Edward", age=42)
-
-        registry["my_obj"] = my_obj
     """
-
-    # Class-level default materializer registry and lock
-    _default_materializers = {}
-    _materializer_lock = threading.Lock()
 
     def __init__(
         self,
-        registry_dir: str | Path | None = None,
-        backend: RegistryBackend | None = None,
-        version_objects: bool = False,
+        backend: str | Path | RegistryBackend | None = None,
+        version_objects: bool | None = None,
+        mutable: bool | None = None,
+        version_digits: int | None = None,
+        versions_cache_ttl: float = 60.0,
+        use_cache: bool = True,
         **kwargs,
     ):
         """Initialize the registry.
 
         Args:
-            registry_dir: Directory to store registry objects. If None, uses the default from config.
-            backend: Backend to use for storage. If None, uses LocalRegistryBackend.
-            version_objects: Whether to keep version history. If False, only one version per object is kept.
-            **kwargs: Additional arguments to pass to the backend.
+            backend: Backend to use for storage. Can be a path string, ``Path``,
+                or a ``RegistryBackend`` instance. If ``None``, uses the default
+                local registry directory.
+            version_objects: Whether to keep version history. If ``None`` (default),
+                uses the stored setting from an existing registry, or ``False``
+                for a new registry.
+            mutable: Whether to allow overwriting existing versions. If ``None``
+                (default), uses the stored setting, or ``False`` for a new registry.
+            versions_cache_ttl: TTL in seconds for the in-memory versions cache.
+            use_cache: Whether to maintain a local cache for remote backends.
+                Default ``True``.
+            **kwargs: Additional arguments forwarded to the backend.
         """
+        # Registry is a library-facing API; avoid leaking debug records into
+        # globally configured root handlers (e.g. ZenML import-time logging).
+        kwargs.setdefault("propagate", False)
+
         super().__init__(**kwargs)
 
-        if backend is None:
-            if registry_dir is None:
-                registry_dir = self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]
-            registry_dir = Path(registry_dir).expanduser().resolve()
-            backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
-        self.backend = backend
-        self.version_objects = version_objects
+        is_remote = backend is not None and not isinstance(backend, (str, Path, LocalRegistryBackend))
 
-        self._artifact_store = LocalArtifactStore(
-            name="local_artifact_store",
-            id=None,  # Will be auto-generated
-            config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
-            ),
-            flavor="local",
-            type="artifact-store",
-            user=None,  # Will be auto-generated
-            created=None,  # Will be auto-generated
-            updated=None,  # Will be auto-generated
-        )
+        if use_cache and is_remote:
+            # Remote backend with local caching
+            self._remote: _RegistryCore = _RegistryCore(
+                backend=backend,
+                version_objects=version_objects,
+                mutable=mutable,
+                version_digits=version_digits,
+                versions_cache_ttl=versions_cache_ttl,
+                **kwargs,
+            )
+            cache_dir = self._get_cache_dir(self._remote.backend.uri)
+            self._cache: _RegistryCore = _RegistryCore(
+                backend=LocalRegistryBackend(uri=cache_dir),
+                version_objects=self._remote.version_objects,
+                mutable=True,  # cache is always mutable for updates
+                version_digits=self._remote.version_digits,
+                versions_cache_ttl=versions_cache_ttl,
+                **kwargs,
+            )
+            self._core = self._remote
+            self._cached = True
+        else:
+            # Local or uncached remote — direct access
+            self._core: _RegistryCore = _RegistryCore(
+                backend=backend,
+                version_objects=version_objects,
+                mutable=mutable,
+                version_digits=version_digits,
+                versions_cache_ttl=versions_cache_ttl,
+                **kwargs,
+            )
+            self._remote = None  # type: ignore
+            self._cache = None  # type: ignore
+            self._cached = False
 
-        # Materializer cache to reduce lock contention
-        self._materializer_cache = {}
-        self._materializer_cache_lock = threading.Lock()
+        self.logger = self._core.logger
 
-        # Register the default materializers if there are none
-        self._register_default_materializers()
-        # Warm the materializer cache to reduce lock contention
-        self._warm_materializer_cache()
+    # ─────────────────────────────────────────────────────────────────────────
+    # Properties (delegated to _core)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @property
+    def backend(self) -> RegistryBackend:
+        return self._core.backend
+
+    @backend.setter
+    def backend(self, value: RegistryBackend) -> None:
+        self._core.backend = value
+
+    @property
+    def version_objects(self) -> bool:
+        return self._core.version_objects
+
+    @property
+    def mutable(self) -> bool:
+        return self._core.mutable
+
+    @property
+    def version_digits(self) -> int:
+        return self._core.version_digits
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Class-level materializer registry (delegates to _RegistryCore)
+    # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
     def register_default_materializer(cls, object_class: str | type, materializer_class: str):
-        """Register a default materializer at the class level.
-
-        Args:
-            object_class: Object class (str or type) to register the materializer for.
-            materializer_class: Materializer class string to register.
-        """
-        if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}"
-        with cls._materializer_lock:
-            cls._default_materializers[object_class] = materializer_class
+        """Register a default materializer at the class level."""
+        _RegistryCore.register_default_materializer(object_class, materializer_class)
 
     @classmethod
     def get_default_materializers(cls):
         """Get a copy of the class-level default materializers dictionary."""
-        with cls._materializer_lock:
-            return dict(cls._default_materializers)
+        return _RegistryCore.get_default_materializers()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Cache utilities
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_cache_dir(backend_uri: str | Path, config: Dict[str, Any] | None = None) -> Path:
+        """Generate a deterministic cache directory path based on backend URI hash.
+
+        Args:
+            backend_uri: URI of the remote backend.
+            config: Optional config dict. If ``None``, uses the class-level config.
+        """
+        uri_hash = hashlib.sha256(str(backend_uri).encode()).hexdigest()[:16]
+        if config is None:
+            from mindtrace.core.config import CoreConfig
+
+            config = CoreConfig()
+        temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
+        return temp_dir / f"registry_cache_{uri_hash}"
+
+    def _is_cache_stale(self, name: str, version: str | None) -> bool:
+        """Check if a cached item is stale by comparing hashes with remote."""
+        try:
+            resolved_version = version if version and version != "latest" else self._remote._latest(name)
+            if not resolved_version:
+                return True
+
+            try:
+                remote_meta = self._remote.backend.fetch_metadata(name, resolved_version).first()
+            except Exception:
+                remote_meta = None
+
+            try:
+                cache_meta = self._cache.backend.fetch_metadata(name, resolved_version).first()
+            except Exception:
+                cache_meta = None
+
+            remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
+            cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
+
+            if not remote_hash:
+                return True
+            if not cache_hash:
+                return True
+
+            return remote_hash != cache_hash
+        except Exception as e:
+            self.logger.debug(f"Error checking cache staleness for {name}@{version}: {e}")
+            return True
+
+    def _find_stale_indices(self, resolved: List[tuple[str, str]], indices: List[int]) -> set[int]:
+        """Find indices of stale cached items by comparing hashes."""
+        if not indices:
+            return set()
+
+        names = [resolved[i][0] for i in indices]
+        versions = [resolved[i][1] for i in indices]
+
+        remote_results = self._remote.backend.fetch_metadata(names, versions)
+        cache_results = self._cache.backend.fetch_metadata(names, versions)
+
+        stale = set()
+        for i, (n, v) in zip(indices, zip(names, versions)):
+            remote_meta = remote_results.get((n, v))
+            cache_meta = cache_results.get((n, v))
+
+            remote_hash = remote_meta.metadata.get("hash") if remote_meta and remote_meta.ok else None
+            cache_hash = cache_meta.metadata.get("hash") if cache_meta and cache_meta.ok else None
+
+            # If we can't verify either side, treat cache as stale (consistent with _is_cache_stale).
+            if not remote_hash or not cache_hash:
+                stale.add(i)
+            elif remote_hash != cache_hash:
+                stale.add(i)
+
+        return stale
+
+    def clear_cache(self) -> None:
+        """Clear the local cache. No-op if caching is not enabled."""
+        if self._cached:
+            self._cache.clear()
+            self.logger.debug("Cleared local cache.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Core operations (cache-aware when _cached is True)
+    # ─────────────────────────────────────────────────────────────────────────
 
     def save(
         self,
-        name: str,
-        obj: Any,
+        name: str | List[str],
+        obj: Any | List[Any],
         *,
         materializer: Type[BaseMaterializer] | None = None,
-        version: str | None = None,
-        init_params: Dict[str, Any] | None = None,
-        metadata: Dict[str, Any] | None = None,
-    ):
-        """Save an object to the registry.
+        version: str | None | List[str | None] = None,
+        init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
+        metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
+        on_conflict: str | None = None,
+    ) -> str | None | BatchResult:
+        """Save object(s) to the registry.
 
-        If a materializer is not provided, the materializer will be inferred from the object type. The inferred
-        materializer will be registered with the object for loading the object from the registry in the future. The
-        order of precedence for determining the materializer is:
-
-        1. Materializer provided as an argument.
-        2. Materializer previously registered for the object type.
-        3. Materializer for any of the object's base classes (checked recursively).
-        4. The object itself, if it's its own materializer.
-
-        If a materializer cannot be found through one of the above means, an error will be raised.
+        When caching is enabled, saves to the remote backend first, then
+        updates the local cache.
 
         Args:
-            name: Name of the object.
-            obj: Object to save.
-            materializer: Materializer to use. If None, uses the default for the object type.
-            version: Version of the object. If None, auto-increments the version number.
-            init_params: Additional parameters to pass to the materializer.
-            metadata: Additional metadata to store with the object.
+            name: Name(s) of the object(s). Single string or list.
+            obj: Object(s) to save.
+            materializer: Materializer to use. If ``None``, uses the default.
+            version: Version(s). If ``None``, auto-increments.
+            init_params: Additional parameters for the materializer(s).
+            metadata: Additional metadata to store with the object(s).
+            on_conflict: Behavior when version already exists (``"skip"`` or ``"overwrite"``).
 
-        Raises:
-            ValueError: If no materializer is found for the object.
-            ValueError: If version string is invalid.
+        Returns:
+            Single item: Resolved version string.
+            Batch (list): ``BatchResult`` with results, errors, and status.
         """
-        object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-
-        # Get all base classes recursively
-        def get_all_base_classes(cls):
-            bases = []
-            for base in cls.__bases__:
-                bases.append(base)
-                bases.extend(get_all_base_classes(base))
-            return bases
-
-        # Try to find a materializer in order of precedence
-        materializer = first_not_none(
-            (
-                materializer,
-                self.registered_materializer(object_class),
-                *[
-                    self.registered_materializer(f"{base.__module__}.{base.__name__}")
-                    for base in get_all_base_classes(type(obj))
-                ],
-                object_class if isinstance(obj, BaseMaterializer) else None,
+        if not self._cached:
+            return self._core.save(
+                name,
+                obj,
+                materializer=materializer,
+                version=version,
+                init_params=init_params,
+                metadata=metadata,
+                on_conflict=on_conflict,
             )
+
+        # Save to remote first
+        result = self._remote.save(
+            name,
+            obj,
+            materializer=materializer,
+            version=version,
+            init_params=init_params,
+            metadata=metadata,
+            on_conflict=on_conflict,
         )
 
-        if materializer is None:
-            raise ValueError(f"No materializer found for object of type {type(obj)}.")
-        materializer_class = (
-            f"{type(materializer).__module__}.{type(materializer).__name__}"
-            if not isinstance(materializer, str)
-            else materializer
-        )
-
-        # Generate temp version for atomic save
-        temp_version = f"__temp__{uuid.uuid4()}__"
-
-        # Acquire a lock for the entire save operation to prevent race conditions
-        # Use a special lock name that covers all operations for this object
-        with self.get_lock(name, "save_operation"):
-            if not self.version_objects or version is None:
-                version = self._next_version(name)
+        # Update cache (best effort)
+        try:
+            if isinstance(name, list):
+                if isinstance(result, BatchResult):
+                    objs_list = obj if isinstance(obj, list) else [obj] * len(name)
+                    to_cache = [
+                        (name[i], result.results[i], objs_list[i])
+                        for i in range(len(name))
+                        if result.results[i] is not None
+                    ]
+                    if to_cache:
+                        self._cache.save(
+                            [t[0] for t in to_cache],
+                            [t[2] for t in to_cache],
+                            version=[t[1] for t in to_cache],
+                            on_conflict=OnConflict.OVERWRITE,
+                        )
             else:
-                # Validate and normalize version string
-                version = self._validate_version(version)
-                if self.has_object(name=name, version=version):
-                    self.logger.error(f"Object {name} version {version} already exists.")
-                    raise ValueError(f"Object {name} version {version} already exists.")
+                if result is not None:
+                    self._cache.save(name, obj, version=result, on_conflict=OnConflict.OVERWRITE)
+        except Exception as e:
+            self.logger.warning(f"Error updating cache: {e}")
 
-            try:
-                # Save to temp location first
-                with self.get_lock(name, temp_version):
-                    try:
-                        metadata = {
-                            "class": object_class,
-                            "materializer": materializer_class,
-                            "init_params": ifnone(init_params, default={}),
-                            "metadata": ifnone(metadata, default={}),
-                        }
-                        with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                            materializer = instantiate_target(
-                                materializer, uri=temp_dir, artifact_store=self._artifact_store
-                            )
-                            materializer.save(obj)
-                            self.backend.push(name=name, version=temp_version, local_path=temp_dir)
-                            self.backend.save_metadata(name=name, version=temp_version, metadata=metadata)
-                    except Exception as e:
-                        self.logger.error(f"Error saving object to temp location {name}@{temp_version}: {e}")
-                        raise e
+        return result
 
-                # Move the temp version to the final version
-                try:
-                    self.backend.overwrite(
-                        source_name=name, source_version=temp_version, target_name=name, target_version=version
-                    )
-
-                except Exception as e:
-                    self.logger.error(f"Error moving temp version to final version for {name}@{version}: {e}")
-                    raise e
-
-            finally:
-                # Cleanup temp version
-                try:
-                    self.backend.delete(name=name, version=temp_version)
-                    self.backend.delete_metadata(name=name, version=temp_version)
-                except Exception as e:
-                    self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
-
-        self.logger.debug(f"Saved {name}@{version} to registry.")
-
+    @overload
     def load(
         self,
         name: str,
         version: str | None = "latest",
         output_dir: str | None = None,
-        acquire_lock: bool = True,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any: ...
+
+    @overload
+    def load(
+        self,
+        name: List[str],
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> BatchResult: ...
+
+    def load(
+        self,
+        name: str | List[str],
+        version: str | None | List[str | None] = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.INTEGRITY,
+        **kwargs,
+    ) -> Any | BatchResult:
+        """Load object(s) from the registry.
+
+        When caching is enabled, tries the local cache first, falling back
+        to the remote backend. The ``verify`` parameter controls cache
+        validation:
+
+        - ``"none"``: Trust cache completely, fastest.
+        - ``"integrity"``: Verify hash integrity only (no staleness check). default.
+        - ``"full"``: integrity + staleness check (cache only).
+
+        Args:
+            name: Name(s) of the object(s). Single string or list.
+            version: Version(s). Defaults to ``"latest"``.
+            output_dir: If loaded object is a ``Path``, move contents here.
+            verify: Verification level for loaded artifacts (default: ``"integrity"``).
+            **kwargs: Additional keyword arguments passed to materializers.
+
+        Returns:
+            Single item: The loaded object.
+            Batch (list): ``BatchResult`` with results, errors, and status.
+        """
+        if not self._cached:
+            # For non-cached, FULL degrades to INTEGRITY (no remote to compare)
+            if verify == VerifyLevel.FULL:
+                verify = VerifyLevel.INTEGRITY
+            return self._core.load(name, version, output_dir=output_dir, verify=verify, **kwargs)
+
+        if isinstance(name, list):
+            return self._load_batch_cached(name, version, output_dir, verify, **kwargs)
+        return self._load_single_cached(name, version, output_dir, verify, **kwargs)
+
+    def _load_single_cached(
+        self,
+        name: str,
+        version: str | None = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> Any:
-        """Load an object from the registry.
+        """Load a single object with cache-first pattern."""
+        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+        check_staleness = verify == VerifyLevel.FULL
 
-        Args:
-            name: Name of the object.
-            version: Version of the object.
-            output_dir (optional): If the loaded object is a Path, the Path contents will be moved to this directory.
-            acquire_lock: Whether to acquire a lock for this operation. Set to False if the caller already has a lock.
-            **kwargs: Additional keyword arguments to pass to the object's constructor.
-
-        Returns:
-            The loaded object.
-
-        Raises:
-            ValueError: If the object does not exist.
-        """
-        if version == "latest" or not self.version_objects:
-            version = self._latest(name)
-
-        if not self.has_object(name=name, version=version):
-            self.logger.error(f"Object {name} version {version} does not exist.")
-            raise ValueError(f"Object {name} version {version} does not exist.")
-
-        # Acquire shared lock for reading if requested
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
-            metadata = self.info(name=name, version=version, acquire_lock=acquire_lock)
-            if not metadata.get("class"):
-                raise ValueError(f"Class not registered for {name}@{version}.")
-
-            self.logger.debug(f"Loading {name}@{version} from registry.")
-            self.logger.debug(f"Metadata: {metadata}")
-
-        object_class = metadata["class"]
-        materializer = metadata["materializer"]
-        init_params = metadata.get("init_params", {}).copy()
-        init_params.update(kwargs)
-
-        # Now acquire lock for the actual load operation
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
-            try:
-                with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                    self.backend.pull(name=name, version=version, local_path=temp_dir)
-                    materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
-
-                    # Convert string class name to actual class
-                    if isinstance(object_class, str):
-                        module_name, class_name = object_class.rsplit(".", 1)
-                        module = __import__(module_name, fromlist=[class_name])
-                        object_class = getattr(module, class_name)
-
-                    obj = materializer.load(data_type=object_class, **init_params)
-
-                    # If the object is a Path, optionally move it to the target directory
-                    if isinstance(obj, Path) and output_dir is not None:
-                        if obj.exists():
-                            output_path = Path(output_dir)
-                            if obj.is_file():
-                                # For files, move the file to the output directory
-                                shutil.move(str(obj), str(output_path / obj.name))
-                                obj = output_path / obj.name
-                            else:
-                                # For directories, copy all contents
-                                for item in obj.iterdir():
-                                    shutil.move(str(item), str(output_path / item.name))
-                                obj = output_path
-                return obj
-            except Exception as e:
-                self.logger.error(f"Error loading {name}@{version}: {e}")
-                raise e
-            else:
-                self.logger.debug(f"Loaded {name}@{version} from registry.")
-
-    def delete(self, name: str, version: str | None = None) -> None:
-        """Delete an object from the registry.
-
-        Args:
-            name: Name of the object.
-            version: Version of the object. If None, deletes all versions.
-
-        Raises:
-            KeyError: If the object doesn't exist.
-        """
-        if version is None:
-            # Check if object exists at all
-            if name not in self.list_objects():
-                raise KeyError(f"Object {name} does not exist")
-            versions = self.list_versions(name)
-        else:
-            # Check if specific version exists
-            if not self.has_object(name, version):
-                raise KeyError(f"Object {name} version {version} does not exist")
-            versions = [version]
-
-        for ver in versions:
-            with self.get_lock(name, version):
-                self.backend.delete(name, ver)
-                self.backend.delete_metadata(name, ver)
-        self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
-
-    def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
-        """Get detailed information about objects in the registry.
-
-        Args:
-            name: Optional name of a specific object. If None, returns info for all objects.
-            version: Optional version string. If None and name is provided, returns info for latest version.
-                    Ignored if name is None.
-            acquire_lock: Whether to acquire a lock for this operation. Set to False if the caller already has a lock.
-
-        Returns:
-            If name is None:
-                Dictionary with all object names mapping to their versions and metadata.
-            If name is provided:
-                Dictionary with object name, version, class, and metadata for specific object.
-
-        Example::
-            from pprint import pprint
-            from mindtrace.core import Registry
-
-            registry = Registry()
-
-            # Get info for all objects
-            all_info = registry.info()
-            pprint(all_info)  # Shows all objects, versions, and metadata
-
-            # Get info for all versions of a specific object
-            object_info = registry.info("yolo8")
-
-            # Get info for the latest object version
-            object_info = registry.info("yolo8", version="latest")
-
-            # Get info for specific object and version
-            object_info = registry.info("yolo8", version="1.0.0")
-        """
-        if name is None:
-            # Return info for all objects
-            result = {}
-            for obj_name in self.list_objects():
-                result[obj_name] = {}
-                for ver in self.list_versions(obj_name):
+        # Try cache first
+        try:
+            if resolved_v and self._cache.has_object(name, resolved_v):
+                if not check_staleness or not self._is_cache_stale(name, resolved_v):
                     try:
-                        lock_context = self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
-                        with lock_context:
-                            meta = self.backend.fetch_metadata(obj_name, ver)
-                            result[obj_name][ver] = meta
-                    except Exception as e:
-                        self.logger.warning(f"Error loading metadata for {obj_name}@{ver}: {e}")
-                        continue
-            return result
-        elif version is not None or version == "latest":
-            # Return info for a specific object
-            if version == "latest":
-                version = self._latest(name)
-            lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-            with lock_context:
-                info = self.backend.fetch_metadata(name, version)
-                info.update({"version": version})
-                return info
-        else:  # name is not None and version is None, return all versions for the given object name
-            result = {}
-            for ver in self.list_versions(name):
-                lock_context = self.get_lock(name, ver, shared=True) if acquire_lock else nullcontext()
-                with lock_context:
-                    info = self.backend.fetch_metadata(name, ver)
-                    info.update({"version": ver})
-                    result[ver] = info
-            return result
+                        return self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
+                    except ValueError:
+                        self.logger.debug(f"Cache corrupted for {name}@{resolved_v}, re-downloading")
+                        try:
+                            self._cache.delete(name, resolved_v)
+                        except Exception:
+                            pass
+        except Exception:
+            pass  # Any cache error — fall through to remote
 
-    def has_object(self, name: str, version: str = "latest") -> bool:
-        """Check if an object exists in the registry.
+        # Load from remote
+        obj = self._remote.load(name, version, output_dir=output_dir, verify=verify, **kwargs)
 
-        Args:
-            name: Name of the object.
-            version: Version of the object. If "latest", checks the latest version.
+        # Update cache (best effort)
+        cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
+        if cache_v:
+            try:
+                self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
+            except Exception as e:
+                self.logger.warning(f"Error caching {name}: {e}")
 
-        Returns:
-            True if the object exists, False otherwise.
-        """
-        if version == "latest":
-            version = self._latest(name)
-            if version is None:
-                return False
-        return self.backend.has_object(name, version)
+        return obj
 
-    def register_materializer(self, object_class: str | type, materializer_class: str | type):
-        """Register a materializer for an object class.
+    def _load_batch_cached(
+        self,
+        names: List[str],
+        versions: str | None | List[str | None] = "latest",
+        output_dir: str | None = None,
+        verify: str = VerifyLevel.FULL,
+        **kwargs,
+    ) -> BatchResult:
+        """Load multiple objects with cache-first pattern."""
+        n = len(names)
+        versions_list = versions if isinstance(versions, list) else [versions] * n
 
-        Args:
-            object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
-        """
-        if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}"
-        if isinstance(materializer_class, type):
-            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+        if n != len(versions_list):
+            raise ValueError("name and version lists must have same length")
 
-        with self.get_lock("_registry", "materializers"):
-            self.backend.register_materializer(object_class, materializer_class)
+        check_staleness = verify == VerifyLevel.FULL
 
-            # Update cache
-            with self._materializer_cache_lock:
-                self._materializer_cache[object_class] = materializer_class
+        # Resolve versions from remote (authoritative source)
+        resolved: List[tuple[str, str] | None] = []
+        objects: List[Any | None] = [None] * n
+        errors: Dict[tuple[str, str], dict] = {}
 
-    def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class (cached).
+        for name, ver in zip(names, versions_list):
+            try:
+                rv = self._remote._resolve_load_version(name, ver)
+                resolved.append((name, rv))
+            except (RegistryObjectNotFound, ValueError) as e:
+                key = (name, ver or "latest")
+                errors[key] = {"error": type(e).__name__, "message": str(e)}
+                resolved.append(None)
 
-        Args:
-            object_class: Object class to get the registered materializer for.
+        pending = [i for i in range(n) if resolved[i] is not None]
 
-        Returns:
-            Materializer class string, or None if no materializer is registered for the object class.
-        """
-        # Check cache first (fast path)
-        with self._materializer_cache_lock:
-            if object_class in self._materializer_cache:
-                return self._materializer_cache[object_class]
+        # Step 1: Batch cache load
+        if pending:
+            cache_result = self._cache.load(
+                [resolved[i][0] for i in pending],
+                [resolved[i][1] for i in pending],
+                verify=verify,
+                **kwargs,
+            )
+            for i, obj in zip(pending, cache_result.results):
+                objects[i] = obj
 
-        # Cache miss - need to check backend (slow path)
-        with self.get_lock("_registry", "materializers", shared=True):
-            materializer = self.backend.registered_materializer(object_class)
+        # Step 2: Check staleness for cache hits
+        if check_staleness:
+            cached = [i for i in pending if objects[i] is not None]
+            for i in self._find_stale_indices(resolved, cached):
+                objects[i] = None  # add to misses list
 
-            # Cache the result (even if None)
-            with self._materializer_cache_lock:
-                self._materializer_cache[object_class] = materializer
+        # Step 3: Remote load for misses
+        misses = [i for i in pending if objects[i] is None]
+        if misses:
+            remote_result = self._remote.load(
+                [resolved[i][0] for i in misses],
+                [resolved[i][1] for i in misses],
+                output_dir=output_dir,
+                verify=verify,
+                **kwargs,
+            )
 
-            return materializer
+            to_cache = []
+            for i, obj in zip(misses, remote_result.results):
+                name_ver = resolved[i]
+                if obj is not None:
+                    objects[i] = obj
+                    to_cache.append((name_ver[0], name_ver[1], obj))
+                elif name_ver in remote_result.errors:
+                    errors[name_ver] = remote_result.errors[name_ver]
 
-    def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
+            if to_cache:
+                try:
+                    self._cache.save(
+                        [t[0] for t in to_cache],
+                        [t[2] for t in to_cache],
+                        version=[t[1] for t in to_cache],
+                        on_conflict=OnConflict.OVERWRITE,
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Error updating cache: {e}")
 
-        Returns:
-            Dictionary mapping object classes to their registered materializer classes.
-        """
-        with self.get_lock("_registry", "materializers", shared=True):
-            return self.backend.registered_materializers()
+        # Build result
+        result = BatchResult()
+        result.errors = errors
+        for i, item in enumerate(resolved):
+            if item is None:
+                key = (names[i], versions_list[i] or "latest")
+                result.results.append(None)
+                result.failed.append(key)
+            elif item in errors:
+                result.results.append(None)
+                result.failed.append(item)
+            elif objects[i] is not None:
+                result.results.append(objects[i])
+                result.succeeded.append(item)
+            else:
+                result.results.append(None)
+                result.failed.append(item)
+                errors[item] = {"error": "Unknown", "message": "Item not loaded"}
 
-    def list_objects(self) -> List[str]:
-        """Return a list of all registered object names.
-
-        Returns:
-            List of object names.
-        """
-        with self.get_lock("_registry", "objects", shared=True):
-            return self.backend.list_objects()
-
-    def list_versions(self, object_name: str) -> List[str]:
-        """List all registered versions for an object.
-
-        Args:
-            object_name: Object name
-
-        Returns:
-            List of version strings
-        """
-        return self.backend.list_versions(object_name)
-
-    def list_objects_and_versions(self) -> Dict[str, List[str]]:
-        """Map object types to their available versions.
-
-        Returns:
-            Dict of object_name → version list
-        """
-        result = {}
-        for object_name in self.list_objects():
-            result[object_name] = self.list_versions(object_name)
+        self.logger.debug(f"Loaded {result.success_count}/{n} object(s) ({result.failure_count} failed).")
         return result
+
+    def delete(
+        self,
+        name: str | List[str],
+        version: str | None | List[str | None] = None,
+    ) -> None | BatchResult:
+        """Delete object(s) from the registry.
+
+        When caching is enabled, deletes from the remote backend first,
+        then cleans up the local cache.
+
+        Args:
+            name: Name(s) of the object(s).
+            version: Version(s). If ``None``, deletes all versions.
+
+        Returns:
+            Single item: ``None``.
+            Batch (list): ``BatchResult`` with results, errors, and status.
+        """
+        if not self._cached:
+            return self._core.delete(name, version)
+
+        result = self._remote.delete(name, version)
+
+        # Delete from cache (best effort)
+        try:
+            names_list = name if isinstance(name, list) else [name]
+            versions_list = version if isinstance(version, list) else [version] * len(names_list)
+
+            for n, v in zip(names_list, versions_list):
+                try:
+                    if v is None:
+                        for ver in self._cache.list_versions(n):
+                            try:
+                                self._cache.delete(n, ver)
+                            except Exception:
+                                pass
+                    else:
+                        resolved_v = v if v != "latest" else self._cache._latest(n)
+                        if resolved_v and self._cache.has_object(n, resolved_v):
+                            self._cache.delete(n, resolved_v)
+                except Exception:
+                    pass
+        except Exception as e:
+            self.logger.warning(f"Error deleting from cache: {e}")
+
+        return result
+
+    def clear(self, clear_registry_metadata: bool = False) -> None:
+        """Remove all objects from the registry.
+
+        Args:
+            clear_registry_metadata: If ``True``, also clears registry metadata.
+        """
+        if self._cached:
+            self._remote.clear(clear_registry_metadata)
+            self._cache.clear()
+        else:
+            self._core.clear(clear_registry_metadata)
 
     def download(
         self,
-        source_registry: "Registry",
+        source_registry,
         name: str,
-        version: str | None = "latest",
+        version: str = "latest",
         target_name: str | None = None,
         target_version: str | None = None,
-    ) -> None:
-        """Download an object from another registry.
+    ) -> str:
+        """Download an object from another registry into this one.
 
-        This method loads an object from a source registry and saves it to the current registry.
-        All metadata and versioning information is preserved.
-
-        Args:
-            source_registry: The source registry to download from
-            name: Name of the object in the source registry
-            version: Version of the object in the source registry. Defaults to "latest"
-            target_name: Name to use in the current registry. If None, uses the same name as source
-            target_version: Version to use in the current registry. If None, uses the same version as source
-
-        Raises:
-            ValueError: If the object doesn't exist in the source registry
-            ValueError: If the target object already exists and versioning is disabled
+        Accepts both ``Registry`` and ``_RegistryCore`` as the source.
         """
-        # Validate source registry
-        if not isinstance(source_registry, Registry):
-            raise ValueError("source_registry must be an instance of Registry")
+        source = source_registry._core if isinstance(source_registry, Registry) else source_registry
+        return self._core.download(
+            source, name, version=version, target_name=target_name, target_version=target_version
+        )
 
-        # Resolve latest version if needed
-        if version == "latest":
-            version = source_registry._latest(name)
-            if version is None:
-                raise ValueError(f"No versions found for object {name} in source registry")
+    # ─────────────────────────────────────────────────────────────────────────
+    # Dict-like interface — must be explicit (dunders bypass __getattr__,
+    # and non-dunder dict methods on _core would call _core.load/save/delete
+    # instead of the facade's cache-aware versions)
+    # ─────────────────────────────────────────────────────────────────────────
 
-        # Set target name and version if not specified
-        target_name = ifnone(target_name, default=name)
-        if target_version is None:
-            target_version = self._next_version(target_name)
-        else:
-            if self.has_object(name=target_name, version=target_version):
-                raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
-
-        # Check if object exists in source registry
-        if not source_registry.has_object(name=name, version=version):
-            raise ValueError(f"Object {name} version {version} does not exist in source registry")
-
-        # Get metadata from source registry
-        metadata = source_registry.info(name=name, version=version)
-
-        # Load object from source registry
-        obj = source_registry.load(name=name, version=version)
-
-        # Save to current registry with lock
-        with self.get_lock(target_name, target_version):
-            self.save(
-                name=target_name,
-                obj=obj,
-                version=target_version,
-                materializer=metadata.get("materializer"),
-                init_params=metadata.get("init_params", {}),
-                metadata=metadata.get("metadata", {}),
-            )
-
-        self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
-
-    def get_lock(self, name: str, version: str | None = None, shared: bool = False) -> contextmanager:
-        """Get a distributed lock for a specific object version.
-
-        Args:
-            name: Name of the object
-            version: Version of the object
-            shared: Whether to use a shared (read) lock. If False, uses an exclusive (write) lock.
-
-        Returns:
-            A context manager that handles lock acquisition and release.
-        """
-        if version is None:
-            lock_key = f"{name}"
-        else:
-            if version == "latest":
-                version = self._latest(name)
-            lock_key = f"{name}@{version}"
-        lock_id = str(uuid.uuid4())
-        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
-
-        @contextmanager
-        def lock_context():
-            try:
-                # Use Timeout class to implement retry logic for lock acquisition
-                timeout_handler = Timeout(
-                    timeout=timeout,
-                    retry_delay=0.1,  # Short retry delay for lock acquisition
-                    exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
-                    progress_bar=False,  # Don't show progress bar for lock acquisition
-                    desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
-                )
-
-                def acquire_lock_with_retry():
-                    """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
-                    if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(
-                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
-                        )
-                    return True
-
-                # Use the timeout handler to retry lock acquisition
-                timeout_handler.run(acquire_lock_with_retry)
-                yield
-            finally:
-                self.backend.release_lock(lock_key, lock_id)
-
-        return lock_context()
-
-    def _validate_version(self, version: str | None) -> str:
-        """Validate and normalize a version string to follow semantic versioning syntax.
-
-        Args:
-            version: Version string to validate.
-
-        Returns:
-            Normalized version string.
-
-        Raises:
-            ValueError: If version string is invalid.
-        """
-        if version is None or version == "latest":
-            return None
-
-        # Remove any 'v' prefix
-        if version.startswith("v"):
-            version = version[1:]
-
-        # Split into components and validate
+    def __getitem__(self, key: str | list[str]) -> Any:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            versions = [v if v is not None else "latest" for v in versions]
+            return self.load(name=names, version=versions)
+        name, version = names[0], versions[0]
         try:
-            components = version.split(".")
-            # Convert each component to int to validate
-            [int(c) for c in components]
-            return version
-        except ValueError:
-            raise ValueError(
-                f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
-            )
+            return self.load(name, version if version else "latest")
+        except (ValueError, RegistryObjectNotFound) as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __setitem__(self, key: str | list[str], value: Any) -> None:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            self.save(names, value, version=versions)
+            return
+        name, version = names[0], versions[0]
+        self.save(name, value, version=version)
+
+    def __delitem__(self, key: str | list[str]) -> None:
+        names, versions, is_batch = self._core._parse_key_input(key)
+        if is_batch:
+            self.delete(name=names, version=versions)
+            return
+        try:
+            name, version = names[0], versions[0]
+            if version is None:
+                if not self._core.list_versions(name):
+                    raise RegistryObjectNotFound(f"Object {name} does not exist")
+            else:
+                exists = self._core.backend.has_object([name], [version])
+                if not exists.get((name, version), False):
+                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
+            self.delete(name, version)
+        except (ValueError, RegistryObjectNotFound) as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __contains__(self, key: str | list[str]) -> bool:
+        if isinstance(key, list):
+            return all(self._core.__contains__(k) for k in key)
+        return self._core.__contains__(key)
+
+    def __len__(self) -> int:
+        return self._core.__len__()
 
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
-        """Returns a human-readable summary of the registry contents.
-
-        Args:
-            color: Whether to colorize the output using `rich`
-            latest_only: If True, only show the latest version of each object
-        """
-        try:
-            from rich.console import Console
-            from rich.table import Table
-
-            use_rich = color
-        except ImportError:
-            use_rich = False
-
-        info = self.info()
-        if not info:
-            return "Registry is empty."
-
-        if use_rich:
-            console = Console()  # type: ignore
-            table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
-
-            table.add_column("Object", style="bold cyan")
-            if self.version_objects:
-                table.add_column("Version", style="green")
-            table.add_column("Class", style="magenta")
-            table.add_column("Value", style="yellow")
-            table.add_column("Metadata", style="dim")
-
-            for object_name, versions in info.items():
-                version_items = versions.items()
-                if latest_only and version_items:
-                    version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
-
-                for version, details in version_items:
-                    meta = details.get("metadata", {})
-                    metadata_str = ", ".join(f"{k}={v}" for k, v in meta.items()) if meta else "(none)"
-
-                    # Get the class name from metadata
-                    class_name = details.get("class", "❓")
-
-                    # Only try to load basic built-in types
-                    if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                        try:
-                            obj = self.load(object_name, version)
-                            value_str = str(obj)
-                            # Truncate long values
-                            if len(value_str) > 50:
-                                value_str = value_str[:47] + "..."
-                        except Exception:
-                            value_str = "❓ (error loading)"
-                    else:
-                        # For non-basic types, just show the class name wrapped in angle brackets
-                        value_str = f"<{class_name.split('.')[-1]}>"
-
-                    if self.version_objects:
-                        table.add_row(
-                            object_name,
-                            f"v{version}",
-                            class_name,
-                            value_str,
-                            metadata_str,
-                        )
-                    else:
-                        table.add_row(
-                            object_name,
-                            class_name,
-                            value_str,
-                            metadata_str,
-                        )
-
-            with console.capture() as capture:
-                console.print(table)
-            return capture.get()
-
-        # Fallback to plain string
-        lines = [f"📦 Registry at: {self.backend.uri}"]
-        for object_name, versions in info.items():
-            lines.append(f"\n🧠 {object_name}:")
-            version_items = versions.items()
-            if latest_only:
-                version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
-            for version, details in version_items:
-                cls = details.get("class", "❓ Not registered")
-
-                # Only try to load basic built-in types
-                if cls in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                    try:
-                        obj = self.load(object_name, version)
-                        value_str = str(obj)
-                        # Truncate long values
-                        if len(value_str) > 50:
-                            value_str = value_str[:47] + "..."
-                    except Exception:
-                        value_str = "❓ (error loading)"
-                else:
-                    # For non-basic types, just show the class name wrapped in angle brackets
-                    value_str = f"<{cls.split('.')[-1]}>"
-
-                lines.append(f"  - v{version}:")
-                lines.append(f"      class: {cls}")
-                lines.append(f"      value: {value_str}")
-                metadata = details.get("metadata", {})
-                if metadata:
-                    for key, val in metadata.items():
-                        lines.append(f"      {key}: {val}")
-                else:
-                    lines.append("      metadata: (none)")
-        return "\n".join(lines)
-
-    def _next_version(self, name: str) -> str:
-        """Generate the next version string for an object.
-
-        The version string must in semantic versioning format: i.e. MAJOR[.MINOR[.PATCH]], where each of MAJOR, MINOR
-        and PATCH are integers. This method increments the least significant component by one.
-
-        For example, the following versions would be updated as shown:
-
-           None -> "1"
-           "1" -> "2"
-           "1.1" -> "1.2"
-           "1.1.0" -> "1.1.1"
-           "1.2.3.4" -> "1.2.3.5"  # Works with any number of components
-           "1.0.0-alpha"  # Non-numeric version strings are not supported
-
-        Args:
-            name: Object name
-
-        Returns:
-            Next version string
-        """
-        if not self.version_objects:
-            return "1"
-
-        most_recent = self._latest(name)
-        if most_recent is None:
-            return "1"
-        components = most_recent.split(".")
-        components[-1] = str(int(components[-1]) + 1)
-
-        return ".".join(components)
-
-    def _latest(self, name: str) -> str:
-        """Return the most recent version string for an object.
-
-        Args:
-            name: Object name
-
-        Returns:
-            Most recent version string, or None if no versions exist
-        """
-        versions = self.list_versions(name)
-        if not versions:
-            return None
-
-        # Filter out temporary versions (those with __temp__ prefix)
-        versions = [v for v in versions if not v.startswith("__temp__")]
-
-        return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
-
-    def _register_default_materializers(self, override_preexisting_materializers: bool = False):
-        """Register default materializers from the class-level registry.
-
-        By default, the registry will only register materializers that are not already registered.
-        """
-        self.logger.info("Registering default materializers...")
-        for object_class, materializer_class in self.get_default_materializers().items():
-            if override_preexisting_materializers or object_class not in self.backend.registered_materializers():
-                self.register_materializer(object_class, materializer_class)
-        self.logger.info("Default materializers registered successfully.")
-
-    def _warm_materializer_cache(self):
-        """Warm the materializer cache to reduce lock contention during operations."""
-        try:
-            # Get all registered materializers and cache them
-            with self.get_lock("_registry", "materializers", shared=True):
-                all_materializers = self.backend.registered_materializers()
-
-                with self._materializer_cache_lock:
-                    self._materializer_cache.update(all_materializers)
-
-            self.logger.debug(f"Warmed materializer cache with {len(all_materializers)} entries")
-        except Exception as e:
-            self.logger.warning(f"Failed to warm materializer cache: {e}")
-
-    ### Dictionary-like interface methods ###
-
-    def __getitem__(self, key: str) -> Any:
-        """Get an object from the registry using dictionary-like syntax.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-
-        Returns:
-            The loaded object
-
-        Raises:
-            KeyError: If the object doesn't exist
-            ValueError: If the version format is invalid
-        """
-        try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, "latest"
-            return self.load(name=name, version=version)
-        except ValueError as e:
-            raise KeyError(f"Object not found: {key}") from e
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        """Save an object to the registry using dictionary-like syntax.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-            value: The object to save
-
-        Raises:
-            ValueError: If the version format is invalid
-        """
-        if "@" in key:
-            name, version = key.split("@", 1)
-        else:
-            name, version = key, None
-        self.save(name=name, obj=value, version=version)
-
-    def __delitem__(self, key: str) -> None:
-        """Delete an object from the registry using dictionary-like syntax.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-
-        Raises:
-            KeyError: If the object doesn't exist
-            ValueError: If the version format is invalid
-        """
-        try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
-            self.delete(name=name, version=version)
-        except ValueError as e:
-            raise KeyError(f"Object not found: {key}") from e
-
-    def __contains__(self, key: str) -> bool:
-        """Check if an object exists in the registry using dictionary-like syntax.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-
-        Returns:
-            True if the object exists, False otherwise.
-        """
-        try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name = key
-                version = self._latest(name)
-                if version is None:
-                    return False
-            return self.has_object(name=name, version=version)
-        except ValueError:
-            return False
+        return self._core.__str__(color=color, latest_only=latest_only)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Get an object from the registry, returning a default value if it doesn't exist.
-
-        This method behaves similarly to dict.get(), allowing for safe access to objects
-        without raising KeyError if they don't exist.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-            default: The value to return if the object doesn't exist
-
-        Returns:
-            The loaded object if it exists, otherwise the default value.
-        """
         try:
             return self[key]
         except KeyError:
             return default
 
     def keys(self) -> List[str]:
-        """Get a list of all object names in the registry.
-
-        Returns:
-            List of object names.
-        """
-        return self.list_objects()
+        return self._core.keys()
 
     def values(self) -> List[Any]:
-        """Get a list of all objects in the registry (latest versions only).
-
-        Returns:
-            List of loaded objects.
-        """
         return [self[name] for name in self.keys()]
 
     def items(self) -> List[tuple[str, Any]]:
-        """Get a list of (name, object) pairs for all objects in the registry (latest versions only).
-
-        Returns:
-            List of (name, object) tuples.
-        """
         return [(name, self[name]) for name in self.keys()]
 
-    def update(self, mapping: Dict[str, Any] | "Registry", *, sync_all_versions: bool = True) -> None:
-        """Update the registry with objects from a dictionary or another registry.
-
-        Args:
-            mapping: Either a dictionary mapping object names to objects, or another Registry instance.
-            sync_all_versions: Whether to save all versions of the objects being downloaded. If False, only the latest
-                version will be saved. Only used if mapping is a Registry instance.
-        """
-        if isinstance(mapping, Registry) and sync_all_versions:
-            for name in mapping.list_objects():
-                for version in mapping.list_versions(name):
-                    if self.has_object(name, version):
-                        raise ValueError(f"Object {name} version {version} already exists in registry.")
-            for name in mapping.list_objects():
-                for version in mapping.list_versions(name):
-                    self.download(mapping, name, version=version)
-        else:
-            for key, value in mapping.items():
-                self[key] = value
-
-    def clear(self) -> None:
-        """Remove all objects from the registry."""
-        for name in self.keys():
-            del self[name]
-
     def pop(self, key: str, default: Any = None) -> Any:
-        """Remove and return an object from the registry.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-            default: The value to return if the object doesn't exist
-
-        Returns:
-            The removed object if it exists, otherwise the default value.
-
-        Raises:
-            KeyError: If the object doesn't exist and no default is provided.
-        """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
-                version = self._latest(name)
+            name, version = self._core._parse_key(key)
+            if version is None:
+                version = self._core._latest(name)
                 if version is None:
                     if default is not None:
                         return default
                     raise KeyError(f"Object {name} does not exist")
 
-            # Check existence first without locks
-            if not self.has_object(name, version):
+            if not self._core.has_object(name, version):
                 if default is not None:
                     return default
                 raise KeyError(f"Object {name} version {version} does not exist")
 
-            # Use a single exclusive lock for both reading and deleting
-            with self.get_lock(name, version):
-                value = self.load(name=name, version=version, acquire_lock=False)
-                self.delete(name=name, version=version)
-                return value
+            value = self.load(name=name, version=version)
+            self.delete(name=name, version=version)
+            return value
         except KeyError:
             if default is not None:
                 return default
             raise
 
     def setdefault(self, key: str, default: Any = None) -> Any:
-        """Get an object from the registry, setting it to default if it doesn't exist.
-
-        Args:
-            key: The object name, optionally including version (e.g. "name@version")
-            default: The value to set and return if the object doesn't exist
-
-        Returns:
-            The object if it exists, otherwise the default value.
-        """
         try:
             return self[key]
         except KeyError:
             if default is not None:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name, version = key, None
-                with self.get_lock(name, version or "latest"):
-                    self[key] = default
+                self[key] = default
             return default
 
-    def __len__(self) -> int:
-        """Get the number of unique named items in the registry.
+    def update(self, mapping, *, sync_all_versions: bool = True) -> None:
+        if isinstance(mapping, (Registry, _RegistryCore)) and sync_all_versions:
+            core = mapping._core if isinstance(mapping, Registry) else mapping
+            for name in core.list_objects():
+                for version in core.list_versions(name):
+                    if self._core.has_object(name, version):
+                        raise ValueError(f"Object {name} version {version} already exists in registry.")
+            for name in core.list_objects():
+                for version in core.list_versions(name):
+                    self._core.download(core, name, version=version)
+        else:
+            for key, value in mapping.items():
+                self[key] = value
 
-        This counts only unique object names, not individual versions. For example, if you have "model@1.0.0" and
-        "model@1.0.1", this will count as 1 item.
+    # ─────────────────────────────────────────────────────────────────────────
+    # Delegation — everything not explicitly overridden goes to _core
+    # ─────────────────────────────────────────────────────────────────────────
 
-        Returns:
-            Number of unique named items in the registry.
-        """
-        return len(self.keys())
-
-    ### End of dictionary-like interface methods ###
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the underlying _core registry."""
+        # Avoid infinite recursion during __init__ before _core is set
+        if name in ("_core", "_remote", "_cache", "_cached"):
+            raise AttributeError(name)
+        return getattr(self._core, name)

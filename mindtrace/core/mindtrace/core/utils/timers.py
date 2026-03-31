@@ -12,8 +12,8 @@ class Timer:
     This class can be used to time operations. It can be started, stopped, and reset. The duration of the timer can be
     retrieved at any time.
 
-    Example::
-
+    Usage:
+        ```python
         import time
         from mindtrace.core import Timer
 
@@ -27,6 +27,7 @@ class Timer:
         time.sleep(2)
         timer.stop()
         print(f'The timer ran for {timer.duration()} seconds.')  # The timer ran for 2.0000000000000004 seconds.
+        ```
 
     """
 
@@ -104,8 +105,8 @@ class TimerCollection:
     timer can be retrieved at any time. If a timer is stopped and restarted, the duration will be added to the previous
     duration. The timers can be reset individually, or all at once.
 
-    Example::
-
+    Usage:
+        ```python
         import time
         from mindtrace.core import TimerCollection
 
@@ -128,9 +129,9 @@ class TimerCollection:
             # Timer 1: 0.000s
             # Timer 2: 0.000s
             # Timer 3: 0.000s
-
-    Context Manager Example::
-
+        ```
+    Context Manager Usage:
+        ```python
         import time
         from mindtrace.core import TimerCollection
 
@@ -148,6 +149,7 @@ class TimerCollection:
             # Timer 1: 3.000s
             # Timer 2: 1.000s
             # Timer 3: 2.000s
+        ```
 
     """
 
@@ -245,8 +247,8 @@ class Timeout:
         TimeoutError: If the timeout is reached.
         Exception: Any raised exception not in the exceptions tuple will be reraised.
 
-    Example— Running Timeout Manually::
-
+    Example— Running Timeout Manually:
+        ```python
         import requests
         from urllib3.util.url import parse_url, Url
         from mindtrace.core import Timeout
@@ -270,9 +272,11 @@ class Timeout:
         Service.launch(url)
         status = timeout.run(get_server_status, url)  # Will wait up to 60 seconds for the server to launch.
         print(f"Server status: {status}")
+        ```
 
 
-    Example— Using Timeout as a Decorator::
+    Example— Using Timeout as a Decorator:
+        ```python
 
         import requests
         from urllib3.util.url import parse_url, Url
@@ -298,6 +302,7 @@ class Timeout:
             print(f"An unexpected error occurred: {e}")
         else:
             print(f"Server status: {status}")
+        ```
 
     """
 

@@ -32,6 +32,7 @@ class TestProxyWorker:
             "git_branch": None,
             "git_commit": None,
             "git_working_dir": None,
+            "git_project": None,
         }
         assert result == expected
 
@@ -65,6 +66,7 @@ class TestStandardWorkerLauncher:
             git_branch="main",
             git_commit="abc123",
             git_working_dir="/app",
+            git_project="our-project",
         )
 
     def test_launcher_initialization(self, temp_dir):
@@ -93,6 +95,7 @@ class TestStandardWorkerLauncher:
             "git_branch": None,
             "git_commit": None,
             "git_working_dir": None,
+            "git_project": None,
         }
         assert saved_data == expected_data
 
@@ -252,7 +255,11 @@ class TestStandardWorkerLauncher:
 
             # Verify GitEnvironment was created with correct parameters
             mock_git_env_class.assert_called_once_with(
-                repo_url="https://github.com/test/repo.git", branch="main", commit="abc123", working_dir="/app"
+                repo_url="https://github.com/test/repo.git",
+                branch="main",
+                commit="abc123",
+                working_dir="/app",
+                project="our-project",
             )
 
             # Verify environment setup was called
@@ -270,13 +277,12 @@ class TestStandardWorkerLauncher:
             assert call_args[6] == "1"
             assert call_args[7] == "-b"
             assert call_args[8] == "git-worker:8080"  # URL without http://
-            assert call_args[9] == "-p"
-            assert call_args[11] == "-k"
-            assert call_args[12] == "uvicorn.workers.UvicornWorker"
-            assert call_args[13] == "--init-params"
+            assert call_args[9] == "-k"
+            assert call_args[10] == "uvicorn.workers.UvicornWorker"
+            assert call_args[11] == "--init-params"
 
             # Verify init params were passed correctly
-            init_params = json.loads(call_args[14])
+            init_params = json.loads(call_args[12])
             assert init_params["url"] == "http://git-worker:8080"
             assert init_params["param1"] == "value1"
             assert init_params["param2"] == 42
@@ -451,7 +457,7 @@ class TestStandardWorkerLauncher:
 
             # Verify init params were passed correctly
             call_args = mock_environment.execute.call_args[0][0]
-            init_params = json.loads(call_args[14])
+            init_params = json.loads(call_args[12])
             assert init_params["url"] == "http://complex-git-worker:8080"
             assert init_params["string_param"] == "test_string"
             assert init_params["int_param"] == 123
@@ -498,7 +504,11 @@ class TestStandardWorkerLauncher:
 
             # Verify GitEnvironment was created with None values
             mock_git_env_class.assert_called_once_with(
-                repo_url="https://github.com/test/repo.git", branch=None, commit=None, working_dir=None
+                repo_url="https://github.com/test/repo.git",
+                branch=None,
+                commit=None,
+                working_dir=None,
+                project=None,
             )
 
             # Verify the result

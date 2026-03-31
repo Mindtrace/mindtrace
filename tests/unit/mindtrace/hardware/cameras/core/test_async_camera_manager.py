@@ -55,8 +55,8 @@ async def test_batch_capture_with_mock_backend(monkeypatch):
     try:
         await manager.open(mock_cameras)
 
-        # Ensure captures complete and produce ndarray images
-        results = await manager.batch_capture(mock_cameras)
+        # Ensure captures complete and produce ndarray images (request numpy format)
+        results = await manager.batch_capture(mock_cameras, output_format="numpy")
         assert set(results.keys()) == set(mock_cameras)
         for img in results.values():
             assert isinstance(img, np.ndarray)
@@ -197,6 +197,18 @@ async def test_open_default_no_cameras_raises(monkeypatch):
     except Exception:
         pass
 
+    try:
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        monkeypatch.setattr(
+            GenICamCameraBackend,
+            "get_available_cameras",
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+
     # Use include_mocks=True but mock the mock backend to return empty too
     mgr = AsyncCameraManager(include_mocks=True)
 
@@ -284,9 +296,11 @@ async def test_discover_opencv_details_with_device_dict(monkeypatch):
         OpenCVCameraBackend,
         "get_available_cameras",
         staticmethod(
-            lambda include_details=False: {"opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}}
-            if include_details
-            else ["opencv_camera_0"]
+            lambda include_details=False: (
+                {"opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}}
+                if include_details
+                else ["opencv_camera_0"]
+            )
         ),
     )
 
