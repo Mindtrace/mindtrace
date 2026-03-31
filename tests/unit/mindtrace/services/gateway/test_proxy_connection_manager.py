@@ -242,8 +242,12 @@ def test_extract_service_endpoints_from_instance_service_class():
     # Create a mock service class that has endpoints
     class MockService:
         __endpoints__ = {
-            "instance_endpoint": EndpointSpec(path="instance_endpoint", method_name="instance_endpoint", schema=DummySchema),
-            "service_endpoint": EndpointSpec(path="service_endpoint", method_name="service_endpoint", schema=DummySchema),
+            "instance_endpoint": EndpointSpec(
+                path="instance_endpoint", method_name="instance_endpoint", schema=DummySchema
+            ),
+            "service_endpoint": EndpointSpec(
+                path="service_endpoint", method_name="service_endpoint", schema=DummySchema
+            ),
         }
 
     # Create a mock connection manager instance with _service_class set on the instance
@@ -494,8 +498,12 @@ def test_extract_service_endpoints_from_class_service_class():
     # Create a mock service class that has endpoints
     class MockService:
         __endpoints__ = {
-            "class_service_endpoint": EndpointSpec(path="class_service_endpoint", method_name="class_service_endpoint", schema=DummySchema),
-            "another_class_endpoint": EndpointSpec(path="another_class_endpoint", method_name="another_class_endpoint", schema=DummySchema),
+            "class_service_endpoint": EndpointSpec(
+                path="class_service_endpoint", method_name="class_service_endpoint", schema=DummySchema
+            ),
+            "another_class_endpoint": EndpointSpec(
+                path="another_class_endpoint", method_name="another_class_endpoint", schema=DummySchema
+            ),
         }
 
     # Create a mock connection manager class with _service_class set on the class

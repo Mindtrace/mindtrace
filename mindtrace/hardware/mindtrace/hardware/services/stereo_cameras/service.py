@@ -86,30 +86,123 @@ class StereoCameraService(Service):
         # Health check endpoint
         EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
         # Backend & Discovery
-        EndpointSpec(path="stereocameras/backends", method_name="get_backends", schema=ALL_SCHEMAS["get_backends"], methods=("GET",), as_tool=True),
-        EndpointSpec(path="stereocameras/backends/info", method_name="get_backend_info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True),
-        EndpointSpec(path="stereocameras/discover", method_name="discover_cameras", schema=ALL_SCHEMAS["discover_cameras"], as_tool=True),
+        EndpointSpec(
+            path="stereocameras/backends",
+            method_name="get_backends",
+            schema=ALL_SCHEMAS["get_backends"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/backends/info",
+            method_name="get_backend_info",
+            schema=ALL_SCHEMAS["get_backend_info"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/discover",
+            method_name="discover_cameras",
+            schema=ALL_SCHEMAS["discover_cameras"],
+            as_tool=True,
+        ),
         # Camera Lifecycle
-        EndpointSpec(path="stereocameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True),
-        EndpointSpec(path="stereocameras/open/batch", method_name="open_cameras_batch", schema=ALL_SCHEMAS["open_cameras_batch"], as_tool=True),
-        EndpointSpec(path="stereocameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True),
-        EndpointSpec(path="stereocameras/close/batch", method_name="close_cameras_batch", schema=ALL_SCHEMAS["close_cameras_batch"], as_tool=True),
-        EndpointSpec(path="stereocameras/close/all", method_name="close_all_cameras", schema=ALL_SCHEMAS["close_all_cameras"], as_tool=True),
-        EndpointSpec(path="stereocameras/active", method_name="get_active_cameras", schema=ALL_SCHEMAS["get_active_cameras"], methods=("GET",), as_tool=True),
+        EndpointSpec(
+            path="stereocameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True
+        ),
+        EndpointSpec(
+            path="stereocameras/open/batch",
+            method_name="open_cameras_batch",
+            schema=ALL_SCHEMAS["open_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True
+        ),
+        EndpointSpec(
+            path="stereocameras/close/batch",
+            method_name="close_cameras_batch",
+            schema=ALL_SCHEMAS["close_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/close/all",
+            method_name="close_all_cameras",
+            schema=ALL_SCHEMAS["close_all_cameras"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/active",
+            method_name="get_active_cameras",
+            schema=ALL_SCHEMAS["get_active_cameras"],
+            methods=("GET",),
+            as_tool=True,
+        ),
         # Camera Status & Information
-        EndpointSpec(path="stereocameras/status", method_name="get_camera_status", schema=ALL_SCHEMAS["get_camera_status"], as_tool=True),
-        EndpointSpec(path="stereocameras/info", method_name="get_camera_info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True),
-        EndpointSpec(path="system/diagnostics", method_name="get_system_diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True),
+        EndpointSpec(
+            path="stereocameras/status",
+            method_name="get_camera_status",
+            schema=ALL_SCHEMAS["get_camera_status"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/info",
+            method_name="get_camera_info",
+            schema=ALL_SCHEMAS["get_camera_info"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="system/diagnostics",
+            method_name="get_system_diagnostics",
+            schema=ALL_SCHEMAS["get_system_diagnostics"],
+            methods=("GET",),
+            as_tool=True,
+        ),
         # Camera Configuration
-        EndpointSpec(path="stereocameras/configure", method_name="configure_camera", schema=ALL_SCHEMAS["configure_camera"], as_tool=True),
-        EndpointSpec(path="stereocameras/configure/batch", method_name="configure_cameras_batch", schema=ALL_SCHEMAS["configure_cameras_batch"], as_tool=True),
-        EndpointSpec(path="stereocameras/config/get", method_name="get_camera_configuration", schema=ALL_SCHEMAS["get_camera_configuration"], as_tool=True),
+        EndpointSpec(
+            path="stereocameras/configure",
+            method_name="configure_camera",
+            schema=ALL_SCHEMAS["configure_camera"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/configure/batch",
+            method_name="configure_cameras_batch",
+            schema=ALL_SCHEMAS["configure_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/config/get",
+            method_name="get_camera_configuration",
+            schema=ALL_SCHEMAS["get_camera_configuration"],
+            as_tool=True,
+        ),
         # Stereo Capture
-        EndpointSpec(path="stereocameras/capture", method_name="capture_stereo_pair", schema=ALL_SCHEMAS["capture_stereo"], as_tool=True),
-        EndpointSpec(path="stereocameras/capture/batch", method_name="capture_stereo_batch", schema=ALL_SCHEMAS["capture_stereo_batch"], as_tool=True),
+        EndpointSpec(
+            path="stereocameras/capture",
+            method_name="capture_stereo_pair",
+            schema=ALL_SCHEMAS["capture_stereo"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/capture/batch",
+            method_name="capture_stereo_batch",
+            schema=ALL_SCHEMAS["capture_stereo_batch"],
+            as_tool=True,
+        ),
         # Point Cloud Capture
-        EndpointSpec(path="stereocameras/capture/pointcloud", method_name="capture_point_cloud", schema=ALL_SCHEMAS["capture_pointcloud"], as_tool=True),
-        EndpointSpec(path="stereocameras/capture/pointcloud/batch", method_name="capture_point_cloud_batch", schema=ALL_SCHEMAS["capture_pointcloud_batch"], as_tool=True),
+        EndpointSpec(
+            path="stereocameras/capture/pointcloud",
+            method_name="capture_point_cloud",
+            schema=ALL_SCHEMAS["capture_pointcloud"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="stereocameras/capture/pointcloud/batch",
+            method_name="capture_point_cloud_batch",
+            schema=ALL_SCHEMAS["capture_pointcloud_batch"],
+            as_tool=True,
+        ),
     ]
 
     def __init__(self, **kwargs):

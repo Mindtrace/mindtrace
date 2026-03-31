@@ -57,7 +57,6 @@ def add_endpoint(app, path, self: Optional["Service"], **kwargs):
     return wrapper
 
 
-
 def generate_connection_manager(
     service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
 ) -> type:

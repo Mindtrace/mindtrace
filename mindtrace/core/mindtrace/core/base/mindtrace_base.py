@@ -111,22 +111,24 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-    _LOGGER_PARAM_NAMES = frozenset({
-        "log_dir",
-        "logger_level",
-        "stream_level",
-        "file_level",
-        "file_mode",
-        "propagate",
-        "max_bytes",
-        "backup_count",
-        "use_structlog",
-        "structlog_json",
-        "structlog_pre_chain",
-        "structlog_processors",
-        "structlog_renderer",
-        "structlog_bind",
-    })
+    _LOGGER_PARAM_NAMES = frozenset(
+        {
+            "log_dir",
+            "logger_level",
+            "stream_level",
+            "file_level",
+            "file_mode",
+            "propagate",
+            "max_bytes",
+            "backup_count",
+            "use_structlog",
+            "structlog_json",
+            "structlog_pre_chain",
+            "structlog_processors",
+            "structlog_renderer",
+            "structlog_bind",
+        }
+    )
 
     def __init__(self, suppress: bool = False, *, config_overrides: SettingsLike | None = None, **kwargs):
         """
@@ -230,6 +232,7 @@ class Mindtrace(metaclass=MindtraceMeta):
             if self is not None:
                 # Logger source is the captured `self` from the decorator argument
                 if is_async:
+
                     @wraps(function)
                     async def wrapper(*args, **kwargs):
                         self.logger.log(log_level, prefix_formatter(function, args, kwargs))
@@ -241,6 +244,7 @@ class Mindtrace(metaclass=MindtraceMeta):
                         self.logger.log(log_level, suffix_formatter(function, result))
                         return result
                 else:
+
                     @wraps(function)
                     def wrapper(*args, **kwargs):
                         self.logger.log(log_level, prefix_formatter(function, args, kwargs))
@@ -254,6 +258,7 @@ class Mindtrace(metaclass=MindtraceMeta):
             else:
                 # Logger source is the first argument (self) of the bound method
                 if is_async:
+
                     @wraps(function)
                     async def wrapper(instance, *args, **kwargs):
                         instance.logger.log(log_level, prefix_formatter(function, args, kwargs))
@@ -265,6 +270,7 @@ class Mindtrace(metaclass=MindtraceMeta):
                         instance.logger.log(log_level, suffix_formatter(function, result))
                         return result
                 else:
+
                     @wraps(function)
                     def wrapper(instance, *args, **kwargs):
                         instance.logger.log(log_level, prefix_formatter(function, args, kwargs))

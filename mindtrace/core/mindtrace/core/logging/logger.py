@@ -19,6 +19,7 @@ from mindtrace.core.utils import ifnone
 if TYPE_CHECKING:
     import structlog
 
+
 def _get_http_exception():
     """Lazily resolve FastAPI's HTTPException, returning None if unavailable."""
     try:
@@ -27,6 +28,7 @@ def _get_http_exception():
         return HTTPException
     except Exception:
         return None
+
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -396,9 +398,7 @@ class _UnifiedTrack:
                     f"Logger {class_logger} does not support .bind() method. Creating new structlog logger.",
                     UserWarning,
                 )
-                logger_name = (
-                    getattr(class_logger, "name", None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
-                )
+                logger_name = getattr(class_logger, "name", None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
                 return get_logger(logger_name, use_structlog=True)
         elif self.logger_name:
             return get_logger(self.logger_name, use_structlog=True)

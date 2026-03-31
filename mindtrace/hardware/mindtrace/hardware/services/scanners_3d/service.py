@@ -90,31 +90,123 @@ class Scanner3DService(Service):
         # Health check endpoint
         EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
         # Backend & Discovery
-        EndpointSpec(path="scanners/backends", method_name="get_backends", schema=ALL_SCHEMAS["get_backends"], methods=("GET",), as_tool=True),
-        EndpointSpec(path="scanners/backends/info", method_name="get_backend_info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True),
-        EndpointSpec(path="scanners/discover", method_name="discover_scanners", schema=ALL_SCHEMAS["discover_scanners"], as_tool=True),
+        EndpointSpec(
+            path="scanners/backends",
+            method_name="get_backends",
+            schema=ALL_SCHEMAS["get_backends"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/backends/info",
+            method_name="get_backend_info",
+            schema=ALL_SCHEMAS["get_backend_info"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/discover",
+            method_name="discover_scanners",
+            schema=ALL_SCHEMAS["discover_scanners"],
+            as_tool=True,
+        ),
         # Scanner Lifecycle
-        EndpointSpec(path="scanners/open", method_name="open_scanner", schema=ALL_SCHEMAS["open_scanner"], as_tool=True),
-        EndpointSpec(path="scanners/open/batch", method_name="open_scanners_batch", schema=ALL_SCHEMAS["open_scanners_batch"], as_tool=True),
-        EndpointSpec(path="scanners/close", method_name="close_scanner", schema=ALL_SCHEMAS["close_scanner"], as_tool=True),
-        EndpointSpec(path="scanners/close/batch", method_name="close_scanners_batch", schema=ALL_SCHEMAS["close_scanners_batch"], as_tool=True),
-        EndpointSpec(path="scanners/close/all", method_name="close_all_scanners", schema=ALL_SCHEMAS["close_all_scanners"], as_tool=True),
-        EndpointSpec(path="scanners/active", method_name="get_active_scanners", schema=ALL_SCHEMAS["get_active_scanners"], methods=("GET",), as_tool=True),
+        EndpointSpec(
+            path="scanners/open", method_name="open_scanner", schema=ALL_SCHEMAS["open_scanner"], as_tool=True
+        ),
+        EndpointSpec(
+            path="scanners/open/batch",
+            method_name="open_scanners_batch",
+            schema=ALL_SCHEMAS["open_scanners_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/close", method_name="close_scanner", schema=ALL_SCHEMAS["close_scanner"], as_tool=True
+        ),
+        EndpointSpec(
+            path="scanners/close/batch",
+            method_name="close_scanners_batch",
+            schema=ALL_SCHEMAS["close_scanners_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/close/all",
+            method_name="close_all_scanners",
+            schema=ALL_SCHEMAS["close_all_scanners"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/active",
+            method_name="get_active_scanners",
+            schema=ALL_SCHEMAS["get_active_scanners"],
+            methods=("GET",),
+            as_tool=True,
+        ),
         # Scanner Status & Information
-        EndpointSpec(path="scanners/status", method_name="get_scanner_status", schema=ALL_SCHEMAS["get_scanner_status"], as_tool=True),
-        EndpointSpec(path="scanners/info", method_name="get_scanner_info", schema=ALL_SCHEMAS["get_scanner_info"], as_tool=True),
-        EndpointSpec(path="system/diagnostics", method_name="get_system_diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True),
+        EndpointSpec(
+            path="scanners/status",
+            method_name="get_scanner_status",
+            schema=ALL_SCHEMAS["get_scanner_status"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/info", method_name="get_scanner_info", schema=ALL_SCHEMAS["get_scanner_info"], as_tool=True
+        ),
+        EndpointSpec(
+            path="system/diagnostics",
+            method_name="get_system_diagnostics",
+            schema=ALL_SCHEMAS["get_system_diagnostics"],
+            methods=("GET",),
+            as_tool=True,
+        ),
         # Scanner Configuration
-        EndpointSpec(path="scanners/capabilities", method_name="get_scanner_capabilities", schema=ALL_SCHEMAS["get_scanner_capabilities"], as_tool=True),
-        EndpointSpec(path="scanners/configure", method_name="configure_scanner", schema=ALL_SCHEMAS["configure_scanner"], as_tool=True),
-        EndpointSpec(path="scanners/configure/batch", method_name="configure_scanners_batch", schema=ALL_SCHEMAS["configure_scanners_batch"], as_tool=True),
-        EndpointSpec(path="scanners/config/get", method_name="get_scanner_configuration", schema=ALL_SCHEMAS["get_scanner_configuration"], as_tool=True),
+        EndpointSpec(
+            path="scanners/capabilities",
+            method_name="get_scanner_capabilities",
+            schema=ALL_SCHEMAS["get_scanner_capabilities"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/configure",
+            method_name="configure_scanner",
+            schema=ALL_SCHEMAS["configure_scanner"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/configure/batch",
+            method_name="configure_scanners_batch",
+            schema=ALL_SCHEMAS["configure_scanners_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/config/get",
+            method_name="get_scanner_configuration",
+            schema=ALL_SCHEMAS["get_scanner_configuration"],
+            as_tool=True,
+        ),
         # Scan Capture
-        EndpointSpec(path="scanners/capture", method_name="capture_scan", schema=ALL_SCHEMAS["capture_scan"], as_tool=True),
-        EndpointSpec(path="scanners/capture/batch", method_name="capture_scan_batch", schema=ALL_SCHEMAS["capture_scan_batch"], as_tool=True),
+        EndpointSpec(
+            path="scanners/capture", method_name="capture_scan", schema=ALL_SCHEMAS["capture_scan"], as_tool=True
+        ),
+        EndpointSpec(
+            path="scanners/capture/batch",
+            method_name="capture_scan_batch",
+            schema=ALL_SCHEMAS["capture_scan_batch"],
+            as_tool=True,
+        ),
         # Point Cloud Capture
-        EndpointSpec(path="scanners/capture/pointcloud", method_name="capture_point_cloud", schema=ALL_SCHEMAS["capture_pointcloud"], as_tool=True),
-        EndpointSpec(path="scanners/capture/pointcloud/batch", method_name="capture_point_cloud_batch", schema=ALL_SCHEMAS["capture_pointcloud_batch"], as_tool=True),
+        EndpointSpec(
+            path="scanners/capture/pointcloud",
+            method_name="capture_point_cloud",
+            schema=ALL_SCHEMAS["capture_pointcloud"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="scanners/capture/pointcloud/batch",
+            method_name="capture_point_cloud_batch",
+            schema=ALL_SCHEMAS["capture_pointcloud_batch"],
+            as_tool=True,
+        ),
     ]
 
     def __init__(self, **kwargs):

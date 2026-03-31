@@ -124,7 +124,9 @@ class TestGenerateConnectionManager:
         mock_service_class.__name__ = "TestService"
         mock_service_class.__endpoints__ = {
             "test_endpoint": EndpointSpec(path="test_endpoint", method_name="test_endpoint", schema=mock_endpoint1),
-            "no_input_endpoint": EndpointSpec(path="no_input_endpoint", method_name="no_input_endpoint", schema=mock_endpoint2),
+            "no_input_endpoint": EndpointSpec(
+                path="no_input_endpoint", method_name="no_input_endpoint", schema=mock_endpoint2
+            ),
         }
 
         mock_service = Mock()

@@ -20,7 +20,6 @@ class DemoPipeline(Pipeline):
     def __init__(self, **kwargs):
         self.load_calls = 0
         self.unload_calls = 0
-        kwargs.setdefault("live_service", False)
         super().__init__(**kwargs)
 
     def on_load(self, payload: PipelineLoadInput) -> None:
@@ -58,7 +57,6 @@ def test_pipeline_worker_from_pipeline_class_without_service_init(monkeypatch):
         pipeline_kwargs={"x": 1},
         default_endpoint="/echo",
         auto_load=False,
-        live_service=False,
     )
     assert isinstance(worker, PipelineWorker)
     assert worker.pipeline_cls is DemoPipeline
@@ -146,6 +144,6 @@ async def test_shutdown_cleanup_unloads_pipeline_and_swallows_errors(monkeypatch
             raise RuntimeError("boom")
 
     worker2 = _worker_stub(default_endpoint="/echo")
-    worker2.pipeline = BoomPipeline(live_service=False)
+    worker2.pipeline = BoomPipeline()
     await worker2.shutdown_cleanup()
     assert called["super"] == 2

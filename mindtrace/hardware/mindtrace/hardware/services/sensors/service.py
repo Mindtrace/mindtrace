@@ -30,11 +30,30 @@ class SensorManagerService(Service):
 
     _endpoint_specs = [
         EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-        EndpointSpec(path="sensors/connect", method_name="connect_sensor", schema=SensorLifecycleSchemas.connect_sensor, as_tool=True),
-        EndpointSpec(path="sensors/disconnect", method_name="disconnect_sensor", schema=SensorLifecycleSchemas.disconnect_sensor, as_tool=True),
-        EndpointSpec(path="sensors/status", method_name="get_sensor_status", schema=SensorLifecycleSchemas.get_sensor_status, as_tool=True),
-        EndpointSpec(path="sensors/list", method_name="list_sensors", schema=SensorLifecycleSchemas.list_sensors, as_tool=True),
-        EndpointSpec(path="sensors/read", method_name="read_sensor_data", schema=SensorDataSchemas.read_sensor_data, as_tool=True),
+        EndpointSpec(
+            path="sensors/connect",
+            method_name="connect_sensor",
+            schema=SensorLifecycleSchemas.connect_sensor,
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="sensors/disconnect",
+            method_name="disconnect_sensor",
+            schema=SensorLifecycleSchemas.disconnect_sensor,
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="sensors/status",
+            method_name="get_sensor_status",
+            schema=SensorLifecycleSchemas.get_sensor_status,
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="sensors/list", method_name="list_sensors", schema=SensorLifecycleSchemas.list_sensors, as_tool=True
+        ),
+        EndpointSpec(
+            path="sensors/read", method_name="read_sensor_data", schema=SensorDataSchemas.read_sensor_data, as_tool=True
+        ),
     ]
 
     def __init__(self, manager: Optional[SensorManager] = None, **kwargs):

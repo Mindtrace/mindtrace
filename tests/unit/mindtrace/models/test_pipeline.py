@@ -9,7 +9,7 @@ class DummyPipeline(Pipeline):
     def __init__(self):
         self.load_calls = 0
         self.unload_calls = 0
-        super().__init__(live_service=False)
+        super().__init__()
 
     def on_load(self, payload: PipelineLoadInput) -> None:
         self.load_calls += 1
@@ -72,7 +72,7 @@ def test_pipeline_loaded_endpoint_reflects_state() -> None:
 
 
 def test_pipeline_base_hooks_raise_when_not_implemented() -> None:
-    pipeline = IncompletePipeline(live_service=False)
+    pipeline = IncompletePipeline()
 
     with pytest.raises(NotImplementedError):
         pipeline.load(PipelineLoadInput(force=False))

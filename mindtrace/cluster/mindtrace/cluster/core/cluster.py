@@ -41,41 +41,99 @@ def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str,
 # -- ClusterManager endpoint schemas --
 _CM_SCHEMAS = {
     "submit_job": TaskSchema(name="submit_job", input_schema=Job, output_schema=cluster_types.JobStatus),
-    "register_job_to_endpoint": TaskSchema(name="register_job_to_endpoint", input_schema=cluster_types.RegisterJobToEndpointInput),
-    "register_job_to_worker": TaskSchema(name="register_job_to_worker", input_schema=cluster_types.RegisterJobToWorkerInput),
-    "get_job_status": TaskSchema(name="get_job_status", input_schema=cluster_types.GetJobStatusInput, output_schema=cluster_types.JobStatus),
-    "worker_alert_started_job": TaskSchema(name="worker_alert_started_job", input_schema=cluster_types.WorkerAlertStartedJobInput),
-    "worker_alert_completed_job": TaskSchema(name="worker_alert_completed_job", input_schema=cluster_types.WorkerAlertCompletedJobInput),
-    "register_node": TaskSchema(name="register_node", input_schema=cluster_types.RegisterNodeInput, output_schema=cluster_types.RegisterNodeOutput),
+    "register_job_to_endpoint": TaskSchema(
+        name="register_job_to_endpoint", input_schema=cluster_types.RegisterJobToEndpointInput
+    ),
+    "register_job_to_worker": TaskSchema(
+        name="register_job_to_worker", input_schema=cluster_types.RegisterJobToWorkerInput
+    ),
+    "get_job_status": TaskSchema(
+        name="get_job_status", input_schema=cluster_types.GetJobStatusInput, output_schema=cluster_types.JobStatus
+    ),
+    "worker_alert_started_job": TaskSchema(
+        name="worker_alert_started_job", input_schema=cluster_types.WorkerAlertStartedJobInput
+    ),
+    "worker_alert_completed_job": TaskSchema(
+        name="worker_alert_completed_job", input_schema=cluster_types.WorkerAlertCompletedJobInput
+    ),
+    "register_node": TaskSchema(
+        name="register_node",
+        input_schema=cluster_types.RegisterNodeInput,
+        output_schema=cluster_types.RegisterNodeOutput,
+    ),
     "register_worker_type": TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
-    "launch_worker": TaskSchema(name="launch_worker", input_schema=cluster_types.ClusterLaunchWorkerInput, output_schema=cluster_types.ClusterLaunchWorkerOutput),
-    "launch_worker_status": TaskSchema(name="launch_worker_status", input_schema=cluster_types.ClusterLaunchWorkerStatusInput, output_schema=cluster_types.ClusterLaunchWorkerStatusOutput),
+    "launch_worker": TaskSchema(
+        name="launch_worker",
+        input_schema=cluster_types.ClusterLaunchWorkerInput,
+        output_schema=cluster_types.ClusterLaunchWorkerOutput,
+    ),
+    "launch_worker_status": TaskSchema(
+        name="launch_worker_status",
+        input_schema=cluster_types.ClusterLaunchWorkerStatusInput,
+        output_schema=cluster_types.ClusterLaunchWorkerStatusOutput,
+    ),
     "clear_databases": TaskSchema(name="clear_databases"),
-    "register_job_schema_to_worker_type": TaskSchema(name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput),
-    "get_worker_status": TaskSchema(name="get_worker_status", input_schema=cluster_types.GetWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
-    "get_worker_status_by_url": TaskSchema(name="get_worker_status_by_url", input_schema=cluster_types.GetWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
-    "query_worker_status": TaskSchema(name="query_worker_status", input_schema=cluster_types.QueryWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
-    "query_worker_status_by_url": TaskSchema(name="query_worker_status_by_url", input_schema=cluster_types.QueryWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
-    "clear_job_schema_queue": TaskSchema(name="clear_job_schema_queue", input_schema=cluster_types.ClearJobSchemaQueueInput),
+    "register_job_schema_to_worker_type": TaskSchema(
+        name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput
+    ),
+    "get_worker_status": TaskSchema(
+        name="get_worker_status",
+        input_schema=cluster_types.GetWorkerStatusInput,
+        output_schema=cluster_types.WorkerStatus,
+    ),
+    "get_worker_status_by_url": TaskSchema(
+        name="get_worker_status_by_url",
+        input_schema=cluster_types.GetWorkerStatusByUrlInput,
+        output_schema=cluster_types.WorkerStatus,
+    ),
+    "query_worker_status": TaskSchema(
+        name="query_worker_status",
+        input_schema=cluster_types.QueryWorkerStatusInput,
+        output_schema=cluster_types.WorkerStatus,
+    ),
+    "query_worker_status_by_url": TaskSchema(
+        name="query_worker_status_by_url",
+        input_schema=cluster_types.QueryWorkerStatusByUrlInput,
+        output_schema=cluster_types.WorkerStatus,
+    ),
+    "clear_job_schema_queue": TaskSchema(
+        name="clear_job_schema_queue", input_schema=cluster_types.ClearJobSchemaQueueInput
+    ),
     "get_dlq_jobs": TaskSchema(name="get_dlq_jobs", output_schema=cluster_types.GetDLQJobsOutput),
-    "requeue_from_dlq": TaskSchema(name="requeue_from_dlq", input_schema=cluster_types.RequeueFromDLQInput, output_schema=cluster_types.JobStatus),
+    "requeue_from_dlq": TaskSchema(
+        name="requeue_from_dlq", input_schema=cluster_types.RequeueFromDLQInput, output_schema=cluster_types.JobStatus
+    ),
     "discard_from_dlq": TaskSchema(name="discard_from_dlq", input_schema=cluster_types.DiscardFromDLQInput),
 }
 
 # -- Node endpoint schemas --
 _NODE_SCHEMAS = {
-    "launch_worker": TaskSchema(name="launch_worker", input_schema=cluster_types.LaunchWorkerInput, output_schema=cluster_types.LaunchWorkerOutput),
-    "launch_worker_status": TaskSchema(name="launch_worker_status", input_schema=cluster_types.LaunchWorkerStatusInput, output_schema=cluster_types.LaunchWorkerStatusOutput),
+    "launch_worker": TaskSchema(
+        name="launch_worker",
+        input_schema=cluster_types.LaunchWorkerInput,
+        output_schema=cluster_types.LaunchWorkerOutput,
+    ),
+    "launch_worker_status": TaskSchema(
+        name="launch_worker_status",
+        input_schema=cluster_types.LaunchWorkerStatusInput,
+        output_schema=cluster_types.LaunchWorkerStatusOutput,
+    ),
     "shutdown_worker": TaskSchema(name="shutdown_worker", input_schema=cluster_types.ShutdownWorkerInput),
-    "shutdown_worker_by_id": TaskSchema(name="shutdown_worker_by_id", input_schema=cluster_types.ShutdownWorkerByIdInput),
-    "shutdown_worker_by_port": TaskSchema(name="shutdown_worker_by_port", input_schema=cluster_types.ShutdownWorkerByPortInput),
+    "shutdown_worker_by_id": TaskSchema(
+        name="shutdown_worker_by_id", input_schema=cluster_types.ShutdownWorkerByIdInput
+    ),
+    "shutdown_worker_by_port": TaskSchema(
+        name="shutdown_worker_by_port", input_schema=cluster_types.ShutdownWorkerByPortInput
+    ),
     "shutdown_all_workers": TaskSchema(name="shutdown_all_workers"),
 }
 
 # -- Worker endpoint schemas --
 _WORKER_SCHEMAS = {
     "start": TaskSchema(name="start_worker"),
-    "run": TaskSchema(name="run_worker", input_schema=cluster_types.WorkerRunInput, output_schema=cluster_types.JobStatus),
+    "run": TaskSchema(
+        name="run_worker", input_schema=cluster_types.WorkerRunInput, output_schema=cluster_types.JobStatus
+    ),
     "connect_to_cluster": TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
     "get_status": TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
 }
@@ -84,22 +142,62 @@ _WORKER_SCHEMAS = {
 class ClusterManager(Gateway):
     _endpoint_specs = [
         EndpointSpec(path="submit_job", method_name="submit_job", schema=_CM_SCHEMAS["submit_job"]),
-        EndpointSpec(path="register_job_to_endpoint", method_name="register_job_to_endpoint", schema=_CM_SCHEMAS["register_job_to_endpoint"]),
-        EndpointSpec(path="register_job_to_worker", method_name="register_job_to_worker", schema=_CM_SCHEMAS["register_job_to_worker"]),
+        EndpointSpec(
+            path="register_job_to_endpoint",
+            method_name="register_job_to_endpoint",
+            schema=_CM_SCHEMAS["register_job_to_endpoint"],
+        ),
+        EndpointSpec(
+            path="register_job_to_worker",
+            method_name="register_job_to_worker",
+            schema=_CM_SCHEMAS["register_job_to_worker"],
+        ),
         EndpointSpec(path="get_job_status", method_name="get_job_status", schema=_CM_SCHEMAS["get_job_status"]),
-        EndpointSpec(path="worker_alert_started_job", method_name="worker_alert_started_job", schema=_CM_SCHEMAS["worker_alert_started_job"]),
-        EndpointSpec(path="worker_alert_completed_job", method_name="worker_alert_completed_job", schema=_CM_SCHEMAS["worker_alert_completed_job"]),
+        EndpointSpec(
+            path="worker_alert_started_job",
+            method_name="worker_alert_started_job",
+            schema=_CM_SCHEMAS["worker_alert_started_job"],
+        ),
+        EndpointSpec(
+            path="worker_alert_completed_job",
+            method_name="worker_alert_completed_job",
+            schema=_CM_SCHEMAS["worker_alert_completed_job"],
+        ),
         EndpointSpec(path="register_node", method_name="register_node", schema=_CM_SCHEMAS["register_node"]),
-        EndpointSpec(path="register_worker_type", method_name="register_worker_type", schema=_CM_SCHEMAS["register_worker_type"]),
+        EndpointSpec(
+            path="register_worker_type", method_name="register_worker_type", schema=_CM_SCHEMAS["register_worker_type"]
+        ),
         EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_CM_SCHEMAS["launch_worker"]),
-        EndpointSpec(path="launch_worker_status", method_name="launch_worker_status", schema=_CM_SCHEMAS["launch_worker_status"]),
+        EndpointSpec(
+            path="launch_worker_status", method_name="launch_worker_status", schema=_CM_SCHEMAS["launch_worker_status"]
+        ),
         EndpointSpec(path="clear_databases", method_name="clear_databases", schema=_CM_SCHEMAS["clear_databases"]),
-        EndpointSpec(path="register_job_schema_to_worker_type", method_name="register_job_schema_to_worker_type", schema=_CM_SCHEMAS["register_job_schema_to_worker_type"]),
-        EndpointSpec(path="get_worker_status", method_name="get_worker_status", schema=_CM_SCHEMAS["get_worker_status"]),
-        EndpointSpec(path="get_worker_status_by_url", method_name="get_worker_status_by_url", schema=_CM_SCHEMAS["get_worker_status_by_url"]),
-        EndpointSpec(path="query_worker_status", method_name="query_worker_status", schema=_CM_SCHEMAS["query_worker_status"]),
-        EndpointSpec(path="query_worker_status_by_url", method_name="query_worker_status_by_url", schema=_CM_SCHEMAS["query_worker_status_by_url"]),
-        EndpointSpec(path="clear_job_schema_queue", method_name="clear_job_schema_queue", schema=_CM_SCHEMAS["clear_job_schema_queue"]),
+        EndpointSpec(
+            path="register_job_schema_to_worker_type",
+            method_name="register_job_schema_to_worker_type",
+            schema=_CM_SCHEMAS["register_job_schema_to_worker_type"],
+        ),
+        EndpointSpec(
+            path="get_worker_status", method_name="get_worker_status", schema=_CM_SCHEMAS["get_worker_status"]
+        ),
+        EndpointSpec(
+            path="get_worker_status_by_url",
+            method_name="get_worker_status_by_url",
+            schema=_CM_SCHEMAS["get_worker_status_by_url"],
+        ),
+        EndpointSpec(
+            path="query_worker_status", method_name="query_worker_status", schema=_CM_SCHEMAS["query_worker_status"]
+        ),
+        EndpointSpec(
+            path="query_worker_status_by_url",
+            method_name="query_worker_status_by_url",
+            schema=_CM_SCHEMAS["query_worker_status_by_url"],
+        ),
+        EndpointSpec(
+            path="clear_job_schema_queue",
+            method_name="clear_job_schema_queue",
+            schema=_CM_SCHEMAS["clear_job_schema_queue"],
+        ),
         EndpointSpec(path="get_dlq_jobs", method_name="get_dlq_jobs", schema=_CM_SCHEMAS["get_dlq_jobs"]),
         EndpointSpec(path="requeue_from_dlq", method_name="requeue_from_dlq", schema=_CM_SCHEMAS["requeue_from_dlq"]),
         EndpointSpec(path="discard_from_dlq", method_name="discard_from_dlq", schema=_CM_SCHEMAS["discard_from_dlq"]),
@@ -112,81 +210,80 @@ class ClusterManager(Gateway):
                 If None, use MINDTRACE_CLUSTER.MINIO_HOST and MINDTRACE_CLUSTER.MINIO_PORT
         """
         super().__init__(**kwargs)
-        if kwargs.get("live_service", True):
-            rabbitmq_password = (
-                self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD")
-                or self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PASSWORD"]
+        rabbitmq_password = (
+            self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD")
+            or self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PASSWORD"]
+        )
+        self.orchestrator = Orchestrator(
+            backend=RabbitMQClient(
+                host=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
+                port=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
+                username=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
+                password=rabbitmq_password,
             )
-            self.orchestrator = Orchestrator(
-                backend=RabbitMQClient(
-                    host=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
-                    port=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
-                    username=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
-                    password=rabbitmq_password,
-                )
-            )
-            self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
-            self.job_schema_targeting_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.JobSchemaTargeting,
-                redis_url=self.redis_url,
-                preferred_backend=BackendType.REDIS,
-            )
-            self.job_schema_targeting_database.initialize_sync()
-            self.job_status_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
-            )
-            self.job_status_database.initialize_sync()
-            self.dlq_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.DLQJobStatus,
-                redis_url=self.redis_url,
-                preferred_backend=BackendType.REDIS,
-            )
-            self.dlq_database.initialize_sync()
-            self.worker_auto_connect_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.WorkerAutoConnect,
-                redis_url=self.redis_url,
-                preferred_backend=BackendType.REDIS,
-            )
-            self.worker_auto_connect_database.initialize_sync()
-            self.worker_status_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.WorkerStatus,
-                redis_url=self.redis_url,
-                preferred_backend=BackendType.REDIS,
-            )
-            self.worker_status_database.initialize_sync()
-            self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
-            # Derive Minio host/port from either explicit endpoint override or cluster config.
-            if minio_endpoint is not None:
-                parsed_minio = urllib.parse.urlparse(minio_endpoint)
-                if parsed_minio.hostname:
-                    self.worker_registry_host = parsed_minio.hostname
-                    self.worker_registry_port = parsed_minio.port or 9000
-                else:
-                    # Handle host:port or bare host for backward compatibility
-                    host, _, port_str = minio_endpoint.partition(":")
-                    self.worker_registry_host = host or "localhost"
-                    self.worker_registry_port = int(port_str) if port_str else 9000
+        )
+        self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
+        self.job_schema_targeting_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.JobSchemaTargeting,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.job_schema_targeting_database.initialize_sync()
+        self.job_status_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+        )
+        self.job_status_database.initialize_sync()
+        self.dlq_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.DLQJobStatus,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.dlq_database.initialize_sync()
+        self.worker_auto_connect_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.WorkerAutoConnect,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_auto_connect_database.initialize_sync()
+        self.worker_status_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.WorkerStatus,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_status_database.initialize_sync()
+        self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
+        # Derive Minio host/port from either explicit endpoint override or cluster config.
+        if minio_endpoint is not None:
+            parsed_minio = urllib.parse.urlparse(minio_endpoint)
+            if parsed_minio.hostname:
+                self.worker_registry_host = parsed_minio.hostname
+                self.worker_registry_port = parsed_minio.port or 9000
             else:
-                self.worker_registry_host = self.config["MINDTRACE_CLUSTER"]["MINIO_HOST"]
-                self.worker_registry_port = int(self.config["MINDTRACE_CLUSTER"]["MINIO_PORT"])
+                # Handle host:port or bare host for backward compatibility
+                host, _, port_str = minio_endpoint.partition(":")
+                self.worker_registry_host = host or "localhost"
+                self.worker_registry_port = int(port_str) if port_str else 9000
+        else:
+            self.worker_registry_host = self.config["MINDTRACE_CLUSTER"]["MINIO_HOST"]
+            self.worker_registry_port = int(self.config["MINDTRACE_CLUSTER"]["MINIO_PORT"])
 
-            self.worker_registry_endpoint = f"{self.worker_registry_host}:{self.worker_registry_port}"
-            self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
-            self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
-            self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
-            self.nodes = []
-            minio_backend = MinioRegistryBackend(
-                uri=self.worker_registry_uri,
-                endpoint=self.worker_registry_endpoint,
-                access_key=self.worker_registry_access_key,
-                secret_key=self.worker_registry_secret_key,
-                bucket=self.worker_registry_bucket,
-                secure=False,
-            )
-            self.worker_registry = Registry(backend=minio_backend, mutable=True)
-            self.worker_registry.register_materializer(
-                cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
-            )
+        self.worker_registry_endpoint = f"{self.worker_registry_host}:{self.worker_registry_port}"
+        self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
+        self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
+        self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
+        self.nodes = []
+        minio_backend = MinioRegistryBackend(
+            uri=self.worker_registry_uri,
+            endpoint=self.worker_registry_endpoint,
+            access_key=self.worker_registry_access_key,
+            secret_key=self.worker_registry_secret_key,
+            bucket=self.worker_registry_bucket,
+            secure=False,
+        )
+        self.worker_registry = Registry(backend=minio_backend, mutable=True)
+        self.worker_registry.register_materializer(
+            cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
+        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
@@ -712,11 +809,27 @@ class ClusterManager(Gateway):
 class Node(Service):
     _endpoint_specs = [
         EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_NODE_SCHEMAS["launch_worker"]),
-        EndpointSpec(path="launch_worker_status", method_name="launch_worker_status", schema=_NODE_SCHEMAS["launch_worker_status"]),
+        EndpointSpec(
+            path="launch_worker_status",
+            method_name="launch_worker_status",
+            schema=_NODE_SCHEMAS["launch_worker_status"],
+        ),
         EndpointSpec(path="shutdown_worker", method_name="shutdown_worker", schema=_NODE_SCHEMAS["shutdown_worker"]),
-        EndpointSpec(path="shutdown_worker_by_id", method_name="shutdown_worker_by_id", schema=_NODE_SCHEMAS["shutdown_worker_by_id"]),
-        EndpointSpec(path="shutdown_worker_by_port", method_name="shutdown_worker_by_port", schema=_NODE_SCHEMAS["shutdown_worker_by_port"]),
-        EndpointSpec(path="shutdown_all_workers", method_name="shutdown_all_workers", schema=_NODE_SCHEMAS["shutdown_all_workers"]),
+        EndpointSpec(
+            path="shutdown_worker_by_id",
+            method_name="shutdown_worker_by_id",
+            schema=_NODE_SCHEMAS["shutdown_worker_by_id"],
+        ),
+        EndpointSpec(
+            path="shutdown_worker_by_port",
+            method_name="shutdown_worker_by_port",
+            schema=_NODE_SCHEMAS["shutdown_worker_by_port"],
+        ),
+        EndpointSpec(
+            path="shutdown_all_workers",
+            method_name="shutdown_all_workers",
+            schema=_NODE_SCHEMAS["shutdown_all_workers"],
+        ),
     ]
 
     def __init__(self, cluster_url: str | None = None, worker_ports: list[int] | None = None, **kwargs):
@@ -1032,27 +1145,28 @@ class Worker(Service, Consumer):
     _endpoint_specs = [
         EndpointSpec(path="start", method_name="start", schema=_WORKER_SCHEMAS["start"]),
         EndpointSpec(path="run", method_name="run", schema=_WORKER_SCHEMAS["run"]),
-        EndpointSpec(path="connect_to_cluster", method_name="connect_to_cluster", schema=_WORKER_SCHEMAS["connect_to_cluster"]),
+        EndpointSpec(
+            path="connect_to_cluster", method_name="connect_to_cluster", schema=_WORKER_SCHEMAS["connect_to_cluster"]
+        ),
         EndpointSpec(path="get_status", method_name="get_status", schema=_WORKER_SCHEMAS["get_status"]),
     ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if kwargs.get("live_service", True):
-            self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
-            self.worker_status_local_database = UnifiedMindtraceODM(
-                unified_model_cls=cluster_types.WorkerStatusLocal,
-                redis_url=self.redis_url,
-                preferred_backend=BackendType.REDIS,
+        self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
+        self.worker_status_local_database = UnifiedMindtraceODM(
+            unified_model_cls=cluster_types.WorkerStatusLocal,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_status_local_database.initialize_sync()
+        self.worker_status_local_database.insert(
+            cluster_types.WorkerStatusLocal(
+                worker_id=str(self.id),
+                status=cluster_types.WorkerStatusEnum.IDLE,
+                job_id=None,
             )
-            self.worker_status_local_database.initialize_sync()
-            self.worker_status_local_database.insert(
-                cluster_types.WorkerStatusLocal(
-                    worker_id=str(self.id),
-                    status=cluster_types.WorkerStatusEnum.IDLE,
-                    job_id=None,
-                )
-            )
+        )
         self.consume_thread = None
         self._cluster_connection_manager = None  # type: ignore
         self._cluster_url = None

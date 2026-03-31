@@ -62,7 +62,9 @@ class Service(Mindtrace):
         EndpointSpec(path="server_id", method_name="server_id_func", schema=ServerIDSchema),
         EndpointSpec(path="class_name", method_name="class_name_func", schema=ClassNameSchema),
         EndpointSpec(path="pid_file", method_name="pid_file_func", schema=PIDFileSchema),
-        EndpointSpec(path="shutdown", method_name="shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}),
+        EndpointSpec(
+            path="shutdown", method_name="shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
+        ),
     ]
     # __endpoints__ is populated by __init_subclass__ for subclasses;
     # for Service itself, it's set after the class body below.
@@ -77,7 +79,6 @@ class Service(Mindtrace):
         description: str | None = None,
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
-        live_service: bool = True,
         pid_file: str | None = None,
         **kwargs,
     ):
@@ -91,9 +92,6 @@ class Service(Mindtrace):
             description: Description of the server
             terms_of_service: Terms of service for the server
             license_info: License information for the server
-            live_service: bool: set to True when launching via .launch(),
-                set to False when querying endpoints in mindtrace.services.core.utils.py::generate_connection_manager
-                Used to allow Service subclasses to have expensive __init__() methods without making .connect() slow
 
         Warning: Services should be created via the ServiceClass.launch() method. The __init__ method here should be
         considered private internal use.

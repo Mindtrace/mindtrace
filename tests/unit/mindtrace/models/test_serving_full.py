@@ -314,31 +314,17 @@ class TestResolveDevice:
 
 
 class TestModelServiceLifecycle:
-    def test_live_false_skips_load_model(self, _patch_core_config):
-        """When live_service=False, load_model must NOT be called."""
+    def test_init_calls_load_model(self, _patch_core_config):
+        """ModelService.__init__ calls load_model."""
         Cls = _make_concrete_model_service()
-        svc = Cls(
-            model_name="test",
-            model_version="v1",
-            registry=None,
-            live_service=False,
-        )
-        # load_model sets self.model = "loaded"; it should not have run.
-        assert not hasattr(svc, "model")
+        svc = Cls(model_name="test", model_version="v1", registry=None)
+        assert svc.model == "loaded"
 
-    def test_live_false_still_registers_endpoints(self, _patch_core_config):
-        """Even in non-live mode, predict and info endpoints are registered."""
+    def test_endpoints_registered(self, _patch_core_config):
+        """predict and info endpoints are declared at class level."""
         Cls = _make_concrete_model_service()
-        svc = Cls(
-            model_name="test",
-            model_version="v1",
-            registry=None,
-            live_service=False,
-        )
-        # svc.endpoints is dict[str, TaskSchema] where keys are path strings
-        endpoint_paths = list(svc.endpoints.keys())
-        assert "predict" in endpoint_paths
-        assert "info" in endpoint_paths
+        assert "predict" in Cls.__endpoints__
+        assert "info" in Cls.__endpoints__
 
     def test_info_returns_correct_task(self, _patch_core_config):
         Cls = _make_concrete_model_service()

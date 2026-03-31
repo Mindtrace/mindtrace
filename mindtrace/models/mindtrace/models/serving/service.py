@@ -90,7 +90,6 @@ class ModelService(Service):
         model_version: str = "",
         device: str = "auto",
         registry: Any = None,
-        live_service: bool = True,
         **kwargs,
     ) -> None:
         """Initialise the model service.
@@ -107,22 +106,14 @@ class ModelService(Service):
                 ``self.registry.load(f"{self.model_name}:{self.model_version}")``
                 in their :meth:`load_model` implementation.  ``None`` is
                 allowed when a subclass manages loading independently.
-            live_service: When ``False`` the instance is used only for
-                endpoint discovery (e.g. by
-                ``generate_connection_manager``).  Model loading and
-                registry construction are skipped.
             **kwargs: Forwarded to :class:`mindtrace.services.Service`.
         """
-        super().__init__(live_service=live_service, **kwargs)
+        super().__init__(**kwargs)
 
         self.model_name: str = model_name
         self.model_version: str = model_version
         self.device: str = resolve_device(device)
         self.registry: Any = registry
-
-        # In non-live mode (endpoint discovery only), skip heavy init.
-        if not live_service:
-            return
 
         # When launched as a subprocess via Service.launch(), registry objects
         # cannot be JSON-serialised.  Fall back to env-var-based construction.

@@ -166,8 +166,12 @@ def test_run_script_worker_both_environments(cluster_cm, node):
     # Launch two workers so git and docker jobs can run concurrently
     port1 = free_port()
     port2 = get_free_port(start_port=port1 + 1, end_port=8390)
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port1}")
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port2}")
+    cluster_cm.launch_worker(
+        node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port1}"
+    )
+    cluster_cm.launch_worker(
+        node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port2}"
+    )
 
     # Git environment job
     git_job = job_from_schema(

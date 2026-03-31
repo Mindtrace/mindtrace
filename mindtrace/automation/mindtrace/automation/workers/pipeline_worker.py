@@ -64,8 +64,6 @@ class PipelineWorker(Worker):
     def start(self):
         """Initialize and optionally load wrapped Pipeline instance."""
         pipeline_kwargs = dict(self.pipeline_kwargs)
-        # Avoid standing up a second externally-live service when embedding in worker.
-        pipeline_kwargs.setdefault("live_service", False)
         self.pipeline = self.pipeline_cls(**pipeline_kwargs)
         if self.auto_load:
             self.pipeline.load(PipelineLoadInput(force=False))
