@@ -37,11 +37,19 @@ This design is intended to be a reusable Mindtrace module rather than an applica
 
 ---
 
-## Review of the previous `mtrix` Datalake
+## Version History
 
-The previous `mtrix` package included a `datalake` module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary. In this document, the previous `mtrix` Datalake is referred to as **V1**, the current `mindtrace.datalake` module is referred to as **V2**, and the design proposed here is referred to as **V3**.
+This proposal is easier to understand if the Datalake is viewed as three iterations:
 
-### What the previous Datalake was
+- **V1**: the `mtrix` Datalake
+- **V2**: the current `mindtrace.datalake` module
+- **V3**: expanding the current Datalake to match the broader data model and storage needs described in this proposal
+
+### V1: The `mtrix` Datalake
+
+The previous `mtrix` package included a `datalake` module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary.
+
+#### What V1 was
 
 The `mtrix` Datalake was primarily a dataset lifecycle and synchronization system.
 
@@ -56,11 +64,11 @@ At a high level it combined:
 - GCP as blob storage
 - Arrow / Hugging Face dataset cache building for loading
 
-In other words, the prior design was less a generalized canonical datalake and more a dataset packaging, synchronization, and loading framework.
+In other words, V1 was less a generalized canonical datalake and more a dataset packaging, synchronization, and loading framework.
 
-### What it did
+#### What V1 did
 
-The previous Datalake supported a concrete end-to-end workflow:
+V1 supported a concrete end-to-end workflow:
 
 1. **Create a dataset locally** from a source directory.
 2. **Validate it** by attempting to build cache through a Hugging Face `GeneratorBasedBuilder`.
@@ -74,11 +82,9 @@ The previous Datalake supported a concrete end-to-end workflow:
 
 This gave `mtrix` a practical dataset distribution pipeline with local-first and offline-aware behavior.
 
-### What it did well
+#### Strengths of V1
 
-The previous Datalake had several real strengths.
-
-#### 1. Good service decomposition
+##### 1. Good service decomposition
 
 The split into:
 
@@ -90,7 +96,7 @@ The split into:
 
 was clean and maintainable. The top-level `Datalake` class remained fairly thin while operational complexity lived in focused service classes.
 
-#### 2. Strong dataset-version packaging model
+##### 2. Strong dataset-version packaging model
 
 The manifest-driven dataset-version model was well suited to shipping and loading versioned datasets. It gave a clear package boundary for:
 
@@ -102,7 +108,7 @@ The manifest-driven dataset-version model was well suited to shipping and loadin
 - annotation files
 - item metadata files
 
-#### 3. Thoughtful local/offline workflow
+##### 3. Thoughtful local/offline workflow
 
 The explicit `offline_mode` was operationally useful and reflected real needs. The system was clearly designed around:
 
@@ -110,7 +116,7 @@ The explicit `offline_mode` was operationally useful and reflected real needs. T
 - remote synchronization when needed
 - explicit failure when offline constraints prevented an operation
 
-#### 4. Practical incremental update support
+##### 4. Practical incremental update support
 
 The previous design did support version-to-version update flows, including:
 
@@ -121,17 +127,17 @@ The previous design did support version-to-version update flows, including:
 
 That is a meaningful capability and should not be dismissed.
 
-#### 5. Strong Hugging Face integration
+##### 5. Strong Hugging Face integration
 
 If the main consumer abstraction is a Hugging Face dataset, the old design was coherent. The builder/cache flow was aligned with a real consumer story.
 
-### Where it breaks down
+#### Limitations of V1
 
-The limitations of the previous design are structural rather than cosmetic.
+The limitations of V1 are structural rather than cosmetic.
 
-#### 1. It is dataset-package centric, not canonical-data centric
+##### 1. It is dataset-package centric, not canonical-data centric
 
-The previous design treats the world primarily as:
+V1 treats the world primarily as:
 
 - dataset names
 - dataset versions
@@ -150,11 +156,9 @@ It does not make the following concepts first-class:
 - atomic annotation records
 - multiple storage locations for the same payload
 
-This is the biggest architectural limitation.
+##### 2. Annotations are file-based, not first-class records
 
-#### 2. Annotations are file-based, not first-class records
-
-Annotations in the old system are largely handled as JSON files per split and per dataset version. They can be merged and copied, but they are not modeled as queryable, canonical records.
+Annotations in V1 are largely handled as JSON files per split and per dataset version. They can be merged and copied, but they are not modeled as queryable, canonical records.
 
 That creates several limitations:
 
@@ -164,11 +168,9 @@ That creates several limitations:
 - difficulty querying across annotations independently of dataset package boundaries
 - difficulty reusing annotation data outside a specific packaged dataset version
 
-This is one of the primary reasons a new version is needed.
+##### 3. Local filesystem layout is doing too much work
 
-#### 3. Local filesystem layout is doing too much work
-
-The old Datalake is heavily coupled to a particular on-disk representation:
+V1 is heavily coupled to a particular on-disk representation:
 
 - root dataset directories
 - `manifest_v*.json`
@@ -177,36 +179,22 @@ The old Datalake is heavily coupled to a particular on-disk representation:
 - masks directories
 - annotation and item metadata JSON files
 
-This is practical for one packaging format, but too rigid for a general platform. It makes the local layout feel canonical when it should instead be one materialization strategy among several possible representations.
+This is practical for one packaging format, but too rigid for a general platform.
 
-#### 4. Remote storage topology is fixed and overly opinionated
+##### 4. Remote storage topology is fixed and overly opinionated
 
-The previous design effectively assumes:
+V1 effectively assumes:
 
 - Hugging Face for registry / discovery / repository concerns
 - GCP for blob storage
 
-That hardcodes vendor roles into the design. It does not provide a generalized mount or multi-storage abstraction and cannot naturally support broader deployment patterns such as:
+That hardcodes vendor roles into the design.
 
-- local scratch + NAS + cloud
-- multiple object stores with equivalent roles
-- durable on-prem object storage with optional cloud promotion
-- storage backends selected by policy rather than by hardcoded class role
+##### 5. No generalized storage namespace or mount abstraction
 
-This is a major scalability and portability constraint.
+There is no equivalent of a multi-mount `Store` or unified storage facade.
 
-#### 5. No generalized storage namespace or mount abstraction
-
-There is no equivalent of a multi-mount `Store` or unified storage facade. The old design has fixed infrastructure roles, not a composable storage model.
-
-That means it cannot naturally express ideas like:
-
-- default mount vs archive mount
-- promotion from one backend to another
-- object-level location awareness across multiple backends
-- later introduction of additional stores without service-level rewrites
-
-#### 6. Reuse and composability are limited
+##### 6. Reuse and composability are limited
 
 Because the main unit is a packaged dataset version, it is difficult to treat:
 
@@ -217,117 +205,11 @@ Because the main unit is a packaged dataset version, it is difficult to treat:
 
 as reusable canonical pieces that can participate in multiple datasets or workflows.
 
-The previous architecture makes datasets easy to ship, but makes underlying data harder to reuse compositionally.
-
-### Why it cannot scale as the long-term architecture
-
-The prior Datalake can scale operationally to a point, but it does not scale conceptually into a broader Mindtrace data layer.
-
-It breaks down as requirements expand toward:
-
-- multi-backend storage flexibility
-- reusable canonical asset identities
-- live structured annotation CRUD
-- multiple annotation layers and provenance
-- dataset derivation by metadata and annotation queries
-- multiple downstream applications sharing the same canonical data layer
-- clear separation between canonical persistence and export/package forms
-
-In particular, the following become increasingly expensive or awkward in the old design:
-
-#### 1. Querying and editing annotations as data rather than files
-
-When annotations are primarily versioned files inside split directories, operations that should be simple data queries become package manipulation tasks.
-
-#### 2. Treating storage locations as replaceable infrastructure
-
-The old design assumes role-specific backends rather than a generalized storage abstraction. That makes backend evolution more invasive than it should be.
-
-#### 3. Building multiple downstream views over the same canonical data
-
-The old system is optimized for one specific representation: a dataset package that can be loaded into HF datasets. It is much less well suited to producing many different consumers from the same underlying canonical records.
-
-#### 4. Separating logical identity from physical layout
-
-A long-lived datalake should let assets and annotations have stable logical identity independent of the current filesystem or object-store materialization. The previous design does not fully achieve that.
-
-### Why V3 must be built
-
-V3 is needed because the next Datalake should be more than a dataset shipping system. It needs to become a canonical persistence and access layer for Mindtrace data.
-
-Concretely, V3 must support:
-
-- object storage that is mount-based rather than hardcoded to fixed remote roles
-- canonical asset records separated from physical location
-- structured annotation persistence as first-class records
-- immutable dataset versions built from reusable lower-level entities
-- queryable datums and annotation sets
-- export/package formats as derived representations rather than the canonical source of truth
-
-The V1 `mtrix` Datalake is a useful predecessor, but it is not sufficient as the long-term foundation for V3.
-
-### What V3 needs that the previous design did not have
-
-The proposed V3 direction adds several necessary capabilities beyond V1 and V2.
-
-#### 1. A generalized storage abstraction
-
-V3 needs a storage facade over multiple backends, such as the newer `Store` / mount model, so that storage becomes configurable and composable rather than fixed.
-
-#### 2. Canonical payload identity
-
-V3 needs explicit `StorageRef` and `Asset` entities so payload-bearing objects can be tracked independently of a particular local directory layout.
-
-#### 3. Canonical annotation model
-
-V3 needs first-class annotation entities:
-
-- `AnnotationSource`
-- `AnnotationRecord`
-- `AnnotationSet`
-
-This is essential for live editing, queryability, provenance, and reuse.
-
-#### 4. Canonical dataset membership unit
-
-V3 needs `Datum` as the reusable unit of dataset membership rather than treating split file listings as the only durable structure.
-
-#### 5. Immutable dataset versions over reusable canonical entities
-
-V3 should keep immutable dataset versions, but they should be built from references to canonical datums, assets, and annotation sets rather than being defined primarily by directory trees and packaged JSON files.
-
-#### 6. Separation between canonical state and export forms
-
-V3 should treat HF datasets, Arrow caches, manifests, packaged split directories, and training exports as materialized views or export forms, not as the canonical persistence model.
-
-### Summary of the retrospective
-
-The V1 `mtrix` Datalake solved a real and useful problem:
-
-- provisioning versioned datasets
-- synchronizing them between local and remote storage
-- building HF-compatible caches
-- loading them reliably
-
-That remains valuable.
-
-However, it is best understood as a dataset lifecycle system rather than a complete canonical datalake architecture.
-
-The V3 direction proposed in this document keeps the strongest operational ideas from the V1 `mtrix` Datalake and the simplification gains from the current V2 module while replacing the rigid parts with a more general and durable model based on:
-
-- generalized storage mounts
-- canonical asset records
-- atomic annotation records and annotation sets
-- reusable datums
-- immutable dataset versions built as views over canonical entities
-
----
-
-## Review of the current `mindtrace.datalake` module (V2)
+### V2: The current `mindtrace.datalake` module
 
 The current `mindtrace.datalake` module in the Mindtrace repo is already a significant shift away from the original `mtrix` dataset-package model. It is not yet the V3 design proposed in this document, but it does represent a meaningful V2 step.
 
-### What V2 is
+#### What V2 is
 
 The current V2 module is a lightweight asynchronous datalake centered on a single `Datalake` class and a single `Datum` model.
 
@@ -349,7 +231,7 @@ The core mental model in V2 is:
 
 This is a much simpler design than V1 and a much more data-centric design than the old package-based approach.
 
-### What V2 does
+#### What V2 does
 
 Operationally, the current V2 module supports:
 
@@ -367,13 +249,9 @@ Operationally, the current V2 module supports:
 5. **Run aggregation-based query execution**
    - use Mongo aggregation for more efficient chained lookups than the older legacy query path
 
-This makes the current module feel like a generalized metadata-and-reference layer rather than a dataset package manager.
+#### Strengths of V2
 
-### What V2 does well
-
-The current Mindtrace Datalake module has several real strengths.
-
-#### 1. It is much simpler than V1
+##### 1. It is much simpler than V1
 
 The V2 module is dramatically simpler than the old `mtrix` Datalake.
 
@@ -391,9 +269,7 @@ and instead focuses on a smaller core:
 - registry-backed payload indirection
 - derivation-aware querying
 
-That simplicity is a major improvement.
-
-#### 2. It introduces a canonical persisted record
+##### 2. It introduces a canonical persisted record
 
 The `Datum` model is the first real step toward a reusable canonical persistence layer.
 
@@ -404,18 +280,14 @@ Unlike V1, the current module is not primarily organized around dataset package 
 - derivation relationship
 - timestamps
 
-That is an important conceptual improvement.
-
-#### 3. It separates heavy payloads from metadata when needed
+##### 3. It separates heavy payloads from metadata when needed
 
 The `add_datum(...)` path allows a datum to be stored either:
 
 - directly in MongoDB
 - or externally in a registry with a MongoDB reference
 
-This is a genuinely useful design and lines up with the broader V3 direction.
-
-#### 4. It supports derivation as a first-class relationship
+##### 4. It supports derivation as a first-class relationship
 
 `derived_from` is simple, but powerful. It allows V2 to represent:
 
@@ -424,23 +296,13 @@ This is a genuinely useful design and lines up with the broader V3 direction.
 - transformations
 - parent/child data relationships
 
-This is one of the strongest aspects of the current V2 module.
+##### 5. It provides a practical query layer
 
-#### 5. It provides a practical query layer
+The aggregation-based `query_data(...)` is a meaningful improvement over purely application-side chained lookups.
 
-The aggregation-based `query_data(...)` is a meaningful improvement over purely application-side chained lookups. It gives users a way to ask for:
+#### Limitations of V2
 
-- a base set of datums
-- plus derived datums matched by filter
-- plus simple result-shaping strategies
-
-That makes the module useful right away.
-
-### Where V2 falls short
-
-The current module is cleaner than V1, but it is still not the long-term V3 architecture.
-
-#### 1. `Datum` is doing too much
+##### 1. `Datum` is doing too much
 
 The current `Datum` model is carrying several concerns at once:
 
@@ -452,20 +314,11 @@ The current `Datum` model is carrying several concerns at once:
 
 This is a reasonable simplification for V2, but it does not scale cleanly into a richer datalake model.
 
-In V3, these roles should be separated more explicitly into things like:
+##### 2. There is no first-class annotation model
 
-- `Asset`
-- `StorageRef`
-- `Datum`
-- `AnnotationRecord`
-- `AnnotationSet`
-- `DatasetVersion`
+Annotations are not modeled as first-class structured records. They can exist only as arbitrary `data` or `metadata` attached to generic datums.
 
-#### 2. There is no first-class annotation model
-
-This is the biggest limitation of V2 relative to the intended V3 direction.
-
-Annotations are not modeled as first-class structured records. They can exist only as arbitrary `data` or `metadata` attached to generic datums. That means V2 lacks:
+That means V2 lacks:
 
 - atomic annotation records
 - annotation-set grouping
@@ -473,9 +326,7 @@ Annotations are not modeled as first-class structured records. They can exist on
 - strong geometry typing
 - clear distinction between labels and arbitrary data payloads
 
-This makes V2 too generic to serve as the final annotation-aware datalake design.
-
-#### 3. There is no explicit asset/storage model
+##### 3. There is no explicit asset/storage model
 
 V2 can store payloads in a registry, but it does not yet have an explicit model for:
 
@@ -484,22 +335,11 @@ V2 can store payloads in a registry, but it does not yet have an explicit model 
 - multiple physical locations for the same logical payload
 - mount-aware storage semantics
 
-Instead, it stores `registry_uri` and `registry_key` directly on `Datum`.
+##### 4. Registry usage is still too primitive
 
-That is fine as a transition, but it is not the cleaner long-term shape.
+The current module uses `registry_uri` directly and lazily creates `Registry(LocalRegistryBackend(...))` instances.
 
-#### 4. Registry usage is still too primitive
-
-The current module uses `registry_uri` directly and lazily creates `Registry(LocalRegistryBackend(...))` instances. That means:
-
-- no generalized multi-mount storage facade
-- no clear storage policy layer
-- no location awareness beyond a raw registry URI
-- no first-class separation between temporary, durable, local, NAS, and cloud backends
-
-This is exactly where the newer `Store` / mount work becomes relevant.
-
-#### 5. Query model is powerful but not yet a canonical data model
+##### 5. Query model is powerful but not yet a canonical data model
 
 The current aggregation query API is useful, but it is still oriented around:
 
@@ -509,46 +349,21 @@ The current aggregation query API is useful, but it is still oriented around:
 
 rather than around the higher-level V3 entities that should become canonical.
 
-In other words, V2 gives a workable query mechanism, but not yet the final conceptual schema.
+##### 6. Dataset concepts are not yet explicit enough
 
-#### 6. Dataset concepts are not yet explicit enough
+Compared to V1, V2 swings strongly away from packaged datasets — which is good. But it does not yet replace them with sufficiently explicit canonical dataset entities.
 
-Compared to V1, V2 swings strongly away from packaged datasets — which is good. But it does not yet replace them with sufficiently explicit canonical dataset entities such as:
+### V3: Expanding the current Datalake to match our data needs
 
-- immutable dataset versions
-- reusable datum membership sets
-- annotation set membership
-- dataset manifests as derived/export forms
+The proposed V3 design in this document builds on V2 rather than replacing it blindly.
 
-That leaves a gap between V1 package management and the richer V3 data model.
+V3 exists because:
 
-### Why V2 is not enough
+- V1 was too package-centric
+- V2 is a strong simplification, but still too generic in the wrong places
+- the next iteration needs to preserve V2's simplicity while adding explicit structure for assets, annotations, datasets, and storage
 
-The current Mindtrace Datalake module is a meaningful improvement over V1, but it still stops short of what a full datalake architecture should provide.
-
-V2 gets us:
-
-- a simpler and cleaner persistence story
-- a canonical datum record
-- registry-backed payload indirection
-- derivation-aware querying
-
-But it does not yet provide:
-
-- first-class assets
-- first-class annotations
-- first-class annotation sets
-- mount-aware multi-storage semantics
-- immutable dataset versions built from reusable entities
-- a clean separation between canonical state and exports/materializations
-
-V2 is therefore best understood as a transitional architecture: a strong simplification and conceptual reset after V1, but not yet the final target.
-
-### What V3 must add beyond V2
-
-The proposed V3 design in this document keeps the useful parts of V2 while introducing the missing structure.
-
-In particular, V3 adds or clarifies:
+Concretely, V3 must add:
 
 #### 1. Generalized storage via `Store` / mounts
 
@@ -576,18 +391,11 @@ V3 keeps `Datum`, but narrows its role to dataset membership and composition rat
 
 V3 reintroduces dataset-version semantics in a cleaner way than V1 by making dataset versions immutable views over canonical datums, assets, and annotation sets.
 
-### Summary of the V2 review
+#### Summary of the version history
 
-The current `mindtrace.datalake` module is an important step forward from V1. It is simpler, more data-centric, and less tied to package layout and fixed vendor roles.
-
-It should be viewed as the current V2 architecture:
-
-- cleaner than V1
-- useful in practice
-- already moving toward canonical data persistence
-- but still missing key structures required for a full datalake design
-
-The proposed V3 design builds on V2 rather than replacing it blindly. It keeps the gains of simplification and canonical datum persistence while adding the missing layers needed for long-term scalability and clarity.
+- **V1** solved dataset packaging, synchronization, and HF-oriented loading.
+- **V2** introduced a much cleaner canonical datum record plus registry-backed payload indirection and derivation-aware querying.
+- **V3** is the next architectural step: expanding V2 into a fuller datalake with explicit assets, annotations, dataset versions, and mount-aware storage.
 
 ---
 
