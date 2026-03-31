@@ -54,6 +54,7 @@ class _RegistryCore(Mindtrace):
         mutable: bool | None = None,
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
+        default_materializer: Type[BaseMaterializer] | str | None = None,
         **kwargs,
     ):
         """Initialize the registry core.
@@ -68,6 +69,8 @@ class _RegistryCore(Mindtrace):
                 If explicitly set, must match the stored setting (if any) or a ValueError is raised.
                 Object level concurrency is handled via lock-free MVCC for both mutable and immutable registries.
             versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
+            default_materializer: Optional fallback materializer used when no
+                type-specific materializer is registered.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -81,6 +84,11 @@ class _RegistryCore(Mindtrace):
             raise ValueError(f"Invalid backend type: {type(backend)}")
 
         self.backend = backend
+
+        if isinstance(default_materializer, type):
+            self._default_materializer = f"{default_materializer.__module__}.{default_materializer.__name__}"
+        else:
+            self._default_materializer = default_materializer
 
         # Initialize registry metadata (version_objects, mutable, version_digits) in a single read/write
         self.version_objects, self.mutable, self.version_digits = self._initialize_registry_metadata(
@@ -247,7 +255,8 @@ class _RegistryCore(Mindtrace):
         1. Materializer provided as an argument.
         2. Materializer previously registered for the object type.
         3. Materializer for any of the object's base classes (checked recursively).
-        4. The object itself, if it's its own materializer.
+        4. Registry-level default materializer (if configured).
+        5. The object itself, if it's its own materializer.
 
         Args:
             obj: Object to find materializer for.
@@ -278,6 +287,7 @@ class _RegistryCore(Mindtrace):
                     self.registered_materializer(f"{base.__module__}.{base.__name__}")
                     for base in get_all_base_classes(type(obj))
                 ],
+                self._default_materializer,
                 object_class if isinstance(obj, BaseMaterializer) else None,
             )
         )
@@ -561,9 +571,14 @@ class _RegistryCore(Mindtrace):
         materializer = instantiate_target(materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store)
 
         if isinstance(object_class, str):
-            module_name, class_name = object_class.rsplit(".", 1)
-            module = __import__(module_name, fromlist=[class_name])
-            object_class = getattr(module, class_name)
+            try:
+                module_name, class_name = object_class.rsplit(".", 1)
+                module = __import__(module_name, fromlist=[class_name])
+                object_class = getattr(module, class_name)
+            except Exception:
+                # Some serializers (e.g., cloudpickle materializers) can deserialize
+                # objects that are not importable by dotted path (lambdas/local classes).
+                object_class = Any
 
         return materializer.load(data_type=object_class, **init_params)
 
