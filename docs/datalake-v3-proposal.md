@@ -42,7 +42,7 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
 - [V3 Design](#v3-design)
   - [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
   - [Canonical V3 entities](#canonical-v3-entities)
-  - [DatasetBuilder as a separate Datalake API concept](#datasetbuilder-as-a-separate-datalake-api-concept)
+  - [DatasetBuilder](#datasetbuilder)
   - [Canonical semantic rule](#canonical-semantic-rule)
   - [Proposed minimal V3 API](#proposed-minimal-v3-api)
 - [Appendix](#appendix)
@@ -1099,21 +1099,6 @@ Notes:
 - This preserves the immutable dataset concept from the sketches.
 - A runtime `Dataset` object can wrap this record and provide a Pythonic interface.
 
-### DatasetBuilder as a separate Datalake API concept
-
-`DatasetBuilder` should not be treated as a canonical persisted entity.
-
-Instead, it should be treated as a separate Datalake-facing helper/API concept used to:
-
-- stage changes to dataset membership
-- construct new immutable `DatasetVersion`s
-- support ergonomic SDK workflows for dataset authoring and revision
-
-In other words:
-
-- `DatasetVersion` is canonical persisted state
-- `DatasetBuilder` is a mutable construction helper that may be exposed by the Datalake API or SDK, but should not sit in the canonical entity model itself
-
 ### Canonical semantic rule
 
 One of the most important semantic rules for V3 should be:
@@ -1419,6 +1404,21 @@ At minimum, V3 should preserve support for the full V1 output surface:
 - pointcloud segmentation
 
 That support does not require V3 to preserve the exact V1 storage format. It does require V3 to provide a canonical way to represent all of those semantics in the new data model.
+
+### DatasetBuilder
+
+`DatasetBuilder` should not be treated as a canonical persisted entity.
+
+Instead, it should be treated as a separate Datalake-facing helper/API concept used to:
+
+- stage changes to dataset membership
+- construct new immutable `DatasetVersion`s
+- support ergonomic SDK workflows for dataset authoring and revision
+
+In other words:
+
+- `DatasetVersion` is canonical persisted state
+- `DatasetBuilder` is a mutable construction helper that may be exposed by the Datalake API or SDK, but should not sit in the canonical entity model itself
 
 ## Appendix
 
