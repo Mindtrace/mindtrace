@@ -832,8 +832,26 @@ Relationship summary:
 - `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
 - `AnnotationSource` captures where an annotation came from.
 - `DatasetVersion` is an immutable dataset view over datums, annotation sets, and provenance from earlier versions.
+- `DatasetBuilder` is treated separately as a Datalake helper/API concept rather than a canonical persisted entity.
 
 </details>
+
+### Canonical entity decision table
+
+| Entity | Keep? | Canonical? | Why | Simplify / alternative |
+|---|---|---|---|---|
+| `Project` | Yes | Likely yes | Needed if projects/workspaces are first-class and can share assets while carrying project-scoped context. | If product-neutral naming is preferred later, rename to `Workspace` or `Collection`. |
+| `ProjectItem` | Yes | Yes if `Project` stays | Needed to separate project membership from asset existence and lifecycle. | Could be renamed to `ProjectAssetMembership` if more explicit naming is preferred. |
+| `AssetOwnership` | Tentatively yes | Maybe | Useful for retention/stewardship semantics beyond simple membership. | Could later be simplified into `AssetRetention` or a lighter retention/pinning model if single ownership is too strong. |
+| `StorageRef` | Yes | Yes | Essential separation between logical asset identity and physical storage location. | No obvious simplification recommended. |
+| `Asset` | Yes | Yes | Canonical payload-bearing object; foundational to the whole model. | No obvious simplification recommended. |
+| `AnnotationSource` | Yes | Probably | Gives structured provenance for labels and predictions. | Could be embedded as a structured sub-object on `AnnotationRecord` if a smaller schema is preferred. |
+| `AnnotationRecord` | Yes | Yes | Core canonical unit of labeling/annotation. | No obvious simplification recommended. |
+| `AnnotationSet` | Yes | Yes | Needed to group records by source, purpose, review state, or version-like context. | No obvious simplification recommended. |
+| `Datum` | Yes | Yes, but narrowly scoped | Useful as the reusable unit of dataset membership/composition. | Keep narrow; do not let it become a generic junk drawer for every stored thing. |
+| `DatasetVersion` | Yes | Yes | Canonical immutable dataset view/version. | No obvious simplification recommended. |
+
+The main simplification applied here is that `DatasetBuilder` is no longer treated as a canonical entity. It is instead treated as a separate helper/API concept.
 
 ### 1. `Project`
 
@@ -1094,15 +1112,20 @@ Notes:
 - This preserves the immutable dataset concept from the sketches.
 - A runtime `Dataset` object can wrap this record and provide a Pythonic interface.
 
-### 11. `DatasetBuilder`
+### DatasetBuilder as a separate Datalake API concept
 
-`DatasetBuilder` should remain part of the SDK / Python workflow surface rather than become a primary persisted schema.
+`DatasetBuilder` should not be treated as a canonical persisted entity.
 
-It represents staged mutations used to produce a new `DatasetVersion`.
+Instead, it should be treated as a separate Datalake-facing helper/API concept used to:
 
----
+- stage changes to dataset membership
+- construct new immutable `DatasetVersion`s
+- support ergonomic SDK workflows for dataset authoring and revision
 
-</details>
+In other words:
+
+- `DatasetVersion` is canonical persisted state
+- `DatasetBuilder` is a mutable construction helper that may be exposed by the Datalake API or SDK, but should not sit in the canonical entity model itself
 
 ### Canonical semantic rule
 
