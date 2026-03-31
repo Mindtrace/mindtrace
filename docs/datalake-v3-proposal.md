@@ -1213,31 +1213,51 @@ flowchart TD
 
 #### Main role / responsibility
 
-The `cluster` module is responsible for distributed orchestration and integration across compute and data.
+The `cluster` module is responsible for distributed job orchestration, worker lifecycle management, and execution routing across nodes and workers.
 
-Its job is to provide:
+Based on the current module and README, its job is to provide:
 
-- worker coordination
-- placement and capability matching
-- job dispatch and run supervision
-- integration between Jobs and Datalake references / persistence
+- a central orchestrator for submitting and tracking jobs
+- worker registration and worker-type registration
+- node-managed worker launching
+- routing jobs either directly to endpoints or through workers
+- support for worker execution environments such as Git-based and Docker-based runs
+- integration with the registry for worker distribution and launch metadata
 
-The `cluster` module is the layer that should know how to turn Datalake-backed inputs into executable work and how to persist outputs back into Datalake.
+The current cluster module already acts as the practical bridge between execution and infrastructure. In a fuller V3 architecture, it should remain the main integration point between `jobs`, `registry`, and `datalake`.
 
 #### Major classes
 
-- `Cluster`
+- `ClusterManager`
+- `Node`
 - `Worker`
-- `Scheduler`
-- `ExecutionAdapter`
+- `ProxyWorker` / `StandardWorkerLauncher`
 
 ```mermaid
 flowchart TD
-    C[Cluster] --> S[Scheduler]
-    S --> W[Worker]
-    C --> EA[ExecutionAdapter]
-    EA --> W
+    CM[ClusterManager] --> N[Node]
+    N --> W[Worker]
+    CM --> PW[ProxyWorker]
+    PW --> SWL[StandardWorkerLauncher]
+    SWL --> W
+    CM --> ORCH[Job Orchestrator / Queue]
+    CM --> WR[Worker Registry]
 ```
+
+The actual current module also includes built-in worker implementations and execution helpers such as:
+
+- `EchoWorker`
+- `RunScriptWorker`
+- Git and Docker execution environments
+
+So the current Cluster module is not just a scheduler in the abstract. It is already a concrete execution system with:
+
+- orchestration through `ClusterManager`
+- node-based worker launching
+- worker status tracking
+- worker-type registration
+- queue/orchestrator integration
+- registry-backed worker distribution
 
 ### How everything works together
 
