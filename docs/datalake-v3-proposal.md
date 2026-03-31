@@ -640,9 +640,13 @@ At a high level, the intended relationship is:
 - **`cluster`** integrates jobs and data in a distributed execution environment
 
 ```mermaid
-flowchart LR
-    DB[database module] --> DL[datalake module]
-    REG[registry module] --> DL
+flowchart TD
+    DB[database module]
+    REG[registry module]
+
+    DB --> DL[datalake module]
+    REG --> DL
+
     JOBS[jobs module] --> CL[cluster module]
     DL --> CL
 ```
