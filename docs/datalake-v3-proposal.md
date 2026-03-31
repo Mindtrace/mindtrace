@@ -2,18 +2,25 @@
 
 ## Summary
 
-This proposal sketches a first canonical Datalake model for Mindtrace that preserves the strongest ideas from the initial design sketches while tightening the parts that are currently ambiguous.
+This document proposes **Datalake Version 3 (V3)** for Mindtrace.
 
-The intended shape is:
+V3 is intended as the next architectural step after:
 
-- payloads live in Registry / Store-backed object storage
-- structured metadata and annotations live in a database / ODM layer
-- `Datum` is the unit of dataset membership
-- `DatasetVersion` is immutable
-- `DatasetBuilder` is mutable and used to derive new dataset versions
-- Datalake exposes a service API for storage, assets, datasets, and annotations
+- **V1**: the original `mtrix` Datalake, which focused primarily on dataset packaging, synchronization, and loading
+- **V2**: the current `mindtrace.datalake` module, which introduced a simpler and more data-centric persistence model
 
-This design is intended to be a reusable Mindtrace module rather than an application-specific subsystem.
+The purpose of this document is to describe what V3 should be, why it is needed, how it relates to the earlier versions, and what architectural shape makes sense as Mindtrace grows.
+
+At a high level, V3 is trying to accomplish the following:
+
+- provide a clearer and more scalable long-term data architecture for Mindtrace
+- move beyond dataset-package management toward a more general canonical persistence layer
+- support richer storage topologies and more explicit data ownership boundaries
+- support structured, queryable, and reusable data across multiple applications and workflows
+- fit cleanly with adjacent modules such as `jobs` and `cluster`
+- preserve the useful ideas from earlier iterations without carrying forward their structural limitations
+
+This is therefore not just a low-level implementation note. It is a proposal for how the Datalake should evolve into a reusable Mindtrace subsystem that can serve as the foundation for storage, metadata, annotations, dataset composition, and data-oriented workflow integration.
 
 ---
 ## Table of Contents
