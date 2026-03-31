@@ -22,7 +22,7 @@ class TestRunScriptWorker:
     @pytest.fixture
     def worker(self):
         """Create a RunScriptWorker instance for testing."""
-        with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
+        with patch("mindtrace.cluster.core.worker.UnifiedMindtraceODM") as MockDatabase:
             MockDatabase.return_value = create_mock_database()
             worker = RunScriptWorker()
 

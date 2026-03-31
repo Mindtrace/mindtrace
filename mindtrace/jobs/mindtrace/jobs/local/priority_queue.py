@@ -1,11 +1,4 @@
-import json
 import queue
-from pathlib import Path
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
-
-from mindtrace.registry import Archiver, Registry
 
 
 class LocalPriorityQueue:
@@ -62,28 +55,3 @@ class LocalPriorityQueue:
             priority = item_data["priority"]
             queue_obj.push(item, priority)
         return queue_obj
-
-
-class PriorityQueueArchiver(Archiver):
-    """Archiver for LocalPriorityQueue objects using JSON serialization."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (LocalPriorityQueue,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
-    def __init__(self, uri: str, **kwargs):
-        super().__init__(uri=uri, **kwargs)
-
-    def save(self, item: LocalPriorityQueue):
-        """Save a LocalPriorityQueue object to JSON."""
-        queue_data = item.to_dict()
-        with open(Path(self.uri) / "priority_queue.json", "w") as f:
-            json.dump(queue_data, f)
-
-    def load(self, data_type: Type[Any]) -> LocalPriorityQueue:
-        """Load a LocalPriorityQueue object from JSON."""
-        with open(Path(self.uri) / "priority_queue.json", "r") as f:
-            queue_data = json.load(f)
-        return LocalPriorityQueue.from_dict(queue_data)
-
-
-Registry.register_default_materializer(LocalPriorityQueue, PriorityQueueArchiver)

@@ -10,7 +10,10 @@ import requests
 from urllib3.exceptions import ConnectionError
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
+from mindtrace.cluster.core.cluster_manager import ClusterManager
+from mindtrace.cluster.core.node import Node
+from mindtrace.cluster.core.utils import update_database
+from mindtrace.cluster.core.worker import Worker
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.registry.backends.registry_backend import RegistryBackend
@@ -32,9 +35,9 @@ def create_mock_database():
 def cluster_manager():
     # Patch Database to avoid file I/O
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
-        patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient,
-        patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend,
+        patch("mindtrace.cluster.core.cluster_manager.UnifiedMindtraceODM") as MockDatabase,
+        patch("mindtrace.cluster.core.cluster_manager.RabbitMQClient") as MockRabbitMQClient,
+        patch("mindtrace.cluster.core.cluster_manager.MinioRegistryBackend") as MockMinioBackend,
     ):
         MockDatabase.side_effect = [
             create_mock_database(),
@@ -84,7 +87,7 @@ def mock_worker():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
+    with patch("mindtrace.cluster.core.worker.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -156,7 +159,7 @@ def test_submit_job_success(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [
         cluster_types.JobSchemaTargeting(schema_name="test_job", target_endpoint="/test")
     ]
-    with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
@@ -170,7 +173,7 @@ def test_submit_job_registry_reload(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [
         cluster_types.JobSchemaTargeting(schema_name="test_job", target_endpoint="/test")
     ]
-    with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"status": "completed", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
@@ -209,7 +212,7 @@ def test_submit_job_to_endpoint_http_error(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [
         cluster_types.JobSchemaTargeting(schema_name="test_job", target_endpoint="/test")
     ]
-    with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post") as mock_post:
         mock_post.return_value.status_code = 500
         mock_post.return_value.text = "Internal Server Error"
         with pytest.raises(RuntimeError, match="Gateway proxy request failed: Internal Server Error"):
@@ -221,7 +224,7 @@ def test_submit_job_to_endpoint_json_error(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [
         cluster_types.JobSchemaTargeting(schema_name="test_job", target_endpoint="/test")
     ]
-    with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.side_effect = Exception("bad json")
         result = cluster_manager._submit_job_to_endpoint(job, "/test/test")
@@ -239,7 +242,7 @@ def test_register_job_to_worker(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [existing_entry]
 
     with (
-        patch("mindtrace.cluster.core.cluster.Worker") as MockWorker,
+        patch("mindtrace.cluster.core.worker.Worker") as MockWorker,
         patch.object(cluster_manager.orchestrator, "register") as mock_register,
     ):
         mock_worker_instance = MockWorker.connect.return_value
@@ -268,7 +271,7 @@ def test_register_job_to_worker_with_existing_entries(cluster_manager):
     existing_entry.pk = "existing-pk"
     cluster_manager.job_schema_targeting_database.find.return_value = [existing_entry]
 
-    with patch("mindtrace.cluster.core.cluster.Worker"), patch.object(cluster_manager.orchestrator, "register"):
+    with patch("mindtrace.cluster.core.worker.Worker"), patch.object(cluster_manager.orchestrator, "register"):
         cluster_manager.register_job_to_worker(payload)
 
         # Verify existing entry was deleted
@@ -285,7 +288,7 @@ def test_register_job_to_worker_worker_down(cluster_manager):
     cluster_manager.job_schema_targeting_database.find.return_value = [existing_entry]
 
     with (
-        patch("mindtrace.cluster.core.cluster.Worker") as MockWorker,
+        patch("mindtrace.cluster.core.worker.Worker") as MockWorker,
         patch.object(cluster_manager.orchestrator, "register") as mock_register,
     ):
         # Mock worker instance with DOWN status heartbeat
@@ -595,7 +598,7 @@ def test_launch_worker_with_auto_connect(cluster_manager):
     cluster_manager.worker_auto_connect_database.find.return_value = [auto_connect_entry]
 
     with (
-        patch("mindtrace.cluster.core.cluster.Node") as MockNode,
+        patch("mindtrace.cluster.core.node.Node") as MockNode,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -634,7 +637,7 @@ def test_launch_worker_without_auto_connect(cluster_manager):
     cluster_manager.worker_auto_connect_database.find.return_value = []
 
     with (
-        patch("mindtrace.cluster.core.cluster.Node") as MockNode,
+        patch("mindtrace.cluster.core.node.Node") as MockNode,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -669,7 +672,7 @@ def test_launch_worker_node_connection_failure(cluster_manager):
         "worker_name": "test_worker",
     }
 
-    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+    with patch("mindtrace.cluster.core.node.Node") as MockNode:
         MockNode.connect.side_effect = Exception("Connection failed")
 
         with pytest.raises(Exception, match="Connection failed"):
@@ -685,7 +688,7 @@ def test_launch_worker_node_launch_failure(cluster_manager):
         "worker_name": "test_worker",
     }
 
-    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+    with patch("mindtrace.cluster.core.node.Node") as MockNode:
         mock_node_instance = MockNode.connect.return_value
         mock_node_instance.launch_worker.side_effect = Exception("Launch failed")
 
@@ -707,7 +710,7 @@ def test_launch_worker_with_different_ports(cluster_manager):
     cluster_manager.worker_auto_connect_database.find.return_value = [auto_connect_entry]
 
     with (
-        patch("mindtrace.cluster.core.cluster.Node") as MockNode,
+        patch("mindtrace.cluster.core.node.Node") as MockNode,
         patch.object(Worker, "connect") as mock_connect,
     ):
         mock_node_instance = MockNode.connect.return_value
@@ -746,7 +749,7 @@ def test_launch_worker_logging(cluster_manager):
     cluster_manager.worker_auto_connect_database.find.return_value = [auto_connect_entry]
 
     with (
-        patch("mindtrace.cluster.core.cluster.Node") as MockNode,
+        patch("mindtrace.cluster.core.node.Node") as MockNode,
         patch.object(cluster_manager, "logger"),
         patch.object(Worker, "connect") as mock_connect,
     ):
@@ -989,10 +992,10 @@ def test_clear_databases_logging_verification(cluster_manager):
 def mock_node():
     """Create a mock node for testing."""
     with (
-        patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase,
-        patch("mindtrace.cluster.core.cluster.MinioRegistryBackend"),
-        patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry,
-        patch("mindtrace.cluster.core.cluster.ClusterManager.connect") as MockClusterManagerConnect,
+        patch("mindtrace.cluster.core.node.UnifiedMindtraceODM") as MockDatabase,
+        patch("mindtrace.cluster.core.node.MinioRegistryBackend"),
+        patch("mindtrace.cluster.core.node.Registry") as MockRegistry,
+        patch("mindtrace.cluster.core.cluster_manager.ClusterManager.connect") as MockClusterManagerConnect,
     ):
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
@@ -1034,7 +1037,7 @@ def test_node_initialization_with_cluster(mock_node):
 
 def test_node_initialization_without_cluster():
     """Test Node initialization without cluster_url."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
+    with patch("mindtrace.cluster.core.node.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -1077,7 +1080,7 @@ def test_worker_cluster_connection_manager_property(mock_worker):
     # Set cluster URL
     mock_worker._cluster_url = "http://cluster:8080"
 
-    with patch("mindtrace.cluster.core.cluster.ClusterManager") as MockClusterManager:
+    with patch("mindtrace.cluster.core.cluster_manager.ClusterManager") as MockClusterManager:
         mock_cm = MockClusterManager.connect.return_value
         mock_worker._cluster_connection_manager = None  # Reset to test property
 
@@ -1095,7 +1098,7 @@ def test_worker_run_with_cluster_manager(mock_worker):
     mock_cm = MagicMock()
     mock_worker._cluster_connection_manager = mock_cm
 
-    with patch("mindtrace.cluster.core.cluster.update_database") as mock_update_database:
+    with patch("mindtrace.cluster.core.worker.update_database") as mock_update_database:
         mock_update_database.return_value = None
         result = mock_worker.run(job_dict)
         mock_update_database.assert_any_call(
@@ -1129,7 +1132,7 @@ def test_worker_run_without_cluster_manager(mock_worker):
 
     with (
         patch.object(mock_worker, "logger") as mock_logger,
-        patch("mindtrace.cluster.core.cluster.update_database") as mock_update_database,
+        patch("mindtrace.cluster.core.worker.update_database") as mock_update_database,
     ):
         mock_update_database.return_value = None
         result = mock_worker.run(job_dict)
@@ -1170,7 +1173,7 @@ def test_worker_connect_to_cluster(mock_worker):
         patch.object(mock_worker, "start") as mock_start,
         patch.object(mock_worker, "connect_to_orchestator_via_backend_args") as mock_connect_orchestrator,
         patch.object(mock_worker, "consume") as mock_consume,
-        patch("mindtrace.cluster.core.cluster.threading.Thread") as MockThread,
+        patch("mindtrace.cluster.core.worker.threading.Thread") as MockThread,
     ):
         mock_thread = MockThread.return_value
 
@@ -1193,7 +1196,7 @@ def test_worker_connect_to_cluster(mock_worker):
 
 def test_worker_abstract_run_method():
     """Test that Worker abstract _run method raises NotImplementedError."""
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
+    with patch("mindtrace.cluster.core.worker.UnifiedMindtraceODM") as MockDatabase:
         MockDatabase.return_value = create_mock_database()
         worker = Worker()
 
@@ -1533,7 +1536,7 @@ def test_worker_concrete_implementation():
         def _run(self, job_dict: dict) -> dict:
             return {"status": "completed", "output": {"result": "test"}}
 
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODM") as MockDatabase:
+    with patch("mindtrace.cluster.core.worker.UnifiedMindtraceODM") as MockDatabase:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -1548,7 +1551,7 @@ def test_worker_concrete_implementation():
 
 def test_update_database_success():
     """Test update_database function with valid input."""
-    from mindtrace.cluster.core.cluster import update_database
+    from mindtrace.cluster.core.utils import update_database
 
     # Mock database and entry
     mock_database = MagicMock()
@@ -1578,7 +1581,7 @@ def test_update_database_success():
 
 def test_update_database_no_entries():
     """Test update_database function when no entries are found."""
-    from mindtrace.cluster.core.cluster import update_database
+    from mindtrace.cluster.core.utils import update_database
 
     mock_database = MagicMock()
     mock_database.find.return_value = []
@@ -1590,7 +1593,7 @@ def test_update_database_no_entries():
 
 def test_update_database_multiple_entries():
     """Test update_database function when multiple entries are found."""
-    from mindtrace.cluster.core.cluster import update_database
+    from mindtrace.cluster.core.utils import update_database
 
     mock_database = MagicMock()
     mock_database.find.return_value = [MagicMock(), MagicMock()]
@@ -1616,7 +1619,7 @@ def test_query_worker_status_success(cluster_manager):
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
-    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+    with patch("mindtrace.cluster.core.worker.Worker") as MockWorker:
         mock_worker_instance = MockWorker.connect.return_value
 
         # Mock worker heartbeat and status
@@ -1630,7 +1633,7 @@ def test_query_worker_status_success(cluster_manager):
         mock_worker_instance.get_status.return_value = mock_worker_status
 
         # Mock update_database
-        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+        with patch("mindtrace.cluster.core.cluster_manager.update_database") as mock_update:
             mock_update.return_value = existing_worker_status
 
             result = cluster_manager.query_worker_status({"worker_id": worker_id})
@@ -1683,7 +1686,7 @@ def test_query_worker_status_worker_down(cluster_manager):
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
-    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+    with patch("mindtrace.cluster.core.worker.Worker") as MockWorker:
         mock_worker_instance = MockWorker.connect.return_value
 
         # Mock worker heartbeat with DOWN status
@@ -1691,7 +1694,7 @@ def test_query_worker_status_worker_down(cluster_manager):
         mock_heartbeat.heartbeat.status = ServerStatus.DOWN
         mock_worker_instance.heartbeat.return_value = mock_heartbeat
 
-        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+        with patch("mindtrace.cluster.core.cluster_manager.update_database") as mock_update:
             mock_update.return_value = existing_worker_status
 
             result = cluster_manager.query_worker_status({"worker_id": worker_id})
@@ -1726,11 +1729,11 @@ def test_query_worker_status_worker_connection_failure(cluster_manager):
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
-    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+    with patch("mindtrace.cluster.core.worker.Worker") as MockWorker:
         # Mock worker connection failure
         MockWorker.connect.return_value = None
 
-        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+        with patch("mindtrace.cluster.core.cluster_manager.update_database") as mock_update:
             mock_update.return_value = existing_worker_status
 
             result = cluster_manager.query_worker_status({"worker_id": worker_id})
@@ -1953,7 +1956,7 @@ def test_query_worker_status_edge_cases(cluster_manager):
     ]
 
     for expected_status, expected_job_id in test_cases:
-        with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+        with patch("mindtrace.cluster.core.worker.Worker") as MockWorker:
             mock_worker_instance = MockWorker.connect.return_value
 
             # Mock worker heartbeat
@@ -1967,7 +1970,7 @@ def test_query_worker_status_edge_cases(cluster_manager):
             mock_worker_status.job_id = expected_job_id
             mock_worker_instance.get_status.return_value = mock_worker_status
 
-            with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+            with patch("mindtrace.cluster.core.cluster_manager.update_database") as mock_update:
                 mock_update.return_value = existing_worker_status
 
                 result = cluster_manager.query_worker_status({"worker_id": worker_id})
@@ -1984,7 +1987,7 @@ def test_query_worker_status_edge_cases(cluster_manager):
 
 def test_update_database_edge_cases():
     """Test update_database function with various edge cases."""
-    from mindtrace.cluster.core.cluster import update_database
+    from mindtrace.cluster.core.utils import update_database
 
     mock_database = MagicMock()
     mock_entry = MagicMock()
@@ -2104,7 +2107,7 @@ def test_submit_job_to_endpoint_with_requests_exception(cluster_manager):
 
     # Mock requests.post to raise an exception
     with patch(
-        "mindtrace.cluster.core.cluster.requests.post",
+        "mindtrace.cluster.core.cluster_manager.requests.post",
         side_effect=requests.exceptions.RequestException("Network error"),
     ):
         with pytest.raises(requests.exceptions.RequestException, match="Network error"):
@@ -2117,7 +2120,8 @@ def test_submit_job_to_endpoint_with_timeout_exception(cluster_manager):
 
     # Mock requests.post to raise a timeout exception
     with patch(
-        "mindtrace.cluster.core.cluster.requests.post", side_effect=requests.exceptions.Timeout("Request timeout")
+        "mindtrace.cluster.core.cluster_manager.requests.post",
+        side_effect=requests.exceptions.Timeout("Request timeout"),
     ):
         with pytest.raises(requests.exceptions.Timeout, match="Request timeout"):
             cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
@@ -2129,7 +2133,7 @@ def test_submit_job_to_endpoint_with_connection_error(cluster_manager):
 
     # Mock requests.post to raise a connection error
     with patch(
-        "mindtrace.cluster.core.cluster.requests.post",
+        "mindtrace.cluster.core.cluster_manager.requests.post",
         side_effect=requests.exceptions.ConnectionError("Connection failed"),
     ):
         with pytest.raises(requests.exceptions.ConnectionError, match="Connection failed"):
@@ -2142,7 +2146,7 @@ def test_submit_job_to_endpoint_with_ssl_error(cluster_manager):
 
     # Mock requests.post to raise an SSL error
     with patch(
-        "mindtrace.cluster.core.cluster.requests.post",
+        "mindtrace.cluster.core.cluster_manager.requests.post",
         side_effect=requests.exceptions.SSLError("SSL certificate error"),
     ):
         with pytest.raises(requests.exceptions.SSLError, match="SSL certificate error"):
@@ -2158,7 +2162,7 @@ def test_submit_job_to_endpoint_with_invalid_json_response(cluster_manager):
     mock_response.status_code = 200
     mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "invalid", 0)
 
-    with patch("mindtrace.cluster.core.cluster.requests.post", return_value=mock_response):
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post", return_value=mock_response):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use default values when JSON parsing fails
@@ -2175,7 +2179,7 @@ def test_submit_job_to_endpoint_with_malformed_response(cluster_manager):
     mock_response.status_code = 200
     mock_response.json.return_value = {"unexpected": "structure"}
 
-    with patch("mindtrace.cluster.core.cluster.requests.post", return_value=mock_response):
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post", return_value=mock_response):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use default values when response doesn't have expected fields
@@ -2192,7 +2196,7 @@ def test_submit_job_to_endpoint_with_partial_response(cluster_manager):
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": "running"}  # Missing output field
 
-    with patch("mindtrace.cluster.core.cluster.requests.post", return_value=mock_response):
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post", return_value=mock_response):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use provided status but default output
@@ -2209,7 +2213,7 @@ def test_submit_job_to_endpoint_with_none_response_values(cluster_manager):
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": None, "output": None}
 
-    with patch("mindtrace.cluster.core.cluster.requests.post", return_value=mock_response):
+    with patch("mindtrace.cluster.core.cluster_manager.requests.post", return_value=mock_response):
         result = cluster_manager._submit_job_to_endpoint(job, "/test_endpoint")
 
         # Should use default values when response has None values
@@ -2222,9 +2226,7 @@ def test_register_job_to_worker_with_worker_connection_failure(cluster_manager):
     payload = {"job_type": "test_job", "worker_url": "http://worker:8080"}
 
     # Mock Worker.connect to raise an exception
-    with patch(
-        "mindtrace.cluster.core.cluster.Worker.connect", side_effect=ConnectionError("Worker connection failed")
-    ):
+    with patch("mindtrace.cluster.core.worker.Worker.connect", side_effect=ConnectionError("Worker connection failed")):
         with pytest.raises(ConnectionError, match="Worker connection failed"):
             cluster_manager.register_job_to_worker(payload)
 
@@ -2237,7 +2239,7 @@ def test_register_job_to_worker_with_heartbeat_failure(cluster_manager):
     mock_worker_cm = MagicMock()
     mock_worker_cm.heartbeat.side_effect = Exception("Heartbeat failed")
 
-    with patch("mindtrace.cluster.core.cluster.Worker.connect", return_value=mock_worker_cm):
+    with patch("mindtrace.cluster.core.worker.Worker.connect", return_value=mock_worker_cm):
         with pytest.raises(Exception, match="Heartbeat failed"):
             cluster_manager.register_job_to_worker(payload)
 
@@ -2254,7 +2256,7 @@ def test_register_job_to_worker_with_connect_to_cluster_failure(cluster_manager)
     mock_worker_cm.heartbeat.return_value = mock_heartbeat
     mock_worker_cm.connect_to_cluster.side_effect = RuntimeError("Cluster connection failed")
 
-    with patch("mindtrace.cluster.core.cluster.Worker.connect", return_value=mock_worker_cm):
+    with patch("mindtrace.cluster.core.worker.Worker.connect", return_value=mock_worker_cm):
         with pytest.raises(RuntimeError, match="Cluster connection failed"):
             cluster_manager.register_job_to_worker(payload)
 
@@ -2355,7 +2357,7 @@ def test_worker_connect_to_cluster_with_thread_start_failure(mock_worker):
     }
 
     # Mock multiprocessing.Process to raise an exception
-    with patch("mindtrace.cluster.core.cluster.threading.Thread") as mock_thread_class:
+    with patch("mindtrace.cluster.core.worker.threading.Thread") as mock_thread_class:
         mock_thread = MagicMock()
         mock_thread.start.side_effect = RuntimeError("Thread start failed")
         mock_thread_class.return_value = mock_thread

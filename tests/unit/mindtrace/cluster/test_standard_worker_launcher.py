@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.cluster.core.cluster import StandardWorkerLauncher
+from mindtrace.cluster.core.archiver import StandardWorkerLauncher
 from mindtrace.cluster.core.types import ProxyWorker
 
 
@@ -119,7 +119,7 @@ class TestStandardWorkerLauncher:
         mock_worker_instance.url = "http://worker:8080"
         mock_worker_class.launch.return_value = mock_worker_instance
 
-        with patch("mindtrace.cluster.core.cluster.get_class", return_value=mock_worker_class):
+        with patch("mindtrace.cluster.core.archiver.get_class", return_value=mock_worker_class):
             # Load the worker
             result = launcher.load(data_type=None, url="http://worker:8080")
 
@@ -173,7 +173,7 @@ class TestStandardWorkerLauncher:
         launcher.save(sample_worker)
 
         # Mock get_class to raise an exception
-        with patch("mindtrace.cluster.core.cluster.get_class", side_effect=ImportError("Module not found")):
+        with patch("mindtrace.cluster.core.archiver.get_class", side_effect=ImportError("Module not found")):
             with pytest.raises(ImportError, match="Module not found"):
                 launcher.load(data_type=None, url="http://worker:8080")
 
@@ -186,7 +186,7 @@ class TestStandardWorkerLauncher:
         mock_worker_class = MagicMock()
         mock_worker_class.launch.side_effect = RuntimeError("Launch failed")
 
-        with patch("mindtrace.cluster.core.cluster.get_class", return_value=mock_worker_class):
+        with patch("mindtrace.cluster.core.archiver.get_class", return_value=mock_worker_class):
             with pytest.raises(RuntimeError, match="Launch failed"):
                 launcher.load(data_type=None, url="http://worker:8080")
 
@@ -214,7 +214,7 @@ class TestStandardWorkerLauncher:
         mock_worker_instance.url = "http://complex-worker:8080"
         mock_worker_class.launch.return_value = mock_worker_instance
 
-        with patch("mindtrace.cluster.core.cluster.get_class", return_value=mock_worker_class):
+        with patch("mindtrace.cluster.core.archiver.get_class", return_value=mock_worker_class):
             # Load the worker
             result = launcher.load(data_type=None, url="http://complex-worker:8080")
 
@@ -248,9 +248,11 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.return_value = mock_connection_manager
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment) as mock_git_env_class,
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker") as mock_worker_class,
+            patch(
+                "mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment
+            ) as mock_git_env_class,
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker") as mock_worker_class,
         ):
             # Load the worker
             result = launcher.load(data_type=None, url="http://git-worker:8080")
@@ -311,9 +313,9 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.side_effect = ConnectionRefusedError("Connection refused")
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment),
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment),
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Load the worker should raise the connection error
             with pytest.raises(ConnectionRefusedError, match="Connection refused"):
@@ -333,9 +335,9 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.side_effect = TimeoutError("Connection timeout")
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment),
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment),
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Load the worker should raise the timeout error
             with pytest.raises(TimeoutError, match="Connection timeout"):
@@ -355,9 +357,9 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.side_effect = Exception("HTTP 500 error")
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment),
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment),
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Load the worker should raise the exception
             with pytest.raises(Exception, match="HTTP 500 error"):
@@ -372,7 +374,7 @@ class TestStandardWorkerLauncher:
         mock_environment = MagicMock()
         mock_environment.setup.side_effect = RuntimeError("Git setup failed")
 
-        with patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment):
+        with patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment):
             # Load the worker should raise the setup error
             with pytest.raises(RuntimeError, match="Git setup failed"):
                 launcher.load(data_type=None, url="http://git-worker:8080")
@@ -387,7 +389,7 @@ class TestStandardWorkerLauncher:
         mock_environment.setup.return_value = "/tmp/working_dir"
         mock_environment.execute.side_effect = RuntimeError("Execute failed")
 
-        with patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment):
+        with patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment):
             # Load the worker should raise the execute error
             with pytest.raises(RuntimeError, match="Execute failed"):
                 launcher.load(data_type=None, url="http://git-worker:8080")
@@ -407,9 +409,9 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.return_value = mock_connection_manager
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment),
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment),
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Test with https URL
             launcher.load(data_type=None, url="https://secure-worker:8443")
@@ -451,9 +453,9 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.return_value = mock_connection_manager
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment),
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch("mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment),
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Load the worker
             result = launcher.load(data_type=None, url="http://complex-git-worker:8080")
@@ -498,9 +500,11 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler.run.return_value = mock_connection_manager
 
         with (
-            patch("mindtrace.cluster.core.cluster.GitEnvironment", return_value=mock_environment) as mock_git_env_class,
-            patch("mindtrace.cluster.core.cluster.Timeout", return_value=mock_timeout_handler),
-            patch("mindtrace.cluster.core.cluster.Worker"),
+            patch(
+                "mindtrace.cluster.core.archiver.GitEnvironment", return_value=mock_environment
+            ) as mock_git_env_class,
+            patch("mindtrace.cluster.core.archiver.Timeout", return_value=mock_timeout_handler),
+            patch("mindtrace.cluster.core.worker.Worker"),
         ):
             # Load the worker
             result = launcher.load(data_type=None, url="http://git-worker-none:8080")

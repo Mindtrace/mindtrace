@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from mindtrace.jobs.local.priority_queue import LocalPriorityQueue, PriorityQueueArchiver
+from mindtrace.jobs.archivers import PriorityQueueArchiver
+from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.registry import Registry
 
 

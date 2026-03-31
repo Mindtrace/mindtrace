@@ -411,7 +411,7 @@ def test_save_without_materializer(registry):
 
 def test_registry_default_materializer_supports_lambda(temp_registry_dir):
     """Registry default_materializer should enable lambda/cloudpickle roundtrips."""
-    from zenml.materializers.cloudpickle_materializer import CloudpickleMaterializer
+    from mindtrace.registry.archivers.builtin_materializers import CloudpickleMaterializer
 
     registry = Registry(
         backend=temp_registry_dir,
@@ -431,7 +431,7 @@ def test_registry_default_materializer_supports_lambda(temp_registry_dir):
 
 def test_registry_default_materializer_supports_reduce_protocol(temp_registry_dir):
     """Registry default_materializer should serialize objects via __reduce__."""
-    from zenml.materializers.cloudpickle_materializer import CloudpickleMaterializer
+    from mindtrace.registry.archivers.builtin_materializers import CloudpickleMaterializer
 
     class Point:
         def __init__(self, x):
@@ -457,14 +457,14 @@ def test_registry_core_default_materializer_string_is_used(temp_registry_dir):
     registry = Registry(
         backend=temp_registry_dir,
         version_objects=True,
-        default_materializer="zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer",
+        default_materializer="mindtrace.registry.archivers.builtin_materializers.CloudpickleMaterializer",
     )
 
     class CustomObject:
         pass
 
     materializer = registry._find_materializer(CustomObject())
-    assert materializer == "zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer"
+    assert materializer == "mindtrace.registry.archivers.builtin_materializers.CloudpickleMaterializer"
 
 
 def test_find_materializer_with_class_object(registry, test_config):
@@ -621,8 +621,11 @@ def test_registered_materializers(registry):
     assert "mindtrace.core.config.config.Config" in materializers
 
     # Verify the materializer classes are correct
-    assert materializers["builtins.str"] == "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    assert materializers["builtins.list"] == "zenml.materializers.BuiltInContainerMaterializer"
+    assert materializers["builtins.str"] == "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer"
+    assert (
+        materializers["builtins.list"]
+        == "mindtrace.registry.archivers.builtin_materializers.BuiltInContainerMaterializer"
+    )
     assert (
         materializers["mindtrace.core.config.config.Config"]
         == "mindtrace.registry.archivers.config_archiver.ConfigArchiver"
@@ -2867,7 +2870,7 @@ def test_load_cache_hit(temp_registry_dir):
                 "1.0.0",
                 metadata={
                     "class": "builtins.str",
-                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                     "hash": cached_hash,
                 },
             )
@@ -2912,7 +2915,7 @@ def test_load_cache_miss(temp_registry_dir):
                     "1.0.0",
                     metadata={
                         "class": "builtins.str",
-                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
                 )
@@ -2979,7 +2982,7 @@ def test_load_cache_hash_mismatch(temp_registry_dir):
                     "1.0.0",
                     metadata={
                         "class": "builtins.str",
-                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
                 )
@@ -3040,7 +3043,7 @@ def test_load_cache_error_fallback(temp_registry_dir):
                         "1.0.0",
                         metadata={
                             "class": "builtins.str",
-                            "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                            "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                             "hash": expected_hash,
                         },
                     )
@@ -3191,7 +3194,7 @@ def test_load_cache_metadata_sync(temp_registry_dir):
                 "1.0.0",
                 metadata={
                     "class": "builtins.str",
-                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                     "hash": cached_hash,
                     "metadata": {"from_remote": "true"},
                 },
@@ -3425,7 +3428,7 @@ def test_load_cache_stale_refresh_fails(temp_registry_dir):
                 "1.0.0",
                 metadata={
                     "class": "builtins.str",
-                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                     "hash": "expected_hash_that_nothing_matches",
                 },
             )
@@ -3563,7 +3566,7 @@ def test_load_verify_integrity_cache_dir_not_exists(temp_registry_dir):
                     "1.0.0",
                     metadata={
                         "class": "builtins.str",
-                        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                        "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                         "hash": expected_hash,
                     },
                 )
@@ -3598,7 +3601,7 @@ def test_load_verify_none_uses_cache(temp_registry_dir):
     # Mock remote metadata
     mock_backend.fetch_metadata.return_value = {
         "class": "builtins.str",
-        "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+        "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
         "hash": "test_hash",
     }
 
@@ -3639,7 +3642,7 @@ def test_load_verify_integrity_cache_hit_skips_staleness(temp_registry_dir):
                 "1.0.0",
                 metadata={
                     "class": "builtins.str",
-                    "materializer": "zenml.materializers.built_in_materializer.BuiltInMaterializer",
+                    "materializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
                     "hash": "completely_different_remote_hash",
                 },
             )

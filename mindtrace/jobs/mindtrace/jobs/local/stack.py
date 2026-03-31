@@ -1,11 +1,4 @@
-import json
 import queue
-from pathlib import Path
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
-
-from mindtrace.registry import Archiver, Registry
 
 
 class LocalStack:
@@ -51,28 +44,3 @@ class LocalStack:
         for item in reversed(data.get("items", [])):
             stack_obj.push(item)
         return stack_obj
-
-
-class StackArchiver(Archiver):
-    """Archiver for LocalStack objects using JSON serialization."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (LocalStack,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
-    def __init__(self, uri: str, **kwargs):
-        super().__init__(uri=uri, **kwargs)
-
-    def save(self, item: LocalStack):
-        """Save a LocalStack object to JSON."""
-        stack_data = item.to_dict()
-        with open(Path(self.uri) / "stack.json", "w") as f:
-            json.dump(stack_data, f)
-
-    def load(self, data_type: Type[Any]) -> LocalStack:
-        """Load a LocalStack object from JSON."""
-        with open(Path(self.uri) / "stack.json", "r") as f:
-            stack_data = json.load(f)
-        return LocalStack.from_dict(stack_data)
-
-
-Registry.register_default_materializer(LocalStack, StackArchiver)

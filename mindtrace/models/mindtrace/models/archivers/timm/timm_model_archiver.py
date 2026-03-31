@@ -12,9 +12,9 @@ import torch
 
 # Import timm at module level for ASSOCIATED_TYPES
 from torch import nn
-from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver
+from mindtrace.registry.core.base_materializer import ArtifactType
 
 try:
     import timm

@@ -11,10 +11,10 @@ from typing import Any, ClassVar, Tuple, Type
 
 import pytest
 from pydantic import BaseModel, Field
-from zenml.enums import ArtifactType
 
 from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Archiver, LocalRegistryBackend, Registry
+from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 # Test models

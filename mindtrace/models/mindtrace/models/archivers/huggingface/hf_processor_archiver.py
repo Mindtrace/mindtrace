@@ -10,9 +10,8 @@ Handles saving and loading of:
 import os
 from typing import Any, ClassVar, Tuple, Type
 
-from zenml.enums import ArtifactType
-
 from mindtrace.registry import Archiver, Registry
+from mindtrace.registry.core.base_materializer import ArtifactType
 
 # Check if transformers is available
 try:

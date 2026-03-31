@@ -16,9 +16,10 @@ def temp_local_client():
         backend = Registry(backend=temp_path, mutable=True)
 
         # Register queue materializers for the temporary registry
-        from mindtrace.jobs.local.fifo_queue import LocalQueue, LocalQueueArchiver
-        from mindtrace.jobs.local.priority_queue import LocalPriorityQueue, PriorityQueueArchiver
-        from mindtrace.jobs.local.stack import LocalStack, StackArchiver
+        from mindtrace.jobs.archivers import LocalQueueArchiver, PriorityQueueArchiver, StackArchiver
+        from mindtrace.jobs.local.fifo_queue import LocalQueue
+        from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
+        from mindtrace.jobs.local.stack import LocalStack
 
         backend.register_materializer(LocalQueue, LocalQueueArchiver)
         backend.register_materializer(LocalPriorityQueue, PriorityQueueArchiver)

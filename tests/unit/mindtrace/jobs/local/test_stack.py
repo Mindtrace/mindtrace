@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from mindtrace.jobs.local.stack import LocalStack, StackArchiver
+from mindtrace.jobs.archivers import StackArchiver
+from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.registry import Registry
 
 

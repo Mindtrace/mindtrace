@@ -9,9 +9,9 @@ from typing import Any, ClassVar, Tuple, Type
 
 import torch
 from ultralytics import YOLO, YOLOWorld
-from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver, Registry
+from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 class YoloArchiver(Archiver):

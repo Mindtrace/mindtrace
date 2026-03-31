@@ -6,9 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Any, Dict, List, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Type
 
-from zenml.materializers.base_materializer import BaseMaterializer
+if TYPE_CHECKING:
+    from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend

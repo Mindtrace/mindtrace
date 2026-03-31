@@ -7,9 +7,8 @@ import tempfile
 from pathlib import Path, PosixPath, PurePath, WindowsPath
 from typing import Any, ClassVar, Tuple, Type
 
-from zenml.enums import ArtifactType
-
 from mindtrace.registry.core.archiver import Archiver
+from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 class PathArchiver(Archiver):

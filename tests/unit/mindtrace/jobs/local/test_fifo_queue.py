@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from mindtrace.jobs.local.fifo_queue import LocalQueue, LocalQueueArchiver
+from mindtrace.jobs.archivers import LocalQueueArchiver
+from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.registry import Registry
 
 

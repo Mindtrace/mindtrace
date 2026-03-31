@@ -7,9 +7,10 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Type, overload
+from typing import TYPE_CHECKING, Any, Dict, List, Type, overload
 
-from zenml.materializers.base_materializer import BaseMaterializer
+if TYPE_CHECKING:
+    from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
@@ -83,7 +84,7 @@ class Registry(Mindtrace):
         mutable: bool | None = None,
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
-        default_materializer: Type[BaseMaterializer] | str | None = None,
+        default_materializer: "Type[BaseMaterializer] | str | None" = None,
         use_cache: bool = True,
         **kwargs,
     ):
@@ -283,7 +284,7 @@ class Registry(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: "Type[BaseMaterializer] | None" = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
