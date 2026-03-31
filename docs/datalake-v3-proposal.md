@@ -41,7 +41,6 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
   - [How everything works together](#how-everything-works-together)
 - [V3 Design](#v3-design)
   - [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
-  - [Design risks and ambiguities to resolve in V3](#design-risks-and-ambiguities-to-resolve-in-v3)
   - [Canonical V3 entities](#canonical-v3-entities)
   - [Canonical semantic rule](#canonical-semantic-rule)
   - [Proposed minimal V3 API](#proposed-minimal-v3-api)
@@ -717,65 +716,6 @@ Supporting a native Mindtrace data model while providing conversion to / from Hu
 
 ---
 
-### Design risks and ambiguities to resolve in V3
-
-### 1. Canonical annotations are mixed with task/job output classes
-
-A key design risk is blurring together:
-
-- task-level result containers (`ImageDetectionAnnotation`, `SemanticSegmentationAnnotation`, etc.)
-- atomic persisted annotation records (one bbox, one mask, one classification label)
-
-For Datalake persistence and querying, the canonical model should be based on atomic annotation records, not nested job-output-shaped objects.
-
-### 2. `Datum.metadata` and `Datum.annotations` are too loosely defined
-
-`metadata` should be descriptive/filterable metadata.
-
-`annotations` should be canonical structured annotation records or references to annotation sets.
-
-If that boundary remains fuzzy, metadata risks becoming a catch-all JSON blob.
-
-### 3. `Datum.data` is too unconstrained
-
-A flexible `data: dict[str, Archivable | str]` style field is too vague as a canonical schema.
-
-The model needs a more explicit representation of payload-bearing assets and their roles.
-
-### 4. Reference counting is mentioned but not clearly modeled
-
-One possible direction is for dataset deletion to decrement reference counts and garbage-collect payloads.
-
-That may be desirable long-term, but it is not yet sufficiently specified to be part of the initial V3 contract.
-
-### 5. `Dataset` is trying to be too many things at once
-
-At the API/schema level, we should separate:
-
-- dataset version record
-- dataset view object / Python runtime wrapper
-- archive/export forms
-
-A Python class can still provide a nice user-facing abstraction, but the canonical service model should be more explicit.
-
-### 6. Query API as arbitrary Python `Callable`
-
-This is a nice SDK shorthand, but not a service contract.
-
-The Datalake API should expose structured declarative filters, while Python helpers can compile lambdas / helper expressions into that representation later.
-
-### 7. Version semantics need separation
-
-The V3 design must avoid conflating:
-
-- dataset version
-- payload object version
-- annotation revision / snapshot version
-
-These must remain distinct.
-
----
-
 ### Canonical V3 entities
 
 <details>
@@ -786,6 +726,10 @@ The following entities define the proposed canonical V3 model.
 ```mermaid
 erDiagram
     STORAGE_REF ||--|| ASSET : "locates"
+    ASSET ||--o{ PROJECT_ITEM : "included by"
+    PROJECT ||--o{ PROJECT_ITEM : "contains"
+    ASSET ||--o{ ASSET_OWNERSHIP : "retained by"
+    PROJECT ||--o{ ASSET_OWNERSHIP : "may import/pin"
     ASSET ||--o{ DATUM : "used by role refs"
     DATASET_VERSION ||--o{ DATUM : "manifest contains"
     DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
@@ -807,6 +751,29 @@ erDiagram
         string media_type
         string checksum
         int size_bytes
+        string lifecycle_state
+    }
+
+    PROJECT {
+        string project_id
+        string name
+        string status
+    }
+
+    PROJECT_ITEM {
+        string project_item_id
+        string project_id
+        string asset_id
+        string split
+        string status
+    }
+
+    ASSET_OWNERSHIP {
+        string ownership_id
+        string asset_id
+        string owner_type
+        string owner_id
+        string retention_policy
     }
 
     DATUM {
@@ -857,13 +824,91 @@ Relationship summary:
 
 - `StorageRef` describes where a payload lives physically.
 - `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`.
+- `Project` is a workspace/context that uses assets without necessarily owning the underlying payload bytes.
+- `ProjectItem` is the membership record connecting a project to an asset.
+- `AssetOwnership` records why an asset should continue to be retained independently of project membership.
 - `Datum` is the unit of dataset membership and references one or more `Asset`s by role.
 - `AnnotationSet` groups related annotations, often by source or purpose.
 - `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
 - `AnnotationSource` captures where an annotation came from.
 - `DatasetVersion` is an immutable dataset view over datums, annotation sets, and provenance from earlier versions.
 
-### 1. `StorageRef`
+</details>
+
+### 1. `Project`
+
+A logical workspace, labeling scope, or collaboration boundary.
+
+```python
+Project:
+    project_id: str
+    name: str
+    description: str | None = None
+    status: Literal["active", "archived", "deleted"] = "active"
+    metadata: dict[str, Any] = {}
+    created_at: datetime
+    created_by: str | None = None
+    updated_at: datetime
+```
+
+Notes:
+
+- A project organizes work over assets.
+- A project should not be treated as the underlying owner of payload bytes by default.
+- Project-local configuration, workflow metadata, and collaboration state can attach here or to nearby entities.
+
+### 2. `ProjectItem`
+
+A membership record connecting a project to an asset.
+
+```python
+ProjectItem:
+    project_item_id: str
+    project_id: str
+    asset_id: str
+    split: Literal["train", "val", "test"] | None = None
+    status: Literal["active", "hidden", "removed"] = "active"
+    metadata: dict[str, Any] = {}
+    added_at: datetime
+    added_by: str | None = None
+```
+
+Notes:
+
+- `ProjectItem` answers the question: “is this asset part of this project?”
+- Removing an asset from a project should usually remove this record, not delete the underlying asset.
+- This entity is central to avoiding naive destructive reference-count semantics.
+
+### 3. `AssetOwnership`
+
+A retention/stewardship record describing why an asset should continue to exist.
+
+```python
+AssetOwnership:
+    ownership_id: str
+    asset_id: str
+    owner_type: Literal[
+        "project_import",
+        "dataset_version",
+        "global_corpus",
+        "job_run",
+        "manual_pin",
+        "system",
+    ]
+    owner_id: str
+    retention_policy: Literal["retain", "delete_when_unreferenced", "archive_when_unreferenced"] = "retain"
+    metadata: dict[str, Any] = {}
+    created_at: datetime
+    created_by: str | None = None
+```
+
+Notes:
+
+- This is a better fit than a single hard owner field.
+- It allows an asset to remain alive even after one project removes it, so long as another project, dataset version, job result, or durable policy still retains it.
+- In V3, asset deletion should be governed by the absence of `ProjectItem` memberships and `AssetOwnership` records, not by project deletion alone.
+
+### 4. `StorageRef`
 
 A reference to a stored payload object.
 
@@ -881,7 +926,7 @@ Notes:
 - `name` is the unqualified object key within that mount.
 - `version` refers to the storage-layer version, not the dataset version.
 
-### 2. `Asset`
+### 5. `Asset`
 
 A canonical record for a payload-bearing object.
 
@@ -903,7 +948,7 @@ Notes:
 - An asset is the catalog record for a payload in backing storage.
 - This cleanly separates payload storage from dataset membership and annotation meaning.
 
-### 3. `AnnotationSource`
+### 6. `AnnotationSource`
 
 Describes where an annotation came from.
 
@@ -921,7 +966,7 @@ Examples:
 - `{"type": "machine", "name": "yolo", "version": "1.2.0"}`
 - `{"type": "derived", "name": "bbox-to-mask"}`
 
-### 4. `AnnotationRecord`
+### 7. `AnnotationRecord`
 
 One atomic annotation.
 
@@ -983,7 +1028,7 @@ Notes:
 - Atomic records are easier to query, edit, and export.
 - Job outputs should map into these records rather than become the canonical storage format.
 
-### 5. `AnnotationSet`
+### 8. `AnnotationSet`
 
 A grouping and provenance boundary for annotation records.
 
@@ -1005,7 +1050,7 @@ Notes:
 - This allows multiple annotation layers over the same underlying datum.
 - Useful distinctions include human truth vs machine predictions vs reviewed snapshots.
 
-### 6. `Datum`
+### 9. `Datum`
 
 The unit of dataset membership.
 
@@ -1025,7 +1070,7 @@ Notes:
 - `asset_refs` can map roles like `image`, `thumbnail`, `aux_mask`, or `roi_crop` to asset IDs.
 - Datums should link to annotation sets instead of embedding all annotation payloads directly.
 
-### 7. `DatasetVersion`
+### 10. `DatasetVersion`
 
 An immutable dataset record.
 
@@ -1047,7 +1092,7 @@ Notes:
 - This preserves the immutable dataset concept from the sketches.
 - A runtime `Dataset` object can wrap this record and provide a Pythonic interface.
 
-### 8. `DatasetBuilder`
+### 11. `DatasetBuilder`
 
 `DatasetBuilder` should remain part of the SDK / Python workflow surface rather than become a primary persisted schema.
 
