@@ -26,7 +26,7 @@ def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     Returns:
         The Url object.
     """
-    from urllib3.util.url import Url, parse_url
+    from urllib3.util.url import parse_url
 
     return ifnone(
         parse_url(url) if isinstance(url, str) else url, parse_url(default) if isinstance(default, str) else default

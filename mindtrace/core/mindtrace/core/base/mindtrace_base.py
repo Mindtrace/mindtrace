@@ -227,60 +227,32 @@ class Mindtrace(metaclass=MindtraceMeta):
         )
 
         def decorator(function):
-            is_async = inspect.iscoroutinefunction(function)
+            if inspect.iscoroutinefunction(function):
 
-            if self is not None:
-                # Logger source is the captured `self` from the decorator argument
-                if is_async:
-
-                    @wraps(function)
-                    async def wrapper(*args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = await function(*args, **kwargs)
-                        except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        self.logger.log(log_level, suffix_formatter(function, result))
-                        return result
-                else:
-
-                    @wraps(function)
-                    def wrapper(*args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = function(*args, **kwargs)
-                        except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        self.logger.log(log_level, suffix_formatter(function, result))
-                        return result
+                @wraps(function)
+                async def wrapper(*args, **kwargs):
+                    logger = self.logger if self is not None else args[0].logger
+                    logger.log(log_level, prefix_formatter(function, args, kwargs))
+                    try:
+                        result = await function(*args, **kwargs)
+                    except Exception as e:
+                        logger.error(exception_formatter(function, e, traceback.format_exc()))
+                        raise
+                    logger.log(log_level, suffix_formatter(function, result))
+                    return result
             else:
-                # Logger source is the first argument (self) of the bound method
-                if is_async:
 
-                    @wraps(function)
-                    async def wrapper(instance, *args, **kwargs):
-                        instance.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = await function(instance, *args, **kwargs)
-                        except Exception as e:
-                            instance.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        instance.logger.log(log_level, suffix_formatter(function, result))
-                        return result
-                else:
-
-                    @wraps(function)
-                    def wrapper(instance, *args, **kwargs):
-                        instance.logger.log(log_level, prefix_formatter(function, args, kwargs))
-                        try:
-                            result = function(instance, *args, **kwargs)
-                        except Exception as e:
-                            instance.logger.error(exception_formatter(function, e, traceback.format_exc()))
-                            raise
-                        instance.logger.log(log_level, suffix_formatter(function, result))
-                        return result
+                @wraps(function)
+                def wrapper(*args, **kwargs):
+                    logger = self.logger if self is not None else args[0].logger
+                    logger.log(log_level, prefix_formatter(function, args, kwargs))
+                    try:
+                        result = function(*args, **kwargs)
+                    except Exception as e:
+                        logger.error(exception_formatter(function, e, traceback.format_exc()))
+                        raise
+                    logger.log(log_level, suffix_formatter(function, result))
+                    return result
 
             return wrapper
 

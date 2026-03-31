@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Type
+
 from urllib3.util.url import Url
 
 if TYPE_CHECKING:  # pragma: no cover
     from fastmcp import Client
+
     from mindtrace.services import Service
 
 

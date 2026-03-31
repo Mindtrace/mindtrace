@@ -91,7 +91,7 @@ class TestEchoService:
         """Test EchoService initialization with arguments."""
         mock_super_init.return_value = None
 
-        service = EchoService("arg1", "arg2", kwarg1="value1", kwarg2="value2")
+        EchoService("arg1", "arg2", kwarg1="value1", kwarg2="value2")
 
         # Verify parent constructor was called with arguments
         mock_super_init.assert_called_once_with("arg1", "arg2", kwarg1="value1", kwarg2="value2")

@@ -34,6 +34,7 @@ def _get_http_exception():
 # Module-level state
 # ---------------------------------------------------------------------------
 _configured_loggers: set[str] = set()
+_structlog_configured: bool = False
 
 
 def reset_logging() -> None:
@@ -41,8 +42,9 @@ def reset_logging() -> None:
 
     Primarily useful in tests that need fresh logger setup between test cases.
     """
-    global _configured_loggers
+    global _configured_loggers, _structlog_configured
     _configured_loggers = set()
+    _structlog_configured = False
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +217,16 @@ def setup_logger(
         ]
     )
 
-    # Configure structlog with proper processors
-    structlog.configure(
-        processors=pre_chain + processors,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
+    # Configure structlog exactly once (repeated calls have undefined behavior in structlog)
+    global _structlog_configured
+    if not _structlog_configured:
+        structlog.configure(
+            processors=pre_chain + processors,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+        _structlog_configured = True
 
     # Set up handlers on the underlying stdlib logger
     stdlib_logger = logging.getLogger(name)
@@ -290,7 +295,9 @@ def get_logger(
 
     # Ensure the root "mindtrace" logger exists (lazy init, replaces the old __init__.py side effect)
     if "mindtrace" not in _configured_loggers and full_name != "mindtrace":
-        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog)
+        # Pass structlog kwargs so the first configure() call uses the caller's processors
+        structlog_kwargs = {k: v for k, v in kwargs.items() if k.startswith("structlog_")}
+        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog, **structlog_kwargs)
 
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
 
