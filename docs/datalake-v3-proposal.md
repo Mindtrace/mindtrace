@@ -1365,6 +1365,49 @@ Delete an annotation record.
 ---
 
 
+### Migrating from V1 to V3
+
+The V1 `mtrix` Datalake supported a smaller set of task/output types than the V3 design. To preserve backward compatibility in spirit, V3 should explicitly map those V1 output types into canonical V3 entities.
+
+The key principle is:
+
+- **V1 output types** describe task/result categories
+- **V3 canonical entities** describe how those results should persist in the Datalake
+
+The table below captures the recommended mapping.
+
+| V1 output type | Meaning in V1 | Recommended V3 representation | Notes |
+|---|---|---|---|
+| `classification` | Single class-style output | `AnnotationSet` + `AnnotationRecord(kind="classification")` | The annotation set captures source/purpose; each record stores the label and optional score/provenance. |
+| `regression` | Scalar numeric output | `AnnotationSet` + `AnnotationRecord(kind="regression")` **or** structured datum/project metadata, depending on domain semantics | If regression is part of the canonical label space, model it explicitly. If it is operational metadata, store it as structured metadata instead. |
+| `detection` | Bounding-box detection output with labels | `AnnotationSet` + `AnnotationRecord(kind="bbox")` | Each detected object should become an atomic bbox annotation record. |
+| `image_segmentation` | Mask-based image segmentation | `Asset(kind="mask")` + `AnnotationSet` + `AnnotationRecord(kind="mask")` | The mask payload should be stored as an asset, while the annotation record references it canonically. |
+| `pointcloud_segmentation` | Per-point segmentation/classification for point clouds | `AnnotationSet` + `AnnotationRecord(kind="pointcloud_segmentation")` **or** a dedicated pointcloud annotation entity if introduced | V3 should support this explicitly even if the first implementation uses a specialized annotation kind before a richer pointcloud model exists. |
+
+### Migration guidance
+
+To migrate V1 semantics into V3 cleanly:
+
+1. Preserve the **task meaning** of each V1 output type.
+2. Persist the result using **canonical V3 entities**, not V1-shaped output blobs as the source of truth.
+3. Keep provenance such as:
+   - original task/output type
+   - producing model or run
+   - source dataset/project context
+4. Treat legacy package outputs and caches as **derived/imported forms**, not as the canonical V3 persistence model.
+
+### Immediate compatibility requirement
+
+At minimum, V3 should preserve support for the full V1 output surface:
+
+- classification
+- regression
+- detection
+- image segmentation
+- pointcloud segmentation
+
+That support does not require V3 to preserve the exact V1 storage format. It does require V3 to provide a canonical way to represent all of those semantics in the new data model.
+
 ## Appendix
 
 ### Integration notes
