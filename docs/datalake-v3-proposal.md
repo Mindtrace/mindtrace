@@ -787,10 +787,10 @@ The following entities define the proposed canonical V3 model.
 ```mermaid
 erDiagram
     STORAGE_REF ||--|| ASSET : "locates"
-    ASSET ||--o{ PROJECT_ITEM : "included by"
-    PROJECT ||--o{ PROJECT_ITEM : "contains"
-    ASSET ||--o{ ASSET_OWNERSHIP : "retained by"
-    PROJECT ||--o{ ASSET_OWNERSHIP : "may import/pin"
+    ASSET ||--o{ COLLECTION_ITEM : "included by"
+    COLLECTION ||--o{ COLLECTION_ITEM : "contains"
+    ASSET ||--o{ ASSET_RETENTION : "retained by"
+    COLLECTION ||--o{ ASSET_RETENTION : "may import/pin"
     ASSET ||--o{ DATUM : "used by role refs"
     DATASET_VERSION ||--o{ DATUM : "manifest contains"
     DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
@@ -814,21 +814,21 @@ erDiagram
         string lifecycle_state
     }
 
-    PROJECT {
+    COLLECTION {
         string collection_id
         string name
         string status
     }
 
-    PROJECT_ITEM {
-        string project_item_id
+    COLLECTION_ITEM {
+        string collection_item_id
         string collection_id
         string asset_id
         string split
         string status
     }
 
-    ASSET_OWNERSHIP {
+    ASSET_RETENTION {
         string ownership_id
         string asset_id
         string owner_type
