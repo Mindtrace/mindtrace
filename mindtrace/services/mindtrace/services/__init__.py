@@ -2,6 +2,7 @@ from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.endpoint_spec import EndpointSpec
 from mindtrace.services.core.service import Service
 from mindtrace.services.core.types import (
+    ClassNameSchema,
     EndpointsSchema,
     Heartbeat,
     HeartbeatSchema,
@@ -19,6 +20,7 @@ from mindtrace.services.samples.echo_service import EchoService
 
 __all__ = [
     "AppConfig",
+    "ClassNameSchema",
     "ConnectionManager",
     "EchoService",
     "EndpointSpec",

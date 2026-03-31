@@ -25,12 +25,13 @@ from urllib3.util.url import Url, parse_url
 if TYPE_CHECKING:
     import psutil
 
-from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url
 from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.endpoint_spec import EndpointSpec
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
+    ClassNameSchema,
     EndpointsSchema,
     Heartbeat,
     HeartbeatSchema,
@@ -59,6 +60,7 @@ class Service(Mindtrace):
         EndpointSpec(path="status", method_name="status_func", schema=StatusSchema, as_tool=True),
         EndpointSpec(path="heartbeat", method_name="heartbeat_func", schema=HeartbeatSchema, as_tool=True),
         EndpointSpec(path="server_id", method_name="server_id_func", schema=ServerIDSchema),
+        EndpointSpec(path="class_name", method_name="class_name_func", schema=ClassNameSchema),
         EndpointSpec(path="pid_file", method_name="pid_file_func", schema=PIDFileSchema),
         EndpointSpec(path="shutdown", method_name="shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}),
     ]
@@ -178,6 +180,10 @@ class Service(Mindtrace):
     def status_func(self):
         """Get the current status of the service."""
         return {"status": self.status.value}
+
+    def class_name_func(self):
+        """Return the name of the concrete class of this service instance."""
+        return {"class_name": self.__class__.__name__}
 
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
