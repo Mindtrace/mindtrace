@@ -18,25 +18,31 @@ This design is intended to be a reusable Mindtrace module rather than an applica
 ---
 ## Table of Contents
 
-- [Goals](#goals)
-- [Non-goals](#non-goals)
+- [Objectives](#objectives)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
 - [Version History](#version-history)
   - [V1: The `mtrix` Datalake](#v1-the-mtrix-datalake)
   - [V2: The current `mindtrace.datalake` module](#v2-the-current-mindtracedatalake-module)
   - [V3: Expanding the current Datalake to match our data needs](#v3-expanding-the-current-datalake-to-match-our-data-needs)
-- [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
-- [Design risks and ambiguities to resolve in V3](#design-risks-and-ambiguities-to-resolve-in-v3)
-- [Canonical V3 entities](#canonical-v3-entities)
-- [Canonical semantic rule](#canonical-semantic-rule)
-- [Proposed minimal V3 API](#proposed-minimal-v3-api)
-- [Integration notes](#integration-notes)
-- [How `datalake`, `jobs`, and `cluster` should work together](#how-datalake-jobs-and-cluster-should-work-together)
-- [Open questions](#open-questions)
-- [Recommended V3 implementation stance](#recommended-v3-implementation-stance)
+- [Module Structure](#module-structure)
+  - [How `datalake`, `jobs`, and `cluster` should work together](#how-datalake-jobs-and-cluster-should-work-together)
+- [V3 Design](#v3-design)
+  - [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
+  - [Design risks and ambiguities to resolve in V3](#design-risks-and-ambiguities-to-resolve-in-v3)
+  - [Canonical V3 entities](#canonical-v3-entities)
+  - [Canonical semantic rule](#canonical-semantic-rule)
+  - [Proposed minimal V3 API](#proposed-minimal-v3-api)
+- [Appendix](#appendix)
+  - [Integration notes](#integration-notes)
+  - [Open questions](#open-questions)
+  - [Recommended V3 implementation stance](#recommended-v3-implementation-stance)
 
 ---
 
-## Goals
+## Objectives
+
+### Goals
 
 - Define a canonical data model for Datalake in Mindtrace.
 - Support remote payload storage across multiple backends via `Store` / `Registry`.
@@ -46,7 +52,7 @@ This design is intended to be a reusable Mindtrace module rather than an applica
 - Support both Mindtrace-native datasets and HuggingFace dataset interoperability.
 - Keep the initial V3 API small enough to implement without building the entire future platform at once.
 
-## Non-goals
+### Non-goals
 
 - Full enterprise data catalog in the initial V3 implementation.
 - Full lineage graph and lifecycle management in the initial V3 implementation.
@@ -374,7 +380,7 @@ Compared to V1, V2 swings strongly away from packaged datasets — which is good
 
 ### V3: Expanding the current Datalake to match our data needs
 
-The proposed V3 design in this document builds on V2 rather than replacing it blindly.
+At a high level, V3 builds on V2 rather than replacing it blindly.
 
 V3 exists because:
 
@@ -418,7 +424,9 @@ V3 reintroduces dataset-version semantics in a cleaner way than V1 by making dat
 
 ---
 
-## Strongest parts of the proposed V3 design
+## V3 Design
+
+### Strongest parts of the proposed V3 design
 
 ### 1. Split payload storage from metadata storage
 
@@ -471,7 +479,7 @@ Supporting a native Mindtrace data model while providing conversion to / from Hu
 
 ---
 
-## Design risks and ambiguities to resolve in V3
+### Design risks and ambiguities to resolve in V3
 
 ### 1. Canonical annotations are mixed with task/job output classes
 
@@ -530,7 +538,7 @@ These must remain distinct.
 
 ---
 
-## Canonical V3 entities
+### Canonical V3 entities
 
 The following entities define the proposed canonical V3 model.
 
@@ -726,7 +734,7 @@ It represents staged mutations used to produce a new `DatasetVersion`.
 
 ---
 
-## Canonical semantic rule
+### Canonical semantic rule
 
 One of the most important semantic rules for V3 should be:
 
@@ -736,7 +744,7 @@ This keeps the V3 data model normalized, extensible, and operationally practical
 
 ---
 
-## Proposed minimal V3 API
+### Proposed minimal V3 API
 
 The API should be split into four slices:
 
@@ -988,7 +996,9 @@ Delete an annotation record.
 
 ---
 
-## Integration notes
+## Appendix
+
+### Integration notes
 
 This proposal is intentionally framed as a public Mindtrace design rather than an application-specific integration plan.
 
@@ -1004,7 +1014,9 @@ This keeps Datalake positioned as the canonical persistence and access layer whi
 
 ---
 
-## How `datalake`, `jobs`, and `cluster` should work together
+## Module Structure
+
+### How `datalake`, `jobs`, and `cluster` should work together
 
 The V3 Datalake should be designed in a way that allows clean interoperability with the `jobs` and `cluster` modules without collapsing those modules into each other.
 
@@ -1150,7 +1162,7 @@ This keeps the boundaries clean while still allowing tight practical integration
 In short, V3 should make it easy for jobs to consume and produce Datalake-backed data without making the Datalake module itself depend on the Jobs module.
 
 
-## Open questions
+### Open questions
 
 The following are intentionally left open for later design decisions:
 
@@ -1176,7 +1188,7 @@ The following are intentionally left open for later design decisions:
 
 ---
 
-## Recommended V3 implementation stance
+### Recommended V3 implementation stance
 
 A practical first implementation of V3 should:
 
