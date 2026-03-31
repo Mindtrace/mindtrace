@@ -34,6 +34,7 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
   - [V3: Expanding the current Datalake to match our data needs](#v3-expanding-the-current-datalake-to-match-our-data-needs)
 - [Module Structure](#module-structure)
   - [The `registry` module](#the-registry-module)
+  - [The `database` module](#the-database-module)
   - [The `jobs` module](#the-jobs-module)
   - [The `datalake` module](#the-datalake-module)
   - [The `cluster` module](#the-cluster-module)
@@ -1150,6 +1151,38 @@ flowchart TD
     B --> MinIO[MinioRegistryBackend]
 ```
 
+### The `database` module
+
+#### Main role / responsibility
+
+The `database` module is responsible for structured persistence, querying, indexing, and model-backed storage for Mindtrace records.
+
+Its job is to provide:
+
+- document-oriented persistence for structured application data
+- ODM-style model integration
+- backend abstraction across supported database/storage engines
+- indexing, uniqueness, and query support for higher-level modules
+
+For the Datalake specifically, the `database` module is the structured persistence substrate for canonical metadata and queryable entities.
+
+#### Major classes
+
+- `MindtraceDocument` / `UnifiedMindtraceDocument`
+- `MongoMindtraceODM`
+- `UnifiedMindtraceODM`
+- backend and model configuration types
+
+```mermaid
+flowchart TD
+    MD[MindtraceDocument / UnifiedMindtraceDocument] --> ODM[MongoMindtraceODM / UnifiedMindtraceODM]
+    ODM --> DBB[Database Backend]
+    DBB --> M[MongoDB]
+    DBB --> O[Other unified backends]
+```
+
+In the V3 architecture, the `database` module should be the place where canonical Datalake records live as structured, queryable entities, while the `registry` module stores larger payloads and versioned objects externally.
+
 ### The `jobs` module
 
 #### Main role / responsibility
@@ -1197,6 +1230,7 @@ Its job is to provide:
 - persistent metadata and provenance
 - queryable structured data
 - a clean boundary between canonical state and export/materialization forms
+- an integration layer that relies on both `registry` for payload persistence and `database` for structured records
 
 #### Major classes
 
@@ -1269,6 +1303,7 @@ So the current Cluster module is not just a scheduler in the abstract. It is alr
 At a high level, the intended relationship is:
 
 - **`registry`** provides storage and object persistence primitives
+- **`database`** provides structured record persistence and query support
 - **`datalake`** provides canonical persisted data entities and data semantics
 - **`jobs`** provides executable task definitions and run lifecycle semantics
 - **`cluster`** integrates jobs and data in a distributed execution environment
@@ -1276,19 +1311,23 @@ At a high level, the intended relationship is:
 ```mermaid
 flowchart LR
     REG[registry module] --> DL[datalake module]
+    DB[database module] --> DL
     JOBS[jobs module] --> CL[cluster module]
     DL --> CL
     REG --> CL
+    DB --> CL
     CL -->|resolves inputs from| DL
     CL -->|dispatches| JOBS
     CL -->|persists outputs via| DL
     DL -->|stores payloads through| REG
+    DL -->|stores structured records through| DB
 ```
 
 The intended dependency direction should be:
 
-- `registry` is a lower-level substrate
-- `datalake` builds on `registry`
+- `registry` is a lower-level storage substrate
+- `database` is a lower-level structured persistence substrate
+- `datalake` builds on both `registry` and `database`
 - `jobs` remains largely independent of `datalake`
 - `cluster` is the primary integration layer between execution and persisted data
 
