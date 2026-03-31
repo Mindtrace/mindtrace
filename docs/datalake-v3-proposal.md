@@ -1142,6 +1142,12 @@ flowchart TD
     R -->|attached into| S[Store]
     MR[MountedRegistry] -->|wraps| R
     S -->|contains| MR
+
+    R --> B[RegistryBackend]
+    B --> L[LocalRegistryBackend]
+    B --> S3[S3RegistryBackend]
+    B --> G[GCPRegistryBackend]
+    B --> MinIO[MinioRegistryBackend]
 ```
 
 ### The `jobs` module
