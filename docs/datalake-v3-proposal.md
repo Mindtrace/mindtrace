@@ -1315,17 +1315,10 @@ At a high level, the intended relationship is:
 
 ```mermaid
 flowchart LR
-    REG[registry module] --> DL[datalake module]
-    DB[database module] --> DL
+    DB[database module] --> DL[datalake module]
+    REG[registry module] --> DL
     JOBS[jobs module] --> CL[cluster module]
     DL --> CL
-    REG --> CL
-    DB --> CL
-    CL -->|resolves inputs from| DL
-    CL -->|dispatches| JOBS
-    CL -->|persists outputs via| DL
-    DL -->|stores payloads through| REG
-    DL -->|stores structured records through| DB
 ```
 
 The intended dependency direction should be:
