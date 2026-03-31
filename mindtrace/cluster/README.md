@@ -99,25 +99,30 @@ print(cluster.status())
 
 Use this when a job should be sent directly to an HTTP endpoint instead of being queued through workers.
 
+`ClusterManager` is a `Gateway`. The usual pattern is to **register the downstream service on the gateway first** (`register_app`), then map the job type to the **gateway-relative path** that forwards to that app (for example `echo/run` for app name `echo` and downstream route `run`). See [`samples/cluster/cluster_as_gateway.py`](../../samples/cluster/cluster_as_gateway.py).
+
 ```python
+cluster.register_app(
+    name="echo",
+    url="http://localhost:8098/",
+    connection_manager=echo_cm,  # optional; enables ProxyConnectionManager-style access via the gateway
+)
 cluster.register_job_to_endpoint(
     job_type="echo_job",
-    endpoint="/echo/run",
+    endpoint="echo/run",
 )
 ```
 
-### Registering a job schema to workers
+### Registering a job schema to an existing worker
 
-Use this when a job should go through the orchestrator/queue path.
+Use this when a worker is already running at a known URL (for example pre-launched or started outside a node) and you want that instance to subscribe to the orchestrator queue for a job type. The cluster manager routes the job schema to `@orchestrator`, ensures the queue exists, and connects that worker to the cluster for the given `job_type`.
 
 ```python
-cluster.register_job_schema_to_worker_type(
-    job_schema_name="echo_job",
-    worker_type="echo_worker",
+cluster.register_job_to_worker(
+    job_type="echo_job",
+    worker_url="http://localhost:8004",
 )
 ```
-
-This sets the job schema to target `@orchestrator`, declares the queue, and enables auto-connect for that worker type.
 
 ### Registering worker types
 
@@ -145,6 +150,19 @@ cluster.register_worker_type(
     git_working_dir="worker",
 )
 ```
+
+### Registering a job schema to workers
+
+Use this when a job should go through the orchestrator/queue path.
+
+```python
+cluster.register_job_schema_to_worker_type(
+    job_schema_name="echo_job",
+    worker_type="echo_worker",
+)
+```
+
+This sets the job schema to target `@orchestrator`, declares the queue, and enables auto-connect for that worker type.
 
 ### Submitting jobs
 
@@ -202,6 +220,18 @@ launch = node.launch_worker(
 )
 
 status = node.launch_worker_status(launch_id=launch.launch_id)
+print(status)
+```
+
+You can do the same thing **through the cluster manager**: call `launch_worker` and `launch_worker_status` on your `ClusterManager` client and pass `node_url`. The manager connects to that node and forwards the call. If the worker type is linked to a job schema (via `register_worker_type` / `register_job_schema_to_worker_type`), it also passes **auto-connect** so the worker is registered on the correct queue once the launch finishes. (Here `cluster` is the manager for the `cluster_url` you used when launching the node.)
+
+```python
+launch = cluster.launch_worker(
+    node_url=str(node.url),
+    worker_type="echo_worker",
+    worker_url="http://localhost:8004",
+)
+status = cluster.launch_worker_status(node_url=str(node.url), launch_id=launch.launch_id)
 print(status)
 ```
 
@@ -269,16 +299,17 @@ One of the most important ideas in the cluster package is that jobs can be route
 
 ### Direct endpoint routing
 
-In this mode, a job schema is mapped to a service endpoint.
+In this mode, a job schema is mapped to a path on the cluster manager, which acts as a **Gateway**. Typically you **`register_app`** for the backing service, then **`register_job_to_endpoint`** with the forwarded path (for example `echo/run`).
 
 ```python
+cluster.register_app(name="echo", url="http://localhost:8098/", connection_manager=echo_cm)
 cluster.register_job_to_endpoint(
     job_type="echo_job",
-    endpoint="/echo/run",
+    endpoint="echo/run",
 )
 ```
 
-When the job is submitted, `ClusterManager` proxies it directly to that endpoint.
+When the job is submitted, `ClusterManager` POSTs to its own base URL plus `endpoint` (not a separate absolute URL). Use a path segment that matches the gateway route (`/{app_name}/...`).
 
 This is useful when:
 
@@ -305,17 +336,36 @@ This is useful when:
 
 ## Built-in Workers
 
+These workers are **services**: run them with `WorkerClass.launch(...)`, **register** them on the cluster manager (`register_job_to_worker` for an already-running worker, or `register_worker_type` + node launch for registry-driven setups), then **submit** a `Job` built from a `JobSchema`. The snippets below follow the pre-launched worker pattern; see [`samples/cluster/cluster_with_prelaunched_workers.py`](../../samples/cluster/cluster_with_prelaunched_workers.py) and [`samples/cluster/run_script/run_script_worker.py`](../../samples/cluster/run_script/run_script_worker.py) for full scripts.
+
 ### EchoWorker
 
 `EchoWorker` is the simplest built-in worker and is useful for smoke tests and demos.
 
 ```python
+import time
+
+from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.echo_worker import EchoWorker
+from mindtrace.jobs import JobSchema, job_from_schema
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
-
-worker = EchoWorker()
-result = worker._run({"message": "Hello World", "delay": 1})
-print(result)
+cluster = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
+worker_cm = EchoWorker.launch(host="localhost", port=8004, wait_for_launch=True)
+try:
+    schema = JobSchema(name="echo_demo", input_schema=EchoInput, output_schema=EchoOutput)
+    cluster.register_job_to_worker(job_type="echo_demo", worker_url=str(worker_cm.url))
+    job = job_from_schema(schema, {"message": "Hello World", "delay": 0})
+    cluster.submit_job(job)
+    status = cluster.get_job_status(job_id=job.id)
+    while str(status.status) not in ("completed", "failed", "error"):
+        time.sleep(0.2)
+        status = cluster.get_job_status(job_id=job.id)
+    print(status)
+finally:
+    worker_cm.shutdown()
+    cluster.clear_databases()
+    cluster.shutdown()
 ```
 
 ### RunScriptWorker
@@ -325,43 +375,52 @@ print(result)
 - Git-based environments
 - Docker-based environments
 
-```python
-from mindtrace.cluster.workers.run_script_worker import RunScriptWorker
-
-
-worker = RunScriptWorker()
-result = worker._run(
-    {
-        "environment": {
-            "git": {
-                "repo_url": "https://github.com/user/repo",
-                "branch": "main",
-                "working_dir": "scripts",
-            }
-        },
-        "command": "python process_data.py",
-    }
-)
-print(result)
-```
-
-Docker-based example:
+Docker-backed job (same flow: launch worker, register on the cluster, submit):
 
 ```python
-result = worker._run(
-    {
-        "environment": {
-            "docker": {
-                "image": "python:3.12",
-                "working_dir": "/app",
-                "volumes": {"/host/path": "/app"},
-                "environment": {"ENV_VAR": "value"},
-            }
+import time
+
+from mindtrace.cluster import ClusterManager
+from mindtrace.cluster.workers.run_script_worker import RunScriptWorker, RunScriptWorkerInput, RunScriptWorkerOutput
+from mindtrace.jobs import JobSchema, job_from_schema
+
+cluster = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
+worker_cm = RunScriptWorker.launch(host="localhost", port=8004, wait_for_launch=True)
+try:
+    schema = JobSchema(
+        name="run_script_demo",
+        input_schema=RunScriptWorkerInput,
+        output_schema=RunScriptWorkerOutput,
+    )
+    cluster.register_job_to_worker(job_type="run_script_demo", worker_url=str(worker_cm.url))
+    job = job_from_schema(
+        schema,
+        {
+            "environment": {
+                "docker": {
+                    "image": "ubuntu:22.04",
+                    "working_dir": "/tmp",
+                    "environment": {},
+                    "volumes": {},
+                    "devices": [],
+                }
+            },
+            "command": "echo hello",
         },
-        "command": "python script.py",
-    }
-)
+    )
+    cluster.submit_job(job)
+    status = cluster.get_job_status(job_id=job.id)
+    while str(status.status) not in ("completed", "failed", "error"):
+        time.sleep(0.5)
+        status = cluster.get_job_status(job_id=job.id)
+    print(status)
+finally:
+    worker_cm.shutdown()
+    cluster.clear_databases()
+    cluster.shutdown()
 ```
+
+Git-backed jobs use the same launch → `register_job_to_worker` → `job_from_schema` → `submit_job` sequence; set `environment.git` (`repo_url`, `branch`, `working_dir`, etc.) and `command` to the script to run inside that checkout.
 
 ## Dead-Letter Queue (DLQ)
 
