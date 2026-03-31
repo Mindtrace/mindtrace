@@ -33,10 +33,10 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
   - [V2: The current `mindtrace.datalake` module](#v2-the-current-mindtracedatalake-module)
   - [V3: Expanding the current Datalake to match our data needs](#v3-expanding-the-current-datalake-to-match-our-data-needs)
 - [Module Structure](#module-structure)
-  - [The `registry` module](#the-registry-module)
   - [The `database` module](#the-database-module)
-  - [The `jobs` module](#the-jobs-module)
+  - [The `registry` module](#the-registry-module)
   - [The `datalake` module](#the-datalake-module)
+  - [The `jobs` module](#the-jobs-module)
   - [The `cluster` module](#the-cluster-module)
   - [How everything works together](#how-everything-works-together)
 - [V3 Design](#v3-design)
@@ -1115,6 +1115,39 @@ This keeps Datalake positioned as the canonical persistence and access layer whi
 
 This section describes how the major Mindtrace modules should relate to one another in the broader V3 architecture.
 
+### The `database` module
+
+#### Main role / responsibility
+
+The `database` module is responsible for structured persistence, querying, indexing, and model-backed storage for Mindtrace records.
+
+Its job is to provide:
+
+- document-oriented persistence for structured application data
+- ODM-style model integration
+- backend abstraction across supported database/storage engines
+- indexing, uniqueness, and query support for higher-level modules
+
+For the Datalake specifically, the `database` module is the structured persistence substrate for canonical metadata and queryable entities.
+
+#### Major classes
+
+- `MindtraceDocument` / `UnifiedMindtraceDocument`
+- `MongoMindtraceODM`
+- `UnifiedMindtraceODM`
+- backend and model configuration types
+
+```mermaid
+flowchart TD
+    MD[MindtraceDocument / UnifiedMindtraceDocument] --> ODM[MongoMindtraceODM / UnifiedMindtraceODM]
+    ODM --> DBB[Database Backend]
+    DBB --> M[MongoDB]
+    DBB --> O[Other unified backends]
+```
+
+In the V3 architecture, the `database` module should be the place where canonical Datalake records live as structured, queryable entities, while the `registry` module stores larger payloads and versioned objects externally.
+
+
 ### The `registry` module
 
 #### Main role / responsibility
@@ -1151,37 +1184,37 @@ flowchart TD
     B --> MinIO[MinioRegistryBackend]
 ```
 
-### The `database` module
+
+### The `datalake` module
 
 #### Main role / responsibility
 
-The `database` module is responsible for structured persistence, querying, indexing, and model-backed storage for Mindtrace records.
+The `datalake` module is responsible for canonical persisted data models and data-facing query semantics.
 
 Its job is to provide:
 
-- document-oriented persistence for structured application data
-- ODM-style model integration
-- backend abstraction across supported database/storage engines
-- indexing, uniqueness, and query support for higher-level modules
-
-For the Datalake specifically, the `database` module is the structured persistence substrate for canonical metadata and queryable entities.
+- canonical records for assets, annotations, datums, and dataset versions
+- persistent metadata and provenance
+- queryable structured data
+- a clean boundary between canonical state and export/materialization forms
+- an integration layer that relies on both `registry` for payload persistence and `database` for structured records
 
 #### Major classes
 
-- `MindtraceDocument` / `UnifiedMindtraceDocument`
-- `MongoMindtraceODM`
-- `UnifiedMindtraceODM`
-- backend and model configuration types
+- `Asset`
+- `Datum`
+- `AnnotationSet`
+- `DatasetVersion`
 
 ```mermaid
 flowchart TD
-    MD[MindtraceDocument / UnifiedMindtraceDocument] --> ODM[MongoMindtraceODM / UnifiedMindtraceODM]
-    ODM --> DBB[Database Backend]
-    DBB --> M[MongoDB]
-    DBB --> O[Other unified backends]
+    A[Asset] --> D[Datum]
+    AS[AnnotationSet] --> AR[AnnotationRecord]
+    AR --> D
+    DV[DatasetVersion] --> D
+    DV --> AS
 ```
 
-In the V3 architecture, the `database` module should be the place where canonical Datalake records live as structured, queryable entities, while the `registry` module stores larger payloads and versioned objects externally.
 
 ### The `jobs` module
 
@@ -1218,35 +1251,6 @@ flowchart TD
     JB --> MQ[RabbitMQ Backend]
 ```
 
-### The `datalake` module
-
-#### Main role / responsibility
-
-The `datalake` module is responsible for canonical persisted data models and data-facing query semantics.
-
-Its job is to provide:
-
-- canonical records for assets, annotations, datums, and dataset versions
-- persistent metadata and provenance
-- queryable structured data
-- a clean boundary between canonical state and export/materialization forms
-- an integration layer that relies on both `registry` for payload persistence and `database` for structured records
-
-#### Major classes
-
-- `Asset`
-- `Datum`
-- `AnnotationSet`
-- `DatasetVersion`
-
-```mermaid
-flowchart TD
-    A[Asset] --> D[Datum]
-    AS[AnnotationSet] --> AR[AnnotationRecord]
-    AR --> D
-    DV[DatasetVersion] --> D
-    DV --> AS
-```
 
 ### The `cluster` module
 
@@ -1297,6 +1301,7 @@ So the current Cluster module is not just a scheduler in the abstract. It is alr
 - worker-type registration
 - queue/orchestrator integration
 - registry-backed worker distribution
+
 
 ### How everything works together
 
@@ -1989,172 +1994,6 @@ Update an annotation record.
 Delete an annotation record.
 
 ---
-
-## Appendix
-
-### Integration notes
-
-This proposal is intentionally framed as a public Mindtrace design rather than an application-specific integration plan.
-
-A consumer of the Datalake module should be able to:
-
-- store payloads through the storage / asset APIs
-- reference canonical Datalake asset IDs from higher-level application records
-- use the annotation APIs for live label CRUD when appropriate
-- generate dataset exports from canonical assets and annotation records
-- promote objects across mounts through storage copy endpoints
-
-This keeps Datalake positioned as the canonical persistence and access layer while allowing downstream applications to remain thin clients over that data model.
-
----
-
-## Module Structure
-
-### How `datalake`, `jobs`, and `cluster` should work together
-
-The V3 Datalake should be designed in a way that allows clean interoperability with the `jobs` and `cluster` modules without collapsing those modules into each other.
-
-The intended relationship is:
-
-- **`datalake`** owns canonical persisted data models and storage semantics
-- **`jobs`** owns execution semantics, job schemas, queueing, retries, and run lifecycle
-- **`cluster`** owns distributed orchestration and acts as the integration layer between execution and persisted data
-
-### Separation of responsibilities
-
-#### `datalake`
-
-The Datalake module should own:
-
-- canonical data entities such as `Asset`, `StorageRef`, `Datum`, `AnnotationSet`, `AnnotationRecord`, and `DatasetVersion`
-- storage and retrieval semantics
-- metadata persistence and query semantics
-- provenance fields on canonical entities
-- mount-aware and registry/store-aware payload access
-
-The Datalake should **not** need to know how jobs are queued, retried, scheduled, or assigned to workers.
-
-#### `jobs`
-
-The Jobs module should own:
-
-- job definitions
-- job input and output schemas
-- job run lifecycle
-- retries, failure handling, and queue state
-- logs and execution metadata
-
-The Jobs module should be able to stand alone without a hard dependency on the Datalake module.
-
-That means Jobs should not require canonical Datalake entity internals in order to function.
-
-#### `cluster`
-
-The Cluster module should act as the layer that binds computation to data.
-
-It should be responsible for:
-
-- resolving Datalake references into worker-usable job inputs
-- dispatching jobs to workers
-- collecting outputs from workers
-- persisting outputs back into Datalake using explicit persistence adapters
-- making placement and locality decisions where data location matters
-
-### Why Jobs and Datalake should not share identical schemas
-
-A key design principle for V3 is that **job/task I/O schemas are not the same thing as canonical persisted Datalake schemas**.
-
-For example:
-
-- a detection job may emit a `DetectionJobOutput`
-- but the Datalake should persist those results as one `AnnotationSet` plus many atomic `AnnotationRecord`s
-
-That means:
-
-- job output schemas may be optimized for execution and worker ergonomics
-- Datalake schemas should be optimized for long-term storage, queryability, provenance, and interoperability
-
-The two should map cleanly to each other, but they should not be forced to be identical.
-
-### Recommended integration model
-
-The cleanest model is:
-
-1. **Jobs defines executable task schemas**
-2. **Datalake defines canonical persisted schemas**
-3. **Cluster registers explicit adapters between them**
-
-In practice, this means:
-
-- job inputs should mostly use references such as `datum_id`, `asset_id`, `dataset_version_id`, or `annotation_set_id`
-- job outputs should be task-oriented structures
-- Cluster should resolve inputs from Datalake before execution and persist outputs into Datalake after execution
-
-### Runtime schema registration
-
-The Jobs module does not need one permanent, static schema equivalent for every Datalake entity.
-
-Instead, a good design is for Jobs to support runtime-registered schemas, while Cluster or higher-level integrations register domain-specific task types.
-
-This allows:
-
-- Jobs to remain generic and reusable
-- Datalake to remain the owner of canonical persisted data structures
-- Cluster to install the task types, input resolvers, and output persistence adapters required for a specific deployment
-
-### Canonical outputs vs run artifacts
-
-V3 should distinguish between:
-
-#### Canonical outputs
-
-These are outputs that should become first-class Datalake entities, such as:
-
-- `AnnotationSet` / `AnnotationRecord`
-- derived `Asset`s
-- new `Datum`s
-- `DatasetVersion`s
-
-#### Run artifacts
-
-These are outputs that should be stored for debugging, reproducibility, or audit, but which are not the canonical data model, such as:
-
-- raw model output JSON
-- logs
-- evaluation reports
-- temporary artifacts
-- profiling traces
-
-Both may be stored in the same MongoDB deployment and registry/store infrastructure, but they should remain conceptually distinct.
-
-### Provenance requirements
-
-To integrate cleanly with Jobs and Cluster, canonical Datalake entities should be able to record provenance such as:
-
-- `produced_by_job_run_id`
-- `source_job_type`
-- `input_refs`
-- model and version information
-- timestamps
-
-This allows Datalake to answer questions like:
-
-- which run produced these annotations?
-- which model created this derived asset?
-- which source datum or dataset version was used?
-
-### Recommended architectural stance
-
-The intended architecture should be:
-
-- **Jobs** = execution system
-- **Datalake** = canonical persistence system
-- **Cluster** = orchestration and integration layer
-
-This keeps the boundaries clean while still allowing tight practical integration.
-
-In short, V3 should make it easy for jobs to consume and produce Datalake-backed data without making the Datalake module itself depend on the Jobs module.
-
 
 ### Open questions
 
