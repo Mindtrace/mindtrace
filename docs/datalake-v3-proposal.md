@@ -20,7 +20,7 @@ At a high level, V3 is trying to accomplish the following:
 - fit cleanly with adjacent modules such as `jobs` and `cluster`
 - preserve the useful ideas from earlier iterations without carrying forward their structural limitations
 
-This is therefore not just a low-level implementation note. It is a proposal for how the Datalake should evolve into a reusable Mindtrace subsystem that can serve as the foundation for storage, metadata, annotations, dataset composition, and data-oriented workflow integration.
+In short, this document lays out a vision for V3 as the long-term data foundation for Mindtrace: scalable, modular, storage-aware, and designed to support rich data workflows across the platform.
 
 ---
 ## Table of Contents
