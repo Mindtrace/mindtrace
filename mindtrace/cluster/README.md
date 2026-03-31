@@ -64,7 +64,7 @@ print(job_status)
 
 At a high level, the cluster module works like this:
 
-- `ClusterManager` decides where a job should go
+- `ClusterManager` routes jobs and is the usual **single entry point** for clients: submit work, inspect job and worker status, launch workers on nodes, plus registrations and DLQ handling
 - `Node` launches worker services on machines
 - `Worker` instances consume jobs and report results back
 - RabbitMQ carries queued work, Redis tracks status, and Registry/MinIO stores worker launcher definitions
@@ -375,7 +375,7 @@ finally:
 - Git-based environments
 - Docker-based environments
 
-Docker-backed job (same flow: launch worker, register on the cluster, submit):
+Same worker and registration for both: a **Docker** job and a **Git** checkout job (`environment.git` + `command` run in that tree). Adjust `repo_url` / `branch` / `command` to match your repository.
 
 ```python
 import time
@@ -383,6 +383,15 @@ import time
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.run_script_worker import RunScriptWorker, RunScriptWorkerInput, RunScriptWorkerOutput
 from mindtrace.jobs import JobSchema, job_from_schema
+
+
+def wait_done(cluster, job_id):
+    status = cluster.get_job_status(job_id=job_id)
+    while str(status.status) not in ("completed", "failed", "error"):
+        time.sleep(0.5)
+        status = cluster.get_job_status(job_id=job_id)
+    return status
+
 
 cluster = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
 worker_cm = RunScriptWorker.launch(host="localhost", port=8004, wait_for_launch=True)
@@ -393,7 +402,8 @@ try:
         output_schema=RunScriptWorkerOutput,
     )
     cluster.register_job_to_worker(job_type="run_script_demo", worker_url=str(worker_cm.url))
-    job = job_from_schema(
+
+    job_docker = job_from_schema(
         schema,
         {
             "environment": {
@@ -408,19 +418,29 @@ try:
             "command": "echo hello",
         },
     )
-    cluster.submit_job(job)
-    status = cluster.get_job_status(job_id=job.id)
-    while str(status.status) not in ("completed", "failed", "error"):
-        time.sleep(0.5)
-        status = cluster.get_job_status(job_id=job.id)
-    print(status)
+    cluster.submit_job(job_docker)
+    print(wait_done(cluster, job_docker.id))
+
+    job_git = job_from_schema(
+        schema,
+        {
+            "environment": {
+                "git": {
+                    "repo_url": "https://github.com/Mindtrace/mindtrace.git",
+                    "branch": "main",
+                    "working_dir": "",
+                }
+            },
+            "command": "python samples/cluster/run_script/test_script.py",
+        },
+    )
+    cluster.submit_job(job_git)
+    print(wait_done(cluster, job_git.id))
 finally:
     worker_cm.shutdown()
     cluster.clear_databases()
     cluster.shutdown()
 ```
-
-Git-backed jobs use the same launch → `register_job_to_worker` → `job_from_schema` → `submit_job` sequence; set `environment.git` (`repo_url`, `branch`, `working_dir`, etc.) and `command` to the script to run inside that checkout.
 
 ## Dead-Letter Queue (DLQ)
 
