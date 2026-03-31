@@ -79,34 +79,22 @@ class TestEchoOutput:
 class TestEchoService:
     """Test suite for EchoService class."""
 
-    @patch("mindtrace.services.samples.echo_service.Service.__init__")
-    def test_echo_service_initialization(self, mock_super_init):
-        """Test EchoService initialization."""
-        mock_super_init.return_value = None
-
-        # Mock the add_endpoint method
-        with patch.object(EchoService, "add_endpoint") as mock_add_endpoint:
-            service = EchoService()
-
-            # Verify parent constructor was called
-            mock_super_init.assert_called_once()
-
-            # Verify add_endpoint was called with correct parameters
-            mock_add_endpoint.assert_called_once_with("echo", service.echo, schema=echo_task)
+    def test_echo_service_initialization(self):
+        """Test EchoService declares echo endpoint."""
+        assert "echo" in EchoService.__endpoints__
+        spec = EchoService.__endpoints__["echo"]
+        assert spec.method_name == "echo"
+        assert spec.schema == echo_task
 
     @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_echo_service_initialization_with_args(self, mock_super_init):
         """Test EchoService initialization with arguments."""
         mock_super_init.return_value = None
 
-        with patch.object(EchoService, "add_endpoint") as mock_add_endpoint:
-            service = EchoService("arg1", "arg2", kwarg1="value1", kwarg2="value2")
+        service = EchoService("arg1", "arg2", kwarg1="value1", kwarg2="value2")
 
-            # Verify parent constructor was called with arguments
-            mock_super_init.assert_called_once_with("arg1", "arg2", kwarg1="value1", kwarg2="value2")
-
-            # Verify add_endpoint was still called correctly
-            mock_add_endpoint.assert_called_once_with("echo", service.echo, schema=echo_task)
+        # Verify parent constructor was called with arguments
+        mock_super_init.assert_called_once_with("arg1", "arg2", kwarg1="value1", kwarg2="value2")
 
     def test_echo_method_functionality(self):
         """Test the echo method functionality."""
@@ -163,16 +151,11 @@ class TestEchoService:
         assert result.echoed == "zero delay"
         mock_sleep.assert_not_called()
 
-    @patch("mindtrace.services.samples.echo_service.Service.__init__")
-    def test_echo_service_inheritance(self, mock_super_init):
+    def test_echo_service_inheritance(self):
         """Test that EchoService properly inherits from Service."""
         from mindtrace.services import Service
 
-        mock_super_init.return_value = None
-
-        with patch.object(EchoService, "add_endpoint"):
-            service = EchoService()
-            assert isinstance(service, Service)
+        assert issubclass(EchoService, Service)
 
     def test_echo_method_type_validation(self):
         """Test that echo method handles type validation correctly."""
@@ -184,19 +167,12 @@ class TestEchoService:
         assert isinstance(result, EchoOutput)
         assert result.echoed == "test"
 
-    @patch("mindtrace.services.samples.echo_service.Service.__init__")
-    def test_echo_service_endpoint_configuration(self, mock_super_init):
+    def test_echo_service_endpoint_configuration(self):
         """Test that the echo endpoint is configured correctly."""
-        mock_super_init.return_value = None
-
-        with patch.object(EchoService, "add_endpoint") as mock_add_endpoint:
-            service = EchoService()
-
-            # Verify the endpoint configuration
-            call_args = mock_add_endpoint.call_args
-            assert call_args[0][0] == "echo"  # endpoint path
-            assert call_args[0][1] == service.echo  # endpoint function
-            assert call_args[1]["schema"] == echo_task  # schema parameter
+        spec = EchoService.__endpoints__["echo"]
+        assert spec.path == "echo"
+        assert spec.method_name == "echo"
+        assert spec.schema == echo_task
 
 
 class TestEchoServiceIntegration:
@@ -231,21 +207,11 @@ class TestEchoServiceIntegration:
         result = service.echo(test_input)
         assert isinstance(result, EchoOutput)
 
-    @patch("mindtrace.services.samples.echo_service.Service.__init__")
-    def test_service_with_mock_dependencies(self, mock_super_init):
-        """Test EchoService with all dependencies mocked."""
-        mock_super_init.return_value = None
+    def test_service_with_mock_dependencies(self):
+        """Test EchoService core functionality."""
+        service = EchoService.__new__(EchoService)
 
-        # Mock the Service class methods that might be called
-        with patch.object(EchoService, "add_endpoint") as mock_add_endpoint:
-            # Create service
-            service = EchoService()
-
-            # Verify initialization
-            assert mock_super_init.called
-            assert mock_add_endpoint.called
-
-            # Test the core functionality still works
-            test_input = EchoInput(message="mocked test")
-            result = service.echo(test_input)
-            assert result.echoed == "mocked test"
+        # Test the core functionality works
+        test_input = EchoInput(message="mocked test")
+        result = service.echo(test_input)
+        assert result.echoed == "mocked test"

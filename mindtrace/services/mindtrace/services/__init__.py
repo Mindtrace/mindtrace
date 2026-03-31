@@ -1,4 +1,5 @@
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.endpoint_spec import EndpointSpec
 from mindtrace.services.core.service import Service
 from mindtrace.services.core.types import (
     EndpointsSchema,
@@ -20,6 +21,7 @@ __all__ = [
     "AppConfig",
     "ConnectionManager",
     "EchoService",
+    "EndpointSpec",
     "EndpointsSchema",
     "Gateway",
     "generate_connection_manager",

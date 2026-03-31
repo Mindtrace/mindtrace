@@ -62,7 +62,7 @@ from mindtrace.hardware.services.stereo_cameras.models import (
 )
 from mindtrace.hardware.services.stereo_cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.hardware.stereo_cameras import AsyncStereoCamera, BaslerStereoAceBackend
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 
 class StereoCameraService(Service):
@@ -81,6 +81,36 @@ class StereoCameraService(Service):
     - Batch operations for multiple cameras
     - System diagnostics and monitoring
     """
+
+    _endpoint_specs = [
+        # Health check endpoint
+        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
+        # Backend & Discovery
+        EndpointSpec(path="stereocameras/backends", method_name="get_backends", schema=ALL_SCHEMAS["get_backends"], methods=("GET",), as_tool=True),
+        EndpointSpec(path="stereocameras/backends/info", method_name="get_backend_info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True),
+        EndpointSpec(path="stereocameras/discover", method_name="discover_cameras", schema=ALL_SCHEMAS["discover_cameras"], as_tool=True),
+        # Camera Lifecycle
+        EndpointSpec(path="stereocameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True),
+        EndpointSpec(path="stereocameras/open/batch", method_name="open_cameras_batch", schema=ALL_SCHEMAS["open_cameras_batch"], as_tool=True),
+        EndpointSpec(path="stereocameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True),
+        EndpointSpec(path="stereocameras/close/batch", method_name="close_cameras_batch", schema=ALL_SCHEMAS["close_cameras_batch"], as_tool=True),
+        EndpointSpec(path="stereocameras/close/all", method_name="close_all_cameras", schema=ALL_SCHEMAS["close_all_cameras"], as_tool=True),
+        EndpointSpec(path="stereocameras/active", method_name="get_active_cameras", schema=ALL_SCHEMAS["get_active_cameras"], methods=("GET",), as_tool=True),
+        # Camera Status & Information
+        EndpointSpec(path="stereocameras/status", method_name="get_camera_status", schema=ALL_SCHEMAS["get_camera_status"], as_tool=True),
+        EndpointSpec(path="stereocameras/info", method_name="get_camera_info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True),
+        EndpointSpec(path="system/diagnostics", method_name="get_system_diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True),
+        # Camera Configuration
+        EndpointSpec(path="stereocameras/configure", method_name="configure_camera", schema=ALL_SCHEMAS["configure_camera"], as_tool=True),
+        EndpointSpec(path="stereocameras/configure/batch", method_name="configure_cameras_batch", schema=ALL_SCHEMAS["configure_cameras_batch"], as_tool=True),
+        EndpointSpec(path="stereocameras/config/get", method_name="get_camera_configuration", schema=ALL_SCHEMAS["get_camera_configuration"], as_tool=True),
+        # Stereo Capture
+        EndpointSpec(path="stereocameras/capture", method_name="capture_stereo_pair", schema=ALL_SCHEMAS["capture_stereo"], as_tool=True),
+        EndpointSpec(path="stereocameras/capture/batch", method_name="capture_stereo_batch", schema=ALL_SCHEMAS["capture_stereo_batch"], as_tool=True),
+        # Point Cloud Capture
+        EndpointSpec(path="stereocameras/capture/pointcloud", method_name="capture_point_cloud", schema=ALL_SCHEMAS["capture_pointcloud"], as_tool=True),
+        EndpointSpec(path="stereocameras/capture/pointcloud/batch", method_name="capture_point_cloud_batch", schema=ALL_SCHEMAS["capture_pointcloud_batch"], as_tool=True),
+    ]
 
     def __init__(self, **kwargs):
         """Initialize StereoCameraService.
@@ -114,103 +144,7 @@ class StereoCameraService(Service):
             allow_headers=["*"],
         )
 
-        # Register REST endpoints
-        self._register_endpoints()
-
-    def _register_endpoints(self):
-        """Register all REST API endpoints using add_endpoint pattern."""
-
-        # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
-
-        # Backend & Discovery
-        self.add_endpoint(
-            "stereocameras/backends", self.get_backends, ALL_SCHEMAS["get_backends"], methods=["GET"], as_tool=True
-        )
-        self.add_endpoint(
-            "stereocameras/backends/info",
-            self.get_backend_info,
-            ALL_SCHEMAS["get_backend_info"],
-            methods=["GET"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "stereocameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], as_tool=True
-        )
-
-        # Camera Lifecycle
-        self.add_endpoint("stereocameras/open", self.open_camera, ALL_SCHEMAS["open_camera"], as_tool=True)
-        self.add_endpoint(
-            "stereocameras/open/batch", self.open_cameras_batch, ALL_SCHEMAS["open_cameras_batch"], as_tool=True
-        )
-        self.add_endpoint("stereocameras/close", self.close_camera, ALL_SCHEMAS["close_camera"], as_tool=True)
-        self.add_endpoint(
-            "stereocameras/close/batch", self.close_cameras_batch, ALL_SCHEMAS["close_cameras_batch"], as_tool=True
-        )
-        self.add_endpoint(
-            "stereocameras/close/all", self.close_all_cameras, ALL_SCHEMAS["close_all_cameras"], as_tool=True
-        )
-        self.add_endpoint(
-            "stereocameras/active",
-            self.get_active_cameras,
-            ALL_SCHEMAS["get_active_cameras"],
-            methods=["GET"],
-            as_tool=True,
-        )
-
-        # Camera Status & Information
-        self.add_endpoint(
-            "stereocameras/status", self.get_camera_status, ALL_SCHEMAS["get_camera_status"], as_tool=True
-        )
-        self.add_endpoint("stereocameras/info", self.get_camera_info, ALL_SCHEMAS["get_camera_info"], as_tool=True)
-        self.add_endpoint(
-            "system/diagnostics",
-            self.get_system_diagnostics,
-            ALL_SCHEMAS["get_system_diagnostics"],
-            methods=["GET"],
-            as_tool=True,
-        )
-
-        # Camera Configuration
-        self.add_endpoint(
-            "stereocameras/configure", self.configure_camera, ALL_SCHEMAS["configure_camera"], as_tool=True
-        )
-        self.add_endpoint(
-            "stereocameras/configure/batch",
-            self.configure_cameras_batch,
-            ALL_SCHEMAS["configure_cameras_batch"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "stereocameras/config/get",
-            self.get_camera_configuration,
-            ALL_SCHEMAS["get_camera_configuration"],
-            as_tool=True,
-        )
-
-        # Stereo Capture
-        self.add_endpoint(
-            "stereocameras/capture", self.capture_stereo_pair, ALL_SCHEMAS["capture_stereo"], as_tool=True
-        )
-        self.add_endpoint(
-            "stereocameras/capture/batch", self.capture_stereo_batch, ALL_SCHEMAS["capture_stereo_batch"], as_tool=True
-        )
-
-        # Point Cloud Capture
-        self.add_endpoint(
-            "stereocameras/capture/pointcloud",
-            self.capture_point_cloud,
-            ALL_SCHEMAS["capture_pointcloud"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "stereocameras/capture/pointcloud/batch",
-            self.capture_point_cloud_batch,
-            ALL_SCHEMAS["capture_pointcloud_batch"],
-            as_tool=True,
-        )
-
-        # Streaming endpoints (no MCP tools - these are for video streaming)
+        # Streaming endpoints (schema=None, kept as imperative add_endpoint)
         self.add_endpoint("stereocameras/stream/start", self.start_stream, None)
         self.add_endpoint("stereocameras/stream/stop", self.stop_stream, None)
         self.add_endpoint("stereocameras/stream/active", self.get_active_streams, None, methods=["GET"])

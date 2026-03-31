@@ -85,6 +85,7 @@ def test_run_script_worker_git_environment(cluster_cm, node):
                     "repo_url": GIT_REPO_URL,
                     "branch": GIT_REPO_BRANCH,
                     "working_dir": "",
+                    "depth": 1,
                 }
             },
             "command": "python samples/cluster/run_script/test_script.py",
@@ -146,7 +147,7 @@ def test_run_script_worker_docker_environment(cluster_cm, node):
 
 @pytest.mark.integration
 def test_run_script_worker_both_environments(cluster_cm, node):
-    """Integration test for RunScriptWorker testing both Git and Docker environments in sequence."""
+    """Integration test for RunScriptWorker testing both Git and Docker environments concurrently."""
     # Define job schema for run script worker
     sample_vbrain_schema = JobSchema(
         name="sample_vbrain",
@@ -162,11 +163,13 @@ def test_run_script_worker_both_environments(cluster_cm, node):
         job_type="sample_vbrain",
     )
 
-    # Launch worker on the node
-    worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    # Launch two workers so git and docker jobs can run concurrently
+    port1 = free_port()
+    port2 = get_free_port(start_port=port1 + 1, end_port=8390)
+    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port1}")
+    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port2}")
 
-    # Test 1: Git environment job
+    # Git environment job
     git_job = job_from_schema(
         sample_vbrain_schema,
         input_data={
@@ -175,18 +178,14 @@ def test_run_script_worker_both_environments(cluster_cm, node):
                     "repo_url": GIT_REPO_URL,
                     "branch": GIT_REPO_BRANCH,
                     "working_dir": "",
+                    "depth": 1,
                 }
             },
             "command": "python samples/cluster/run_script/test_script.py",
         },
     )
 
-    cluster_cm.submit_job(git_job)
-
-    # Wait for Git job to complete
-    git_status = wait_for_job_status(cluster_cm, git_job.id, "completed", timeout=60)
-
-    # Test 2: Docker environment job
+    # Docker environment job
     docker_job = job_from_schema(
         sample_vbrain_schema,
         input_data={
@@ -203,9 +202,11 @@ def test_run_script_worker_both_environments(cluster_cm, node):
         },
     )
 
+    # Submit both jobs and wait for both concurrently
+    cluster_cm.submit_job(git_job)
     cluster_cm.submit_job(docker_job)
 
-    # Wait for Docker job to complete
+    git_status = wait_for_job_status(cluster_cm, git_job.id, "completed", timeout=60)
     docker_status = wait_for_job_status(cluster_cm, docker_job.id, "completed", timeout=60)
 
     print("Both jobs completed successfully:")

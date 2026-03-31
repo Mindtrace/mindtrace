@@ -1,5 +1,7 @@
 """Service base class. Provides unified methods for all Mindtrace (micro)services."""
 
+from __future__ import annotations
+
 import atexit
 import json
 import logging
@@ -12,19 +14,21 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Dict, Literal, Type, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Dict, Literal, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
-import psutil
 import requests
 from fastapi import FastAPI, HTTPException
-from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
+
+if TYPE_CHECKING:
+    import psutil
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.endpoint_spec import EndpointSpec
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
     EndpointsSchema,
@@ -49,6 +53,17 @@ class Service(Mindtrace):
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
     mcp: MCPClientManager = None
+
+    _endpoint_specs: list[EndpointSpec] = [
+        EndpointSpec(path="endpoints", method_name="endpoints_func", schema=EndpointsSchema, as_tool=True),
+        EndpointSpec(path="status", method_name="status_func", schema=StatusSchema, as_tool=True),
+        EndpointSpec(path="heartbeat", method_name="heartbeat_func", schema=HeartbeatSchema, as_tool=True),
+        EndpointSpec(path="server_id", method_name="server_id_func", schema=ServerIDSchema),
+        EndpointSpec(path="pid_file", method_name="pid_file_func", schema=PIDFileSchema),
+        EndpointSpec(path="shutdown", method_name="shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}),
+    ]
+    # __endpoints__ is populated by __init_subclass__ for subclasses;
+    # for Service itself, it's set after the class body below.
 
     def __init__(
         self,
@@ -104,6 +119,8 @@ class Service(Mindtrace):
         description = str(ifnone(description, default=f"{self.name} server."))
         version_str = "Mindtrace " + version("mindtrace-services")
 
+        from fastmcp import FastMCP
+
         self.mcp = FastMCP(
             name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
             version=version_str,
@@ -137,33 +154,22 @@ class Service(Mindtrace):
         # Mount MCP app at configured mount path
         self.app.mount(mcp_mount_path, self.mcp_app)
 
-        self.add_endpoint(
-            path="/endpoints",
-            func=self.endpoints_func,
-            schema=EndpointsSchema,
-            as_tool=True,
-        )
-        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema, as_tool=True)
-        self.add_endpoint(
-            path="/heartbeat",
-            func=self.heartbeat_func,
-            schema=HeartbeatSchema,
-            as_tool=True,
-        )
-        self.add_endpoint(
-            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
-        )
-        self.add_endpoint(
-            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
-        )
-        self.add_endpoint(
-            path="/shutdown", func=self.shutdown, schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
-        )
+        # Register routes from class-level endpoint specs
+        for path, spec in self.__class__.__endpoints__.items():
+            func = getattr(self, spec.method_name)
+            self._register_route(path, func, spec)
+            self._endpoints[path] = spec.schema
 
     def __init_subclass__(cls, **kwargs):
-        """Set up MCP client manager for each service subclass."""
+        """Set up MCP client manager and collect endpoint specs for each service subclass."""
         super().__init_subclass__(**kwargs)
         cls.mcp = MCPClientManager(cls)
+        # Merge endpoint specs from all ancestors (later in MRO wins)
+        collected: dict[str, EndpointSpec] = {}
+        for base in reversed(cls.__mro__):
+            for spec in getattr(base, "_endpoint_specs", []):
+                collected[spec.path] = spec
+        cls.__endpoints__ = collected
 
     def endpoints_func(self):
         """List all available endpoints for the service."""
@@ -176,6 +182,41 @@ class Service(Mindtrace):
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
         return {"heartbeat": self.heartbeat()}
+
+    def server_id_func(self):
+        """Return the server's unique ID."""
+        return {"server_id": self.id}
+
+    def pid_file_func(self):
+        """Return the path to the server's PID file."""
+        return {"pid_file": self.pid_file}
+
+    def _register_route(self, path: str, func, spec: EndpointSpec):
+        """Register a FastAPI route and optional MCP tool for an endpoint spec."""
+        default_autolog_kwargs = {
+            "log_level": logging.INFO,
+            "include_duration": True,
+            "include_system_metrics": False,
+            "system_metrics": ["cpu_percent", "memory_percent"],
+        }
+        autolog_kwargs = {**default_autolog_kwargs, **(spec.autolog_kwargs or {})}
+        api_route_kwargs = spec.api_route_kwargs or {}
+        if spec.as_tool:
+            self.add_tool(tool_name=path, func=func)
+        wrapped = track_operation(
+            name=func.__name__,
+            service_name=self.name,
+            logger=self.logger,
+            log_level=autolog_kwargs.get("log_level", logging.INFO),
+            include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
+            system_metrics=autolog_kwargs.get("system_metrics"),
+        )(func)
+        self.app.add_api_route(
+            "/" + path,
+            endpoint=wrapped,
+            methods=list(spec.methods),
+            **api_route_kwargs,
+        )
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -283,6 +324,7 @@ class Service(Mindtrace):
         wait_for_launch: Literal[False],
         timeout: int = 60,
         progress_bar: bool = True,
+        retry_delay: float = 0.2,
         **kwargs,
     ) -> None: ...
 
@@ -299,6 +341,7 @@ class Service(Mindtrace):
         wait_for_launch: Literal[True] | bool = True,
         timeout: int = 60,
         progress_bar: bool = True,
+        retry_delay: float = 0.2,
         **kwargs,
     ) -> Any: ...
 
@@ -314,6 +357,7 @@ class Service(Mindtrace):
         wait_for_launch: bool = True,
         timeout: int = 60,
         progress_bar: bool = True,
+        retry_delay: float = 0.2,
         **kwargs,
     ):
         """Launch a new server instance.
@@ -330,6 +374,7 @@ class Service(Mindtrace):
             wait_for_launch: Whether to wait for server startup
             timeout: Timeout for server startup in seconds
             progress_bar: Show progress bar during startup
+            retry_delay: Delay in seconds between connection retry attempts during startup
             **kwargs: Additional parameters passed to the server's __init__ method
         """
         # Build the launch URL with priority
@@ -391,6 +436,7 @@ class Service(Mindtrace):
         if wait_for_launch:
             timeout_handler = Timeout(
                 timeout=timeout,
+                retry_delay=retry_delay,
                 exceptions=(
                     ConnectionRefusedError,
                     requests.exceptions.ConnectionError,
@@ -449,6 +495,8 @@ class Service(Mindtrace):
 
     @classmethod
     def _cleanup_server(cls, server_id: UUID):
+        import psutil
+
         if server_id in cls._active_servers:
             process = cls._active_servers[server_id]
             try:
@@ -573,14 +621,20 @@ class Service(Mindtrace):
         scope: str = "public",
         as_tool: bool = False,
     ):
-        """Register a new endpoint with optional role."""
+        """Register a new endpoint with optional role.
+
+        .. deprecated::
+            Use class-level ``_endpoint_specs`` with :class:`EndpointSpec` instead.
+            This method is kept for endpoints that require ``schema=None`` or other
+            dynamic registration patterns.
+        """
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         # Merge and override default autolog_kwargs
         default_autolog_kwargs = {
             "log_level": logging.INFO,
             "include_duration": True,
-            "include_system_metrics": True,
+            "include_system_metrics": False,
             "system_metrics": ["cpu_percent", "memory_percent"],
         }
         autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
@@ -614,3 +668,8 @@ class Service(Mindtrace):
             self.logger.warning(f"Function '{tool_name}' for service '{service_name}' has no docstring.")
         full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
         self.mcp.tool(name=tool_name, description=full_desc)(func)
+
+
+# Populate __endpoints__ for the Service base class itself
+# (__init_subclass__ only fires for subclasses, not the defining class).
+Service.__endpoints__ = {spec.path: spec for spec in Service._endpoint_specs}

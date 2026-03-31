@@ -3,7 +3,7 @@ import time
 from pydantic import BaseModel
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 
 class EchoInput(BaseModel):
@@ -28,9 +28,12 @@ def reverse_message(payload: EchoInput) -> EchoOutput:
 
 
 class EchoService(Service):
+    _endpoint_specs = [
+        EndpointSpec(path="echo", method_name="echo", schema=echo_task, as_tool=True),
+    ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
         # Add the reverse_message tool directly (not as an endpoint)
         self.add_tool("reverse_message", reverse_message)
 

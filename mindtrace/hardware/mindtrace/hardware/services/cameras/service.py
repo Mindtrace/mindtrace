@@ -94,7 +94,7 @@ from mindtrace.hardware.services.cameras.models import (
     SystemDiagnosticsResponse,
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 
 class CameraManagerService(Service):
@@ -104,6 +104,211 @@ class CameraManagerService(Service):
     Provides comprehensive camera management functionality through a Service-based
     architecture with MCP tool integration and async camera operations.
     """
+
+    _endpoint_specs = [
+        # Health check endpoint
+        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
+        # Backend & Discovery
+        EndpointSpec(
+            path="cameras/backends",
+            method_name="discover_backends",
+            schema=ALL_SCHEMAS["discover_backends"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/backends/info",
+            method_name="get_backend_info",
+            schema=ALL_SCHEMAS["get_backend_info"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/discover",
+            method_name="discover_cameras",
+            schema=ALL_SCHEMAS["discover_cameras"],
+            as_tool=True,
+        ),
+        # Camera Lifecycle
+        EndpointSpec(path="cameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True),
+        EndpointSpec(
+            path="cameras/open/batch",
+            method_name="open_cameras_batch",
+            schema=ALL_SCHEMAS["open_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True
+        ),
+        EndpointSpec(
+            path="cameras/close/batch",
+            method_name="close_cameras_batch",
+            schema=ALL_SCHEMAS["close_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/close/all",
+            method_name="close_all_cameras",
+            schema=ALL_SCHEMAS["close_all_cameras"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/active",
+            method_name="get_active_cameras",
+            schema=ALL_SCHEMAS["get_active_cameras"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        # Camera Status & Information
+        EndpointSpec(
+            path="cameras/status",
+            method_name="get_camera_status",
+            schema=ALL_SCHEMAS["get_camera_status"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/info", method_name="get_camera_info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True
+        ),
+        EndpointSpec(
+            path="cameras/capabilities",
+            method_name="get_camera_capabilities",
+            schema=ALL_SCHEMAS["get_camera_capabilities"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="system/diagnostics",
+            method_name="get_system_diagnostics",
+            schema=ALL_SCHEMAS["get_system_diagnostics"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        # Camera Configuration
+        EndpointSpec(
+            path="cameras/configure",
+            method_name="configure_camera",
+            schema=ALL_SCHEMAS["configure_camera"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/configure/batch",
+            method_name="configure_cameras_batch",
+            schema=ALL_SCHEMAS["configure_cameras_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/config/get",
+            method_name="get_camera_configuration",
+            schema=ALL_SCHEMAS["get_camera_configuration"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/config/import",
+            method_name="import_camera_config",
+            schema=ALL_SCHEMAS["import_camera_config"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/config/export",
+            method_name="export_camera_config",
+            schema=ALL_SCHEMAS["export_camera_config"],
+            as_tool=True,
+        ),
+        # Image Capture
+        EndpointSpec(
+            path="cameras/capture", method_name="capture_image", schema=ALL_SCHEMAS["capture_image"], as_tool=True
+        ),
+        EndpointSpec(
+            path="cameras/capture/batch",
+            method_name="capture_images_batch",
+            schema=ALL_SCHEMAS["capture_images_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/capture/hdr",
+            method_name="capture_hdr_image",
+            schema=ALL_SCHEMAS["capture_hdr_image"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/capture/hdr/batch",
+            method_name="capture_hdr_images_batch",
+            schema=ALL_SCHEMAS["capture_hdr_images_batch"],
+            as_tool=True,
+        ),
+        # Streaming (REST API only - not as MCP tools)
+        EndpointSpec(path="cameras/stream/start", method_name="start_stream", schema=ALL_SCHEMAS["stream_start"]),
+        EndpointSpec(path="cameras/stream/stop", method_name="stop_stream", schema=ALL_SCHEMAS["stream_stop"]),
+        EndpointSpec(
+            path="cameras/stream/status", method_name="get_stream_status", schema=ALL_SCHEMAS["stream_status"]
+        ),
+        EndpointSpec(
+            path="cameras/stream/active",
+            method_name="get_active_streams",
+            schema=ALL_SCHEMAS["get_active_streams"],
+            methods=("GET",),
+        ),
+        EndpointSpec(
+            path="cameras/stream/stop/all", method_name="stop_all_streams", schema=ALL_SCHEMAS["stop_all_streams"]
+        ),
+        # Network & Diagnostics
+        EndpointSpec(
+            path="network/diagnostics",
+            method_name="get_network_diagnostics",
+            schema=ALL_SCHEMAS["get_network_diagnostics"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/performance/get",
+            method_name="get_performance_settings",
+            schema=ALL_SCHEMAS["get_performance_settings"],
+            methods=("GET",),
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/performance/set",
+            method_name="set_performance_settings",
+            schema=ALL_SCHEMAS["set_performance_settings"],
+            as_tool=True,
+        ),
+        # Homography Calibration & Measurement
+        EndpointSpec(
+            path="cameras/homography/calibrate/checkerboard",
+            method_name="calibrate_homography_checkerboard",
+            schema=ALL_SCHEMAS["calibrate_homography_checkerboard"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/homography/calibrate/correspondences",
+            method_name="calibrate_homography_correspondences",
+            schema=ALL_SCHEMAS["calibrate_homography_correspondences"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/homography/calibrate/multi-view",
+            method_name="calibrate_homography_multi_view",
+            schema=ALL_SCHEMAS["calibrate_homography_multi_view"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/homography/measure/box",
+            method_name="measure_homography_box",
+            schema=ALL_SCHEMAS["measure_homography_box"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/homography/measure/batch",
+            method_name="measure_homography_batch",
+            schema=ALL_SCHEMAS["measure_homography_batch"],
+            as_tool=True,
+        ),
+        EndpointSpec(
+            path="cameras/homography/measure/distance",
+            method_name="measure_homography_distance",
+            schema=ALL_SCHEMAS["measure_homography_distance"],
+            as_tool=True,
+        ),
+    ]
 
     def __init__(self, include_mocks: bool = False, **kwargs):
         """Initialize CameraManagerService.
@@ -132,8 +337,8 @@ class CameraManagerService(Service):
         self._startup_time = time.time()
         self._active_streams: dict = {}  # Track active camera streams
 
-        # Register all endpoints with their schemas
-        self._register_endpoints()
+        # Video stream endpoint (schema=None, cannot use EndpointSpec)
+        self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
 
     async def _get_camera_manager(self) -> AsyncCameraManager:
         """Get or create camera manager instance."""
@@ -161,163 +366,6 @@ class CameraManagerService(Service):
             finally:
                 self._camera_manager = None
         await super().shutdown_cleanup()
-
-    def _register_endpoints(self):
-        """Register all service endpoints."""
-        # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
-
-        # Backend & Discovery
-        self.add_endpoint(
-            "cameras/backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
-        )
-        self.add_endpoint(
-            "cameras/backends/info",
-            self.get_backend_info,
-            ALL_SCHEMAS["get_backend_info"],
-            methods=["GET"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], methods=["POST"], as_tool=True
-        )
-
-        # Camera Lifecycle
-        self.add_endpoint("cameras/open", self.open_camera, ALL_SCHEMAS["open_camera"], as_tool=True)
-        self.add_endpoint(
-            "cameras/open/batch", self.open_cameras_batch, ALL_SCHEMAS["open_cameras_batch"], as_tool=True
-        )
-        self.add_endpoint("cameras/close", self.close_camera, ALL_SCHEMAS["close_camera"], as_tool=True)
-        self.add_endpoint(
-            "cameras/close/batch", self.close_cameras_batch, ALL_SCHEMAS["close_cameras_batch"], as_tool=True
-        )
-        self.add_endpoint("cameras/close/all", self.close_all_cameras, ALL_SCHEMAS["close_all_cameras"], as_tool=True)
-        self.add_endpoint(
-            "cameras/active", self.get_active_cameras, ALL_SCHEMAS["get_active_cameras"], methods=["GET"], as_tool=True
-        )
-
-        # Camera Status & Information
-        self.add_endpoint("cameras/status", self.get_camera_status, ALL_SCHEMAS["get_camera_status"], as_tool=True)
-        self.add_endpoint("cameras/info", self.get_camera_info, ALL_SCHEMAS["get_camera_info"], as_tool=True)
-        self.add_endpoint(
-            "cameras/capabilities", self.get_camera_capabilities, ALL_SCHEMAS["get_camera_capabilities"], as_tool=True
-        )
-        self.add_endpoint(
-            "system/diagnostics",
-            self.get_system_diagnostics,
-            ALL_SCHEMAS["get_system_diagnostics"],
-            methods=["GET"],
-            as_tool=True,
-        )
-
-        # Camera Configuration
-        self.add_endpoint("cameras/configure", self.configure_camera, ALL_SCHEMAS["configure_camera"], as_tool=True)
-        self.add_endpoint(
-            "cameras/configure/batch",
-            self.configure_cameras_batch,
-            ALL_SCHEMAS["configure_cameras_batch"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/config/get",
-            self.get_camera_configuration,
-            ALL_SCHEMAS["get_camera_configuration"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/config/import", self.import_camera_config, ALL_SCHEMAS["import_camera_config"], as_tool=True
-        )
-        self.add_endpoint(
-            "cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"], as_tool=True
-        )
-
-        # Image Capture
-        self.add_endpoint("cameras/capture", self.capture_image, ALL_SCHEMAS["capture_image"], as_tool=True)
-        self.add_endpoint(
-            "cameras/capture/batch", self.capture_images_batch, ALL_SCHEMAS["capture_images_batch"], as_tool=True
-        )
-        self.add_endpoint("cameras/capture/hdr", self.capture_hdr_image, ALL_SCHEMAS["capture_hdr_image"], as_tool=True)
-        self.add_endpoint(
-            "cameras/capture/hdr/batch",
-            self.capture_hdr_images_batch,
-            ALL_SCHEMAS["capture_hdr_images_batch"],
-            as_tool=True,
-        )
-
-        # Streaming (REST API only - not as MCP tools)
-        self.add_endpoint("cameras/stream/start", self.start_stream, ALL_SCHEMAS["stream_start"])
-        self.add_endpoint("cameras/stream/stop", self.stop_stream, ALL_SCHEMAS["stream_stop"])
-        self.add_endpoint("cameras/stream/status", self.get_stream_status, ALL_SCHEMAS["stream_status"])
-        self.add_endpoint(
-            "cameras/stream/active", self.get_active_streams, ALL_SCHEMAS["get_active_streams"], methods=["GET"]
-        )
-        self.add_endpoint(
-            "cameras/stream/stop/all", self.stop_all_streams, ALL_SCHEMAS["stop_all_streams"], methods=["POST"]
-        )
-
-        # Video stream endpoints (serve actual video)
-        self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
-
-        # Network & Diagnostics
-        self.add_endpoint(
-            "network/diagnostics",
-            self.get_network_diagnostics,
-            ALL_SCHEMAS["get_network_diagnostics"],
-            methods=["GET"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/performance/get",
-            self.get_performance_settings,
-            ALL_SCHEMAS["get_performance_settings"],
-            methods=["GET"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/performance/set",
-            self.set_performance_settings,
-            ALL_SCHEMAS["set_performance_settings"],
-            methods=["POST"],
-            as_tool=True,
-        )
-
-        # Homography Calibration & Measurement
-        self.add_endpoint(
-            "cameras/homography/calibrate/checkerboard",
-            self.calibrate_homography_checkerboard,
-            ALL_SCHEMAS["calibrate_homography_checkerboard"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/homography/calibrate/correspondences",
-            self.calibrate_homography_correspondences,
-            ALL_SCHEMAS["calibrate_homography_correspondences"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/homography/calibrate/multi-view",
-            self.calibrate_homography_multi_view,
-            ALL_SCHEMAS["calibrate_homography_multi_view"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/homography/measure/box",
-            self.measure_homography_box,
-            ALL_SCHEMAS["measure_homography_box"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/homography/measure/batch",
-            self.measure_homography_batch,
-            ALL_SCHEMAS["measure_homography_batch"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "cameras/homography/measure/distance",
-            self.measure_homography_distance,
-            ALL_SCHEMAS["measure_homography_distance"],
-            as_tool=True,
-        )
 
     # Backend & Discovery Operations
     async def discover_backends(self) -> BackendsResponse:

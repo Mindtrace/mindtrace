@@ -19,7 +19,7 @@ from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClien
 from mindtrace.registry import Archiver, Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.registry.core.types import OnConflict
-from mindtrace.services import ConnectionManager, Gateway, ServerStatus, Service
+from mindtrace.services import ConnectionManager, EndpointSpec, Gateway, ServerStatus, Service
 
 
 def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str, update_dict: dict):
@@ -38,7 +38,73 @@ def update_database(database: UnifiedMindtraceODM, sort_key: str, find_key: str,
     return entry
 
 
+# -- ClusterManager endpoint schemas --
+_CM_SCHEMAS = {
+    "submit_job": TaskSchema(name="submit_job", input_schema=Job, output_schema=cluster_types.JobStatus),
+    "register_job_to_endpoint": TaskSchema(name="register_job_to_endpoint", input_schema=cluster_types.RegisterJobToEndpointInput),
+    "register_job_to_worker": TaskSchema(name="register_job_to_worker", input_schema=cluster_types.RegisterJobToWorkerInput),
+    "get_job_status": TaskSchema(name="get_job_status", input_schema=cluster_types.GetJobStatusInput, output_schema=cluster_types.JobStatus),
+    "worker_alert_started_job": TaskSchema(name="worker_alert_started_job", input_schema=cluster_types.WorkerAlertStartedJobInput),
+    "worker_alert_completed_job": TaskSchema(name="worker_alert_completed_job", input_schema=cluster_types.WorkerAlertCompletedJobInput),
+    "register_node": TaskSchema(name="register_node", input_schema=cluster_types.RegisterNodeInput, output_schema=cluster_types.RegisterNodeOutput),
+    "register_worker_type": TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
+    "launch_worker": TaskSchema(name="launch_worker", input_schema=cluster_types.ClusterLaunchWorkerInput, output_schema=cluster_types.ClusterLaunchWorkerOutput),
+    "launch_worker_status": TaskSchema(name="launch_worker_status", input_schema=cluster_types.ClusterLaunchWorkerStatusInput, output_schema=cluster_types.ClusterLaunchWorkerStatusOutput),
+    "clear_databases": TaskSchema(name="clear_databases"),
+    "register_job_schema_to_worker_type": TaskSchema(name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput),
+    "get_worker_status": TaskSchema(name="get_worker_status", input_schema=cluster_types.GetWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
+    "get_worker_status_by_url": TaskSchema(name="get_worker_status_by_url", input_schema=cluster_types.GetWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
+    "query_worker_status": TaskSchema(name="query_worker_status", input_schema=cluster_types.QueryWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
+    "query_worker_status_by_url": TaskSchema(name="query_worker_status_by_url", input_schema=cluster_types.QueryWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
+    "clear_job_schema_queue": TaskSchema(name="clear_job_schema_queue", input_schema=cluster_types.ClearJobSchemaQueueInput),
+    "get_dlq_jobs": TaskSchema(name="get_dlq_jobs", output_schema=cluster_types.GetDLQJobsOutput),
+    "requeue_from_dlq": TaskSchema(name="requeue_from_dlq", input_schema=cluster_types.RequeueFromDLQInput, output_schema=cluster_types.JobStatus),
+    "discard_from_dlq": TaskSchema(name="discard_from_dlq", input_schema=cluster_types.DiscardFromDLQInput),
+}
+
+# -- Node endpoint schemas --
+_NODE_SCHEMAS = {
+    "launch_worker": TaskSchema(name="launch_worker", input_schema=cluster_types.LaunchWorkerInput, output_schema=cluster_types.LaunchWorkerOutput),
+    "launch_worker_status": TaskSchema(name="launch_worker_status", input_schema=cluster_types.LaunchWorkerStatusInput, output_schema=cluster_types.LaunchWorkerStatusOutput),
+    "shutdown_worker": TaskSchema(name="shutdown_worker", input_schema=cluster_types.ShutdownWorkerInput),
+    "shutdown_worker_by_id": TaskSchema(name="shutdown_worker_by_id", input_schema=cluster_types.ShutdownWorkerByIdInput),
+    "shutdown_worker_by_port": TaskSchema(name="shutdown_worker_by_port", input_schema=cluster_types.ShutdownWorkerByPortInput),
+    "shutdown_all_workers": TaskSchema(name="shutdown_all_workers"),
+}
+
+# -- Worker endpoint schemas --
+_WORKER_SCHEMAS = {
+    "start": TaskSchema(name="start_worker"),
+    "run": TaskSchema(name="run_worker", input_schema=cluster_types.WorkerRunInput, output_schema=cluster_types.JobStatus),
+    "connect_to_cluster": TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
+    "get_status": TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
+}
+
+
 class ClusterManager(Gateway):
+    _endpoint_specs = [
+        EndpointSpec(path="submit_job", method_name="submit_job", schema=_CM_SCHEMAS["submit_job"]),
+        EndpointSpec(path="register_job_to_endpoint", method_name="register_job_to_endpoint", schema=_CM_SCHEMAS["register_job_to_endpoint"]),
+        EndpointSpec(path="register_job_to_worker", method_name="register_job_to_worker", schema=_CM_SCHEMAS["register_job_to_worker"]),
+        EndpointSpec(path="get_job_status", method_name="get_job_status", schema=_CM_SCHEMAS["get_job_status"]),
+        EndpointSpec(path="worker_alert_started_job", method_name="worker_alert_started_job", schema=_CM_SCHEMAS["worker_alert_started_job"]),
+        EndpointSpec(path="worker_alert_completed_job", method_name="worker_alert_completed_job", schema=_CM_SCHEMAS["worker_alert_completed_job"]),
+        EndpointSpec(path="register_node", method_name="register_node", schema=_CM_SCHEMAS["register_node"]),
+        EndpointSpec(path="register_worker_type", method_name="register_worker_type", schema=_CM_SCHEMAS["register_worker_type"]),
+        EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_CM_SCHEMAS["launch_worker"]),
+        EndpointSpec(path="launch_worker_status", method_name="launch_worker_status", schema=_CM_SCHEMAS["launch_worker_status"]),
+        EndpointSpec(path="clear_databases", method_name="clear_databases", schema=_CM_SCHEMAS["clear_databases"]),
+        EndpointSpec(path="register_job_schema_to_worker_type", method_name="register_job_schema_to_worker_type", schema=_CM_SCHEMAS["register_job_schema_to_worker_type"]),
+        EndpointSpec(path="get_worker_status", method_name="get_worker_status", schema=_CM_SCHEMAS["get_worker_status"]),
+        EndpointSpec(path="get_worker_status_by_url", method_name="get_worker_status_by_url", schema=_CM_SCHEMAS["get_worker_status_by_url"]),
+        EndpointSpec(path="query_worker_status", method_name="query_worker_status", schema=_CM_SCHEMAS["query_worker_status"]),
+        EndpointSpec(path="query_worker_status_by_url", method_name="query_worker_status_by_url", schema=_CM_SCHEMAS["query_worker_status_by_url"]),
+        EndpointSpec(path="clear_job_schema_queue", method_name="clear_job_schema_queue", schema=_CM_SCHEMAS["clear_job_schema_queue"]),
+        EndpointSpec(path="get_dlq_jobs", method_name="get_dlq_jobs", schema=_CM_SCHEMAS["get_dlq_jobs"]),
+        EndpointSpec(path="requeue_from_dlq", method_name="requeue_from_dlq", schema=_CM_SCHEMAS["requeue_from_dlq"]),
+        EndpointSpec(path="discard_from_dlq", method_name="discard_from_dlq", schema=_CM_SCHEMAS["discard_from_dlq"]),
+    ]
+
     def __init__(self, minio_endpoint=None, **kwargs):
         """
         Args:
@@ -121,175 +187,6 @@ class ClusterManager(Gateway):
             self.worker_registry.register_materializer(
                 cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
             )
-        self.add_endpoint(
-            "/submit_job",
-            func=self.submit_job,
-            schema=TaskSchema(name="submit_job", input_schema=Job, output_schema=cluster_types.JobStatus),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/register_job_to_endpoint",
-            func=self.register_job_to_endpoint,
-            schema=TaskSchema(name="register_job_to_endpoint", input_schema=cluster_types.RegisterJobToEndpointInput),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/register_job_to_worker",
-            func=self.register_job_to_worker,
-            schema=TaskSchema(name="register_job_to_worker", input_schema=cluster_types.RegisterJobToWorkerInput),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/get_job_status",
-            func=self.get_job_status,
-            schema=TaskSchema(
-                name="get_job_status",
-                input_schema=cluster_types.GetJobStatusInput,
-                output_schema=cluster_types.JobStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/worker_alert_started_job",
-            func=self.worker_alert_started_job,
-            schema=TaskSchema(name="worker_alert_started_job", input_schema=cluster_types.WorkerAlertStartedJobInput),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/worker_alert_completed_job",
-            func=self.worker_alert_completed_job,
-            schema=TaskSchema(
-                name="worker_alert_completed_job", input_schema=cluster_types.WorkerAlertCompletedJobInput
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/register_node",
-            func=self.register_node,
-            schema=TaskSchema(
-                name="register_node",
-                input_schema=cluster_types.RegisterNodeInput,
-                output_schema=cluster_types.RegisterNodeOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/register_worker_type",
-            func=self.register_worker_type,
-            schema=TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/launch_worker",
-            func=self.launch_worker,
-            schema=TaskSchema(
-                name="launch_worker",
-                input_schema=cluster_types.ClusterLaunchWorkerInput,
-                output_schema=cluster_types.ClusterLaunchWorkerOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/launch_worker_status",
-            func=self.launch_worker_status,
-            schema=TaskSchema(
-                name="launch_worker_status",
-                input_schema=cluster_types.ClusterLaunchWorkerStatusInput,
-                output_schema=cluster_types.ClusterLaunchWorkerStatusOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/clear_databases",
-            func=self.clear_databases,
-            schema=TaskSchema(name="clear_databases"),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/register_job_schema_to_worker_type",
-            func=self.register_job_schema_to_worker_type,
-            schema=TaskSchema(
-                name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/get_worker_status",
-            func=self.get_worker_status,
-            schema=TaskSchema(
-                name="get_worker_status",
-                input_schema=cluster_types.GetWorkerStatusInput,
-                output_schema=cluster_types.WorkerStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/get_worker_status_by_url",
-            func=self.get_worker_status_by_url,
-            schema=TaskSchema(
-                name="get_worker_status_by_url",
-                input_schema=cluster_types.GetWorkerStatusByUrlInput,
-                output_schema=cluster_types.WorkerStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/query_worker_status",
-            func=self.query_worker_status,
-            schema=TaskSchema(
-                name="query_worker_status",
-                input_schema=cluster_types.QueryWorkerStatusInput,
-                output_schema=cluster_types.WorkerStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/query_worker_status_by_url",
-            func=self.query_worker_status_by_url,
-            schema=TaskSchema(
-                name="query_worker_status_by_url",
-                input_schema=cluster_types.QueryWorkerStatusByUrlInput,
-                output_schema=cluster_types.WorkerStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/clear_job_schema_queue",
-            func=self.clear_job_schema_queue,
-            schema=TaskSchema(
-                name="clear_job_schema_queue",
-                input_schema=cluster_types.ClearJobSchemaQueueInput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/get_dlq_jobs",
-            func=self.get_dlq_jobs,
-            schema=TaskSchema(
-                name="get_dlq_jobs",
-                output_schema=cluster_types.GetDLQJobsOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/requeue_from_dlq",
-            func=self.requeue_from_dlq,
-            schema=TaskSchema(
-                name="requeue_from_dlq",
-                input_schema=cluster_types.RequeueFromDLQInput,
-                output_schema=cluster_types.JobStatus,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/discard_from_dlq",
-            func=self.discard_from_dlq,
-            schema=TaskSchema(
-                name="discard_from_dlq",
-                input_schema=cluster_types.DiscardFromDLQInput,
-            ),
-            methods=["POST"],
-        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
@@ -459,6 +356,7 @@ class ClusterManager(Gateway):
         git_branch = payload.get("git_branch", None)
         git_commit = payload.get("git_commit", None)
         git_working_dir = payload.get("git_working_dir", None)
+        git_depth = payload.get("git_depth", None)
         job_schema_name = payload["job_type"]
         proxy_worker = cluster_types.ProxyWorker(
             worker_type=worker_class,
@@ -467,6 +365,7 @@ class ClusterManager(Gateway):
             git_branch=git_branch,
             git_commit=git_commit,
             git_working_dir=git_working_dir,
+            git_depth=git_depth,
         )
         self.worker_registry.save(f"worker:{worker_name}", proxy_worker, on_conflict=OnConflict.OVERWRITE)
         if job_schema_name:
@@ -811,6 +710,15 @@ class ClusterManager(Gateway):
 
 
 class Node(Service):
+    _endpoint_specs = [
+        EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_NODE_SCHEMAS["launch_worker"]),
+        EndpointSpec(path="launch_worker_status", method_name="launch_worker_status", schema=_NODE_SCHEMAS["launch_worker_status"]),
+        EndpointSpec(path="shutdown_worker", method_name="shutdown_worker", schema=_NODE_SCHEMAS["shutdown_worker"]),
+        EndpointSpec(path="shutdown_worker_by_id", method_name="shutdown_worker_by_id", schema=_NODE_SCHEMAS["shutdown_worker_by_id"]),
+        EndpointSpec(path="shutdown_worker_by_port", method_name="shutdown_worker_by_port", schema=_NODE_SCHEMAS["shutdown_worker_by_port"]),
+        EndpointSpec(path="shutdown_all_workers", method_name="shutdown_all_workers", schema=_NODE_SCHEMAS["shutdown_all_workers"]),
+    ]
+
     def __init__(self, cluster_url: str | None = None, worker_ports: list[int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.worker_registry: Registry = None  # type: ignore
@@ -872,62 +780,6 @@ class Node(Service):
             config_range = self.config["MINDTRACE_CLUSTER"]["WORKER_PORTS_RANGE"]
             self.worker_ports = self._parse_port_range(config_range)
             self.logger.debug(f"Using worker ports range {config_range} for node {self.id}")
-
-        self.add_endpoint(
-            "/launch_worker",
-            func=self.launch_worker,
-            schema=TaskSchema(
-                name="launch_worker",
-                input_schema=cluster_types.LaunchWorkerInput,
-                output_schema=cluster_types.LaunchWorkerOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/launch_worker_status",
-            func=self.launch_worker_status,
-            schema=TaskSchema(
-                name="launch_worker_status",
-                input_schema=cluster_types.LaunchWorkerStatusInput,
-                output_schema=cluster_types.LaunchWorkerStatusOutput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/shutdown_worker",
-            func=self.shutdown_worker,
-            schema=TaskSchema(
-                name="shutdown_worker",
-                input_schema=cluster_types.ShutdownWorkerInput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/shutdown_worker_by_id",
-            func=self.shutdown_worker_by_id,
-            schema=TaskSchema(
-                name="shutdown_worker_by_id",
-                input_schema=cluster_types.ShutdownWorkerByIdInput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/shutdown_worker_by_port",
-            func=self.shutdown_worker_by_port,
-            schema=TaskSchema(
-                name="shutdown_worker_by_port",
-                input_schema=cluster_types.ShutdownWorkerByPortInput,
-            ),
-            methods=["POST"],
-        )
-        self.add_endpoint(
-            "/shutdown_all_workers",
-            func=self.shutdown_all_workers,
-            schema=TaskSchema(
-                name="shutdown_all_workers",
-            ),
-            methods=["POST"],
-        )
 
     def launch_worker_status(self, payload: dict):
         """
@@ -1177,6 +1029,13 @@ class Node(Service):
 
 
 class Worker(Service, Consumer):
+    _endpoint_specs = [
+        EndpointSpec(path="start", method_name="start", schema=_WORKER_SCHEMAS["start"]),
+        EndpointSpec(path="run", method_name="run", schema=_WORKER_SCHEMAS["run"]),
+        EndpointSpec(path="connect_to_cluster", method_name="connect_to_cluster", schema=_WORKER_SCHEMAS["connect_to_cluster"]),
+        EndpointSpec(path="get_status", method_name="get_status", schema=_WORKER_SCHEMAS["get_status"]),
+    ]
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
@@ -1194,24 +1053,6 @@ class Worker(Service, Consumer):
                     job_id=None,
                 )
             )
-        self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
-        self.add_endpoint(
-            "/run",
-            self.run,
-            schema=TaskSchema(
-                name="run_worker", input_schema=cluster_types.WorkerRunInput, output_schema=cluster_types.JobStatus
-            ),
-        )
-        self.add_endpoint(
-            "/connect_to_cluster",
-            self.connect_to_cluster,
-            schema=TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
-        )
-        self.add_endpoint(
-            "/get_status",
-            self.get_status,
-            schema=TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
-        )
         self.consume_thread = None
         self._cluster_connection_manager = None  # type: ignore
         self._cluster_url = None
@@ -1336,6 +1177,7 @@ class StandardWorkerLauncher(Archiver):
                 commit=worker_dict["git_commit"],
                 working_dir=worker_dict["git_working_dir"],
                 project=worker_dict.get("git_project"),
+                depth=worker_dict.get("git_depth"),
             )
             _ = environment.setup()
 

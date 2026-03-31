@@ -1,6 +1,10 @@
 import threading
 
-import psutil
+
+def _get_psutil():
+    import psutil
+
+    return psutil
 
 
 class SystemMetricsCollector:
@@ -49,15 +53,15 @@ class SystemMetricsCollector:
     """
 
     AVAILABLE_METRICS = {
-        "cpu_percent": lambda: psutil.cpu_percent(),
-        "per_core_cpu_percent": lambda: psutil.cpu_percent(percpu=True),
-        "memory_percent": lambda: psutil.virtual_memory().percent,
-        "disk_usage": lambda: psutil.disk_usage("/").percent,
+        "cpu_percent": lambda: _get_psutil().cpu_percent(),
+        "per_core_cpu_percent": lambda: _get_psutil().cpu_percent(percpu=True),
+        "memory_percent": lambda: _get_psutil().virtual_memory().percent,
+        "disk_usage": lambda: _get_psutil().disk_usage("/").percent,
         "network_io": lambda: {
-            "bytes_sent": psutil.net_io_counters().bytes_sent,
-            "bytes_recv": psutil.net_io_counters().bytes_recv,
+            "bytes_sent": _get_psutil().net_io_counters().bytes_sent,
+            "bytes_recv": _get_psutil().net_io_counters().bytes_recv,
         },
-        "load_average": lambda: psutil.getloadavg() if hasattr(psutil, "getloadavg") else None,
+        "load_average": lambda: _get_psutil().getloadavg() if hasattr(_get_psutil(), "getloadavg") else None,
     }
 
     def __init__(self, interval: int | None = None, metrics_to_collect: list[str] | None = None):

@@ -50,7 +50,7 @@ from mindtrace.hardware.services.plcs.models import (
 )
 from mindtrace.hardware.services.plcs.models.requests import BackendFilterRequest
 from mindtrace.hardware.services.plcs.schemas import ALL_SCHEMAS, HealthSchema
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 
 class PLCManagerService(Service):
@@ -60,6 +60,33 @@ class PLCManagerService(Service):
     Provides comprehensive PLC management functionality through a Service-based
     architecture with MCP tool integration and async PLC operations.
     """
+
+    _endpoint_specs = [
+        # Backend & Discovery
+        EndpointSpec(path="plcs/backends", method_name="discover_backends", schema=ALL_SCHEMAS["discover_backends"], methods=("GET",), as_tool=True),
+        EndpointSpec(path="plcs/backends/info", method_name="get_backend_info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True),
+        EndpointSpec(path="plcs/discover", method_name="discover_plcs", schema=ALL_SCHEMAS["discover_plcs"], as_tool=True),
+        # PLC Lifecycle
+        EndpointSpec(path="plcs/connect", method_name="connect_plc", schema=ALL_SCHEMAS["connect_plc"], as_tool=True),
+        EndpointSpec(path="plcs/connect/batch", method_name="connect_plcs_batch", schema=ALL_SCHEMAS["connect_plcs_batch"], as_tool=True),
+        EndpointSpec(path="plcs/disconnect", method_name="disconnect_plc", schema=ALL_SCHEMAS["disconnect_plc"], as_tool=True),
+        EndpointSpec(path="plcs/disconnect/batch", method_name="disconnect_plcs_batch", schema=ALL_SCHEMAS["disconnect_plcs_batch"], as_tool=True),
+        EndpointSpec(path="plcs/disconnect/all", method_name="disconnect_all_plcs", schema=ALL_SCHEMAS["disconnect_all_plcs"], as_tool=True),
+        EndpointSpec(path="plcs/active", method_name="get_active_plcs", schema=ALL_SCHEMAS["get_active_plcs"], methods=("GET",), as_tool=True),
+        # Tag Operations
+        EndpointSpec(path="plcs/tags/read", method_name="read_tags", schema=ALL_SCHEMAS["tag_read"], as_tool=True),
+        EndpointSpec(path="plcs/tags/write", method_name="write_tags", schema=ALL_SCHEMAS["tag_write"], as_tool=True),
+        EndpointSpec(path="plcs/tags/read/batch", method_name="read_tags_batch", schema=ALL_SCHEMAS["tag_batch_read"], as_tool=True),
+        EndpointSpec(path="plcs/tags/write/batch", method_name="write_tags_batch", schema=ALL_SCHEMAS["tag_batch_write"], as_tool=True),
+        EndpointSpec(path="plcs/tags/list", method_name="list_tags", schema=ALL_SCHEMAS["tag_list"], as_tool=True),
+        EndpointSpec(path="plcs/tags/info", method_name="get_tag_info", schema=ALL_SCHEMAS["tag_info"], as_tool=True),
+        # Status & Information
+        EndpointSpec(path="plcs/status", method_name="get_plc_status", schema=ALL_SCHEMAS["get_plc_status"], as_tool=True),
+        EndpointSpec(path="plcs/info", method_name="get_plc_info", schema=ALL_SCHEMAS["get_plc_info"], as_tool=True),
+        EndpointSpec(path="system/diagnostics", method_name="get_system_diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True),
+        # Health check endpoint (for container healthcheck - not an MCP tool)
+        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
+    ]
 
     def __init__(self, **kwargs):
         """Initialize PLCManagerService.
@@ -89,9 +116,6 @@ class PLCManagerService(Service):
         self._total_tag_reads = 0
         self._total_tag_writes = 0
 
-        # Register all endpoints with their schemas
-        self._register_endpoints()
-
     def _get_plc_manager(self) -> PLCManager:
         """Get or create PLC manager instance."""
         self.logger.debug(f"_get_plc_manager called, current manager: {self._plc_manager}")
@@ -112,55 +136,6 @@ class PLCManagerService(Service):
             finally:
                 self._plc_manager = None
         await super().shutdown_cleanup()
-
-    def _register_endpoints(self):
-        """Register all service endpoints."""
-        # Backend & Discovery
-        self.add_endpoint(
-            "plcs/backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
-        )
-        self.add_endpoint(
-            "plcs/backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
-        )
-        self.add_endpoint("plcs/discover", self.discover_plcs, ALL_SCHEMAS["discover_plcs"], as_tool=True)
-
-        # PLC Lifecycle
-        self.add_endpoint("plcs/connect", self.connect_plc, ALL_SCHEMAS["connect_plc"], as_tool=True)
-        self.add_endpoint(
-            "plcs/connect/batch", self.connect_plcs_batch, ALL_SCHEMAS["connect_plcs_batch"], as_tool=True
-        )
-        self.add_endpoint("plcs/disconnect", self.disconnect_plc, ALL_SCHEMAS["disconnect_plc"], as_tool=True)
-        self.add_endpoint(
-            "plcs/disconnect/batch", self.disconnect_plcs_batch, ALL_SCHEMAS["disconnect_plcs_batch"], as_tool=True
-        )
-        self.add_endpoint(
-            "plcs/disconnect/all", self.disconnect_all_plcs, ALL_SCHEMAS["disconnect_all_plcs"], as_tool=True
-        )
-        self.add_endpoint(
-            "plcs/active", self.get_active_plcs, ALL_SCHEMAS["get_active_plcs"], methods=["GET"], as_tool=True
-        )
-
-        # Tag Operations
-        self.add_endpoint("plcs/tags/read", self.read_tags, ALL_SCHEMAS["tag_read"], as_tool=True)
-        self.add_endpoint("plcs/tags/write", self.write_tags, ALL_SCHEMAS["tag_write"], as_tool=True)
-        self.add_endpoint("plcs/tags/read/batch", self.read_tags_batch, ALL_SCHEMAS["tag_batch_read"], as_tool=True)
-        self.add_endpoint("plcs/tags/write/batch", self.write_tags_batch, ALL_SCHEMAS["tag_batch_write"], as_tool=True)
-        self.add_endpoint("plcs/tags/list", self.list_tags, ALL_SCHEMAS["tag_list"], as_tool=True)
-        self.add_endpoint("plcs/tags/info", self.get_tag_info, ALL_SCHEMAS["tag_info"], as_tool=True)
-
-        # Status & Information
-        self.add_endpoint("plcs/status", self.get_plc_status, ALL_SCHEMAS["get_plc_status"], as_tool=True)
-        self.add_endpoint("plcs/info", self.get_plc_info, ALL_SCHEMAS["get_plc_info"], as_tool=True)
-        self.add_endpoint(
-            "system/diagnostics",
-            self.get_system_diagnostics,
-            ALL_SCHEMAS["get_system_diagnostics"],
-            methods=["GET"],
-            as_tool=True,
-        )
-
-        # Health check endpoint (for container healthcheck - not an MCP tool)
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
 
     # Backend & Discovery Operations
     def discover_backends(self) -> BackendsResponse:

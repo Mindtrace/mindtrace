@@ -83,6 +83,7 @@ class TestRunScriptWorker:
             commit="abc123",
             working_dir="src",
             project="our-project",
+            depth=None,
         )
 
         # Verify setup was called

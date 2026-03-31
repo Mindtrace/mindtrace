@@ -37,20 +37,11 @@ class TestGateway:
         # Test that CORS middleware was added
         # Note: We can't easily test middleware addition without inspecting FastAPI internals
 
-    @patch("mindtrace.services.gateway.gateway.Gateway.add_endpoint")
-    def test_init_adds_register_app_endpoint(self, mock_add_endpoint):
-        """Test that __init__ adds the register_app endpoint."""
-        Gateway()
-
-        # Find the register_app endpoint call among all calls
-        register_app_calls = [
-            call for call in mock_add_endpoint.call_args_list if len(call[0]) > 0 and "register_app" in str(call[0][0])
-        ]
-
-        assert len(register_app_calls) == 1
-        call_args = register_app_calls[0]
-        assert call_args[1]["methods"] == ["POST"]
-        assert "/register_app" in call_args[0]
+    def test_init_adds_register_app_endpoint(self):
+        """Test that Gateway declares the register_app endpoint."""
+        assert "register_app" in Gateway.__endpoints__
+        spec = Gateway.__endpoints__["register_app"]
+        assert spec.method_name == "register_app"
 
     def test_register_app(self, gateway, mock_app_config):
         """Test the register_app method."""

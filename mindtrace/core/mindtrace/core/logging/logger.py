@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -9,12 +11,13 @@ from inspect import signature
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable, Optional
-
-import structlog
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from mindtrace.core.config import get_core_settings
 from mindtrace.core.utils import ifnone
+
+if TYPE_CHECKING:
+    import structlog
 
 def _get_http_exception():
     """Lazily resolve FastAPI's HTTPException, returning None if unavailable."""
@@ -129,6 +132,8 @@ def setup_logger(
     Returns:
         Logger | structlog.BoundLogger: Configured logger instance.
     """
+    import structlog
+
     logger = logging.getLogger(name)
     logger.handlers.clear()
     logger.setLevel(logger_level)

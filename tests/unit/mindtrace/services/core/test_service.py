@@ -811,7 +811,7 @@ class TestServiceLaunchExceptionHandling:
 class TestServiceCleanupMethods:
     """Test Service cleanup methods with process handling."""
 
-    @patch("mindtrace.services.core.service.psutil.Process")
+    @patch("psutil.Process")
     def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
         """Test _cleanup_server with child NoSuchProcess exception."""
         # Setup mock process
@@ -844,7 +844,7 @@ class TestServiceCleanupMethods:
         finally:
             Service._active_servers = original_servers
 
-    @patch("mindtrace.services.core.service.psutil.Process")
+    @patch("psutil.Process")
     def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
         """Test _cleanup_server with parent NoSuchProcess exception."""
         # Setup mock process
@@ -873,7 +873,7 @@ class TestServiceCleanupMethods:
         finally:
             Service._active_servers = original_servers
 
-    @patch("mindtrace.services.core.service.psutil.Process")
+    @patch("psutil.Process")
     def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
         """Test _cleanup_server with parent terminate NoSuchProcess exception."""
         # Setup mock process
@@ -907,7 +907,7 @@ class TestServiceCleanupMethods:
         finally:
             Service._active_servers = original_servers
 
-    @patch("mindtrace.services.core.service.psutil.Process")
+    @patch("psutil.Process")
     def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
         """Test _cleanup_server with parent wait NoSuchProcess exception."""
         # Setup mock process
@@ -1263,6 +1263,7 @@ class TestServiceInterruption:
                 # Should create Timeout with correct parameters
                 mock_timeout_class.assert_called_once_with(
                     timeout=60,
+                    retry_delay=0.2,
                     exceptions=(
                         ConnectionRefusedError,
                         requests.exceptions.ConnectionError,

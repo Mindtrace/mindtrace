@@ -15,7 +15,7 @@ from threading import RLock
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 
 class PipelineLoadInput(BaseModel):
@@ -76,14 +76,16 @@ class Pipeline(Service):
     register their own inference endpoints with TaskSchemas as needed.
     """
 
+    _endpoint_specs = [
+        EndpointSpec(path="load", method_name="load", schema=PipelineLoadTaskSchema),
+        EndpointSpec(path="unload", method_name="unload", schema=PipelineUnloadTaskSchema),
+        EndpointSpec(path="loaded", method_name="loaded", schema=PipelineLoadedTaskSchema),
+    ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._loaded = False
         self._load_state_lock = RLock()
-
-        self.add_endpoint(path="/load", func=self.load, schema=PipelineLoadTaskSchema)
-        self.add_endpoint(path="/unload", func=self.unload, schema=PipelineUnloadTaskSchema)
-        self.add_endpoint(path="/loaded", func=self.loaded, schema=PipelineLoadedTaskSchema)
 
     @property
     def is_loaded(self) -> bool:

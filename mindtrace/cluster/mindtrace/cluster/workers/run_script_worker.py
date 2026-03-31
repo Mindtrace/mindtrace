@@ -34,6 +34,7 @@ class RunScriptWorker(Worker):
                 commit=environment_config["git"].get("commit"),
                 working_dir=environment_config["git"].get("working_dir"),
                 project=environment_config["git"].get("project"),
+                depth=environment_config["git"].get("depth"),
             )
             self.working_dir = self.env_manager.setup()  # This handles dependency syncing
 

@@ -24,7 +24,7 @@ class TestMCPClientManagerInitialization:
 
 
 class TestMCPClientManagerConnect:
-    @patch("mindtrace.services.core.mcp_client_manager.Client")
+    @patch("fastmcp.Client")
     @patch.object(MyService, "build_url")
     def test_connect_uses_built_url_and_appends_mcp_path(self, mock_build_url, mock_client):
         mock_build_url.return_value = parse_url("http://example.com:9000/")
@@ -37,7 +37,7 @@ class TestMCPClientManagerConnect:
         mock_client.assert_called_once_with("http://example.com:9000/mcp-server/mcp")
         assert result is mock_client_instance
 
-    @patch("mindtrace.services.core.mcp_client_manager.Client")
+    @patch("fastmcp.Client")
     @patch.object(MyService, "build_url")
     def test_connect_with_default_url(self, mock_build_url, mock_client):
         mock_build_url.return_value = parse_url("http://default-host:8000")
@@ -51,7 +51,7 @@ class TestMCPClientManagerConnect:
 
 
 class TestMCPClientManagerLaunch:
-    @patch("mindtrace.services.core.mcp_client_manager.Client")
+    @patch("fastmcp.Client")
     @patch.object(MyService, "launch")
     def test_launch_returns_client_for_launched_service(self, mock_launch, mock_client):
         cm = Mock()

@@ -503,7 +503,7 @@ def test_launch_worker_with_delay(cluster_cm, node):
         )
 
     # Wait for the job to be processed
-    time.sleep(1)
+    time.sleep(0.3)
 
     job_result = cluster_cm.get_job_status(job_id=job.id)
     assert job_result.status == JobStatusEnum.RUNNING
@@ -699,7 +699,7 @@ def test_query_worker_status_multiple_workers(cluster_cm):
         assert result2.status == "queued"
 
         # Wait a bit for jobs to start
-        time.sleep(0.5)
+        time.sleep(0.2)
 
         # Query status of both workers during job execution
         worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
@@ -754,7 +754,7 @@ def test_query_worker_status_vs_get_worker_status(cluster_cm):
         assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to start
-        time.sleep(0.5)
+        time.sleep(0.2)
 
         # Compare status during job execution
         get_status = cluster_cm.get_worker_status(worker_id=worker_id)
@@ -803,7 +803,7 @@ def test_query_worker_status_real_time_updates(cluster_cm):
         assert result.status == JobStatusEnum.QUEUED
 
         # Wait for job to start
-        time.sleep(0.5)
+        time.sleep(0.2)
 
         # Check status during job execution (should be RUNNING)
         worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
@@ -902,7 +902,7 @@ class ErrorWorker(EchoWorker):
     def _run(self, job_dict: dict) -> dict:
         print(f"ErrorWorker running job: {job_dict}")
         if job_dict.get("should_error", False):
-            time.sleep(0.5)
+            time.sleep(0.05)
             return {"status": "error", "output": {"error": "Job encountered an error"}}
         return super()._run(job_dict)
 

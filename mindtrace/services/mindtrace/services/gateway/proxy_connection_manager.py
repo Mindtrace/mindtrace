@@ -36,20 +36,17 @@ class ProxyConnectionManager:
         the original connection manager.
         """
         # Try to access the service endpoints through the connection manager
-        # The connection manager should have been created from a service with _endpoints
         if hasattr(original_cm.__class__, "_service_class"):
-            # If the CM class stores the service class, get endpoints from there
             service_cls = original_cm.__class__._service_class
-            temp_service = service_cls()
-            return temp_service._endpoints
+            class_endpoints = getattr(service_cls, "__endpoints__", {})
+            return {path: spec.schema for path, spec in class_endpoints.items()}
         elif hasattr(original_cm.__class__, "_service_endpoints"):
             # If the CM class stores the endpoints directly
             return original_cm.__class__._service_endpoints
         elif hasattr(original_cm, "_service_class"):
-            # If the CM instance stores the service class, get endpoints from there
             service_cls = original_cm._service_class
-            temp_service = service_cls()
-            return temp_service._endpoints
+            class_endpoints = getattr(service_cls, "__endpoints__", {})
+            return {path: spec.schema for path, spec in class_endpoints.items()}
         elif hasattr(original_cm, "_service_endpoints"):
             # If the CM instance stores the endpoints directly
             return original_cm._service_endpoints

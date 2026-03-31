@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import discord
 from urllib3.util.url import Url
 
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 from mindtrace.services.discord.discord_client import DiscordClient
 from mindtrace.services.discord.types import (
     DiscordCommandInput,
@@ -35,6 +35,17 @@ class DiscordService(Service):
     - Integration with Mindtrace infrastructure
     """
 
+    _endpoint_specs = [
+        EndpointSpec(
+            path="discord.execute",
+            method_name="execute_command",
+            schema=DiscordCommandSchema(),
+            autolog_kwargs={"log_level": logging.INFO},
+        ),
+        EndpointSpec(path="discord.status", method_name="get_bot_status", schema=DiscordStatusSchema()),
+        EndpointSpec(path="discord.commands", method_name="get_commands", schema=DiscordCommandsSchema()),
+    ]
+
     def __init__(self, *, token: str | None = None, intents: Optional[Any] = None, **kwargs):
         """Initialize the Discord service.
 
@@ -55,9 +66,6 @@ class DiscordService(Service):
         # Bot task for running in background
         self._bot_task: Optional[asyncio.Task] = None
 
-        # Add Discord-specific endpoints
-        self._add_discord_endpoints()
-
         # Override the FastAPI lifespan to include Discord bot startup
         self._setup_lifespan()
 
@@ -77,23 +85,6 @@ class DiscordService(Service):
 
         # Replace the app's lifespan
         self.app.router.lifespan_context = discord_lifespan
-
-    def _add_discord_endpoints(self):
-        """Add Discord-specific endpoints to the service."""
-
-        # Add command execution endpoint
-        self.add_endpoint(
-            path="discord.execute",
-            func=self.execute_command,
-            schema=DiscordCommandSchema(),
-            autolog_kwargs={"log_level": logging.INFO},
-        )
-
-        # Add bot status endpoint
-        self.add_endpoint(path="discord.status", func=self.get_bot_status, schema=DiscordStatusSchema())
-
-        # Add command list endpoint
-        self.add_endpoint(path="discord.commands", func=self.get_commands, schema=DiscordCommandsSchema())
 
     async def startup(self):
         """Startup the Discord bot during service initialization."""

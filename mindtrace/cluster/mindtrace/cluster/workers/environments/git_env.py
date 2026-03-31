@@ -20,6 +20,7 @@ class GitEnvironment(Mindtrace):
         commit: Optional[str] = None,
         working_dir: Optional[str] = None,
         project: Optional[str] = None,
+        depth: Optional[int] = None,
     ):
         super().__init__()
         self.repo_url = repo_url
@@ -27,6 +28,7 @@ class GitEnvironment(Mindtrace):
         self.commit = commit
         self.working_dir = working_dir
         self.project = project
+        self.depth = depth
         self.temp_dir: str = None  # type: ignore
         self.repo = None
         allowed_owners_env = os.environ.get("GIT_ALLOWED_OWNERS")
@@ -139,6 +141,9 @@ class GitEnvironment(Mindtrace):
         """
         self.logger.info(f"Cloning repo {self.repo_url}")
         token = self._get_token()
+        clone_kwargs = {}
+        if self.depth is not None:
+            clone_kwargs["depth"] = self.depth
         try:
             self._remove_git_auth_methods()
             if token:
@@ -148,10 +153,10 @@ class GitEnvironment(Mindtrace):
                 # used by tools like `uv` for dependency fetches) are rewritten
                 # to include the fine-grained token.
                 self._configure_git_token(token)
-                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
+                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir, **clone_kwargs)
                 self.logger.info("Successfully cloned repository with token")
             else:
-                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir)
+                self.repo = git.Repo.clone_from(self.repo_url, self.temp_dir, **clone_kwargs)
                 self.logger.info("Successfully cloned repository without auth token")
 
         except git.GitCommandError as e:

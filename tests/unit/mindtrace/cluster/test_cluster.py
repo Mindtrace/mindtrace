@@ -463,6 +463,7 @@ def test_register_worker_type(cluster_manager):
             git_branch=None,
             git_commit=None,
             git_working_dir=None,
+            git_depth=None,
         )
         # Verify worker was saved
         mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
@@ -494,6 +495,7 @@ def test_register_worker_type_with_default_materializer(cluster_manager):
             git_branch=None,
             git_commit=None,
             git_working_dir=None,
+            git_depth=None,
         )
         # Verify worker was saved
         mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
@@ -527,6 +529,7 @@ def test_register_worker_type_with_job_schema_name(cluster_manager):
             git_branch=None,
             git_commit=None,
             git_working_dir=None,
+            git_depth=None,
         )
         mock_save.assert_called_once_with("worker:test_worker", mock_proxy_worker, on_conflict=OnConflict.OVERWRITE)
 

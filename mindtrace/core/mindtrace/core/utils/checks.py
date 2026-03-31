@@ -1,6 +1,9 @@
-from typing import Iterable
+from __future__ import annotations
 
-from urllib3.util.url import Url, parse_url
+from typing import TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:
+    from urllib3.util.url import Url
 
 
 def ifnone[T1, T2](val: T1 | None, default: T2) -> T1 | T2:
@@ -23,6 +26,8 @@ def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     Returns:
         The Url object.
     """
+    from urllib3.util.url import Url, parse_url
+
     return ifnone(
         parse_url(url) if isinstance(url, str) else url, parse_url(default) if isinstance(default, str) else default
     )

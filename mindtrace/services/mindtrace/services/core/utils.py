@@ -57,48 +57,6 @@ def add_endpoint(app, path, self: Optional["Service"], **kwargs):
     return wrapper
 
 
-def register_connection_manager(connection_manager: Type["ConnectionManager"]):
-    """Register a connection manager for a server class.
-
-    This decorator is used to register a connection manager for a server class. The connection manager is used to
-    communicate with the server. The connection manager must be a subclass of ConnectionManager.
-
-    Args:
-        connection_manager: The connection manager class.
-
-    Example::
-
-        import requests
-        from mindtrace.services import ConnectionManager, Service
-
-        class MyConnectionManager(ConnectionManager):
-            def __init__(self, url):
-                super().__init__(url)
-
-            def add(arg1, arg2):
-                response = requests.request("POST", str(self.url) + "add", json={"arg1": arg1, "arg2": arg2})
-                return json.loads(response.content)["sum"]
-
-        @register_connection_manager(MyConnectionManager)
-        class MyService(Service):
-            def __init__(self):
-                super().__init__()
-                self.add_endpoint("add", self.add)
-
-            def add(self, arg1, arg2):
-                return {"sum": arg1 + arg2}
-
-        cm = MyService.launch()  # Returns a MyConnectionManager instance, NOT a MyServer instance
-        sum = cm.add(1, 2)  # Calls add method in MyConnectionManager
-
-    """
-
-    def wrapper(server_class):
-        server_class._client_interface = connection_manager
-        return server_class
-
-    return wrapper
-
 
 def generate_connection_manager(
     service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
@@ -118,15 +76,16 @@ def generate_connection_manager(
     class ServiceConnectionManager(ConnectionManager):
         pass  # Methods will be added dynamically
 
-    # Create a temporary service instance to get the endpoints
-    temp_service = service_cls(live_service=False)
+    # Read endpoint schemas from class-level specs (no instance needed).
+    class_endpoints = getattr(service_cls, "__endpoints__", {})
+    endpoints_schemas = {path: spec.schema for path, spec in class_endpoints.items()}
 
     # Store service class and endpoints
     ServiceConnectionManager._service_class = service_cls
-    ServiceConnectionManager._service_endpoints = temp_service._endpoints
+    ServiceConnectionManager._service_endpoints = endpoints_schemas
 
     # Dynamically define one method per endpoint
-    for endpoint_name, endpoint in temp_service._endpoints.items():
+    for endpoint_name, endpoint in endpoints_schemas.items():
         # Skip if this would override an existing method in ConnectionManager
         if endpoint_name in protected_methods:
             continue

@@ -29,7 +29,7 @@ from mindtrace.models.serving.schemas import (
     info_task,
     predict_task,
 )
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 
 # ---------------------------------------------------------------------------
 # Optional torch import -- torch is heavy and may not be installed in every
@@ -78,6 +78,11 @@ class ModelService(Service):
     # (e.g. "detection", "classification", "segmentation").
     _task: str = "generic"
 
+    _endpoint_specs = [
+        EndpointSpec(path="predict", method_name="_handle_predict", schema=predict_task, as_tool=True),
+        EndpointSpec(path="info", method_name="_handle_info", schema=info_task),
+    ]
+
     def __init__(
         self,
         *,
@@ -108,7 +113,6 @@ class ModelService(Service):
                 registry construction are skipped.
             **kwargs: Forwarded to :class:`mindtrace.services.Service`.
         """
-        # Pass live_service through so Service.__init__ receives it too.
         super().__init__(live_service=live_service, **kwargs)
 
         self.model_name: str = model_name
@@ -118,17 +122,6 @@ class ModelService(Service):
 
         # In non-live mode (endpoint discovery only), skip heavy init.
         if not live_service:
-            self.add_endpoint(
-                path="predict",
-                func=self._handle_predict,
-                schema=predict_task,
-                as_tool=True,
-            )
-            self.add_endpoint(
-                path="info",
-                func=self._handle_info,
-                schema=info_task,
-            )
             return
 
         # When launched as a subprocess via Service.launch(), registry objects
@@ -182,19 +175,6 @@ class ModelService(Service):
         # Load model weights / artefacts.
         self.load_model()
         self.logger.info("Model loaded successfully on %s.", self.device)
-
-        # Register endpoints.
-        self.add_endpoint(
-            path="predict",
-            func=self._handle_predict,
-            schema=predict_task,
-            as_tool=True,
-        )
-        self.add_endpoint(
-            path="info",
-            func=self._handle_info,
-            schema=info_task,
-        )
 
     # ------------------------------------------------------------------
     # Abstract interface

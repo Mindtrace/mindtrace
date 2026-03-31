@@ -35,6 +35,7 @@ def test_start_worker_from_git():
             worker_params={},
             git_repo_url=GIT_REPO_URL,
             git_branch=GIT_REPO_BRANCH,
+            git_depth=1,
             job_type="echo",
         )
 
@@ -90,7 +91,7 @@ def test_start_worker_from_git():
                     f"Job failed before starting. Status: {status}. "
                     f"This indicates the worker may have crashed, the job was rejected, or there's a job processing error."
                 )
-            time.sleep(0.5)
+            time.sleep(0.1)
             status = cluster_manager.get_job_status(job_id=job.id)
 
         print(f"Job status after waiting for running: {status}")
@@ -121,7 +122,7 @@ def test_start_worker_from_git():
             and final_status.status != "failed"
             and (time.time() - start_time) < max_wait_for_completion
         ):
-            time.sleep(0.5)
+            time.sleep(0.1)
             final_status = cluster_manager.get_job_status(job_id=job.id)
 
             # Check if job is stuck in running (early failure detection - fail fast if worker is dead)

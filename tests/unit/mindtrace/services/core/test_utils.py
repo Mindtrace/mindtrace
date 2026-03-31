@@ -5,10 +5,10 @@ from fastapi import HTTPException
 from urllib3.util.url import parse_url
 
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.endpoint_spec import EndpointSpec
 from mindtrace.services.core.utils import (
     add_endpoint,
     generate_connection_manager,
-    register_connection_manager,
 )
 
 
@@ -106,60 +106,6 @@ class TestAddEndpoint:
         assert len(mock_server._endpoints) == 3
 
 
-class TestRegisterConnectionManager:
-    """Test suite for the register_connection_manager decorator."""
-
-    def test_register_connection_manager_basic(self):
-        """Test basic functionality of register_connection_manager."""
-        # Mock connection manager
-        mock_connection_manager = Mock()
-
-        # Apply decorator
-        @register_connection_manager(mock_connection_manager)
-        class TestServer:
-            pass
-
-        # Verify the connection manager was registered
-        assert hasattr(TestServer, "_client_interface")
-        assert TestServer._client_interface == mock_connection_manager
-
-    def test_register_connection_manager_preserves_class(self):
-        """Test that register_connection_manager returns the original class."""
-        mock_connection_manager = Mock()
-
-        class OriginalServer:
-            def __init__(self):
-                self.name = "test_server"
-
-            def test_method(self):
-                return "test"
-
-        # Apply decorator
-        DecoratedServer = register_connection_manager(mock_connection_manager)(OriginalServer)
-
-        # Verify it's the same class with added attribute
-        assert DecoratedServer == OriginalServer
-        assert DecoratedServer._client_interface == mock_connection_manager
-
-        # Verify original functionality is preserved
-        instance = DecoratedServer()
-        assert instance.name == "test_server"
-        assert instance.test_method() == "test"
-
-    def test_register_connection_manager_multiple_decorators(self):
-        """Test applying register_connection_manager multiple times (last one wins)."""
-        mock_cm1 = Mock()
-        mock_cm2 = Mock()
-
-        @register_connection_manager(mock_cm2)
-        @register_connection_manager(mock_cm1)
-        class TestServer:
-            pass
-
-        # The last decorator applied should win
-        assert TestServer._client_interface == mock_cm2
-
-
 class TestGenerateConnectionManager:
     """Test suite for the generate_connection_manager function."""
 
@@ -174,14 +120,18 @@ class TestGenerateConnectionManager:
         mock_endpoint2.input_schema = None
         mock_endpoint2.output_schema = Mock()
 
+        mock_service_class = Mock()
+        mock_service_class.__name__ = "TestService"
+        mock_service_class.__endpoints__ = {
+            "test_endpoint": EndpointSpec(path="test_endpoint", method_name="test_endpoint", schema=mock_endpoint1),
+            "no_input_endpoint": EndpointSpec(path="no_input_endpoint", method_name="no_input_endpoint", schema=mock_endpoint2),
+        }
+
         mock_service = Mock()
         mock_service._endpoints = {
             "test_endpoint": mock_endpoint1,
             "no_input_endpoint": mock_endpoint2,
         }
-
-        mock_service_class = Mock()
-        mock_service_class.__name__ = "TestService"
         mock_service_class.return_value = mock_service
 
         return mock_service_class, mock_service, mock_endpoint1, mock_endpoint2
@@ -198,8 +148,8 @@ class TestGenerateConnectionManager:
         # Verify it inherits from ConnectionManager
         assert issubclass(ConnectionManagerClass, ConnectionManager)
 
-        # Verify service instance was created
-        mock_service_class.assert_called_once()
+        # Verify service class was NOT instantiated (reads __endpoints__ directly)
+        mock_service_class.assert_not_called()
 
     def test_generate_connection_manager_method_creation(self, mock_service_class):
         """Test that methods are created for each endpoint."""
@@ -233,13 +183,10 @@ class TestGenerateConnectionManager:
         """Test that default protected methods are not overridden."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
 
-        # Add protected methods to endpoints
-        mock_service._endpoints = {
-            "shutdown": mock_endpoint1,
-            "ashutdown": mock_endpoint1,
-            "status": mock_endpoint1,
-            "astatus": mock_endpoint1,
-            "safe_endpoint": mock_endpoint1,
+        # Override __endpoints__ with protected + safe endpoints
+        mock_service_class.__endpoints__ = {
+            name: EndpointSpec(path=name, method_name=name, schema=mock_endpoint1)
+            for name in ["shutdown", "ashutdown", "status", "astatus", "safe_endpoint"]
         }
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
@@ -253,9 +200,9 @@ class TestGenerateConnectionManager:
         """Test custom protected methods parameter."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
 
-        mock_service._endpoints = {
-            "custom_protected": mock_endpoint1,
-            "safe_endpoint": mock_endpoint1,
+        mock_service_class.__endpoints__ = {
+            name: EndpointSpec(path=name, method_name=name, schema=mock_endpoint1)
+            for name in ["custom_protected", "safe_endpoint"]
         }
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class, protected_methods=["custom_protected"])
@@ -776,22 +723,20 @@ class TestUtilsIntegration:
             def __init__(self, url):
                 self.url = url
 
-        # Create mock service class with decorator
-        @register_connection_manager(MockConnectionManager)
+        # Create mock service class with explicit registration
         class MockService:
             def __init__(self):
                 self._endpoints = {}
 
+        MockService._client_interface = MockConnectionManager
+
         # Verify registration worked
-        assert hasattr(MockService, "_client_interface")
         assert MockService._client_interface == MockConnectionManager
 
         # Test that we can generate a connection manager using mock
         mock_service_cls = Mock()
         mock_service_cls.__name__ = "MockService"
-        mock_service_instance = Mock()
-        mock_service_instance._endpoints = {}
-        mock_service_cls.return_value = mock_service_instance
+        mock_service_cls.__endpoints__ = {}
 
         GeneratedConnectionManager = generate_connection_manager(mock_service_cls)
 

@@ -3,7 +3,7 @@ import time
 from pydantic import BaseModel
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import Service
+from mindtrace.services import EndpointSpec, Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
 
 
@@ -20,6 +20,10 @@ echo_task = TaskSchema(name="echo", input_schema=EchoInput, output_schema=EchoOu
 
 
 class EchoService(Service):
+    _endpoint_specs = [
+        EndpointSpec(path="echo", method_name="echo", schema=echo_task),
+    ]
+
     def __init__(self, *args, use_structlog=True, **kwargs):
         # Add use_structlog to kwargs to pass to parent Mindtrace class
         kwargs["use_structlog"] = use_structlog
@@ -31,7 +35,6 @@ class EchoService(Service):
             add_request_id_header=True,
             logger=self.logger,
         )
-        self.add_endpoint("echo", self.echo, schema=echo_task)
 
     def echo(self, payload: EchoInput) -> EchoOutput:
         if payload.delay > 0:

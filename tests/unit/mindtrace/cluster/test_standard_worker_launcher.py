@@ -33,6 +33,7 @@ class TestProxyWorker:
             "git_commit": None,
             "git_working_dir": None,
             "git_project": None,
+            "git_depth": None,
         }
         assert result == expected
 
@@ -96,6 +97,7 @@ class TestStandardWorkerLauncher:
             "git_commit": None,
             "git_working_dir": None,
             "git_project": None,
+            "git_depth": None,
         }
         assert saved_data == expected_data
 
@@ -260,6 +262,7 @@ class TestStandardWorkerLauncher:
                 commit="abc123",
                 working_dir="/app",
                 project="our-project",
+                depth=None,
             )
 
             # Verify environment setup was called
@@ -509,6 +512,7 @@ class TestStandardWorkerLauncher:
                 commit=None,
                 working_dir=None,
                 project=None,
+                depth=None,
             )
 
             # Verify the result

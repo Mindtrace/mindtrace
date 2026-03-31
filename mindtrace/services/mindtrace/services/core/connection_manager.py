@@ -1,17 +1,20 @@
 """Client-side helper class for communicating with any ServerBase server."""
 
+from __future__ import annotations
+
 import asyncio
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 from uuid import UUID
 
-import httpx
 import requests
-from fastapi import HTTPException
-from fastmcp import Client
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, Timeout, ifnone
 from mindtrace.services.core.types import ServerStatus, ShutdownOutput, StatusOutput
+
+if TYPE_CHECKING:
+    from fastmcp import Client
 
 
 class ConnectionManager(Mindtrace):
@@ -51,6 +54,8 @@ class ConnectionManager(Mindtrace):
         # Send the shutdown request
         response = requests.request("POST", urljoin(str(self.url), "shutdown"), timeout=60)
         if response.status_code != 200:
+            from fastapi import HTTPException
+
             raise HTTPException(response.status_code, response.content)
 
         # If not blocking, return immediately after sending the shutdown request
@@ -117,6 +122,8 @@ class ConnectionManager(Mindtrace):
         Returns:
             StatusOutput with the current server status.
         """
+        import httpx
+
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(urljoin(str(self.url), "status"))
@@ -165,5 +172,7 @@ class ConnectionManager(Mindtrace):
             # Use client for MCP protocol interactions
         """
         if self._mcp_client is None:
+            from fastmcp import Client
+
             self._mcp_client = Client(self.mcp_url)
         return self._mcp_client
