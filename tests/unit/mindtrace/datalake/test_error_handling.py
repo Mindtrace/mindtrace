@@ -11,8 +11,15 @@ from mindtrace.datalake.datum import Datum
 
 
 def create_mock_datum(
-    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, contract="default",
-    project_id="test_project", line_id="test_line"
+    data=None,
+    registry_uri=None,
+    registry_key=None,
+    derived_from=None,
+    metadata=None,
+    datum_id=None,
+    contract="default",
+    project_id="test_project",
+    line_id="test_line",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:

@@ -7,8 +7,8 @@ import pytest
 from beanie import PydanticObjectId
 from datasets import Image, IterableDataset, List, Sequence, Value
 
-from mindtrace.datalake.datum import Datum
 from mindtrace.datalake.dataset import Dataset, contracts_to_hf_type, gen
+from mindtrace.datalake.datum import Datum
 
 
 def create_mock_dataset(
@@ -47,7 +47,9 @@ def create_mock_dataset(
     return mock_dataset
 
 
-def create_mock_datum(data=None, contract="default", datum_id=None, added_at=None, project_id="test_project", line_id="test_line"):
+def create_mock_datum(
+    data=None, contract="default", datum_id=None, added_at=None, project_id="test_project", line_id="test_line"
+):
     """Create a mock Datum instance for testing."""
     if datum_id is None:
         datum_id = PydanticObjectId()
