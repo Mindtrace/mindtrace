@@ -186,3 +186,6 @@ assets/external/
 
 # Mac stuff
 .DS_Store
+
+# root uv.lock file
+/uv.lock
