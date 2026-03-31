@@ -549,6 +549,86 @@ These must remain distinct.
 
 The following entities define the proposed canonical V3 model.
 
+```mermaid
+erDiagram
+    STORAGE_REF ||--|| ASSET : "locates"
+    ASSET ||--o{ DATUM : "used by role refs"
+    DATASET_VERSION ||--o{ DATUM : "manifest contains"
+    DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
+    ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "contains"
+    DATUM ||--o{ ANNOTATION_RECORD : "annotated by"
+    ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
+    DATASET_VERSION ||--o| DATASET_VERSION : "derived from"
+
+    STORAGE_REF {
+        string mount
+        string name
+        string version
+        string qualified_key
+    }
+
+    ASSET {
+        string asset_id
+        string kind
+        string media_type
+        string checksum
+        int size_bytes
+    }
+
+    DATUM {
+        string datum_id
+        string dataset_version_id
+        string split
+        json asset_refs
+        json metadata
+    }
+
+    ANNOTATION_SOURCE {
+        string type
+        string name
+        string version
+    }
+
+    ANNOTATION_SET {
+        string annotation_set_id
+        string dataset_version_id
+        string name
+        string purpose
+        string source_type
+        string status
+    }
+
+    ANNOTATION_RECORD {
+        string annotation_id
+        string datum_id
+        string annotation_set_id
+        string kind
+        string label
+        int label_id
+        float score
+        json geometry
+        json attributes
+    }
+
+    DATASET_VERSION {
+        string dataset_version_id
+        string dataset_name
+        string version
+        string source_dataset_version_id
+        json manifest
+    }
+```
+
+Relationship summary:
+
+- `StorageRef` describes where a payload lives physically.
+- `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`.
+- `Datum` is the unit of dataset membership and references one or more `Asset`s by role.
+- `AnnotationSet` groups related annotations, often by source or purpose.
+- `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
+- `AnnotationSource` captures where an annotation came from.
+- `DatasetVersion` is an immutable dataset view over datums, annotation sets, and provenance from earlier versions.
+
 ### 1. `StorageRef`
 
 A reference to a stored payload object.
