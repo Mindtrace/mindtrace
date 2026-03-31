@@ -76,6 +76,7 @@ PACKAGES=(
     "jobs"
     "models"
     "automation"
+    "agents"
     "ui"
 )
 

@@ -4,7 +4,7 @@ Thanks for your interest in contributing to Mindtrace!
 
 Mindtrace is a modular project, so contributions should respect module boundaries and dependency direction. The main modules include:
 
-`apps`, `automation`, `cluster`, `core`, `database`, `datalake`, `hardware`, `jobs`, `models`, `registry`, `services`, `storage`, and `ui`.
+`apps`, `agents`, `automation`, `cluster`, `core`, `database`, `datalake`, `hardware`, `jobs`, `models`, `registry`, `services`, `storage`, and `ui`.
 
 ## Before You Start
 
