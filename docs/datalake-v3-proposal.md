@@ -755,14 +755,14 @@ erDiagram
     }
 
     PROJECT {
-        string project_id
+        string collection_id
         string name
         string status
     }
 
     PROJECT_ITEM {
         string project_item_id
-        string project_id
+        string collection_id
         string asset_id
         string split
         string status
@@ -824,9 +824,9 @@ Relationship summary:
 
 - `StorageRef` describes where a payload lives physically.
 - `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`.
-- `Project` is a workspace/context that uses assets without necessarily owning the underlying payload bytes.
-- `ProjectItem` is the membership record connecting a project to an asset.
-- `AssetOwnership` records why an asset should continue to be retained independently of project membership.
+- `Collection` is a workspace/context that uses assets without necessarily owning the underlying payload bytes.
+- `CollectionItem` is the membership record connecting a collection to an asset.
+- `AssetRetention` records why an asset should continue to be retained independently of collection membership.
 - `Datum` is the unit of dataset membership and references one or more `Asset`s by role.
 - `AnnotationSet` groups related annotations, often by source or purpose.
 - `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
@@ -836,30 +836,28 @@ Relationship summary:
 
 </details>
 
-### Canonical entity decision table
+### Canonical entity summary table
 
-| Entity | Keep? | Canonical? | Why | Simplify / alternative |
-|---|---|---|---|---|
-| `Project` | Yes | Likely yes | Needed if projects/workspaces are first-class and can share assets while carrying project-scoped context. | If product-neutral naming is preferred later, rename to `Workspace` or `Collection`. |
-| `ProjectItem` | Yes | Yes if `Project` stays | Needed to separate project membership from asset existence and lifecycle. | Could be renamed to `ProjectAssetMembership` if more explicit naming is preferred. |
-| `AssetOwnership` | Tentatively yes | Maybe | Useful for retention/stewardship semantics beyond simple membership. | Could later be simplified into `AssetRetention` or a lighter retention/pinning model if single ownership is too strong. |
-| `StorageRef` | Yes | Yes | Essential separation between logical asset identity and physical storage location. | No obvious simplification recommended. |
-| `Asset` | Yes | Yes | Canonical payload-bearing object; foundational to the whole model. | No obvious simplification recommended. |
-| `AnnotationSource` | Yes | Probably | Gives structured provenance for labels and predictions. | Could be embedded as a structured sub-object on `AnnotationRecord` if a smaller schema is preferred. |
-| `AnnotationRecord` | Yes | Yes | Core canonical unit of labeling/annotation. | No obvious simplification recommended. |
-| `AnnotationSet` | Yes | Yes | Needed to group records by source, purpose, review state, or version-like context. | No obvious simplification recommended. |
-| `Datum` | Yes | Yes, but narrowly scoped | Useful as the reusable unit of dataset membership/composition. | Keep narrow; do not let it become a generic junk drawer for every stored thing. |
-| `DatasetVersion` | Yes | Yes | Canonical immutable dataset view/version. | No obvious simplification recommended. |
+| Entity | Description |
+|---|---|
+| `Collection` | A logical workspace or organizational boundary that groups assets and related work without implying ownership of the underlying payload bytes. |
+| `CollectionItem` | A membership record connecting a collection to an asset, allowing collections to share assets without coupling membership to deletion semantics. |
+| `AssetRetention` | A retention/stewardship record describing why an asset should continue to exist independently of current collection membership. |
+| `StorageRef` | A physical storage reference describing where a payload lives in backing storage. |
+| `Asset` | The canonical logical record for a payload-bearing object such as an image, mask, artifact, or embedding. |
+| `AnnotationSource` | A structured, queryable provenance model describing where an annotation came from, such as a human annotator, model, or derived process. |
+| `AnnotationRecord` | The atomic unit of annotation/label persistence. |
+| `AnnotationSet` | A grouping of related annotation records, typically by source, purpose, or review state. |
+| `Datum` | The reusable unit of dataset membership/composition, linking assets, metadata, and annotations. |
+| `DatasetVersion` | An immutable dataset view/version built over canonical datums, assets, and annotation sets. |
 
-The main simplification applied here is that `DatasetBuilder` is no longer treated as a canonical entity. It is instead treated as a separate helper/API concept.
-
-### 1. `Project`
+### 1. `Collection`
 
 A logical workspace, labeling scope, or collaboration boundary.
 
 ```python
-Project:
-    project_id: str
+Collection:
+    collection_id: str
     name: str
     description: str | None = None
     status: Literal["active", "archived", "deleted"] = "active"
@@ -871,18 +869,18 @@ Project:
 
 Notes:
 
-- A project organizes work over assets.
-- A project should not be treated as the underlying owner of payload bytes by default.
-- Project-local configuration, workflow metadata, and collaboration state can attach here or to nearby entities.
+- A collection organizes work over assets.
+- A collection should not be treated as the underlying owner of payload bytes by default.
+- Collection-local configuration, workflow metadata, and collaboration state can attach here or to nearby entities.
 
-### 2. `ProjectItem`
+### 2. `CollectionItem`
 
-A membership record connecting a project to an asset.
+A membership record connecting a collection to an asset.
 
 ```python
-ProjectItem:
+CollectionItem:
     project_item_id: str
-    project_id: str
+    collection_id: str
     asset_id: str
     split: Literal["train", "val", "test"] | None = None
     status: Literal["active", "hidden", "removed"] = "active"
@@ -893,20 +891,20 @@ ProjectItem:
 
 Notes:
 
-- `ProjectItem` answers the question: “is this asset part of this project?”
-- Removing an asset from a project should usually remove this record, not delete the underlying asset.
+- `CollectionItem` answers the question: “is this asset part of this project?”
+- Removing an asset from a collection should usually remove this record, not delete the underlying asset.
 - This entity is central to avoiding naive destructive reference-count semantics.
 
-### 3. `AssetOwnership`
+### 3. `AssetRetention`
 
 A retention/stewardship record describing why an asset should continue to exist.
 
 ```python
-AssetOwnership:
+AssetRetention:
     ownership_id: str
     asset_id: str
     owner_type: Literal[
-        "project_import",
+        "collection_import",
         "dataset_version",
         "global_corpus",
         "job_run",
@@ -923,8 +921,8 @@ AssetOwnership:
 Notes:
 
 - This is a better fit than a single hard owner field.
-- It allows an asset to remain alive even after one project removes it, so long as another project, dataset version, job result, or durable policy still retains it.
-- In V3, asset deletion should be governed by the absence of `ProjectItem` memberships and `AssetOwnership` records, not by project deletion alone.
+- It allows an asset to remain alive even after one collection removes it, so long as another project, dataset version, job result, or durable policy still retains it.
+- In V3, asset deletion should be governed by the absence of `CollectionItem` memberships and `AssetRetention` records, not by collection deletion alone.
 
 ### 4. `StorageRef`
 
@@ -1202,7 +1200,7 @@ Example request:
   "content_type": "image/jpeg",
   "metadata": {
     "filename": "foo.jpg",
-    "project_id": "p1"
+    "collection_id": "p1"
   },
   "on_conflict": "overwrite"
 }
@@ -1243,7 +1241,7 @@ Example request:
   "size_bytes": 12345,
   "metadata": {
     "filename": "foo.jpg",
-    "project_id": "p1"
+    "collection_id": "p1"
   }
 }
 ```
@@ -1404,7 +1402,7 @@ The table below captures the recommended mapping.
 | V1 output type | Meaning in V1 | Recommended V3 representation | Notes |
 |---|---|---|---|
 | `classification` | Single class-style output | `AnnotationSet` + `AnnotationRecord(kind="classification")` | The annotation set captures source/purpose; each record stores the label and optional score/provenance. |
-| `regression` | Scalar numeric output | `AnnotationSet` + `AnnotationRecord(kind="regression")` **or** structured datum/project metadata, depending on domain semantics | If regression is part of the canonical label space, model it explicitly. If it is operational metadata, store it as structured metadata instead. |
+| `regression` | Scalar numeric output | `AnnotationSet` + `AnnotationRecord(kind="regression")` **or** structured datum/collection metadata, depending on domain semantics | If regression is part of the canonical label space, model it explicitly. If it is operational metadata, store it as structured metadata instead. |
 | `detection` | Bounding-box detection output with labels | `AnnotationSet` + `AnnotationRecord(kind="bbox")` | Each detected object should become an atomic bbox annotation record. |
 | `image_segmentation` | Mask-based image segmentation | `Asset(kind="mask")` + `AnnotationSet` + `AnnotationRecord(kind="mask")` | The mask payload should be stored as an asset, while the annotation record references it canonically. |
 | `pointcloud_segmentation` | Per-point segmentation/classification for point clouds | `AnnotationSet` + `AnnotationRecord(kind="pointcloud_segmentation")` **or** a dedicated pointcloud annotation entity if introduced | V3 should support this explicitly even if the first implementation uses a specialized annotation kind before a richer pointcloud model exists. |
@@ -1418,7 +1416,7 @@ To migrate V1 semantics into V3 cleanly:
 3. Keep provenance such as:
    - original task/output type
    - producing model or run
-   - source dataset/project context
+   - source dataset/collection context
 4. Treat legacy package outputs and caches as **derived/imported forms**, not as the canonical V3 persistence model.
 
 ### Immediate compatibility requirement
