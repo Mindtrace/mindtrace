@@ -323,11 +323,11 @@ The V2 direction proposed in this document keeps the strongest operational ideas
 
 ---
 
-## Strongest parts of the existing design
+## Strongest parts of the proposed V2 design
 
 ### 1. Split payload storage from metadata storage
 
-This is the strongest architectural decision in the current sketches.
+This is the strongest architectural decision in the proposed V2 design.
 
 - Payloads such as images, masks, artifacts, and exports belong in Registry / Store-backed object storage.
 - Structured metadata, manifests, and annotations belong in a database / ODM layer.
@@ -341,7 +341,7 @@ This enables:
 
 ### 2. `Datum` as the unit of dataset membership
 
-The idea that a dataset is composed of datums is strong and should be preserved.
+The idea that a dataset is composed of datums is strong and should be central to V2.
 
 A datum can point to one or more stored payloads while also carrying:
 
@@ -353,7 +353,7 @@ This supports reusable assets, derived datasets, and query-generated views witho
 
 ### 3. Immutable `Dataset` with mutable `DatasetBuilder`
 
-This is a very good modeling choice.
+This is a very good modeling choice for V2.
 
 - `Dataset` should represent an immutable view / version.
 - `DatasetBuilder` should represent a mutable changeset used to construct a new dataset version.
@@ -376,11 +376,11 @@ Supporting a native Mindtrace data model while providing conversion to / from Hu
 
 ---
 
-## Weak or ambiguous parts of the current sketches
+## Design risks and ambiguities to resolve in V2
 
 ### 1. Canonical annotations are mixed with task/job output classes
 
-The current sketches blur together:
+A key design risk is blurring together:
 
 - task-level result containers (`ImageDetectionAnnotation`, `SemanticSegmentationAnnotation`, etc.)
 - atomic persisted annotation records (one bbox, one mask, one classification label)
@@ -397,13 +397,13 @@ If that boundary remains fuzzy, metadata risks becoming a catch-all JSON blob.
 
 ### 3. `Datum.data` is too unconstrained
 
-The current idea of `data: dict[str, Archivable | str]` is flexible, but too vague as a canonical schema.
+A flexible `data: dict[str, Archivable | str]` style field is too vague as a canonical schema.
 
 The model needs a more explicit representation of payload-bearing assets and their roles.
 
 ### 4. Reference counting is mentioned but not clearly modeled
 
-The sketches suggest dataset deletion may decrement reference counts and garbage-collect payloads.
+One possible direction is for dataset deletion to decrement reference counts and garbage-collect payloads.
 
 That may be desirable long-term, but it is not yet sufficiently specified to be part of the initial V2 contract.
 
@@ -425,7 +425,7 @@ The Datalake API should expose structured declarative filters, while Python help
 
 ### 7. Version semantics need separation
 
-The design currently risks conflating:
+The V2 design must avoid conflating:
 
 - dataset version
 - payload object version
@@ -437,7 +437,7 @@ These must remain distinct.
 
 ## Canonical V2 entities
 
-The following entities preserve the spirit of the sketches while tightening the model.
+The following entities define the proposed canonical V2 model.
 
 ### 1. `StorageRef`
 
@@ -637,7 +637,7 @@ One of the most important semantic rules for V2 should be:
 
 > Dataset versions are immutable views over datum membership; assets and annotations are persisted separately and referenced by those views.
 
-This preserves the best part of the original design while keeping the data model normalized and extensible.
+This keeps the V2 data model normalized, extensible, and operationally practical.
 
 ---
 
