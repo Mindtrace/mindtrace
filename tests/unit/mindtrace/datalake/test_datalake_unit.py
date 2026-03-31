@@ -48,26 +48,16 @@ class TestDatalakeUnit:
     """Unit tests for the Datalake class."""
 
     @staticmethod
-    def _create_mock_backend_class(mock_database, mock_dataset_database):
-        """Helper to create a mock backend class that supports subscripting."""
+    def _dual_mongo_odm_side_effect(mock_datum_db, mock_dataset_db):
+        """Return a side_effect for MongoMindtraceODM: 1st call = datum DB, 2nd = dataset DB."""
+
         call_count = [0]
 
-        def mock_backend_factory(*args, **kwargs):
+        def factory(*args, **kwargs):
             call_count[0] += 1
-            if call_count[0] == 1:
-                return mock_database
-            else:
-                return mock_dataset_database
+            return mock_datum_db if call_count[0] == 1 else mock_dataset_db
 
-        class MockBackendMeta(type):
-            def __getitem__(cls, item):
-                return cls
-
-        class MockBackendClass(metaclass=MockBackendMeta):
-            def __new__(cls, *args, **kwargs):
-                return mock_backend_factory(*args, **kwargs)
-
-        return MockBackendClass
+        return factory
 
     @pytest.fixture
     def mock_database(self):
@@ -128,7 +118,10 @@ class TestDatalakeUnit:
                 self.project_id = project_id
                 self.line_id = line_id
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database)
+        db_patcher = patch(
+            "mindtrace.datalake.datalake.MongoMindtraceODM",
+            side_effect=self._dual_mongo_odm_side_effect(mock_database, mock_dataset_database),
+        )
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
@@ -136,8 +129,6 @@ class TestDatalakeUnit:
         registry_patcher.start()
         try:
             instance = Datalake("mongodb://test:27017", "test_db")
-            # Ensure dataset_database is properly set to the mock
-            instance.dataset_database = mock_dataset_database
             yield instance
         finally:
             datum_patcher.stop()
@@ -604,10 +595,11 @@ class TestDatalakeUnit:
         mock_dataset_database.get = AsyncMock()
         mock_dataset_database.find = AsyncMock()
 
-        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
-
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
+            patch(
+                "mindtrace.datalake.datalake.MongoMindtraceODM",
+                side_effect=self._dual_mongo_odm_side_effect(mock_database, mock_dataset_database),
+            ),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -619,6 +611,8 @@ class TestDatalakeUnit:
         # Verify the instance is properly initialized
         assert result.mongo_db_uri == mongo_db_uri
         assert result.mongo_db_name == mongo_db_name
+        assert result.datum_database == mock_database
+        assert result.dataset_database == mock_dataset_database
         # Verify initialize was called for both databases
         mock_database.initialize.assert_called_once()
         mock_dataset_database.initialize.assert_called_once()
@@ -659,10 +653,11 @@ class TestDatalakeUnit:
         mock_dataset_database.get = AsyncMock()
         mock_dataset_database.find = AsyncMock()
 
-        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
-
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
+            patch(
+                "mindtrace.datalake.datalake.MongoMindtraceODM",
+                side_effect=self._dual_mongo_odm_side_effect(mock_database, mock_dataset_database),
+            ),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -725,7 +720,10 @@ class TestDatalakeUnit:
                 return mock_dataset_database
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
+            patch(
+                "mindtrace.datalake.datalake.MongoMindtraceODM",
+                side_effect=mock_backend_factory,
+            ),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -772,10 +770,11 @@ class TestDatalakeUnit:
         mock_dataset_database.get = AsyncMock()
         mock_dataset_database.find = AsyncMock()
 
-        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
-
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
+            patch(
+                "mindtrace.datalake.datalake.MongoMindtraceODM",
+                side_effect=self._dual_mongo_odm_side_effect(mock_database, mock_dataset_database),
+            ),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -841,28 +840,24 @@ class TestDatalakeUnit:
         mock_dataset_database2.get = AsyncMock()
         mock_dataset_database2.find = AsyncMock()
 
-        # Track call count to return appropriate mocks for multiple instances
         call_count = [0]
 
         def mock_backend_factory(*args, **kwargs):
             call_count[0] += 1
-            if call_count[0] <= 2:
-                # First instance: first call = datum_db, second call = dataset_db
-                return mock_database if call_count[0] == 1 else mock_dataset_database1
-            else:
-                # Second instance: third call = datum_db, fourth call = dataset_db
-                return mock_database if call_count[0] == 3 else mock_dataset_database2
-
-        class MockBackendMeta(type):
-            def __getitem__(cls, item):
-                return cls
-
-        class MockBackendClass(metaclass=MockBackendMeta):
-            def __new__(cls, *args, **kwargs):
-                return mock_backend_factory(*args, **kwargs)
+            n = call_count[0]
+            if n == 1 or n == 3:
+                return mock_database
+            if n == 2:
+                return mock_dataset_database1
+            if n == 4:
+                return mock_dataset_database2
+            raise AssertionError(f"unexpected MongoMindtraceODM construction count {n}")
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODM", return_value=mock_database),
+            patch(
+                "mindtrace.datalake.datalake.MongoMindtraceODM",
+                side_effect=mock_backend_factory,
+            ),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):

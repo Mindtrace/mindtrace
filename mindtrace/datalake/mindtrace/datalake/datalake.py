@@ -52,7 +52,7 @@ class Datalake(Mindtrace):
             db_uri=self.mongo_db_uri,
         )
         self.registries: Dict[str, Registry] = {}
-        self.dataset_database: MongoMindtraceODMBackend[Dataset] = MongoMindtraceODMBackend[Dataset](
+        self.dataset_database: MongoMindtraceODM[Dataset] = MongoMindtraceODM(
             model_cls=Dataset,
             db_name=self.mongo_db_name,
             db_uri=self.mongo_db_uri,
