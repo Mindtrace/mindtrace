@@ -1,4 +1,4 @@
-# Datalake v1 Proposal
+# Datalake V2 Proposal
 
 ## Summary
 
@@ -25,21 +25,21 @@ This design is intended to be a reusable Mindtrace module rather than an applica
 - Preserve immutable dataset-version semantics.
 - Support query-generated dataset views.
 - Support both Mindtrace-native datasets and HuggingFace dataset interoperability.
-- Keep the v1 API small enough to implement without building the entire future platform at once.
+- Keep the initial V2 API small enough to implement without building the entire future platform at once.
 
 ## Non-goals
 
-- Full enterprise data catalog in v1.
-- Full lineage graph and lifecycle management in v1.
+- Full enterprise data catalog in the initial V2 implementation.
+- Full lineage graph and lifecycle management in the initial V2 implementation.
 - Arbitrary Python-callable query execution over RPC.
-- Fully automatic reference-counted garbage collection across all stored objects in v1.
+- Fully automatic reference-counted garbage collection across all stored objects in the initial V2 implementation.
 - Replacing every existing application-level workflow with Datalake on day one.
 
 ---
 
 ## Review of the previous `mtrix` Datalake
 
-The previous `mtrix` package included a `datalake` module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary.
+The previous `mtrix` package included a `datalake` module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary. In this document, the previous `mtrix` Datalake is referred to as **V1**, while the current Mindtrace design and implementation direction is referred to as **V2**.
 
 ### What the previous Datalake was
 
@@ -251,9 +251,9 @@ The old system is optimized for one specific representation: a dataset package t
 
 A long-lived datalake should let assets and annotations have stable logical identity independent of the current filesystem or object-store materialization. The previous design does not fully achieve that.
 
-### Why a V2 must be built
+### Why V2 must be built
 
-A V2 is needed because the next Datalake should be more than a dataset shipping system. It needs to become a canonical persistence and access layer for Mindtrace data.
+V2 is needed because the next Datalake should be more than a dataset shipping system. It needs to become a canonical persistence and access layer for Mindtrace data.
 
 Concretely, V2 must support:
 
@@ -264,11 +264,11 @@ Concretely, V2 must support:
 - queryable datums and annotation sets
 - export/package formats as derived representations rather than the canonical source of truth
 
-The old `mtrix` Datalake is a useful predecessor, but it is not sufficient as the long-term foundation.
+The V1 `mtrix` Datalake is a useful predecessor, but it is not sufficient as the long-term foundation for V2.
 
 ### What V2 needs that the previous design did not have
 
-The proposed V2 direction adds several necessary capabilities.
+The proposed V2 direction adds several necessary capabilities beyond V1.
 
 #### 1. A generalized storage abstraction
 
@@ -302,7 +302,7 @@ V2 should treat HF datasets, Arrow caches, manifests, packaged split directories
 
 ### Summary of the retrospective
 
-The previous `mtrix` Datalake solved a real and useful problem:
+The V1 `mtrix` Datalake solved a real and useful problem:
 
 - provisioning versioned datasets
 - synchronizing them between local and remote storage
@@ -313,7 +313,7 @@ That remains valuable.
 
 However, it is best understood as a dataset lifecycle system rather than a complete canonical datalake architecture.
 
-The V2 direction proposed in this document keeps the strongest operational ideas from `mtrix` — service decomposition, versioning, synchronization, offline awareness, and interoperability — while replacing the rigid parts with a more general and durable model based on:
+The V2 direction proposed in this document keeps the strongest operational ideas from the V1 `mtrix` Datalake — service decomposition, versioning, synchronization, offline awareness, and interoperability — while replacing the rigid parts with a more general and durable model based on:
 
 - generalized storage mounts
 - canonical asset records
@@ -405,7 +405,7 @@ The model needs a more explicit representation of payload-bearing assets and the
 
 The sketches suggest dataset deletion may decrement reference counts and garbage-collect payloads.
 
-That may be desirable long-term, but it is not yet sufficiently specified to be a v1 contract.
+That may be desirable long-term, but it is not yet sufficiently specified to be part of the initial V2 contract.
 
 ### 5. `Dataset` is trying to be too many things at once
 
@@ -435,7 +435,7 @@ These must remain distinct.
 
 ---
 
-## Canonical v1 entities
+## Canonical V2 entities
 
 The following entities preserve the spirit of the sketches while tightening the model.
 
@@ -633,7 +633,7 @@ It represents staged mutations used to produce a new `DatasetVersion`.
 
 ## Canonical semantic rule
 
-The most important semantic rule for v1 should be:
+One of the most important semantic rules for V2 should be:
 
 > Dataset versions are immutable views over datum membership; assets and annotations are persisted separately and referenced by those views.
 
@@ -641,7 +641,7 @@ This preserves the best part of the original design while keeping the data model
 
 ---
 
-## Proposed minimal v1 API
+## Proposed minimal V2 API
 
 The API should be split into four slices:
 
@@ -762,7 +762,7 @@ List/filter assets by kind, project, metadata, or pagination.
 
 #### `DELETE /api/v1/datalake/assets/{asset_id}`
 
-Delete an asset record. Underlying payload deletion policy may remain conservative in v1.
+Delete an asset record. Underlying payload deletion policy may remain conservative in the initial V2 implementation.
 
 ### C. Datasets API
 
@@ -931,13 +931,13 @@ The following are intentionally left open for later design decisions:
    - How much of the Python ergonomic layer (`Dataset`, `DatasetBuilder`, HF interop helpers) should ship in the first implementation?
 
 6. **Access control / multi-tenant concerns**
-   - Should authorization remain outside the Datalake service for v1, or be partly absorbed later?
+   - Should authorization remain outside the Datalake service in the initial V2 implementation, or be partly absorbed later?
 
 ---
 
-## Recommended v1 implementation stance
+## Recommended V2 implementation stance
 
-A practical first implementation should:
+A practical first implementation of V2 should:
 
 - preserve the Registry / Store + database split
 - implement explicit canonical entities for assets, datums, dataset versions, annotation sets, and atomic annotation records
