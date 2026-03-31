@@ -977,6 +977,7 @@ AnnotationRecord:
     annotation_set_id: str
     kind: Literal[
         "classification",
+        "regression",
         "bbox",
         "rotated_bbox",
         "polygon",
@@ -985,6 +986,7 @@ AnnotationRecord:
         "keypoint",
         "mask",
         "instance_mask",
+        "pointcloud_segmentation",
     ]
     label: str
     label_id: int | None = None
