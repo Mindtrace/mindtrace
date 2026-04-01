@@ -65,9 +65,5 @@ __all__ = [
     "TimerCollection",
     "Timeout",
     "SystemMetricsCollector",
-    "Version",
-    "wait_for_service",
-]
-lector",
     "wait_for_service",
 ]
