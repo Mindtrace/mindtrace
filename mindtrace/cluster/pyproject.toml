@@ -18,6 +18,7 @@ dependencies = [
     "mindtrace-database>=0.10.0",
     "mindtrace-services>=0.10.0",
     "docker>=7.1.0",
+    "gitpython>=3.1.42",
 ]
 
 [project.urls]
