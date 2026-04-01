@@ -30,6 +30,7 @@ __all__ = [
     "StoreLocationNotFound",
     "StoreKeyFormatError",
     "StoreAmbiguousObjectError",
+    "Version",
 ]
 
 register_default_materializers()
@@ -42,3 +43,4 @@ def __getattr__(name):
         globals()["GCPRegistryBackend"] = GCPRegistryBackend
         return GCPRegistryBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+e__!r} has no attribute {name!r}")
