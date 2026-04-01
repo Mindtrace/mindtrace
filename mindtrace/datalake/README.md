@@ -341,9 +341,10 @@ classification = await datalake.add_datum(
     derived_from=image.id
 )
 
-# Bounding box
+# Bounding box (matches HuggingFace format: {bbox: [[x1, y1, x2, y2], ...]})
 bbox = await datalake.add_datum(
-    data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+    data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},
+    contract="bbox",
     metadata={"model": "yolo"},
     derived_from=classification.id
 )

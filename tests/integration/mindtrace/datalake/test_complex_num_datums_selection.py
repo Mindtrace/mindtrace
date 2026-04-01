@@ -24,8 +24,9 @@ class TestComplexNumDatumsSelection:
         classification_labels = []
         for i in [0, 1, 2, 3, 5]:
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
             classification_labels.append(label)
@@ -36,8 +37,9 @@ class TestComplexNumDatumsSelection:
         image_to_label_map = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4}  # Maps image index to classification_labels index
         for i in [0, 2, 5]:
             bbox = await datalake.add_datum(
-                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
                 metadata={"model": "yolo"},
+                contract="bbox",
                 derived_from=classification_labels[image_to_label_map[i]].id,
             )
             bbox_labels.append(bbox)
@@ -47,8 +49,8 @@ class TestComplexNumDatumsSelection:
         # even though we asked for 3 and there are 6 base images, only 3 have complete derivation chains
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=3)
 
@@ -98,8 +100,9 @@ class TestComplexNumDatumsSelection:
         classification_labels = []
         for i in range(4):
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
             classification_labels.append(label)
@@ -108,8 +111,9 @@ class TestComplexNumDatumsSelection:
         bbox_labels = []
         for i in [0, 2]:
             bbox = await datalake.add_datum(
-                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
                 metadata={"model": "yolo"},
+                contract="bbox",
                 derived_from=classification_labels[i].id,
             )
             bbox_labels.append(bbox)
@@ -118,8 +122,8 @@ class TestComplexNumDatumsSelection:
         # This should return 2 results (from images 0, 2 that have complete chains)
         query = [
             {"metadata.project": "test_project", "strategy": "latest", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "strategy": "quickest", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "strategy": "quickest", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 
@@ -158,8 +162,9 @@ class TestComplexNumDatumsSelection:
         classification_labels = []
         for i in [0, 1, 2, 4, 5]:
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
             classification_labels.append(label)
@@ -170,8 +175,9 @@ class TestComplexNumDatumsSelection:
         image_to_label_map = {0: 0, 1: 1, 2: 2, 4: 3, 5: 4}  # Maps image index to classification_labels index
         for i in [0, 2, 5]:
             bbox = await datalake.add_datum(
-                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
                 metadata={"model": "yolo"},
+                contract="bbox",
                 derived_from=classification_labels[image_to_label_map[i]].id,
             )
             bbox_labels.append(bbox)
@@ -184,8 +190,8 @@ class TestComplexNumDatumsSelection:
                 "metadata.quality": {"$gte": 0.7},  # Should match images 2, 4, 5
                 "column": "image_id",
             },
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 
@@ -223,8 +229,9 @@ class TestComplexNumDatumsSelection:
         classification_labels = []
         for i in range(7):
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
             classification_labels.append(label)
@@ -233,8 +240,9 @@ class TestComplexNumDatumsSelection:
         bbox_labels = []
         for i in [0, 2, 4, 6]:
             bbox = await datalake.add_datum(
-                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
                 metadata={"model": "yolo"},
+                contract="bbox",
                 derived_from=classification_labels[i].id,
             )
             bbox_labels.append(bbox)
@@ -243,8 +251,8 @@ class TestComplexNumDatumsSelection:
         # This should return exactly 2 results (from the 4 that have complete chains)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 

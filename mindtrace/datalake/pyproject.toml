@@ -12,6 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "datasets>=4.4.1",
     "mindtrace-core>=0.10.0",
     "mindtrace-registry>=0.10.0",
     "mindtrace-database>=0.10.0",
