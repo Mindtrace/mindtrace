@@ -30,6 +30,7 @@ __all__ = [
     "StoreLocationNotFound",
     "StoreKeyFormatError",
     "StoreAmbiguousObjectError",
+    "Version",
 ]
 
 register_default_materializers()
