@@ -25,6 +25,7 @@ __all__ = [
     "StoreLocationNotFound",
     "StoreKeyFormatError",
     "StoreAmbiguousObjectError",
+    "Version",
 ]
 
 _lazy_registry_initialized = False
