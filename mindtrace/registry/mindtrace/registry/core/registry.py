@@ -17,8 +17,8 @@ from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.mount import (
     AmbientAuth,
-    GCPMountConfig,
-    GCPServiceAccountFileAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
     LocalMountConfig,
     Mount,
     MountBackendKind,
@@ -215,10 +215,10 @@ class Registry(Mindtrace):
                 raise TypeError("s3 mounts require AmbientAuth or S3AccessKeyAuth")
             return S3RegistryBackend(**backend_kwargs)
 
-        if mount.backend is MountBackendKind.GCP:
+        if mount.backend is MountBackendKind.GCS:
             cfg = mount.config
-            if not isinstance(cfg, GCPMountConfig):
-                raise TypeError("gcp mounts require GCPMountConfig")
+            if not isinstance(cfg, GCSMountConfig):
+                raise TypeError("gcs mounts require GCSMountConfig")
             auth = mount.auth
             backend_kwargs = {
                 "bucket_name": cfg.bucket_name,
@@ -226,10 +226,10 @@ class Registry(Mindtrace):
                 "prefix": cfg.prefix or "",
                 "credentials_path": cfg.credentials_path,
             }
-            if isinstance(auth, GCPServiceAccountFileAuth):
+            if isinstance(auth, GCSServiceAccountFileAuth):
                 backend_kwargs["credentials_path"] = auth.path
             elif not isinstance(auth, AmbientAuth):
-                raise TypeError("gcp mounts require AmbientAuth or GCPServiceAccountFileAuth")
+                raise TypeError("gcs mounts require AmbientAuth or GCSServiceAccountFileAuth")
             return GCPRegistryBackend(**backend_kwargs)
 
         raise ValueError(f"Unsupported mount backend: {mount.backend}")

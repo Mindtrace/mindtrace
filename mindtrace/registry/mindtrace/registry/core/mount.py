@@ -13,7 +13,7 @@ class MountBackendKind(str, Enum):
 
     LOCAL = "local"
     S3 = "s3"
-    GCP = "gcp"
+    GCS = "gcs"
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ class S3MountConfig:
 
 
 @dataclass(frozen=True)
-class GCPMountConfig:
+class GCSMountConfig:
     """Configuration for a Google Cloud Storage-backed registry mount."""
 
     bucket_name: str
@@ -67,15 +67,15 @@ class S3AccessKeyAuth:
 
 
 @dataclass(frozen=True)
-class GCPServiceAccountFileAuth:
-    """Explicit GCP service account file authentication."""
+class GCSServiceAccountFileAuth:
+    """Explicit GCS service account file authentication."""
 
     path: str
     mode: str = "service_account_file"
 
 
-MountAuth = NoAuth | AmbientAuth | S3AccessKeyAuth | GCPServiceAccountFileAuth
-MountConfig = LocalMountConfig | S3MountConfig | GCPMountConfig
+MountAuth = NoAuth | AmbientAuth | S3AccessKeyAuth | GCSServiceAccountFileAuth
+MountConfig = LocalMountConfig | S3MountConfig | GCSMountConfig
 
 
 @dataclass(frozen=True, init=False)
@@ -97,7 +97,7 @@ class Mount:
 
     def __init__(
         self,
-        name: str | "Registry" | None = None,
+        name: str | None = None,
         backend: MountBackendKind | str | None = None,
         config: MountConfig | None = None,
         read_only: bool = False,
@@ -106,19 +106,6 @@ class Mount:
         registry_options: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        if backend is None and config is None and self._is_registry_like(name):
-            registry_mount = self.from_registry(name)
-            object.__setattr__(self, "name", registry_mount.name)
-            object.__setattr__(self, "backend", registry_mount.backend)
-            object.__setattr__(self, "config", registry_mount.config)
-            object.__setattr__(self, "read_only", registry_mount.read_only)
-            object.__setattr__(self, "is_default", registry_mount.is_default)
-            object.__setattr__(self, "auth", registry_mount.auth)
-            object.__setattr__(self, "registry_options", registry_mount.registry_options)
-            object.__setattr__(self, "metadata", registry_mount.metadata)
-            self.__post_init__()
-            return
-
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "backend", backend)
         object.__setattr__(self, "config", config)
@@ -129,20 +116,19 @@ class Mount:
         object.__setattr__(self, "metadata", {} if metadata is None else dict(metadata))
         self.__post_init__()
 
-    @staticmethod
-    def _is_registry_like(obj: object) -> bool:
-        return hasattr(obj, "backend") and hasattr(obj, "version_objects") and hasattr(obj, "mutable")
-
     def __post_init__(self) -> None:
         if self.name is not None and not isinstance(self.name, str):
             raise TypeError("Mount name must be a string or None")
+        if self.backend is None:
+            raise TypeError("backend is required")
+        if self.config is None:
+            raise TypeError("config is required")
+
         backend = MountBackendKind(self.backend)
         object.__setattr__(self, "backend", backend)
 
         if isinstance(self.name, str) and self.name and ("/" in self.name or "@" in self.name):
             raise ValueError("Invalid mount name")
-        if self.config is None:
-            raise TypeError("config is required")
 
         if backend is MountBackendKind.LOCAL:
             if not isinstance(self.config, LocalMountConfig):
@@ -156,11 +142,11 @@ class Mount:
             if not isinstance(self.auth, (AmbientAuth, S3AccessKeyAuth)):
                 raise TypeError("s3 mounts require AmbientAuth or S3AccessKeyAuth")
 
-        elif backend is MountBackendKind.GCP:
-            if not isinstance(self.config, GCPMountConfig):
-                raise TypeError("gcp mounts require GCPMountConfig")
-            if not isinstance(self.auth, (AmbientAuth, GCPServiceAccountFileAuth)):
-                raise TypeError("gcp mounts require AmbientAuth or GCPServiceAccountFileAuth")
+        elif backend is MountBackendKind.GCS:
+            if not isinstance(self.config, GCSMountConfig):
+                raise TypeError("gcs mounts require GCSMountConfig")
+            if not isinstance(self.auth, (AmbientAuth, GCSServiceAccountFileAuth)):
+                raise TypeError("gcs mounts require AmbientAuth or GCSServiceAccountFileAuth")
 
     @classmethod
     def from_registry(
@@ -220,8 +206,8 @@ class Mount:
         if isinstance(backend, GCPRegistryBackend):
             return cls(
                 name=name,
-                backend=MountBackendKind.GCP,
-                config=GCPMountConfig(
+                backend=MountBackendKind.GCS,
+                config=GCSMountConfig(
                     bucket_name=backend.gcs.bucket_name,
                     project_id=backend.config.get("MINDTRACE_GCP", {}).get("GCP_PROJECT_ID", "")
                     or backend.config.get("MINDTRACE_GCP_REGISTRY", {}).get("GCP_PROJECT_ID", ""),
@@ -249,6 +235,6 @@ class Mount:
             suffix = f"/{cfg.prefix.strip('/')}" if cfg.prefix else ""
             return f"s3://{cfg.bucket}{suffix}"
         cfg = self.config
-        assert isinstance(cfg, GCPMountConfig)
+        assert isinstance(cfg, GCSMountConfig)
         suffix = f"/{cfg.prefix.strip('/')}" if cfg.prefix else ""
         return f"gs://{cfg.bucket_name}{suffix}"

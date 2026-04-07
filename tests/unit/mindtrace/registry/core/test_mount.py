@@ -4,8 +4,8 @@ import pytest
 
 from mindtrace.registry import (
     AmbientAuth,
-    GCPMountConfig,
-    GCPServiceAccountFileAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
     LocalMountConfig,
     Mount,
     NoAuth,
@@ -71,7 +71,7 @@ class DummyS3Backend(DummyRemoteBackend):
     pass
 
 
-class DummyGCPBackend(DummyRemoteBackend):
+class DummyGCSBackend(DummyRemoteBackend):
     pass
 
 
@@ -95,12 +95,12 @@ def test_mount_rejects_invalid_s3_config_type():
         Mount(name="nas", backend="s3", config=LocalMountConfig(uri="/tmp/test"), auth=AmbientAuth())
 
 
-def test_mount_rejects_invalid_gcp_auth_type():
+def test_mount_rejects_invalid_gcs_auth_type():
     with pytest.raises(TypeError):
         Mount(
-            name="gcp",
-            backend="gcp",
-            config=GCPMountConfig(bucket_name="bucket-a", project_id="proj-1"),
+            name="gcs",
+            backend="gcs",
+            config=GCSMountConfig(bucket_name="bucket-a", project_id="proj-1"),
             auth=S3AccessKeyAuth(access_key="a", secret_key="b"),
         )
 
@@ -156,30 +156,30 @@ def test_registry_from_s3_mount_builds_s3_backend(monkeypatch):
     assert registry.version_objects is True
 
 
-def test_registry_from_gcp_mount_builds_gcp_backend(monkeypatch):
+def test_registry_from_gcs_mount_builds_gcs_backend(monkeypatch):
     captured = {}
 
-    def fake_gcp_backend(**kwargs):
+    def fake_gcs_backend(**kwargs):
         captured.update(kwargs)
-        return DummyGCPBackend(uri=f"gs://{kwargs['bucket_name']}/{kwargs.get('prefix', '').strip('/')}")
+        return DummyGCSBackend(uri=f"gs://{kwargs['bucket_name']}/{kwargs.get('prefix', '').strip('/')}")
 
-    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend", fake_gcp_backend)
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend", fake_gcs_backend)
 
     mount = Mount(
-        name="gcp",
-        backend="gcp",
-        config=GCPMountConfig(
+        name="gcs",
+        backend="gcs",
+        config=GCSMountConfig(
             bucket_name="bucket-a",
             project_id="proj-1",
             prefix="datasets",
         ),
-        auth=GCPServiceAccountFileAuth(path="/tmp/service-account.json"),
+        auth=GCSServiceAccountFileAuth(path="/tmp/service-account.json"),
         registry_options={"mutable": True},
     )
 
     registry = Registry.from_mount(mount)
 
-    assert isinstance(registry.backend, DummyGCPBackend)
+    assert isinstance(registry.backend, DummyGCSBackend)
     assert captured["bucket_name"] == "bucket-a"
     assert captured["project_id"] == "proj-1"
     assert captured["prefix"] == "datasets"
@@ -197,10 +197,10 @@ def test_registry_mount_property_round_trips_local_registry():
         assert mount.registry_options["mutable"] is True
 
 
-def test_mount_can_be_initialized_from_registry_instance():
+def test_mount_from_registry_classmethod():
     with TemporaryDirectory() as d:
         registry = Registry(backend=d, version_objects=True, mutable=False)
-        mount = Mount(registry)
+        mount = Mount.from_registry(registry)
         assert mount.backend == "local"
         assert mount.registry_options["mutable"] is False
 
@@ -251,7 +251,7 @@ def test_store_add_mount_derives_name_for_nameless_mount():
         store.add_mount(mount)
         derived = [m for m in store.list_mounts() if m != "temp"]
         assert len(derived) == 1
-        assert derived[0] != "registry"
+        assert derived[0] != "mount"
 
 
 def test_store_add_mount_derives_distinct_names_for_multiple_registries():
@@ -298,15 +298,15 @@ def test_mount_display_uri_for_remote_mounts():
         config=S3MountConfig(bucket="datasets", prefix="mindtrace"),
         auth=AmbientAuth(),
     )
-    gcp_mount = Mount(
-        name="gcp",
-        backend="gcp",
-        config=GCPMountConfig(bucket_name="bucket-a", project_id="proj-1", prefix="exports"),
+    gcs_mount = Mount(
+        name="gcs",
+        backend="gcs",
+        config=GCSMountConfig(bucket_name="bucket-a", project_id="proj-1", prefix="exports"),
         auth=AmbientAuth(),
     )
 
     assert s3_mount.display_uri() == "s3://datasets/mindtrace"
-    assert gcp_mount.display_uri() == "gs://bucket-a/exports"
+    assert gcs_mount.display_uri() == "gs://bucket-a/exports"
 
 
 def test_noauth_still_supported_for_local_mounts():

@@ -7,8 +7,8 @@ from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.mount import (
     AmbientAuth,
-    GCPMountConfig,
-    GCPServiceAccountFileAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
     LocalMountConfig,
     Mount,
     MountBackendKind,
@@ -25,8 +25,6 @@ from mindtrace.registry.core.exceptions import (
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.store import MountedRegistry, Store
 
-StoreMount = MountedRegistry
-
 __all__ = [
     "Archiver",
     "AmbientAuth",
@@ -34,9 +32,9 @@ __all__ = [
     "PathArchiver",
     "LocalRegistryBackend",
     "LockTimeoutError",
-    "GCPMountConfig",
+    "GCSMountConfig",
     "GCPRegistryBackend",
-    "GCPServiceAccountFileAuth",
+    "GCSServiceAccountFileAuth",
     "LocalMountConfig",
     "MinioRegistryBackend",
     "Mount",
