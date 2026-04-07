@@ -3,7 +3,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core.exceptions import NotFound, PreconditionFailed
+from google.api_core.exceptions import Conflict, Forbidden, NotFound, PreconditionFailed
 
 from mindtrace.storage import BatchResult, FileResult, GCSStorageHandler, StringResult
 
@@ -42,6 +42,35 @@ def test_ctor_errors_when_bucket_missing_and_create_false(mock_client_cls):
 
     with pytest.raises(NotFound):
         GCSStorageHandler("missing-bucket")  # create_if_missing defaults to False
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_forbidden_bucket_check_without_create_raises_actionable_error(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls)
+    bucket.exists.side_effect = Forbidden("forbidden")
+
+    with pytest.raises(Forbidden, match="Grant storage\\.buckets\\.get"):
+        GCSStorageHandler("bucket", create_if_missing=False)
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_treats_bucket_create_conflict_as_success(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=False)
+    bucket.create.side_effect = Conflict("already exists")
+
+    handler = GCSStorageHandler("bucket", create_if_missing=True)
+
+    assert handler.bucket_name == "bucket"
+    bucket.create.assert_called_once()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_ctor_forbidden_bucket_create_raises_actionable_error(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=False)
+    bucket.create.side_effect = Forbidden("forbidden")
+
+    with pytest.raises(Forbidden, match="Cannot create bucket"):
+        GCSStorageHandler("bucket", create_if_missing=True)
 
 
 # ---------------------------------------------------------------------------
@@ -306,9 +335,10 @@ def test_exists_delegates_to_blob(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.exists.side_effect = (True, False)  # yes then no
 
-    h = GCSStorageHandler("bucket")
+    h = GCSStorageHandler("my-bucket")
     assert h.exists("foo") is True
-    assert h.exists("foo") is False
+    assert h.exists("gs://my-bucket/foo") is False
+    bucket.blob.assert_any_call("foo")
 
 
 @patch("mindtrace.storage.gcs.storage.Client")

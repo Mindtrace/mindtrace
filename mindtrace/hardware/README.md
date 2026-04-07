@@ -2,523 +2,675 @@
 [![License](https://img.shields.io/pypi/l/mindtrace-hardware)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware/LICENSE)
 [![Downloads](https://static.pepy.tech/badge/mindtrace-hardware)](https://pepy.tech/projects/mindtrace-hardware)
 
-# Mindtrace Hardware
+# Mindtrace Hardware Module
 
-The `Hardware` module provides Mindtrace’s interface for working with industrial hardware such as cameras, stereo cameras, 3D scanners, PLCs, and sensors through direct Python APIs, service layers, and CLI tooling.
+The Mindtrace Hardware module provides a unified interface for managing industrial hardware components including 2D cameras, 3D stereo cameras, 3D scanners, PLCs, and sensors. Built with a service-first architecture, it supports multiple interface levels from simple scripts to distributed automation systems.
 
-## Features
+## Table of Contents
 
-- **Unified hardware interfaces** for cameras, stereo cameras, 3D scanners, PLCs, and sensors
-- **Async-first managers** for orchestration and concurrency-sensitive workflows
-- **Service-oriented integration** through Mindtrace services and MCP-compatible endpoints
-- **CLI tooling** for service management and backend setup
-- **Backend-aware extras** for vendor SDKs and protocol-specific integrations
-- **Lazy imports and modular backends** to avoid loading heavy SDKs until needed
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Camera System](#camera-system)
+- [Stereo Camera System](#stereo-camera-system)
+- [3D Scanner System](#3d-scanner-system)
+- [PLC System](#plc-system)
+- [Sensor System](#sensor-system)
+- [CLI Tools](#cli-tools)
+- [Docker Deployment](#docker-deployment)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [API Reference](#api-reference)
+- [Tested Hardware](#tested-hardware)
 
-## Quick Start
+## Overview
 
-```python
-import asyncio
+The hardware module consists of five main subsystems:
 
-from mindtrace.hardware import CameraManager
+- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control
+- **Stereo Camera System**: 3D vision with depth measurement and point cloud generation (Basler Stereo ace)
+- **3D Scanner System**: Industrial 3D scanning with multi-component capture (Photoneo)
+- **PLC System**: Industrial PLC integration (Allen-Bradley) with tag-based operations
+- **Sensor System**: Unified sensor interface for MQTT, HTTP, and Serial protocols
 
+Each subsystem provides:
+- Async-first interfaces with sync wrappers
+- REST API service layer with MCP tool integration
+- Python client libraries for programmatic access
+- CLI tools for service management
 
-async def main():
-    async with CameraManager() as manager:
-        cameras = manager.discover()
-        if not cameras:
-            print("No cameras found")
-            return
+## Architecture
 
-        camera = await manager.open(cameras[0])
-        image = await camera.capture()
-        print(type(image))
-
-
-asyncio.run(main())
+```
+mindtrace/hardware/
+├── cameras/                  # 2D camera subsystem
+│   ├── core/                 # Camera, AsyncCamera, CameraManager
+│   ├── backends/             # Basler, GenICam, OpenCV, Mock
+│   └── homography/           # Planar measurement system
+├── stereo_cameras/           # 3D stereo camera subsystem
+│   ├── core/                 # StereoCamera, StereoCameraManager
+│   └── backends/             # Basler Stereo ace
+├── scanners_3d/              # 3D scanner subsystem
+│   ├── core/                 # AsyncScanner3D, models
+│   └── backends/             # Photoneo (harvesters + GenTL)
+├── plcs/                     # PLC subsystem
+│   ├── core/                 # PLCManager
+│   └── backends/             # Allen-Bradley (Logix, SLC, CIP)
+├── sensors/                  # Sensor subsystem
+│   ├── core/                 # AsyncSensor, SensorManager
+│   └── backends/             # MQTT, HTTP, Serial
+├── services/                 # REST API services
+│   ├── cameras/              # CameraManagerService
+│   ├── stereo_cameras/       # StereoCameraService
+│   ├── scanners_3d/          # Scanner3DService
+│   ├── plcs/                 # PLCManagerService
+│   └── sensors/              # SensorManagerService
+├── cli/                      # Command-line tools
+└── core/                     # Shared config, exceptions
 ```
 
-The hardware package is designed around a simple idea: the same hardware domain can usually be used at several levels, depending on what you need.
-
-- **direct Python objects** for simple scripts
-- **manager-style APIs** for multi-device orchestration
-- **services** for remote access and automation
-- **CLI commands** for starting and operating those services
-
-## Interface Levels
-
-Most hardware subsystems follow a layered pattern.
-
-### Direct device access
-
-Use this when you want to work with one device in a local script.
-
-```python
-from mindtrace.hardware.cameras import Camera
-
-
-camera = Camera(name="OpenCV:opencv_camera_0")
-image = camera.capture()
-camera.close()
-```
-
-### Manager-level access
-
-Use managers when you want discovery, multiple devices, async orchestration, or shared lifecycle handling.
-
-```python
-import asyncio
-
-from mindtrace.hardware import CameraManager
-
-
-async def main():
-    async with CameraManager() as manager:
-        cameras = manager.discover()
-        if not cameras:
-            return
-        camera = await manager.open(cameras[0])
-        image = await camera.capture()
-        print(type(image))
-
-
-asyncio.run(main())
-```
-
-### Service access
-
-For remote control, automation pipelines, or agent/tool use, the hardware package can be exposed through Mindtrace services.
-
-```python
-from mindtrace.hardware.services import CameraManagerConnectionManager, CameraManagerService
-
-
-# Launch a camera service
-cm = CameraManagerService.launch(port=8002, wait_for_launch=True)
-print(cm.status())
-
-# Or connect to an already-running service
-camera_cm = CameraManagerConnectionManager("http://localhost:8002")
-```
-
-### CLI access
-
-For operational workflows, use `mindtrace-hw` and the setup entry points to start services and install backend-specific dependencies.
+## Installation
 
 ```bash
-$ mindtrace-hw camera start --open-docs
-$ mindtrace-hw camera status
-$ curl http://localhost:8002/docs
+# Base installation
+pip install mindtrace-hardware
+
+# With specific backend support
+pip install mindtrace-hardware[cameras-basler]      # Basler cameras
+pip install mindtrace-hardware[cameras-genicam]     # GenICam cameras
+pip install mindtrace-hardware[cameras-all]         # All camera backends
+pip install mindtrace-hardware[stereo-all]          # Stereo cameras
+pip install mindtrace-hardware[scanners-3d]         # 3D scanners (Photoneo)
+pip install mindtrace-hardware[plcs-all]            # PLC support
 ```
 
-## Cameras
+### SDK Requirements
 
-The camera subsystem exposes synchronous and asynchronous interfaces as well as manager-based coordination.
+| Hardware Type | Python Package | External SDK |
+|---------------|---------------|--------------|
+| Basler 2D | `pypylon` | Optional (Viewer/IP Configurator only) |
+| GenICam | `harvesters` | Required (GenTL Producer) |
+| Stereo ace | `pypylon` | Required (Supplementary Package) |
+| Photoneo | `harvesters` | Required (Matrix Vision mvGenTL Producer) |
 
-Top-level exports include:
+SDK setup commands:
+```bash
+mindtrace-camera-basler install        # Basler Pylon tools (optional)
+mindtrace-camera-genicam install       # GenICam CTI files (required)
+mindtrace-stereo-basler install        # Stereo supplementary package (required)
+mindtrace-scanner-photoneo install     # Matrix Vision mvGenTL Producer (required)
+```
 
-- `Camera`
-- `AsyncCamera`
-- `CameraManager`
-- `AsyncCameraManager`
-- `CameraBackend`
+## Camera System
 
-Example:
+### Interface Hierarchy
+
+| Interface | Async | Multi-Camera | Bandwidth Mgmt | Service API |
+|-----------|-------|--------------|----------------|-------------|
+| Camera | No | No | No | No |
+| AsyncCamera | Yes | No | No | No |
+| CameraManager | No | Yes | No | No |
+| AsyncCameraManager | Yes | Yes | Yes | No |
+| CameraManagerService | Yes | Yes | Yes | Yes |
+
+### Basic Usage
 
 ```python
-from mindtrace.hardware.cameras import Camera
+from mindtrace.hardware.cameras.core.camera import Camera
 
-
+# Simple synchronous usage
 camera = Camera(name="OpenCV:opencv_camera_0")
 image = camera.capture()
+camera.configure(exposure=15000, gain=2.0)
 camera.close()
 ```
 
-Example with the async manager:
+### Async Manager with Bandwidth Control
 
 ```python
 import asyncio
-
 from mindtrace.hardware import CameraManager
 
-
-async def capture_one():
-    async with CameraManager() as manager:
+async def capture_with_bandwidth_limit():
+    async with CameraManager(max_concurrent_captures=2) as manager:
         cameras = manager.discover()
-        if not cameras:
-            return
-        cam = await manager.open(cameras[0])
-        image = await cam.capture()
-        print(type(image))
+        proxy = await manager.open(cameras[0])
+        image = await proxy.capture()
+        await proxy.configure(exposure=15000)
 
-
-asyncio.run(capture_one())
+asyncio.run(capture_with_bandwidth_limit())
 ```
 
-### Camera backends
-
-The camera module exposes availability flags so you can check which backends are usable in the current environment:
-
-- `BASLER_AVAILABLE`
-- `OPENCV_AVAILABLE`
-- `GENICAM_AVAILABLE`
-- `SETUP_AVAILABLE`
-
-Example:
+### Service Layer
 
 ```python
-from mindtrace.hardware.cameras import BASLER_AVAILABLE, OPENCV_AVAILABLE
+from mindtrace.hardware.services import CameraManagerService
 
-print("Basler:", BASLER_AVAILABLE)
-print("OpenCV:", OPENCV_AVAILABLE)
+# Launch REST API + MCP tools
+CameraManagerService.launch(port=8002, block=True)
 ```
 
-### Homography utilities
+### Supported Backends
 
-The top-level hardware package also exposes planar calibration helpers:
+| Backend | SDK | Use Case |
+|---------|-----|----------|
+| Basler | pypylon | GigE industrial cameras |
+| GenICam | harvesters | GenICam-compliant cameras |
+| OpenCV | opencv-python | USB cameras, webcams |
+| Mock | Built-in | Testing, CI/CD |
 
-- `HomographyCalibrator`
-- `CalibrationData`
-- `PlanarHomographyMeasurer`
-- `MeasuredBox`
+### Homography Measurement
 
-Example:
+Convert pixel coordinates to real-world measurements:
 
 ```python
-from mindtrace.hardware import HomographyCalibrator, PlanarHomographyMeasurer
+from mindtrace.hardware import HomographyCalibrator, HomographyMeasurer
 
-
+# Calibrate
 calibrator = HomographyCalibrator()
 calibration = calibrator.calibrate_checkerboard(
     image=checkerboard_image,
     board_size=(8, 6),
     square_size=25.0,
-    world_unit="mm",
+    world_unit="mm"
 )
+calibration.save("calibration.json")
 
-measurer = PlanarHomographyMeasurer(calibration)
+# Measure
+measurer = HomographyMeasurer(calibration)
 measured = measurer.measure_bounding_box(detection_bbox, target_unit="cm")
-print(measured)
+print(f"Size: {measured.width_world:.2f} x {measured.height_world:.2f} cm")
 ```
 
-## Stereo Cameras
+See [Homography Documentation](mindtrace/hardware/cameras/homography/README.md) for details.
 
-The stereo camera subsystem is intended for 3D vision workflows where you want depth-aware capture and stereo-specific device control.
+## Stereo Camera System
 
-The package exports a dedicated `stereo_cameras` module with:
+### Interface Hierarchy
 
-- `StereoCamera`
-- `AsyncStereoCamera`
-- `StereoGrabResult`
-- `StereoCalibrationData`
-- `PointCloudData`
-- `BaslerStereoAceBackend`
+| Interface | Async | Multi-Camera | Service API |
+|-----------|-------|--------------|-------------|
+| StereoCamera | Yes | No | No |
+| StereoCameraManager | Yes | Yes | No |
+| StereoCameraService | Yes | Yes | Yes |
 
-Example:
-
-```python
-from mindtrace.hardware.stereo_cameras import StereoCamera
-
-
-camera = StereoCamera()
-result = camera.capture()
-print(result.intensity.shape)
-print(result.disparity.shape)
-
-point_cloud = camera.capture_point_cloud()
-point_cloud.save_ply("output.ply")
-camera.close()
-```
-
-For operational usage, the CLI includes stereo service management commands:
-
-```bash
-$ mindtrace-hw stereo start --open-docs
-$ mindtrace-hw stereo status
-$ mindtrace-hw stereo stop
-```
-
-## 3D Scanners
-
-The 3D scanner subsystem focuses on async capture workflows and industrial structured-light scanning.
-
-Top-level scanner exports include:
-
-- `Scanner3D`
-- `AsyncScanner3D`
-- `ScanResult`
-- `PointCloudData`
-- `PhotoneoBackend`
-
-Example:
+### Basic Usage
 
 ```python
 import asyncio
+from mindtrace.hardware.stereo_cameras import StereoCamera
 
+async def capture_3d():
+    camera = StereoCamera(name="BaslerStereoAce:40644640")
+    await camera.initialize()
+
+    # Capture stereo pair
+    stereo_data = await camera.capture_rectified()
+
+    # Generate point cloud
+    point_cloud = await camera.capture_point_cloud()
+    print(f"Points: {point_cloud.points.shape}")
+
+    await camera.close()
+
+asyncio.run(capture_3d())
+```
+
+### Service Layer
+
+```bash
+# Via CLI
+mindtrace-hw stereo start
+
+# Programmatically
+from mindtrace.hardware.services.stereo_cameras import StereoCameraService
+StereoCameraService.launch(port=8004, block=True)
+```
+
+### Configuration Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `depth_range` | Measurement range (min, max) in meters | (0.5, 3.0) |
+| `illumination_mode` | AlwaysActive (fast) or AlternateActive (clean) | AlwaysActive |
+| `binning` | Horizontal/vertical binning (1-4) | (1, 1) |
+| `depth_quality` | Full, High, Normal, Low | Normal |
+| `exposure_time` | Exposure in microseconds | 8000.0 |
+| `trigger_mode` | continuous or trigger | continuous |
+
+See [Stereo Camera Documentation](mindtrace/hardware/services/stereo_cameras/README.md) for details.
+
+## 3D Scanner System
+
+### Interface Hierarchy
+
+| Interface | Async | Multi-Scanner | Service API |
+|-----------|-------|---------------|-------------|
+| AsyncScanner3D | Yes | No | No |
+| Scanner3DService | Yes | Yes | Yes |
+
+### Basic Usage
+
+```python
+import asyncio
 from mindtrace.hardware.scanners_3d import AsyncScanner3D
 
-
 async def capture_scan():
-    async with await AsyncScanner3D.open() as scanner:
-        result = await scanner.capture()
-        print(result.range_shape)
+    scanner = await AsyncScanner3D.open("Photoneo:DVJ-104")
 
-        point_cloud = await scanner.capture_point_cloud()
-        point_cloud.save_ply("output.ply")
+    # Capture multi-component scan
+    result = await scanner.capture(
+        enable_range=True,
+        enable_intensity=True,
+        enable_confidence=True,
+        enable_normal=True,
+        enable_color=True,
+    )
+    print(f"Range: {result.range_shape}")
+    print(f"Intensity: {result.intensity_shape}")
 
+    # Generate point cloud
+    point_cloud = await scanner.capture_point_cloud(include_colors=True)
+    print(f"Points: {point_cloud.num_points}")
+    point_cloud.save_ply("output.ply")
+
+    await scanner.close()
 
 asyncio.run(capture_scan())
 ```
 
-A dedicated scanner README exists in this package:
-- [3D scanner subsystem documentation](mindtrace/hardware/scanners_3d/README.md)
-
-CLI example:
+### Service Layer
 
 ```bash
-$ mindtrace-hw scanner start --open-docs
-$ mindtrace-hw scanner status
-$ mindtrace-hw scanner stop
+# Via CLI
+mindtrace-hw scanner3d start
+
+# Programmatically
+from mindtrace.hardware.services.scanners_3d import Scanner3DService
+Scanner3DService.launch(port=8005, block=True)
 ```
 
-## PLCs
+### Supported Backends
 
-The PLC subsystem provides `PLCManager` for industrial controller integration.
+| Backend | SDK | Hardware |
+|---------|-----|----------|
+| Photoneo | harvesters + mvGenTL | PhoXi 3D Scanner (S/M/L/XL), MotionCam-3D |
+| MockPhotoneo | Built-in | Testing and development (no hardware needed) |
 
-Top-level export:
+### Capture Modalities
 
-- `PLCManager`
+| Modality | Description | Data Shape |
+|----------|-------------|------------|
+| Range | Depth/distance map | (H, W) float32 |
+| Intensity | Reflected light intensity | (H, W) float32 |
+| Confidence | Per-pixel confidence | (H, W) float32 |
+| Normal | Surface normal vectors | (H, W, 3) float32 |
+| Color | RGB color texture | (H, W, 3) uint8 |
 
-Example:
+### Configuration Parameters
+
+**Operation Settings:**
+
+| Parameter | Description | Options/Range |
+|-----------|-------------|---------------|
+| `operation_mode` | Scanner mode | Camera, Scanner, Mode_2D |
+| `coding_strategy` | Structured light strategy | Normal, Interreflections, HighFrequency |
+| `coding_quality` | Quality/speed tradeoff | Ultra, High, Fast |
+| `maximum_fps` | Max frames per second | 0-100 |
+
+**Exposure Settings:**
+
+| Parameter | Description | Range |
+|-----------|-------------|-------|
+| `exposure_time` | Exposure in milliseconds | 10.24-100.352 |
+| `shutter_multiplier` | Shutter multiplier | 1-10 |
+| `scan_multiplier` | Scan multiplier | 1-10 |
+
+**Lighting Settings:**
+
+| Parameter | Description | Range |
+|-----------|-------------|-------|
+| `led_power` | LED illumination power | 0-4095 |
+| `laser_power` | Laser/projector power | 1-4095 |
+
+**Processing Settings:**
+
+| Parameter | Description | Range |
+|-----------|-------------|-------|
+| `normals_estimation_radius` | Normal estimation radius | 0-4 |
+| `max_inaccuracy` | Maximum allowed inaccuracy | 0-100 |
+| `calibration_volume_only` | Filter to calibration volume | bool |
+| `hole_filling` | Enable hole filling | bool |
+
+**Trigger Settings:**
+
+| Parameter | Description | Options |
+|-----------|-------------|---------|
+| `trigger_mode` | Trigger mode | Software, Hardware, Continuous |
+| `hardware_trigger_signal` | Trigger edge | Falling, Rising, Both |
+
+### Optimal Configuration for Accuracy
+
+```python
+from mindtrace.hardware.scanners_3d import AsyncScanner3D, ScannerConfiguration, CodingQuality, CodingStrategy
+
+async def high_accuracy_capture():
+    scanner = await AsyncScanner3D.open()
+
+    config = ScannerConfiguration(
+        coding_quality=CodingQuality.ULTRA,
+        coding_strategy=CodingStrategy.INTERREFLECTIONS,
+        exposure_time=20.0,
+        shutter_multiplier=2,
+        led_power=4095,
+        laser_power=4095,
+        normals_estimation_radius=2,
+        max_inaccuracy=3.0,
+        hole_filling=True,
+    )
+    await scanner.set_configuration(config)
+
+    point_cloud = await scanner.capture_point_cloud(include_colors=True)
+    point_cloud.save_ply("high_accuracy.ply")
+
+    await scanner.close()
+```
+
+See [3D Scanner Documentation](mindtrace/hardware/scanners_3d/README.md) for details.
+
+## PLC System
+
+### Supported Drivers
+
+| Driver | Target PLCs | Addressing |
+|--------|-------------|------------|
+| LogixDriver | ControlLogix, CompactLogix | Tag-based (`Motor1_Speed`) |
+| SLCDriver | SLC500, MicroLogix | Data files (`N7:0`, `B3:1`) |
+| CIPDriver | PowerFlex, I/O Modules | CIP objects (`Parameter:10`) |
+
+### Basic Usage
 
 ```python
 import asyncio
-
 from mindtrace.hardware import PLCManager
 
-
-async def plc_example():
+async def plc_operations():
     manager = PLCManager()
     await manager.register_plc("Line1", "192.168.1.100", plc_type="logix")
     await manager.connect_plc("Line1")
+
+    # Read/write operations
     values = await manager.read_tags("Line1", ["Motor_Speed", "Status"])
-    print(values)
+    await manager.write_tag("Line1", "Command", True)
+
     await manager.cleanup()
 
-
-asyncio.run(plc_example())
+asyncio.run(plc_operations())
 ```
 
-CLI example:
+### Service Layer
 
 ```bash
-$ mindtrace-hw plc start
-$ mindtrace-hw plc status
-$ mindtrace-hw plc stop
+# Via CLI
+mindtrace-hw plc start
+
+# Programmatically
+from mindtrace.hardware.services import PLCManagerService
+PLCManagerService.launch(port=8003, block=True)
 ```
 
-## Sensors
+See [PLC Documentation](mindtrace/hardware/services/plcs/README.md) for details.
 
-The sensors subsystem provides a unified async interface for reading and publishing sensor data across multiple communication backends.
+## Sensor System
 
-Exports include:
+### Supported Backends
 
-- `AsyncSensor`
-- `SensorManager`
-- `SensorSimulator`
-- `MQTTSensorBackend`
-- `HTTPSensorBackend`
-- `SerialSensorBackend`
-- simulator backends and backend factory helpers
+| Protocol | Status |
+|----------|--------|
+| MQTT | Implemented |
+| HTTP | Planned |
+| Serial | Planned |
 
-A dedicated sensor README exists in this package:
-- [Sensor subsystem documentation](mindtrace/hardware/sensors/README.md)
-
-Minimal example:
+### Basic Usage
 
 ```python
 from mindtrace.hardware.sensors import AsyncSensor, MQTTSensorBackend
 
-
 backend = MQTTSensorBackend("mqtt://localhost:1883")
 async with AsyncSensor("temp001", backend, "sensors/temperature") as sensor:
     data = await sensor.read()
-    print(data)
+    print(f"Temperature: {data}")
 ```
 
-## Services and MCP
-
-The hardware package is designed to work well with Mindtrace services, which can expose hardware functionality over HTTP and MCP.
-
-In practice, that means a hardware subsystem can often be run as a service and then accessed through:
-
-- REST endpoints
-- generated API docs at `/docs`
-- MCP-compatible tool endpoints for agent workflows
-
-Example:
-
-```python
-from mindtrace.hardware.services import PLCManagerConnectionManager, PLCManagerService
-
-
-# Launch a PLC service and wait for a usable client
-cm = PLCManagerService.launch(port=8003, wait_for_launch=True)
-print(cm.status())
-
-# Or connect later from another Python process
-plc_cm = PLCManagerConnectionManager("http://localhost:8003")
-```
-
-Example with the docs UI and a direct HTTP request:
-
-```bash
-$ mindtrace-hw plc start
-# Visit http://localhost:8003/docs
-$ curl http://localhost:8003/status
-```
-
-If you are already using the Mindtrace services layer, the hardware module fits naturally into that pattern.
-
-For service lifecycle management, the main operational interface is the hardware CLI.
+See [Sensor Documentation](mindtrace/hardware/sensors/README.md) for details.
 
 ## CLI Tools
 
-The package includes a dedicated CLI:
+### Service Management
 
 ```bash
-mindtrace-hw --help
-```
-
-Common service commands include:
-
-```bash
-# Cameras
+# Start services
 mindtrace-hw camera start
-mindtrace-hw camera status
-mindtrace-hw camera stop
-
-# Stereo cameras
 mindtrace-hw stereo start
-mindtrace-hw stereo status
-mindtrace-hw stereo stop
-
-# 3D scanners
-mindtrace-hw scanner start
-mindtrace-hw scanner status
-mindtrace-hw scanner stop
-
-# PLCs
+mindtrace-hw scanner3d start
 mindtrace-hw plc start
-mindtrace-hw plc status
-mindtrace-hw plc stop
 
-# Global status
+# Check status
 mindtrace-hw status
+
+# Stop all services
 mindtrace-hw stop
 ```
 
-Example workflow:
+### SDK Setup
 
 ```bash
-# Start a camera service and open its docs
-$ mindtrace-hw camera start --open-docs
+# Basler 2D (optional - for Viewer/IP Configurator)
+mindtrace-camera-basler install
 
-# Check overall hardware service status
-$ mindtrace-hw status
+# GenICam CTI files (required for GenICam cameras)
+mindtrace-camera-genicam install
 
-# Show service-specific status
-$ mindtrace-hw camera status
+# Stereo supplementary package (required for stereo cameras)
+mindtrace-stereo-basler install
 
-# Stop the service again
-$ mindtrace-hw camera stop
+# Matrix Vision mvGenTL Producer (required for Photoneo scanners)
+mindtrace-scanner-photoneo install
+
+# Verify Photoneo setup
+mindtrace-scanner-photoneo verify
 ```
 
-A dedicated CLI README exists in this package:
-- [Hardware CLI documentation](mindtrace/hardware/cli/README.md)
+See [CLI Documentation](mindtrace/hardware/cli/README.md) for details.
 
-## Installation and Backend Extras
+## Docker Deployment
 
-Base install:
+Pre-configured Docker images for each service:
+
+| Service | Port | Image |
+|---------|------|-------|
+| Camera | 8002 | `mindtrace-camera` |
+| Stereo | 8004 | `mindtrace-stereo` |
+| Scanner 3D | 8005 | `mindtrace-scanner3d` |
+| PLC | 8003 | `mindtrace-plc` |
+| Sensors | 8006 | `mindtrace-sensors` |
 
 ```bash
-uv add mindtrace-hardware
+# Build (from repo root)
+docker build -f docker/hardware/camera/Dockerfile \
+  --build-arg INSTALL_BASLER=true \
+  -t mindtrace-camera:basler .
+
+# Run (GigE cameras require host network)
+docker run -d --network host mindtrace-camera:basler
+
+# Verify
+curl http://localhost:8002/health
 ```
 
-Or with pip:
-
-```bash
-pip install mindtrace-hardware
-```
-
-Optional extras enable backend-specific support:
-
-```bash
-pip install 'mindtrace-hardware[cameras-basler]'
-pip install 'mindtrace-hardware[cameras-genicam]'
-pip install 'mindtrace-hardware[cameras-all]'
-pip install 'mindtrace-hardware[stereo-basler]'
-pip install 'mindtrace-hardware[stereo-all]'
-pip install 'mindtrace-hardware[scanners-photoneo]'
-pip install 'mindtrace-hardware[scanners-all]'
-pip install 'mindtrace-hardware[hardware-all]'
-```
-
-### Setup entry points
-
-The package also defines setup-oriented commands for vendor-specific support:
-
-```bash
-mindtrace-camera-basler --help
-mindtrace-camera-genicam --help
-mindtrace-stereo-basler --help
-mindtrace-scanner-photoneo --help
-```
+See [Docker Documentation](../../../docker/hardware/) for details.
 
 ## Configuration
 
-The hardware package includes shared configuration helpers under `mindtrace.hardware.core` and is designed to support:
+### Environment Variables
 
-- environment-variable based configuration
-- programmatic configuration in Python
-- service-level runtime configuration
+```bash
+# Camera settings
+export MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=2
+export MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE=1000.0
+export MINDTRACE_HW_CAMERA_TIMEOUT_MS=5000
 
-Because different hardware domains and backends have different requirements, the most useful configuration surface usually depends on the subsystem you are using.
+# Stereo camera settings
+export MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS=20000
+export MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MIN=0.5
+export MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MAX=3.0
+export MINDTRACE_HW_STEREO_CAMERA_ILLUMINATION_MODE=AlwaysActive
+export MINDTRACE_HW_STEREO_CAMERA_DEPTH_QUALITY=Normal
 
-For subsystem-specific details, prefer the dedicated module documentation where available.
+# 3D scanner settings
+export MINDTRACE_HW_SCANNER_TIMEOUT_MS=30000
+export MINDTRACE_HW_SCANNER_EXPOSURE_TIME=20.0
+export MINDTRACE_HW_SCANNER_CODING_QUALITY=Ultra
+export MINDTRACE_HW_SCANNER_LED_POWER=4095
+export MINDTRACE_HW_SCANNER_LASER_POWER=4095
 
-## Examples
+# PLC settings
+export MINDTRACE_HW_PLC_CONNECTION_TIMEOUT=10.0
+export MINDTRACE_HW_PLC_READ_TIMEOUT=5.0
 
-See these docs in the repo for more focused subsystem guidance:
+# Backend control
+export MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+export MINDTRACE_HW_CAMERA_GENICAM_ENABLED=true
+export MINDTRACE_HW_SCANNER_PHOTONEO_ENABLED=true
+```
 
-- [Hardware CLI documentation](mindtrace/hardware/cli/README.md)
-- [3D scanner subsystem documentation](mindtrace/hardware/scanners_3d/README.md)
-- [Sensor subsystem documentation](mindtrace/hardware/sensors/README.md)
+### Configuration File
+
+```json
+{
+  "cameras": {
+    "max_concurrent_captures": 2,
+    "timeout_ms": 5000
+  },
+  "stereo_cameras": {
+    "timeout_ms": 20000,
+    "depth_range_min": 0.5,
+    "depth_range_max": 3.0,
+    "illumination_mode": "AlwaysActive",
+    "depth_quality": "Normal"
+  },
+  "scanners_3d": {
+    "timeout_ms": 30000,
+    "exposure_time": 20.0,
+    "coding_quality": "Ultra",
+    "coding_strategy": "Interreflections",
+    "led_power": 4095,
+    "laser_power": 4095
+  },
+  "plcs": {
+    "connection_timeout": 10.0,
+    "read_timeout": 5.0
+  }
+}
+```
 
 ## Testing
 
-If you are working in the full Mindtrace repo, run tests for this module specifically:
-
 ```bash
-git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
-uv sync --dev --all-extras
+# Unit tests
+pytest tests/unit/mindtrace/hardware/
+
+# Integration tests
+pytest tests/integration/mindtrace/hardware/
+
+# With mock backends
+export MINDTRACE_HW_CAMERA_MOCK_ENABLED=true
+export MINDTRACE_HW_SCANNER_MOCK_ENABLED=true
+pytest tests/
 ```
 
-```bash
-# Run the hardware test suite
-ds test: hardware
+## API Reference
 
-# Run only unit tests for hardware
-ds test: --unit hardware
+### Service Endpoints
+
+Each service exposes REST endpoints at:
+- Swagger UI: `http://localhost:{port}/docs`
+- ReDoc: `http://localhost:{port}/redoc`
+
+| Service | Port | Documentation |
+|---------|------|---------------|
+| Camera | 8002 | http://localhost:8002/docs |
+| Stereo | 8004 | http://localhost:8004/docs |
+| Scanner 3D | 8005 | http://localhost:8005/docs |
+| PLC | 8003 | http://localhost:8003/docs |
+
+### MCP Integration
+
+Services automatically expose MCP tools:
+
+```json
+{
+  "mcpServers": {
+    "mindtrace_cameras": {"url": "http://localhost:8002/mcp-server/mcp/"},
+    "mindtrace_plcs": {"url": "http://localhost:8003/mcp-server/mcp/"},
+    "mindtrace_stereo": {"url": "http://localhost:8004/mcp-server/mcp/"},
+    "mindtrace_scanner3d": {"url": "http://localhost:8005/mcp-server/mcp/"}
+  }
+}
 ```
 
-When hardware-dependent tests are not practical, prefer mock or simulator-based workflows where the subsystem supports them.
+### Exception Hierarchy
 
-## Practical Notes and Caveats
+```
+HardwareError
+├── HardwareOperationError
+├── HardwareTimeoutError
+└── SDKNotAvailableError
 
-- Many hardware backends require vendor SDKs, drivers, or transport libraries in addition to the Python package.
-- Available functionality depends on the backend and installed extras.
-- The top-level package uses lazy imports so unused SDKs are not loaded automatically.
-- Manager-style and async interfaces are usually the best choice for multi-device or automation workflows.
-- Service deployment is useful when hardware should be controlled remotely or exposed to agents/tools.
-- Some subsystems have more detailed dedicated READMEs than the top-level package; use this README for orientation and those docs for deeper subsystem details.
+CameraError
+├── CameraNotFoundError
+├── CameraCaptureError
+├── CameraConnectionError
+└── CameraConfigurationError
+
+ScannerError
+├── ScannerNotFoundError
+├── ScannerCaptureError
+├── ScannerConnectionError
+└── ScannerConfigurationError
+
+PLCError
+├── PLCConnectionError
+└── PLCTagError
+```
+
+## Tested Hardware
+
+The following hardware has been tested and validated with this module:
+
+### 2D Cameras
+| Manufacturer | Model | Interface | Backend |
+|--------------|-------|-----------|---------|
+| Basler | ace series | GigE | Basler |
+| Various | GenICam-compliant | GigE | GenICam |
+
+### Stereo Cameras
+| Manufacturer | Model | Interface | Backend |
+|--------------|-------|-----------|---------|
+| Basler | Stereo ace (dual ace2 Pro) | GigE | BaslerStereoAce |
+
+### 3D Scanners
+| Manufacturer | Model | Interface | Backend |
+|--------------|-------|-----------|---------|
+| Photoneo | PhoXi 3D Scanner (S, M, L, XL) | GigE (GenTL) | Photoneo |
+| Photoneo | MotionCam-3D / MotionCam-3D Color | GigE (GenTL) | Photoneo |
+
+### PLCs
+| Manufacturer | Model | Protocol |
+|--------------|-------|----------|
+| Allen-Bradley | ControlLogix | EtherNet/IP |
+| Allen-Bradley | CompactLogix | EtherNet/IP |
+
+## License
+
+Apache-2.0. See LICENSE file for details.
