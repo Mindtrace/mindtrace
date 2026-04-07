@@ -39,10 +39,12 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
   - [The `datalake` module](#the-datalake-module)
   - [The `jobs` module](#the-jobs-module)
   - [The `cluster` module](#the-cluster-module)
+  - [The `models` module (mindtrace-models)](#the-models-module-mindtrace-models)
   - [How everything works together](#how-everything-works-together)
 - [V3 Design](#v3-design)
   - [Strongest parts of the proposed V3 design](#strongest-parts-of-the-proposed-v3-design)
   - [Canonical V3 entities](#canonical-v3-entities)
+    - [Referencing paradigm (parent → child)](#referencing-paradigm-parent--child)
     - [Canonical entity summary table](#canonical-entity-summary-table)
     - [Collection](#1-collection)
     - [CollectionItem](#2-collectionitem)
@@ -80,6 +82,7 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
 - Preserve immutable dataset-version semantics.
 - Support query-generated dataset views.
 - Support both Mindtrace-native datasets and HuggingFace dataset interoperability.
+- Align with **mindtrace-models** so model runs can persist outputs into the Datalake and consume Datalake-backed data as training or inference inputs without ad hoc glue code.
 - Keep the initial V3 API small enough to implement without building the entire future platform at once.
 
 ### Non-goals
@@ -482,7 +485,7 @@ V3 keeps `Datum`, but narrows its role to dataset membership and composition rat
 
 #### 5. Immutable dataset versions over canonical entities
 
-V3 reintroduces dataset-version semantics in a cleaner way than V1 by making dataset versions immutable views over canonical datums, assets, and annotation sets.
+V3 reintroduces dataset-version semantics in a cleaner way than V1: a **dataset version** is an immutable **`manifest` of datum ids**; each **datum** references **assets** and **annotation sets**, which in turn list **annotation records**—with **parent → child** references only ([Referencing paradigm](#referencing-paradigm-parent--child)).
 
 #### Summary of the version history
 
@@ -590,11 +593,10 @@ Its job is to provide:
 
 ```mermaid
 flowchart TD
-    A[Asset] --> D[Datum]
-    AS[AnnotationSet] --> AR[AnnotationRecord]
-    AR --> D
-    DV[DatasetVersion] --> D
-    DV --> AS
+    DV[DatasetVersion] --> D[Datum]
+    D --> ARF[asset_refs to Asset]
+    D --> AS[AnnotationSet]
+    AS --> AR[AnnotationRecord]
 ```
 
 
@@ -685,6 +687,32 @@ So the current Cluster module is not just a scheduler in the abstract. It is alr
 - registry-backed worker distribution
 
 
+### The `models` module (mindtrace-models)
+
+The **`mindtrace-models`** package (the `mindtrace.models` module) is the ML lifecycle layer: architectures, training, evaluation, serving, and **archivers** that serialize model artifacts into the Mindtrace Registry.
+
+For V3, Datalake and models should be **synchronized by contract**, not by turning the Datalake into a training framework or models into a database layer.
+
+#### Main role relative to the Datalake
+
+- **Outputs → Datalake**: Predictions, exported masks, embeddings, evaluation dumps, and other run products should be able to land in the Datalake as canonical **assets**, **annotation sets**, and **annotation records** (and linked **datums** / **dataset versions** where appropriate), with explicit **provenance** (model identity, archiver or checkpoint ref, job/run id, software versions). This extends the spirit of the [V1 output-type mapping](#migrating-from-v1-to-v3) so that mindtrace-models task outputs map to the same V3 entities applications use.
+- **Datalake → inputs**: Training and inference pipelines should be able to resolve **dataset views** (immutable `DatasetVersion` materializations or query-derived views) into the tensors, file paths, or **Hugging Face** datasets that models already consume, using a small, stable adapter surface (see below) rather than each job reimplementing datum/asset resolution.
+
+#### Dependency boundary
+
+- **`datalake`** (and its service API) should remain **free of a hard dependency** on PyTorch, Ultralytics, ONNX, and other heavy ML stacks so lightweight clients and services can use it.
+- **`mindtrace-models`** may take an **optional** dependency on Datalake client types / HTTP APIs for I/O helpers, or integration can live in a **thin composition layer** (`apps`, job workers, or a dedicated bridge package) that already depends on both. The important part is that **schemas and metadata conventions are shared** (e.g. annotation `kind`, asset kinds, provenance fields) so outputs written by models are indistinguishable from outputs written by other producers.
+
+#### Practical synchronization mechanisms
+
+1. **Shared canonical shapes**: Reuse V3 entity semantics for model outputs (e.g. detection → `AnnotationRecord(kind="bbox")` with `AnnotationSource` pointing at the producing model/run). Archivers continue to own **Registry** serialization of weights and large blobs; Datalake rows reference those payloads via **storage refs / assets** where needed.
+2. **Ingress adapters in models**: Typed helpers that accept Datalake identifiers or view descriptors (dataset version + split + column mapping) and yield `Pipeline` / dataloader / HF `Dataset` inputs—mirroring how the module already integrates with the Registry.
+3. **Egress hooks in training, evaluation, and serving**: Callbacks, post-inference steps, or evaluation runners that call Datalake APIs (or injected `DatalakePort` interfaces) to persist batches of annotations or assets atomically where the platform requires it.
+4. **Jobs / cluster as optional orchestrators**: Long-running training or batch inference jobs remain the natural place to wire credentials, mounts, and retries; the Datalake contract stays the same whether the caller is a notebook, a worker, or a service.
+
+Together, this makes **Registry + Datalake** the single spine for “where blobs and canonical metadata live,” while **mindtrace-models** stays the spine for “how we train, evaluate, and serve,” with a narrow, documented bridge between them.
+
+
 ### How everything works together
 
 At a high level, the intended relationship is:
@@ -694,6 +722,7 @@ At a high level, the intended relationship is:
 - **`datalake`** provides canonical persisted data entities and data semantics
 - **`jobs`** provides executable task definitions and run lifecycle semantics
 - **`cluster`** integrates jobs and data in a distributed execution environment
+- **`models` (mindtrace-models)** produces and consumes ML artifacts; **synchronized with `datalake`** for canonical dataset membership, annotations, and provenance-backed outputs (see [above](#the-models-module-mindtrace-models))
 
 ```mermaid
 flowchart TD
@@ -705,6 +734,12 @@ flowchart TD
 
     JOBS[jobs module] --> CL[cluster module]
     DL --> CL
+
+    MD[models module]
+    REG --> MD
+    DL -->|views & datum resolution| MD
+    MD -->|annotations, assets, provenance| DL
+    CL --> MD
 ```
 
 The intended dependency direction should be:
@@ -714,6 +749,7 @@ The intended dependency direction should be:
 - `datalake` builds on both `registry` and `database`
 - `jobs` remains largely independent of `datalake`
 - `cluster` is the primary integration layer between execution and persisted data
+- `models` depends on `registry` today for archivers; **optional or composed** integration with `datalake` keeps heavy ML dependencies out of the core Datalake module
 
 This keeps the architecture modular while still allowing tight practical interoperability.
 
@@ -740,13 +776,7 @@ This enables:
 
 The idea that a dataset is composed of datums is strong and should be central to V3.
 
-A datum can point to one or more stored payloads while also carrying:
-
-- structured metadata
-- split membership
-- links to annotation sets
-
-This supports reusable assets, derived datasets, and query-generated views without forcing deep copies.
+A **dataset version** lists datums in its **manifest**; each **datum** points to one or more **assets** (by role) and lists **annotation sets**—see [Referencing paradigm (parent → child)](#referencing-paradigm-parent--child). Together that supports reusable assets, derived datasets, and query-generated views without forcing deep copies.
 
 ### 3. Immutable `Dataset` with mutable `DatasetBuilder`
 
@@ -777,6 +807,34 @@ Supporting a native Mindtrace data model while providing conversion to / from Hu
 
 The following entities define the proposed canonical V3 model.
 
+### Referencing paradigm (parent → child)
+
+The core **dataset / annotation / asset tree** uses **one-way containment**: larger containers hold references to smaller ones; **smaller entities do not store foreign keys back to their parents**.
+
+Intended hierarchy:
+
+```text
+DatasetVersion
+  └── manifest → Datum (ordered / addressable list of datum ids)
+        ├── asset_refs → Asset (role → asset_id; payload identity only flows Datum → Asset)
+        └── annotation_set_ids → AnnotationSet
+              └── annotation_record_ids → AnnotationRecord
+```
+
+Consequences:
+
+- A **`DatasetVersion`** lists **`datum_ids`** in its manifest only. Datums do **not** store `dataset_version_id`.
+- A **`Datum`** lists **`annotation_set_ids`** only. Annotation sets do **not** store `datum_id` or `dataset_version_id`.
+- An **`AnnotationSet`** lists **`annotation_record_ids`** only. Annotation records do **not** store `datum_id` or `annotation_set_id`.
+- An **`Asset`** does not reference datums, datasets, or annotations; only parents reference assets.
+
+`AnnotationSource` is modeled **inside** each `AnnotationRecord` (a value object), not as a separate graph parent of records.
+
+**Sibling references under the same datum**: A record may reference an `asset_id` that is also listed under the same datum’s `asset_refs` (for example mask geometry pointing at a mask asset). That is not a parent pointer; it links one **child** (record) to another **child** (asset) of the same datum.
+
+**Query and indexing**: Services may maintain secondary indexes or denormalized projections (e.g. “all records under dataset X”) for performance, but the **canonical persisted shape** should stay parent → child so membership and deletes compose predictably.
+
+Workspace and stewardship entities (`Collection`, `CollectionItem`, `AssetRetention`) sit **beside** this tree; where they still use multi-parent foreign keys, treat them as **operational** concerns, not as part of the core dataset containment model above.
 
 
 <details>
@@ -791,12 +849,10 @@ erDiagram
     COLLECTION ||--o{ COLLECTION_ITEM : "contains"
     ASSET ||--o{ ASSET_RETENTION : "retained by"
     COLLECTION ||--o{ ASSET_RETENTION : "may import/pin"
-    ASSET ||--o{ DATUM : "used by role refs"
-    DATASET_VERSION ||--o{ DATUM : "manifest contains"
-    DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
-    ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "contains"
-    DATUM ||--o{ ANNOTATION_RECORD : "annotated by"
-    ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
+    DATASET_VERSION ||--o{ DATUM : "manifest lists"
+    DATUM }o--o{ ASSET : "asset_refs"
+    DATUM ||--o{ ANNOTATION_SET : "annotation_set_ids"
+    ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "annotation_record_ids"
 
     STORAGE_REF {
         string mount
@@ -838,35 +894,28 @@ erDiagram
 
     DATUM {
         string datum_id
-        string dataset_version_id
         string split
         json asset_refs
         json metadata
-    }
-
-    ANNOTATION_SOURCE {
-        string type
-        string name
-        string version
+        json annotation_set_ids
     }
 
     ANNOTATION_SET {
         string annotation_set_id
-        string dataset_version_id
         string name
         string purpose
         string source_type
         string status
+        json annotation_record_ids
     }
 
     ANNOTATION_RECORD {
         string annotation_id
-        string datum_id
-        string annotation_set_id
         string kind
         string label
         int label_id
         float score
+        json source
         json geometry
         json attributes
     }
@@ -883,18 +932,27 @@ erDiagram
 Relationship summary:
 
 - `StorageRef` describes where a payload lives physically.
-- `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`.
+- `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`. Assets do not point back at datums.
 - `Collection` is a workspace/context that uses assets without necessarily owning the underlying payload bytes.
 - `CollectionItem` is the membership record connecting a collection to an asset.
 - `AssetRetention` records why an asset should continue to be retained independently of collection membership.
-- `Datum` is the unit of dataset membership and references one or more `Asset`s by role.
-- `AnnotationSet` groups related annotations, often by source or purpose.
-- `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
-- `AnnotationSource` captures where an annotation came from.
-- `DatasetVersion` is an immutable dataset view over datums, annotation sets, and provenance from earlier versions.
+- `DatasetVersion` is an immutable view whose **manifest** lists `datum_ids` only.
+- `Datum` is the unit of dataset membership: it references **assets by role** and lists **annotation set ids** for all label layers on that sample.
+- `AnnotationSet` is **scoped to one datum** (reachable only via that datum’s `annotation_set_ids`); it lists **annotation record ids** only.
+- `AnnotationRecord` is an atomic label; **provenance** lives in an embedded `source` object (same information as `AnnotationSource` elsewhere in this doc).
 - `DatasetBuilder` is treated separately as a Datalake helper/API concept rather than a canonical persisted entity.
 
 </details>
+
+### Canonical entity summary table
+
+| Entity | Holds references to (children / payloads only) |
+|--------|-----------------------------------------------|
+| `DatasetVersion` | `manifest` → `Datum` ids |
+| `Datum` | `asset_refs` → `Asset` ids; `annotation_set_ids` → `AnnotationSet` ids |
+| `AnnotationSet` | `annotation_record_ids` → `AnnotationRecord` ids |
+| `AnnotationRecord` | (none upward); optional sibling `asset_id` inside `geometry` / attributes when tied to a datum-level mask asset |
+| `Asset` | `storage_ref` only (no datum or dataset pointers) |
 
 ### 1. `Collection`
 
@@ -1029,13 +1087,11 @@ Examples:
 
 ### 7. `AnnotationRecord`
 
-One atomic annotation.
+One atomic annotation. **Parent:** an `AnnotationSet` lists this id in `annotation_record_ids`. Records do **not** store `datum_id` or `annotation_set_id`.
 
 ```python
 AnnotationRecord:
     annotation_id: str
-    datum_id: str
-    annotation_set_id: str
     kind: Literal[
         "classification",
         "regression",
@@ -1093,16 +1149,16 @@ Notes:
 
 ### 8. `AnnotationSet`
 
-A grouping and provenance boundary for annotation records.
+A grouping and provenance boundary for annotation records, **scoped to a single datum**. **Parent:** that `Datum` lists this id in `annotation_set_ids`. Sets do **not** store `datum_id` or `dataset_version_id`.
 
 ```python
 AnnotationSet:
     annotation_set_id: str
-    dataset_version_id: str | None = None
     name: str
     purpose: Literal["ground_truth", "prediction", "review", "snapshot", "other"]
     source_type: Literal["human", "machine", "mixed"]
     status: Literal["draft", "active", "archived"]
+    annotation_record_ids: list[str] = []
     metadata: dict[str, Any] = {}
     created_at: datetime
     created_by: str | None = None
@@ -1110,17 +1166,16 @@ AnnotationSet:
 
 Notes:
 
-- This allows multiple annotation layers over the same underlying datum.
-- Useful distinctions include human truth vs machine predictions vs reviewed snapshots.
+- Multiple sets per datum support layers such as human truth vs machine predictions vs reviewed snapshots.
+- All records in the set apply to the **same** datum (the parent that holds `annotation_set_ids`).
 
 ### 9. `Datum`
 
-The unit of dataset membership.
+The unit of dataset membership. **Parent:** `DatasetVersion.manifest` lists this `datum_id`. Datums do **not** store `dataset_version_id`.
 
 ```python
 Datum:
     datum_id: str
-    dataset_version_id: str
     split: Literal["train", "val", "test"] | None = None
     asset_refs: dict[str, str]  # role -> asset_id
     metadata: dict[str, Any] = {}
@@ -1131,11 +1186,11 @@ Datum:
 Notes:
 
 - `asset_refs` can map roles like `image`, `thumbnail`, `aux_mask`, or `roi_crop` to asset IDs.
-- Datums should link to annotation sets instead of embedding all annotation payloads directly.
+- Datums reference annotation sets by id instead of embedding annotation payloads.
 
 ### 10. `DatasetVersion`
 
-An immutable dataset record.
+An immutable dataset record. **Parent:** this object lists member datums in `manifest` only.
 
 ```python
 DatasetVersion:
@@ -1143,7 +1198,7 @@ DatasetVersion:
     dataset_name: str
     version: str
     description: str | None = None
-    manifest: list[str]  # datum_ids
+    manifest: list[str]  # datum_ids, in stable order
     source_dataset_version_id: str | None = None
     metadata: dict[str, Any] = {}
     created_at: datetime
@@ -1152,14 +1207,17 @@ DatasetVersion:
 
 Notes:
 
-- This preserves the immutable dataset concept from the sketches.
+- Annotation sets and assets are **not** listed on the dataset version; they are reached through each datum (`annotation_set_ids`, `asset_refs`).
+- The same `datum_id` may appear in multiple dataset version manifests when versions share identical samples (reuse without duplicating child records).
 - A runtime `Dataset` object can wrap this record and provide a Pythonic interface.
 
 ### Canonical semantic rule
 
 One of the most important semantic rules for V3 should be:
 
-> Dataset versions are immutable views over datum membership; assets and annotations are persisted separately and referenced by those views.
+> **Dataset versions** list **datums**; **datums** list **assets** (by role) and **annotation sets**; **annotation sets** list **annotation records**—and **child records never store parent ids**, so containment always flows from larger to smaller containers.
+
+> Immutable dataset versions are defined by their **manifest** of datum ids; assets and annotation payloads remain separate rows referenced only downward the tree.
 
 This keeps the V3 data model normalized, extensible, and operationally practical.
 
@@ -1340,7 +1398,7 @@ This preserves the spirit of `from_query(...)` while replacing a Python `Callabl
 
 #### `POST /api/v1/datalake/datums`
 
-Create one or more datums.
+Create one or more datums. **Membership in a dataset version** is expressed only by appending each `datum_id` to that version’s `manifest` (for example via dataset-version update or builder finalize), not by storing `dataset_version_id` on the datum.
 
 #### `GET /api/v1/datalake/datums/{datum_id}`
 
@@ -1356,30 +1414,30 @@ Update mutable datum metadata before finalization if allowed.
 
 ### E. Annotation API
 
-#### `POST /api/v1/datalake/annotation-sets`
+Annotation APIs should follow **parent-scoped** paths so callers never send parent ids on child bodies: the server appends new child ids to the parent’s list (`datum.annotation_set_ids`, `annotation_set.annotation_record_ids`).
 
-Create a new annotation set.
+#### `POST /api/v1/datalake/datums/{datum_id}/annotation-sets`
+
+Create a new annotation set for this datum (empty `annotation_record_ids` initially). The service must append the new `annotation_set_id` to `datum.annotation_set_ids`.
+
+#### `GET /api/v1/datalake/datums/{datum_id}/annotation-sets`
+
+List annotation sets belonging to this datum (resolve via `datum.annotation_set_ids`).
 
 #### `GET /api/v1/datalake/annotation-sets/{annotation_set_id}`
 
-Fetch annotation set metadata.
+Fetch annotation set metadata (convenience when the id is already known).
 
-#### `GET /api/v1/datalake/annotation-sets`
+#### `POST /api/v1/datalake/annotation-sets/{annotation_set_id}/annotation-records`
 
-List/filter annotation sets.
-
-#### `POST /api/v1/datalake/annotations`
-
-Create one or more annotation records.
+Create one or more annotation records. The service assigns ids and appends each to `annotation_set.annotation_record_ids`. Bodies must **not** include `datum_id` or `annotation_set_id`.
 
 Example request:
 
 ```json
 {
-  "annotation_set_id": "aset-1",
   "annotations": [
     {
-      "datum_id": "datum-1",
       "kind": "bbox",
       "label": "crack",
       "score": 0.92,
@@ -1403,17 +1461,21 @@ Example request:
 }
 ```
 
-#### `GET /api/v1/datalake/annotations`
+#### `GET /api/v1/datalake/annotation-records`
 
-Filter annotation records by datum, set, kind, label, or source.
+Filter annotation records by kind, label, or source. Filtering **by datum** or **by set** is defined as: traverse `dataset_version.manifest` → each `datum.annotation_set_ids` → each set’s `annotation_record_ids`, or use an implementation-maintained secondary index that mirrors that tree.
 
-#### `PATCH /api/v1/datalake/annotations/{annotation_id}`
+#### `GET /api/v1/datalake/annotation-records/{annotation_id}`
+
+Fetch a single record by id.
+
+#### `PATCH /api/v1/datalake/annotation-records/{annotation_id}`
 
 Update an annotation record.
 
-#### `DELETE /api/v1/datalake/annotations/{annotation_id}`
+#### `DELETE /api/v1/datalake/annotation-records/{annotation_id}`
 
-Delete an annotation record.
+Delete an annotation record and remove its id from the parent `AnnotationSet.annotation_record_ids` (or apply an equivalent tombstone policy).
 
 ---
 
@@ -1434,7 +1496,7 @@ The table below captures the recommended mapping.
 | `classification` | Single class-style output | `AnnotationSet` + `AnnotationRecord(kind="classification")` | The annotation set captures source/purpose; each record stores the label and optional score/provenance. |
 | `regression` | Scalar numeric output | `AnnotationSet` + `AnnotationRecord(kind="regression")` **or** structured datum/collection metadata, depending on domain semantics | If regression is part of the canonical label space, model it explicitly. If it is operational metadata, store it as structured metadata instead. |
 | `detection` | Bounding-box detection output with labels | `AnnotationSet` + `AnnotationRecord(kind="bbox")` | Each detected object should become an atomic bbox annotation record. |
-| `image_segmentation` | Mask-based image segmentation | `Asset(kind="mask")` + `AnnotationSet` + `AnnotationRecord(kind="mask")` | The mask payload should be stored as an asset, while the annotation record references it canonically. |
+| `image_segmentation` | Mask-based image segmentation | `Asset(kind="mask")` + `AnnotationSet` + `AnnotationRecord(kind="mask")` | The mask payload is a **datum**-level asset in `asset_refs`; the record may reference that `asset_id` in geometry (sibling ref), not a parent id. |
 | `pointcloud_segmentation` | Per-point segmentation/classification for point clouds | `AnnotationSet` + `AnnotationRecord(kind="pointcloud_segmentation")` **or** a dedicated pointcloud annotation entity if introduced | V3 should support this explicitly even if the first implementation uses a specialized annotation kind before a richer pointcloud model exists. |
 
 ### Migration guidance
@@ -1492,6 +1554,16 @@ A consumer of the Datalake module should be able to:
 
 This keeps Datalake positioned as the canonical persistence and access layer while allowing downstream applications to remain thin clients over that data model.
 
+#### mindtrace-models synchronization
+
+To make **model outputs** and **Datalake entries** first-class counterparts:
+
+- **Egress (models → Datalake)**: Standardize how training, evaluation, and serving persist results—prefer **parent-scoped** batch APIs (datum → annotation set → records; datum `asset_refs`) so model outputs extend the tree without embedding parent foreign keys on child rows.
+- **Ingress (Datalake → models)**: Provide stable “view → loader” patterns: from a `DatasetVersion` or query-derived view descriptor to the structures `Pipeline` / `Trainer` / `EvaluationRunner` already expect, including HF interop where that is the native consumer.
+- **Single source of truth**: Large tensors and checkpoints stay in **Registry** via archivers; the Datalake holds **references, metadata, and structured labels** so queries and dataset versions stay coherent without duplicating blob logic inside `mindtrace.models`.
+
+Whether the Python glue ships inside `mindtrace-models` as an extra, inside `mindtrace.apps`, or as a small shared bridge module is an implementation choice; the **contract** (entity shapes, metadata keys, and API endpoints) should be owned with the V3 Datalake design so both sides evolve together.
+
 ---
 
 
@@ -1518,6 +1590,10 @@ The following are intentionally left open for later design decisions:
 
 6. **Access control / multi-tenant concerns**
    - Should authorization remain outside the Datalake service in the initial V3 implementation, or be partly absorbed later?
+
+7. **mindtrace-models ↔ Datalake integration placement**
+   - Should ingress/egress helpers live in `mindtrace-models` (optional extra), in `mindtrace.apps` / job workers only, or in a small dedicated bridge package?
+   - What is the minimum API surface on the Datalake side (SDK vs HTTP) that models need for batch write and stream read paths?
 
 ---
 
