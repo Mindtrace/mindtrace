@@ -137,8 +137,76 @@ def test_update_from_other_store(basic_store):
 def test_location_cache_helpers(basic_store):
     basic_store.cache_update_location("foo", "a")
     assert basic_store.cache_lookup_locations("foo") == ["a"]
+    basic_store.cache_update_location("foo", "b")
+    assert basic_store.cache_lookup_locations("foo") == ["b", "a"]
+    basic_store.cache_update_location("foo", "a")
+    assert basic_store.cache_lookup_locations("foo") == ["a", "b"]
     basic_store.cache_evict_name("foo")
     assert basic_store.cache_lookup_locations("foo") == []
     basic_store.cache_update_location("foo", "a")
     basic_store.clear_location_cache()
     assert basic_store.cache_lookup_locations("foo") == []
+
+
+def test_has_mount_false_path_and_list_mount_info(basic_store):
+    assert basic_store.has_mount("missing") is False
+    info = basic_store.list_mount_info()
+    assert "a" in info
+    assert "b" in info
+    assert "temp" in info
+
+
+def test_add_mount_rejects_invalid_input_type(basic_store):
+    with pytest.raises(TypeError):
+        basic_store.add_mount(object())
+
+
+def test_parse_key_recognizes_existing_mount_prefix(basic_store):
+    assert basic_store.parse_key("a/nested/path") == ("a", "nested/path", None)
+
+
+def test_remove_mount_prunes_cache_references(basic_store):
+    basic_store.cache_update_location("foo", "a")
+    basic_store.cache_update_location("foo", "b")
+    basic_store.remove_mount("b")
+    assert basic_store.cache_lookup_locations("foo") == ["a"]
+
+
+def test_qualified_has_object_and_delete(basic_store):
+    basic_store.save("a/qitem", {"v": 1})
+    assert basic_store.has_object("a/qitem") is True
+    assert basic_store.delete("a/qitem") is None
+    assert basic_store.has_object("a/qitem") is False
+
+
+def test_get_and_pop_missing_defaults(basic_store):
+    sentinel = {"missing": True}
+    assert basic_store.get("missing", sentinel) is sentinel
+    assert basic_store.pop("missing", sentinel) is sentinel
+    with pytest.raises(KeyError):
+        basic_store.pop("missing")
+
+
+def test_keys_values_items_and_len(basic_store):
+    basic_store.save("one", {"v": 1})
+    basic_store.save("two", {"v": 2})
+    keys = list(basic_store.keys())
+    values = list(basic_store.values())
+    items = list(basic_store.items())
+    assert len(basic_store) >= 2
+    assert "one" in keys
+    assert "two" in keys
+    assert any(v["v"] == 1 for v in values)
+    assert any(k == "one" and v["v"] == 1 for k, v in items)
+
+
+def test_unqualified_delete_uses_default_mount(basic_store):
+    basic_store.save("default-only", {"v": 1})
+    basic_store.delete("default-only")
+    with pytest.raises(RegistryObjectNotFound):
+        basic_store.load("a/default-only")
+
+
+def test_batch_delete_failure_path(basic_store):
+    result = basic_store.delete(["present", "missing"])
+    assert result.success_count == 0 or result.failed_count >= 1
