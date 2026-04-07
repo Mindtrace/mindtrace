@@ -68,8 +68,8 @@ def test_batch_save_load_delete_round_trip(basic_store):
 
     load_result = basic_store.load(["x", "y"])
     assert load_result.success_count == 2
-    assert load_result.results["x"]["n"] == 1
-    assert load_result.results["y"]["n"] == 2
+    assert load_result.results[0]["n"] == 1
+    assert load_result.results[1]["n"] == 2
 
     delete_result = basic_store.delete(["x", "y"])
     assert delete_result.success_count == 2
@@ -94,11 +94,11 @@ def test_info_with_unqualified_name_resolves_location(basic_store):
 
 def test_copy_and_move_between_mounts(basic_store):
     basic_store.save("a/original", {"v": 1})
-    copy_result = basic_store.copy("a/original", "b/copied")
+    copy_result = basic_store.copy("a/original", target="b/copied")
     assert copy_result is not None
     assert basic_store.load("b/copied")["v"] == 1
 
-    move_result = basic_store.move("b/copied", "a/moved")
+    move_result = basic_store.move("b/copied", target="a/moved")
     assert move_result is not None
     assert basic_store.load("a/moved")["v"] == 1
     with pytest.raises(RegistryObjectNotFound):
