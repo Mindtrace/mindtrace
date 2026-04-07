@@ -6,6 +6,7 @@ from mindtrace.registry import Registry, Store
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
+    StoreKeyFormatError,
     StoreLocationNotFound,
 )
 from mindtrace.registry.core.mount import LocalMountConfig, Mount
@@ -211,3 +212,239 @@ def test_batch_delete_missing_is_noop_success(basic_store):
     result = basic_store.delete(["present", "missing"])
     assert result.success_count == 2
     assert result.failure_count == 0
+
+
+def test_store_init_accepts_explicit_temp_and_named_mounts():
+    with TemporaryDirectory() as temp_dir, TemporaryDirectory() as other_dir:
+        temp_registry = Registry.from_mount(Mount(backend="local", config=LocalMountConfig(uri=temp_dir)))
+        other_registry = Registry.from_mount(Mount(backend="local", config=LocalMountConfig(uri=other_dir)))
+
+        store = Store(mounts={"temp": temp_registry, "other": other_registry}, default_mount="temp")
+
+        assert store.get_mount("temp").registry is temp_registry
+        assert store.get_mount("other").registry is other_registry
+
+
+def test_mount_name_sanitization_and_auto_derivation(basic_store):
+    with TemporaryDirectory() as d:
+        unnamed_mount = Mount(backend="local", config=LocalMountConfig(uri=d))
+
+        basic_store.add_mount(unnamed_mount)
+        basic_store.add_mount(unnamed_mount)
+
+        derived_mounts = [mount for mount in basic_store.list_mounts() if mount not in {"temp", "a", "b"}]
+        assert len(derived_mounts) == 2
+        assert any(mount.endswith("-2") for mount in derived_mounts)
+        assert Store._sanitize_mount_name("!!!") == "mount"
+
+
+def test_derive_mount_name_handles_registry_sources_and_multiple_collisions():
+    with TemporaryDirectory() as d:
+        registry = Registry.from_mount(Mount(backend="local", config=LocalMountConfig(uri=d)))
+        store = Store(default_mount="temp")
+
+        first_name = store._derive_mount_name(registry)
+        store.add_mount(registry, name=first_name)
+        store.add_mount(registry, name=f"{first_name}-2")
+
+        assert store._derive_mount_name(registry) == f"{first_name}-3"
+
+
+def test_add_mount_validates_generated_invalid_and_duplicate_names(basic_store):
+    with TemporaryDirectory() as auto_dir, TemporaryDirectory() as dup_dir:
+        basic_store.add_mount(Mount(backend="local", config=LocalMountConfig(uri=auto_dir)))
+        assert len([mount for mount in basic_store.list_mounts() if mount not in {"temp", "a", "b"}]) == 1
+
+        with pytest.raises(ValueError, match="Invalid mount name"):
+            basic_store.add_mount(
+                Mount(backend="local", config=LocalMountConfig(uri=dup_dir)),
+                name="bad/name",
+            )
+
+        basic_store.add_mount(Mount(name="dup", backend="local", config=LocalMountConfig(uri=dup_dir)))
+        with pytest.raises(ValueError, match="already exists"):
+            basic_store.add_mount(
+                Mount(name="dup", backend="local", config=LocalMountConfig(uri=dup_dir)),
+            )
+
+
+def test_remove_and_get_mount_raise_for_unknown_mount(basic_store):
+    with pytest.raises(StoreLocationNotFound):
+        basic_store.remove_mount("missing")
+
+    with pytest.raises(StoreLocationNotFound):
+        basic_store.get_mount("missing")
+
+
+def test_remove_mount_evicts_last_cached_location(basic_store):
+    basic_store.cache_update_location("foo", "b")
+    basic_store.remove_mount("b")
+
+    assert basic_store.cache_lookup_locations("foo") == []
+
+
+def test_parse_and_build_key_validation_errors(basic_store):
+    with pytest.raises(StoreKeyFormatError, match="empty"):
+        basic_store.parse_key("   ")
+
+    with pytest.raises(StoreKeyFormatError, match="Invalid key"):
+        basic_store.parse_key("@1")
+
+    with pytest.raises(StoreKeyFormatError, match="Invalid key"):
+        basic_store.parse_key("a/")
+
+    with pytest.raises(StoreLocationNotFound):
+        basic_store.build_key("missing", "name")
+
+    with pytest.raises(StoreKeyFormatError, match="name cannot be empty"):
+        basic_store.build_key("a", "")
+
+
+def test_resolve_registry_and_get_registry_helpers(basic_store):
+    assert basic_store.resolve_registry("a") is basic_store.get_mount("a").registry
+    assert basic_store.get_registry("a/item") is basic_store.get_mount("a").registry
+
+    with pytest.raises(StoreLocationNotFound, match="No mount specified"):
+        basic_store.resolve_registry("item")
+
+
+def test_cache_helpers_noop_when_location_cache_disabled():
+    store = Store(enable_location_cache=False)
+
+    store.cache_update_location("foo", "temp")
+
+    assert store.cache_lookup_locations("foo") == []
+
+
+def test_read_only_mount_blocks_save_and_delete(basic_store):
+    with TemporaryDirectory() as d:
+        basic_store.add_mount(
+            Mount(name="ro", backend="local", config=LocalMountConfig(uri=d), read_only=True)
+        )
+
+        with pytest.raises(PermissionError, match="read-only"):
+            basic_store.save("ro/item", {"v": 1})
+
+        basic_store.get_mount("ro").registry.save("item", {"v": 1})
+        with pytest.raises(PermissionError, match="read-only"):
+            basic_store.delete("ro/item")
+
+
+def test_batch_operations_validate_lengths(basic_store):
+    with pytest.raises(ValueError, match="lengths must match"):
+        basic_store.save(["one", "two"], [{"v": 1}], version=[None, None])
+
+    with pytest.raises(ValueError, match="same length"):
+        basic_store.load(["one", "two"], version=["1"])
+
+    with pytest.raises(ValueError, match="same length"):
+        basic_store.delete(["one", "two"], version=["1"])
+
+
+def test_batch_save_records_per_item_errors(basic_store, monkeypatch):
+    original_single_save = basic_store._single_save
+
+    def fake_single_save(key, obj, **kwargs):
+        if key == "bad":
+            raise RuntimeError("boom")
+        return original_single_save(key, obj, **kwargs)
+
+    monkeypatch.setattr(basic_store, "_single_save", fake_single_save)
+
+    result = basic_store.save(["good", "bad"], [{"v": 1}, {"v": 2}])
+
+    assert result.success_count == 1
+    assert result.failure_count == 1
+    assert ("a/good", "1.0.0") in result.succeeded
+    assert ("a/bad", "latest") in result.failed
+    assert result.errors[("a/bad", "latest")]["error"] == "RuntimeError"
+
+
+def test_batch_load_records_per_item_errors(basic_store, monkeypatch):
+    def fake_single_load(key, version="latest", output_dir=None, verify=None, **kwargs):
+        if key == "bad":
+            raise RuntimeError("boom")
+        return {"key": key, "version": version}
+
+    monkeypatch.setattr(basic_store, "_single_load", fake_single_load)
+
+    result = basic_store.load(["good", "bad"], version=["1", "2"])
+
+    assert result.success_count == 1
+    assert result.failure_count == 1
+    assert ("good", "1") in result.succeeded
+    assert ("bad", "2") in result.failed
+    assert result.errors[("bad", "2")]["message"] == "boom"
+
+
+def test_batch_delete_records_per_item_errors(basic_store, monkeypatch):
+    def fake_single_delete(key, version=None):
+        if key == "bad":
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(basic_store, "_single_delete", fake_single_delete)
+
+    result = basic_store.delete(["good", "bad"], version=["1", "2"])
+
+    assert result.success_count == 1
+    assert result.failure_count == 1
+    assert ("good", "1") in result.succeeded
+    assert ("bad", "2") in result.failed
+    assert result.errors[("bad", "2")]["error"] == "RuntimeError"
+
+
+def test_listing_helpers_with_mount_specific_queries(basic_store):
+    basic_store.save("a/item", {"v": 1}, version="1")
+    basic_store.save("b/other", {"v": 3})
+
+    assert basic_store.list_objects("a") == ["a/item"]
+    assert basic_store.list_versions("a/item") == ["1.0.0"]
+    assert basic_store.list_objects_and_versions("a") == {"a/item": ["1.0.0"]}
+
+    all_objects = basic_store.list_objects_and_versions()
+    assert all_objects["a/item"] == ["1.0.0"]
+    assert all_objects["b/other"] == ["1.0.0"]
+
+
+def test_dict_dunder_helpers_for_delete_contains_and_str(basic_store):
+    basic_store["alpha"] = {"v": 1}
+    basic_store["beta"] = {"v": 2}
+
+    assert ["alpha", "beta"] in basic_store
+    del basic_store["beta"]
+    assert "beta" not in basic_store
+
+    rendered = basic_store.__str__(color=False)
+    assert "Store" in rendered
+    assert "[*a]" in rendered
+    assert "Default Mount: `a`" in rendered
+
+
+def test_update_from_store_without_syncing_all_versions():
+    with TemporaryDirectory() as src_dir, TemporaryDirectory() as dst_dir:
+        other = Store.from_mounts([Mount(name="src", backend="local", config=LocalMountConfig(uri=src_dir), is_default=True)])
+        target = Store.from_mounts(
+            [
+                Mount(
+                    name="dst",
+                    backend="local",
+                    config=LocalMountConfig(uri=dst_dir),
+                    is_default=True,
+                    registry_options={"mutable": True},
+                )
+            ]
+        )
+        other.save("src/item", {"v": 2})
+        other.save("src/second", {"v": 3})
+        target.save("item", {"v": 0})
+
+        target.update(other, sync_all_versions=False)
+
+        assert target.load("item")["v"] == 2
+        assert target.load("second")["v"] == 3
+        assert target.list_versions("dst/item") == ["1.0.0"]
+
+
+def test_update_rejects_non_mapping_input(basic_store):
+    with pytest.raises(TypeError, match="mapping must be a mapping or Store"):
+        basic_store.update(object())
