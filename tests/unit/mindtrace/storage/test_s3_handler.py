@@ -386,6 +386,42 @@ def test_delete_idempotent(mock_boto3):
     mock_client.delete_object.assert_called_once()
 
 
+@patch("mindtrace.storage.s3.boto3")
+def test_delete_returns_not_found_for_missing_key(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("404", "missing")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.delete("ghost.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.error_type == "NotFound"
+    assert "Object not found" in result.error_message
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_delete_returns_error_for_non_not_found_client_error(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("AccessDenied", "denied")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.delete("blocked.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"
+    assert "AccessDenied" in result.error_message
+
+
 # ---------------------------------------------------------------------------
 # String Operations
 # ---------------------------------------------------------------------------
