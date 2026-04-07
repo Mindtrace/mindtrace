@@ -207,6 +207,7 @@ def test_unqualified_delete_uses_default_mount(basic_store):
         basic_store.load("a/default-only")
 
 
-def test_batch_delete_failure_path(basic_store):
+def test_batch_delete_missing_is_noop_success(basic_store):
     result = basic_store.delete(["present", "missing"])
-    assert result.success_count == 0 or result.failure_count >= 1
+    assert result.success_count == 2
+    assert result.failure_count == 0
