@@ -101,6 +101,26 @@ def test_mount_rejects_invalid_local_auth():
         )
 
 
+def test_mount_rejects_invalid_local_config_type():
+    with pytest.raises(TypeError):
+        Mount(
+            name="local",
+            backend="local",
+            config=S3MountConfig(bucket="datasets"),
+            auth=NoAuth(),
+        )
+
+
+def test_mount_rejects_invalid_local_gcs_auth_type():
+    with pytest.raises(TypeError):
+        Mount(
+            name="local",
+            backend="local",
+            config=LocalMountConfig(uri="/tmp/test"),
+            auth=GCSServiceAccountFileAuth(path="/tmp/service-account.json"),
+        )
+
+
 def test_mount_rejects_invalid_s3_config_type():
     with pytest.raises(TypeError):
         Mount(name="nas", backend="s3", config=LocalMountConfig(uri="/tmp/test"), auth=AmbientAuth())
