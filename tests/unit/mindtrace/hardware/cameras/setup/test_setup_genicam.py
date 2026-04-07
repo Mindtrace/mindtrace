@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from mindtrace.hardware.cameras.setup.setup_genicam import (
@@ -16,6 +17,20 @@ from mindtrace.hardware.cameras.setup.setup_genicam import (
 )
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _block_unmocked_privileged_subprocess_calls(monkeypatch):
+    """Fail fast if a test leaks a real privileged subprocess call."""
+
+    original_run = subprocess.run
+
+    def guarded_run(cmd, *args, **kwargs):
+        if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "sudo":
+            raise AssertionError(f"Unexpected real privileged subprocess call: {cmd!r}")
+        return original_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
 
 
 def _mock_hw_config():
@@ -216,7 +231,10 @@ def test_install_linux_returns_false_when_verification_fails(tmp_path):
 def test_install_linux_returns_false_on_file_not_found(tmp_path):
     inst = _installer(tmp_path)
 
-    with patch("urllib.request.urlretrieve", side_effect=FileNotFoundError("missing")):
+    with (
+        patch.object(inst, "_run_command"),
+        patch("urllib.request.urlretrieve", side_effect=FileNotFoundError("missing")),
+    ):
         assert inst._install_linux() is False
 
 
