@@ -715,6 +715,17 @@ def test_fetch_registry_metadata_default(backend):
     assert "materializers" in result
 
 
+def test_fetch_registry_metadata_error_message(backend, monkeypatch):
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="error", ok=False, error_message="boom"),
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to fetch registry metadata: boom"):
+        backend.fetch_registry_metadata()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Materializer Tests
 # ─────────────────────────────────────────────────────────────────────────────
