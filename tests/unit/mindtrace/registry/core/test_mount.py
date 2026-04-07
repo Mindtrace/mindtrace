@@ -2,7 +2,9 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
+import importlib
 
+import mindtrace.registry as registry_package
 from mindtrace.registry import (
     AmbientAuth,
     GCSMountConfig,
@@ -90,6 +92,11 @@ def test_mount_requires_config():
 def test_mount_rejects_invalid_name():
     with pytest.raises(ValueError):
         Mount(name="bad/name", backend="local", config=LocalMountConfig(uri="/tmp/test"))
+
+
+def test_mount_rejects_non_string_name():
+    with pytest.raises(TypeError, match="Mount name must be a string or None"):
+        Mount(name=123, backend="local", config=LocalMountConfig(uri="/tmp/test"))
 
 
 def test_mount_rejects_invalid_local_auth():
@@ -413,3 +420,16 @@ def test_mount_display_uri_for_remote_mounts():
 def test_noauth_still_supported_for_local_mounts():
     mount = Mount(name="local", backend="local", config=LocalMountConfig(uri="/tmp/test"), auth=NoAuth())
     assert mount.auth.mode == "none"
+
+
+def test_registry_package_rejects_unknown_lazy_attribute():
+    with pytest.raises(AttributeError, match="has no attribute 'DefinitelyMissingRegistryExport'"):
+        getattr(registry_package, "DefinitelyMissingRegistryExport")
+
+
+def test_registry_package_lazily_exports_gcp_backend():
+    reloaded = importlib.reload(registry_package)
+
+    gcp_backend = getattr(reloaded, "GCPRegistryBackend")
+
+    assert gcp_backend.__name__ == "GCPRegistryBackend"
