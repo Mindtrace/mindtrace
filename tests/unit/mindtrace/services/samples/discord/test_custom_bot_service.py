@@ -4,6 +4,7 @@ Unit tests for the custom Discord bot service sample.
 
 import runpy
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -622,6 +623,6 @@ class TestModuleExecution:
             with patch("builtins.print"):
                 with patch("time.sleep", side_effect=KeyboardInterrupt()):
                     with patch("mindtrace.services.discord.discord_service.DiscordService.launch", return_value=mock_manager):
-                        runpy.run_module("mindtrace.services.samples.discord.custom_bot_service", run_name="__main__")
+                        runpy.run_path(str(Path(main.__code__.co_filename)), run_name="__main__")
 
         mock_manager.shutdown.assert_called_once()
