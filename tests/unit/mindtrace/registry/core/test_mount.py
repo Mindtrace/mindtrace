@@ -9,6 +9,7 @@ from mindtrace.registry import (
     GCSServiceAccountFileAuth,
     LocalMountConfig,
     Mount,
+    MountBackendKind,
     NoAuth,
     Registry,
     S3AccessKeyAuth,
