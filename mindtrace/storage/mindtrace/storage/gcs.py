@@ -384,7 +384,8 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             True if the blob exists, False otherwise.
         """
-        return self._bucket().blob(remote_path).exists(self.client)
+        sanitized_path = self._sanitize_blob_path(remote_path)
+        return self._bucket().blob(sanitized_path).exists(self.client)
 
     def get_presigned_url(
         self,

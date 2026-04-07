@@ -306,9 +306,10 @@ def test_exists_delegates_to_blob(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.exists.side_effect = (True, False)  # yes then no
 
-    h = GCSStorageHandler("bucket")
+    h = GCSStorageHandler("my-bucket")
     assert h.exists("foo") is True
-    assert h.exists("foo") is False
+    assert h.exists("gs://my-bucket/foo") is False
+    bucket.blob.assert_any_call("foo")
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
