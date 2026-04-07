@@ -1069,6 +1069,19 @@ def test_acquire_internal_lock_returns_false_on_unexpected_error(backend, monkey
     assert backend._acquire_internal_lock("test_error", "lock", timeout=30, shared=False) is False
 
 
+def test_acquire_internal_lock_returns_false_when_lock_dir_creation_fails(backend, monkeypatch):
+    real_mkdir = Path.mkdir
+    lock_dir = backend._lock_dir("test_error_mkdir")
+
+    def mock_mkdir(self, *args, **kwargs):
+        if self == lock_dir:
+            raise OSError("mkdir failed")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mock_mkdir)
+    assert backend._acquire_internal_lock("test_error_mkdir", "lock", timeout=30, shared=False) is False
+
+
 def test_cleanup_expired_locks_handles_missing_dir_and_corrupted_file(backend):
     backend._cleanup_expired_locks("missing-lock-dir")
 

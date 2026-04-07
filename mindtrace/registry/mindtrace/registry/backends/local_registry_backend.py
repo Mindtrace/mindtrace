@@ -159,13 +159,13 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             True if the lock was acquired, False otherwise.
         """
-        lock_dir = self._lock_dir(key)
-        lock_dir.mkdir(parents=True, exist_ok=True)
-
-        exclusive_path = self._exclusive_lock_path(key)
-        expires_at = time.time() + timeout
-
         try:
+            lock_dir = self._lock_dir(key)
+            lock_dir.mkdir(parents=True, exist_ok=True)
+
+            exclusive_path = self._exclusive_lock_path(key)
+            expires_at = time.time() + timeout
+
             if shared:
                 # For shared lock: check no exclusive lock exists, then create shared lock file
                 # First, clean up expired exclusive lock if any
