@@ -75,6 +75,16 @@ class DummyGCSBackend(DummyRemoteBackend):
     pass
 
 
+def test_mount_requires_backend():
+    with pytest.raises(TypeError):
+        Mount(name="local", config=LocalMountConfig(uri="/tmp/test"))
+
+
+def test_mount_requires_config():
+    with pytest.raises(TypeError):
+        Mount(name="local", backend="local")
+
+
 def test_mount_rejects_invalid_name():
     with pytest.raises(ValueError):
         Mount(name="bad/name", backend="local", config=LocalMountConfig(uri="/tmp/test"))
@@ -93,6 +103,21 @@ def test_mount_rejects_invalid_local_auth():
 def test_mount_rejects_invalid_s3_config_type():
     with pytest.raises(TypeError):
         Mount(name="nas", backend="s3", config=LocalMountConfig(uri="/tmp/test"), auth=AmbientAuth())
+
+
+def test_mount_rejects_invalid_s3_auth_type():
+    with pytest.raises(TypeError):
+        Mount(
+            name="nas",
+            backend="s3",
+            config=S3MountConfig(bucket="datasets"),
+            auth=NoAuth(),
+        )
+
+
+def test_mount_rejects_invalid_gcs_config_type():
+    with pytest.raises(TypeError):
+        Mount(name="gcs", backend="gcs", config=LocalMountConfig(uri="/tmp/test"), auth=AmbientAuth())
 
 
 def test_mount_rejects_invalid_gcs_auth_type():
@@ -195,6 +220,7 @@ def test_registry_mount_property_round_trips_local_registry():
         assert isinstance(mount.config, LocalMountConfig)
         assert mount.registry_options["version_objects"] is True
         assert mount.registry_options["mutable"] is True
+        assert mount.auth.mode == "none"
 
 
 def test_mount_from_registry_classmethod():
@@ -203,6 +229,57 @@ def test_mount_from_registry_classmethod():
         mount = Mount.from_registry(registry)
         assert mount.backend == "local"
         assert mount.registry_options["mutable"] is False
+
+
+def test_mount_from_registry_s3_best_effort(monkeypatch):
+    registry = Registry.__new__(Registry)
+    backend = DummyS3Backend(uri="s3://datasets/mindtrace")
+    backend.storage = type(
+        "S3StorageStub",
+        (),
+        {"bucket_name": "datasets", "endpoint": "minio.local:9000", "secure": False},
+    )()
+    backend._prefix = "mindtrace"
+    registry.backend = backend
+    registry.version_objects = True
+    registry.mutable = True
+    registry.version_digits = 8
+
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3RegistryBackend", DummyS3Backend)
+    mount = Mount.from_registry(registry, name="s3mount")
+    assert mount.name == "s3mount"
+    assert mount.backend == "s3"
+    assert isinstance(mount.config, S3MountConfig)
+    assert mount.auth.mode == "ambient"
+
+
+def test_mount_from_registry_gcs_best_effort(monkeypatch):
+    registry = Registry.__new__(Registry)
+    backend = DummyGCSBackend(uri="gs://bucket-a/datasets")
+    backend.gcs = type("GCSStorageStub", (), {"bucket_name": "bucket-a"})()
+    backend._prefix = "datasets"
+    backend.config = {"MINDTRACE_GCP": {"GCP_PROJECT_ID": "proj-1"}}
+    registry.backend = backend
+    registry.version_objects = True
+    registry.mutable = True
+    registry.version_digits = 8
+
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend", DummyGCSBackend)
+    mount = Mount.from_registry(registry, name="gcsmount")
+    assert mount.name == "gcsmount"
+    assert mount.backend == "gcs"
+    assert isinstance(mount.config, GCSMountConfig)
+    assert mount.auth.mode == "ambient"
+
+
+def test_mount_from_registry_rejects_unsupported_backend():
+    registry = Registry.__new__(Registry)
+    registry.backend = DummyRemoteBackend(uri="dummy://backend")
+    registry.version_objects = True
+    registry.mutable = True
+    registry.version_digits = 8
+    with pytest.raises(TypeError):
+        Mount.from_registry(registry)
 
 
 def test_mount_name_can_be_omitted():
