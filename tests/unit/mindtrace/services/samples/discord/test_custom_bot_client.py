@@ -2,6 +2,9 @@
 Unit tests for the custom Discord bot client sample.
 """
 
+import runpy
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -13,6 +16,56 @@ from mindtrace.services.samples.discord.custom_bot_client import (
     main,
     parse_arguments,
 )
+
+
+class _CommandTree:
+    def __init__(self):
+        self.commands = {}
+
+    def command(self, *, name, description):
+        def decorator(func):
+            self.commands[name] = func
+            return func
+
+        return decorator
+
+    def get_commands(self):
+        return list(self.commands.values())
+
+
+def _patch_bot_init():
+    tree = _CommandTree()
+
+    def fake_init(self, **kwargs):
+        self.logger = Mock()
+        self.bot = SimpleNamespace(tree=tree)
+        self.register_event_handler = Mock()
+
+    return tree, fake_init
+
+
+def _make_history(*messages):
+    async def history(*, limit):
+        for message in messages[:limit]:
+            yield message
+
+    return history
+
+
+def _make_interaction(*, guild=None, user=None, channel=None, client=None):
+    if user is None:
+        user = SimpleNamespace(id=123, __str__=lambda self: "user")  # pragma: no cover - fallback
+    interaction = Mock()
+    interaction.guild = guild
+    interaction.user = user
+    interaction.channel = channel or Mock()
+    interaction.client = client or SimpleNamespace(user=object())
+    interaction.response = Mock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = Mock()
+    interaction.followup.send = AsyncMock()
+    return interaction
 
 
 class TestCustomEventHandler:
@@ -160,6 +213,150 @@ class TestCustomDiscordBot:
         assert hasattr(CustomDiscordBot, "__init__")
         assert hasattr(CustomDiscordBot, "_register_commands")
         assert hasattr(CustomDiscordBot, "register_event_handler")
+
+    def test_init_registers_event_handler_and_commands(self):
+        tree, fake_init = _patch_bot_init()
+
+        with patch("mindtrace.services.samples.discord.custom_bot_client.DiscordClient.__init__", new=fake_init):
+            bot = CustomDiscordBot(token="abc")
+
+        bot.register_event_handler.assert_called_once()
+        assert set(tree.commands) == {"info", "roll", "cleanup", "help"}
+
+
+class TestRegisteredCommands:
+    @pytest.fixture
+    def bot_and_commands(self):
+        tree, fake_init = _patch_bot_init()
+
+        with patch("mindtrace.services.samples.discord.custom_bot_client.DiscordClient.__init__", new=fake_init):
+            bot = CustomDiscordBot(token="abc")
+
+        return bot, tree.commands
+
+    @pytest.mark.asyncio
+    async def test_info_command_requires_guild(self, bot_and_commands):
+        _, commands = bot_and_commands
+        interaction = _make_interaction(guild=None)
+
+        await commands["info"](interaction)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "This command can only be used in a server.", ephemeral=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_info_command_reports_guild_details(self, bot_and_commands):
+        _, commands = bot_and_commands
+        guild = SimpleNamespace(
+            name="Guild",
+            member_count=42,
+            channels=[1, 2, 3],
+            roles=["a", "b"],
+            created_at=datetime(2024, 1, 2),
+        )
+        interaction = _make_interaction(guild=guild, user="tester")
+
+        await commands["info"](interaction)
+
+        sent_message = interaction.response.send_message.await_args.args[0]
+        assert "Server Information" in sent_message
+        assert "Name: Guild" in sent_message
+        assert "Members: 42" in sent_message
+        assert "Created: 2024-01-02" in sent_message
+
+    @pytest.mark.asyncio
+    async def test_roll_command_rejects_non_positive_sides(self, bot_and_commands):
+        _, commands = bot_and_commands
+        interaction = _make_interaction()
+
+        await commands["roll"](interaction, 0)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "Number of sides must be positive.", ephemeral=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_roll_command_uses_random_result(self, bot_and_commands):
+        _, commands = bot_and_commands
+        interaction = _make_interaction()
+
+        with patch("random.randint", return_value=4):
+            await commands["roll"](interaction, 6)
+
+        interaction.response.send_message.assert_awaited_once_with("🎲 You rolled a 4 (1-6)")
+
+    @pytest.mark.asyncio
+    async def test_cleanup_command_requires_guild(self, bot_and_commands):
+        _, commands = bot_and_commands
+        interaction = _make_interaction(guild=None)
+
+        await commands["cleanup"](interaction, 10)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "This command can only be used in a server.", ephemeral=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_cleanup_command_requires_manage_messages_permission(self, bot_and_commands):
+        _, commands = bot_and_commands
+        member = SimpleNamespace(guild_permissions=SimpleNamespace(manage_messages=False))
+        guild = Mock()
+        guild.get_member.return_value = member
+        interaction = _make_interaction(guild=guild, user=SimpleNamespace(id=5))
+
+        await commands["cleanup"](interaction, 10)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "You need the 'Manage Messages' permission to use this command.", ephemeral=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_cleanup_command_validates_count_range(self, bot_and_commands):
+        _, commands = bot_and_commands
+        member = SimpleNamespace(guild_permissions=SimpleNamespace(manage_messages=True))
+        guild = Mock()
+        guild.get_member.return_value = member
+        interaction = _make_interaction(guild=guild, user=SimpleNamespace(id=5))
+
+        await commands["cleanup"](interaction, 101)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "Please specify a number between 1 and 100.", ephemeral=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_cleanup_command_deletes_only_bot_messages(self, bot_and_commands):
+        _, commands = bot_and_commands
+        member = SimpleNamespace(guild_permissions=SimpleNamespace(manage_messages=True))
+        guild = Mock()
+        guild.get_member.return_value = member
+        bot_user = object()
+        bot_message = SimpleNamespace(author=bot_user, delete=AsyncMock())
+        other_message = SimpleNamespace(author=object(), delete=AsyncMock())
+        channel = Mock()
+        channel.history = _make_history(bot_message, other_message, bot_message)
+        interaction = _make_interaction(
+            guild=guild, user=SimpleNamespace(id=5), channel=channel, client=SimpleNamespace(user=bot_user)
+        )
+
+        await commands["cleanup"](interaction, 3)
+
+        interaction.response.defer.assert_awaited_once()
+        assert bot_message.delete.await_count == 2
+        other_message.delete.assert_not_awaited()
+        interaction.followup.send.assert_awaited_once_with("Cleaned up 2 bot messages.")
+
+    @pytest.mark.asyncio
+    async def test_help_command_lists_available_commands(self, bot_and_commands):
+        _, commands = bot_and_commands
+        interaction = _make_interaction()
+
+        await commands["help"](interaction)
+
+        sent_message = interaction.response.send_message.await_args.args[0]
+        assert "Available commands:" in sent_message
+        assert "**/cleanup [count]**" in sent_message
 
 
 class TestCommandFunctions:
@@ -377,11 +574,7 @@ class TestModuleExecution:
 
     def test_module_execution(self):
         """Test that the module can be executed as a script."""
-        # Test that the module execution doesn't crash
-        # This tests the `if __name__ == "__main__": asyncio.run(main())` line
-        with patch("mindtrace.services.samples.discord.custom_bot_client.main"):
-            with patch("asyncio.run"):
-                # Import the module to trigger the if __name__ == "__main__" block
+        with patch("asyncio.run") as mock_run:
+            runpy.run_module("mindtrace.services.samples.discord.custom_bot_client", run_name="__main__")
 
-                # The module should be importable without errors
-                assert True
+        mock_run.assert_called_once()
