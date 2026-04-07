@@ -240,10 +240,10 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
         {"bucket_name": "datasets", "endpoint": "minio.local:9000", "secure": False},
     )()
     backend._prefix = "mindtrace"
-    registry.backend = backend
-    registry.version_objects = True
-    registry.mutable = True
-    registry.version_digits = 8
+    object.__setattr__(registry, "_backend", backend)
+    object.__setattr__(registry, "version_objects", True)
+    object.__setattr__(registry, "mutable", True)
+    object.__setattr__(registry, "version_digits", 8)
 
     monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3RegistryBackend", DummyS3Backend)
     mount = Mount.from_registry(registry, name="s3mount")
@@ -259,10 +259,10 @@ def test_mount_from_registry_gcs_best_effort(monkeypatch):
     backend.gcs = type("GCSStorageStub", (), {"bucket_name": "bucket-a"})()
     backend._prefix = "datasets"
     backend.config = {"MINDTRACE_GCP": {"GCP_PROJECT_ID": "proj-1"}}
-    registry.backend = backend
-    registry.version_objects = True
-    registry.mutable = True
-    registry.version_digits = 8
+    object.__setattr__(registry, "_backend", backend)
+    object.__setattr__(registry, "version_objects", True)
+    object.__setattr__(registry, "mutable", True)
+    object.__setattr__(registry, "version_digits", 8)
 
     monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend", DummyGCSBackend)
     mount = Mount.from_registry(registry, name="gcsmount")
@@ -274,10 +274,10 @@ def test_mount_from_registry_gcs_best_effort(monkeypatch):
 
 def test_mount_from_registry_rejects_unsupported_backend():
     registry = Registry.__new__(Registry)
-    registry.backend = DummyRemoteBackend(uri="dummy://backend")
-    registry.version_objects = True
-    registry.mutable = True
-    registry.version_digits = 8
+    object.__setattr__(registry, "_backend", DummyRemoteBackend(uri="dummy://backend"))
+    object.__setattr__(registry, "version_objects", True)
+    object.__setattr__(registry, "mutable", True)
+    object.__setattr__(registry, "version_digits", 8)
     with pytest.raises(TypeError):
         Mount.from_registry(registry)
 
