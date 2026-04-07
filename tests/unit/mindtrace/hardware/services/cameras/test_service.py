@@ -25,6 +25,8 @@ from mindtrace.hardware.services.cameras.models.requests import (
     CameraOpenRequest,
     CameraQueryRequest,
     CaptureImageRequest,
+    ConfigFileExportRequest,
+    ConfigFileImportRequest,
 )
 from mindtrace.hardware.services.cameras.service import CameraManagerService
 
@@ -450,6 +452,129 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data == ["Camera1", "Camera2", "Camera3"]
 
     @pytest.mark.asyncio
+    async def test_get_camera_status_returns_connected_state(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.check_connection.return_value = True
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_status(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.camera == "MockBasler:Camera1"
+        assert response.data.connected is True
+        assert response.data.backend == "MockBasler"
+        assert response.data.device_name == "Camera1"
+
+    @pytest.mark.asyncio
+    async def test_get_camera_info_sanitizes_sensor_info_backend(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.is_connected = True
+        mock_camera.get_sensor_info.return_value = {
+            "name": "MockBasler:Camera1",
+            "backend": object(),
+            "device_name": "Camera1",
+            "connected": True,
+        }
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_info(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.backend == "MockBasler"
+        assert response.data.sensor_info["backend"] == "MockBasler"
+        assert response.data.sensor_info["device_name"] == "Camera1"
+
+    @pytest.mark.asyncio
+    async def test_get_camera_capabilities_gracefully_degrades(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.get_exposure_range.return_value = [100.0, 5000.0]
+        mock_camera.is_exposure_control_supported.return_value = False
+        mock_camera.get_gain_range.side_effect = RuntimeError("no gain")
+        mock_camera.get_available_pixel_formats.return_value = ["Mono8", "BGR8"]
+        mock_camera.get_available_white_balance_modes.side_effect = RuntimeError("no wb")
+        mock_camera.get_trigger_modes.return_value = ["continuous", "trigger"]
+        mock_camera.get_width_range.return_value = [320, 1920]
+        mock_camera.get_height_range.side_effect = RuntimeError("no height")
+        mock_camera.get_bandwidth_limit_range.return_value = [1.0, 1000.0]
+        mock_camera.get_packet_size_range.side_effect = RuntimeError("no packet")
+        mock_camera.get_inter_packet_delay_range.return_value = [0, 65535]
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_capabilities(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.exposure_range is None
+        assert response.data.gain_range is None
+        assert response.data.pixel_formats == ["Mono8", "BGR8"]
+        assert response.data.white_balance_modes is None
+        assert response.data.trigger_modes == ["continuous", "trigger"]
+        assert response.data.width_range == (320, 1920)
+        assert response.data.height_range is None
+        assert response.data.bandwidth_limit_range == (1.0, 1000.0)
+        assert response.data.packet_size_range is None
+        assert response.data.inter_packet_delay_range == (0, 65535)
+
+    @pytest.mark.asyncio
+    async def test_get_camera_configuration_gracefully_handles_missing_fields(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.get_roi.return_value = {"x": 1, "y": 2, "width": 640, "height": 480}
+        mock_camera.get_exposure.return_value = 1500
+        mock_camera.get_gain.side_effect = RuntimeError("no gain")
+        mock_camera.get_trigger_mode.return_value = "continuous"
+        mock_camera.get_pixel_format.side_effect = RuntimeError("no pixel format")
+        mock_camera.get_white_balance.return_value = "auto"
+        mock_camera.get_image_enhancement.side_effect = RuntimeError("no enhancement")
+        mock_camera.get_bandwidth_limit.return_value = 800.0
+        mock_camera.get_packet_size.side_effect = RuntimeError("no packet")
+        mock_camera.get_inter_packet_delay.return_value = 100
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.roi == (1, 2, 640, 480)
+        assert response.data.exposure_time == 1500
+        assert response.data.gain is None
+        assert response.data.trigger_mode == "continuous"
+        assert response.data.pixel_format is None
+        assert response.data.white_balance == "auto"
+        assert response.data.image_enhancement is None
+        assert response.data.bandwidth_limit == 800.0
+        assert response.data.packet_size is None
+        assert response.data.inter_packet_delay == 100
+
+    @pytest.mark.asyncio
+    async def test_import_and_export_camera_config_delegate_to_proxy(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.load_config.return_value = True
+        mock_camera.save_config.return_value = False
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        import_response = await service.import_camera_config(
+            ConfigFileImportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")
+        )
+        export_response = await service.export_camera_config(
+            ConfigFileExportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")
+        )
+
+        assert import_response.success is True
+        assert import_response.data.operation == "import"
+        assert import_response.data.file_path == "/tmp/camera.json"
+        assert export_response.success is False
+        assert export_response.data.operation == "export"
+        assert export_response.data.success is False
+
+    @pytest.mark.asyncio
     async def test_configure_camera_failure_handling(self, service_with_mock_manager):
         """Test configure camera handles configuration failures correctly."""
         service, mock_manager = service_with_mock_manager
@@ -605,3 +730,30 @@ class TestCameraManagerServiceResponseModels:
         assert "MockBasler" in response.data.backend_status
         assert "OpenCV" in response.data.backend_status
         assert response.data.backend_status["MockBasler"] is True
+
+    @pytest.mark.asyncio
+    async def test_get_network_diagnostics_counts_only_supported_gige_cameras(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["Basler:gige", "OpenCV:usb", "Broken:cam"]
+
+        gige_camera = AsyncMock()
+        gige_camera.supports_feature.return_value = True
+        usb_camera = AsyncMock()
+        usb_camera.supports_feature.return_value = False
+
+        async def get_camera(camera_name):
+            if camera_name == "Basler:gige":
+                return gige_camera
+            if camera_name == "OpenCV:usb":
+                return usb_camera
+            raise RuntimeError("camera lookup failed")
+
+        mock_manager.get_camera = AsyncMock(side_effect=get_camera)
+
+        response = await service.get_network_diagnostics()
+
+        assert response.success is True
+        assert response.data.gige_cameras_count == 1
+        assert response.data.total_bandwidth_usage == 0.0
+        assert response.data.jumbo_frames_enabled is True
+        assert response.data.multicast_enabled is True
