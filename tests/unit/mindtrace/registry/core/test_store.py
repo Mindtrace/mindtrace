@@ -183,7 +183,7 @@ def test_get_and_pop_missing_defaults(basic_store):
     sentinel = {"missing": True}
     assert basic_store.get("missing", sentinel) is sentinel
     assert basic_store.pop("missing", sentinel) is sentinel
-    with pytest.raises(KeyError):
+    with pytest.raises(RegistryObjectNotFound):
         basic_store.pop("missing")
 
 
@@ -194,10 +194,10 @@ def test_keys_values_items_and_len(basic_store):
     values = list(basic_store.values())
     items = list(basic_store.items())
     assert len(basic_store) >= 2
-    assert "one" in keys
-    assert "two" in keys
+    assert "a/one" in keys
+    assert "a/two" in keys
     assert any(v["v"] == 1 for v in values)
-    assert any(k == "one" and v["v"] == 1 for k, v in items)
+    assert any(k == "a/one" and v["v"] == 1 for k, v in items)
 
 
 def test_unqualified_delete_uses_default_mount(basic_store):
@@ -209,4 +209,4 @@ def test_unqualified_delete_uses_default_mount(basic_store):
 
 def test_batch_delete_failure_path(basic_store):
     result = basic_store.delete(["present", "missing"])
-    assert result.success_count == 0 or result.failed_count >= 1
+    assert result.success_count == 0 or result.failure_count >= 1

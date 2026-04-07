@@ -275,9 +275,9 @@ def test_mount_from_registry_gcs_best_effort(monkeypatch):
 def test_mount_from_registry_rejects_unsupported_backend():
     registry = Registry.__new__(Registry)
     object.__setattr__(registry, "_backend", DummyRemoteBackend(uri="dummy://backend"))
-    object.__setattr__(registry, "version_objects", True)
-    object.__setattr__(registry, "mutable", True)
-    object.__setattr__(registry, "version_digits", 8)
+    object.__setattr__(registry, "_version_objects", True)
+    object.__setattr__(registry, "_mutable", True)
+    object.__setattr__(registry, "_version_digits", 8)
     with pytest.raises(TypeError):
         Mount.from_registry(registry)
 
