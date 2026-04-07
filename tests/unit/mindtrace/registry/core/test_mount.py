@@ -102,12 +102,11 @@ def test_mount_rejects_invalid_local_auth():
 
 
 def test_mount_rejects_invalid_local_config_type():
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="local mounts require LocalMountConfig"):
         Mount(
             name="local",
-            backend="local",
+            backend=MountBackendKind.LOCAL,
             config=S3MountConfig(bucket="datasets"),
-            auth=NoAuth(),
         )
 
 
