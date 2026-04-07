@@ -4,6 +4,7 @@ Unit tests for the custom Discord bot client sample.
 
 import runpy
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -575,6 +576,6 @@ class TestModuleExecution:
     def test_module_execution(self):
         """Test that the module can be executed as a script."""
         with patch("asyncio.run") as mock_run:
-            runpy.run_module("mindtrace.services.samples.discord.custom_bot_client", run_name="__main__")
+            runpy.run_path(str(Path(main.__code__.co_filename)), run_name="__main__")
 
         mock_run.assert_called_once()
