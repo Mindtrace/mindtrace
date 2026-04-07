@@ -1198,7 +1198,7 @@ class S3RegistryBackend(RegistryBackend):
         if result.status == Status.NOT_FOUND:
             return {}
         if result.status == Status.ERROR:
-            raise RuntimeError(f"Failed to fetch registry metadata,: {result.error_message}")
+            raise RuntimeError(f"Failed to fetch registry metadata: {result.error_message}")
         return json.loads(result.content.decode("utf-8"))
 
     # ─────────────────────────────────────────────────────────────────────────

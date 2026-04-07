@@ -657,8 +657,9 @@ class GCPRegistryBackend(RegistryBackend):
         - For immutable (skip): generation_match=0 ensures first-write-wins
         - For mutable (overwrite): last metadata write wins
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Per-item conflicts and failures are reported via ``OpResult``
+        entries instead of raising from the backend itself.
 
         Args:
             name: Object name(s). Single string or list.
@@ -666,7 +667,8 @@ class GCPRegistryBackend(RegistryBackend):
             local_path: Local source directory/directories to upload from.
             metadata: Metadata dict(s) to store.
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip" (default): Return ``OpResult.skipped()`` when the version
+                already exists.
                 "overwrite": Replace existing version.
             acquire_lock: Ignored. Kept for API compatibility. Lock-free model used.
             max_workers: Maximum parallel workers. Defaults to instance setting.
@@ -674,12 +676,9 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
+            - OpResult.failed() on failure
         """
         names, versions, paths, metadatas = self._prepare_inputs(name, version, local_path, metadata)
 
@@ -729,8 +728,9 @@ class GCPRegistryBackend(RegistryBackend):
         2. Metadata is written LAST, so if readable, files should exist
         3. Worst case during concurrent write: download fails, caller retries
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Per-item download failures are reported via failed ``OpResult``
+        entries instead of raising from the backend itself.
 
         Args:
             name: Name of the object(s).
@@ -744,10 +744,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         workers = max_workers or self._max_workers
 
@@ -911,8 +908,9 @@ class GCPRegistryBackend(RegistryBackend):
         for concurrent safety - metadata deletion is the atomic "commit point"
         that makes objects invisible to readers.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Per-item delete outcomes are reported via ``OpResult`` entries,
+        and missing objects are treated as successful idempotent deletes.
 
         Args:
             name: Name of the object(s).
@@ -923,10 +921,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and object doesn't exist.
+            - OpResult.failed() on failure
         """
         names = self._to_list(name)
         versions = self._to_list(version)
@@ -975,27 +970,25 @@ class GCPRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Save metadata for object version(s).
 
-        Single item operations raise exceptions on error/conflict.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Per-item conflicts and failures are reported via ``OpResult``
+        entries instead of raising from the backend itself.
 
         Args:
             name: Object name(s).
             version: Object version(s).
             metadata: Metadata dict(s) to save.
             on_conflict: Behavior when version exists.
-                "skip" (default): Single ops raise RegistryVersionConflict, batch ops return skipped result.
+                "skip" (default): Return ``OpResult.skipped()`` when the version
+                already exists.
                 "overwrite": Replace existing version.
 
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.skipped() when on_conflict="skip" and version exists (batch only)
+            - OpResult.skipped() when on_conflict="skip" and version exists
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryVersionConflict: Single item with on_conflict="skip" and version exists.
-            RuntimeError: Single item with unexpected error.
+            - OpResult.failed() on failure
         """
         names = self._to_list(name)
         versions = self._to_list(version)
@@ -1039,9 +1032,9 @@ class GCPRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Fetch metadata for object version(s) using batch download.
 
-        Single item operations raise exceptions if not found.
-        Batch operations return OpResults without raising, letting caller inspect results.
-        Not found entries are returned as failed OpResults.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Missing objects and other per-item failures are reported via
+        failed ``OpResult`` entries instead of raising from the backend itself.
 
         Args:
             name: Name of the object(s).
@@ -1050,10 +1043,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success(metadata=...) on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RegistryObjectNotFound: Single item and metadata doesn't exist.
+            - OpResult.failed() on failure
         """
         names = self._to_list(name)
         versions = self._to_list(version)
@@ -1108,8 +1098,10 @@ class GCPRegistryBackend(RegistryBackend):
     ) -> OpResults:
         """Delete metadata for object version(s) using batch delete.
 
-        Single item operations raise exceptions on error.
-        Batch operations return OpResults without raising, letting caller inspect results.
+        This backend method returns ``OpResults`` for both single-item and batch
+        calls. Per-item delete failures are reported via failed ``OpResult``
+        entries, and missing metadata is treated as a successful idempotent
+        delete.
 
         Args:
             name: Name of the object(s).
@@ -1118,10 +1110,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure (batch only)
-
-        Raises:
-            RuntimeError: Single item and deletion fails.
+            - OpResult.failed() on failure
         """
         names = self._to_list(name)
         versions = self._to_list(version)

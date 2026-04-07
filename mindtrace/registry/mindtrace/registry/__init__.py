@@ -5,6 +5,17 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
+from mindtrace.registry.core.mount import (
+    AmbientAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    NoAuth,
+    S3AccessKeyAuth,
+    S3MountConfig,
+)
 from mindtrace.registry.core.exceptions import (
     LockTimeoutError,
     StoreAmbiguousObjectError,
@@ -12,25 +23,34 @@ from mindtrace.registry.core.exceptions import (
     StoreLocationNotFound,
 )
 from mindtrace.registry.core.registry import Registry
-from mindtrace.registry.core.store import Store, StoreMount
+from mindtrace.registry.core.store import MountedRegistry, Store
 
 __all__ = [
     "Archiver",
+    "AmbientAuth",
     "ConfigArchiver",
     "PathArchiver",
     "LocalRegistryBackend",
     "LockTimeoutError",
+    "GCSMountConfig",
     "GCPRegistryBackend",
+    "GCSServiceAccountFileAuth",
+    "LocalMountConfig",
     "MinioRegistryBackend",
+    "Mount",
+    "MountBackendKind",
+    "NoAuth",
+    "S3AccessKeyAuth",
+    "S3MountConfig",
     "S3RegistryBackend",
     "Registry",
     "RegistryBackend",
     "Store",
+    "MountedRegistry",
     "StoreMount",
     "StoreLocationNotFound",
     "StoreKeyFormatError",
     "StoreAmbiguousObjectError",
-    "Version",
 ]
 
 register_default_materializers()

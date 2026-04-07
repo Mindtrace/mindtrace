@@ -1,3 +1,5 @@
+import json
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
@@ -6,7 +8,8 @@ from urllib.parse import quote
 import pytest
 
 from mindtrace.registry import S3RegistryBackend
-from mindtrace.registry.core.types import CleanupState
+from mindtrace.registry.core.exceptions import LockAcquisitionError
+from mindtrace.registry.core.types import CleanupState, OpResult, OpResults
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -712,6 +715,17 @@ def test_fetch_registry_metadata_default(backend):
     assert "materializers" in result
 
 
+def test_fetch_registry_metadata_error_message(backend, monkeypatch):
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="error", ok=False, error_message="boom"),
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to fetch registry metadata: boom"):
+        backend.fetch_registry_metadata()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Materializer Tests
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1011,3 +1025,382 @@ def test_batch_push_rejects_single_dict_metadata(backend, sample_object_dir, sam
         [sample_metadata, sample_metadata],  # List - one per object
     )
     assert results.all_ok
+
+
+def test_config_and_path_helper_edge_cases(mock_minio_handler, tmp_path, backend, monkeypatch):
+    prefixed_backend = S3RegistryBackend(
+        uri=str(tmp_path / "prefixed"),
+        endpoint="localhost:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket="test-bucket",
+        secure=False,
+        prefix="nested/prefix",
+    )
+
+    assert prefixed_backend._prefixed("artifact.bin") == "nested/prefix/artifact.bin"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        object_key = prefixed_backend._object_key("test:object", "1.0.0")
+    assert object_key == "nested/prefix/objects/test:object/1.0.0"
+    assert any(isinstance(w.message, DeprecationWarning) for w in caught)
+
+    monkeypatch.setattr(backend, "config", {"MINDTRACE_MINIO": {}})
+
+    with pytest.raises(ValueError, match="endpoint is required"):
+        backend._resolve_config(None, "access", "secret", "bucket")
+
+    with pytest.raises(ValueError, match="access_key is required"):
+        backend._resolve_config("endpoint", None, "secret", "bucket")
+
+    with pytest.raises(ValueError, match="secret_key is required"):
+        backend._resolve_config("endpoint", "access", None, "bucket")
+
+
+def test_commit_plan_and_cleanup_helper_edge_cases(backend, monkeypatch):
+    def raise_upload(*args, **kwargs):
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(backend.storage, "upload_string", raise_upload)
+    assert backend._create_commit_plan("test:object", "1.0.0", "uuid-1") is False
+
+    assert backend._delete_commit_plan("test:object", "1.0.0", "missing") is True
+
+    backend.storage._objects[backend._staging_path("test:object", "1.0.0", "uuid-2")] = b"{}"
+
+    def delete_error(path):
+        return MockFileResult(
+            remote_path=path,
+            status="error",
+            ok=False,
+            error_type="DeleteError",
+            error_message="cannot delete",
+        )
+
+    monkeypatch.setattr(backend.storage, "delete", delete_error)
+    assert backend._delete_commit_plan("test:object", "1.0.0", "uuid-2") is False
+
+    assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-3", files_manifest=[]) is True
+
+    monkeypatch.setattr(backend.storage, "list_objects", lambda prefix="": [])
+    assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-4") is False
+
+    monkeypatch.setattr(backend.storage, "list_objects", lambda prefix="": (_ for _ in ()).throw(RuntimeError("list failed")))
+    assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-5") is False
+
+
+def test_attempt_rollback_only_deletes_plan_when_folder_cleanup_succeeds(backend, monkeypatch):
+    deleted_plans: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: True)
+    assert backend._attempt_rollback("test:object", "1.0.0", "uuid-1") is True
+    assert deleted_plans == [("test:object", "1.0.0", "uuid-1")]
+
+    deleted_plans.clear()
+    monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: False)
+    assert backend._attempt_rollback("test:object", "1.0.0", "uuid-2") is False
+    assert deleted_plans == []
+
+
+def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
+    calls = {"upload": 0}
+
+    def upload_not_found_then_success(data, path, if_generation_match=None, **kwargs):
+        calls["upload"] += 1
+        if calls["upload"] == 1:
+            return MockStringResult(remote_path=path, status="already_exists", ok=False)
+        return MockStringResult(remote_path=path, status="ok", ok=True)
+
+    monkeypatch.setattr(backend.storage, "upload_string", upload_not_found_then_success)
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="not_found", ok=False),
+    )
+    assert backend._acquire_lock("test:object@1.0.0", "lock-1", timeout=1) is True
+
+    calls["upload"] = 0
+
+    def upload_takeover(data, path, if_generation_match=None, **kwargs):
+        calls["upload"] += 1
+        if calls["upload"] == 1:
+            return MockStringResult(remote_path=path, status="already_exists", ok=False)
+        return MockStringResult(remote_path=path, status="ok", ok=True)
+
+    monkeypatch.setattr(backend.storage, "upload_string", upload_takeover)
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(
+            remote_path=path,
+            status="ok",
+            ok=True,
+            content=json.dumps({"lock_id": "other", "expires_at": 0}).encode("utf-8"),
+        ),
+    )
+    assert backend._acquire_lock("test:object@2.0.0", "lock-2", timeout=1) is True
+
+    monkeypatch.setattr(backend.storage, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert backend._acquire_lock("test:object@3.0.0", "lock-3", timeout=0) is False
+
+    attempt_counter = {"count": 0}
+    sleeps: list[float] = []
+
+    def upload_after_sleep(data, path, if_generation_match=None, **kwargs):
+        attempt_counter["count"] += 1
+        if attempt_counter["count"] == 1:
+            return MockStringResult(remote_path=path, status="already_exists", ok=False)
+        return MockStringResult(remote_path=path, status="ok", ok=True)
+
+    monkeypatch.setattr(backend.storage, "upload_string", upload_after_sleep)
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="already_exists", ok=False),
+    )
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.time.sleep", lambda seconds: sleeps.append(seconds))
+    assert backend._acquire_lock("test:object@3.1.0", "lock-31", timeout=1) is True
+    assert sleeps == [0.1]
+
+    monkeypatch.setattr(backend.storage, "download_string", lambda path: (_ for _ in ()).throw(RuntimeError("boom")))
+    backend._release_lock("test:object@4.0.0", "lock-4")
+
+    assert backend._acquire_locks_batch([]) == {}
+
+    monkeypatch.setattr(backend, "_acquire_lock", lambda key, lock_id, timeout: key != "blocked")
+    batch_locks = backend._acquire_locks_batch(["ok", "blocked"], timeout=1)
+    assert batch_locks["ok"] is not None
+    assert batch_locks["blocked"] is None
+
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(backend, "_release_lock", lambda key, lock_id: released.append((key, lock_id)))
+    backend._release_locks_batch({})
+    backend._release_locks_batch({"ok": "lock-a", "other": "lock-b"})
+    assert sorted(released) == [("ok", "lock-a"), ("other", "lock-b")]
+
+
+def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample_metadata, monkeypatch):
+    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: False)
+    result = backend._push_single_object("test:plan", "1.0.0", sample_object_dir, sample_metadata, "skip")
+    assert result.is_error
+    assert "Failed to create commit plan" in result.message
+
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: True)
+    result = backend._push_single_object("test:fallback", "1.0.0", sample_object_dir, {"class": "dict"}, "skip")
+    assert result.ok
+
+    monkeypatch.setattr(
+        backend.storage,
+        "upload_batch",
+        lambda *args, **kwargs: MockBatchResult(
+            results=[MockFileResult(local_path="x", remote_path="y", status="error", ok=False, error_message="upload failed")]
+        ),
+    )
+    monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: True)
+    result = backend._push_single_object("test:upload-error", "1.0.0", sample_object_dir, sample_metadata, "skip")
+    assert result.is_error
+    assert result.cleanup == CleanupState.OK
+
+    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
+    monkeypatch.setattr(backend.storage, "upload_batch", MockMinioHandler.upload_batch.__get__(backend.storage, type(backend.storage)))
+    result = backend._push_single_object("test:overwrite", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
+    assert result.ok
+    assert result.cleanup == CleanupState.UNKNOWN
+
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: True)
+    monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: True)
+    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: OpResults())
+    monkeypatch.setattr(
+        backend,
+        "_save_metadata_single",
+        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="already_exists", ok=False, error_message="exists"),
+    )
+    result = backend._push_single_object("test:skip-race", "1.0.0", sample_object_dir, sample_metadata, "skip")
+    assert result.is_skipped
+    assert result.cleanup == CleanupState.OK
+
+    monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        backend,
+        "_save_metadata_single",
+        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="meta failed"),
+    )
+    result = backend._push_single_object("test:meta-error", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
+    assert result.is_error
+    assert result.cleanup == CleanupState.ORPHANED
+
+    monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: True)
+
+    def raise_save(*args, **kwargs):
+        raise RuntimeError("save exploded")
+
+    monkeypatch.setattr(backend, "_save_metadata_single", raise_save)
+    result = backend._push_single_object("test:except", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
+    assert result.is_error
+    assert result.cleanup == CleanupState.OK
+
+
+def test_pull_fallback_listing_branch(backend, sample_object_dir, sample_metadata, tmp_path):
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    metadata = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+    metadata.pop("_files", None)
+
+    results = backend.pull("test:object", "1.0.0", tmp_path / "fallback", metadata=metadata)
+
+    assert results.first().ok
+    assert (tmp_path / "fallback" / "data.json").exists()
+
+
+def test_pull_fallback_listing_not_found_returns_error(backend, tmp_path):
+    metadata = {"_storage": {"uuid": "missing-uuid"}}
+    results = backend.pull("missing:object", "1.0.0", tmp_path / "missing", metadata=metadata)
+    assert results.first().is_error
+
+
+def test_delete_single_object_edge_cases(backend, sample_object_dir, sample_metadata, monkeypatch):
+    result = backend._delete_single_object("missing:object", "1.0.0", metadata=None)
+    assert result.ok
+
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: False)
+    result = backend._delete_single_object("test:missing-uuid", "1.0.0", metadata={"_files": ["a.bin"]})
+    assert result.is_error
+    assert "Failed to create commit plan" in result.message
+
+    deleted_plans: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: True)
+    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(
+        backend.storage,
+        "delete",
+        lambda path: MockFileResult(remote_path=path, status="error", ok=False, error_message="meta delete failed"),
+    )
+    result = backend._delete_single_object("test:delete-error", "1.0.0", metadata={"_storage": {"uuid": "uuid-1"}})
+    assert result.is_error
+    assert deleted_plans == [("test:delete-error", "1.0.0", "uuid-1")]
+
+    deleted_plans.clear()
+
+    def raise_delete(path):
+        raise RuntimeError("delete exploded")
+
+    monkeypatch.setattr(backend.storage, "delete", raise_delete)
+    result = backend._delete_single_object("test:delete-except", "1.0.0", metadata={"_storage": {"uuid": "uuid-2"}})
+    assert result.is_error
+    assert deleted_plans == [("test:delete-except", "1.0.0", "uuid-2")]
+
+
+def test_delete_validates_lengths(backend):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.delete(["a", "b"], ["1.0.0"])
+
+
+def test_save_fetch_and_delete_metadata_edge_cases(backend, monkeypatch):
+    with pytest.raises(ValueError, match="Input lengths must match"):
+        backend.save_metadata(["a", "b"], ["1.0.0"], [{"class": "dict"}])
+
+    metadata = {"class": "dict"}
+    backend.save_metadata("test:object", "1.0.0", metadata)
+    results = backend.save_metadata("test:object", "1.0.0", metadata, on_conflict="overwrite")
+    assert results.first().is_overwritten
+
+    monkeypatch.setattr(
+        backend.storage,
+        "upload_string",
+        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="write failed"),
+    )
+    helper_result = backend._save_metadata_single("test:helper", "1.0.0", metadata, on_conflict="overwrite")
+    assert helper_result.status == "error"
+
+    monkeypatch.setattr(
+        backend,
+        "_save_metadata_single",
+        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="save failed"),
+    )
+    results = backend.save_metadata("test:error", "1.0.0", metadata)
+    assert results.first().is_error
+
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.fetch_metadata(["a", "b"], ["1.0.0"])
+
+    backend.storage._objects[backend._object_metadata_path("test:bad-json", "1.0.0")] = b"{not-json"
+    results = backend.fetch_metadata("test:bad-json", "1.0.0")
+    assert results.first().is_error
+
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string_batch",
+        lambda remote_paths, max_workers=4: [MockStringResult(remote_path=remote_paths[0], status="error", ok=False)],
+    )
+    results = backend.fetch_metadata("test:download-error", "1.0.0")
+    result = results.first()
+    assert result.is_error
+    assert result.error == "DownloadError"
+    assert result.message == "Unknown error"
+
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.delete_metadata(["a", "b"], ["1.0.0"])
+
+    expected_path = backend._object_metadata_path("test:delete-error", "1.0.0")
+    monkeypatch.setattr(
+        backend.storage,
+        "delete_batch",
+        lambda paths, max_workers=4: MockBatchResult(
+            results=[
+                MockFileResult(remote_path="unexpected-path", status="ok", ok=True),
+                MockFileResult(remote_path=expected_path, status="error", ok=False),
+            ]
+        ),
+    )
+    results = backend.delete_metadata("test:delete-error", "1.0.0")
+    result = results.first()
+    assert result.is_error
+    assert result.error == "DeleteError"
+    assert result.message == "Unknown error"
+
+
+def test_registry_metadata_discovery_and_has_object_edge_cases(backend, monkeypatch):
+    backend.storage.delete(backend._metadata_path)
+    assert backend.fetch_registry_metadata() == {}
+
+    monkeypatch.setattr(
+        backend.storage,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="error", ok=False, error_message="boom"),
+    )
+    with pytest.raises(RuntimeError, match="Failed to fetch registry metadata"):
+        backend.fetch_registry_metadata()
+
+    backend.save_metadata("test:object", "alpha", {"class": "dict"})
+    backend.save_metadata("test:object", "2.0.0", {"class": "dict"}, on_conflict="overwrite")
+    versions = backend.list_versions("test:object")["test:object"]
+    assert versions[0] == "alpha"
+
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.has_object(["a", "b"], ["1.0.0"])
+
+
+def test_register_materializer_edge_cases(backend, monkeypatch):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.register_materializer(["a", "b"], ["mat"])
+
+    monkeypatch.setattr(backend, "_acquire_lock", lambda *args, **kwargs: False)
+    with pytest.raises(LockAcquisitionError, match="Could not acquire lock"):
+        backend.register_materializer("my.Class", "my.Materializer")
+
+    released: list[tuple[str, str]] = []
+    saved_metadata: dict = {}
+    monkeypatch.setattr(backend, "_acquire_lock", lambda *args, **kwargs: True)
+    monkeypatch.setattr(backend, "_release_lock", lambda key, lock_id: released.append((key, lock_id)))
+    monkeypatch.setattr(backend, "fetch_registry_metadata", lambda: {})
+    monkeypatch.setattr(backend, "save_registry_metadata", lambda metadata: saved_metadata.update(metadata))
+
+    backend.register_materializer("my.Class", "my.Materializer")
+
+    assert saved_metadata == {"materializers": {"my.Class": "my.Materializer"}}
+    assert released and released[0][0] == "_materializer_registry"
+
+    monkeypatch.setattr(backend, "fetch_registry_metadata", lambda: {"materializers": {"a": "A", "b": "B", "c": "C"}})
+    assert backend.registered_materializers(["a", "c"]) == {"a": "A", "c": "C"}
