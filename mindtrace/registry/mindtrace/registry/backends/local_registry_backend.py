@@ -300,12 +300,16 @@ class LocalRegistryBackend(RegistryBackend):
                 try:
                     with open(exclusive_path, "r") as f:
                         meta = json.loads(f.read().strip())
-                    if meta.get("lock_id") == lock_id:
-                        exclusive_path.unlink()
-                        self._cleanup_lock_dir(key)
-                        return True
-                except (json.JSONDecodeError, IOError, FileNotFoundError):
+                except FileNotFoundError:
                     pass
+                except (json.JSONDecodeError, IOError):
+                    return False
+                else:
+                    if meta.get("lock_id") != lock_id:
+                        return False
+                    exclusive_path.unlink()
+                    self._cleanup_lock_dir(key)
+                    return True
 
             # Try to release shared lock
             shared_path = self._shared_lock_path(key, lock_id)
