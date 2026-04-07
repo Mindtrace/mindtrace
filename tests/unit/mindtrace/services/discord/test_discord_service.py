@@ -56,6 +56,14 @@ class TestDiscordService:
         assert discord_service.discord_client is not None
         assert discord_service._bot_task is None
 
+    @pytest.mark.asyncio
+    async def test_lifespan_starts_bot_on_enter(self, discord_service):
+        with patch.object(discord_service, "startup", new_callable=AsyncMock) as mock_startup:
+            async with discord_service.app.router.lifespan_context(discord_service.app):
+                pass
+
+        mock_startup.assert_awaited_once()
+
     def test_get_bot_status_not_started(self, discord_service):
         """Test bot status when bot is not started."""
         discord_service.discord_client.bot = None
@@ -222,6 +230,25 @@ class TestDiscordService:
             mock_stop.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_shutdown_cleanup_ignores_cancelled_error_from_bot_task(self, discord_service):
+        class CancelledAwaitable:
+            def __init__(self):
+                self.cancel = Mock()
+
+            def __await__(self):
+                if False:
+                    yield
+                raise asyncio.CancelledError
+
+        discord_service._bot_task = CancelledAwaitable()
+
+        with patch.object(discord_service.discord_client, "stop_bot", new_callable=AsyncMock) as mock_stop:
+            await discord_service.shutdown_cleanup()
+
+        discord_service._bot_task.cancel.assert_called_once()
+        mock_stop.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_execute_command_bot_not_connected(self, discord_service):
         """Test command execution when bot is not connected."""
         discord_service.discord_client.bot = None
@@ -303,6 +330,18 @@ class TestDiscordService:
             assert any("author_id not provided" in str(call) for call in mock_warning.call_args_list)
             assert any("channel_id not provided" in str(call) for call in mock_warning.call_args_list)
             assert any("message_id not provided" in str(call) for call in mock_warning.call_args_list)
+
+    def test_validate_required_parameters_raises_for_missing_required_value(self, discord_service):
+        mock_param = Mock()
+        mock_param.name = "target"
+        mock_param.default = None
+
+        mock_command = Mock()
+        mock_command.name = "test"
+        mock_command.parameters = [mock_param]
+
+        with pytest.raises(ValueError, match="Required parameter 'target' is missing"):
+            discord_service._validate_required_parameters({}, mock_command)
 
     def test_parse_command_parameters(self, discord_service):
         """Test command parameter parsing."""
@@ -538,6 +577,67 @@ class TestDiscordService:
             # Verify context manager methods were called
             mock_cm.__enter__.assert_called_once()
             mock_cm.__exit__.assert_called_once()
+
+    def test_launch_returns_immediately_when_not_waiting(self):
+        mock_cm = Mock()
+        mock_cm.url = "http://localhost:8000"
+
+        with patch("mindtrace.services.Service.launch", return_value=mock_cm) as mock_launch:
+            cm = DiscordService.launch(wait_for_launch=False)
+
+        assert cm is mock_cm
+        mock_launch.assert_called_once()
+
+    def test_launch_handles_non_200_status_when_waiting_for_bot(self):
+        mock_cm = Mock()
+        mock_cm.url = "http://localhost:8000"
+
+        with (
+            patch("mindtrace.services.Service.launch", return_value=mock_cm),
+            patch("time.sleep"),
+            patch("requests.post") as mock_post,
+            patch("mindtrace.core.Timeout") as mock_timeout,
+        ):
+            mock_post.return_value.status_code = 503
+            mock_timeout.return_value.run.side_effect = lambda fn: fn()
+
+            cm = DiscordService.launch()
+
+        assert cm is mock_cm
+        mock_timeout.return_value.run.assert_called_once()
+
+    def test_launch_warns_when_bot_readiness_check_times_out(self):
+        mock_cm = Mock()
+        mock_cm.url = "http://localhost:8000"
+
+        with (
+            patch("mindtrace.services.Service.launch", return_value=mock_cm),
+            patch("time.sleep"),
+            patch("mindtrace.core.Timeout") as mock_timeout,
+            patch.object(DiscordService.logger, "warning") as mock_warning,
+        ):
+            mock_timeout.return_value.run.side_effect = RuntimeError("timed out")
+
+            cm = DiscordService.launch()
+
+        assert cm is mock_cm
+        mock_warning.assert_called_once()
+
+    def test_launch_handles_request_exceptions_during_readiness_check(self):
+        mock_cm = Mock()
+        mock_cm.url = "http://localhost:8000"
+
+        with (
+            patch("mindtrace.services.Service.launch", return_value=mock_cm),
+            patch("time.sleep"),
+            patch("requests.post", side_effect=Exception("network error")),
+            patch("mindtrace.core.Timeout") as mock_timeout,
+        ):
+            mock_timeout.return_value.run.side_effect = lambda fn: fn()
+
+            cm = DiscordService.launch()
+
+        assert cm is mock_cm
 
     def test_parse_command_parameters_empty_content(self, discord_service):
         """Test command parameter parsing with empty content."""
