@@ -69,7 +69,10 @@ class S3StorageHandler(StorageHandler):
             if error_code in ("404", "NoSuchBucket"):
                 if not create:
                     raise FileNotFoundError(f"Bucket {self.bucket_name!r} not found")
-                self.client.create_bucket(Bucket=self.bucket_name)
+                create_kwargs: Dict[str, Any] = {"Bucket": self.bucket_name}
+                if self._region != "us-east-1":
+                    create_kwargs["CreateBucketConfiguration"] = {"LocationConstraint": self._region}
+                self.client.create_bucket(**create_kwargs)
             else:
                 raise
 

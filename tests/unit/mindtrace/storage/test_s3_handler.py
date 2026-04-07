@@ -48,6 +48,26 @@ def test_ctor_creates_bucket_when_missing(mock_boto3):
 
 
 @patch("mindtrace.storage.s3.boto3")
+def test_ctor_creates_bucket_with_region_constraint_when_missing(mock_boto3):
+    mock_client = _prepare_client(mock_boto3, bucket_exists=False)
+
+    handler = S3StorageHandler(
+        "new-bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+        create_if_missing=True,
+        region="us-west-2",
+    )
+
+    mock_client.create_bucket.assert_called_once_with(
+        Bucket="new-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
+    )
+    assert handler.bucket_name == "new-bucket"
+
+
+@patch("mindtrace.storage.s3.boto3")
 def test_ctor_errors_when_bucket_missing_and_create_false(mock_boto3):
     _prepare_client(mock_boto3, bucket_exists=False)
 
