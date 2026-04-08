@@ -171,7 +171,13 @@ async def test_async_context_manager_initializes_and_closes():
 @pytest.mark.parametrize(
     ("method_name", "args", "kwargs", "warning_fragment", "error_fragment"),
     [
-        ("capture_point_cloud", (), {"include_colors": True, "downsample_factor": 1}, "not optimized", "not implemented"),
+        (
+            "capture_point_cloud",
+            (),
+            {"include_colors": True, "downsample_factor": 1},
+            "not optimized",
+            "not implemented",
+        ),
         ("configure", (), {"ExposureTime": 1000}, "configure not implemented", "configure not supported"),
         ("set_exposure_time", (1000.0,), {}, "set_exposure_time not implemented", "set_exposure_time not supported"),
         ("get_exposure_time", (), {}, "get_exposure_time not implemented", "get_exposure_time not supported"),
@@ -181,8 +187,20 @@ async def test_async_context_manager_initializes_and_closes():
         ("get_depth_range", (), {}, "get_depth_range not implemented", "get_depth_range not supported"),
         ("set_depth_quality", ("Full",), {}, "set_depth_quality not implemented", "set_depth_quality not supported"),
         ("get_depth_quality", (), {}, "get_depth_quality not implemented", "get_depth_quality not supported"),
-        ("set_illumination_mode", ("AlwaysActive",), {}, "set_illumination_mode not implemented", "set_illumination_mode not supported"),
-        ("get_illumination_mode", (), {}, "get_illumination_mode not implemented", "get_illumination_mode not supported"),
+        (
+            "set_illumination_mode",
+            ("AlwaysActive",),
+            {},
+            "set_illumination_mode not implemented",
+            "set_illumination_mode not supported",
+        ),
+        (
+            "get_illumination_mode",
+            (),
+            {},
+            "get_illumination_mode not implemented",
+            "get_illumination_mode not supported",
+        ),
         ("set_binning", (2, 2), {}, "set_binning not implemented", "set_binning not supported"),
         ("get_binning", (), {}, "get_binning not implemented", "get_binning not supported"),
         ("set_pixel_format", ("Mono8",), {}, "set_pixel_format not implemented", "set_pixel_format not supported"),

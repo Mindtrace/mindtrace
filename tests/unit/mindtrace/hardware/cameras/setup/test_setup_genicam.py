@@ -334,9 +334,7 @@ def test_install_macos_returns_false_when_mount_point_missing(tmp_path):
 
 def test_elevate_privileges_handles_shell_execute_error(tmp_path):
     inst = _installer(tmp_path)
-    fake_windll = SimpleNamespace(
-        shell32=SimpleNamespace(ShellExecuteW=Mock(side_effect=RuntimeError("boom")))
-    )
+    fake_windll = SimpleNamespace(shell32=SimpleNamespace(ShellExecuteW=Mock(side_effect=RuntimeError("boom"))))
 
     with patch("mindtrace.hardware.cameras.setup.setup_genicam.ctypes.windll", fake_windll, create=True):
         assert inst._elevate_privileges() is False

@@ -167,7 +167,10 @@ def test_generate_point_cloud_calibrates_raw_disparity_when_needed():
         has_disparity=True,
     )
 
-    with patch("mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.reprojectImageTo3D", return_value=np.array([[[1.0, 2.0, 3.0]]])):
+    with patch(
+        "mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.reprojectImageTo3D",
+        return_value=np.array([[[1.0, 2.0, 3.0]]]),
+    ):
         cloud = cam._generate_point_cloud(result, include_colors=False)
 
     calibration.calibrate_disparity.assert_called_once_with(result.disparity)
@@ -204,7 +207,9 @@ def test_generate_point_cloud_uses_calibrated_disparity_filters_invalid_points_a
     rgb = np.stack([resized, resized + 1, resized + 2], axis=-1)
 
     with (
-        patch("mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.reprojectImageTo3D", return_value=points_3d) as reproject,
+        patch(
+            "mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.reprojectImageTo3D", return_value=points_3d
+        ) as reproject,
         patch("mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.resize", return_value=resized) as resize,
         patch("mindtrace.hardware.stereo_cameras.core.async_stereo_camera.cv2.cvtColor", return_value=rgb) as cvt_color,
     ):
