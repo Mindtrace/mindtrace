@@ -287,6 +287,15 @@ class Datalake(Mindtrace):
     def get_health(self) -> dict[str, Any]:
         return self._submit_coro(self._backend.get_health())
 
+    def summary(self) -> str:
+        summary = self._submit_coro(self._backend.summary())
+        if summary.startswith("AsyncDatalake("):
+            return "Datalake(" + summary[len("AsyncDatalake(") :]
+        return summary
+
+    def __str__(self) -> str:
+        return self.summary()
+
     def get_mounts(self) -> dict[str, Any]:
         return self._backend.get_mounts()
 

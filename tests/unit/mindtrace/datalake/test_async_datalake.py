@@ -108,6 +108,22 @@ class TestAsyncDatalakeUnit:
     async def test_get_health_returns_expected_payload(self, async_datalake):
         health = await async_datalake.get_health()
         assert health == {"status": "ok", "database": "test_db", "default_mount": "temp"}
+        assert str(async_datalake) == "AsyncDatalake(database=test_db, default_mount=temp)"
+
+    @pytest.mark.asyncio
+    async def test_summary_returns_counts(self, async_datalake):
+        async_datalake.list_assets = AsyncMock(return_value=[MagicMock(), MagicMock()])
+        async_datalake.list_annotation_sets = AsyncMock(return_value=[MagicMock()])
+        async_datalake.list_annotation_records = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
+        async_datalake.list_datums = AsyncMock(return_value=[MagicMock()])
+        async_datalake.list_dataset_versions = AsyncMock(return_value=[])
+
+        summary = await async_datalake.summary()
+
+        assert summary == (
+            "AsyncDatalake(database=test_db, default_mount=temp, assets=2, "
+            "annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
+        )
 
     def test_get_mounts_returns_named_mounts(self, async_datalake):
         mounts = async_datalake.get_mounts()
