@@ -467,8 +467,8 @@ class TestDatalakeUnit:
     @pytest.mark.asyncio
     async def test_resolve_dataset_version_builds_resolved_dataset(self, datalake):
         dataset_version = DatasetVersion(dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"])
-        resolved_datum_1 = MagicMock()
-        resolved_datum_2 = MagicMock()
+        resolved_datum_1 = ResolvedDatum(datum=Datum(asset_refs={"image": "asset_1"}))
+        resolved_datum_2 = ResolvedDatum(datum=Datum(asset_refs={"image": "asset_2"}))
         datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
         datalake.resolve_datum = AsyncMock(side_effect=[resolved_datum_1, resolved_datum_2])
 
