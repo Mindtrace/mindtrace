@@ -51,9 +51,11 @@ class Datalake(Mindtrace):
               -p 27017:27017 \
               -d mongo:7
 
-        Create a datalake and register an image asset from an in-memory payload:
+        Create a datalake and register the repository's ``hopper.png`` test image:
 
         .. code-block:: python
+
+            from pathlib import Path
 
             from mindtrace.datalake import Datalake
 
@@ -62,12 +64,16 @@ class Datalake(Mindtrace):
                 mongo_db_name="mindtrace",
             )
 
+            hopper_path = Path("tests/resources/hopper.png")
+            image_bytes = hopper_path.read_bytes()
+
             asset = await datalake.create_asset_from_object(
-                name="images/example.jpg",
+                name="images/hopper.png",
                 obj=image_bytes,
                 kind="image",
-                media_type="image/jpeg",
+                media_type="image/png",
                 mount="temp",
+                object_metadata={"source_path": str(hopper_path)},
             )
 
         Create a datum that points at an image asset and attach a ground-truth
