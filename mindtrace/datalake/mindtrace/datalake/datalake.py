@@ -55,72 +55,133 @@ class Datalake(Mindtrace):
 
         .. code-block:: python
 
+            import asyncio
             from pathlib import Path
 
             from mindtrace.datalake import Datalake
 
-            datalake = await Datalake.create(
-                mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-                mongo_db_name="mindtrace",
-            )
 
-            hopper_path = Path("tests/resources/hopper.png")
-            image_bytes = hopper_path.read_bytes()
+            async def main() -> None:
+                datalake = await Datalake.create(
+                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                    mongo_db_name="mindtrace",
+                )
 
-            asset = await datalake.create_asset_from_object(
-                name="images/hopper.png",
-                obj=image_bytes,
-                kind="image",
-                media_type="image/png",
-                mount="temp",
-                object_metadata={"source_path": str(hopper_path)},
-            )
+                hopper_path = Path("tests/resources/hopper.png")
+                image_bytes = hopper_path.read_bytes()
+
+                asset = await datalake.create_asset_from_object(
+                    name="images/hopper.png",
+                    obj=image_bytes,
+                    kind="image",
+                    media_type="image/png",
+                    mount="temp",
+                    object_metadata={"source_path": str(hopper_path)},
+                )
+
+                print(asset.asset_id)
+
+
+            asyncio.run(main())
 
         Create a datum that points at an image asset and attach a ground-truth
         annotation set:
 
         .. code-block:: python
 
-            datum = await datalake.create_datum(
-                asset_refs={"image": asset.asset_id},
-                split="train",
-                metadata={"source": "demo"},
-            )
+            import asyncio
+            from pathlib import Path
 
-            annotation_set = await datalake.create_annotation_set(
-                name="ground-truth",
-                purpose="ground_truth",
-                source_type="human",
-                datum_id=datum.datum_id,
-            )
+            from mindtrace.datalake import Datalake
 
-            await datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
-                [
-                    {
-                        "kind": "bbox",
-                        "label": "crack",
-                        "source": {"type": "human", "name": "review-ui"},
-                        "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
-                    }
-                ],
-            )
+
+            async def main() -> None:
+                datalake = await Datalake.create(
+                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                    mongo_db_name="mindtrace",
+                )
+
+                hopper_path = Path("tests/resources/hopper.png")
+                asset = await datalake.create_asset_from_object(
+                    name="images/hopper.png",
+                    obj=hopper_path.read_bytes(),
+                    kind="image",
+                    media_type="image/png",
+                    mount="temp",
+                )
+
+                datum = await datalake.create_datum(
+                    asset_refs={"image": asset.asset_id},
+                    split="train",
+                    metadata={"source": "demo"},
+                )
+
+                annotation_set = await datalake.create_annotation_set(
+                    name="ground-truth",
+                    purpose="ground_truth",
+                    source_type="human",
+                    datum_id=datum.datum_id,
+                )
+
+                await datalake.add_annotation_records(
+                    annotation_set.annotation_set_id,
+                    [
+                        {
+                            "kind": "bbox",
+                            "label": "crack",
+                            "source": {"type": "human", "name": "review-ui"},
+                            "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
+                        }
+                    ],
+                )
+
+                print(datum.datum_id, annotation_set.annotation_set_id)
+
+
+            asyncio.run(main())
 
         Publish an immutable dataset version from a list of datum ids:
 
         .. code-block:: python
 
-            dataset_version = await datalake.create_dataset_version(
-                dataset_name="surface-defects",
-                version="0.1.0",
-                manifest=[datum.datum_id],
-                metadata={"stage": "initial"},
-            )
+            import asyncio
+            from pathlib import Path
 
-            resolved = await datalake.resolve_dataset_version(
-                dataset_name="surface-defects",
-                version="0.1.0",
-            )
+            from mindtrace.datalake import Datalake
+
+
+            async def main() -> None:
+                datalake = await Datalake.create(
+                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                    mongo_db_name="mindtrace",
+                )
+
+                hopper_path = Path("tests/resources/hopper.png")
+                asset = await datalake.create_asset_from_object(
+                    name="images/hopper.png",
+                    obj=hopper_path.read_bytes(),
+                    kind="image",
+                    media_type="image/png",
+                    mount="temp",
+                )
+                datum = await datalake.create_datum(asset_refs={"image": asset.asset_id}, split="train")
+
+                dataset_version = await datalake.create_dataset_version(
+                    dataset_name="surface-defects",
+                    version="0.1.0",
+                    manifest=[datum.datum_id],
+                    metadata={"stage": "initial"},
+                )
+
+                resolved = await datalake.resolve_dataset_version(
+                    dataset_name="surface-defects",
+                    version="0.1.0",
+                )
+
+                print(dataset_version.dataset_version_id, len(resolved.datums))
+
+
+            asyncio.run(main())
     """
 
     def __init__(
