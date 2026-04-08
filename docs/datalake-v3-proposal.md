@@ -477,7 +477,6 @@ V3 needs:
 - `AnnotationSource`
 - `AnnotationRecord`
 - `AnnotationSet`
-- optional **`subject`** on **`AnnotationRecord`** and **`Asset`** via a shared **`SubjectRef`**, so labels and payloads stay canonical without requiring a datum to bundle every asset–annotation pairing ([Subject references](#subject-references))
 
 so labels become canonical structured data rather than arbitrary embedded payloads.
 
@@ -596,9 +595,10 @@ Its job is to provide:
 ```mermaid
 flowchart TD
     DV[DatasetVersion] --> D[Datum]
-    D --> ARF[asset_refs to Asset]
+    D --> A[Asset]
     D --> AS[AnnotationSet]
     AS --> AR[AnnotationRecord]
+    A --> SR[StorageRef]
 ```
 
 
