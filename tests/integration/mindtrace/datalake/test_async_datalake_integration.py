@@ -167,7 +167,9 @@ def test_async_datalake_constructor_variants_and_helpers(tmp_path):
             is_default=True,
         )
     ]
-    datalake_with_mounts = AsyncDatalake("mongodb://localhost:27018", "mounts-only", mounts=mounts, default_mount="mounted")
+    datalake_with_mounts = AsyncDatalake(
+        "mongodb://localhost:27018", "mounts-only", mounts=mounts, default_mount="mounted"
+    )
     assert datalake_with_mounts.store.default_mount == "mounted"
 
     db_name = f"default-store-{uuid4().hex}"

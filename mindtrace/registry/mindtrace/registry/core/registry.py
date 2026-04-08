@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
     GCSMountConfig,
@@ -22,11 +23,9 @@ from mindtrace.registry.core.mount import (
     LocalMountConfig,
     Mount,
     MountBackendKind,
-    NoAuth,
     S3AccessKeyAuth,
     S3MountConfig,
 )
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 

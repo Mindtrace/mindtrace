@@ -1,8 +1,8 @@
+import importlib
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
-import importlib
 
 import mindtrace.registry as registry_package
 from mindtrace.registry import (

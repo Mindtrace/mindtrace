@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mindtrace.registry.core.registry import Registry
 
 
 class MountBackendKind(str, Enum):

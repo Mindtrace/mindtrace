@@ -5,6 +5,12 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
+from mindtrace.registry.core.exceptions import (
+    LockTimeoutError,
+    StoreAmbiguousObjectError,
+    StoreKeyFormatError,
+    StoreLocationNotFound,
+)
 from mindtrace.registry.core.mount import (
     AmbientAuth,
     GCSMountConfig,
@@ -15,12 +21,6 @@ from mindtrace.registry.core.mount import (
     NoAuth,
     S3AccessKeyAuth,
     S3MountConfig,
-)
-from mindtrace.registry.core.exceptions import (
-    LockTimeoutError,
-    StoreAmbiguousObjectError,
-    StoreKeyFormatError,
-    StoreLocationNotFound,
 )
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.store import MountedRegistry, Store

@@ -933,14 +933,24 @@ def test_config_and_path_helper_edge_cases(backend, monkeypatch):
     assert backend._prefixed("artifact.bin") == "nested/prefix/artifact.bin"
     assert backend._object_metadata_path("test:object", "1.0.0") == "nested/prefix/_meta_test%3Aobject@1.0.0.json"
     assert backend._object_metadata_prefix("test:object") == "nested/prefix/_meta_test%3Aobject@"
-    assert backend._object_key_with_uuid("test:object", "1.0.0", "uuid-1") == "nested/prefix/objects/test:object/1.0.0/uuid-1"
-    assert backend._staging_path("test:object", "1.0.0", "uuid-1") == "nested/prefix/_staging/test%3Aobject/1.0.0/uuid-1.json"
+    assert (
+        backend._object_key_with_uuid("test:object", "1.0.0", "uuid-1")
+        == "nested/prefix/objects/test:object/1.0.0/uuid-1"
+    )
+    assert (
+        backend._staging_path("test:object", "1.0.0", "uuid-1")
+        == "nested/prefix/_staging/test%3Aobject/1.0.0/uuid-1.json"
+    )
 
 
 def test_ensure_metadata_file_recovers_from_exists_error(backend, monkeypatch):
     monkeypatch.setattr(backend.gcs, "exists", lambda path: (_ for _ in ()).throw(RuntimeError("boom")))
     uploaded: list[tuple[str, str]] = []
-    monkeypatch.setattr(backend.gcs, "upload_string", lambda data, path, **kwargs: uploaded.append((data, path)) or MockStringResult(remote_path=path))
+    monkeypatch.setattr(
+        backend.gcs,
+        "upload_string",
+        lambda data, path, **kwargs: uploaded.append((data, path)) or MockStringResult(remote_path=path),
+    )
 
     backend._ensure_metadata_file()
 
@@ -949,7 +959,9 @@ def test_ensure_metadata_file_recovers_from_exists_error(backend, monkeypatch):
 
 
 def test_commit_plan_and_cleanup_helper_edge_cases(backend, monkeypatch):
-    monkeypatch.setattr(backend.gcs, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("upload failed")))
+    monkeypatch.setattr(
+        backend.gcs, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("upload failed"))
+    )
     assert backend._create_commit_plan("test:object", "1.0.0", "uuid-1") is False
 
     assert backend._delete_commit_plan("test:object", "1.0.0", "missing") is True
@@ -958,7 +970,9 @@ def test_commit_plan_and_cleanup_helper_edge_cases(backend, monkeypatch):
     monkeypatch.setattr(
         backend.gcs,
         "delete",
-        lambda path: MockFileResult(remote_path=path, status="error", ok=False, error_type="DeleteError", error_message="cannot delete"),
+        lambda path: MockFileResult(
+            remote_path=path, status="error", ok=False, error_type="DeleteError", error_message="cannot delete"
+        ),
     )
     assert backend._delete_commit_plan("test:object", "1.0.0", "uuid-2") is False
 
@@ -967,13 +981,19 @@ def test_commit_plan_and_cleanup_helper_edge_cases(backend, monkeypatch):
     monkeypatch.setattr(backend.gcs, "list_objects", lambda prefix="": [])
     assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-4") is False
 
-    monkeypatch.setattr(backend.gcs, "list_objects", lambda prefix="": (_ for _ in ()).throw(RuntimeError("list failed")))
+    monkeypatch.setattr(
+        backend.gcs, "list_objects", lambda prefix="": (_ for _ in ()).throw(RuntimeError("list failed"))
+    )
     assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-5") is False
 
 
 def test_attempt_rollback_only_deletes_plan_when_folder_cleanup_succeeds(backend, monkeypatch):
     deleted_plans: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(
+        backend,
+        "_delete_commit_plan",
+        lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True,
+    )
     monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: True)
     assert backend._attempt_rollback("test:object", "1.0.0", "uuid-1") is True
     assert deleted_plans == [("test:object", "1.0.0", "uuid-1")]
@@ -994,7 +1014,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
         return MockStringResult(remote_path=path, status="ok", ok=True)
 
     monkeypatch.setattr(backend.gcs, "upload_string", upload_not_found_then_success)
-    monkeypatch.setattr(backend.gcs, "download_string", lambda path: MockStringResult(remote_path=path, status="not_found", ok=False))
+    monkeypatch.setattr(
+        backend.gcs, "download_string", lambda path: MockStringResult(remote_path=path, status="not_found", ok=False)
+    )
     assert backend._acquire_lock("test:object@1.0.0", "lock-1", timeout=1) is True
 
     calls["upload"] = 0
@@ -1018,7 +1040,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
     )
     assert backend._acquire_lock("test:object@2.0.0", "lock-2", timeout=1) is True
 
-    monkeypatch.setattr(backend.gcs, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        backend.gcs, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.time.sleep", lambda seconds: None)
     assert backend._acquire_lock("test:object@3.0.0", "lock-3", timeout=0) is False
 
@@ -1032,8 +1056,14 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
         return MockStringResult(remote_path=path, status="ok", ok=True)
 
     monkeypatch.setattr(backend.gcs, "upload_string", upload_after_sleep)
-    monkeypatch.setattr(backend.gcs, "download_string", lambda path: MockStringResult(remote_path=path, status="already_exists", ok=False))
-    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.time.sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(
+        backend.gcs,
+        "download_string",
+        lambda path: MockStringResult(remote_path=path, status="already_exists", ok=False),
+    )
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.gcp_registry_backend.time.sleep", lambda seconds: sleeps.append(seconds)
+    )
     assert backend._acquire_lock("test:object@3.1.0", "lock-31", timeout=1) is True
     assert sleeps == [1]
 
@@ -1055,7 +1085,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
 
 
 def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample_metadata, monkeypatch):
-    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
+    monkeypatch.setattr(
+        backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed"))
+    )
     monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: False)
     result = backend._push_single_object("test:plan", "1.0.0", Path(sample_object_dir), sample_metadata, "skip")
     assert result.is_error
@@ -1069,7 +1101,9 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
         backend.gcs,
         "upload_batch",
         lambda *args, **kwargs: MockBatchResult(
-            results=[MockFileResult(local_path="x", remote_path="y", status="error", ok=False, error_message="upload failed")]
+            results=[
+                MockFileResult(local_path="x", remote_path="y", status="error", ok=False, error_message="upload failed")
+            ]
         ),
     )
     monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: True)
@@ -1077,9 +1111,15 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     assert result.is_error
     assert result.cleanup == CleanupState.OK
 
-    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
-    monkeypatch.setattr(backend.gcs, "upload_batch", MockGCSHandler.upload_batch.__get__(backend.gcs, type(backend.gcs)))
-    result = backend._push_single_object("test:overwrite", "1.0.0", Path(sample_object_dir), sample_metadata, "overwrite")
+    monkeypatch.setattr(
+        backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed"))
+    )
+    monkeypatch.setattr(
+        backend.gcs, "upload_batch", MockGCSHandler.upload_batch.__get__(backend.gcs, type(backend.gcs))
+    )
+    result = backend._push_single_object(
+        "test:overwrite", "1.0.0", Path(sample_object_dir), sample_metadata, "overwrite"
+    )
     assert result.ok
     assert result.cleanup == CleanupState.UNKNOWN
 
@@ -1089,7 +1129,9 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="already_exists", ok=False, error_message="exists"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="already_exists", ok=False, error_message="exists"
+        ),
     )
     result = backend._push_single_object("test:skip-race", "1.0.0", Path(sample_object_dir), sample_metadata, "skip")
     assert result.is_skipped
@@ -1099,9 +1141,13 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="meta failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="meta failed"
+        ),
     )
-    result = backend._push_single_object("test:meta-error", "1.0.0", Path(sample_object_dir), sample_metadata, "overwrite")
+    result = backend._push_single_object(
+        "test:meta-error", "1.0.0", Path(sample_object_dir), sample_metadata, "overwrite"
+    )
     assert result.is_error
     assert result.cleanup == CleanupState.ORPHANED
 
@@ -1125,7 +1171,9 @@ def test_pull_fallback_listing_branches(backend, sample_object_dir, sample_metad
     assert results.first().ok
     assert (tmp_path / "fallback" / "file1.txt").exists()
 
-    missing_results = backend.pull("missing:object", "1.0.0", tmp_path / "missing", metadata={"_storage": {"uuid": "missing-uuid"}})
+    missing_results = backend.pull(
+        "missing:object", "1.0.0", tmp_path / "missing", metadata={"_storage": {"uuid": "missing-uuid"}}
+    )
     assert missing_results.first().is_error
 
     corrupted_results = backend.pull("corrupt:object", "1.0.0", tmp_path / "corrupt", metadata={"_storage": {}})
@@ -1143,7 +1191,11 @@ def test_delete_single_object_edge_cases(backend, monkeypatch):
 
     deleted_plans: list[tuple[str, str, str]] = []
     monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: True)
-    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(
+        backend,
+        "_delete_commit_plan",
+        lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True,
+    )
     monkeypatch.setattr(
         backend.gcs,
         "delete",
@@ -1182,7 +1234,9 @@ def test_save_fetch_delete_metadata_and_registry_edge_cases(backend, sample_meta
     monkeypatch.setattr(
         backend.gcs,
         "upload_string",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="write failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="write failed"
+        ),
     )
     helper_result = backend._save_metadata_single("test:helper", "1.0.0", sample_metadata, on_conflict="overwrite")
     assert helper_result.status == "error"
@@ -1190,7 +1244,9 @@ def test_save_fetch_delete_metadata_and_registry_edge_cases(backend, sample_meta
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="save failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="save failed"
+        ),
     )
     results = backend.save_metadata("test:error", "1.0.0", sample_metadata)
     assert results.first().is_error

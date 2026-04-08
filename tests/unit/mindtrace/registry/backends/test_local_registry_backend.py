@@ -998,7 +998,10 @@ def test_acquire_shared_lock_ignores_corrupt_exclusive_on_double_check(backend, 
 
 
 def test_acquire_shared_lock_treats_existing_holder_as_success(backend, monkeypatch):
-    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.os.open", lambda *args, **kwargs: (_ for _ in ()).throw(FileExistsError()))
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.os.open",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileExistsError()),
+    )
     assert backend._acquire_internal_lock("test_shared_exists", "shared-lock", timeout=30, shared=True) is True
 
 
@@ -1160,7 +1163,10 @@ def test_pull_reports_missing_object_and_copy_errors(backend, sample_object_dir,
 
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
     fetched_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
-    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.shutil.copytree", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("copy failed")))
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.shutil.copytree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("copy failed")),
+    )
     result = backend.pull("test:object", "1.0.0", str(backend.uri / "dest2"), metadata=fetched_meta)
     assert result[("test:object", "1.0.0")].is_error
 
@@ -1176,12 +1182,17 @@ def test_pull_with_shared_lock_copies_contents(backend, sample_object_dir, sampl
     assert (dest_path / "file1.txt").read_text() == "test content 1"
 
 
-def test_delete_validates_lengths_and_reports_runtime_failures(backend, sample_object_dir, sample_metadata, monkeypatch):
+def test_delete_validates_lengths_and_reports_runtime_failures(
+    backend, sample_object_dir, sample_metadata, monkeypatch
+):
     with pytest.raises(ValueError, match="lengths must match"):
         backend.delete(["a", "b"], ["1.0.0"])
 
     backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
-    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.shutil.rmtree", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("delete failed")))
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.shutil.rmtree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("delete failed")),
+    )
     result = backend.delete("test:object", "1.0.0")
     assert result[("test:object", "1.0.0")].is_error
 
@@ -1200,7 +1211,9 @@ def test_save_metadata_branches(backend, sample_metadata):
     assert result[("test:object", "1.0.0")].is_overwritten
 
 
-def test_push_rolls_back_artifacts_and_metadata_when_metadata_write_fails(backend, sample_object_dir, sample_metadata, monkeypatch):
+def test_push_rolls_back_artifacts_and_metadata_when_metadata_write_fails(
+    backend, sample_object_dir, sample_metadata, monkeypatch
+):
     real_safe_dump = yaml.safe_dump
 
     def failing_safe_dump(data, stream, *args, **kwargs):
@@ -1289,7 +1302,10 @@ def test_registered_materializers_missing_error_and_filtered_list(backend, monke
 
 def test_fetch_metadata_reports_yaml_errors(backend, sample_metadata, monkeypatch):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
-    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.yaml.safe_load", lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad yaml")))
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.yaml.safe_load",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad yaml")),
+    )
 
     result = backend.fetch_metadata("test:object", "1.0.0")
     assert result[("test:object", "1.0.0")].is_error

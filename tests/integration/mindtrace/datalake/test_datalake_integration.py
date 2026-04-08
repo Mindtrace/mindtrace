@@ -183,6 +183,7 @@ def test_sync_datalake_internal_helpers_cover_error_branches():
     datalake = _bare_datalake()
     loop = datalake._loop
     try:
+
         async def assert_running_loop_guard():
             with pytest.raises(RuntimeError, match="use AsyncDatalake instead"):
                 datalake._ensure_not_in_running_loop()
@@ -206,7 +207,9 @@ def test_sync_datalake_internal_helpers_cover_error_branches():
             return 1
 
         coro = sample()
-        with patch("mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("schedule failed")):
+        with patch(
+            "mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("schedule failed")
+        ):
             with pytest.raises(RuntimeError, match="schedule failed"):
                 datalake._submit_coro(coro)
         assert coro.cr_frame is None

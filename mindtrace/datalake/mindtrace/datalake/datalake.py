@@ -239,9 +239,7 @@ class Datalake(Mindtrace):
             asyncio.get_running_loop()
         except RuntimeError:
             return
-        raise RuntimeError(
-            "Cannot call sync Datalake methods from an active event loop; use AsyncDatalake instead."
-        )
+        raise RuntimeError("Cannot call sync Datalake methods from an active event loop; use AsyncDatalake instead.")
 
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)

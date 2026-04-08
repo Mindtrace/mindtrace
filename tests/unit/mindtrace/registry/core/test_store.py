@@ -318,9 +318,7 @@ def test_cache_helpers_noop_when_location_cache_disabled():
 
 def test_read_only_mount_blocks_save_and_delete(basic_store):
     with TemporaryDirectory() as d:
-        basic_store.add_mount(
-            Mount(name="ro", backend="local", config=LocalMountConfig(uri=d), read_only=True)
-        )
+        basic_store.add_mount(Mount(name="ro", backend="local", config=LocalMountConfig(uri=d), read_only=True))
 
         with pytest.raises(PermissionError, match="read-only"):
             basic_store.save("ro/item", {"v": 1})
@@ -422,7 +420,9 @@ def test_dict_dunder_helpers_for_delete_contains_and_str(basic_store):
 
 def test_update_from_store_without_syncing_all_versions():
     with TemporaryDirectory() as src_dir, TemporaryDirectory() as dst_dir:
-        other = Store.from_mounts([Mount(name="src", backend="local", config=LocalMountConfig(uri=src_dir), is_default=True)])
+        other = Store.from_mounts(
+            [Mount(name="src", backend="local", config=LocalMountConfig(uri=src_dir), is_default=True)]
+        )
         target = Store.from_mounts(
             [
                 Mount(

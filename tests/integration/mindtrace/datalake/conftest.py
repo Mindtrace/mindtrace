@@ -69,6 +69,7 @@ def sync_datalake(datalake_store):
         yield datalake
     finally:
         client = datalake._backend.asset_database.client
+
         async def _drop_database():
             await client.drop_database(db_name)
 

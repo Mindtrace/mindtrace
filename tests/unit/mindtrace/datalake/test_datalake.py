@@ -1,5 +1,4 @@
 import asyncio
-from concurrent.futures import Future
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -78,18 +77,28 @@ class TestDatalakeSyncFacade:
             "get_object": b"payload",
             "head_object": {"size": 123},
             "copy_object": StorageRef(mount="archive", name="hopper.png", version="v2"),
-            "create_asset": Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
-            "get_asset": Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+            "create_asset": Asset(
+                kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+            ),
+            "get_asset": Asset(
+                kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+            ),
             "list_assets": [],
-            "update_asset_metadata": Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+            "update_asset_metadata": Asset(
+                kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+            ),
             "delete_asset": None,
             "create_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "get_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "list_annotation_sets": [],
             "add_annotation_records": [],
-            "get_annotation_record": AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}),
+            "get_annotation_record": AnnotationRecord(
+                kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
+            ),
             "list_annotation_records": [],
-            "update_annotation_record": AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}),
+            "update_annotation_record": AnnotationRecord(
+                kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
+            ),
             "delete_annotation_record": None,
             "create_datum": Datum(asset_refs={"image": "asset_1"}),
             "get_datum": Datum(asset_refs={"image": "asset_1"}),
@@ -99,8 +108,12 @@ class TestDatalakeSyncFacade:
             "get_dataset_version": DatasetVersion(dataset_name="demo", version="0.1.0"),
             "list_dataset_versions": [],
             "resolve_datum": ResolvedDatum(datum=Datum(asset_refs={"image": "asset_1"})),
-            "resolve_dataset_version": ResolvedDatasetVersion(dataset_version=DatasetVersion(dataset_name="demo", version="0.1.0"), datums=[]),
-            "create_asset_from_object": Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+            "resolve_dataset_version": ResolvedDatasetVersion(
+                dataset_version=DatasetVersion(dataset_name="demo", version="0.1.0"), datums=[]
+            ),
+            "create_asset_from_object": Asset(
+                kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+            ),
         }.items():
             setattr(backend, name, AsyncMock(return_value=value))
         return backend
@@ -145,6 +158,7 @@ class TestDatalakeSyncFacade:
     def test_call_in_loop_propagates_constructor_exception(self):
         datalake = self._bare_datalake()
         try:
+
             def boom():
                 raise ValueError("boom")
 
@@ -159,7 +173,9 @@ class TestDatalakeSyncFacade:
             return 1
 
         coro = sample()
-        with patch("mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("schedule failed")):
+        with patch(
+            "mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("schedule failed")
+        ):
             with pytest.raises(RuntimeError, match="schedule failed"):
                 datalake._submit_coro(coro)
         assert coro.cr_frame is None
@@ -188,22 +204,44 @@ class TestDatalakeSyncFacade:
         future.cancel.assert_called_once()
 
     def test_sync_facade_basic_methods(self, datalake, mock_backend):
-        mock_backend.summary = AsyncMock(return_value="Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)")
+        mock_backend.summary = AsyncMock(
+            return_value="Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        )
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
-        assert datalake.summary() == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
-        assert str(datalake) == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        assert (
+            datalake.summary()
+            == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        )
+        assert (
+            str(datalake)
+            == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        )
         assert datalake.get_mounts()["default_mount"] == "temp"
         assert datalake.put_object(name="hopper.png", obj=b"bytes").version == "v1"
         assert datalake.get_object(StorageRef(mount="temp", name="hopper.png", version="v1")) == b"payload"
         assert datalake.head_object(StorageRef(mount="temp", name="hopper.png", version="v1")) == {"size": 123}
-        assert datalake.copy_object(StorageRef(mount="temp", name="hopper.png", version="v1"), target_mount="archive", target_name="hopper.png").version == "v2"
-        assert isinstance(datalake.create_asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")), Asset)
+        assert (
+            datalake.copy_object(
+                StorageRef(mount="temp", name="hopper.png", version="v1"),
+                target_mount="archive",
+                target_name="hopper.png",
+            ).version
+            == "v2"
+        )
+        assert isinstance(
+            datalake.create_asset(
+                kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+            ),
+            Asset,
+        )
         assert isinstance(datalake.get_asset("asset_1"), Asset)
         assert datalake.list_assets() == []
         assert isinstance(datalake.update_asset_metadata("asset_1", {"source": "demo"}), Asset)
         datalake.delete_asset("asset_1")
-        assert isinstance(datalake.create_annotation_set(name="gt", purpose="ground_truth", source_type="human"), AnnotationSet)
+        assert isinstance(
+            datalake.create_annotation_set(name="gt", purpose="ground_truth", source_type="human"), AnnotationSet
+        )
         assert isinstance(datalake.get_annotation_set("set_1"), AnnotationSet)
         assert datalake.list_annotation_sets() == []
         assert datalake.add_annotation_records("set_1", []) == []
@@ -215,12 +253,17 @@ class TestDatalakeSyncFacade:
         assert isinstance(datalake.get_datum("datum_1"), Datum)
         assert datalake.list_datums() == []
         assert isinstance(datalake.update_datum("datum_1", split="train"), Datum)
-        assert isinstance(datalake.create_dataset_version(dataset_name="demo", version="0.1.0", manifest=[]), DatasetVersion)
+        assert isinstance(
+            datalake.create_dataset_version(dataset_name="demo", version="0.1.0", manifest=[]), DatasetVersion
+        )
         assert isinstance(datalake.get_dataset_version("demo", "0.1.0"), DatasetVersion)
         assert datalake.list_dataset_versions() == []
         assert isinstance(datalake.resolve_datum("datum_1"), ResolvedDatum)
         assert isinstance(datalake.resolve_dataset_version("demo", "0.1.0"), ResolvedDatasetVersion)
-        assert isinstance(datalake.create_asset_from_object(name="hopper.png", obj=b"bytes", kind="image", media_type="image/png"), Asset)
+        assert isinstance(
+            datalake.create_asset_from_object(name="hopper.png", obj=b"bytes", kind="image", media_type="image/png"),
+            Asset,
+        )
         mock_backend.initialize.assert_awaited_once()
 
     def test_summary_rewrites_async_prefix(self, datalake, mock_backend):
