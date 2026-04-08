@@ -35,6 +35,9 @@ class SubjectRef(BaseModel):
     kind: Literal["asset", "annotation"]
     id: str
 
+    def __str__(self) -> str:
+        return f"SubjectRef(kind={self.kind}, id={self.id})"
+
 
 class StorageRef(BaseModel):
     """Embedded reference to a payload stored in a registry/store mount."""
@@ -43,6 +46,9 @@ class StorageRef(BaseModel):
     name: str
     version: str | None = "latest"
     qualified_key: str | None = None
+
+    def __str__(self) -> str:
+        return f"StorageRef({self.qualified_key})"
 
     @model_validator(mode="after")
     def populate_qualified_key(self) -> "StorageRef":
@@ -59,9 +65,16 @@ class AnnotationSource(BaseModel):
     version: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def __str__(self) -> str:
+        version = f", version={self.version}" if self.version else ""
+        return f"AnnotationSource(type={self.type}, name={self.name}{version})"
+
 
 class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
+
+    def __str__(self) -> str:
+        return f"Asset(asset_id={self.asset_id}, kind={self.kind}, storage_ref={self.storage_ref})"
 
     asset_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("asset"))
     kind: Literal["image", "mask", "artifact", "embedding", "document", "other"]
@@ -89,6 +102,9 @@ class Asset(DatalakeDocument):
 
 class AnnotationRecord(DatalakeDocument):
     """One atomic persisted annotation."""
+
+    def __str__(self) -> str:
+        return f"AnnotationRecord(annotation_id={self.annotation_id}, kind={self.kind}, label={self.label})"
 
     annotation_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation"))
     annotation_set_id: Annotated[str | None, Indexed(unique=False)] = None
@@ -131,6 +147,9 @@ class AnnotationRecord(DatalakeDocument):
 class AnnotationSet(DatalakeDocument):
     """Grouping/provenance boundary for annotation records."""
 
+    def __str__(self) -> str:
+        return f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, records={len(self.annotation_record_ids)})"
+
     annotation_set_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_set"))
     datum_id: Annotated[str | None, Indexed(unique=False)] = None
     name: str
@@ -151,6 +170,9 @@ class AnnotationSet(DatalakeDocument):
 class Datum(DatalakeDocument):
     """Reusable unit of dataset membership."""
 
+    def __str__(self) -> str:
+        return f"Datum(datum_id={self.datum_id}, split={self.split}, assets={list(self.asset_refs.keys())})"
+
     datum_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("datum"))
     split: Literal["train", "val", "test"] | None = None
     asset_refs: dict[str, str] = Field(default_factory=dict)
@@ -166,6 +188,9 @@ class Datum(DatalakeDocument):
 
 class DatasetVersion(DatalakeDocument):
     """Immutable dataset manifest over datum ids."""
+
+    def __str__(self) -> str:
+        return f"DatasetVersion(dataset={self.dataset_name}, version={self.version}, datums={len(self.manifest)})"
 
     dataset_version_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("dataset_version"))
     dataset_name: Annotated[str, Indexed(unique=False)]
@@ -190,9 +215,15 @@ class ResolvedDatum(BaseModel):
     annotation_sets: list[AnnotationSet] = Field(default_factory=list)
     annotation_records: dict[str, list[AnnotationRecord]] = Field(default_factory=dict)
 
+    def __str__(self) -> str:
+        return f"ResolvedDatum(datum_id={self.datum.datum_id}, assets={len(self.assets)}, annotation_sets={len(self.annotation_sets)})"
+
 
 class ResolvedDatasetVersion(BaseModel):
     """Resolved dataset view with all datums and their linked records."""
 
     dataset_version: DatasetVersion
     datums: list[ResolvedDatum] = Field(default_factory=list)
+
+    def __str__(self) -> str:
+        return f"ResolvedDatasetVersion(dataset={self.dataset_version.dataset_name}, version={self.dataset_version.version}, datums={len(self.datums)})"

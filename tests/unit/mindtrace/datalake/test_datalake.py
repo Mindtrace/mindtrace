@@ -188,8 +188,11 @@ class TestDatalakeSyncFacade:
         future.cancel.assert_called_once()
 
     def test_sync_facade_basic_methods(self, datalake, mock_backend):
+        mock_backend.summary = AsyncMock(return_value="Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)")
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
+        assert datalake.summary() == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        assert str(datalake) == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         assert datalake.get_mounts()["default_mount"] == "temp"
         assert datalake.put_object(name="hopper.png", obj=b"bytes").version == "v1"
         assert datalake.get_object(StorageRef(mount="temp", name="hopper.png", version="v1")) == b"payload"

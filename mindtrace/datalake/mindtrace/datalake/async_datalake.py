@@ -131,6 +131,22 @@ class AsyncDatalake(Mindtrace):
             "default_mount": self.store.default_mount,
         }
 
+    async def summary(self) -> str:
+        asset_count = len(await self.list_assets())
+        annotation_set_count = len(await self.list_annotation_sets())
+        annotation_record_count = len(await self.list_annotation_records())
+        datum_count = len(await self.list_datums())
+        dataset_version_count = len(await self.list_dataset_versions())
+        return (
+            f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount}, "
+            f"assets={asset_count}, annotation_sets={annotation_set_count}, "
+            f"annotation_records={annotation_record_count}, datums={datum_count}, "
+            f"dataset_versions={dataset_version_count})"
+        )
+
+    def __str__(self) -> str:
+        return f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount})"
+
     def get_mounts(self) -> dict[str, Any]:
         mount_info = self.store.list_mount_info()
         mounts = [{"name": name, **info} for name, info in mount_info.items()]
