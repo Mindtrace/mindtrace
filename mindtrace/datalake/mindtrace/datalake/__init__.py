@@ -1,3 +1,4 @@
+from .async_datalake import AsyncDatalake
 from .datalake import Datalake
 from .types import (
     AnnotationRecord,
@@ -17,6 +18,7 @@ __all__ = [
     "AnnotationSet",
     "AnnotationSource",
     "Asset",
+    "AsyncDatalake",
     "DatasetVersion",
     "Datalake",
     "Datum",
