@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
+from pathlib import Path
+
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -18,6 +20,15 @@ from mindtrace.datalake.types import (
 
 
 class TestAsyncDatalakeUnit:
+    def test_default_datalake_store_path_uses_cache_directory(self):
+        from mindtrace.datalake.async_datalake import _default_datalake_store_path
+
+        path = _default_datalake_store_path("mongodb://example:27017", "demo")
+
+        assert path == Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{path.name.split('datalake-')[1]}"
+        assert path.parent == Path("~/.cache/mindtrace/temp").expanduser()
+        assert path.name.startswith("datalake-")
+
     @pytest.fixture
     def mock_odm(self):
         mock = AsyncMock()
@@ -69,15 +80,23 @@ class TestAsyncDatalakeUnit:
         assert datalake.store == fake_store
         from_mounts.assert_called_once()
 
-    def test_init_builds_default_store_when_not_provided(self, mock_odm):
+    def test_init_builds_default_cache_backed_store_when_not_provided(self, mock_odm):
         fake_store = MagicMock()
+        fake_path = MagicMock()
         with (
             patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm),
-            patch("mindtrace.datalake.async_datalake.Store", return_value=fake_store) as store_cls,
+            patch("mindtrace.datalake.async_datalake._default_datalake_store_path", return_value=fake_path) as default_path,
+            patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
             datalake = AsyncDatalake("mongodb://test:27017", "test_db", default_mount="nas")
         assert datalake.store == fake_store
-        store_cls.assert_called_once_with(default_mount="nas")
+        default_path.assert_called_once_with("mongodb://test:27017", "test_db")
+        fake_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        from_mounts.assert_called_once()
+        mounts = from_mounts.call_args.args[0]
+        assert len(mounts) == 1
+        assert mounts[0].name == "nas"
+        assert from_mounts.call_args.kwargs["default_mount"] == "nas"
 
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):

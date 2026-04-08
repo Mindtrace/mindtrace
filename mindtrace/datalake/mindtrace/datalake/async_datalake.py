@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timezone
+import hashlib
+from pathlib import Path
 from typing import Any, TypeVar
 
 from mindtrace.core import Mindtrace
@@ -19,10 +21,15 @@ from mindtrace.datalake.types import (
     StorageRef,
     SubjectRef,
 )
-from mindtrace.registry import Mount, Store
+from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
 
 
 DocumentT = TypeVar("DocumentT")
+
+
+def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
+    digest = hashlib.sha1(f"{mongo_db_uri}|{mongo_db_name}".encode()).hexdigest()[:12]
+    return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
 
 
 class AsyncDatalake(Mindtrace):
@@ -58,7 +65,20 @@ class AsyncDatalake(Mindtrace):
         elif mounts is not None:
             self.store = Store.from_mounts(mounts, default_mount=default_mount)
         else:
-            self.store = Store(default_mount=default_mount or "temp")
+            default_path = _default_datalake_store_path(mongo_db_uri, mongo_db_name)
+            default_path.mkdir(parents=True, exist_ok=True)
+            effective_default_mount = default_mount or "default"
+            self.store = Store.from_mounts(
+                [
+                    Mount(
+                        name=effective_default_mount,
+                        backend=MountBackendKind.LOCAL,
+                        config=LocalMountConfig(uri=default_path),
+                        is_default=True,
+                    )
+                ],
+                default_mount=effective_default_mount,
+            )
 
         self.asset_database = MongoMindtraceODM(model_cls=Asset, db_name=mongo_db_name, db_uri=mongo_db_uri)
         self.annotation_record_database = MongoMindtraceODM(
