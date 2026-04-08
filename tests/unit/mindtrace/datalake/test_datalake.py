@@ -163,6 +163,18 @@ class TestDatalakeSyncFacade:
                 datalake._submit_coro(sample())
         future.cancel.assert_called_once()
 
+    def test_submit_coro_ignores_cancel_failure_and_reraises_original_error(self, datalake):
+        async def sample():
+            return 1
+
+        future = MagicMock()
+        future.result.side_effect = RuntimeError("future failed")
+        future.cancel.side_effect = RuntimeError("cancel failed")
+        with patch("mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", return_value=future):
+            with pytest.raises(RuntimeError, match="future failed"):
+                datalake._submit_coro(sample())
+        future.cancel.assert_called_once()
+
     def test_sync_facade_basic_methods(self, datalake, mock_backend):
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
