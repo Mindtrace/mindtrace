@@ -26,7 +26,7 @@ DocumentT = TypeVar("DocumentT")
 
 
 class Datalake(Mindtrace):
-    """V3 datalake facade for canonical records over Store-backed payloads."""
+    """Datalake facade for canonical records over Store-backed payloads."""
 
     def __init__(
         self,
