@@ -18,6 +18,14 @@ from mindtrace.datalake.types import (
 
 
 class TestDatalakeSyncFacade:
+    @staticmethod
+    def _bare_datalake() -> Datalake:
+        datalake = object.__new__(Datalake)
+        datalake._owns_loop_thread = False
+        datalake._loop_thread = None
+        datalake._loop = asyncio.new_event_loop()
+        return datalake
+
     def test_init_with_existing_async_datalake_and_loop(self):
         backend = MagicMock()
         backend.store = MagicMock()
@@ -111,10 +119,10 @@ class TestDatalakeSyncFacade:
 
         asyncio.run(inner())
 
-    def test_run_loop_helper_executes_forever_loop(self, datalake):
-        loop = asyncio.new_event_loop()
+    def test_run_loop_helper_executes_forever_loop(self):
+        datalake = self._bare_datalake()
+        loop = datalake._loop
         try:
-            datalake._loop = loop
             with patch("mindtrace.datalake.datalake.asyncio.set_event_loop") as set_event_loop:
                 with patch.object(loop, "run_forever") as run_forever:
                     datalake._run_loop()
@@ -134,13 +142,17 @@ class TestDatalakeSyncFacade:
         submit.assert_called_once()
         assert result == "ok"
 
-    def test_call_in_loop_propagates_constructor_exception(self, datalake):
-        def boom():
-            raise ValueError("boom")
+    def test_call_in_loop_propagates_constructor_exception(self):
+        datalake = self._bare_datalake()
+        try:
+            def boom():
+                raise ValueError("boom")
 
-        datalake._loop.call_soon_threadsafe = lambda fn: fn()
-        with pytest.raises(ValueError, match="boom"):
-            datalake._call_in_loop(boom)
+            datalake._loop.call_soon_threadsafe = lambda fn: fn()
+            with pytest.raises(ValueError, match="boom"):
+                datalake._call_in_loop(boom)
+        finally:
+            datalake._loop.close()
 
     def test_submit_coro_closes_coro_when_scheduling_fails(self, datalake):
         async def sample():
