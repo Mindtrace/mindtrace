@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TypeVar
 
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
@@ -20,6 +20,9 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry import Mount, Registry, Store
+
+
+DocumentT = TypeVar("DocumentT")
 
 
 class Datalake(Mindtrace):
@@ -105,6 +108,11 @@ class Datalake(Mindtrace):
             version=storage_ref.version,
         )
 
+    @staticmethod
+    def _build_document(model_cls: type[DocumentT], **data: Any) -> DocumentT:
+        """Construct Beanie documents without requiring collection initialization."""
+        return model_cls.model_construct(**data)
+
     async def get_health(self) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -183,7 +191,8 @@ class Datalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> Asset:
-        asset = Asset(
+        asset = self._build_document(
+            Asset,
             kind=kind,
             media_type=media_type,
             storage_ref=self._normalize_storage_ref(storage_ref),
@@ -226,7 +235,8 @@ class Datalake(Mindtrace):
         created_by: str | None = None,
         datum_id: str | None = None,
     ) -> AnnotationSet:
-        annotation_set = AnnotationSet(
+        annotation_set = self._build_document(
+            AnnotationSet,
             datum_id=datum_id,
             name=name,
             purpose=purpose,
@@ -269,7 +279,8 @@ class Datalake(Mindtrace):
                 source = annotation.get("source")
                 if isinstance(source, dict):
                     source = AnnotationSource(**source)
-                record = AnnotationRecord(
+                record = self._build_document(
+                    AnnotationRecord,
                     annotation_set_id=annotation_set_id,
                     subject=annotation.get("subject"),
                     kind=annotation["kind"],
@@ -325,7 +336,8 @@ class Datalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
-        datum = Datum(
+        datum = self._build_document(
+            Datum,
             split=split,
             asset_refs=asset_refs,
             metadata=metadata or {},
@@ -364,7 +376,8 @@ class Datalake(Mindtrace):
         existing = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
         if existing:
             raise ValueError(f"Dataset version already exists: {dataset_name}@{version}")
-        dataset_version = DatasetVersion(
+        dataset_version = self._build_document(
+            DatasetVersion,
             dataset_name=dataset_name,
             version=version,
             description=description,

@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from beanie import Indexed
+from beanie.exceptions import CollectionWasNotInitialized
 from pydantic import BaseModel, Field, model_validator
 
 from mindtrace.database import MindtraceDocument
@@ -16,6 +17,16 @@ def utc_now() -> datetime:
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+class DatalakeDocument(MindtraceDocument):
+    """Beanie document that can still be instantiated before collection init in unit tests."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            super().__init__(*args, **kwargs)
+        except CollectionWasNotInitialized:
+            BaseModel.__init__(self, *args, **kwargs)
 
 
 class SubjectRef(BaseModel):
@@ -49,7 +60,7 @@ class AnnotationSource(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class Asset(MindtraceDocument):
+class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
 
     asset_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("asset"))
@@ -76,7 +87,7 @@ class Asset(MindtraceDocument):
         ]
 
 
-class AnnotationRecord(MindtraceDocument):
+class AnnotationRecord(DatalakeDocument):
     """One atomic persisted annotation."""
 
     annotation_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation"))
@@ -117,7 +128,7 @@ class AnnotationRecord(MindtraceDocument):
         ]
 
 
-class AnnotationSet(MindtraceDocument):
+class AnnotationSet(DatalakeDocument):
     """Grouping/provenance boundary for annotation records."""
 
     annotation_set_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_set"))
@@ -137,7 +148,7 @@ class AnnotationSet(MindtraceDocument):
         indexes = ["datum_id", "purpose", "source_type", "status"]
 
 
-class Datum(MindtraceDocument):
+class Datum(DatalakeDocument):
     """Reusable unit of dataset membership."""
 
     datum_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("datum"))
@@ -153,7 +164,7 @@ class Datum(MindtraceDocument):
         indexes = ["split"]
 
 
-class DatasetVersion(MindtraceDocument):
+class DatasetVersion(DatalakeDocument):
     """Immutable dataset manifest over datum ids."""
 
     dataset_version_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("dataset_version"))
