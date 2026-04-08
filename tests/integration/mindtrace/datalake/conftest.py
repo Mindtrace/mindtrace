@@ -22,6 +22,7 @@ def datalake_store():
                 backend=MountBackendKind.LOCAL,
                 config=LocalMountConfig(uri=temp_dir),
                 is_default=True,
+                registry_options={"mutable": True},
             )
         ],
         default_mount="local",
@@ -51,6 +52,11 @@ async def async_datalake(datalake_store):
         datalake.dataset_version_database.client.close()
 
 
+@pytest_asyncio.fixture(scope="function")
+async def datalake(async_datalake):
+    yield async_datalake
+
+
 @pytest.fixture(scope="function")
 def sync_datalake(datalake_store):
     db_name = f"test_datalake_sync_{uuid4().hex}"
@@ -63,11 +69,21 @@ def sync_datalake(datalake_store):
         yield datalake
     finally:
         client = datalake._backend.asset_database.client
-        import asyncio
+        async def _drop_database():
+            await client.drop_database(db_name)
 
-        asyncio.run(client.drop_database(db_name))
+        datalake._call_in_loop(_drop_database)
         datalake.close()
         try:
             client.close()
         except Exception:
             pass
+
+
+@pytest.fixture(scope="function")
+def temp_registry_dir():
+    temp_dir = tempfile.mkdtemp(prefix="mindtrace-datalake-registry-")
+    try:
+        yield temp_dir
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
