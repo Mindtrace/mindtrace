@@ -181,12 +181,22 @@ class TestDatalakeUnit:
         assert payload == b"payload"
         mock_store.load.assert_called_once_with("nas/images/cat.jpg@v1", version="v1", verify="none")
 
+    def test_get_object_sync_wrapper(self, datalake):
+        ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
+        payload = datalake.get_object(ref, verify="none")
+        assert payload == b"payload"
+
     @pytest.mark.asyncio
     async def test_ahead_object_returns_store_info(self, datalake, mock_store):
         ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
         info = await datalake.ahead_object(ref)
         assert info == {"size": 123}
         mock_store.info.assert_called_once_with("nas/images/cat.jpg@v1", version="v1")
+
+    def test_head_object_sync_wrapper(self, datalake):
+        ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
+        info = datalake.head_object(ref)
+        assert info == {"size": 123}
 
     @pytest.mark.asyncio
     async def test_acopy_object_returns_new_storage_ref(self, datalake, mock_store):
@@ -196,14 +206,39 @@ class TestDatalakeUnit:
         assert copied.name == "cat.jpg"
         assert copied.version == "v2"
 
+    def test_copy_object_sync_wrapper(self, datalake):
+        source = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
+        copied = datalake.copy_object(source, target_mount="archive", target_name="cat.jpg", target_version="v2")
+        assert copied.mount == "archive"
+        assert copied.version == "v2"
+
     @pytest.mark.asyncio
     async def test_acreate_asset_inserts_asset_model(self, datalake, mock_odm):
         ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
-        asset = await datalake.acreate_asset(kind="image", media_type="image/jpeg", storage_ref=ref)
+        asset = await datalake.acreate_asset(
+            kind="image",
+            media_type="image/jpeg",
+            storage_ref=ref,
+            checksum="sha256:abc",
+            size_bytes=123,
+            subject=SubjectRef(kind="asset", id="asset_0"),
+            metadata={"source": "demo"},
+            created_by="tester",
+        )
         assert isinstance(asset, Asset)
         assert asset.kind == "image"
         assert asset.storage_ref.mount == "nas"
+        assert asset.checksum == "sha256:abc"
+        assert asset.size_bytes == 123
+        assert asset.subject == SubjectRef(kind="asset", id="asset_0")
+        assert asset.metadata == {"source": "demo"}
+        assert asset.created_by == "tester"
         mock_odm.insert.assert_awaited()
+
+    def test_create_asset_sync_wrapper(self, datalake):
+        ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
+        asset = datalake.create_asset(kind="image", media_type="image/jpeg", storage_ref=ref)
+        assert isinstance(asset, Asset)
 
     @pytest.mark.asyncio
     async def test_aget_asset_raises_when_missing(self, datalake, mock_odm):
@@ -224,6 +259,17 @@ class TestDatalakeUnit:
         assert listed == [asset]
         assert updated.metadata == {"source": "demo"}
         mock_odm.delete.assert_awaited_once_with("db-id")
+
+    def test_asset_crud_sync_wrappers(self, datalake, mock_odm):
+        asset = Asset(kind="image", media_type="image/jpeg", storage_ref=StorageRef(mount="temp", name="x"))
+        asset.id = "db-id"
+        mock_odm.find.return_value = [asset]
+        assert datalake.get_asset(asset.asset_id) is asset
+        assert datalake.list_assets({"kind": "image"}) == [asset]
+        updated = datalake.update_asset_metadata(asset.asset_id, {"source": "demo"})
+        assert updated.metadata == {"source": "demo"}
+        datalake.delete_asset(asset.asset_id)
+        mock_odm.delete.assert_awaited_with("db-id")
 
     @pytest.mark.asyncio
     async def test_acreate_annotation_set_for_datum_updates_parent(self, datalake, mock_odm):
@@ -246,6 +292,10 @@ class TestDatalakeUnit:
         assert created.datum_id is None
         assert mock_odm.update.await_count == 0
 
+    def test_create_annotation_set_sync_wrapper(self, datalake):
+        created = datalake.create_annotation_set(name="predictions", purpose="prediction", source_type="machine")
+        assert isinstance(created, AnnotationSet)
+
     @pytest.mark.asyncio
     async def test_aget_annotation_set_raises_when_missing(self, datalake, mock_odm):
         mock_odm.find.return_value = []
@@ -258,6 +308,12 @@ class TestDatalakeUnit:
         mock_odm.find.return_value = [annotation_set]
         results = await datalake.alist_annotation_sets({"purpose": "ground_truth"})
         assert results == [annotation_set]
+
+    def test_annotation_set_get_and_list_sync_wrappers(self, datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        mock_odm.find.return_value = [annotation_set]
+        assert datalake.get_annotation_set(annotation_set.annotation_set_id) is annotation_set
+        assert datalake.list_annotation_sets({"purpose": "ground_truth"}) == [annotation_set]
 
     @pytest.mark.asyncio
     async def test_aadd_annotation_records_supports_dict_and_model_instances(self, datalake, mock_odm):
@@ -279,6 +335,16 @@ class TestDatalakeUnit:
         assert annotation_set.annotation_record_ids == ["annotation_model", "annotation_dict"]
         mock_odm.update.assert_awaited()
 
+    def test_add_annotation_records_sync_wrapper(self, datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        annotation_set.annotation_record_ids = []
+        datalake.aget_annotation_set = AsyncMock(return_value=annotation_set)
+        inserted = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1})
+        inserted.annotation_id = "annotation_sync"
+        mock_odm.insert = AsyncMock(return_value=inserted)
+        result = datalake.add_annotation_records(annotation_set.annotation_set_id, [{"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "review-ui"}}])
+        assert result == [inserted]
+
     @pytest.mark.asyncio
     async def test_annotation_record_crud_async(self, datalake, mock_odm):
         record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1})
@@ -297,6 +363,23 @@ class TestDatalakeUnit:
         assert updated.source.type == "machine"
         assert annotation_set.annotation_record_ids == []
         mock_odm.delete.assert_awaited_once_with("db-rec")
+
+    def test_annotation_record_sync_wrappers(self, datalake, mock_odm):
+        record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1})
+        record.id = "db-rec"
+        record.annotation_set_id = "set-1"
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        annotation_set.annotation_set_id = "set-1"
+        annotation_set.annotation_record_ids = [record.annotation_id]
+        mock_odm.find.return_value = [record]
+        datalake.aget_annotation_record = AsyncMock(return_value=record)
+        datalake.aget_annotation_set = AsyncMock(return_value=annotation_set)
+        assert datalake.get_annotation_record(record.annotation_id) is record
+        assert datalake.list_annotation_records({"label": "dent"}) == [record]
+        updated = datalake.update_annotation_record(record.annotation_id, source={"type": "machine", "name": "det"})
+        assert updated.source.type == "machine"
+        datalake.delete_annotation_record(record.annotation_id)
+        mock_odm.delete.assert_awaited_with("db-rec")
 
     @pytest.mark.asyncio
     async def test_adelete_annotation_record_without_annotation_set_only_deletes_record(self, datalake, mock_odm):
@@ -319,6 +402,16 @@ class TestDatalakeUnit:
         updated = await datalake.aupdate_datum(datum.datum_id, metadata={"source": "updated"})
         assert fetched is datum
         assert listed == [datum]
+        assert updated.metadata == {"source": "updated"}
+
+    def test_datum_sync_wrappers(self, datalake, mock_odm):
+        datum = datalake.create_datum(asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"})
+        assert isinstance(datum, Datum)
+        datum.id = "db-datum"
+        mock_odm.find.return_value = [datum]
+        assert datalake.get_datum(datum.datum_id) is datum
+        assert datalake.list_datums({"split": "train"}) == [datum]
+        updated = datalake.update_datum(datum.datum_id, metadata={"source": "updated"})
         assert updated.metadata == {"source": "updated"}
 
     @pytest.mark.asyncio
@@ -353,6 +446,14 @@ class TestDatalakeUnit:
         assert listed_all == [dataset_version]
         assert listed_named == [dataset_version]
 
+    def test_dataset_version_sync_wrappers(self, datalake, mock_odm):
+        mock_odm.find.return_value = []
+        created = datalake.create_dataset_version(dataset_name="demo", version="0.1.0", manifest=["datum_1"])
+        assert isinstance(created, DatasetVersion)
+        mock_odm.find.return_value = [created]
+        assert datalake.get_dataset_version("demo", "0.1.0") is created
+        assert datalake.list_dataset_versions(dataset_name="demo", filters={"metadata.stage": "initial"}) == [created]
+
     @pytest.mark.asyncio
     async def test_aget_dataset_version_raises_when_missing(self, datalake, mock_odm):
         mock_odm.find.return_value = []
@@ -378,6 +479,15 @@ class TestDatalakeUnit:
         assert resolved.annotation_sets == [annotation_set]
         assert resolved.annotation_records == {"set_1": [record]}
 
+    def test_resolve_datum_sync_wrapper(self, datalake):
+        datum = Datum(asset_refs={"image": "asset_1"}, annotation_set_ids=[])
+        asset = Asset(kind="image", media_type="image/jpeg", storage_ref=StorageRef(mount="temp", name="x"))
+        datalake.aget_datum = AsyncMock(return_value=datum)
+        datalake.aget_asset = AsyncMock(return_value=asset)
+        resolved = datalake.resolve_datum("datum_1")
+        assert isinstance(resolved, ResolvedDatum)
+        assert resolved.assets == {"image": asset}
+
     @pytest.mark.asyncio
     async def test_aresolve_dataset_version_builds_resolved_dataset(self, datalake):
         dataset_version = DatasetVersion(dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"])
@@ -389,6 +499,15 @@ class TestDatalakeUnit:
         assert isinstance(resolved, ResolvedDatasetVersion)
         assert resolved.dataset_version is dataset_version
         assert resolved.datums == [resolved_datum_1, resolved_datum_2]
+
+    def test_resolve_dataset_version_sync_wrapper(self, datalake):
+        dataset_version = DatasetVersion(dataset_name="demo", version="0.1.0", manifest=["datum_1"])
+        resolved_datum = ResolvedDatum(datum=Datum(asset_refs={"image": "asset_1"}))
+        datalake.aget_dataset_version = AsyncMock(return_value=dataset_version)
+        datalake.aresolve_datum = AsyncMock(return_value=resolved_datum)
+        resolved = datalake.resolve_dataset_version("demo", "0.1.0")
+        assert isinstance(resolved, ResolvedDatasetVersion)
+        assert resolved.datums == [resolved_datum]
 
     @pytest.mark.asyncio
     async def test_acreate_asset_from_object_chains_put_and_create(self, datalake):
@@ -423,3 +542,11 @@ class TestDatalakeUnit:
             metadata={"source": "demo"},
             created_by="tester",
         )
+
+    def test_create_asset_from_object_sync_wrapper(self, datalake):
+        storage_ref = StorageRef(mount="temp", name="images/example.jpg", version="v1")
+        asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+        datalake.aput_object = AsyncMock(return_value=storage_ref)
+        datalake.acreate_asset = AsyncMock(return_value=asset)
+        created = datalake.create_asset_from_object(name="images/example.jpg", obj=b"bytes", kind="image", media_type="image/jpeg")
+        assert created is asset
