@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -19,10 +20,11 @@ from mindtrace.datalake.types import (
     StorageRef,
     SubjectRef,
 )
-from mindtrace.registry import Mount, Registry, Store
+from mindtrace.registry import Mount, Store
 
 
 DocumentT = TypeVar("DocumentT")
+ReturnT = TypeVar("ReturnT")
 
 
 class Datalake(Mindtrace):
@@ -35,9 +37,9 @@ class Datalake(Mindtrace):
     - ``MongoMindtraceODM`` for canonical metadata records such as assets,
       annotations, datums, and dataset versions.
 
-    The class provides a single async interface for common Datalake operations,
-    including object persistence, asset registration, annotation management,
-    datum construction, and immutable dataset-version creation.
+    The class provides paired sync/async methods for common Datalake operations.
+    The plain method name is the synchronous wrapper, while the async version is
+    prefixed with ``a``.
 
     Examples:
         Launch a local MongoDB in Docker for trying the Datalake examples below:
@@ -55,7 +57,6 @@ class Datalake(Mindtrace):
 
         .. code-block:: python
 
-            import asyncio
             from pathlib import Path
 
             from mindtrace.datalake import Datalake
@@ -64,20 +65,18 @@ class Datalake(Mindtrace):
                 mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
                 mongo_db_name="mindtrace",
             )
-            asyncio.run(datalake.initialize())
+            datalake.initialize()
 
             hopper_path = Path("tests/resources/hopper.png")
             image_bytes = hopper_path.read_bytes()
 
-            asset = asyncio.run(
-                datalake.create_asset_from_object(
-                    name="images/hopper.png",
-                    obj=image_bytes,
-                    kind="image",
-                    media_type="image/png",
-                    mount="temp",
-                    object_metadata={"source_path": str(hopper_path)},
-                )
+            asset = datalake.create_asset_from_object(
+                name="images/hopper.png",
+                obj=image_bytes,
+                kind="image",
+                media_type="image/png",
+                mount="temp",
+                object_metadata={"source_path": str(hopper_path)},
             )
 
             print(asset.asset_id)
@@ -87,7 +86,6 @@ class Datalake(Mindtrace):
 
         .. code-block:: python
 
-            import asyncio
             from pathlib import Path
 
             from mindtrace.datalake import Datalake
@@ -96,48 +94,40 @@ class Datalake(Mindtrace):
                 mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
                 mongo_db_name="mindtrace",
             )
-            asyncio.run(datalake.initialize())
+            datalake.initialize()
 
             hopper_path = Path("tests/resources/hopper.png")
-            asset = asyncio.run(
-                datalake.create_asset_from_object(
-                    name="images/hopper.png",
-                    obj=hopper_path.read_bytes(),
-                    kind="image",
-                    media_type="image/png",
-                    mount="temp",
-                )
+            asset = datalake.create_asset_from_object(
+                name="images/hopper.png",
+                obj=hopper_path.read_bytes(),
+                kind="image",
+                media_type="image/png",
+                mount="temp",
             )
 
-            datum = asyncio.run(
-                datalake.create_datum(
-                    asset_refs={"image": asset.asset_id},
-                    split="train",
-                    metadata={"source": "demo"},
-                )
+            datum = datalake.create_datum(
+                asset_refs={"image": asset.asset_id},
+                split="train",
+                metadata={"source": "demo"},
             )
 
-            annotation_set = asyncio.run(
-                datalake.create_annotation_set(
-                    name="ground-truth",
-                    purpose="ground_truth",
-                    source_type="human",
-                    datum_id=datum.datum_id,
-                )
+            annotation_set = datalake.create_annotation_set(
+                name="ground-truth",
+                purpose="ground_truth",
+                source_type="human",
+                datum_id=datum.datum_id,
             )
 
-            asyncio.run(
-                datalake.add_annotation_records(
-                    annotation_set.annotation_set_id,
-                    [
-                        {
-                            "kind": "bbox",
-                            "label": "crack",
-                            "source": {"type": "human", "name": "review-ui"},
-                            "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
-                        }
-                    ],
-                )
+            datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "crack",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
+                    }
+                ],
             )
 
             print(datum.datum_id, annotation_set.annotation_set_id)
@@ -146,7 +136,6 @@ class Datalake(Mindtrace):
 
         .. code-block:: python
 
-            import asyncio
             from pathlib import Path
 
             from mindtrace.datalake import Datalake
@@ -155,40 +144,33 @@ class Datalake(Mindtrace):
                 mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
                 mongo_db_name="mindtrace",
             )
-            asyncio.run(datalake.initialize())
+            datalake.initialize()
 
             hopper_path = Path("tests/resources/hopper.png")
-            asset = asyncio.run(
-                datalake.create_asset_from_object(
-                    name="images/hopper.png",
-                    obj=hopper_path.read_bytes(),
-                    kind="image",
-                    media_type="image/png",
-                    mount="temp",
-                )
+            asset = datalake.create_asset_from_object(
+                name="images/hopper.png",
+                obj=hopper_path.read_bytes(),
+                kind="image",
+                media_type="image/png",
+                mount="temp",
             )
-            datum = asyncio.run(datalake.create_datum(asset_refs={"image": asset.asset_id}, split="train"))
+            datum = datalake.create_datum(asset_refs={"image": asset.asset_id}, split="train")
 
-            dataset_version = asyncio.run(
-                datalake.create_dataset_version(
-                    dataset_name="surface-defects",
-                    version="0.1.0",
-                    manifest=[datum.datum_id],
-                    metadata={"stage": "initial"},
-                )
+            dataset_version = datalake.create_dataset_version(
+                dataset_name="surface-defects",
+                version="0.1.0",
+                manifest=[datum.datum_id],
+                metadata={"stage": "initial"},
             )
 
-            resolved = asyncio.run(
-                datalake.resolve_dataset_version(
-                    dataset_name="surface-defects",
-                    version="0.1.0",
-                )
+            resolved = datalake.resolve_dataset_version(
+                dataset_name="surface-defects",
+                version="0.1.0",
             )
 
             print(dataset_version.dataset_version_id, len(resolved.datums))
 
-        If you want a single async setup helper instead of calling
-        ``asyncio.run(...)`` around each operation, use ``Datalake.create(...)``:
+        In async code, use the ``a...`` variants directly:
 
         .. code-block:: python
 
@@ -198,11 +180,11 @@ class Datalake(Mindtrace):
 
 
             async def main() -> None:
-                datalake = await Datalake.create(
+                datalake = await Datalake.acreate(
                     mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
                     mongo_db_name="mindtrace",
                 )
-                print(await datalake.get_health())
+                print(await datalake.aget_health())
 
 
             asyncio.run(main())
@@ -249,7 +231,20 @@ class Datalake(Mindtrace):
             db_uri=mongo_db_uri,
         )
 
-    async def initialize(self) -> None:
+    @staticmethod
+    def _run_async(coro: Any) -> ReturnT:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        raise RuntimeError(
+            "Cannot call sync Datalake methods from an active event loop; use the async 'a...' variant instead."
+        )
+
+    def initialize(self) -> None:
+        self._run_async(self.ainitialize())
+
+    async def ainitialize(self) -> None:
         await self.asset_database.initialize()
         await self.annotation_record_database.initialize()
         await self.annotation_set_database.initialize()
@@ -257,7 +252,27 @@ class Datalake(Mindtrace):
         await self.dataset_version_database.initialize()
 
     @classmethod
-    async def create(
+    def create(
+        cls,
+        mongo_db_uri: str,
+        mongo_db_name: str,
+        *,
+        store: Store | None = None,
+        mounts: list[Mount] | None = None,
+        default_mount: str | None = None,
+    ) -> "Datalake":
+        return cls._run_async(
+            cls.acreate(
+                mongo_db_uri=mongo_db_uri,
+                mongo_db_name=mongo_db_name,
+                store=store,
+                mounts=mounts,
+                default_mount=default_mount,
+            )
+        )
+
+    @classmethod
+    async def acreate(
         cls,
         mongo_db_uri: str,
         mongo_db_name: str,
@@ -273,7 +288,7 @@ class Datalake(Mindtrace):
             mounts=mounts,
             default_mount=default_mount,
         )
-        await datalake.initialize()
+        await datalake.ainitialize()
         return datalake
 
     @staticmethod
@@ -293,7 +308,10 @@ class Datalake(Mindtrace):
         """Construct Beanie documents without requiring collection initialization."""
         return model_cls.model_construct(**data)
 
-    async def get_health(self) -> dict[str, Any]:
+    def get_health(self) -> dict[str, Any]:
+        return self._run_async(self.aget_health())
+
+    async def aget_health(self) -> dict[str, Any]:
         return {
             "status": "ok",
             "database": self.mongo_db_name,
@@ -302,19 +320,31 @@ class Datalake(Mindtrace):
 
     def get_mounts(self) -> dict[str, Any]:
         mount_info = self.store.list_mount_info()
-        mounts = [
-            {
-                "name": name,
-                **info,
-            }
-            for name, info in mount_info.items()
-        ]
-        return {
-            "default_mount": self.store.default_mount,
-            "mounts": mounts,
-        }
+        mounts = [{"name": name, **info} for name, info in mount_info.items()]
+        return {"default_mount": self.store.default_mount, "mounts": mounts}
 
-    async def put_object(
+    def put_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        mount: str | None = None,
+        version: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> StorageRef:
+        return self._run_async(
+            self.aput_object(
+                name=name,
+                obj=obj,
+                mount=mount,
+                version=version,
+                metadata=metadata,
+                on_conflict=on_conflict,
+            )
+        )
+
+    async def aput_object(
         self,
         *,
         name: str,
@@ -330,17 +360,40 @@ class Datalake(Mindtrace):
         resolved_version = saved_version if isinstance(saved_version, str) else version or "latest"
         return StorageRef(mount=target_mount, name=name, version=resolved_version)
 
-    async def get_object(self, storage_ref: StorageRef, **kwargs) -> Any:
+    def get_object(self, storage_ref: StorageRef, **kwargs) -> Any:
+        return self._run_async(self.aget_object(storage_ref, **kwargs))
+
+    async def aget_object(self, storage_ref: StorageRef, **kwargs) -> Any:
         storage_ref = self._normalize_storage_ref(storage_ref)
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.load(key, version=storage_ref.version, **kwargs)
 
-    async def head_object(self, storage_ref: StorageRef) -> dict[str, Any]:
+    def head_object(self, storage_ref: StorageRef) -> dict[str, Any]:
+        return self._run_async(self.ahead_object(storage_ref))
+
+    async def ahead_object(self, storage_ref: StorageRef) -> dict[str, Any]:
         storage_ref = self._normalize_storage_ref(storage_ref)
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
 
-    async def copy_object(
+    def copy_object(
+        self,
+        source: StorageRef,
+        *,
+        target_mount: str,
+        target_name: str,
+        target_version: str | None = None,
+    ) -> StorageRef:
+        return self._run_async(
+            self.acopy_object(
+                source,
+                target_mount=target_mount,
+                target_name=target_name,
+                target_version=target_version,
+            )
+        )
+
+    async def acopy_object(
         self,
         source: StorageRef,
         *,
@@ -359,7 +412,10 @@ class Datalake(Mindtrace):
         )
         return StorageRef(mount=target_mount, name=target_name, version=saved_version)
 
-    async def create_asset(
+    def create_asset(self, **kwargs: Any) -> Asset:
+        return self._run_async(self.acreate_asset(**kwargs))
+
+    async def acreate_asset(
         self,
         *,
         kind: str,
@@ -385,26 +441,41 @@ class Datalake(Mindtrace):
         )
         return await self.asset_database.insert(asset)
 
-    async def get_asset(self, asset_id: str) -> Asset:
+    def get_asset(self, asset_id: str) -> Asset:
+        return self._run_async(self.aget_asset(asset_id))
+
+    async def aget_asset(self, asset_id: str) -> Asset:
         results = await self.asset_database.find({"asset_id": asset_id})
         if not results:
             raise DocumentNotFoundError(f"Asset with asset_id {asset_id} not found")
         return results[0]
 
-    async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+    def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        return self._run_async(self.alist_assets(filters))
+
+    async def alist_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return await self.asset_database.find(filters or {})
 
-    async def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
-        asset = await self.get_asset(asset_id)
+    def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
+        return self._run_async(self.aupdate_asset_metadata(asset_id, metadata))
+
+    async def aupdate_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
+        asset = await self.aget_asset(asset_id)
         asset.metadata = metadata
         asset.updated_at = self._utc_now()
         return await self.asset_database.update(asset)
 
-    async def delete_asset(self, asset_id: str) -> None:
-        asset = await self.get_asset(asset_id)
+    def delete_asset(self, asset_id: str) -> None:
+        self._run_async(self.adelete_asset(asset_id))
+
+    async def adelete_asset(self, asset_id: str) -> None:
+        asset = await self.aget_asset(asset_id)
         await self.asset_database.delete(asset.id)
 
-    async def create_annotation_set(
+    def create_annotation_set(self, **kwargs: Any) -> AnnotationSet:
+        return self._run_async(self.acreate_annotation_set(**kwargs))
+
+    async def acreate_annotation_set(
         self,
         *,
         name: str,
@@ -428,27 +499,40 @@ class Datalake(Mindtrace):
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
         if datum_id is not None:
-            datum = await self.get_datum(datum_id)
+            datum = await self.aget_datum(datum_id)
             datum.annotation_set_ids.append(inserted.annotation_set_id)
             datum.updated_at = self._utc_now()
             await self.datum_database.update(datum)
         return inserted
 
-    async def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
+    def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
+        return self._run_async(self.aget_annotation_set(annotation_set_id))
+
+    async def aget_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
         results = await self.annotation_set_database.find({"annotation_set_id": annotation_set_id})
         if not results:
             raise DocumentNotFoundError(f"AnnotationSet with annotation_set_id {annotation_set_id} not found")
         return results[0]
 
-    async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+    def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        return self._run_async(self.alist_annotation_sets(filters))
+
+    async def alist_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return await self.annotation_set_database.find(filters or {})
 
-    async def add_annotation_records(
+    def add_annotation_records(
         self,
         annotation_set_id: str,
         annotations: Iterable[AnnotationRecord | dict[str, Any]],
     ) -> list[AnnotationRecord]:
-        annotation_set = await self.get_annotation_set(annotation_set_id)
+        return self._run_async(self.aadd_annotation_records(annotation_set_id, annotations))
+
+    async def aadd_annotation_records(
+        self,
+        annotation_set_id: str,
+        annotations: Iterable[AnnotationRecord | dict[str, Any]],
+    ) -> list[AnnotationRecord]:
+        annotation_set = await self.aget_annotation_set(annotation_set_id)
         inserted_records: list[AnnotationRecord] = []
         for annotation in annotations:
             if isinstance(annotation, AnnotationRecord):
@@ -479,17 +563,26 @@ class Datalake(Mindtrace):
         await self.annotation_set_database.update(annotation_set)
         return inserted_records
 
-    async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+    def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+        return self._run_async(self.aget_annotation_record(annotation_id))
+
+    async def aget_annotation_record(self, annotation_id: str) -> AnnotationRecord:
         results = await self.annotation_record_database.find({"annotation_id": annotation_id})
         if not results:
             raise DocumentNotFoundError(f"AnnotationRecord with annotation_id {annotation_id} not found")
         return results[0]
 
-    async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+    def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        return self._run_async(self.alist_annotation_records(filters))
+
+    async def alist_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
         return await self.annotation_record_database.find(filters or {})
 
-    async def update_annotation_record(self, annotation_id: str, **changes: Any) -> AnnotationRecord:
-        record = await self.get_annotation_record(annotation_id)
+    def update_annotation_record(self, annotation_id: str, **changes: Any) -> AnnotationRecord:
+        return self._run_async(self.aupdate_annotation_record(annotation_id, **changes))
+
+    async def aupdate_annotation_record(self, annotation_id: str, **changes: Any) -> AnnotationRecord:
+        record = await self.aget_annotation_record(annotation_id)
         for key, value in changes.items():
             if key == "source" and isinstance(value, dict):
                 value = AnnotationSource(**value)
@@ -497,10 +590,13 @@ class Datalake(Mindtrace):
         record.updated_at = self._utc_now()
         return await self.annotation_record_database.update(record)
 
-    async def delete_annotation_record(self, annotation_id: str) -> None:
-        record = await self.get_annotation_record(annotation_id)
+    def delete_annotation_record(self, annotation_id: str) -> None:
+        self._run_async(self.adelete_annotation_record(annotation_id))
+
+    async def adelete_annotation_record(self, annotation_id: str) -> None:
+        record = await self.aget_annotation_record(annotation_id)
         if record.annotation_set_id is not None:
-            annotation_set = await self.get_annotation_set(record.annotation_set_id)
+            annotation_set = await self.aget_annotation_set(record.annotation_set_id)
             annotation_set.annotation_record_ids = [
                 existing_id for existing_id in annotation_set.annotation_record_ids if existing_id != annotation_id
             ]
@@ -508,7 +604,10 @@ class Datalake(Mindtrace):
             await self.annotation_set_database.update(annotation_set)
         await self.annotation_record_database.delete(record.id)
 
-    async def create_datum(
+    def create_datum(self, **kwargs: Any) -> Datum:
+        return self._run_async(self.acreate_datum(**kwargs))
+
+    async def acreate_datum(
         self,
         *,
         asset_refs: dict[str, str],
@@ -526,23 +625,35 @@ class Datalake(Mindtrace):
         )
         return await self.datum_database.insert(datum)
 
-    async def get_datum(self, datum_id: str) -> Datum:
+    def get_datum(self, datum_id: str) -> Datum:
+        return self._run_async(self.aget_datum(datum_id))
+
+    async def aget_datum(self, datum_id: str) -> Datum:
         results = await self.datum_database.find({"datum_id": datum_id})
         if not results:
             raise DocumentNotFoundError(f"Datum with datum_id {datum_id} not found")
         return results[0]
 
-    async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
+    def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
+        return self._run_async(self.alist_datums(filters))
+
+    async def alist_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
         return await self.datum_database.find(filters or {})
 
-    async def update_datum(self, datum_id: str, **changes: Any) -> Datum:
-        datum = await self.get_datum(datum_id)
+    def update_datum(self, datum_id: str, **changes: Any) -> Datum:
+        return self._run_async(self.aupdate_datum(datum_id, **changes))
+
+    async def aupdate_datum(self, datum_id: str, **changes: Any) -> Datum:
+        datum = await self.aget_datum(datum_id)
         for key, value in changes.items():
             setattr(datum, key, value)
         datum.updated_at = self._utc_now()
         return await self.datum_database.update(datum)
 
-    async def create_dataset_version(
+    def create_dataset_version(self, **kwargs: Any) -> DatasetVersion:
+        return self._run_async(self.acreate_dataset_version(**kwargs))
+
+    async def acreate_dataset_version(
         self,
         *,
         dataset_name: str,
@@ -568,13 +679,23 @@ class Datalake(Mindtrace):
         )
         return await self.dataset_version_database.insert(dataset_version)
 
-    async def get_dataset_version(self, dataset_name: str, version: str) -> DatasetVersion:
+    def get_dataset_version(self, dataset_name: str, version: str) -> DatasetVersion:
+        return self._run_async(self.aget_dataset_version(dataset_name, version))
+
+    async def aget_dataset_version(self, dataset_name: str, version: str) -> DatasetVersion:
         results = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
         if not results:
             raise DocumentNotFoundError(f"DatasetVersion {dataset_name}@{version} not found")
         return results[0]
 
-    async def list_dataset_versions(
+    def list_dataset_versions(
+        self,
+        dataset_name: str | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> list[DatasetVersion]:
+        return self._run_async(self.alist_dataset_versions(dataset_name=dataset_name, filters=filters))
+
+    async def alist_dataset_versions(
         self,
         dataset_name: str | None = None,
         filters: dict[str, Any] | None = None,
@@ -584,20 +705,23 @@ class Datalake(Mindtrace):
             query["dataset_name"] = dataset_name
         return await self.dataset_version_database.find(query)
 
-    async def resolve_datum(self, datum_id: str) -> ResolvedDatum:
-        datum = await self.get_datum(datum_id)
+    def resolve_datum(self, datum_id: str) -> ResolvedDatum:
+        return self._run_async(self.aresolve_datum(datum_id))
+
+    async def aresolve_datum(self, datum_id: str) -> ResolvedDatum:
+        datum = await self.aget_datum(datum_id)
         assets: dict[str, Asset] = {}
         for role, asset_id in datum.asset_refs.items():
-            assets[role] = await self.get_asset(asset_id)
+            assets[role] = await self.aget_asset(asset_id)
 
         annotation_sets: list[AnnotationSet] = []
         annotation_records: dict[str, list[AnnotationRecord]] = {}
         for annotation_set_id in datum.annotation_set_ids:
-            annotation_set = await self.get_annotation_set(annotation_set_id)
+            annotation_set = await self.aget_annotation_set(annotation_set_id)
             annotation_sets.append(annotation_set)
             records: list[AnnotationRecord] = []
             for annotation_id in annotation_set.annotation_record_ids:
-                records.append(await self.get_annotation_record(annotation_id))
+                records.append(await self.aget_annotation_record(annotation_id))
             annotation_records[annotation_set.annotation_set_id] = records
 
         return ResolvedDatum(
@@ -607,12 +731,18 @@ class Datalake(Mindtrace):
             annotation_records=annotation_records,
         )
 
-    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
-        dataset_version = await self.get_dataset_version(dataset_name, version)
-        datums = [await self.resolve_datum(datum_id) for datum_id in dataset_version.manifest]
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        return self._run_async(self.aresolve_dataset_version(dataset_name, version))
+
+    async def aresolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        dataset_version = await self.aget_dataset_version(dataset_name, version)
+        datums = [await self.aresolve_datum(datum_id) for datum_id in dataset_version.manifest]
         return ResolvedDatasetVersion(dataset_version=dataset_version, datums=datums)
 
-    async def create_asset_from_object(
+    def create_asset_from_object(self, **kwargs: Any) -> Asset:
+        return self._run_async(self.acreate_asset_from_object(**kwargs))
+
+    async def acreate_asset_from_object(
         self,
         *,
         name: str,
@@ -629,7 +759,7 @@ class Datalake(Mindtrace):
         created_by: str | None = None,
         on_conflict: str | None = None,
     ) -> Asset:
-        storage_ref = await self.put_object(
+        storage_ref = await self.aput_object(
             name=name,
             obj=obj,
             mount=mount,
@@ -637,7 +767,7 @@ class Datalake(Mindtrace):
             metadata=object_metadata,
             on_conflict=on_conflict,
         )
-        return await self.create_asset(
+        return await self.acreate_asset(
             kind=kind,
             media_type=media_type,
             storage_ref=storage_ref,
