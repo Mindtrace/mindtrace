@@ -1,56 +1,71 @@
-"""Configuration and fixtures for datalake integration tests."""
-
-import asyncio
 import shutil
 import tempfile
-from typing import Generator
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
 
-from mindtrace.datalake import Datalake
+from mindtrace.datalake import AsyncDatalake, Datalake
+from mindtrace.registry import Mount, Store
 
-# Test configuration
 MONGO_URL = "mongodb://localhost:27018"
-MONGO_DB = "datalake_test_db"
-TEST_REGISTRY_DIR = None  # Will be set in fixtures
 
 
 @pytest.fixture(scope="function")
-def event_loop():
-    """Create an instance of the default event loop for each test function."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture(scope="function")
-def temp_registry_dir() -> Generator[str, None, None]:
-    """Create a temporary directory for registry testing."""
-    temp_dir = tempfile.mkdtemp(prefix="datalake_test_registry_")
+def datalake_store():
+    temp_dir = Path(tempfile.mkdtemp(prefix="mindtrace-datalake-store-"))
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="local",
+                uri=str(temp_dir),
+            )
+        ],
+        default_mount="local",
+    )
     try:
-        yield temp_dir
+        yield store
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def datalake():
-    """Create a Datalake instance for testing."""
-    # Clean up any existing data before starting
+async def async_datalake(datalake_store):
+    db_name = f"test_datalake_async_{uuid4().hex}"
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        store=datalake_store,
+    )
     try:
-        from mindtrace.datalake.types import Datum
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
 
-        await Datum.delete_all()
-    except Exception:
-        pass  # Ignore cleanup errors
 
-    datalake_instance = Datalake(MONGO_URL, MONGO_DB)
-    await datalake_instance.initialize()
-    yield datalake_instance
-
-    # Clean up: delete all data after each test
+@pytest.fixture(scope="function")
+def sync_datalake(datalake_store):
+    db_name = f"test_datalake_sync_{uuid4().hex}"
+    datalake = Datalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        store=datalake_store,
+    )
     try:
-        await Datum.delete_all()
-    except Exception:
-        pass  # Ignore cleanup errors
+        yield datalake
+    finally:
+        client = datalake._backend.asset_database.client
+        import asyncio
+
+        asyncio.run(client.drop_database(db_name))
+        datalake.close()
+        try:
+            client.close()
+        except Exception:
+            pass
