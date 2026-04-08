@@ -110,7 +110,8 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     assert health["status"] == "ok"
     assert mounts["default_mount"] == "local"
     assert loaded == image_bytes
-    assert info["exists"] is True or "size" in info or "path" in info
+    assert info.get("exists", True) is True
+    assert "path" in info or "hash" in info
     assert copied_ref.mount == "local"
     assert fetched_asset.asset_id == asset.asset_id
     assert any(item.asset_id == asset.asset_id for item in listed_assets)
