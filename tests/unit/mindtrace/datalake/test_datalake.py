@@ -223,6 +223,16 @@ class TestDatalakeSyncFacade:
         assert isinstance(datalake.create_asset_from_object(name="hopper.png", obj=b"bytes", kind="image", media_type="image/png"), Asset)
         mock_backend.initialize.assert_awaited_once()
 
+    def test_summary_rewrites_async_prefix(self, datalake, mock_backend):
+        mock_backend.summary = AsyncMock(
+            return_value="AsyncDatalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        )
+
+        assert datalake.summary() == (
+            "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, "
+            "annotation_records=0, datums=0, dataset_versions=0)"
+        )
+
     def test_close_handles_cleanup_exceptions_and_context_manager(self, datalake):
         failing_loop = MagicMock()
         failing_loop.call_soon_threadsafe.side_effect = RuntimeError("stop failed")
