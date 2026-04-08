@@ -81,6 +81,44 @@ async def test_set_performance_settings_camera_specific_calls_proxy(service_and_
 
 
 @pytest.mark.asyncio
+async def test_get_performance_settings_camera_specific_skips_unsupported_fields(service_and_manager):
+    service, manager = service_and_manager
+    camera_proxy = AsyncMock()
+    camera_proxy.get_packet_size.side_effect = NotImplementedError
+    camera_proxy.get_inter_packet_delay.return_value = 44
+    camera_proxy.get_bandwidth_limit.side_effect = AttributeError("unsupported")
+    manager.open.return_value = camera_proxy
+
+    response = await service.get_performance_settings(CameraPerformanceSettingsRequest(camera="Basler:cam1"))
+
+    assert response.success is True
+    assert response.data.camera == "Basler:cam1"
+    assert response.data.packet_size is None
+    assert response.data.inter_packet_delay == 44
+    assert response.data.bandwidth_limit_mbps is None
+
+
+@pytest.mark.asyncio
+async def test_set_performance_settings_camera_specific_ignores_unsupported_updates(service_and_manager):
+    service, manager = service_and_manager
+    camera_proxy = AsyncMock()
+    camera_proxy.set_packet_size.side_effect = NotImplementedError
+    camera_proxy.set_inter_packet_delay.side_effect = AttributeError("unsupported")
+    manager.open.return_value = camera_proxy
+
+    req = CameraPerformanceSettingsRequest(
+        camera="Basler:cam1", packet_size=9000, inter_packet_delay=10, bandwidth_limit_mbps=200.0
+    )
+    response = await service.set_performance_settings(req)
+
+    assert response.success is True
+    assert "bandwidth_limit=200.0Mbps" in response.message
+    assert "packet_size=9000bytes" not in response.message
+    assert "inter_packet_delay=10ticks" not in response.message
+    camera_proxy.set_bandwidth_limit.assert_awaited_once_with(200.0)
+
+
+@pytest.mark.asyncio
 async def test_start_stream_success_tracks_stream(service_and_manager):
     service, manager = service_and_manager
     camera_proxy = AsyncMock()
@@ -95,6 +133,32 @@ async def test_start_stream_success_tracks_stream(service_and_manager):
     assert response.data.streaming is True
     assert "Basler_cam1" in response.data.stream_url
     assert "Basler:cam1" in service._active_streams
+
+
+@pytest.mark.asyncio
+async def test_start_stream_initializes_inactive_camera(service_and_manager):
+    service, manager = service_and_manager
+    manager.active_cameras = []
+    camera_proxy = AsyncMock()
+    manager.open.return_value = camera_proxy
+
+    response = await service.start_stream(StreamStartRequest(camera="Basler:cam1", fps=10, quality=60))
+
+    assert response.success is True
+    manager.open.assert_awaited_once_with("Basler:cam1")
+    assert service._active_streams["Basler:cam1"]["fps"] == 10
+
+
+@pytest.mark.asyncio
+async def test_start_stream_raises_camera_not_found_when_initialization_fails(service_and_manager):
+    service, manager = service_and_manager
+    manager.active_cameras = []
+    manager.open.side_effect = RuntimeError("camera missing")
+
+    with pytest.raises(CameraNotFoundError, match="could not be initialized"):
+        await service.start_stream(StreamStartRequest(camera="Basler:cam1"))
+
+    manager.open.assert_awaited_once_with("Basler:cam1")
 
 
 @pytest.mark.asyncio
@@ -117,6 +181,31 @@ async def test_get_stream_status_active_stream(service_and_manager):
     assert response.data.stream_url is not None
 
 
+@pytest.mark.asyncio
+async def test_get_stream_status_handles_connection_check_failure(service_and_manager):
+    service, manager = service_and_manager
+    camera_proxy = AsyncMock()
+    camera_proxy.check_connection.side_effect = RuntimeError("camera offline")
+    manager.open.return_value = camera_proxy
+
+    response = await service.get_stream_status(StreamStatusRequest(camera="Basler:cam1"))
+
+    assert response.success is True
+    assert response.data.connected is False
+    assert response.data.streaming is False
+
+
+def test_stop_stream_removes_active_entry(service_and_manager):
+    service, _ = service_and_manager
+    service._active_streams["Basler:cam1"] = {"stream_url": "http://localhost:8002/stream/Basler_cam1"}
+
+    response = service.stop_stream(StreamStopRequest(camera="Basler:cam1"))
+
+    assert response.success is True
+    assert "stopped" in response.message
+    assert "Basler:cam1" not in service._active_streams
+
+
 def test_stop_stream_when_missing_is_graceful(service_and_manager):
     service, _ = service_and_manager
 
@@ -134,3 +223,13 @@ def test_stop_all_streams_clears_dict(service_and_manager):
 
     assert response.success is True
     assert service._active_streams == {}
+
+
+def test_get_active_streams_returns_tracking_keys(service_and_manager):
+    service, _ = service_and_manager
+    service._active_streams = {"Basler:cam1": {}, "OpenCV:cam2": {}}
+
+    response = service.get_active_streams()
+
+    assert response.success is True
+    assert response.data == ["Basler:cam1", "OpenCV:cam2"]
