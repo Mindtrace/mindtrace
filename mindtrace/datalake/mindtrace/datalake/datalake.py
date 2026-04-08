@@ -60,17 +60,17 @@ class Datalake(Mindtrace):
 
             from mindtrace.datalake import Datalake
 
+            datalake = Datalake(
+                mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                mongo_db_name="mindtrace",
+            )
+            asyncio.run(datalake.initialize())
 
-            async def main() -> None:
-                datalake = await Datalake.create(
-                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-                    mongo_db_name="mindtrace",
-                )
+            hopper_path = Path("tests/resources/hopper.png")
+            image_bytes = hopper_path.read_bytes()
 
-                hopper_path = Path("tests/resources/hopper.png")
-                image_bytes = hopper_path.read_bytes()
-
-                asset = await datalake.create_asset_from_object(
+            asset = asyncio.run(
+                datalake.create_asset_from_object(
                     name="images/hopper.png",
                     obj=image_bytes,
                     kind="image",
@@ -78,11 +78,9 @@ class Datalake(Mindtrace):
                     mount="temp",
                     object_metadata={"source_path": str(hopper_path)},
                 )
+            )
 
-                print(asset.asset_id)
-
-
-            asyncio.run(main())
+            print(asset.asset_id)
 
         Create a datum that points at an image asset and attach a ground-truth
         annotation set:
@@ -94,36 +92,42 @@ class Datalake(Mindtrace):
 
             from mindtrace.datalake import Datalake
 
+            datalake = Datalake(
+                mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                mongo_db_name="mindtrace",
+            )
+            asyncio.run(datalake.initialize())
 
-            async def main() -> None:
-                datalake = await Datalake.create(
-                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-                    mongo_db_name="mindtrace",
-                )
-
-                hopper_path = Path("tests/resources/hopper.png")
-                asset = await datalake.create_asset_from_object(
+            hopper_path = Path("tests/resources/hopper.png")
+            asset = asyncio.run(
+                datalake.create_asset_from_object(
                     name="images/hopper.png",
                     obj=hopper_path.read_bytes(),
                     kind="image",
                     media_type="image/png",
                     mount="temp",
                 )
+            )
 
-                datum = await datalake.create_datum(
+            datum = asyncio.run(
+                datalake.create_datum(
                     asset_refs={"image": asset.asset_id},
                     split="train",
                     metadata={"source": "demo"},
                 )
+            )
 
-                annotation_set = await datalake.create_annotation_set(
+            annotation_set = asyncio.run(
+                datalake.create_annotation_set(
                     name="ground-truth",
                     purpose="ground_truth",
                     source_type="human",
                     datum_id=datum.datum_id,
                 )
+            )
 
-                await datalake.add_annotation_records(
+            asyncio.run(
+                datalake.add_annotation_records(
                     annotation_set.annotation_set_id,
                     [
                         {
@@ -134,11 +138,9 @@ class Datalake(Mindtrace):
                         }
                     ],
                 )
+            )
 
-                print(datum.datum_id, annotation_set.annotation_set_id)
-
-
-            asyncio.run(main())
+            print(datum.datum_id, annotation_set.annotation_set_id)
 
         Publish an immutable dataset version from a list of datum ids:
 
@@ -149,36 +151,58 @@ class Datalake(Mindtrace):
 
             from mindtrace.datalake import Datalake
 
+            datalake = Datalake(
+                mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                mongo_db_name="mindtrace",
+            )
+            asyncio.run(datalake.initialize())
 
-            async def main() -> None:
-                datalake = await Datalake.create(
-                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-                    mongo_db_name="mindtrace",
-                )
-
-                hopper_path = Path("tests/resources/hopper.png")
-                asset = await datalake.create_asset_from_object(
+            hopper_path = Path("tests/resources/hopper.png")
+            asset = asyncio.run(
+                datalake.create_asset_from_object(
                     name="images/hopper.png",
                     obj=hopper_path.read_bytes(),
                     kind="image",
                     media_type="image/png",
                     mount="temp",
                 )
-                datum = await datalake.create_datum(asset_refs={"image": asset.asset_id}, split="train")
+            )
+            datum = asyncio.run(datalake.create_datum(asset_refs={"image": asset.asset_id}, split="train"))
 
-                dataset_version = await datalake.create_dataset_version(
+            dataset_version = asyncio.run(
+                datalake.create_dataset_version(
                     dataset_name="surface-defects",
                     version="0.1.0",
                     manifest=[datum.datum_id],
                     metadata={"stage": "initial"},
                 )
+            )
 
-                resolved = await datalake.resolve_dataset_version(
+            resolved = asyncio.run(
+                datalake.resolve_dataset_version(
                     dataset_name="surface-defects",
                     version="0.1.0",
                 )
+            )
 
-                print(dataset_version.dataset_version_id, len(resolved.datums))
+            print(dataset_version.dataset_version_id, len(resolved.datums))
+
+        If you want a single async setup helper instead of calling
+        ``asyncio.run(...)`` around each operation, use ``Datalake.create(...)``:
+
+        .. code-block:: python
+
+            import asyncio
+
+            from mindtrace.datalake import Datalake
+
+
+            async def main() -> None:
+                datalake = await Datalake.create(
+                    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+                    mongo_db_name="mindtrace",
+                )
+                print(await datalake.get_health())
 
 
             asyncio.run(main())
