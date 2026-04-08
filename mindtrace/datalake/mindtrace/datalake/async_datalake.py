@@ -30,14 +30,11 @@ class AsyncDatalake(Mindtrace):
 
     The ``AsyncDatalake`` coordinates two lower-level Mindtrace subsystems:
 
-    - ``Store`` / ``Registry`` for payload-bearing objects such as images, masks,
-      artifacts, and other large blobs.
-    - ``MongoMindtraceODM`` for canonical metadata records such as assets,
-      annotations, datums, and dataset versions.
+    - ``Store`` / ``Registry`` for payload-bearing objects such as images, masks, artifacts, and other large blobs.
+    - ``MongoMindtraceODM`` for canonical metadata records such as assets, annotations, datums, and dataset versions.
 
-    Use this class directly in async code. For synchronous code, use
-    :class:`mindtrace.datalake.Datalake`, which provides a blocking facade over an
-    ``AsyncDatalake`` running on a dedicated background event loop.
+    Use this class directly in async code. For synchronous code, use :class:`mindtrace.datalake.Datalake`,
+    which provides a blocking facade over an ``AsyncDatalake`` running on a dedicated background event loop.
     """
 
     def __init__(

@@ -13,10 +13,9 @@ from mindtrace.registry import Mount, Store
 class Datalake(Mindtrace):
     """Synchronous facade over ``AsyncDatalake``.
 
-    The sync ``Datalake`` owns a dedicated background event loop thread and runs
-    all async database and store operations on that loop. This allows blocking,
-    script-friendly usage while keeping the canonical implementation async and
-    compatible with Beanie + Motor.
+    The sync ``Datalake`` owns a dedicated background event loop thread and runs all async database and store
+    operations on that loop. This allows blocking, script-friendly usage while keeping the canonical
+    implementation async and compatible with Beanie + Motor.
 
     Examples:
         Launch a local MongoDB in Docker for trying the Datalake examples below:
@@ -30,9 +29,9 @@ class Datalake(Mindtrace):
               -p 27017:27017 \
               -d mongo:7
 
-        Create a datalake and register the repository's ``hopper.png`` test image.
-        The examples below use a flat object name because the current local/temp
-        registry backend does not yet safely handle slash-delimited names in this path:
+        Create a datalake and register the repository's ``hopper.png`` test image. The examples below use a
+        flat object name because the current local/temp registry backend does not yet safely handle
+        slash-delimited names in this path:
 
         .. code-block:: python
 
