@@ -23,6 +23,10 @@ class TestDatalakeSyncFacade:
         backend.store = MagicMock()
         backend.store.default_mount = "temp"
         backend.store.list_mount_info.return_value = {"temp": {"backend": "file:///tmp", "mutable": True}}
+        backend.get_mounts.return_value = {
+            "default_mount": "temp",
+            "mounts": [{"name": "temp", "backend": "file:///tmp", "mutable": True}],
+        }
         backend.mongo_db_uri = "mongodb://test:27017"
         backend.mongo_db_name = "test_db"
         for name, value in {
