@@ -35,12 +35,21 @@ class TestDatalakeSyncFacade:
             loop.close()
 
     def test_create_classmethod_initializes_sync_instance(self):
-        created = MagicMock()
-        created.initialize = MagicMock()
-        with patch("mindtrace.datalake.datalake.Datalake", return_value=created):
+        with (
+            patch.object(Datalake, "__init__", return_value=None) as init_mock,
+            patch.object(Datalake, "initialize", return_value=None) as initialize_mock,
+        ):
             result = Datalake.create("mongodb://test:27017", "test_db")
-        created.initialize.assert_called_once()
-        assert result is created
+
+        init_mock.assert_called_once_with(
+            mongo_db_uri="mongodb://test:27017",
+            mongo_db_name="test_db",
+            store=None,
+            mounts=None,
+            default_mount=None,
+        )
+        initialize_mock.assert_called_once()
+        assert isinstance(result, Datalake)
 
     @pytest.fixture
     def mock_backend(self):
@@ -103,10 +112,16 @@ class TestDatalakeSyncFacade:
         asyncio.run(inner())
 
     def test_run_loop_helper_executes_forever_loop(self, datalake):
-        fake_loop = MagicMock()
-        datalake._loop = fake_loop
-        datalake._run_loop()
-        fake_loop.run_forever.assert_called_once()
+        loop = asyncio.new_event_loop()
+        try:
+            datalake._loop = loop
+            with patch("mindtrace.datalake.datalake.asyncio.set_event_loop") as set_event_loop:
+                with patch.object(loop, "run_forever") as run_forever:
+                    datalake._run_loop()
+            set_event_loop.assert_called_once_with(loop)
+            run_forever.assert_called_once()
+        finally:
+            loop.close()
 
     def test_call_in_loop_with_coroutine_function(self, datalake):
         async def sample(value):
