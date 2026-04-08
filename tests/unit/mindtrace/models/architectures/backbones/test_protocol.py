@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
 
 from mindtrace.models.architectures.backbones.protocol import BackboneFeatures, BackboneProtocol

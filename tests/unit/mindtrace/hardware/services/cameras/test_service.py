@@ -1173,9 +1173,7 @@ class TestCameraManagerServiceCaptureAndHomography:
         assert response.data.width_world == 2.0
         assert response.data.area_world == 2.0
 
-    def test_measure_homography_batch_handles_partial_distance_failures(
-        self, service_with_mock_manager, monkeypatch
-    ):
+    def test_measure_homography_batch_handles_partial_distance_failures(self, service_with_mock_manager, monkeypatch):
         service, _ = service_with_mock_manager
         measured_box = SimpleNamespace(
             corners_world=np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]]),

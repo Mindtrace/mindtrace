@@ -273,9 +273,7 @@ class TestRegisteredCommands:
 
         await commands["roll"](interaction, 0)
 
-        interaction.response.send_message.assert_awaited_once_with(
-            "Number of sides must be positive.", ephemeral=True
-        )
+        interaction.response.send_message.assert_awaited_once_with("Number of sides must be positive.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_roll_command_uses_random_result(self, bot_and_commands):

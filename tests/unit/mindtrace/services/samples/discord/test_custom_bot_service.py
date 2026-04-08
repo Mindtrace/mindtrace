@@ -275,9 +275,7 @@ class TestRegisteredCommands:
 
         await commands["roll"](interaction, 0)
 
-        interaction.response.send_message.assert_awaited_once_with(
-            "Number of sides must be positive.", ephemeral=True
-        )
+        interaction.response.send_message.assert_awaited_once_with("Number of sides must be positive.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_roll_command_uses_random_result(self, service_and_commands):
@@ -622,7 +620,9 @@ class TestModuleExecution:
         with patch("sys.argv", ["custom_bot_service.py"]):
             with patch("builtins.print"):
                 with patch("time.sleep", side_effect=KeyboardInterrupt()):
-                    with patch("mindtrace.services.discord.discord_service.DiscordService.launch", return_value=mock_manager):
+                    with patch(
+                        "mindtrace.services.discord.discord_service.DiscordService.launch", return_value=mock_manager
+                    ):
                         runpy.run_path(str(Path(main.__code__.co_filename)), run_name="__main__")
 
         mock_manager.shutdown.assert_called_once()

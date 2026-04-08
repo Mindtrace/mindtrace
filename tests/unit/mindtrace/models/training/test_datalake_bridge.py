@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -50,7 +50,9 @@ class TestDatalakeDatasetMirrored:
             return [_datum(10, "label-10")]
 
         datalake = SimpleNamespace(query_data=query_data, get_data=get_data)
-        dataset = DatalakeDataset(datalake, query={"column": "image"}, transform=lambda d: (d["image"].data, d["label"].data), prefetch=False)
+        dataset = DatalakeDataset(
+            datalake, query={"column": "image"}, transform=lambda d: (d["image"].data, d["label"].data), prefetch=False
+        )
         dataset._cache[1] = _datum(1, "image-1")
 
         image, label = dataset[0]
