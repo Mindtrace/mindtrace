@@ -7,7 +7,7 @@ import pytest
 import pytest_asyncio
 
 from mindtrace.datalake import AsyncDatalake, Datalake
-from mindtrace.registry import Mount, Store
+from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
 
 MONGO_URL = "mongodb://localhost:27018"
 
@@ -19,7 +19,9 @@ def datalake_store():
         [
             Mount(
                 name="local",
-                uri=str(temp_dir),
+                backend=MountBackendKind.LOCAL,
+                config=LocalMountConfig(uri=temp_dir),
+                is_default=True,
             )
         ],
         default_mount="local",
