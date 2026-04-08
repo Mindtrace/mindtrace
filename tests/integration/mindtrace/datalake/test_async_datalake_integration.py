@@ -1,9 +1,15 @@
+import shutil
 from pathlib import Path
+from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import AsyncDatalake
-from mindtrace.datalake.types import SubjectRef
+from mindtrace.datalake.async_datalake import _default_datalake_store_path
+from mindtrace.datalake.types import AnnotationRecord, AnnotationSource, SubjectRef
+from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind
 
 
 @pytest.mark.asyncio
@@ -140,3 +146,80 @@ async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
     await async_datalake.delete_annotation_record(annotation_record.annotation_id)
     await async_datalake.delete_asset(created_from_object.asset_id)
     await async_datalake.delete_asset(asset.asset_id)
+
+
+def test_async_datalake_constructor_variants_and_helpers(tmp_path):
+    explicit_store = MagicMock()
+    explicit_store.default_mount = "explicit"
+
+    with pytest.raises(ValueError, match="Provide either store or mounts, not both"):
+        AsyncDatalake("mongodb://localhost:27018", "both-provided", store=explicit_store, mounts=[])
+
+    datalake_with_store = AsyncDatalake("mongodb://localhost:27018", "store-only", store=explicit_store)
+    assert datalake_with_store.store is explicit_store
+
+    mount_path = tmp_path / "mounted-store"
+    mounts = [
+        Mount(
+            name="mounted",
+            backend=MountBackendKind.LOCAL,
+            config=LocalMountConfig(uri=mount_path),
+            is_default=True,
+        )
+    ]
+    datalake_with_mounts = AsyncDatalake("mongodb://localhost:27018", "mounts-only", mounts=mounts, default_mount="mounted")
+    assert datalake_with_mounts.store.default_mount == "mounted"
+
+    db_name = f"default-store-{uuid4().hex}"
+    default_path = _default_datalake_store_path("mongodb://localhost:27018", db_name)
+    default_datalake = AsyncDatalake("mongodb://localhost:27018", db_name)
+    try:
+        assert default_path.exists()
+        assert default_datalake.store.default_mount == "default"
+        assert str(default_datalake) == f"AsyncDatalake(database={db_name}, default_mount=default)"
+    finally:
+        shutil.rmtree(default_path, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_async_datalake_error_paths_and_instance_annotation_record(async_datalake: AsyncDatalake):
+    with pytest.raises(DocumentNotFoundError, match="Asset with asset_id missing-asset not found"):
+        await async_datalake.get_asset("missing-asset")
+    with pytest.raises(DocumentNotFoundError, match="AnnotationSet with annotation_set_id missing-set not found"):
+        await async_datalake.get_annotation_set("missing-set")
+    with pytest.raises(DocumentNotFoundError, match="AnnotationRecord with annotation_id missing-record not found"):
+        await async_datalake.get_annotation_record("missing-record")
+    with pytest.raises(DocumentNotFoundError, match="Datum with datum_id missing-datum not found"):
+        await async_datalake.get_datum("missing-datum")
+    with pytest.raises(DocumentNotFoundError, match="DatasetVersion missing@0.0.1 not found"):
+        await async_datalake.get_dataset_version("missing", "0.0.1")
+
+    datum = await async_datalake.create_datum(asset_refs={}, split="train")
+    annotation_set = await async_datalake.create_annotation_set(
+        name="instance-records",
+        purpose="ground_truth",
+        source_type="human",
+        datum_id=datum.datum_id,
+    )
+    record = AnnotationRecord(
+        kind="bbox",
+        label="hopper",
+        source=AnnotationSource(type="human", name="pytest"),
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+    inserted_records = await async_datalake.add_annotation_records(annotation_set.annotation_set_id, [record])
+
+    assert inserted_records[0].annotation_set_id == annotation_set.annotation_set_id
+    assert inserted_records[0].updated_at is not None
+
+    await async_datalake.create_dataset_version(
+        dataset_name="duplicate-dataset",
+        version="0.1.0",
+        manifest=[datum.datum_id],
+    )
+    with pytest.raises(ValueError, match="Dataset version already exists: duplicate-dataset@0.1.0"):
+        await async_datalake.create_dataset_version(
+            dataset_name="duplicate-dataset",
+            version="0.1.0",
+            manifest=[datum.datum_id],
+        )
