@@ -53,7 +53,9 @@ class Datalake(Mindtrace):
               -p 27017:27017 \
               -d mongo:7
 
-        Create a datalake and register the repository's ``hopper.png`` test image:
+        Create a datalake and register the repository's ``hopper.png`` test image.
+        The examples below use a flat object name because the current local/temp
+        registry backend does not yet safely handle slash-delimited names in this path:
 
         .. code-block:: python
 
@@ -71,7 +73,7 @@ class Datalake(Mindtrace):
             image_bytes = hopper_path.read_bytes()
 
             asset = datalake.create_asset_from_object(
-                name="images/hopper.png",
+                name="hopper.png",
                 obj=image_bytes,
                 kind="image",
                 media_type="image/png",
@@ -98,7 +100,7 @@ class Datalake(Mindtrace):
 
             hopper_path = Path("tests/resources/hopper.png")
             asset = datalake.create_asset_from_object(
-                name="images/hopper.png",
+                name="hopper.png",
                 obj=hopper_path.read_bytes(),
                 kind="image",
                 media_type="image/png",
@@ -148,7 +150,7 @@ class Datalake(Mindtrace):
 
             hopper_path = Path("tests/resources/hopper.png")
             asset = datalake.create_asset_from_object(
-                name="images/hopper.png",
+                name="hopper.png",
                 obj=hopper_path.read_bytes(),
                 kind="image",
                 media_type="image/png",
