@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 from datetime import datetime, timezone
-import hashlib
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -22,7 +22,6 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
-
 
 DocumentT = TypeVar("DocumentT")
 

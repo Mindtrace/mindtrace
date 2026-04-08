@@ -1,10 +1,9 @@
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from pathlib import Path
-
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -85,7 +84,9 @@ class TestAsyncDatalakeUnit:
         fake_path = MagicMock()
         with (
             patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm),
-            patch("mindtrace.datalake.async_datalake._default_datalake_store_path", return_value=fake_path) as default_path,
+            patch(
+                "mindtrace.datalake.async_datalake._default_datalake_store_path", return_value=fake_path
+            ) as default_path,
             patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
             datalake = AsyncDatalake("mongodb://test:27017", "test_db", default_mount="nas")
@@ -156,9 +157,16 @@ class TestAsyncDatalakeUnit:
         mock_store.save.return_value = None
         ref2 = await async_datalake.put_object(name="images/cat.jpg", obj=b"bytes")
         assert ref2.version == "latest"
-        payload = await async_datalake.get_object(StorageRef(mount="nas", name="images/cat.jpg", version="v1"), verify="none")
+        payload = await async_datalake.get_object(
+            StorageRef(mount="nas", name="images/cat.jpg", version="v1"), verify="none"
+        )
         info = await async_datalake.head_object(StorageRef(mount="nas", name="images/cat.jpg", version="v1"))
-        copied = await async_datalake.copy_object(StorageRef(mount="nas", name="images/cat.jpg", version="v1"), target_mount="archive", target_name="cat.jpg", target_version="v2")
+        copied = await async_datalake.copy_object(
+            StorageRef(mount="nas", name="images/cat.jpg", version="v1"),
+            target_mount="archive",
+            target_name="cat.jpg",
+            target_version="v2",
+        )
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
@@ -200,18 +208,26 @@ class TestAsyncDatalakeUnit:
             name="gt", purpose="ground_truth", source_type="human", datum_id=datum.datum_id
         )
         assert created_set.annotation_set_id in datum.annotation_set_ids
-        created_no_parent = await async_datalake.create_annotation_set(name="pred", purpose="prediction", source_type="machine")
+        created_no_parent = await async_datalake.create_annotation_set(
+            name="pred", purpose="prediction", source_type="machine"
+        )
         assert created_no_parent.datum_id is None
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
-        inserted_model = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
+        inserted_model = AnnotationRecord(
+            kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
+        )
         inserted_model.annotation_id = "annotation_model"
-        inserted_dict = AnnotationRecord(kind="bbox", label="crack", source={"type": "machine", "name": "detector"}, geometry={})
+        inserted_dict = AnnotationRecord(
+            kind="bbox", label="crack", source={"type": "machine", "name": "detector"}, geometry={}
+        )
         inserted_dict.annotation_id = "annotation_dict"
         mock_odm.insert = AsyncMock(side_effect=[inserted_model, inserted_dict])
-        record_instance = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
+        record_instance = AnnotationRecord(
+            kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
+        )
         inserted = await async_datalake.add_annotation_records(
             annotation_set.annotation_set_id,
             [record_instance, {"kind": "bbox", "label": "crack", "source": {"type": "machine", "name": "detector"}}],
@@ -231,7 +247,9 @@ class TestAsyncDatalakeUnit:
         assert await async_datalake.list_annotation_records({"label": "dent"}) == [record]
         async_datalake.get_annotation_record = AsyncMock(return_value=record)
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
-        updated = await async_datalake.update_annotation_record(record.annotation_id, source={"type": "machine", "name": "det"})
+        updated = await async_datalake.update_annotation_record(
+            record.annotation_id, source={"type": "machine", "name": "det"}
+        )
         assert updated.source.type == "machine"
         await async_datalake.delete_annotation_record(record.annotation_id)
         assert annotation_set.annotation_record_ids == []
@@ -252,7 +270,9 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_datum_crud_async(self, async_datalake, mock_odm):
-        datum = await async_datalake.create_datum(asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"}, annotation_set_ids=["set_1"])
+        datum = await async_datalake.create_datum(
+            asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"}, annotation_set_ids=["set_1"]
+        )
         assert isinstance(datum, Datum)
         datum.id = "db-datum"
         mock_odm.find.return_value = [datum]
@@ -270,7 +290,9 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_dataset_version_async(self, async_datalake, mock_odm):
         mock_odm.find.return_value = []
-        created = await async_datalake.create_dataset_version(dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"])
+        created = await async_datalake.create_dataset_version(
+            dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"]
+        )
         assert isinstance(created, DatasetVersion)
         existing = DatasetVersion(dataset_name="demo", version="0.1.0")
         mock_odm.find.return_value = [existing]
@@ -283,7 +305,9 @@ class TestAsyncDatalakeUnit:
         mock_odm.find.return_value = [dataset_version]
         assert await async_datalake.get_dataset_version("demo", "0.1.0") is dataset_version
         assert await async_datalake.list_dataset_versions(filters={"metadata.stage": "initial"}) == [dataset_version]
-        assert await async_datalake.list_dataset_versions(dataset_name="demo", filters={"metadata.stage": "initial"}) == [dataset_version]
+        assert await async_datalake.list_dataset_versions(
+            dataset_name="demo", filters={"metadata.stage": "initial"}
+        ) == [dataset_version]
         resolved_datum_1 = ResolvedDatum(datum=Datum(asset_refs={"image": "asset_1"}))
         resolved_datum_2 = ResolvedDatum(datum=Datum(asset_refs={"image": "asset_2"}))
         async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)

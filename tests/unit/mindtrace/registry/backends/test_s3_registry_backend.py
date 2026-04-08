@@ -981,7 +981,6 @@ def test_opresult_failed_has_correct_signature(backend, sample_object_dir, sampl
 
     This test exists to catch signature mismatches (e.g., error= vs error_type=).
     """
-    from mindtrace.registry.core.types import OpResult
 
     # Test with exception (positional)
     result1 = OpResult.failed("test", "1.0.0", RuntimeError("test error"))
@@ -1086,14 +1085,20 @@ def test_commit_plan_and_cleanup_helper_edge_cases(backend, monkeypatch):
     monkeypatch.setattr(backend.storage, "list_objects", lambda prefix="": [])
     assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-4") is False
 
-    monkeypatch.setattr(backend.storage, "list_objects", lambda prefix="": (_ for _ in ()).throw(RuntimeError("list failed")))
+    monkeypatch.setattr(
+        backend.storage, "list_objects", lambda prefix="": (_ for _ in ()).throw(RuntimeError("list failed"))
+    )
     assert backend._delete_uuid_folder("test:object", "1.0.0", "uuid-5") is False
 
 
 def test_attempt_rollback_only_deletes_plan_when_folder_cleanup_succeeds(backend, monkeypatch):
     deleted_plans: list[tuple[str, str, str]] = []
 
-    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(
+        backend,
+        "_delete_commit_plan",
+        lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True,
+    )
     monkeypatch.setattr(backend, "_delete_uuid_folder", lambda *args, **kwargs: True)
     assert backend._attempt_rollback("test:object", "1.0.0", "uuid-1") is True
     assert deleted_plans == [("test:object", "1.0.0", "uuid-1")]
@@ -1142,7 +1147,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
     )
     assert backend._acquire_lock("test:object@2.0.0", "lock-2", timeout=1) is True
 
-    monkeypatch.setattr(backend.storage, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        backend.storage, "upload_string", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     assert backend._acquire_lock("test:object@3.0.0", "lock-3", timeout=0) is False
 
     attempt_counter = {"count": 0}
@@ -1160,7 +1167,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
         "download_string",
         lambda path: MockStringResult(remote_path=path, status="already_exists", ok=False),
     )
-    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.time.sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.s3_registry_backend.time.sleep", lambda seconds: sleeps.append(seconds)
+    )
     assert backend._acquire_lock("test:object@3.1.0", "lock-31", timeout=1) is True
     assert sleeps == [0.1]
 
@@ -1182,7 +1191,9 @@ def test_lock_helper_retry_timeout_and_batch_paths(backend, monkeypatch):
 
 
 def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample_metadata, monkeypatch):
-    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
+    monkeypatch.setattr(
+        backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed"))
+    )
     monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: False)
     result = backend._push_single_object("test:plan", "1.0.0", sample_object_dir, sample_metadata, "skip")
     assert result.is_error
@@ -1196,7 +1207,9 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
         backend.storage,
         "upload_batch",
         lambda *args, **kwargs: MockBatchResult(
-            results=[MockFileResult(local_path="x", remote_path="y", status="error", ok=False, error_message="upload failed")]
+            results=[
+                MockFileResult(local_path="x", remote_path="y", status="error", ok=False, error_message="upload failed")
+            ]
         ),
     )
     monkeypatch.setattr(backend, "_attempt_rollback", lambda *args, **kwargs: True)
@@ -1204,8 +1217,12 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     assert result.is_error
     assert result.cleanup == CleanupState.OK
 
-    monkeypatch.setattr(backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed")))
-    monkeypatch.setattr(backend.storage, "upload_batch", MockMinioHandler.upload_batch.__get__(backend.storage, type(backend.storage)))
+    monkeypatch.setattr(
+        backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed"))
+    )
+    monkeypatch.setattr(
+        backend.storage, "upload_batch", MockMinioHandler.upload_batch.__get__(backend.storage, type(backend.storage))
+    )
     result = backend._push_single_object("test:overwrite", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
     assert result.ok
     assert result.cleanup == CleanupState.UNKNOWN
@@ -1216,7 +1233,9 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="already_exists", ok=False, error_message="exists"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="already_exists", ok=False, error_message="exists"
+        ),
     )
     result = backend._push_single_object("test:skip-race", "1.0.0", sample_object_dir, sample_metadata, "skip")
     assert result.is_skipped
@@ -1226,7 +1245,9 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="meta failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="meta failed"
+        ),
     )
     result = backend._push_single_object("test:meta-error", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
     assert result.is_error
@@ -1271,7 +1292,11 @@ def test_delete_single_object_edge_cases(backend, sample_object_dir, sample_meta
 
     deleted_plans: list[tuple[str, str, str]] = []
     monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: True)
-    monkeypatch.setattr(backend, "_delete_commit_plan", lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True)
+    monkeypatch.setattr(
+        backend,
+        "_delete_commit_plan",
+        lambda name, version, uuid_str: deleted_plans.append((name, version, uuid_str)) or True,
+    )
     monkeypatch.setattr(
         backend.storage,
         "delete",
@@ -1309,7 +1334,9 @@ def test_save_fetch_and_delete_metadata_edge_cases(backend, monkeypatch):
     monkeypatch.setattr(
         backend.storage,
         "upload_string",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="write failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="write failed"
+        ),
     )
     helper_result = backend._save_metadata_single("test:helper", "1.0.0", metadata, on_conflict="overwrite")
     assert helper_result.status == "error"
@@ -1317,7 +1344,9 @@ def test_save_fetch_and_delete_metadata_edge_cases(backend, monkeypatch):
     monkeypatch.setattr(
         backend,
         "_save_metadata_single",
-        lambda *args, **kwargs: MockStringResult(remote_path="meta", status="error", ok=False, error_message="save failed"),
+        lambda *args, **kwargs: MockStringResult(
+            remote_path="meta", status="error", ok=False, error_message="save failed"
+        ),
     )
     results = backend.save_metadata("test:error", "1.0.0", metadata)
     assert results.first().is_error

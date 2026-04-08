@@ -4296,7 +4296,7 @@ class TestRegistryCoreCoverage:
         with pytest.raises(ValueError, match="Invalid backend type"):
             _RegistryCore(backend=123)
 
-        registry = _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=False, version_digits=3)
+        _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=False, version_digits=3)
         with pytest.raises(ValueError, match="Mutable conflict"):
             _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=True, version_digits=3)
         with pytest.raises(ValueError, match="version_digits must be >= 1"):

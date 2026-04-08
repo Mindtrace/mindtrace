@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 import hashlib
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Dict, List, Type
@@ -14,13 +14,13 @@ from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
-from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
     StoreKeyFormatError,
     StoreLocationNotFound,
 )
+from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.types import BatchResult, VerifyLevel
 
@@ -113,7 +113,9 @@ class Store(Mindtrace):
             idx += 1
         return f"{candidate}-{idx}"
 
-    def add_mount(self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None) -> None:
+    def add_mount(
+        self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None
+    ) -> None:
         if isinstance(mount_or_registry, Mount):
             mount_name = name if name is not None else mount_or_registry.name
             registry = Registry.from_mount(mount_or_registry)
