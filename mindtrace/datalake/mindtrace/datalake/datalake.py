@@ -40,6 +40,17 @@ class Datalake(Mindtrace):
     datum construction, and immutable dataset-version creation.
 
     Examples:
+        Launch a local MongoDB in Docker for trying the Datalake examples below:
+
+        .. code-block:: bash
+
+            docker run --name mindtrace-mongo \
+              -e MONGO_INITDB_ROOT_USERNAME=mindtrace \
+              -e MONGO_INITDB_ROOT_PASSWORD=mindtrace \
+              -e MONGO_INITDB_DATABASE=mindtrace \
+              -p 27017:27017 \
+              -d mongo:7
+
         Create a datalake and register an image asset from an in-memory payload:
 
         .. code-block:: python
@@ -47,7 +58,7 @@ class Datalake(Mindtrace):
             from mindtrace.datalake import Datalake
 
             datalake = await Datalake.create(
-                mongo_db_uri="mongodb://localhost:27017",
+                mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
                 mongo_db_name="mindtrace",
             )
 
