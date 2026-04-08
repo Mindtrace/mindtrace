@@ -204,7 +204,11 @@ class TestAsyncDatalakeUnit:
         await async_datalake.delete_annotation_record(record.annotation_id)
 
     @pytest.mark.asyncio
-    async def test_annotation_getters_raise_when_missing(self, async_datalake, mock_odm):
+    async def test_annotation_getters_and_listing(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        mock_odm.find.return_value = [annotation_set]
+        assert await async_datalake.get_annotation_set(annotation_set.annotation_set_id) is annotation_set
+        assert await async_datalake.list_annotation_sets() == [annotation_set]
         mock_odm.find.return_value = []
         with pytest.raises(DocumentNotFoundError):
             await async_datalake.get_annotation_set("missing")
