@@ -9,8 +9,12 @@ from mindtrace.datalake.types import (
     AnnotationRecord,
     AnnotationSet,
     Asset,
+    AssetRetention,
+    Collection,
+    CollectionItem,
     DatasetVersion,
     Datum,
+    ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
@@ -102,7 +106,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 5
+        assert mock_odm.initialize.await_count == 8
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -110,7 +114,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 5
+        assert mock_odm.initialize.await_count == 8
 
     def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
         now = async_datalake._utc_now()
@@ -133,6 +137,9 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_summary_returns_counts(self, async_datalake):
         async_datalake.list_assets = AsyncMock(return_value=[MagicMock(), MagicMock()])
+        async_datalake.list_collections = AsyncMock(return_value=[MagicMock()])
+        async_datalake.list_collection_items = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
+        async_datalake.list_asset_retentions = AsyncMock(return_value=[MagicMock()])
         async_datalake.list_annotation_sets = AsyncMock(return_value=[MagicMock()])
         async_datalake.list_annotation_records = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
         async_datalake.list_datums = AsyncMock(return_value=[MagicMock()])
@@ -141,8 +148,8 @@ class TestAsyncDatalakeUnit:
         summary = await async_datalake.summary()
 
         assert summary == (
-            "AsyncDatalake(database=test_db, default_mount=temp, assets=2, "
-            "annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
+            "AsyncDatalake(database=test_db, default_mount=temp, assets=2, collections=1, collection_items=3, "
+            "asset_retentions=1, annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
         )
 
     def test_get_mounts_returns_named_mounts(self, async_datalake):
@@ -211,7 +218,7 @@ class TestAsyncDatalakeUnit:
         created_no_parent = await async_datalake.create_annotation_set(
             name="pred", purpose="prediction", source_type="machine"
         )
-        assert created_no_parent.datum_id is None
+        assert isinstance(created_no_parent, AnnotationSet)
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
@@ -233,28 +240,28 @@ class TestAsyncDatalakeUnit:
             [record_instance, {"kind": "bbox", "label": "crack", "source": {"type": "machine", "name": "detector"}}],
         )
         assert inserted == [inserted_model, inserted_dict]
+        assert annotation_set.annotation_record_ids == ["annotation_model", "annotation_dict"]
 
     @pytest.mark.asyncio
     async def test_annotation_record_crud_async(self, async_datalake, mock_odm):
         record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
         record.id = "db-rec"
-        record.annotation_set_id = "set-1"
-        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
-        annotation_set.annotation_set_id = "set-1"
-        annotation_set.annotation_record_ids = [record.annotation_id]
+        annotation_set_1 = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        annotation_set_1.annotation_record_ids = [record.annotation_id]
+        annotation_set_2 = AnnotationSet(name="review", purpose="review", source_type="human")
+        annotation_set_2.annotation_record_ids = [record.annotation_id, "other_annotation"]
         mock_odm.find.return_value = [record]
         assert await async_datalake.get_annotation_record(record.annotation_id) is record
         assert await async_datalake.list_annotation_records({"label": "dent"}) == [record]
         async_datalake.get_annotation_record = AsyncMock(return_value=record)
-        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        async_datalake.list_annotation_sets = AsyncMock(return_value=[annotation_set_1, annotation_set_2])
         updated = await async_datalake.update_annotation_record(
             record.annotation_id, source={"type": "machine", "name": "det"}
         )
         assert updated.source.type == "machine"
         await async_datalake.delete_annotation_record(record.annotation_id)
-        assert annotation_set.annotation_record_ids == []
-        record.annotation_set_id = None
-        await async_datalake.delete_annotation_record(record.annotation_id)
+        assert annotation_set_1.annotation_record_ids == []
+        assert annotation_set_2.annotation_record_ids == ["other_annotation"]
 
     @pytest.mark.asyncio
     async def test_annotation_getters_and_listing(self, async_datalake, mock_odm):
@@ -267,6 +274,66 @@ class TestAsyncDatalakeUnit:
             await async_datalake.get_annotation_set("missing")
         with pytest.raises(DocumentNotFoundError):
             await async_datalake.get_annotation_record("missing")
+
+    @pytest.mark.asyncio
+    async def test_collection_and_asset_retention_crud_async(self, async_datalake, mock_odm):
+        collection = await async_datalake.create_collection(
+            name="demo-collection",
+            description="demo",
+            metadata={"source": "demo"},
+            created_by="tester",
+        )
+        assert isinstance(collection, Collection)
+        collection.id = "db-collection"
+        mock_odm.find.return_value = [collection]
+        assert await async_datalake.get_collection(collection.collection_id) is collection
+        assert await async_datalake.list_collections({"status": "active"}) == [collection]
+        updated_collection = await async_datalake.update_collection(collection.collection_id, status="archived")
+        assert updated_collection.status == "archived"
+        await async_datalake.delete_collection(collection.collection_id)
+        mock_odm.delete.assert_awaited_with("db-collection")
+
+        asset = Asset(kind="image", media_type="image/jpeg", storage_ref=StorageRef(mount="temp", name="x"))
+        async_datalake.get_collection = AsyncMock(return_value=collection)
+        async_datalake.get_asset = AsyncMock(return_value=asset)
+        collection_item = await async_datalake.create_collection_item(
+            collection_id=collection.collection_id,
+            asset_id=asset.asset_id,
+            split="train",
+            metadata={"tag": "a"},
+            added_by="tester",
+        )
+        assert isinstance(collection_item, CollectionItem)
+        collection_item.id = "db-collection-item"
+        mock_odm.find.return_value = [collection_item]
+        assert await async_datalake.get_collection_item(collection_item.collection_item_id) is collection_item
+        assert await async_datalake.list_collection_items({"collection_id": collection.collection_id}) == [collection_item]
+        async_datalake.get_collection_item = AsyncMock(return_value=collection_item)
+        resolved_item = await async_datalake.resolve_collection_item(collection_item.collection_item_id)
+        assert isinstance(resolved_item, ResolvedCollectionItem)
+        updated_item = await async_datalake.update_collection_item(collection_item.collection_item_id, status="hidden")
+        assert updated_item.status == "hidden"
+        await async_datalake.delete_collection_item(collection_item.collection_item_id)
+
+        asset_retention = await async_datalake.create_asset_retention(
+            asset_id=asset.asset_id,
+            owner_type="manual_pin",
+            owner_id="owner_1",
+            metadata={"source": "demo"},
+            created_by="tester",
+        )
+        assert isinstance(asset_retention, AssetRetention)
+        asset_retention.id = "db-asset-retention"
+        mock_odm.find.return_value = [asset_retention]
+        assert await async_datalake.get_asset_retention(asset_retention.asset_retention_id) is asset_retention
+        assert await async_datalake.list_asset_retentions({"asset_id": asset.asset_id}) == [asset_retention]
+        async_datalake.get_asset_retention = AsyncMock(return_value=asset_retention)
+        updated_retention = await async_datalake.update_asset_retention(
+            asset_retention.asset_retention_id,
+            retention_policy="archive_when_unreferenced",
+        )
+        assert updated_retention.retention_policy == "archive_when_unreferenced"
+        await async_datalake.delete_asset_retention(asset_retention.asset_retention_id)
 
     @pytest.mark.asyncio
     async def test_datum_crud_async(self, async_datalake, mock_odm):
