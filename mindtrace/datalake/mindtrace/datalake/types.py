@@ -7,9 +7,9 @@ from uuid import uuid4
 from beanie import Indexed
 from beanie.exceptions import CollectionWasNotInitialized
 from pydantic import BaseModel, Field, model_validator
+from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
-
 
 AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
 AnnotationKind = Literal[
@@ -173,7 +173,9 @@ class AnnotationSchema(DatalakeDocument):
             f"version={self.version}, task_type={self.task_type})"
         )
 
-    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_schema"))
+    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(
+        default_factory=lambda: new_id("annotation_schema")
+    )
     name: str
     version: str
     task_type: AnnotationTaskType
@@ -192,7 +194,7 @@ class AnnotationSchema(DatalakeDocument):
         name = "datalake_annotation_schemas"
         indexes = [
             "task_type",
-            [("name", 1), ("version", 1)],
+            IndexModel([("name", 1), ("version", 1)], unique=True),
         ]
 
 

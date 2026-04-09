@@ -72,7 +72,6 @@ def test_main_type_str_methods_are_readable():
     assert str(resolved_dataset) == "ResolvedDatasetVersion(dataset=demo, version=0.1.0, datums=1)"
 
 
-
 def test_annotation_schema_and_label_definition_defaults():
     label = AnnotationLabelDefinition(name="cat", id=1, color="#ffffff")
     schema = AnnotationSchema(

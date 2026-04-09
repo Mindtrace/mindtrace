@@ -105,7 +105,9 @@ class TestDatalakeSyncFacade:
             "resolve_collection_item": ResolvedCollectionItem(
                 collection_item=CollectionItem(collection_id="collection_1", asset_id="asset_1"),
                 collection=Collection(name="demo-collection"),
-                asset=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+                asset=Asset(
+                    kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+                ),
             ),
             "update_collection_item": CollectionItem(collection_id="collection_1", asset_id="asset_1"),
             "delete_collection_item": None,
@@ -147,6 +149,7 @@ class TestDatalakeSyncFacade:
             "create_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "get_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "list_annotation_sets": [],
+            "update_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "add_annotation_records": [],
             "get_annotation_record": AnnotationRecord(
                 kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -268,19 +271,13 @@ class TestDatalakeSyncFacade:
         )
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
-        assert (
-            datalake.summary()
-            == (
-                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
-            )
+        assert datalake.summary() == (
+            "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+            "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         )
-        assert (
-            str(datalake)
-            == (
-                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
-            )
+        assert str(datalake) == (
+            "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+            "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         )
         assert datalake.get_mounts()["default_mount"] == "temp"
         assert datalake.put_object(name="hopper.png", obj=b"bytes").version == "v1"
@@ -349,6 +346,7 @@ class TestDatalakeSyncFacade:
         )
         assert isinstance(datalake.get_annotation_set("set_1"), AnnotationSet)
         assert datalake.list_annotation_sets() == []
+        assert isinstance(datalake.update_annotation_set("set_1", status="active"), AnnotationSet)
         assert datalake.add_annotation_records("set_1", []) == []
         assert isinstance(datalake.get_annotation_record("ann_1"), AnnotationRecord)
         assert datalake.list_annotation_records() == []
