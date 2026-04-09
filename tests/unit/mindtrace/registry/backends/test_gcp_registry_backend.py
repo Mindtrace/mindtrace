@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
+from unittest.mock import patch
 from urllib.parse import quote
 
 import pytest
@@ -647,14 +648,25 @@ def test_acquire_lock_success(backend):
 def test_acquire_lock_already_held(backend):
     """Test lock acquisition times out when lock is already held."""
     key = "test:object@1.0.0"
+    current_time = [1000.0]
 
-    # First lock succeeds (long TTL so it won't expire during test)
-    result1 = backend._acquire_lock(key, "lock-1", timeout=30)
-    assert result1 is True
+    def fake_time() -> float:
+        return current_time[0]
 
-    # Second lock times out (short timeout < first lock's TTL)
-    result2 = backend._acquire_lock(key, "lock-2", timeout=1)
-    assert result2 is False
+    def fake_sleep(seconds: float) -> None:
+        current_time[0] += seconds
+
+    with (
+        patch("mindtrace.registry.backends.gcp_registry_backend.time.time", side_effect=fake_time),
+        patch("mindtrace.registry.backends.gcp_registry_backend.time.sleep", side_effect=fake_sleep),
+    ):
+        # First lock succeeds (long TTL so it won't expire during test)
+        result1 = backend._acquire_lock(key, "lock-1", timeout=30)
+        assert result1 is True
+
+        # Second lock times out (short timeout < first lock's TTL)
+        result2 = backend._acquire_lock(key, "lock-2", timeout=1)
+        assert result2 is False
 
 
 def test_release_lock(backend):

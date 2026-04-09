@@ -26,6 +26,9 @@ until nc -z localhost 6380; do
     sleep 1
 done
 
+echo "Flushing Redis test database..."
+$DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
+
 export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:9100
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin

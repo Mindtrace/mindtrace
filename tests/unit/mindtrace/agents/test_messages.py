@@ -3,12 +3,14 @@
 import pytest
 
 from mindtrace.agents.messages import (
+    MessagesBuilder,
     ModelMessage,
     SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
 )
+from mindtrace.agents.prompts import UserPromptPart
 
 
 class TestMessageParts:
@@ -95,3 +97,61 @@ class TestModelMessage:
         parts = [TextPart(content="a"), TextPart(content="b")]
         msg = ModelMessage(role="assistant", parts=parts)
         assert len(msg.parts) == 2
+
+    def test_requires_at_least_one_part(self):
+        """ModelMessage rejects empty part lists."""
+        with pytest.raises(ValueError, match="at least one part"):
+            ModelMessage(role="user", parts=[])
+
+
+class TestMessagesBuilder:
+    """Tests for fluent message construction."""
+
+    def test_builder_chains_all_message_types(self):
+        builder = MessagesBuilder()
+
+        result = (
+            builder.add_user("hello")
+            .add_system("be helpful")
+            .add_assistant_text("working on it")
+            .add_assistant_tool_calls([("tc-1", "search", '{"q":"cats"}')])
+            .add_tool_return("tc-1", "done")
+        )
+
+        assert result is builder
+        messages = builder.messages
+        assert len(messages) == 5
+        assert messages[0].role == "user"
+        assert isinstance(messages[0].parts[0], UserPromptPart)
+        assert messages[0].parts[0].content == "hello"
+        assert messages[1].role == "system"
+        assert messages[2].parts[0].content == "working on it"
+        assert isinstance(messages[3].parts[0], ToolCallPart)
+        assert messages[3].parts[0].tool_name == "search"
+        assert messages[4].role == "tool"
+        assert messages[4].parts[0].content == "done"
+
+    def test_builder_adds_multiple_tool_calls_in_single_message(self):
+        builder = MessagesBuilder()
+
+        builder.add_assistant_tool_calls(
+            [
+                ("tc-1", "search", '{"q":"cats"}'),
+                ("tc-2", "lookup", '{"id":42}'),
+            ]
+        )
+
+        message = builder.messages[0]
+        assert message.role == "assistant"
+        assert [part.tool_name for part in message.parts] == ["search", "lookup"]
+        assert [part.tool_call_id for part in message.parts] == ["tc-1", "tc-2"]
+
+    def test_messages_property_returns_copy_of_internal_list(self):
+        builder = MessagesBuilder()
+        builder.add_user("hello")
+
+        first_snapshot = builder.messages
+        first_snapshot.append(ModelMessage(role="assistant", parts=[TextPart(content="injected")]))
+
+        assert len(first_snapshot) == 2
+        assert len(builder.messages) == 1

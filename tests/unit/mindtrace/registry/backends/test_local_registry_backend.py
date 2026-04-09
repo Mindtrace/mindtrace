@@ -714,7 +714,7 @@ def test_internal_lock_raises_on_acquisition_failure(backend):
     # Context manager itself should still raise LockAcquisitionError
     # (the backend methods catch this and return failed results)
     with pytest.raises(LockAcquisitionError, match="lock"):
-        with backend._internal_lock(lock_key):
+        with backend._internal_lock(lock_key, timeout=0.01):
             pass  # Should never reach here
 
     # Clean up
@@ -735,6 +735,9 @@ def test_push_blocked_by_active_lock(backend, sample_object_dir):
     exclusive_path = backend._exclusive_lock_path(lock_key)
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
+
+    # Use a tiny lock timeout so contention is detected quickly in tests.
+    backend._lock_timeout = 0.01
 
     # Push should return failed result because lock is held
     result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"test": True}])
@@ -763,6 +766,9 @@ def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     exclusive_path = backend._exclusive_lock_path(lock_key)
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
+
+    # Use a tiny lock timeout so contention is detected quickly in tests.
+    backend._lock_timeout = 0.01
 
     # Delete should return failed result because lock is held
     result = backend.delete(["test:object"], ["1.0.0"])

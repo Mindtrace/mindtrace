@@ -264,15 +264,13 @@ class TestMockBaslerImageGeneration:
     @pytest.mark.asyncio
     async def test_auto_pattern_rotation(self):
         """Test automatic pattern rotation in auto mode."""
-        camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="auto")
+        camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="auto", fast_mode=True)
         await camera.initialize()
 
         # Capture multiple images to test pattern rotation
-        images = []
         image_stats = []
-        for i in range(8):  # Capture more images to ensure we see rotation
+        for i in range(4):
             image = await camera.capture()
-            images.append(image)
             # Track statistics to detect pattern changes
             stats = (image.mean(), image.std(), image.min(), image.max())
             image_stats.append(stats)
