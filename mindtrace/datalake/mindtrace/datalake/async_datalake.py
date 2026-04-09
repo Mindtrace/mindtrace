@@ -444,7 +444,6 @@ class AsyncDatalake(Mindtrace):
         asset_retention = await self.get_asset_retention(asset_retention_id)
         await self.asset_retention_database.delete(asset_retention.id)
 
-
     async def create_annotation_schema(
         self,
         *,

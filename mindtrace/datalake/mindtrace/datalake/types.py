@@ -11,7 +11,6 @@ from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
 
-
 AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
 AnnotationKind = Literal[
     "classification",
@@ -174,7 +173,9 @@ class AnnotationSchema(DatalakeDocument):
             f"version={self.version}, task_type={self.task_type})"
         )
 
-    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_schema"))
+    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(
+        default_factory=lambda: new_id("annotation_schema")
+    )
     name: str
     version: str
     task_type: AnnotationTaskType

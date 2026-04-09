@@ -105,7 +105,9 @@ class TestDatalakeSyncFacade:
             "resolve_collection_item": ResolvedCollectionItem(
                 collection_item=CollectionItem(collection_id="collection_1", asset_id="asset_1"),
                 collection=Collection(name="demo-collection"),
-                asset=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+                asset=Asset(
+                    kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
+                ),
             ),
             "update_collection_item": CollectionItem(collection_id="collection_1", asset_id="asset_1"),
             "delete_collection_item": None,
@@ -269,19 +271,13 @@ class TestDatalakeSyncFacade:
         )
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
-        assert (
-            datalake.summary()
-            == (
-                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
-            )
+        assert datalake.summary() == (
+            "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+            "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         )
-        assert (
-            str(datalake)
-            == (
-                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
-            )
+        assert str(datalake) == (
+            "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+            "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         )
         assert datalake.get_mounts()["default_mount"] == "temp"
         assert datalake.put_object(name="hopper.png", obj=b"bytes").version == "v1"

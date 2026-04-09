@@ -316,7 +316,9 @@ class TestAsyncDatalakeUnit:
         collection_item.id = "db-collection-item"
         mock_odm.find.return_value = [collection_item]
         assert await async_datalake.get_collection_item(collection_item.collection_item_id) is collection_item
-        assert await async_datalake.list_collection_items({"collection_id": collection.collection_id}) == [collection_item]
+        assert await async_datalake.list_collection_items({"collection_id": collection.collection_id}) == [
+            collection_item
+        ]
         async_datalake.get_collection_item = AsyncMock(return_value=collection_item)
         resolved_item = await async_datalake.resolve_collection_item(collection_item.collection_item_id)
         assert isinstance(resolved_item, ResolvedCollectionItem)
@@ -500,7 +502,6 @@ class TestAsyncDatalakeUnit:
             created_by="tester",
         )
 
-
     @pytest.mark.asyncio
     async def test_annotation_schema_crud_async(self, async_datalake, mock_odm):
         schema = await async_datalake.create_annotation_schema(
@@ -524,6 +525,8 @@ class TestAsyncDatalakeUnit:
         )
         assert updated.labels[0].name == "dog"
         assert updated.allow_scores is True
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        async_datalake.annotation_set_database.find = AsyncMock(return_value=[])
         await async_datalake.delete_annotation_schema(schema.annotation_schema_id)
         mock_odm.delete.assert_awaited_with("db-schema")
 
@@ -577,14 +580,16 @@ class TestAsyncDatalakeUnit:
 
         inserted = await async_datalake.add_annotation_records(
             annotation_set.annotation_set_id,
-            [{
-                "kind": "bbox",
-                "label": "dent",
-                "label_id": 7,
-                "source": {"type": "human", "name": "review-ui"},
-                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
-                "attributes": {"quality": "high"},
-            }],
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "label_id": 7,
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    "attributes": {"quality": "high"},
+                }
+            ],
         )
 
         assert inserted == [inserted_record]
@@ -611,22 +616,26 @@ class TestAsyncDatalakeUnit:
         with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
             await async_datalake.add_annotation_records(
                 annotation_set.annotation_set_id,
-                [{
-                    "kind": "classification",
-                    "label": "dog",
-                    "source": {"type": "human", "name": "review-ui"},
-                }],
+                [
+                    {
+                        "kind": "classification",
+                        "label": "dog",
+                        "source": {"type": "human", "name": "review-ui"},
+                    }
+                ],
             )
 
         with pytest.raises(AnnotationSchemaValidationError, match="must not include geometry"):
             await async_datalake.add_annotation_records(
                 annotation_set.annotation_set_id,
-                [{
-                    "kind": "classification",
-                    "label": "cat",
-                    "source": {"type": "human", "name": "review-ui"},
-                    "geometry": {"x": 1},
-                }],
+                [
+                    {
+                        "kind": "classification",
+                        "label": "cat",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 1},
+                    }
+                ],
             )
 
     @pytest.mark.asyncio
