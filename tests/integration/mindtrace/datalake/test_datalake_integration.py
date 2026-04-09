@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import SubjectRef
 
@@ -239,3 +240,89 @@ def test_sync_datalake_close_context_manager_handles_cleanup_failures():
     assert datalake.__enter__() is datalake
     assert datalake.__exit__(None, None, None) is False
     assert datalake._owns_loop_thread is False
+
+
+def test_datalake_collection_and_retention_lifecycle(sync_datalake: Datalake):
+    hopper_path = Path("tests/resources/hopper.png")
+    image_bytes = hopper_path.read_bytes()
+
+    storage_ref = sync_datalake.put_object(
+        name="collection-hopper.png",
+        obj=image_bytes,
+        metadata={"source_path": str(hopper_path)},
+    )
+    asset = sync_datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=storage_ref,
+        checksum="sha256:collection",
+        size_bytes=len(image_bytes),
+        metadata={"source": "integration"},
+        created_by="pytest",
+    )
+
+    collection = sync_datalake.create_collection(
+        name="integration-collection",
+        description="collection integration test",
+        metadata={"suite": "integration"},
+        created_by="pytest",
+    )
+    fetched_collection = sync_datalake.get_collection(collection.collection_id)
+    listed_collections = sync_datalake.list_collections({"status": "active"})
+    updated_collection = sync_datalake.update_collection(collection.collection_id, status="archived")
+
+    collection_item = sync_datalake.create_collection_item(
+        collection_id=collection.collection_id,
+        asset_id=asset.asset_id,
+        split="train",
+        metadata={"role": "example"},
+        added_by="pytest",
+    )
+    fetched_collection_item = sync_datalake.get_collection_item(collection_item.collection_item_id)
+    listed_collection_items = sync_datalake.list_collection_items({"collection_id": collection.collection_id})
+    resolved_collection_item = sync_datalake.resolve_collection_item(collection_item.collection_item_id)
+    updated_collection_item = sync_datalake.update_collection_item(
+        collection_item.collection_item_id,
+        collection_id=collection.collection_id,
+        asset_id=asset.asset_id,
+        status="hidden",
+    )
+
+    asset_retention = sync_datalake.create_asset_retention(
+        asset_id=asset.asset_id,
+        owner_type="manual_pin",
+        owner_id=collection.collection_id,
+        metadata={"suite": "integration"},
+        created_by="pytest",
+    )
+    fetched_asset_retention = sync_datalake.get_asset_retention(asset_retention.asset_retention_id)
+    listed_asset_retentions = sync_datalake.list_asset_retentions({"asset_id": asset.asset_id})
+    updated_asset_retention = sync_datalake.update_asset_retention(
+        asset_retention.asset_retention_id,
+        asset_id=asset.asset_id,
+        retention_policy="archive_when_unreferenced",
+    )
+
+    assert fetched_collection.collection_id == collection.collection_id
+    assert any(item.collection_id == collection.collection_id for item in listed_collections)
+    assert updated_collection.status == "archived"
+    assert fetched_collection_item.collection_item_id == collection_item.collection_item_id
+    assert any(item.collection_item_id == collection_item.collection_item_id for item in listed_collection_items)
+    assert resolved_collection_item.collection.collection_id == collection.collection_id
+    assert resolved_collection_item.asset.asset_id == asset.asset_id
+    assert updated_collection_item.status == "hidden"
+    assert fetched_asset_retention.asset_retention_id == asset_retention.asset_retention_id
+    assert any(item.asset_retention_id == asset_retention.asset_retention_id for item in listed_asset_retentions)
+    assert updated_asset_retention.retention_policy == "archive_when_unreferenced"
+
+    sync_datalake.delete_collection_item(collection_item.collection_item_id)
+    sync_datalake.delete_asset_retention(asset_retention.asset_retention_id)
+    sync_datalake.delete_collection(collection.collection_id)
+    sync_datalake.delete_asset(asset.asset_id)
+
+    with pytest.raises(DocumentNotFoundError):
+        sync_datalake.get_collection("missing")
+    with pytest.raises(DocumentNotFoundError):
+        sync_datalake.get_collection_item("missing")
+    with pytest.raises(DocumentNotFoundError):
+        sync_datalake.get_asset_retention("missing")

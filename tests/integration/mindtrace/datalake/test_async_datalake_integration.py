@@ -211,7 +211,8 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
     )
     inserted_records = await async_datalake.add_annotation_records(annotation_set.annotation_set_id, [record])
 
-    assert inserted_records[0].annotation_set_id == annotation_set.annotation_set_id
+    refreshed_annotation_set = await async_datalake.get_annotation_set(annotation_set.annotation_set_id)
+    assert inserted_records[0].annotation_id in refreshed_annotation_set.annotation_record_ids
     assert inserted_records[0].updated_at is not None
 
     await async_datalake.create_dataset_version(
