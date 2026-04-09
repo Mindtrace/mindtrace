@@ -271,7 +271,6 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSet:
         annotation_set = self._build_document(
             AnnotationSet,
-            datum_id=datum_id,
             name=name,
             purpose=purpose,
             source_type=source_type,
@@ -283,9 +282,10 @@ class AsyncDatalake(Mindtrace):
         inserted = await self.annotation_set_database.insert(annotation_set)
         if datum_id is not None:
             datum = await self.get_datum(datum_id)
-            datum.annotation_set_ids.append(inserted.annotation_set_id)
-            datum.updated_at = self._utc_now()
-            await self.datum_database.update(datum)
+            if inserted.annotation_set_id not in datum.annotation_set_ids:
+                datum.annotation_set_ids.append(inserted.annotation_set_id)
+                datum.updated_at = self._utc_now()
+                await self.datum_database.update(datum)
         return inserted
 
     async def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
@@ -307,7 +307,6 @@ class AsyncDatalake(Mindtrace):
         for annotation in annotations:
             if isinstance(annotation, AnnotationRecord):
                 record = annotation
-                record.annotation_set_id = annotation_set_id
                 record.updated_at = self._utc_now()
             else:
                 source = annotation.get("source")
@@ -315,7 +314,6 @@ class AsyncDatalake(Mindtrace):
                     source = AnnotationSource(**source)
                 record = self._build_document(
                     AnnotationRecord,
-                    annotation_set_id=annotation_set_id,
                     subject=annotation.get("subject"),
                     kind=annotation["kind"],
                     label=annotation["label"],
@@ -328,7 +326,8 @@ class AsyncDatalake(Mindtrace):
                 )
             inserted = await self.annotation_record_database.insert(record)
             inserted_records.append(inserted)
-            annotation_set.annotation_record_ids.append(inserted.annotation_id)
+            if inserted.annotation_id not in annotation_set.annotation_record_ids:
+                annotation_set.annotation_record_ids.append(inserted.annotation_id)
         annotation_set.updated_at = self._utc_now()
         await self.annotation_set_database.update(annotation_set)
         return inserted_records
@@ -353,13 +352,14 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
         record = await self.get_annotation_record(annotation_id)
-        if record.annotation_set_id is not None:
-            annotation_set = await self.get_annotation_set(record.annotation_set_id)
-            annotation_set.annotation_record_ids = [
-                existing_id for existing_id in annotation_set.annotation_record_ids if existing_id != annotation_id
-            ]
-            annotation_set.updated_at = self._utc_now()
-            await self.annotation_set_database.update(annotation_set)
+        annotation_sets = await self.list_annotation_sets()
+        for annotation_set in annotation_sets:
+            if annotation_id in annotation_set.annotation_record_ids:
+                annotation_set.annotation_record_ids = [
+                    existing_id for existing_id in annotation_set.annotation_record_ids if existing_id != annotation_id
+                ]
+                annotation_set.updated_at = self._utc_now()
+                await self.annotation_set_database.update(annotation_set)
         await self.annotation_record_database.delete(record.id)
 
     async def create_datum(

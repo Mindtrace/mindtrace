@@ -101,13 +101,17 @@ class Asset(DatalakeDocument):
 
 
 class AnnotationRecord(DatalakeDocument):
-    """One atomic persisted annotation."""
+    """One atomic persisted annotation.
+
+    Membership in annotation sets is maintained only by parent ``AnnotationSet.annotation_record_ids``.
+    Records themselves do not store parent set ids, which allows the same atomic record to be reused
+    across multiple sets.
+    """
 
     def __str__(self) -> str:
         return f"AnnotationRecord(annotation_id={self.annotation_id}, kind={self.kind}, label={self.label})"
 
     annotation_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation"))
-    annotation_set_id: Annotated[str | None, Indexed(unique=False)] = None
     subject: SubjectRef | None = None
     kind: Literal[
         "classification",
@@ -134,7 +138,6 @@ class AnnotationRecord(DatalakeDocument):
     class Settings:
         name = "datalake_annotation_records"
         indexes = [
-            "annotation_set_id",
             "kind",
             "label",
             "source.type",
@@ -145,13 +148,16 @@ class AnnotationRecord(DatalakeDocument):
 
 
 class AnnotationSet(DatalakeDocument):
-    """Grouping/provenance boundary for annotation records."""
+    """Grouping/provenance boundary for annotation records.
+
+    Membership in datums is maintained only by parent ``Datum.annotation_set_ids``. Sets themselves do
+    not store parent datum ids, which allows the same set to be reused across multiple datums when needed.
+    """
 
     def __str__(self) -> str:
         return f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, records={len(self.annotation_record_ids)})"
 
     annotation_set_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_set"))
-    datum_id: Annotated[str | None, Indexed(unique=False)] = None
     name: str
     purpose: Literal["ground_truth", "prediction", "review", "snapshot", "other"]
     source_type: Literal["human", "machine", "mixed"]
@@ -164,7 +170,7 @@ class AnnotationSet(DatalakeDocument):
 
     class Settings:
         name = "datalake_annotation_sets"
-        indexes = ["datum_id", "purpose", "source_type", "status"]
+        indexes = ["purpose", "source_type", "status"]
 
 
 class Datum(DatalakeDocument):
