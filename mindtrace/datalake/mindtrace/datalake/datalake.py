@@ -323,6 +323,54 @@ class Datalake(Mindtrace):
     def delete_asset(self, asset_id: str) -> None:
         self._submit_coro(self._backend.delete_asset(asset_id))
 
+    def create_collection(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_collection(**kwargs))
+
+    def get_collection(self, collection_id: str):
+        return self._submit_coro(self._backend.get_collection(collection_id))
+
+    def list_collections(self, filters: dict[str, Any] | None = None):
+        return self._submit_coro(self._backend.list_collections(filters))
+
+    def update_collection(self, collection_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_collection(collection_id, **changes))
+
+    def delete_collection(self, collection_id: str) -> None:
+        self._submit_coro(self._backend.delete_collection(collection_id))
+
+    def create_collection_item(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_collection_item(**kwargs))
+
+    def get_collection_item(self, collection_item_id: str):
+        return self._submit_coro(self._backend.get_collection_item(collection_item_id))
+
+    def list_collection_items(self, filters: dict[str, Any] | None = None):
+        return self._submit_coro(self._backend.list_collection_items(filters))
+
+    def resolve_collection_item(self, collection_item_id: str):
+        return self._submit_coro(self._backend.resolve_collection_item(collection_item_id))
+
+    def update_collection_item(self, collection_item_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_collection_item(collection_item_id, **changes))
+
+    def delete_collection_item(self, collection_item_id: str) -> None:
+        self._submit_coro(self._backend.delete_collection_item(collection_item_id))
+
+    def create_asset_retention(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_asset_retention(**kwargs))
+
+    def get_asset_retention(self, asset_retention_id: str):
+        return self._submit_coro(self._backend.get_asset_retention(asset_retention_id))
+
+    def list_asset_retentions(self, filters: dict[str, Any] | None = None):
+        return self._submit_coro(self._backend.list_asset_retentions(filters))
+
+    def update_asset_retention(self, asset_retention_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_asset_retention(asset_retention_id, **changes))
+
+    def delete_asset_retention(self, asset_retention_id: str) -> None:
+        self._submit_coro(self._backend.delete_asset_retention(asset_retention_id))
+
     def create_annotation_set(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_annotation_set(**kwargs))
 

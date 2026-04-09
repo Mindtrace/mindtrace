@@ -14,8 +14,12 @@ from mindtrace.datalake.types import (
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetRetention,
+    Collection,
+    CollectionItem,
     DatasetVersion,
     Datum,
+    ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
@@ -80,6 +84,17 @@ class AsyncDatalake(Mindtrace):
             )
 
         self.asset_database = MongoMindtraceODM(model_cls=Asset, db_name=mongo_db_name, db_uri=mongo_db_uri)
+        self.collection_database = MongoMindtraceODM(model_cls=Collection, db_name=mongo_db_name, db_uri=mongo_db_uri)
+        self.collection_item_database = MongoMindtraceODM(
+            model_cls=CollectionItem,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
+        self.asset_retention_database = MongoMindtraceODM(
+            model_cls=AssetRetention,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
         self.annotation_record_database = MongoMindtraceODM(
             model_cls=AnnotationRecord,
             db_name=mongo_db_name,
@@ -99,6 +114,9 @@ class AsyncDatalake(Mindtrace):
 
     async def initialize(self) -> None:
         await self.asset_database.initialize()
+        await self.collection_database.initialize()
+        await self.collection_item_database.initialize()
+        await self.asset_retention_database.initialize()
         await self.annotation_record_database.initialize()
         await self.annotation_set_database.initialize()
         await self.datum_database.initialize()
@@ -149,13 +167,17 @@ class AsyncDatalake(Mindtrace):
 
     async def summary(self) -> str:
         asset_count = len(await self.list_assets())
+        collection_count = len(await self.list_collections())
+        collection_item_count = len(await self.list_collection_items())
+        asset_retention_count = len(await self.list_asset_retentions())
         annotation_set_count = len(await self.list_annotation_sets())
         annotation_record_count = len(await self.list_annotation_records())
         datum_count = len(await self.list_datums())
         dataset_version_count = len(await self.list_dataset_versions())
         return (
             f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount}, "
-            f"assets={asset_count}, annotation_sets={annotation_set_count}, "
+            f"assets={asset_count}, collections={collection_count}, collection_items={collection_item_count}, "
+            f"asset_retentions={asset_retention_count}, annotation_sets={annotation_set_count}, "
             f"annotation_records={annotation_record_count}, datums={datum_count}, "
             f"dataset_versions={dataset_version_count})"
         )
@@ -257,6 +279,149 @@ class AsyncDatalake(Mindtrace):
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
         await self.asset_database.delete(asset.id)
+
+    async def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection:
+        collection = self._build_document(
+            Collection,
+            name=name,
+            description=description,
+            status=status,
+            metadata=metadata or {},
+            created_by=created_by,
+            updated_at=self._utc_now(),
+        )
+        return await self.collection_database.insert(collection)
+
+    async def get_collection(self, collection_id: str) -> Collection:
+        results = await self.collection_database.find({"collection_id": collection_id})
+        if not results:
+            raise DocumentNotFoundError(f"Collection with collection_id {collection_id} not found")
+        return results[0]
+
+    async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        return await self.collection_database.find(filters or {})
+
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        collection = await self.get_collection(collection_id)
+        for key, value in changes.items():
+            setattr(collection, key, value)
+        collection.updated_at = self._utc_now()
+        return await self.collection_database.update(collection)
+
+    async def delete_collection(self, collection_id: str) -> None:
+        collection = await self.get_collection(collection_id)
+        await self.collection_database.delete(collection.id)
+
+    async def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem:
+        await self.get_collection(collection_id)
+        await self.get_asset(asset_id)
+        collection_item = self._build_document(
+            CollectionItem,
+            collection_id=collection_id,
+            asset_id=asset_id,
+            split=split,
+            status=status,
+            metadata=metadata or {},
+            added_by=added_by,
+            updated_at=self._utc_now(),
+        )
+        return await self.collection_item_database.insert(collection_item)
+
+    async def get_collection_item(self, collection_item_id: str) -> CollectionItem:
+        results = await self.collection_item_database.find({"collection_item_id": collection_item_id})
+        if not results:
+            raise DocumentNotFoundError(f"CollectionItem with collection_item_id {collection_item_id} not found")
+        return results[0]
+
+    async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        return await self.collection_item_database.find(filters or {})
+
+    async def resolve_collection_item(self, collection_item_id: str) -> ResolvedCollectionItem:
+        collection_item = await self.get_collection_item(collection_item_id)
+        collection = await self.get_collection(collection_item.collection_id)
+        asset = await self.get_asset(collection_item.asset_id)
+        return ResolvedCollectionItem(
+            collection_item=collection_item,
+            collection=collection,
+            asset=asset,
+        )
+
+    async def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem:
+        collection_item = await self.get_collection_item(collection_item_id)
+        if "collection_id" in changes and changes["collection_id"] is not None:
+            await self.get_collection(changes["collection_id"])
+        if "asset_id" in changes and changes["asset_id"] is not None:
+            await self.get_asset(changes["asset_id"])
+        for key, value in changes.items():
+            setattr(collection_item, key, value)
+        collection_item.updated_at = self._utc_now()
+        return await self.collection_item_database.update(collection_item)
+
+    async def delete_collection_item(self, collection_item_id: str) -> None:
+        collection_item = await self.get_collection_item(collection_item_id)
+        await self.collection_item_database.delete(collection_item.id)
+
+    async def create_asset_retention(
+        self,
+        *,
+        asset_id: str,
+        owner_type: str,
+        owner_id: str,
+        retention_policy: str = "retain",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> AssetRetention:
+        await self.get_asset(asset_id)
+        asset_retention = self._build_document(
+            AssetRetention,
+            asset_id=asset_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            retention_policy=retention_policy,
+            metadata=metadata or {},
+            created_by=created_by,
+            updated_at=self._utc_now(),
+        )
+        return await self.asset_retention_database.insert(asset_retention)
+
+    async def get_asset_retention(self, asset_retention_id: str) -> AssetRetention:
+        results = await self.asset_retention_database.find({"asset_retention_id": asset_retention_id})
+        if not results:
+            raise DocumentNotFoundError(f"AssetRetention with asset_retention_id {asset_retention_id} not found")
+        return results[0]
+
+    async def list_asset_retentions(self, filters: dict[str, Any] | None = None) -> list[AssetRetention]:
+        return await self.asset_retention_database.find(filters or {})
+
+    async def update_asset_retention(self, asset_retention_id: str, **changes: Any) -> AssetRetention:
+        asset_retention = await self.get_asset_retention(asset_retention_id)
+        if "asset_id" in changes and changes["asset_id"] is not None:
+            await self.get_asset(changes["asset_id"])
+        for key, value in changes.items():
+            setattr(asset_retention, key, value)
+        asset_retention.updated_at = self._utc_now()
+        return await self.asset_retention_database.update(asset_retention)
+
+    async def delete_asset_retention(self, asset_retention_id: str) -> None:
+        asset_retention = await self.get_asset_retention(asset_retention_id)
+        await self.asset_retention_database.delete(asset_retention.id)
 
     async def create_annotation_set(
         self,
