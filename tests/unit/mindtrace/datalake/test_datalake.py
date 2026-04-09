@@ -147,6 +147,7 @@ class TestDatalakeSyncFacade:
             "create_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "get_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "list_annotation_sets": [],
+            "update_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "add_annotation_records": [],
             "get_annotation_record": AnnotationRecord(
                 kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -349,6 +350,7 @@ class TestDatalakeSyncFacade:
         )
         assert isinstance(datalake.get_annotation_set("set_1"), AnnotationSet)
         assert datalake.list_annotation_sets() == []
+        assert isinstance(datalake.update_annotation_set("set_1", status="active"), AnnotationSet)
         assert datalake.add_annotation_records("set_1", []) == []
         assert isinstance(datalake.get_annotation_record("ann_1"), AnnotationRecord)
         assert datalake.list_annotation_records() == []

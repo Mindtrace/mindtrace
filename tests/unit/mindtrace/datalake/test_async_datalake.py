@@ -6,7 +6,11 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
-from mindtrace.datalake.async_datalake import AnnotationSchemaValidationError, DuplicateAnnotationSchemaError
+from mindtrace.datalake.async_datalake import (
+    AnnotationSchemaInUseError,
+    AnnotationSchemaValidationError,
+    DuplicateAnnotationSchemaError,
+)
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -727,3 +731,54 @@ class TestAsyncDatalakeUnit:
         assert len(errors) == 1
         assert isinstance(errors[0], DuplicateAnnotationSchemaError)
         assert async_datalake.annotation_schema_database.insert.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_delete_annotation_schema_rejects_referenced_schema(self, async_datalake):
+        schema = AnnotationSchema(
+            name="demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        schema.id = "db-schema"
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        async_datalake.annotation_set_database.find = AsyncMock(
+            return_value=[
+                AnnotationSet(
+                    name="gt",
+                    purpose="ground_truth",
+                    source_type="human",
+                    annotation_schema_id=schema.annotation_schema_id,
+                )
+            ]
+        )
+
+        with pytest.raises(AnnotationSchemaInUseError, match="still referenced"):
+            await async_datalake.delete_annotation_schema(schema.annotation_schema_id)
+
+        async_datalake.annotation_schema_database.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_update_annotation_set_validates_schema_reference(self, async_datalake):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        schema = AnnotationSchema(
+            name="demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        async_datalake.annotation_set_database.update = AsyncMock(side_effect=lambda obj: obj)
+
+        updated = await async_datalake.update_annotation_set(
+            annotation_set.annotation_set_id,
+            annotation_schema_id=schema.annotation_schema_id,
+            status="active",
+        )
+
+        async_datalake.get_annotation_schema.assert_awaited_once_with(schema.annotation_schema_id)
+        assert updated.annotation_schema_id == schema.annotation_schema_id
+        assert updated.status == "active"

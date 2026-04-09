@@ -40,6 +40,10 @@ class DuplicateAnnotationSchemaError(ValueError):
     """Raised when an annotation schema name/version pair already exists."""
 
 
+class AnnotationSchemaInUseError(ValueError):
+    """Raised when attempting to delete an annotation schema still referenced by a set."""
+
+
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     digest = hashlib.sha1(f"{mongo_db_uri}|{mongo_db_name}".encode()).hexdigest()[:12]
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
@@ -512,6 +516,11 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_annotation_schema(self, annotation_schema_id: str) -> None:
         schema = await self.get_annotation_schema(annotation_schema_id)
+        referencing_sets = await self.annotation_set_database.find({"annotation_schema_id": annotation_schema_id})
+        if referencing_sets:
+            raise AnnotationSchemaInUseError(
+                f"Annotation schema {annotation_schema_id} is still referenced by {len(referencing_sets)} annotation set(s)"
+            )
         await self.annotation_schema_database.delete(schema.id)
 
     def _validate_annotation_kind_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
@@ -650,6 +659,15 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return await self.annotation_set_database.find(filters or {})
+
+    async def update_annotation_set(self, annotation_set_id: str, **changes: Any) -> AnnotationSet:
+        annotation_set = await self.get_annotation_set(annotation_set_id)
+        if "annotation_schema_id" in changes and changes["annotation_schema_id"] is not None:
+            await self.get_annotation_schema(changes["annotation_schema_id"])
+        for key, value in changes.items():
+            setattr(annotation_set, key, value)
+        annotation_set.updated_at = self._utc_now()
+        return await self.annotation_set_database.update(annotation_set)
 
     async def add_annotation_records(
         self,
