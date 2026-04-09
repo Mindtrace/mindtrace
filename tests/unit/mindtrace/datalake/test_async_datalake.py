@@ -791,3 +791,231 @@ class TestAsyncDatalakeUnit:
         async_datalake.get_annotation_schema.assert_awaited_once_with(schema.annotation_schema_id)
         assert updated.annotation_schema_id == schema.annotation_schema_id
         assert updated.status == "active"
+
+    @pytest.mark.asyncio
+    async def test_annotation_schema_lookup_and_duplicate_paths_raise_expected_errors(self, async_datalake):
+        existing_schema = AnnotationSchema(
+            name="demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        async_datalake.annotation_schema_database.find = AsyncMock(return_value=[existing_schema])
+
+        with pytest.raises(DuplicateAnnotationSchemaError, match="demo@1.0.0"):
+            await async_datalake.create_annotation_schema(
+                name="demo",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+            )
+
+        async_datalake.annotation_schema_database.find = AsyncMock(return_value=[])
+        with pytest.raises(DocumentNotFoundError, match="annotation_schema_id missing"):
+            await async_datalake.get_annotation_schema("missing")
+        with pytest.raises(DocumentNotFoundError, match="AnnotationSchema demo@missing not found"):
+            await async_datalake.get_annotation_schema_by_name_version("demo", "missing")
+
+    def test_annotation_schema_validation_helpers_cover_remaining_error_branches(self, async_datalake):
+        classification_schema = AnnotationSchema(
+            name="classification-demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat", id=1)],
+        )
+        classification_record = AnnotationRecord(
+            kind="classification",
+            label="cat",
+            label_id=1,
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
+        )
+        async_datalake._validate_annotation_geometry_for_schema(classification_record, classification_schema)
+
+        with pytest.raises(AnnotationSchemaValidationError, match="kind 'bbox' is not allowed"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="bbox",
+                    label="cat",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                ),
+                classification_schema,
+            )
+
+        with pytest.raises(AnnotationSchemaValidationError, match="label_id 99 does not match"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="classification",
+                    label="cat",
+                    label_id=99,
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                ),
+                classification_schema,
+            )
+
+        detection_schema = AnnotationSchema(
+            name="bbox-demo",
+            version="1.0.0",
+            task_type="detection",
+            allowed_annotation_kinds=["bbox"],
+            labels=[AnnotationLabelDefinition(name="dent")],
+        )
+        with pytest.raises(AnnotationSchemaValidationError, match="missing required geometry fields"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="bbox",
+                    label="dent",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={"x": 1, "y": 2, "width": 3},
+                ),
+                detection_schema,
+            )
+
+        segmentation_schema = AnnotationSchema(
+            name="mask-demo",
+            version="1.0.0",
+            task_type="segmentation",
+            allowed_annotation_kinds=["mask"],
+            labels=[AnnotationLabelDefinition(name="dent")],
+        )
+        with pytest.raises(AnnotationSchemaValidationError, match="must include non-empty geometry"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="mask",
+                    label="dent",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                ),
+                segmentation_schema,
+            )
+        with pytest.raises(AnnotationSchemaValidationError, match="must include at least one of"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="mask",
+                    label="dent",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={"x": 1},
+                ),
+                segmentation_schema,
+            )
+
+        attribute_schema = AnnotationSchema(
+            name="attribute-demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+            required_attributes=["quality"],
+            optional_attributes=["reviewed"],
+        )
+        with pytest.raises(AnnotationSchemaValidationError, match="missing required fields: quality"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="classification",
+                    label="cat",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                    attributes={},
+                ),
+                attribute_schema,
+            )
+        with pytest.raises(AnnotationSchemaValidationError, match="not allowed by schema 'attribute-demo@1.0.0': extra"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="classification",
+                    label="cat",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                    attributes={"quality": "high", "extra": True},
+                ),
+                attribute_schema,
+            )
+        with pytest.raises(AnnotationSchemaValidationError, match="scores are not allowed"):
+            async_datalake._validate_annotation_record_against_schema(
+                AnnotationRecord(
+                    kind="classification",
+                    label="cat",
+                    source={"type": "human", "name": "review-ui"},
+                    geometry={},
+                    score=0.5,
+                ),
+                classification_schema,
+            )
+
+    @pytest.mark.asyncio
+    async def test_annotation_record_rollbacks_handle_delete_errors_and_update_failures(self, async_datalake):
+        record_without_id = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        inserted_record.id = "db-inserted"
+        async_datalake.annotation_record_database.delete = AsyncMock(side_effect=RuntimeError("delete failed"))
+        await async_datalake._rollback_inserted_annotation_records([record_without_id, inserted_record])
+        async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-inserted")
+
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        successful_insert = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        successful_insert.id = "db-success"
+        successful_insert.annotation_id = "annotation_success"
+        async_datalake.annotation_record_database.insert = AsyncMock(
+            side_effect=[successful_insert, RuntimeError("insert failed")]
+        )
+        async_datalake.annotation_record_database.delete = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="insert failed"):
+            await async_datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "dent",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    },
+                    {
+                        "kind": "bbox",
+                        "label": "dent",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
+                    },
+                ],
+            )
+        async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
+
+        async_datalake.annotation_record_database.delete.reset_mock()
+        async_datalake.annotation_record_database.insert = AsyncMock(return_value=successful_insert)
+        async_datalake.annotation_set_database.update = AsyncMock(side_effect=RuntimeError("set update failed"))
+
+        with pytest.raises(RuntimeError, match="set update failed"):
+            await async_datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "dent",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    }
+                ],
+            )
+
+        assert annotation_set.annotation_record_ids == []
+        async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
