@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -34,6 +34,10 @@ DocumentT = TypeVar("DocumentT")
 
 class AnnotationSchemaValidationError(ValueError):
     """Raised when an annotation record violates a schema-bound set contract."""
+
+
+class DuplicateAnnotationSchemaError(ValueError):
+    """Raised when an annotation schema name/version pair already exists."""
 
 
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
@@ -454,7 +458,7 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSchema:
         existing = await self.annotation_schema_database.find({"name": name, "version": version})
         if existing:
-            raise ValueError(f"Annotation schema already exists: {name}@{version}")
+            raise DuplicateAnnotationSchemaError(f"Annotation schema already exists: {name}@{version}")
         normalized_labels = [
             label if isinstance(label, AnnotationLabelDefinition) else AnnotationLabelDefinition(**label)
             for label in (labels or [])
@@ -474,7 +478,10 @@ class AsyncDatalake(Mindtrace):
             created_by=created_by,
             updated_at=self._utc_now(),
         )
-        return await self.annotation_schema_database.insert(schema)
+        try:
+            return await self.annotation_schema_database.insert(schema)
+        except DuplicateInsertError as exc:
+            raise DuplicateAnnotationSchemaError(f"Annotation schema already exists: {name}@{version}") from exc
 
     async def get_annotation_schema(self, annotation_schema_id: str) -> AnnotationSchema:
         results = await self.annotation_schema_database.find({"annotation_schema_id": annotation_schema_id})

@@ -1,11 +1,12 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
-from mindtrace.datalake.async_datalake import AnnotationSchemaValidationError
+from mindtrace.datalake.async_datalake import AnnotationSchemaValidationError, DuplicateAnnotationSchemaError
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -675,3 +676,54 @@ class TestAsyncDatalakeUnit:
         assert async_datalake.annotation_record_database.insert.await_count == 0
         async_datalake.annotation_set_database.update.assert_not_awaited()
         assert annotation_set.annotation_record_ids == []
+
+    @pytest.mark.asyncio
+    async def test_create_annotation_schema_prevents_concurrent_duplicate_name_version(self, async_datalake):
+        race_gate = asyncio.Event()
+        lookup_count = 0
+        insert_count = 0
+
+        async def racing_find(filters):
+            nonlocal lookup_count
+            assert filters == {"name": "demo", "version": "1.0.0"}
+            lookup_count += 1
+            if lookup_count == 2:
+                race_gate.set()
+            await race_gate.wait()
+            return []
+
+        async def racing_insert(obj):
+            nonlocal insert_count
+            insert_count += 1
+            if insert_count == 2:
+                raise DuplicateInsertError("Duplicate key error")
+            return obj
+
+        async_datalake.annotation_schema_database.find = AsyncMock(side_effect=racing_find)
+        async_datalake.annotation_schema_database.insert = AsyncMock(side_effect=racing_insert)
+
+        results = await asyncio.gather(
+            async_datalake.create_annotation_schema(
+                name="demo",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[{"name": "cat"}],
+            ),
+            async_datalake.create_annotation_schema(
+                name="demo",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[{"name": "cat"}],
+            ),
+            return_exceptions=True,
+        )
+
+        successes = [result for result in results if isinstance(result, AnnotationSchema)]
+        errors = [result for result in results if isinstance(result, Exception)]
+
+        assert len(successes) == 1
+        assert len(errors) == 1
+        assert isinstance(errors[0], DuplicateAnnotationSchemaError)
+        assert async_datalake.annotation_schema_database.insert.await_count == 2
