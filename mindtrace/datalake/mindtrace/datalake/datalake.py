@@ -398,6 +398,9 @@ class Datalake(Mindtrace):
     def list_annotation_sets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_sets(filters))
 
+    def update_annotation_set(self, annotation_set_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_annotation_set(annotation_set_id, **changes))
+
     def add_annotation_records(self, annotation_set_id: str, annotations):
         return self._submit_coro(self._backend.add_annotation_records(annotation_set_id, annotations))
 

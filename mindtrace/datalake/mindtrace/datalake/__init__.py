@@ -1,4 +1,4 @@
-from .async_datalake import AsyncDatalake
+from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
 from .types import (
     AnnotationLabelDefinition,
@@ -25,6 +25,7 @@ __all__ = [
     "AnnotationSchema",
     "AnnotationSet",
     "AnnotationSource",
+    "AnnotationSchemaInUseError",
     "Asset",
     "AssetRetention",
     "AsyncDatalake",
@@ -33,6 +34,7 @@ __all__ = [
     "DatasetVersion",
     "Datalake",
     "Datum",
+    "DuplicateAnnotationSchemaError",
     "ResolvedCollectionItem",
     "ResolvedDatasetVersion",
     "ResolvedDatum",

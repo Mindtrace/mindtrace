@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -34,6 +34,14 @@ DocumentT = TypeVar("DocumentT")
 
 class AnnotationSchemaValidationError(ValueError):
     """Raised when an annotation record violates a schema-bound set contract."""
+
+
+class DuplicateAnnotationSchemaError(ValueError):
+    """Raised when an annotation schema name/version pair already exists."""
+
+
+class AnnotationSchemaInUseError(ValueError):
+    """Raised when attempting to delete an annotation schema still referenced by a set."""
 
 
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
@@ -436,7 +444,6 @@ class AsyncDatalake(Mindtrace):
         asset_retention = await self.get_asset_retention(asset_retention_id)
         await self.asset_retention_database.delete(asset_retention.id)
 
-
     async def create_annotation_schema(
         self,
         *,
@@ -454,7 +461,7 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSchema:
         existing = await self.annotation_schema_database.find({"name": name, "version": version})
         if existing:
-            raise ValueError(f"Annotation schema already exists: {name}@{version}")
+            raise DuplicateAnnotationSchemaError(f"Annotation schema already exists: {name}@{version}")
         normalized_labels = [
             label if isinstance(label, AnnotationLabelDefinition) else AnnotationLabelDefinition(**label)
             for label in (labels or [])
@@ -474,7 +481,10 @@ class AsyncDatalake(Mindtrace):
             created_by=created_by,
             updated_at=self._utc_now(),
         )
-        return await self.annotation_schema_database.insert(schema)
+        try:
+            return await self.annotation_schema_database.insert(schema)
+        except DuplicateInsertError as exc:
+            raise DuplicateAnnotationSchemaError(f"Annotation schema already exists: {name}@{version}") from exc
 
     async def get_annotation_schema(self, annotation_schema_id: str) -> AnnotationSchema:
         results = await self.annotation_schema_database.find({"annotation_schema_id": annotation_schema_id})
@@ -505,6 +515,11 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_annotation_schema(self, annotation_schema_id: str) -> None:
         schema = await self.get_annotation_schema(annotation_schema_id)
+        referencing_sets = await self.annotation_set_database.find({"annotation_schema_id": annotation_schema_id})
+        if referencing_sets:
+            raise AnnotationSchemaInUseError(
+                f"Annotation schema {annotation_schema_id} is still referenced by {len(referencing_sets)} annotation set(s)"
+            )
         await self.annotation_schema_database.delete(schema.id)
 
     def _validate_annotation_kind_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
@@ -571,6 +586,36 @@ class AsyncDatalake(Mindtrace):
                 f"Annotation scores are not allowed by schema '{schema.name}@{schema.version}'"
             )
 
+    def _coerce_annotation_record(self, annotation: AnnotationRecord | dict[str, Any]) -> AnnotationRecord:
+        if isinstance(annotation, AnnotationRecord):
+            annotation.updated_at = self._utc_now()
+            return annotation
+
+        source = annotation.get("source")
+        if isinstance(source, dict):
+            source = AnnotationSource(**source)
+        return self._build_document(
+            AnnotationRecord,
+            subject=annotation.get("subject"),
+            kind=annotation["kind"],
+            label=annotation["label"],
+            label_id=annotation.get("label_id"),
+            score=annotation.get("score"),
+            source=source,
+            geometry=annotation.get("geometry", {}),
+            attributes=annotation.get("attributes", {}),
+            updated_at=self._utc_now(),
+        )
+
+    async def _rollback_inserted_annotation_records(self, inserted_records: list[AnnotationRecord]) -> None:
+        for record in reversed(inserted_records):
+            if getattr(record, "id", None) is None:
+                continue
+            try:
+                await self.annotation_record_database.delete(record.id)
+            except Exception:
+                pass
+
     async def create_annotation_set(
         self,
         *,
@@ -614,6 +659,15 @@ class AsyncDatalake(Mindtrace):
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return await self.annotation_set_database.find(filters or {})
 
+    async def update_annotation_set(self, annotation_set_id: str, **changes: Any) -> AnnotationSet:
+        annotation_set = await self.get_annotation_set(annotation_set_id)
+        if "annotation_schema_id" in changes and changes["annotation_schema_id"] is not None:
+            await self.get_annotation_schema(changes["annotation_schema_id"])
+        for key, value in changes.items():
+            setattr(annotation_set, key, value)
+        annotation_set.updated_at = self._utc_now()
+        return await self.annotation_set_database.update(annotation_set)
+
     async def add_annotation_records(
         self,
         annotation_set_id: str,
@@ -623,35 +677,35 @@ class AsyncDatalake(Mindtrace):
         schema = None
         if annotation_set.annotation_schema_id is not None:
             schema = await self.get_annotation_schema(annotation_set.annotation_schema_id)
-        inserted_records: list[AnnotationRecord] = []
-        for annotation in annotations:
-            if isinstance(annotation, AnnotationRecord):
-                record = annotation
-                record.updated_at = self._utc_now()
-            else:
-                source = annotation.get("source")
-                if isinstance(source, dict):
-                    source = AnnotationSource(**source)
-                record = self._build_document(
-                    AnnotationRecord,
-                    subject=annotation.get("subject"),
-                    kind=annotation["kind"],
-                    label=annotation["label"],
-                    label_id=annotation.get("label_id"),
-                    score=annotation.get("score"),
-                    source=source,
-                    geometry=annotation.get("geometry", {}),
-                    attributes=annotation.get("attributes", {}),
-                    updated_at=self._utc_now(),
-                )
+
+        candidate_records = [self._coerce_annotation_record(annotation) for annotation in annotations]
+        for record in candidate_records:
             if schema is not None:
                 self._validate_annotation_record_against_schema(record, schema)
-            inserted = await self.annotation_record_database.insert(record)
-            inserted_records.append(inserted)
-            if inserted.annotation_id not in annotation_set.annotation_record_ids:
-                annotation_set.annotation_record_ids.append(inserted.annotation_id)
+
+        inserted_records: list[AnnotationRecord] = []
+        try:
+            for record in candidate_records:
+                inserted = await self.annotation_record_database.insert(record)
+                inserted_records.append(inserted)
+        except Exception:
+            await self._rollback_inserted_annotation_records(inserted_records)
+            raise
+
+        previous_record_ids = list(annotation_set.annotation_record_ids)
+        next_record_ids = list(previous_record_ids)
+        for inserted in inserted_records:
+            if inserted.annotation_id not in next_record_ids:
+                next_record_ids.append(inserted.annotation_id)
+
+        annotation_set.annotation_record_ids = next_record_ids
         annotation_set.updated_at = self._utc_now()
-        await self.annotation_set_database.update(annotation_set)
+        try:
+            await self.annotation_set_database.update(annotation_set)
+        except Exception:
+            annotation_set.annotation_record_ids = previous_record_ids
+            await self._rollback_inserted_annotation_records(inserted_records)
+            raise
         return inserted_records
 
     async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:

@@ -3,7 +3,9 @@ from unittest.mock import patch
 from beanie.exceptions import CollectionWasNotInitialized
 
 from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     AnnotationSource,
     Asset,
@@ -24,6 +26,14 @@ def test_types_string_representations():
     subject = SubjectRef(kind="asset", id="asset_1")
     storage_ref = StorageRef(mount="local", name="hopper.png", version="1.0.0")
     source = AnnotationSource(type="machine", name="detector", version="1.0.0")
+    label = AnnotationLabelDefinition(name="hopper", id=7)
+    schema = AnnotationSchema(
+        name="demo-schema",
+        version="1.0.0",
+        task_type="classification",
+        allowed_annotation_kinds=["classification"],
+        labels=[label],
+    )
 
     asset = Asset(kind="image", media_type="image/png", storage_ref=storage_ref, subject=subject)
     record = AnnotationRecord(kind="bbox", label="hopper", source=source, geometry={})
@@ -49,6 +59,8 @@ def test_types_string_representations():
     assert str(subject) == "SubjectRef(kind=asset, id=asset_1)"
     assert str(storage_ref) == f"StorageRef({storage_ref.qualified_key})"
     assert str(source) == "AnnotationSource(type=machine, name=detector, version=1.0.0)"
+    assert str(label) == "AnnotationLabelDefinition(name=hopper, id=7)"
+    assert "AnnotationSchema(annotation_schema_id=" in str(schema)
     assert "Asset(asset_id=" in str(asset)
     assert "AnnotationRecord(annotation_id=" in str(record)
     assert "AnnotationSet(annotation_set_id=" in str(annotation_set)
