@@ -10,7 +10,9 @@ from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     AnnotationSource,
     Asset,
@@ -28,6 +30,10 @@ from mindtrace.datalake.types import (
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
 
 DocumentT = TypeVar("DocumentT")
+
+
+class AnnotationSchemaValidationError(ValueError):
+    """Raised when an annotation record violates a schema-bound set contract."""
 
 
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
@@ -100,6 +106,11 @@ class AsyncDatalake(Mindtrace):
             db_name=mongo_db_name,
             db_uri=mongo_db_uri,
         )
+        self.annotation_schema_database = MongoMindtraceODM(
+            model_cls=AnnotationSchema,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
         self.annotation_set_database = MongoMindtraceODM(
             model_cls=AnnotationSet,
             db_name=mongo_db_name,
@@ -118,6 +129,7 @@ class AsyncDatalake(Mindtrace):
         await self.collection_item_database.initialize()
         await self.asset_retention_database.initialize()
         await self.annotation_record_database.initialize()
+        await self.annotation_schema_database.initialize()
         await self.annotation_set_database.initialize()
         await self.datum_database.initialize()
         await self.dataset_version_database.initialize()
@@ -170,6 +182,7 @@ class AsyncDatalake(Mindtrace):
         collection_count = len(await self.list_collections())
         collection_item_count = len(await self.list_collection_items())
         asset_retention_count = len(await self.list_asset_retentions())
+        annotation_schema_count = len(await self.list_annotation_schemas())
         annotation_set_count = len(await self.list_annotation_sets())
         annotation_record_count = len(await self.list_annotation_records())
         datum_count = len(await self.list_datums())
@@ -177,8 +190,8 @@ class AsyncDatalake(Mindtrace):
         return (
             f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount}, "
             f"assets={asset_count}, collections={collection_count}, collection_items={collection_item_count}, "
-            f"asset_retentions={asset_retention_count}, annotation_sets={annotation_set_count}, "
-            f"annotation_records={annotation_record_count}, datums={datum_count}, "
+            f"asset_retentions={asset_retention_count}, annotation_schemas={annotation_schema_count}, "
+            f"annotation_sets={annotation_set_count}, annotation_records={annotation_record_count}, datums={datum_count}, "
             f"dataset_versions={dataset_version_count})"
         )
 
@@ -423,6 +436,141 @@ class AsyncDatalake(Mindtrace):
         asset_retention = await self.get_asset_retention(asset_retention_id)
         await self.asset_retention_database.delete(asset_retention.id)
 
+
+    async def create_annotation_schema(
+        self,
+        *,
+        name: str,
+        version: str,
+        task_type: str,
+        allowed_annotation_kinds: list[str],
+        labels: list[AnnotationLabelDefinition | dict[str, Any]] | None = None,
+        allow_scores: bool = False,
+        required_attributes: list[str] | None = None,
+        optional_attributes: list[str] | None = None,
+        allow_additional_attributes: bool = False,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> AnnotationSchema:
+        existing = await self.annotation_schema_database.find({"name": name, "version": version})
+        if existing:
+            raise ValueError(f"Annotation schema already exists: {name}@{version}")
+        normalized_labels = [
+            label if isinstance(label, AnnotationLabelDefinition) else AnnotationLabelDefinition(**label)
+            for label in (labels or [])
+        ]
+        schema = self._build_document(
+            AnnotationSchema,
+            name=name,
+            version=version,
+            task_type=task_type,
+            allowed_annotation_kinds=allowed_annotation_kinds,
+            labels=normalized_labels,
+            allow_scores=allow_scores,
+            required_attributes=required_attributes or [],
+            optional_attributes=optional_attributes or [],
+            allow_additional_attributes=allow_additional_attributes,
+            metadata=metadata or {},
+            created_by=created_by,
+            updated_at=self._utc_now(),
+        )
+        return await self.annotation_schema_database.insert(schema)
+
+    async def get_annotation_schema(self, annotation_schema_id: str) -> AnnotationSchema:
+        results = await self.annotation_schema_database.find({"annotation_schema_id": annotation_schema_id})
+        if not results:
+            raise DocumentNotFoundError(f"AnnotationSchema with annotation_schema_id {annotation_schema_id} not found")
+        return results[0]
+
+    async def get_annotation_schema_by_name_version(self, name: str, version: str) -> AnnotationSchema:
+        results = await self.annotation_schema_database.find({"name": name, "version": version})
+        if not results:
+            raise DocumentNotFoundError(f"AnnotationSchema {name}@{version} not found")
+        return results[0]
+
+    async def list_annotation_schemas(self, filters: dict[str, Any] | None = None) -> list[AnnotationSchema]:
+        return await self.annotation_schema_database.find(filters or {})
+
+    async def update_annotation_schema(self, annotation_schema_id: str, **changes: Any) -> AnnotationSchema:
+        schema = await self.get_annotation_schema(annotation_schema_id)
+        if "labels" in changes and changes["labels"] is not None:
+            changes["labels"] = [
+                label if isinstance(label, AnnotationLabelDefinition) else AnnotationLabelDefinition(**label)
+                for label in changes["labels"]
+            ]
+        for key, value in changes.items():
+            setattr(schema, key, value)
+        schema.updated_at = self._utc_now()
+        return await self.annotation_schema_database.update(schema)
+
+    async def delete_annotation_schema(self, annotation_schema_id: str) -> None:
+        schema = await self.get_annotation_schema(annotation_schema_id)
+        await self.annotation_schema_database.delete(schema.id)
+
+    def _validate_annotation_kind_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
+        if record.kind not in schema.allowed_annotation_kinds:
+            raise AnnotationSchemaValidationError(
+                f"Annotation kind '{record.kind}' is not allowed by schema '{schema.name}@{schema.version}'"
+            )
+
+    def _validate_annotation_label_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
+        labels_by_name = {label.name: label for label in schema.labels}
+        if record.label not in labels_by_name:
+            raise AnnotationSchemaValidationError(
+                f"Annotation label '{record.label}' is not defined in schema '{schema.name}@{schema.version}'"
+            )
+        label_definition = labels_by_name[record.label]
+        if record.label_id is not None and label_definition.id is not None and record.label_id != label_definition.id:
+            raise AnnotationSchemaValidationError(
+                f"Annotation label_id {record.label_id} does not match schema label id {label_definition.id} for label '{record.label}'"
+            )
+
+    def _validate_annotation_geometry_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
+        geometry = record.geometry or {}
+        if schema.task_type == "classification":
+            if geometry:
+                raise AnnotationSchemaValidationError("Classification annotations must not include geometry")
+            return
+        if schema.task_type == "detection":
+            missing = [field for field in ("x", "y", "width", "height") if field not in geometry]
+            if missing:
+                raise AnnotationSchemaValidationError(
+                    f"BBox annotation is missing required geometry fields: {', '.join(missing)}"
+                )
+            return
+        if schema.task_type == "segmentation":
+            if not geometry:
+                raise AnnotationSchemaValidationError("Mask annotation must include non-empty geometry")
+            if not any(key in geometry for key in ("storage_ref", "mask_asset_id", "encoding")):
+                raise AnnotationSchemaValidationError(
+                    "Mask annotation geometry must include at least one of: storage_ref, mask_asset_id, encoding"
+                )
+
+    def _validate_annotation_attributes_for_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
+        attributes = record.attributes or {}
+        missing_required = [name for name in schema.required_attributes if name not in attributes]
+        if missing_required:
+            raise AnnotationSchemaValidationError(
+                f"Annotation attributes missing required fields: {', '.join(missing_required)}"
+            )
+        if not schema.allow_additional_attributes:
+            allowed_attributes = set(schema.required_attributes) | set(schema.optional_attributes)
+            unknown = sorted(set(attributes) - allowed_attributes)
+            if unknown:
+                raise AnnotationSchemaValidationError(
+                    f"Annotation attributes not allowed by schema '{schema.name}@{schema.version}': {', '.join(unknown)}"
+                )
+
+    def _validate_annotation_record_against_schema(self, record: AnnotationRecord, schema: AnnotationSchema) -> None:
+        self._validate_annotation_kind_for_schema(record, schema)
+        self._validate_annotation_label_for_schema(record, schema)
+        self._validate_annotation_geometry_for_schema(record, schema)
+        self._validate_annotation_attributes_for_schema(record, schema)
+        if record.score is not None and not schema.allow_scores:
+            raise AnnotationSchemaValidationError(
+                f"Annotation scores are not allowed by schema '{schema.name}@{schema.version}'"
+            )
+
     async def create_annotation_set(
         self,
         *,
@@ -433,13 +581,17 @@ class AsyncDatalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         created_by: str | None = None,
         datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
     ) -> AnnotationSet:
+        if annotation_schema_id is not None:
+            await self.get_annotation_schema(annotation_schema_id)
         annotation_set = self._build_document(
             AnnotationSet,
             name=name,
             purpose=purpose,
             source_type=source_type,
             status=status,
+            annotation_schema_id=annotation_schema_id,
             metadata=metadata or {},
             created_by=created_by,
             updated_at=self._utc_now(),
@@ -468,6 +620,9 @@ class AsyncDatalake(Mindtrace):
         annotations: Iterable[AnnotationRecord | dict[str, Any]],
     ) -> list[AnnotationRecord]:
         annotation_set = await self.get_annotation_set(annotation_set_id)
+        schema = None
+        if annotation_set.annotation_schema_id is not None:
+            schema = await self.get_annotation_schema(annotation_set.annotation_schema_id)
         inserted_records: list[AnnotationRecord] = []
         for annotation in annotations:
             if isinstance(annotation, AnnotationRecord):
@@ -489,6 +644,8 @@ class AsyncDatalake(Mindtrace):
                     attributes=annotation.get("attributes", {}),
                     updated_at=self._utc_now(),
                 )
+            if schema is not None:
+                self._validate_annotation_record_against_schema(record, schema)
             inserted = await self.annotation_record_database.insert(record)
             inserted_records.append(inserted)
             if inserted.annotation_id not in annotation_set.annotation_record_ids:

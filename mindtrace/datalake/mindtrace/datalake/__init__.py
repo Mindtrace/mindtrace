@@ -1,7 +1,9 @@
 from .async_datalake import AsyncDatalake
 from .datalake import Datalake
 from .types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     AnnotationSource,
     Asset,
@@ -18,7 +20,9 @@ from .types import (
 )
 
 __all__ = [
+    "AnnotationLabelDefinition",
     "AnnotationRecord",
+    "AnnotationSchema",
     "AnnotationSet",
     "AnnotationSource",
     "Asset",

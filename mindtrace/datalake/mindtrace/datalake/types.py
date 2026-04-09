@@ -11,6 +11,22 @@ from pydantic import BaseModel, Field, model_validator
 from mindtrace.database import MindtraceDocument
 
 
+AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
+AnnotationKind = Literal[
+    "classification",
+    "regression",
+    "bbox",
+    "rotated_bbox",
+    "polygon",
+    "polyline",
+    "ellipse",
+    "keypoint",
+    "mask",
+    "instance_mask",
+    "pointcloud_segmentation",
+]
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -70,6 +86,19 @@ class AnnotationSource(BaseModel):
         return f"AnnotationSource(type={self.type}, name={self.name}{version})"
 
 
+class AnnotationLabelDefinition(BaseModel):
+    """Explicit label contract for schema-governed annotation sets."""
+
+    name: str
+    id: int | None = None
+    display_name: str | None = None
+    color: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def __str__(self) -> str:
+        return f"AnnotationLabelDefinition(name={self.name}, id={self.id})"
+
+
 class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
 
@@ -113,19 +142,7 @@ class AnnotationRecord(DatalakeDocument):
 
     annotation_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation"))
     subject: SubjectRef | None = None
-    kind: Literal[
-        "classification",
-        "regression",
-        "bbox",
-        "rotated_bbox",
-        "polygon",
-        "polyline",
-        "ellipse",
-        "keypoint",
-        "mask",
-        "instance_mask",
-        "pointcloud_segmentation",
-    ]
+    kind: AnnotationKind
     label: str
     label_id: int | None = None
     score: float | None = None
@@ -147,6 +164,38 @@ class AnnotationRecord(DatalakeDocument):
         ]
 
 
+class AnnotationSchema(DatalakeDocument):
+    """Canonical annotation contract applied to schema-bound annotation sets."""
+
+    def __str__(self) -> str:
+        return (
+            f"AnnotationSchema(annotation_schema_id={self.annotation_schema_id}, name={self.name}, "
+            f"version={self.version}, task_type={self.task_type})"
+        )
+
+    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_schema"))
+    name: str
+    version: str
+    task_type: AnnotationTaskType
+    allowed_annotation_kinds: list[AnnotationKind] = Field(default_factory=list)
+    labels: list[AnnotationLabelDefinition] = Field(default_factory=list)
+    allow_scores: bool = False
+    required_attributes: list[str] = Field(default_factory=list)
+    optional_attributes: list[str] = Field(default_factory=list)
+    allow_additional_attributes: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_annotation_schemas"
+        indexes = [
+            "task_type",
+            [("name", 1), ("version", 1)],
+        ]
+
+
 class AnnotationSet(DatalakeDocument):
     """Grouping/provenance boundary for annotation records.
 
@@ -155,13 +204,17 @@ class AnnotationSet(DatalakeDocument):
     """
 
     def __str__(self) -> str:
-        return f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, records={len(self.annotation_record_ids)})"
+        return (
+            f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, "
+            f"records={len(self.annotation_record_ids)})"
+        )
 
     annotation_set_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_set"))
     name: str
     purpose: Literal["ground_truth", "prediction", "review", "snapshot", "other"]
     source_type: Literal["human", "machine", "mixed"]
     status: Literal["draft", "active", "archived"] = "draft"
+    annotation_schema_id: str | None = None
     annotation_record_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -170,7 +223,7 @@ class AnnotationSet(DatalakeDocument):
 
     class Settings:
         name = "datalake_annotation_sets"
-        indexes = ["purpose", "source_type", "status"]
+        indexes = ["purpose", "source_type", "status", "annotation_schema_id"]
 
 
 class Collection(DatalakeDocument):
