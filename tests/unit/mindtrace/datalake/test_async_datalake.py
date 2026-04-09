@@ -5,8 +5,11 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AnnotationSchemaValidationError
 from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     Asset,
     AssetRetention,
@@ -106,7 +109,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 8
+        assert mock_odm.initialize.await_count == 9
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -114,7 +117,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 8
+        assert mock_odm.initialize.await_count == 9
 
     def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
         now = async_datalake._utc_now()
@@ -140,6 +143,7 @@ class TestAsyncDatalakeUnit:
         async_datalake.list_collections = AsyncMock(return_value=[MagicMock()])
         async_datalake.list_collection_items = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
         async_datalake.list_asset_retentions = AsyncMock(return_value=[MagicMock()])
+        async_datalake.list_annotation_schemas = AsyncMock(return_value=[MagicMock(), MagicMock()])
         async_datalake.list_annotation_sets = AsyncMock(return_value=[MagicMock()])
         async_datalake.list_annotation_records = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
         async_datalake.list_datums = AsyncMock(return_value=[MagicMock()])
@@ -149,7 +153,7 @@ class TestAsyncDatalakeUnit:
 
         assert summary == (
             "AsyncDatalake(database=test_db, default_mount=temp, assets=2, collections=1, collection_items=3, "
-            "asset_retentions=1, annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
+            "asset_retentions=1, annotation_schemas=2, annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
         )
 
     def test_get_mounts_returns_named_mounts(self, async_datalake):
@@ -490,3 +494,132 @@ class TestAsyncDatalakeUnit:
             metadata={"source": "demo"},
             created_by="tester",
         )
+
+
+    @pytest.mark.asyncio
+    async def test_annotation_schema_crud_async(self, async_datalake, mock_odm):
+        schema = await async_datalake.create_annotation_schema(
+            name="demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[{"name": "cat", "id": 1}],
+            created_by="tester",
+        )
+        assert isinstance(schema, AnnotationSchema)
+        schema.id = "db-schema"
+        mock_odm.find.return_value = [schema]
+        assert await async_datalake.get_annotation_schema(schema.annotation_schema_id) is schema
+        assert await async_datalake.get_annotation_schema_by_name_version("demo", "1.0.0") is schema
+        assert await async_datalake.list_annotation_schemas({"task_type": "classification"}) == [schema]
+        updated = await async_datalake.update_annotation_schema(
+            schema.annotation_schema_id,
+            labels=[{"name": "dog", "id": 2}],
+            allow_scores=True,
+        )
+        assert updated.labels[0].name == "dog"
+        assert updated.allow_scores is True
+        await async_datalake.delete_annotation_schema(schema.annotation_schema_id)
+        mock_odm.delete.assert_awaited_with("db-schema")
+
+    @pytest.mark.asyncio
+    async def test_create_annotation_set_validates_schema_reference(self, async_datalake):
+        schema = AnnotationSchema(
+            name="demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        created = await async_datalake.create_annotation_set(
+            name="gt",
+            purpose="ground_truth",
+            source_type="human",
+            annotation_schema_id=schema.annotation_schema_id,
+        )
+        assert created.annotation_schema_id == schema.annotation_schema_id
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_validates_schema_bound_sets(self, async_datalake, mock_odm):
+        schema = AnnotationSchema(
+            name="bbox-demo",
+            version="1.0.0",
+            task_type="detection",
+            allowed_annotation_kinds=["bbox"],
+            labels=[AnnotationLabelDefinition(name="dent", id=7)],
+            required_attributes=["quality"],
+            optional_attributes=["reviewed"],
+        )
+        annotation_set = AnnotationSet(
+            name="gt",
+            purpose="ground_truth",
+            source_type="human",
+            annotation_schema_id=schema.annotation_schema_id,
+        )
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            label_id=7,
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+            attributes={"quality": "high"},
+        )
+        inserted_record.annotation_id = "annotation_1"
+        mock_odm.insert = AsyncMock(side_effect=[inserted_record])
+
+        inserted = await async_datalake.add_annotation_records(
+            annotation_set.annotation_set_id,
+            [{
+                "kind": "bbox",
+                "label": "dent",
+                "label_id": 7,
+                "source": {"type": "human", "name": "review-ui"},
+                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "attributes": {"quality": "high"},
+            }],
+        )
+
+        assert inserted == [inserted_record]
+        assert annotation_set.annotation_record_ids == ["annotation_1"]
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_rejects_invalid_schema_payloads(self, async_datalake):
+        schema = AnnotationSchema(
+            name="classification-demo",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        annotation_set = AnnotationSet(
+            name="gt",
+            purpose="ground_truth",
+            source_type="human",
+            annotation_schema_id=schema.annotation_schema_id,
+        )
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+
+        with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
+            await async_datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [{
+                    "kind": "classification",
+                    "label": "dog",
+                    "source": {"type": "human", "name": "review-ui"},
+                }],
+            )
+
+        with pytest.raises(AnnotationSchemaValidationError, match="must not include geometry"):
+            await async_datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [{
+                    "kind": "classification",
+                    "label": "cat",
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {"x": 1},
+                }],
+            )

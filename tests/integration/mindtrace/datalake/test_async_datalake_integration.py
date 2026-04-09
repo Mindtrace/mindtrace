@@ -7,8 +7,9 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AnnotationSchemaValidationError
 from mindtrace.datalake.async_datalake import _default_datalake_store_path
-from mindtrace.datalake.types import AnnotationRecord, AnnotationSource, SubjectRef
+from mindtrace.datalake.types import AnnotationLabelDefinition, AnnotationRecord, AnnotationSource, SubjectRef
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind
 
 
@@ -226,3 +227,61 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
             version="0.1.0",
             manifest=[datum.datum_id],
         )
+
+
+
+@pytest.mark.asyncio
+async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatalake):
+    schema = await async_datalake.create_annotation_schema(
+        name="integration-bbox",
+        version="1.0.0",
+        task_type="detection",
+        allowed_annotation_kinds=["bbox"],
+        labels=[AnnotationLabelDefinition(name="hopper", id=1)],
+        required_attributes=["quality"],
+    )
+
+    fetched_schema = await async_datalake.get_annotation_schema(schema.annotation_schema_id)
+    fetched_by_name = await async_datalake.get_annotation_schema_by_name_version("integration-bbox", "1.0.0")
+    listed_schemas = await async_datalake.list_annotation_schemas({"task_type": "detection"})
+    updated_schema = await async_datalake.update_annotation_schema(schema.annotation_schema_id, allow_scores=True)
+
+    datum = await async_datalake.create_datum(asset_refs={}, split="train")
+    annotation_set = await async_datalake.create_annotation_set(
+        name="schema-bound",
+        purpose="ground_truth",
+        source_type="human",
+        datum_id=datum.datum_id,
+        annotation_schema_id=schema.annotation_schema_id,
+    )
+
+    inserted = await async_datalake.add_annotation_records(
+        annotation_set.annotation_set_id,
+        [{
+            "kind": "bbox",
+            "label": "hopper",
+            "label_id": 1,
+            "source": {"type": "human", "name": "pytest"},
+            "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+            "attributes": {"quality": "high"},
+            "score": 0.5,
+        }],
+    )
+
+    with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
+        await async_datalake.add_annotation_records(
+            annotation_set.annotation_set_id,
+            [{
+                "kind": "bbox",
+                "label": "unknown",
+                "source": {"type": "human", "name": "pytest"},
+                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "attributes": {"quality": "high"},
+            }],
+        )
+
+    assert fetched_schema.annotation_schema_id == schema.annotation_schema_id
+    assert fetched_by_name.annotation_schema_id == schema.annotation_schema_id
+    assert any(item.annotation_schema_id == schema.annotation_schema_id for item in listed_schemas)
+    assert updated_schema.allow_scores is True
+    assert inserted[0].label == "hopper"

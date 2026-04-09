@@ -371,6 +371,24 @@ class Datalake(Mindtrace):
     def delete_asset_retention(self, asset_retention_id: str) -> None:
         self._submit_coro(self._backend.delete_asset_retention(asset_retention_id))
 
+    def create_annotation_schema(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_annotation_schema(**kwargs))
+
+    def get_annotation_schema(self, annotation_schema_id: str):
+        return self._submit_coro(self._backend.get_annotation_schema(annotation_schema_id))
+
+    def get_annotation_schema_by_name_version(self, name: str, version: str):
+        return self._submit_coro(self._backend.get_annotation_schema_by_name_version(name, version))
+
+    def list_annotation_schemas(self, filters: dict[str, Any] | None = None):
+        return self._submit_coro(self._backend.list_annotation_schemas(filters))
+
+    def update_annotation_schema(self, annotation_schema_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_annotation_schema(annotation_schema_id, **changes))
+
+    def delete_annotation_schema(self, annotation_schema_id: str) -> None:
+        self._submit_coro(self._backend.delete_annotation_schema(annotation_schema_id))
+
     def create_annotation_set(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_annotation_set(**kwargs))
 

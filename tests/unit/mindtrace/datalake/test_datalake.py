@@ -5,7 +5,9 @@ import pytest
 
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     Asset,
     AssetRetention,
@@ -112,6 +114,36 @@ class TestDatalakeSyncFacade:
             "list_asset_retentions": [],
             "update_asset_retention": AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"),
             "delete_asset_retention": None,
+            "create_annotation_schema": AnnotationSchema(
+                name="demo-schema",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[AnnotationLabelDefinition(name="cat")],
+            ),
+            "get_annotation_schema": AnnotationSchema(
+                name="demo-schema",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[AnnotationLabelDefinition(name="cat")],
+            ),
+            "get_annotation_schema_by_name_version": AnnotationSchema(
+                name="demo-schema",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[AnnotationLabelDefinition(name="cat")],
+            ),
+            "list_annotation_schemas": [],
+            "update_annotation_schema": AnnotationSchema(
+                name="demo-schema",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[AnnotationLabelDefinition(name="cat")],
+            ),
+            "delete_annotation_schema": None,
             "create_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "get_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "list_annotation_sets": [],
@@ -231,7 +263,7 @@ class TestDatalakeSyncFacade:
         mock_backend.summary = AsyncMock(
             return_value=(
                 "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
             )
         )
         datalake.initialize()
@@ -240,14 +272,14 @@ class TestDatalakeSyncFacade:
             datalake.summary()
             == (
                 "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
             )
         )
         assert (
             str(datalake)
             == (
                 "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
-                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+                "asset_retentions=0, annotation_schemas=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
             )
         )
         assert datalake.get_mounts()["default_mount"] == "temp"
@@ -297,6 +329,21 @@ class TestDatalakeSyncFacade:
             AssetRetention,
         )
         datalake.delete_asset_retention("asset_retention_1")
+        assert isinstance(
+            datalake.create_annotation_schema(
+                name="demo-schema",
+                version="1.0.0",
+                task_type="classification",
+                allowed_annotation_kinds=["classification"],
+                labels=[{"name": "cat"}],
+            ),
+            AnnotationSchema,
+        )
+        assert isinstance(datalake.get_annotation_schema("schema_1"), AnnotationSchema)
+        assert isinstance(datalake.get_annotation_schema_by_name_version("demo-schema", "1.0.0"), AnnotationSchema)
+        assert datalake.list_annotation_schemas() == []
+        assert isinstance(datalake.update_annotation_schema("schema_1", allow_scores=True), AnnotationSchema)
+        datalake.delete_annotation_schema("schema_1")
         assert isinstance(
             datalake.create_annotation_set(name="gt", purpose="ground_truth", source_type="human"), AnnotationSet
         )

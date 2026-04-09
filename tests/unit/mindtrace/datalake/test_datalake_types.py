@@ -1,5 +1,7 @@
 from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     AnnotationSource,
     Asset,
@@ -68,3 +70,30 @@ def test_main_type_str_methods_are_readable():
     assert str(dataset_version) == "DatasetVersion(dataset=demo, version=0.1.0, datums=1)"
     assert str(resolved_datum) == f"ResolvedDatum(datum_id={datum.datum_id}, assets=1, annotation_sets=1)"
     assert str(resolved_dataset) == "ResolvedDatasetVersion(dataset=demo, version=0.1.0, datums=1)"
+
+
+
+def test_annotation_schema_and_label_definition_defaults():
+    label = AnnotationLabelDefinition(name="cat", id=1, color="#ffffff")
+    schema = AnnotationSchema(
+        name="demo-schema",
+        version="1.0.0",
+        task_type="classification",
+        allowed_annotation_kinds=["classification"],
+        labels=[label],
+    )
+    annotation_set = AnnotationSet(
+        name="gt",
+        purpose="ground_truth",
+        source_type="human",
+        annotation_schema_id=schema.annotation_schema_id,
+    )
+
+    assert label.metadata == {}
+    assert str(label) == "AnnotationLabelDefinition(name=cat, id=1)"
+    assert schema.allow_scores is False
+    assert schema.required_attributes == []
+    assert schema.optional_attributes == []
+    assert schema.allow_additional_attributes is False
+    assert "AnnotationSchema(annotation_schema_id=" in str(schema)
+    assert annotation_set.annotation_schema_id == schema.annotation_schema_id
