@@ -1,7 +1,8 @@
+import asyncio
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
@@ -11,6 +12,8 @@ from mindtrace.hardware.core.exceptions import (
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
 )
 
 
@@ -128,6 +131,12 @@ class MinimalConcreteBackend(CameraBackend):
         return ["test_camera"]
 
 
+class MinimalThreadAffinityBackend(MinimalConcreteBackend):
+    """Concrete backend that requires thread affinity for SDK calls."""
+
+    REQUIRES_THREAD_AFFINITY = True
+
+
 class TestCameraBackendConstructor:
     """Test camera backend constructor and initialization."""
 
@@ -209,6 +218,130 @@ class TestCameraBackendConstructor:
         # Should use config values when not explicitly provided
         assert backend.img_quality_enhancement is False
         assert backend.retrieve_retry_count == 7
+
+
+class TestCameraBackendBlockingExecution:
+    """Test blocking SDK execution helpers."""
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_run_blocking_uses_to_thread_when_thread_affinity_not_required(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend(camera_name="cam-1")
+        backend._op_timeout_s = 1.25
+
+        with patch(
+            "mindtrace.hardware.cameras.backends.camera_backend.asyncio.to_thread",
+            AsyncMock(return_value="done"),
+        ) as to_thread:
+            result = await backend._run_blocking(str.upper, "abc")
+
+        to_thread.assert_called_once_with(str.upper, "abc")
+        assert result == "done"
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_run_blocking_uses_single_thread_executor_when_affinity_required(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalThreadAffinityBackend(camera_name="affinity-cam")
+        loop = MagicMock()
+        future = asyncio.Future()
+        future.set_result("done")
+        loop.run_in_executor.return_value = future
+
+        with (
+            patch("mindtrace.hardware.cameras.backends.camera_backend.asyncio.get_running_loop", return_value=loop),
+            patch("mindtrace.hardware.cameras.backends.camera_backend.ThreadPoolExecutor") as executor_cls,
+        ):
+            result = await backend._run_blocking(str.upper, "abc", timeout=2.0)
+
+        executor_cls.assert_called_once_with(max_workers=1, thread_name_prefix="MinimalThreadAffinityBackend_affinity-cam")
+        loop.run_in_executor.assert_called_once()
+        assert result == "done"
+        assert backend._sdk_executor is executor_cls.return_value
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_run_blocking_wraps_timeouts(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend(camera_name="cam-1")
+
+        with (
+            patch("mindtrace.hardware.cameras.backends.camera_backend.asyncio.to_thread", return_value=object()),
+            patch(
+                "mindtrace.hardware.cameras.backends.camera_backend.asyncio.wait_for",
+                side_effect=asyncio.TimeoutError,
+            ),
+        ):
+            with pytest.raises(CameraTimeoutError, match="timed out after 5.00s"):
+                await backend._run_blocking(lambda: None)
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_run_blocking_wraps_generic_errors(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend(camera_name="cam-1")
+
+        with (
+            patch("mindtrace.hardware.cameras.backends.camera_backend.asyncio.to_thread", return_value=object()),
+            patch(
+                "mindtrace.hardware.cameras.backends.camera_backend.asyncio.wait_for",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            with pytest.raises(HardwareOperationError, match="SDK operation failed for camera 'cam-1': boom"):
+                await backend._run_blocking(lambda: None)
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_cleanup_executor_shuts_down_and_clears_executor(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend(camera_name="cam-1")
+        executor = MagicMock()
+        backend._sdk_executor = executor
+
+        await backend._cleanup_executor()
+
+        executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+        assert backend._sdk_executor is None
+
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    @pytest.mark.asyncio
+    async def test_cleanup_executor_logs_warning_on_shutdown_error(self, mock_get_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend(camera_name="cam-1")
+        backend._sdk_executor = MagicMock()
+        backend._sdk_executor.shutdown.side_effect = RuntimeError("shutdown failed")
+        backend.logger.warning = MagicMock()
+
+        await backend._cleanup_executor()
+
+        backend.logger.warning.assert_called_once()
+        assert backend._sdk_executor is None
 
 
 class TestCameraBackendLogging:
@@ -696,7 +829,7 @@ class TestCameraBackendCleanup:
     """Test resource cleanup and destructor behavior."""
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
-    def test_destructor_with_camera_warns(self, mock_get_config, caplog):
+    def test_destructor_with_camera_warns(self, mock_get_config):
         """Test destructor warns when camera not properly cleaned up."""
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
@@ -705,21 +838,14 @@ class TestCameraBackendCleanup:
 
         backend = MinimalConcreteBackend()
         backend.camera = "mock_camera"  # Simulate uncleaned camera
+        backend.logger.warning = MagicMock()
 
-        # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend, logging.WARNING)
+        backend.__del__()
 
-        with caplog.at_level(logging.WARNING):
-            backend.__del__()
-
-        # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
-
-        # Should warn about improper cleanup
-        # Check log records instead of text for more reliable capture
-        log_messages = [record.message for record in caplog.records]
-        assert any("destroyed without proper cleanup" in msg for msg in log_messages)
-        assert any("Use 'async with camera' or call 'await camera.close()'" in msg for msg in log_messages)
+        backend.logger.warning.assert_called_once()
+        warning_message = backend.logger.warning.call_args.args[0]
+        assert "destroyed without proper cleanup" in warning_message
+        assert "Use 'async with camera' or call 'await camera.close()'" in warning_message
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_destructor_without_camera_no_warning(self, mock_get_config, caplog):
