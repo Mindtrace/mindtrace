@@ -1,4 +1,5 @@
-from unittest.mock import Mock, patch
+import json
+from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -350,6 +351,22 @@ async def genicam_backend_uninitialized(mock_harvester_module):
     )
 
     yield backend
+
+
+def attach_mock_acquirer(backend, node_map=None, *, vendor="Keyence", model="CV-X420"):
+    """Attach a simple mocked image acquirer and synchronous _run_blocking helper."""
+    backend.initialized = True
+    backend.device_info = {"vendor": vendor, "model": model}
+    backend.image_acquirer = MockImageAcquirer(
+        MockDeviceInfo(serial_number=backend.camera_name, vendor=vendor, model=model),
+        node_map=node_map or MockNodeMap(),
+    )
+
+    async def run_blocking(func, timeout=None):
+        return func()
+
+    backend._run_blocking = AsyncMock(side_effect=run_blocking)
+    return backend
 
 
 # Tests for singleton Harvester pattern
@@ -729,3 +746,363 @@ class TestCameraInfo:
     async def test_camera_name_property(self, genicam_backend):
         """Test camera_name property."""
         assert genicam_backend.camera_name == "12345678"
+
+
+class TestDiscoveryAndHelperMethods:
+    @pytest.mark.asyncio
+    async def test_discover_async_uses_to_thread(self, mock_harvester_module):
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        with patch(
+            "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.asyncio.to_thread",
+            new=AsyncMock(return_value=["12345678"]),
+        ) as to_thread:
+            result = await GenICamCameraBackend.discover_async(include_details=False)
+
+        assert result == ["12345678"]
+        to_thread.assert_awaited_once_with(GenICamCameraBackend.get_available_cameras, False)
+
+    def test_detect_cti_path_prefers_env_var(self, mock_harvester_module):
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        with (
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.getenv", return_value="/env.cti"),
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True),
+        ):
+            assert GenICamCameraBackend._detect_cti_path() == "/env.cti"
+
+    def test_detect_cti_path_raises_when_not_found(self, mock_harvester_module):
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        with (
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.getenv", return_value=None),
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=False),
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.system", return_value="Linux"),
+            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.machine", return_value="x86_64"),
+        ):
+            with pytest.raises(CameraConfigurationError, match="GenTL Producer not found"):
+                GenICamCameraBackend._detect_cti_path()
+
+    def test_get_available_cameras_returns_empty_when_cti_missing(self, mock_harvester_module):
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        with patch.object(GenICamCameraBackend, "_detect_cti_path", side_effect=CameraConfigurationError("missing")):
+            assert GenICamCameraBackend.get_available_cameras() == []
+            assert GenICamCameraBackend.get_available_cameras(include_details=True) == {}
+
+    @pytest.mark.asyncio
+    async def test_cleanup_on_failure_clears_resources(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.harvester = Mock()
+        backend.image_acquirer.start()
+        backend._cleanup_executor = AsyncMock()
+
+        await backend._cleanup_on_failure()
+
+        assert backend.image_acquirer is None
+        assert backend.harvester is None
+        assert backend.initialized is False
+        backend._cleanup_executor.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("vendor", "expected_integer"),
+        [("Keyence", True), ("Basler", False), ("Other", False)],
+    )
+    async def test_detect_vendor_quirks_sets_expected_flags(
+        self, genicam_backend_uninitialized, vendor, expected_integer
+    ):
+        backend = genicam_backend_uninitialized
+        backend.device_info = {"vendor": vendor}
+        backend._detect_trigger_mode_capability = AsyncMock()
+
+        await backend._detect_vendor_quirks()
+
+        assert backend.vendor_quirks["use_integer_exposure"] is expected_integer
+        backend._detect_trigger_mode_capability.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_detect_trigger_mode_capability_handles_missing_node(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
+
+        await backend._detect_trigger_mode_capability()
+
+        assert backend.vendor_quirks["trigger_mode_writable"] is False
+        assert backend.vendor_quirks["trigger_mode_at_init"] == "unknown"
+        assert backend.triggermode == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_detect_trigger_mode_capability_falls_back_on_error(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.logger.warning = Mock()
+        backend._run_blocking = AsyncMock(side_effect=RuntimeError("boom"))
+
+        await backend._detect_trigger_mode_capability()
+
+        assert backend.vendor_quirks["trigger_mode_writable"] is True
+        assert backend.vendor_quirks["trigger_mode_at_init"] == "continuous"
+        backend.logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_node_value_uses_fallback_names(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(ExposureTimeAbs=MockGenICamNode(123.0))
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        value = await backend._get_node_value("ExposureTime", ["ExposureTimeAbs"])
+
+        assert value == 123.0
+
+    @pytest.mark.asyncio
+    async def test_set_node_value_uses_integer_exposure_conversion(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(ExposureTime=MockGenICamNode(0))
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+        backend.vendor_quirks["use_integer_exposure"] = True
+
+        await backend._set_node_value("ExposureTime", 12.9)
+
+        assert node_map.ExposureTime.value == 12
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_sets_buffer_count_and_acquisition_mode(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(AcquisitionMode=MockEnumNode("SingleFrame", ["SingleFrame", "Continuous"]))
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+        backend.buffer_count = 7
+
+        await backend._configure_camera()
+
+        assert backend.image_acquirer.num_buffers == 7
+        assert node_map.AcquisitionMode.value == "Continuous"
+
+    @pytest.mark.asyncio
+    async def test_start_acquisition_starts_when_not_running(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+
+        await backend._start_acquisition()
+
+        assert backend.image_acquirer.is_acquiring() is True
+
+
+class TestAdditionalGenICamOperations:
+    @pytest.mark.asyncio
+    async def test_initialize_imports_existing_config(self, mock_harvester_module, tmp_path):
+        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
+
+        config_path = tmp_path / "camera.json"
+        config_path.write_text("{}")
+        backend = GenICamCameraBackend("12345678", cti_path="/mock/path/to/gentl.cti", camera_config=str(config_path))
+        backend.import_config = AsyncMock()
+
+        await backend.initialize()
+
+        backend.import_config.assert_awaited_once_with(str(config_path))
+
+    @pytest.mark.asyncio
+    async def test_get_width_and_height_ranges_default_when_nodes_missing(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
+
+        assert await backend.get_width_range() == [1, 9999]
+        assert await backend.get_height_range() == [1, 9999]
+
+    @pytest.mark.asyncio
+    async def test_get_trigger_mode_falls_back_when_trigger_source_unreadable(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(
+            TriggerMode=MockEnumNode("On", ["Off", "On"], readable=True),
+            TriggerSource=MockEnumNode("Software", ["Software"], readable=False),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        assert await backend.get_triggermode() == "trigger"
+
+    @pytest.mark.asyncio
+    async def test_set_trigger_mode_restarts_acquisition_and_updates_nodes(self, genicam_backend):
+        await genicam_backend.set_triggermode("trigger")
+        node_map = genicam_backend.image_acquirer.remote_device.node_map
+
+        assert node_map.TriggerSelector.value == "FrameStart"
+        assert node_map.TriggerMode.value == "On"
+        assert node_map.TriggerSource.value == "Software"
+        assert genicam_backend.image_acquirer.is_acquiring() is True
+
+    @pytest.mark.asyncio
+    async def test_capture_in_trigger_mode_requires_software_trigger_command(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(
+            TriggerMode=MockEnumNode("On", ["Off", "On"]),
+            TriggerSource=MockEnumNode("Software", ["Software"]),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+        backend.triggermode = "trigger"
+
+        with pytest.raises(CameraCaptureError, match="No software trigger command found"):
+            await backend.capture()
+
+    @pytest.mark.asyncio
+    async def test_capture_converts_mono8_to_bgr(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.triggermode = "continuous"
+        backend.image_acquirer.fetch = lambda timeout=1.0: MockBuffer(width=4, height=3, pixel_format="Mono8")
+
+        image = await backend.capture()
+
+        assert image.shape == (3, 4, 3)
+        assert image.dtype == np.uint8
+
+    @pytest.mark.asyncio
+    async def test_capture_uses_image_enhancement_when_enabled(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.triggermode = "continuous"
+        backend.img_quality_enhancement = True
+        backend._enhance_image = AsyncMock(return_value=np.ones((1080, 1920, 3), dtype=np.uint8))
+
+        image = await backend.capture()
+
+        backend._enhance_image.assert_awaited_once()
+        assert image.shape == (1080, 1920, 3)
+
+    @pytest.mark.asyncio
+    async def test_enhance_image_wraps_failures(self, genicam_backend_uninitialized, monkeypatch):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+
+        async def raise_from_to_thread(_func):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.asyncio.to_thread", raise_from_to_thread)
+
+        with pytest.raises(CameraCaptureError, match="Image enhancement failed"):
+            await backend._enhance_image(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    @pytest.mark.asyncio
+    async def test_check_connection_returns_false_when_vendor_node_missing(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
+        backend.image_acquirer.start()
+
+        assert await backend.check_connection() is False
+
+    @pytest.mark.asyncio
+    async def test_close_cleans_up_image_acquirer_and_executor(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.harvester = Mock()
+        backend.image_acquirer.start()
+        backend._cleanup_executor = AsyncMock()
+
+        await backend.close()
+
+        assert backend.image_acquirer is None
+        assert backend.harvester is None
+        assert backend.initialized is False
+        backend._cleanup_executor.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_white_balance_helpers_cover_common_paths(self, genicam_backend_uninitialized):
+        wb_node = Mock()
+        wb_node.value = "Continuous"
+        wb_node.symbolics = ["Continuous", "Off", "Once"]
+        node_map = MockNodeMap(BalanceWhiteAuto=wb_node)
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        assert await backend.get_wb() == "auto"
+        assert await backend.get_wb_range() == ["auto", "manual", "once"]
+
+        await backend.set_auto_wb_once("mystery")
+        assert wb_node.value == "Once"
+
+    @pytest.mark.asyncio
+    async def test_import_config_supports_legacy_exposure_and_genicam_nodes(self, genicam_backend_uninitialized, tmp_path):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.set_exposure = AsyncMock()
+        backend.set_gain = AsyncMock()
+        backend.set_triggermode = AsyncMock()
+        backend.set_auto_wb_once = AsyncMock()
+        backend.set_ROI = AsyncMock()
+        backend._apply_genicam_nodes = AsyncMock()
+        config_path = tmp_path / "camera.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "exposure": 1500,
+                    "gain": 2.5,
+                    "triggermode": "trigger",
+                    "white_balance": "once",
+                    "roi": {"x": 1, "y": 2, "width": 100, "height": 50},
+                    "genicam_nodes": {"PixelFormat": "Mono8"},
+                }
+            )
+        )
+
+        await backend.import_config(str(config_path))
+
+        backend.set_exposure.assert_awaited_once_with(1500)
+        backend.set_gain.assert_awaited_once_with(2.5)
+        backend.set_triggermode.assert_awaited_once_with("trigger")
+        backend.set_auto_wb_once.assert_awaited_once_with("once")
+        backend.set_ROI.assert_awaited_once_with(1, 2, 100, 50)
+        backend._apply_genicam_nodes.assert_awaited_once_with({"PixelFormat": "Mono8"})
+
+    @pytest.mark.asyncio
+    async def test_export_config_writes_current_values(self, genicam_backend_uninitialized, tmp_path):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized)
+        backend.get_exposure = AsyncMock(return_value=1000.0)
+        backend.get_gain = AsyncMock(return_value=2.0)
+        backend.get_triggermode = AsyncMock(return_value="trigger")
+        backend.get_wb = AsyncMock(return_value="auto")
+        backend.get_ROI = AsyncMock(return_value={"x": 1, "y": 2, "width": 100, "height": 50})
+        backend.get_exposure_range = AsyncMock(return_value=[10.0, 10000.0])
+        backend.get_gain_range = AsyncMock(return_value=[0.0, 24.0])
+        backend.get_wb_range = AsyncMock(return_value=["auto", "once"])
+        backend._export_genicam_nodes = AsyncMock(return_value={"PixelFormat": "Mono8"})
+        config_path = tmp_path / "nested" / "camera.json"
+
+        with patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.time.time", return_value=123.0):
+            await backend.export_config(str(config_path))
+
+        config = json.loads(config_path.read_text())
+        assert config["camera_name"] == "12345678"
+        assert config["vendor"] == "Keyence"
+        assert config["exported_timestamp"] == 123.0
+        assert config["exposure_time"] == 1000.0
+        assert config["roi"] == {"x": 1, "y": 2, "width": 100, "height": 50}
+        assert config["genicam_nodes"] == {"PixelFormat": "Mono8"}
+
+    @pytest.mark.asyncio
+    async def test_apply_and_export_genicam_nodes_use_available_values(self, genicam_backend_uninitialized):
+        reverse_x = MockGenICamNode(False)
+        pixel_format = MockEnumNode("RGB8", ["RGB8", "Mono8"])
+        node_map = MockNodeMap(PixelFormat=pixel_format, ReverseX=reverse_x)
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        await backend._apply_genicam_nodes({"PixelFormat": "Mono8", "Missing": 1, "ReverseX": True})
+        exported = await backend._export_genicam_nodes()
+
+        assert pixel_format.value == "Mono8"
+        assert reverse_x.value is True
+        assert exported["PixelFormat"] == "Mono8"
+        assert exported["ReverseX"] is True
+
+    @pytest.mark.asyncio
+    async def test_region_of_interest_methods_cover_region_nodes_and_defaults(self, genicam_backend_uninitialized):
+        node_map = MockNodeMap(
+            RegionOffsetX=MockGenICamNode(0, min_val=0, max_val=10),
+            RegionOffsetY=MockGenICamNode(0, min_val=0, max_val=10),
+            RegionWidth=MockGenICamNode(640, min_val=1, max_val=1280),
+            RegionHeight=MockGenICamNode(480, min_val=1, max_val=960),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        await backend.set_ROI(5, 6, 320, 240)
+        roi = await backend.get_ROI()
+        await backend.reset_ROI()
+
+        assert roi == {"x": 5, "y": 6, "width": 320, "height": 240}
+        assert node_map.RegionOffsetX.value == 0
+        assert node_map.RegionOffsetY.value == 0
+        assert node_map.RegionWidth.value == 1280
+        assert node_map.RegionHeight.value == 960
+
+    @pytest.mark.asyncio
+    async def test_capture_timeout_round_trip(self, genicam_backend_uninitialized):
+        backend = genicam_backend_uninitialized
+
+        await backend.set_capture_timeout(250)
+
+        assert await backend.get_capture_timeout() == 250
+        with pytest.raises(ValueError, match="non-negative"):
+            await backend.set_capture_timeout(-1)
