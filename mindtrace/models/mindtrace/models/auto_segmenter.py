@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
 from mindtrace.models.pipeline import Pipeline, PipelineLoadInput, PipelineUnloadInput
-from mindtrace.services import EndpointSpec
+from mindtrace.services import endpoint
 
 try:
     from ultralytics import SAM, YOLO
@@ -81,10 +81,6 @@ class AutoSegmenter(Pipeline):
     - SAM model: sam2.1_s.pt
     """
 
-    _endpoint_specs = [
-        EndpointSpec(path="auto_segment", method_name="auto_segment", schema=AutoSegmenterTaskSchema),
-    ]
-
     def __init__(
         self,
         *args,
@@ -113,6 +109,7 @@ class AutoSegmenter(Pipeline):
         self._yolo = None
         self._sam = None
 
+    @endpoint("auto_segment", schema=AutoSegmenterTaskSchema)
     def auto_segment(self, payload: AutoSegmenterInput) -> AutoSegmenterOutput:
         """Detect objects with YOLO and segment each box with SAM."""
         if not self.is_loaded:

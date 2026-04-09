@@ -65,7 +65,7 @@ from mindtrace.hardware.services.scanners_3d.models import (
     SystemDiagnosticsResponse,
 )
 from mindtrace.hardware.services.scanners_3d.schemas import ALL_SCHEMAS, HealthSchema
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 
 class Scanner3DService(Service):
@@ -85,129 +85,6 @@ class Scanner3DService(Service):
     - Batch operations for multiple scanners
     - System diagnostics and monitoring
     """
-
-    _endpoint_specs = [
-        # Health check endpoint
-        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-        # Backend & Discovery
-        EndpointSpec(
-            path="scanners/backends",
-            method_name="get_backends",
-            schema=ALL_SCHEMAS["get_backends"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/backends/info",
-            method_name="get_backend_info",
-            schema=ALL_SCHEMAS["get_backend_info"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/discover",
-            method_name="discover_scanners",
-            schema=ALL_SCHEMAS["discover_scanners"],
-            as_tool=True,
-        ),
-        # Scanner Lifecycle
-        EndpointSpec(
-            path="scanners/open", method_name="open_scanner", schema=ALL_SCHEMAS["open_scanner"], as_tool=True
-        ),
-        EndpointSpec(
-            path="scanners/open/batch",
-            method_name="open_scanners_batch",
-            schema=ALL_SCHEMAS["open_scanners_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/close", method_name="close_scanner", schema=ALL_SCHEMAS["close_scanner"], as_tool=True
-        ),
-        EndpointSpec(
-            path="scanners/close/batch",
-            method_name="close_scanners_batch",
-            schema=ALL_SCHEMAS["close_scanners_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/close/all",
-            method_name="close_all_scanners",
-            schema=ALL_SCHEMAS["close_all_scanners"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/active",
-            method_name="get_active_scanners",
-            schema=ALL_SCHEMAS["get_active_scanners"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Scanner Status & Information
-        EndpointSpec(
-            path="scanners/status",
-            method_name="get_scanner_status",
-            schema=ALL_SCHEMAS["get_scanner_status"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/info", method_name="get_scanner_info", schema=ALL_SCHEMAS["get_scanner_info"], as_tool=True
-        ),
-        EndpointSpec(
-            path="system/diagnostics",
-            method_name="get_system_diagnostics",
-            schema=ALL_SCHEMAS["get_system_diagnostics"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Scanner Configuration
-        EndpointSpec(
-            path="scanners/capabilities",
-            method_name="get_scanner_capabilities",
-            schema=ALL_SCHEMAS["get_scanner_capabilities"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/configure",
-            method_name="configure_scanner",
-            schema=ALL_SCHEMAS["configure_scanner"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/configure/batch",
-            method_name="configure_scanners_batch",
-            schema=ALL_SCHEMAS["configure_scanners_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/config/get",
-            method_name="get_scanner_configuration",
-            schema=ALL_SCHEMAS["get_scanner_configuration"],
-            as_tool=True,
-        ),
-        # Scan Capture
-        EndpointSpec(
-            path="scanners/capture", method_name="capture_scan", schema=ALL_SCHEMAS["capture_scan"], as_tool=True
-        ),
-        EndpointSpec(
-            path="scanners/capture/batch",
-            method_name="capture_scan_batch",
-            schema=ALL_SCHEMAS["capture_scan_batch"],
-            as_tool=True,
-        ),
-        # Point Cloud Capture
-        EndpointSpec(
-            path="scanners/capture/pointcloud",
-            method_name="capture_point_cloud",
-            schema=ALL_SCHEMAS["capture_pointcloud"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="scanners/capture/pointcloud/batch",
-            method_name="capture_point_cloud_batch",
-            schema=ALL_SCHEMAS["capture_pointcloud_batch"],
-            as_tool=True,
-        ),
-    ]
 
     def __init__(self, **kwargs):
         """Initialize Scanner3DService.
@@ -242,6 +119,7 @@ class Scanner3DService(Service):
     # Health Check
     # =========================================================================
 
+    @endpoint("health", schema=HealthSchema, methods=("GET",))
     async def health_check(self) -> HealthCheckResponse:
         """Health check endpoint."""
         try:
@@ -276,11 +154,13 @@ class Scanner3DService(Service):
             pass
         return backends
 
+    @endpoint("scanners/backends", schema=ALL_SCHEMAS["get_backends"], methods=("GET",), as_tool=True)
     async def get_backends(self) -> BackendsResponse:
         """Get available scanner backends."""
         backends = self._get_available_backends()
         return BackendsResponse(success=True, message=f"Found {len(backends)} backends", data=backends)
 
+    @endpoint("scanners/backends/info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True)
     async def get_backend_info(self) -> BackendInfoResponse:
         """Get detailed backend information."""
         info = {}
@@ -306,6 +186,7 @@ class Scanner3DService(Service):
 
         return BackendInfoResponse(success=True, message="Backend information retrieved", data=info)
 
+    @endpoint("scanners/discover", schema=ALL_SCHEMAS["discover_scanners"], as_tool=True)
     async def discover_scanners(self, request: BackendFilterRequest) -> ListResponse:
         """Discover available 3D scanners."""
         scanners = []
@@ -326,6 +207,7 @@ class Scanner3DService(Service):
     # Scanner Lifecycle
     # =========================================================================
 
+    @endpoint("scanners/open", schema=ALL_SCHEMAS["open_scanner"], as_tool=True)
     async def open_scanner(self, request: ScannerOpenRequest) -> BoolResponse:
         """Open a 3D scanner connection."""
         scanner_name = request.scanner
@@ -340,6 +222,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/open/batch", schema=ALL_SCHEMAS["open_scanners_batch"], as_tool=True)
     async def open_scanners_batch(self, request: ScannerOpenBatchRequest) -> BatchOperationResponse:
         """Open multiple scanners."""
         results = {"successful": 0, "failed": 0, "results": []}
@@ -361,6 +244,7 @@ class Scanner3DService(Service):
             data=results,
         )
 
+    @endpoint("scanners/close", schema=ALL_SCHEMAS["close_scanner"], as_tool=True)
     async def close_scanner(self, request: ScannerCloseRequest) -> BoolResponse:
         """Close a 3D scanner connection."""
         scanner_name = request.scanner
@@ -375,6 +259,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/close/batch", schema=ALL_SCHEMAS["close_scanners_batch"], as_tool=True)
     async def close_scanners_batch(self, request: ScannerCloseBatchRequest) -> BatchOperationResponse:
         """Close multiple scanners."""
         results = {"successful": 0, "failed": 0, "results": []}
@@ -396,6 +281,7 @@ class Scanner3DService(Service):
             data=results,
         )
 
+    @endpoint("scanners/close/all", schema=ALL_SCHEMAS["close_all_scanners"], as_tool=True)
     async def close_all_scanners(self) -> BatchOperationResponse:
         """Close all active scanners."""
         scanner_names = list(self._scanners.keys())
@@ -415,6 +301,7 @@ class Scanner3DService(Service):
             success=results["failed"] == 0, message=f"Closed {results['successful']} scanners", data=results
         )
 
+    @endpoint("scanners/active", schema=ALL_SCHEMAS["get_active_scanners"], methods=("GET",), as_tool=True)
     async def get_active_scanners(self) -> ActiveScannersResponse:
         """Get list of active scanners."""
         return ActiveScannersResponse(
@@ -425,6 +312,7 @@ class Scanner3DService(Service):
     # Scanner Status & Information
     # =========================================================================
 
+    @endpoint("scanners/status", schema=ALL_SCHEMAS["get_scanner_status"], as_tool=True)
     async def get_scanner_status(self, request: ScannerQueryRequest) -> ScannerStatusResponse:
         """Get scanner status."""
         scanner_name = request.scanner
@@ -439,6 +327,7 @@ class Scanner3DService(Service):
 
         return ScannerStatusResponse(success=True, message="Status retrieved", data=status)
 
+    @endpoint("scanners/info", schema=ALL_SCHEMAS["get_scanner_info"], as_tool=True)
     async def get_scanner_info(self, request: ScannerQueryRequest) -> ScannerInfoResponse:
         """Get scanner information."""
         scanner_name = request.scanner
@@ -454,6 +343,7 @@ class Scanner3DService(Service):
 
         return ScannerInfoResponse(success=True, message="Info retrieved", data=info)
 
+    @endpoint("system/diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True)
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics."""
         process = psutil.Process()
@@ -473,6 +363,7 @@ class Scanner3DService(Service):
     # Scanner Configuration
     # =========================================================================
 
+    @endpoint("scanners/capabilities", schema=ALL_SCHEMAS["get_scanner_capabilities"], as_tool=True)
     async def get_scanner_capabilities(self, request: ScannerQueryRequest) -> ScannerCapabilitiesResponse:
         """Get scanner capabilities and available settings."""
         scanner_name = request.scanner
@@ -511,6 +402,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/configure", schema=ALL_SCHEMAS["configure_scanner"], as_tool=True)
     async def configure_scanner(self, request: ScannerConfigureRequest) -> BoolResponse:
         """Configure scanner parameters."""
         scanner_name = request.scanner
@@ -599,6 +491,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/configure/batch", schema=ALL_SCHEMAS["configure_scanners_batch"], as_tool=True)
     async def configure_scanners_batch(self, request: ScannerConfigureBatchRequest) -> BatchOperationResponse:
         """Configure multiple scanners."""
         results = {"successful": 0, "failed": 0, "results": []}
@@ -624,6 +517,7 @@ class Scanner3DService(Service):
             data=results,
         )
 
+    @endpoint("scanners/config/get", schema=ALL_SCHEMAS["get_scanner_configuration"], as_tool=True)
     async def get_scanner_configuration(self, request: ScannerQueryRequest) -> ScannerConfigurationResponse:
         """Get scanner configuration."""
         scanner_name = request.scanner
@@ -680,6 +574,7 @@ class Scanner3DService(Service):
     # Scan Capture
     # =========================================================================
 
+    @endpoint("scanners/capture", schema=ALL_SCHEMAS["capture_scan"], as_tool=True)
     async def capture_scan(self, request: ScanCaptureRequest) -> ScanCaptureResponse:
         """Capture 3D scan data."""
         scanner_name = request.scanner
@@ -741,6 +636,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/capture/batch", schema=ALL_SCHEMAS["capture_scan_batch"], as_tool=True)
     async def capture_scan_batch(self, request: ScanCaptureBatchRequest) -> ScanCaptureBatchResponse:
         """Capture scans from multiple scanners."""
         results = []
@@ -794,6 +690,7 @@ class Scanner3DService(Service):
     # Point Cloud Capture
     # =========================================================================
 
+    @endpoint("scanners/capture/pointcloud", schema=ALL_SCHEMAS["capture_pointcloud"], as_tool=True)
     async def capture_point_cloud(self, request: PointCloudCaptureRequest) -> PointCloudResponse:
         """Capture and generate 3D point cloud."""
         scanner_name = request.scanner
@@ -835,6 +732,7 @@ class Scanner3DService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("scanners/capture/pointcloud/batch", schema=ALL_SCHEMAS["capture_pointcloud_batch"], as_tool=True)
     async def capture_point_cloud_batch(self, request: PointCloudCaptureBatchRequest) -> PointCloudBatchResponse:
         """Capture point clouds from multiple scanners."""
         results = []

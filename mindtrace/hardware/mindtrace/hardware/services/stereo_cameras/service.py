@@ -62,7 +62,7 @@ from mindtrace.hardware.services.stereo_cameras.models import (
 )
 from mindtrace.hardware.services.stereo_cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.hardware.stereo_cameras import AsyncStereoCamera, BaslerStereoAceBackend
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 
 class StereoCameraService(Service):
@@ -81,129 +81,6 @@ class StereoCameraService(Service):
     - Batch operations for multiple cameras
     - System diagnostics and monitoring
     """
-
-    _endpoint_specs = [
-        # Health check endpoint
-        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-        # Backend & Discovery
-        EndpointSpec(
-            path="stereocameras/backends",
-            method_name="get_backends",
-            schema=ALL_SCHEMAS["get_backends"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/backends/info",
-            method_name="get_backend_info",
-            schema=ALL_SCHEMAS["get_backend_info"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/discover",
-            method_name="discover_cameras",
-            schema=ALL_SCHEMAS["discover_cameras"],
-            as_tool=True,
-        ),
-        # Camera Lifecycle
-        EndpointSpec(
-            path="stereocameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True
-        ),
-        EndpointSpec(
-            path="stereocameras/open/batch",
-            method_name="open_cameras_batch",
-            schema=ALL_SCHEMAS["open_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True
-        ),
-        EndpointSpec(
-            path="stereocameras/close/batch",
-            method_name="close_cameras_batch",
-            schema=ALL_SCHEMAS["close_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/close/all",
-            method_name="close_all_cameras",
-            schema=ALL_SCHEMAS["close_all_cameras"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/active",
-            method_name="get_active_cameras",
-            schema=ALL_SCHEMAS["get_active_cameras"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Camera Status & Information
-        EndpointSpec(
-            path="stereocameras/status",
-            method_name="get_camera_status",
-            schema=ALL_SCHEMAS["get_camera_status"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/info",
-            method_name="get_camera_info",
-            schema=ALL_SCHEMAS["get_camera_info"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="system/diagnostics",
-            method_name="get_system_diagnostics",
-            schema=ALL_SCHEMAS["get_system_diagnostics"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Camera Configuration
-        EndpointSpec(
-            path="stereocameras/configure",
-            method_name="configure_camera",
-            schema=ALL_SCHEMAS["configure_camera"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/configure/batch",
-            method_name="configure_cameras_batch",
-            schema=ALL_SCHEMAS["configure_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/config/get",
-            method_name="get_camera_configuration",
-            schema=ALL_SCHEMAS["get_camera_configuration"],
-            as_tool=True,
-        ),
-        # Stereo Capture
-        EndpointSpec(
-            path="stereocameras/capture",
-            method_name="capture_stereo_pair",
-            schema=ALL_SCHEMAS["capture_stereo"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/capture/batch",
-            method_name="capture_stereo_batch",
-            schema=ALL_SCHEMAS["capture_stereo_batch"],
-            as_tool=True,
-        ),
-        # Point Cloud Capture
-        EndpointSpec(
-            path="stereocameras/capture/pointcloud",
-            method_name="capture_point_cloud",
-            schema=ALL_SCHEMAS["capture_pointcloud"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="stereocameras/capture/pointcloud/batch",
-            method_name="capture_point_cloud_batch",
-            schema=ALL_SCHEMAS["capture_pointcloud_batch"],
-            as_tool=True,
-        ),
-    ]
 
     def __init__(self, **kwargs):
         """Initialize StereoCameraService.
@@ -237,20 +114,10 @@ class StereoCameraService(Service):
             allow_headers=["*"],
         )
 
-        # Streaming endpoints (schema=None, kept as imperative add_endpoint)
-        self.add_endpoint("stereocameras/stream/start", self.start_stream, None)
-        self.add_endpoint("stereocameras/stream/stop", self.stop_stream, None)
-        self.add_endpoint("stereocameras/stream/active", self.get_active_streams, None, methods=["GET"])
-
-        # Video stream endpoint (serves actual MJPEG stream) - registered directly
-        self.app.add_api_route("/stream/{camera_name}", self.serve_stereo_stream, methods=["GET"])
-
-        # Calibration endpoint with path parameter - registered directly
-        self.app.add_api_route("/stereocameras/{camera_name}/calibration", self.get_calibration, methods=["GET"])
-
     # -------------------------------------------------------------------------
     # Health Check
     # -------------------------------------------------------------------------
+    @endpoint("health", schema=HealthSchema, methods=("GET",))
     def health_check(self) -> HealthCheckResponse:
         """Service health check for container healthcheck."""
         try:
@@ -283,6 +150,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Backend & Discovery
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/backends", schema=ALL_SCHEMAS["get_backends"], methods=("GET",), as_tool=True)
     def get_backends(self) -> BackendsResponse:
         """Get list of available stereo camera backends."""
         try:
@@ -291,6 +159,7 @@ class StereoCameraService(Service):
         except Exception as e:
             return BackendsResponse(success=False, message=f"Failed to get backends: {e}", data=[])
 
+    @endpoint("stereocameras/backends/info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True)
     def get_backend_info(self) -> BackendInfoResponse:
         """Get detailed information about stereo camera backends."""
         try:
@@ -307,6 +176,7 @@ class StereoCameraService(Service):
         except Exception as e:
             return BackendInfoResponse(success=False, message=f"Failed to get backend info: {e}", data={})
 
+    @endpoint("stereocameras/discover", schema=ALL_SCHEMAS["discover_cameras"], as_tool=True)
     def discover_cameras(self, request: BackendFilterRequest) -> ListResponse:
         """Discover available stereo cameras."""
         try:
@@ -320,6 +190,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Camera Lifecycle
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/open", schema=ALL_SCHEMAS["open_camera"], as_tool=True)
     async def open_camera(self, request: StereoCameraOpenRequest) -> BoolResponse:
         """Open a stereo camera connection."""
         try:
@@ -336,6 +207,7 @@ class StereoCameraService(Service):
         except Exception as e:
             return BoolResponse(success=False, message=f"Failed to open camera: {e}", data=False)
 
+    @endpoint("stereocameras/open/batch", schema=ALL_SCHEMAS["open_cameras_batch"], as_tool=True)
     async def open_cameras_batch(self, request: StereoCameraOpenBatchRequest) -> BatchOperationResponse:
         """Open multiple stereo cameras."""
         results = []
@@ -361,6 +233,7 @@ class StereoCameraService(Service):
             success=True, message=f"Batch open: {successful} successful, {failed} failed", data=data
         )
 
+    @endpoint("stereocameras/close", schema=ALL_SCHEMAS["close_camera"], as_tool=True)
     async def close_camera(self, request: StereoCameraCloseRequest) -> BoolResponse:
         """Close a stereo camera connection."""
         try:
@@ -376,6 +249,7 @@ class StereoCameraService(Service):
         except Exception as e:
             return BoolResponse(success=False, message=f"Failed to close camera: {e}", data=False)
 
+    @endpoint("stereocameras/close/batch", schema=ALL_SCHEMAS["close_cameras_batch"], as_tool=True)
     async def close_cameras_batch(self, request: StereoCameraCloseBatchRequest) -> BatchOperationResponse:
         """Close multiple stereo cameras."""
         results = []
@@ -401,6 +275,7 @@ class StereoCameraService(Service):
             success=True, message=f"Batch close: {successful} successful, {failed} failed", data=data
         )
 
+    @endpoint("stereocameras/close/all", schema=ALL_SCHEMAS["close_all_cameras"], as_tool=True)
     async def close_all_cameras(self) -> BoolResponse:
         """Close all active stereo cameras."""
         try:
@@ -411,6 +286,7 @@ class StereoCameraService(Service):
         except Exception as e:
             return BoolResponse(success=False, message=f"Failed to close all cameras: {e}", data=False)
 
+    @endpoint("stereocameras/active", schema=ALL_SCHEMAS["get_active_cameras"], methods=("GET",), as_tool=True)
     def get_active_cameras(self) -> ActiveStereoCamerasResponse:
         """Get list of active stereo cameras."""
         camera_names = list(self._cameras.keys())
@@ -421,6 +297,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Camera Status & Information
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/status", schema=ALL_SCHEMAS["get_camera_status"], as_tool=True)
     async def get_camera_status(self, request: StereoCameraQueryRequest) -> StereoCameraStatusResponse:
         """Get stereo camera status."""
         try:
@@ -445,6 +322,7 @@ class StereoCameraService(Service):
         except Exception as e:
             raise HTTPException(status_code=404, detail=str(e))
 
+    @endpoint("stereocameras/info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True)
     async def get_camera_info(self, request: StereoCameraQueryRequest) -> StereoCameraInfoResponse:
         """Get detailed stereo camera information."""
         try:
@@ -481,6 +359,7 @@ class StereoCameraService(Service):
         except Exception as e:
             raise HTTPException(status_code=404, detail=str(e))
 
+    @endpoint("stereocameras/{camera_name}/calibration", methods=("GET",))
     def get_calibration(self, camera_name: str):
         """Get full calibration data including Q matrix for 2D-to-3D projection."""
         try:
@@ -514,6 +393,7 @@ class StereoCameraService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("system/diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True)
     def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics and statistics."""
         import psutil
@@ -533,6 +413,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Camera Configuration
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/configure", schema=ALL_SCHEMAS["configure_camera"], as_tool=True)
     async def configure_camera(self, request: StereoCameraConfigureRequest) -> BoolResponse:
         """Configure stereo camera parameters."""
         try:
@@ -554,6 +435,7 @@ class StereoCameraService(Service):
             self.logger.error(f"Failed to configure camera {request.camera}: {e}")
             raise HTTPException(status_code=400, detail=str(e))
 
+    @endpoint("stereocameras/configure/batch", schema=ALL_SCHEMAS["configure_cameras_batch"], as_tool=True)
     async def configure_cameras_batch(self, request: StereoCameraConfigureBatchRequest) -> BatchOperationResponse:
         """Configure multiple stereo cameras."""
         results = []
@@ -578,6 +460,7 @@ class StereoCameraService(Service):
             success=True, message=f"Batch configure: {successful} successful, {failed} failed", data=data
         )
 
+    @endpoint("stereocameras/config/get", schema=ALL_SCHEMAS["get_camera_configuration"], as_tool=True)
     async def get_camera_configuration(self, request: StereoCameraQueryRequest) -> StereoCameraConfigurationResponse:
         """Get current stereo camera configuration."""
         try:
@@ -615,6 +498,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Stereo Capture
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/capture", schema=ALL_SCHEMAS["capture_stereo"], as_tool=True)
     async def capture_stereo_pair(self, request: StereoCaptureRequest) -> StereoCaptureResponse:
         """Capture stereo data (intensity + disparity)."""
         try:
@@ -659,6 +543,7 @@ class StereoCameraService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("stereocameras/capture/batch", schema=ALL_SCHEMAS["capture_stereo_batch"], as_tool=True)
     async def capture_stereo_batch(self, request: StereoCaptureBatchRequest) -> StereoCaptureBatchResponse:
         """Capture stereo data from multiple cameras."""
         results = []
@@ -713,6 +598,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Point Cloud Capture
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/capture/pointcloud", schema=ALL_SCHEMAS["capture_pointcloud"], as_tool=True)
     async def capture_point_cloud(self, request: PointCloudCaptureRequest) -> PointCloudResponse:
         """Capture and generate 3D point cloud."""
         try:
@@ -748,6 +634,7 @@ class StereoCameraService(Service):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @endpoint("stereocameras/capture/pointcloud/batch", schema=ALL_SCHEMAS["capture_pointcloud_batch"], as_tool=True)
     async def capture_point_cloud_batch(self, request: PointCloudCaptureBatchRequest) -> PointCloudBatchResponse:
         """Capture point clouds from multiple cameras."""
         results = []
@@ -802,6 +689,7 @@ class StereoCameraService(Service):
     # -------------------------------------------------------------------------
     # Streaming
     # -------------------------------------------------------------------------
+    @endpoint("stereocameras/stream/start")
     def start_stream(self, camera: str, quality: int = 85, fps: int = 10):
         """Start stereo camera stream."""
         import os
@@ -833,6 +721,7 @@ class StereoCameraService(Service):
             },
         }
 
+    @endpoint("stereocameras/stream/stop")
     def stop_stream(self, camera: str):
         """Stop stereo camera stream."""
         was_streaming = camera in self._active_streams
@@ -841,10 +730,12 @@ class StereoCameraService(Service):
 
         return {"success": True, "message": f"Stream stopped for camera '{camera}'", "data": True}
 
+    @endpoint("stereocameras/stream/active", methods=("GET",))
     def get_active_streams(self):
         """Get list of active streams."""
         return {"success": True, "message": "Active streams retrieved", "data": list(self._active_streams.keys())}
 
+    @endpoint("stream/{camera_name}", methods=("GET",))
     async def serve_stereo_stream(self, camera_name: str):
         """Serve MJPEG video stream for stereo camera (intensity image)."""
         import cv2

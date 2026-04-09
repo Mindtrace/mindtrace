@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.sensors import SensorManager
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 from .models import (
     HealthCheckResponse,
@@ -27,34 +27,6 @@ from .schemas import HealthSchema, SensorDataSchemas, SensorLifecycleSchemas
 
 class SensorManagerService(Service):
     """Service wrapper for SensorManager with MCP endpoint registration."""
-
-    _endpoint_specs = [
-        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-        EndpointSpec(
-            path="sensors/connect",
-            method_name="connect_sensor",
-            schema=SensorLifecycleSchemas.connect_sensor,
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="sensors/disconnect",
-            method_name="disconnect_sensor",
-            schema=SensorLifecycleSchemas.disconnect_sensor,
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="sensors/status",
-            method_name="get_sensor_status",
-            schema=SensorLifecycleSchemas.get_sensor_status,
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="sensors/list", method_name="list_sensors", schema=SensorLifecycleSchemas.list_sensors, as_tool=True
-        ),
-        EndpointSpec(
-            path="sensors/read", method_name="read_sensor_data", schema=SensorDataSchemas.read_sensor_data, as_tool=True
-        ),
-    ]
 
     def __init__(self, manager: Optional[SensorManager] = None, **kwargs):
         """Initialize the sensor manager service.
@@ -82,6 +54,7 @@ class SensorManagerService(Service):
         self._last_data_times: Dict[str, float] = {}
         self._startup_time = time.time()
 
+    @endpoint("sensors/connect", schema=SensorLifecycleSchemas.connect_sensor, as_tool=True)
     async def connect_sensor(self, request: SensorConnectionRequest) -> SensorConnectionResponse:
         """Connect to a sensor with specified configuration.
 
@@ -118,6 +91,7 @@ class SensorManagerService(Service):
                 message=f"Failed to connect sensor: {str(e)}",
             )
 
+    @endpoint("sensors/disconnect", schema=SensorLifecycleSchemas.disconnect_sensor, as_tool=True)
     async def disconnect_sensor(self, request: SensorStatusRequest) -> SensorConnectionResponse:
         """Disconnect from a connected sensor.
 
@@ -153,6 +127,7 @@ class SensorManagerService(Service):
                 message=f"Failed to disconnect sensor: {str(e)}",
             )
 
+    @endpoint("sensors/read", schema=SensorDataSchemas.read_sensor_data, as_tool=True)
     async def read_sensor_data(self, request: SensorDataRequest) -> SensorDataResponse:
         """Read data from a connected sensor.
 
@@ -192,6 +167,7 @@ class SensorManagerService(Service):
                 message=f"Failed to read sensor data: {str(e)}",
             )
 
+    @endpoint("sensors/status", schema=SensorLifecycleSchemas.get_sensor_status, as_tool=True)
     async def get_sensor_status(self, request: SensorStatusRequest) -> SensorStatusResponse:
         """Get status information for a sensor.
 
@@ -227,6 +203,7 @@ class SensorManagerService(Service):
                 success=False, sensor_info=None, message=f"Failed to get sensor status: {str(e)}"
             )
 
+    @endpoint("sensors/list", schema=SensorLifecycleSchemas.list_sensors, as_tool=True)
     async def list_sensors(self, request: SensorListRequest) -> SensorListResponse:
         """List all registered sensors.
 
@@ -281,6 +258,7 @@ class SensorManagerService(Service):
         await super().shutdown_cleanup()
 
     # Health Check
+    @endpoint("health", schema=HealthSchema, methods=("GET",))
     def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:

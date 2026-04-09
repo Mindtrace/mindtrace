@@ -53,6 +53,7 @@ def add_endpoint(app, path, self: Optional["Service"], **kwargs):
 
     def wrapper(func):
         app.add_api_route(f"/{path}", endpoint=Mindtrace.autolog(self=self)(func), methods=["POST"], **kwargs)
+        return func
 
     return wrapper
 

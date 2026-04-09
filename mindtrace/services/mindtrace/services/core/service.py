@@ -14,21 +14,19 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Literal, Type, TypeVar, overload
+from typing import Any, Dict, Literal, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
+import psutil
 import requests
 from fastapi import FastAPI, HTTPException
 from urllib3.util.url import Url, parse_url
 
-if TYPE_CHECKING:
-    import psutil
-
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url
 from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.endpoint_spec import EndpointSpec
+from mindtrace.services.core.endpoint_spec import EndpointSpec, endpoint
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
     ClassNameSchema,
@@ -55,17 +53,6 @@ class Service(Mindtrace):
     _active_servers: dict[UUID, psutil.Process] = {}
     mcp: MCPClientManager = None
 
-    _endpoint_specs: list[EndpointSpec] = [
-        EndpointSpec(path="endpoints", method_name="endpoints_func", schema=EndpointsSchema, as_tool=True),
-        EndpointSpec(path="status", method_name="status_func", schema=StatusSchema, as_tool=True),
-        EndpointSpec(path="heartbeat", method_name="heartbeat_func", schema=HeartbeatSchema, as_tool=True),
-        EndpointSpec(path="server_id", method_name="server_id_func", schema=ServerIDSchema),
-        EndpointSpec(path="class_name", method_name="class_name_func", schema=ClassNameSchema),
-        EndpointSpec(path="pid_file", method_name="pid_file_func", schema=PIDFileSchema),
-        EndpointSpec(
-            path="shutdown", method_name="shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
-        ),
-    ]
     # __endpoints__ is populated by __init_subclass__ for subclasses;
     # for Service itself, it's set after the class body below.
 
@@ -158,39 +145,64 @@ class Service(Mindtrace):
         for path, spec in self.__class__.__endpoints__.items():
             func = getattr(self, spec.method_name)
             self._register_route(path, func, spec)
-            self._endpoints[path] = spec.schema
+            if spec.schema is not None:
+                self._endpoints[path] = spec.schema
+
+    @staticmethod
+    def _collect_endpoints(cls) -> dict[str, EndpointSpec]:
+        """Collect endpoint specs from both ``_endpoint_specs`` lists and ``@endpoint``-decorated methods.
+
+        Walks the MRO from most general to most specific so that subclasses
+        override base-class specs for the same path.  ``@endpoint``-decorated
+        methods take precedence over ``_endpoint_specs`` entries on the same
+        class when paths collide.
+        """
+        collected: dict[str, EndpointSpec] = {}
+        for base in reversed(cls.__mro__):
+            # Legacy _endpoint_specs lists
+            for spec in getattr(base, "_endpoint_specs", []):
+                collected[spec.path] = spec
+            # @endpoint-decorated methods
+            for attr in vars(base).values():
+                # Unwrap staticmethod/classmethod descriptors to reach the inner function
+                func = getattr(attr, "__func__", attr)
+                if callable(func) and hasattr(func, "_endpoint_spec"):
+                    spec = func._endpoint_spec
+                    collected[spec.path] = spec
+        return collected
 
     def __init_subclass__(cls, **kwargs):
         """Set up MCP client manager and collect endpoint specs for each service subclass."""
         super().__init_subclass__(**kwargs)
         cls.mcp = MCPClientManager(cls)
-        # Merge endpoint specs from all ancestors (later in MRO wins)
-        collected: dict[str, EndpointSpec] = {}
-        for base in reversed(cls.__mro__):
-            for spec in getattr(base, "_endpoint_specs", []):
-                collected[spec.path] = spec
-        cls.__endpoints__ = collected
+        cls.__endpoints__ = Service._collect_endpoints(cls)
 
+    @endpoint("endpoints", schema=EndpointsSchema, as_tool=True)
     def endpoints_func(self):
         """List all available endpoints for the service."""
         return {"endpoints": list(self._endpoints.keys())}
 
+    @endpoint("status", schema=StatusSchema, as_tool=True)
     def status_func(self):
         """Get the current status of the service."""
         return {"status": self.status.value}
 
+    @endpoint("class_name", schema=ClassNameSchema)
     def class_name_func(self):
         """Return the name of the concrete class of this service instance."""
         return {"class_name": self.__class__.__name__}
 
+    @endpoint("heartbeat", schema=HeartbeatSchema, as_tool=True)
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
         return {"heartbeat": self.heartbeat()}
 
+    @endpoint("server_id", schema=ServerIDSchema)
     def server_id_func(self):
         """Return the server's unique ID."""
         return {"server_id": self.id}
 
+    @endpoint("pid_file", schema=PIDFileSchema)
     def pid_file_func(self):
         """Return the path to the server's PID file."""
         return {"pid_file": self.pid_file}
@@ -499,8 +511,6 @@ class Service(Mindtrace):
 
     @classmethod
     def _cleanup_server(cls, server_id: UUID):
-        import psutil
-
         if server_id in cls._active_servers:
             process = cls._active_servers[server_id]
             try:
@@ -528,6 +538,7 @@ class Service(Mindtrace):
             cls._cleanup_server(server_id)
 
     @staticmethod
+    @endpoint("shutdown", schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG})
     def shutdown() -> fastapi.Response:
         """HTTP endpoint to shut down the server."""
         os.kill(os.getppid(), signal.SIGTERM)  # kill the parent gunicorn process as it will respawn us otherwise
@@ -676,4 +687,4 @@ class Service(Mindtrace):
 
 # Populate __endpoints__ for the Service base class itself
 # (__init_subclass__ only fires for subclasses, not the defining class).
-Service.__endpoints__ = {spec.path: spec for spec in Service._endpoint_specs}
+Service.__endpoints__ = Service._collect_endpoints(Service)

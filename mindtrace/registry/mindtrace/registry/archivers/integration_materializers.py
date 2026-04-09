@@ -1,8 +1,4 @@
-"""Integration materializers for third-party ML frameworks.
-
-These replace the corresponding zenml integration materializers with simpler
-implementations using each framework's native save/load API.
-"""
+"""Integration materializers for third-party ML frameworks."""
 
 import os
 from typing import Any, ClassVar, Type

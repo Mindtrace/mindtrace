@@ -29,7 +29,7 @@ from mindtrace.models.serving.schemas import (
     info_task,
     predict_task,
 )
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 # ---------------------------------------------------------------------------
 # Optional torch import -- torch is heavy and may not be installed in every
@@ -77,11 +77,6 @@ class ModelService(Service):
     # Subclasses should override this with their model's task type
     # (e.g. "detection", "classification", "segmentation").
     _task: str = "generic"
-
-    _endpoint_specs = [
-        EndpointSpec(path="predict", method_name="_handle_predict", schema=predict_task, as_tool=True),
-        EndpointSpec(path="info", method_name="_handle_info", schema=info_task),
-    ]
 
     def __init__(
         self,
@@ -212,6 +207,7 @@ class ModelService(Service):
     # Endpoint handlers
     # ------------------------------------------------------------------
 
+    @endpoint("predict", schema=predict_task, as_tool=True)
     def _handle_predict(self, payload: PredictRequest) -> PredictResponse:
         """Endpoint handler that wraps :meth:`predict` with timing."""
         self.logger.debug(
@@ -233,6 +229,7 @@ class ModelService(Service):
         )
         return response
 
+    @endpoint("info", schema=info_task)
     def _handle_info(self) -> ModelInfo:
         """Endpoint handler that returns model metadata."""
         return self.info()

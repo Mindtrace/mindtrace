@@ -8,7 +8,7 @@ from urllib3.util.url import Url
 
 from mindtrace.core import ifnone_url
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.endpoint_spec import EndpointSpec
+from mindtrace.services.core.endpoint_spec import endpoint
 from mindtrace.services.core.service import Service
 from mindtrace.services.core.types import ServerStatus
 from mindtrace.services.core.utils import generate_connection_manager
@@ -17,10 +17,6 @@ from mindtrace.services.gateway.types import AppConfig, RegisterAppTaskSchema
 
 
 class Gateway(Service):
-    _endpoint_specs = [
-        EndpointSpec(path="register_app", method_name="register_app", schema=RegisterAppTaskSchema),
-    ]
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -36,6 +32,7 @@ class Gateway(Service):
             allow_headers=["*"],
         )
 
+    @endpoint("register_app", schema=RegisterAppTaskSchema)
     def register_app(self, payload: AppConfig):
         """Register a FastAPI app with the gateway."""
         self.registered_routers[payload.name] = str(payload.url)

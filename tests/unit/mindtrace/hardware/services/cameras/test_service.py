@@ -813,18 +813,13 @@ class TestCameraManagerServiceCaptureAndHomography:
         return service, mock_manager
 
     def test_register_endpoints_registers_all_routes(self):
-        service = CameraManagerService.__new__(CameraManagerService)
-        service.add_endpoint = Mock()
-
-        CameraManagerService._register_endpoints(service)
-
-        endpoint_paths = [entry.args[0] for entry in service.add_endpoint.call_args_list]
-        assert service.add_endpoint.call_count == 38
-        assert "health" in endpoint_paths
-        assert "cameras/capture" in endpoint_paths
-        assert "cameras/stream/start" in endpoint_paths
-        assert "stream/{camera_name}" in endpoint_paths
-        assert "cameras/homography/measure/distance" in endpoint_paths
+        endpoints = CameraManagerService.__endpoints__
+        assert "health" in endpoints
+        assert "cameras/capture" in endpoints
+        assert "cameras/stream/start" in endpoints
+        assert "cameras/homography/measure/distance" in endpoints
+        # stream/{camera_name} is registered dynamically via add_endpoint in __init__,
+        # so it won't appear in __endpoints__
 
     @pytest.mark.asyncio
     async def test_configure_cameras_batch_formats_partial_results(self, service_with_mock_manager):

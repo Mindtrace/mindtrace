@@ -25,5 +25,5 @@ def temp_local_client():
         backend.register_materializer(LocalPriorityQueue, PriorityQueueArchiver)
         backend.register_materializer(LocalStack, StackArchiver)
 
-        client = LocalClient(broker_id=f"test_broker_{int(time.time())}", backend=backend)
+        client = LocalClient(client_dir=temp_path, broker_id=f"test_broker_{int(time.time())}", backend=backend)
         yield client

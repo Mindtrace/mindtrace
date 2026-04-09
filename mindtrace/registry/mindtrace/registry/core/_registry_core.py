@@ -26,22 +26,6 @@ from mindtrace.registry.core.types import (
     Version,
 )
 
-# Mapping from old zenml materializer paths to new mindtrace paths.
-# Applied transparently when loading artifacts persisted with zenml materializers.
-_ZENML_MIGRATION = {
-    "zenml.materializers.built_in_materializer.BuiltInMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
-    "zenml.materializers.BuiltInContainerMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInContainerMaterializer",
-    "zenml.materializers.BytesMaterializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
-    "zenml.materializers.PydanticMaterializer": "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer",
-    "zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer": "mindtrace.registry.archivers.builtin_materializers.CloudpickleMaterializer",
-    "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer": "mindtrace.registry.archivers.integration_materializers.HFDatasetMaterializer",
-    "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer": "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
-    "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer": "mindtrace.registry.archivers.integration_materializers.NumpyMaterializer",
-    "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer": "mindtrace.registry.archivers.integration_materializers.PillowImageMaterializer",
-    "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer": "mindtrace.registry.archivers.integration_materializers.PyTorchDataLoaderMaterializer",
-    "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer": "mindtrace.registry.archivers.integration_materializers.PyTorchModuleMaterializer",
-}
-
 
 def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
     """Sort key for fixed-width numeric version strings."""
@@ -585,7 +569,6 @@ class _RegistryCore(Mindtrace):
         init_params = metadata.get("init_params", {}).copy()
         init_params.update(kwargs)
 
-        materializer_class = _ZENML_MIGRATION.get(materializer_class, materializer_class)
         materializer = instantiate_target(materializer_class, uri=str(temp_dir))
 
         if isinstance(object_class, str):
@@ -1421,10 +1404,19 @@ class _RegistryCore(Mindtrace):
         # Filter materializers that need to be registered
         materializers_to_register = {}
         for object_class, materializer_class in default_materializers.items():
-            if override_preexisting_materializers or object_class not in existing_materializers:
-                # Ensure materializer_class is a string for JSON serialization
-                if isinstance(materializer_class, type):
-                    materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+            # Ensure materializer_class is a string for JSON serialization
+            if isinstance(materializer_class, type):
+                materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+
+            existing = existing_materializers.get(object_class)
+            needs_update = (
+                override_preexisting_materializers
+                or existing is None
+                # Default materializers are the source of truth — always
+                # override persisted values that differ.
+                or existing != materializer_class
+            )
+            if needs_update:
                 materializers_to_register[object_class] = materializer_class
 
         if materializers_to_register:

@@ -1,15 +1,11 @@
-"""Built-in materializers for basic Python types.
-
-These replace the corresponding zenml materializers with simpler implementations
-that use standard file I/O instead of zenml's artifact store abstraction.
-File naming conventions match zenml's for backward compatibility with persisted artifacts.
-"""
+"""Built-in materializers for basic Python types."""
 
 import json
 import os
 from typing import Any, ClassVar, Tuple, Type
 
 import cloudpickle
+from pydantic import BaseModel
 
 from mindtrace.registry.core.base_materializer import ArtifactType, BaseMaterializer
 
@@ -63,13 +59,6 @@ class BuiltInContainerMaterializer(BaseMaterializer):
         elif os.path.exists(pkl_path):
             with open(pkl_path, "rb") as f:
                 return cloudpickle.load(f)
-        elif os.path.exists(metadata_path):
-            # Legacy zenml recursive format — fall back to cloudpickle load
-            # of the whole directory if individual elements were pickled
-            raise RuntimeError(
-                f"Cannot load container from legacy zenml metadata format at {self.uri}. "
-                "Re-save the artifact with the current version."
-            )
         else:
             raise FileNotFoundError(f"No data found at {self.uri}")
 
@@ -104,17 +93,11 @@ class PydanticMaterializer(BaseMaterializer):
     """Handle pydantic BaseModel objects.
 
     Saves/loads using pydantic's native JSON serialization.
-    Format matches zenml's PydanticMaterializer for backward compatibility:
-    the model's JSON string is stored as a JSON-encoded string in data.json.
+    The model's JSON string is stored as a JSON-encoded string in data.json.
     """
 
+    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (BaseModel,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
-    @property
-    def _associated_types(self):
-        from pydantic import BaseModel
-
-        return (BaseModel,)
 
     def save(self, data: Any) -> None:
         data_path = os.path.join(self.uri, "data.json")

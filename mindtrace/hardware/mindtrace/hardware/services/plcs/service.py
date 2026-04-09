@@ -50,7 +50,7 @@ from mindtrace.hardware.services.plcs.models import (
 )
 from mindtrace.hardware.services.plcs.models.requests import BackendFilterRequest
 from mindtrace.hardware.services.plcs.schemas import ALL_SCHEMAS, HealthSchema
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 
 class PLCManagerService(Service):
@@ -60,88 +60,6 @@ class PLCManagerService(Service):
     Provides comprehensive PLC management functionality through a Service-based
     architecture with MCP tool integration and async PLC operations.
     """
-
-    _endpoint_specs = [
-        # Backend & Discovery
-        EndpointSpec(
-            path="plcs/backends",
-            method_name="discover_backends",
-            schema=ALL_SCHEMAS["discover_backends"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/backends/info",
-            method_name="get_backend_info",
-            schema=ALL_SCHEMAS["get_backend_info"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/discover", method_name="discover_plcs", schema=ALL_SCHEMAS["discover_plcs"], as_tool=True
-        ),
-        # PLC Lifecycle
-        EndpointSpec(path="plcs/connect", method_name="connect_plc", schema=ALL_SCHEMAS["connect_plc"], as_tool=True),
-        EndpointSpec(
-            path="plcs/connect/batch",
-            method_name="connect_plcs_batch",
-            schema=ALL_SCHEMAS["connect_plcs_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/disconnect", method_name="disconnect_plc", schema=ALL_SCHEMAS["disconnect_plc"], as_tool=True
-        ),
-        EndpointSpec(
-            path="plcs/disconnect/batch",
-            method_name="disconnect_plcs_batch",
-            schema=ALL_SCHEMAS["disconnect_plcs_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/disconnect/all",
-            method_name="disconnect_all_plcs",
-            schema=ALL_SCHEMAS["disconnect_all_plcs"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/active",
-            method_name="get_active_plcs",
-            schema=ALL_SCHEMAS["get_active_plcs"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Tag Operations
-        EndpointSpec(path="plcs/tags/read", method_name="read_tags", schema=ALL_SCHEMAS["tag_read"], as_tool=True),
-        EndpointSpec(path="plcs/tags/write", method_name="write_tags", schema=ALL_SCHEMAS["tag_write"], as_tool=True),
-        EndpointSpec(
-            path="plcs/tags/read/batch",
-            method_name="read_tags_batch",
-            schema=ALL_SCHEMAS["tag_batch_read"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="plcs/tags/write/batch",
-            method_name="write_tags_batch",
-            schema=ALL_SCHEMAS["tag_batch_write"],
-            as_tool=True,
-        ),
-        EndpointSpec(path="plcs/tags/list", method_name="list_tags", schema=ALL_SCHEMAS["tag_list"], as_tool=True),
-        EndpointSpec(path="plcs/tags/info", method_name="get_tag_info", schema=ALL_SCHEMAS["tag_info"], as_tool=True),
-        # Status & Information
-        EndpointSpec(
-            path="plcs/status", method_name="get_plc_status", schema=ALL_SCHEMAS["get_plc_status"], as_tool=True
-        ),
-        EndpointSpec(path="plcs/info", method_name="get_plc_info", schema=ALL_SCHEMAS["get_plc_info"], as_tool=True),
-        EndpointSpec(
-            path="system/diagnostics",
-            method_name="get_system_diagnostics",
-            schema=ALL_SCHEMAS["get_system_diagnostics"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Health check endpoint (for container healthcheck - not an MCP tool)
-        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-    ]
 
     def __init__(self, **kwargs):
         """Initialize PLCManagerService.
@@ -193,6 +111,7 @@ class PLCManagerService(Service):
         await super().shutdown_cleanup()
 
     # Backend & Discovery Operations
+    @endpoint("plcs/backends", schema=ALL_SCHEMAS["discover_backends"], methods=("GET",), as_tool=True)
     def discover_backends(self) -> BackendsResponse:
         """Discover available PLC backends."""
         try:
@@ -205,6 +124,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Backend discovery failed: {e}")
             raise
 
+    @endpoint("plcs/backends/info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True)
     def get_backend_info(self) -> BackendInfoResponse:
         """Get detailed information about all backends."""
         try:
@@ -231,6 +151,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Backend info retrieval failed: {e}")
             raise
 
+    @endpoint("plcs/discover", schema=ALL_SCHEMAS["discover_plcs"], as_tool=True)
     async def discover_plcs(self, request: BackendFilterRequest) -> ListResponse:
         """Discover available PLCs from all or specific backends."""
         try:
@@ -254,6 +175,7 @@ class PLCManagerService(Service):
             raise
 
     # PLC Lifecycle Operations
+    @endpoint("plcs/connect", schema=ALL_SCHEMAS["connect_plc"], as_tool=True)
     async def connect_plc(self, request: PLCConnectRequest) -> BoolResponse:
         """Connect to a PLC."""
         try:
@@ -282,6 +204,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to connect to PLC '{request.plc_name}': {e}")
             raise
 
+    @endpoint("plcs/connect/batch", schema=ALL_SCHEMAS["connect_plcs_batch"], as_tool=True)
     async def connect_plcs_batch(self, request: PLCConnectBatchRequest) -> BatchOperationResponse:
         """Connect to multiple PLCs in batch."""
         try:
@@ -335,6 +258,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Batch PLC connection failed: {e}")
             raise
 
+    @endpoint("plcs/disconnect", schema=ALL_SCHEMAS["disconnect_plc"], as_tool=True)
     async def disconnect_plc(self, request: PLCDisconnectRequest) -> BoolResponse:
         """Disconnect from a PLC."""
         try:
@@ -346,6 +270,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to disconnect from PLC '{request.plc}': {e}")
             raise
 
+    @endpoint("plcs/disconnect/batch", schema=ALL_SCHEMAS["disconnect_plcs_batch"], as_tool=True)
     async def disconnect_plcs_batch(self, request: PLCDisconnectBatchRequest) -> BatchOperationResponse:
         """Disconnect from multiple PLCs in batch."""
         try:
@@ -374,6 +299,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Batch PLC disconnection failed: {e}")
             raise
 
+    @endpoint("plcs/disconnect/all", schema=ALL_SCHEMAS["disconnect_all_plcs"], as_tool=True)
     async def disconnect_all_plcs(self) -> BoolResponse:
         """Disconnect from all active PLCs."""
         try:
@@ -386,6 +312,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to disconnect all PLCs: {e}")
             raise
 
+    @endpoint("plcs/active", schema=ALL_SCHEMAS["get_active_plcs"], methods=("GET",), as_tool=True)
     def get_active_plcs(self) -> ActivePLCsResponse:
         """Get list of currently active PLCs."""
         try:
@@ -398,6 +325,7 @@ class PLCManagerService(Service):
             raise
 
     # Tag Operations
+    @endpoint("plcs/tags/read", schema=ALL_SCHEMAS["tag_read"], as_tool=True)
     async def read_tags(self, request: TagReadRequest) -> TagReadResponse:
         """Read tag values from a PLC."""
         try:
@@ -412,6 +340,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to read tags from PLC '{request.plc}': {e}")
             raise
 
+    @endpoint("plcs/tags/write", schema=ALL_SCHEMAS["tag_write"], as_tool=True)
     async def write_tags(self, request: TagWriteRequest) -> TagWriteResponse:
         """Write tag values to a PLC."""
         try:
@@ -428,6 +357,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to write tags to PLC '{request.plc}': {e}")
             raise
 
+    @endpoint("plcs/tags/read/batch", schema=ALL_SCHEMAS["tag_batch_read"], as_tool=True)
     async def read_tags_batch(self, request: TagBatchReadRequest) -> BatchTagReadResponse:
         """Read tags from multiple PLCs in batch."""
         try:
@@ -448,6 +378,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Batch tag read failed: {e}")
             raise
 
+    @endpoint("plcs/tags/write/batch", schema=ALL_SCHEMAS["tag_batch_write"], as_tool=True)
     async def write_tags_batch(self, request: TagBatchWriteRequest) -> BatchTagWriteResponse:
         """Write tags to multiple PLCs in batch."""
         try:
@@ -468,6 +399,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Batch tag write failed: {e}")
             raise
 
+    @endpoint("plcs/tags/list", schema=ALL_SCHEMAS["tag_list"], as_tool=True)
     async def list_tags(self, request: PLCQueryRequest) -> TagListResponse:
         """List all available tags on a PLC."""
         try:
@@ -479,6 +411,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to list tags for PLC '{request.plc}': {e}")
             raise
 
+    @endpoint("plcs/tags/info", schema=ALL_SCHEMAS["tag_info"], as_tool=True)
     async def get_tag_info(self, request: TagInfoRequest) -> TagInfoResponse:
         """Get detailed information about a specific tag."""
         try:
@@ -508,6 +441,7 @@ class PLCManagerService(Service):
             raise
 
     # Status & Information Operations
+    @endpoint("plcs/status", schema=ALL_SCHEMAS["get_plc_status"], as_tool=True)
     async def get_plc_status(self, request: PLCQueryRequest) -> PLCStatusResponse:
         """Get PLC status information."""
         try:
@@ -530,6 +464,7 @@ class PLCManagerService(Service):
             self.logger.error(f"Failed to get PLC status for '{request.plc}': {e}")
             raise
 
+    @endpoint("plcs/info", schema=ALL_SCHEMAS["get_plc_info"], as_tool=True)
     async def get_plc_info(self, request: PLCQueryRequest) -> PLCInfoResponse:
         """Get detailed PLC information."""
         try:
@@ -557,6 +492,7 @@ class PLCManagerService(Service):
             raise
 
     # System Diagnostics
+    @endpoint("system/diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True)
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics information."""
         try:
@@ -589,6 +525,7 @@ class PLCManagerService(Service):
             raise
 
     # Health Check
+    @endpoint("health", schema=HealthSchema, methods=("GET",))
     def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:

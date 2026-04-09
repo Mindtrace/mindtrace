@@ -6,7 +6,7 @@ from mindtrace.cluster.core.utils import update_database
 from mindtrace.core import TaskSchema
 from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Consumer
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 # -- Worker endpoint schemas --
 _WORKER_SCHEMAS = {
@@ -20,15 +20,6 @@ _WORKER_SCHEMAS = {
 
 
 class Worker(Service, Consumer):
-    _endpoint_specs = [
-        EndpointSpec(path="start", method_name="start", schema=_WORKER_SCHEMAS["start"]),
-        EndpointSpec(path="run", method_name="run", schema=_WORKER_SCHEMAS["run"]),
-        EndpointSpec(
-            path="connect_to_cluster", method_name="connect_to_cluster", schema=_WORKER_SCHEMAS["connect_to_cluster"]
-        ),
-        EndpointSpec(path="get_status", method_name="get_status", schema=_WORKER_SCHEMAS["get_status"]),
-    ]
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
@@ -57,6 +48,7 @@ class Worker(Service, Consumer):
             self._cluster_connection_manager = ClusterManager.connect(self._cluster_url)
         return self._cluster_connection_manager
 
+    @endpoint("run", schema=_WORKER_SCHEMAS["run"])
     def run(self, job_dict: dict):
         """
         Run a job. Alerts the cluster manager that the job has started and completed; in between it calls self._run().
@@ -111,12 +103,14 @@ class Worker(Service, Consumer):
         """
         raise NotImplementedError("Subclasses must implement this method")  # pragma: no cover
 
+    @endpoint("start", schema=_WORKER_SCHEMAS["start"])
     def start(self):
         """
         Put any initialization code that wants to run after the worker is connected to the cluster here.
         """
         pass
 
+    @endpoint("connect_to_cluster", schema=_WORKER_SCHEMAS["connect_to_cluster"])
     def connect_to_cluster(self, payload: dict):
         """
         Connect the worker to a Cluster and an Orchestrator.
@@ -140,6 +134,7 @@ class Worker(Service, Consumer):
         self.consume_thread.start()
         self.logger.info(f"Worker {self.id} started consuming from queue {queue_name}")
 
+    @endpoint("get_status", schema=_WORKER_SCHEMAS["get_status"])
     def get_status(self):
         """
         Get the status of the worker.

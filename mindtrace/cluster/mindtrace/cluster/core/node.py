@@ -7,7 +7,7 @@ from mindtrace.core import TaskSchema
 from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 # -- Node endpoint schemas --
 _NODE_SCHEMAS = {
@@ -33,31 +33,6 @@ _NODE_SCHEMAS = {
 
 
 class Node(Service):
-    _endpoint_specs = [
-        EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_NODE_SCHEMAS["launch_worker"]),
-        EndpointSpec(
-            path="launch_worker_status",
-            method_name="launch_worker_status",
-            schema=_NODE_SCHEMAS["launch_worker_status"],
-        ),
-        EndpointSpec(path="shutdown_worker", method_name="shutdown_worker", schema=_NODE_SCHEMAS["shutdown_worker"]),
-        EndpointSpec(
-            path="shutdown_worker_by_id",
-            method_name="shutdown_worker_by_id",
-            schema=_NODE_SCHEMAS["shutdown_worker_by_id"],
-        ),
-        EndpointSpec(
-            path="shutdown_worker_by_port",
-            method_name="shutdown_worker_by_port",
-            schema=_NODE_SCHEMAS["shutdown_worker_by_port"],
-        ),
-        EndpointSpec(
-            path="shutdown_all_workers",
-            method_name="shutdown_all_workers",
-            schema=_NODE_SCHEMAS["shutdown_all_workers"],
-        ),
-    ]
-
     def __init__(self, cluster_url: str | None = None, worker_ports: list[int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.worker_registry: Registry = None  # type: ignore
@@ -122,6 +97,7 @@ class Node(Service):
             self.worker_ports = self._parse_port_range(config_range)
             self.logger.debug(f"Using worker ports range {config_range} for node {self.id}")
 
+    @endpoint("launch_worker_status", schema=_NODE_SCHEMAS["launch_worker_status"])
     def launch_worker_status(self, payload: dict):
         """
         Return the status of a previously requested worker launch.
@@ -192,6 +168,7 @@ class Node(Service):
                 return port
         raise ValueError(f"No worker ports available in range {self.worker_ports}")
 
+    @endpoint("launch_worker", schema=_NODE_SCHEMAS["launch_worker"])
     def launch_worker(self, payload: dict):
         """
         Asynchronously launch a worker from the Worker registry and return a launch_id.
@@ -316,6 +293,7 @@ class Node(Service):
                 self.logger.error(f"Failed to shutdown worker {entry.worker_name}: {e}")
             self.node_worker_database.delete(entry.pk)
 
+    @endpoint("shutdown_worker", schema=_NODE_SCHEMAS["shutdown_worker"])
     def shutdown_worker(self, payload: dict):
         """
         Shutdown a worker by name.
@@ -330,6 +308,7 @@ class Node(Service):
         )
         self._shutdown_workers(entries)
 
+    @endpoint("shutdown_worker_by_id", schema=_NODE_SCHEMAS["shutdown_worker_by_id"])
     def shutdown_worker_by_id(self, payload: dict):
         """
         Shutdown a worker by id.
@@ -344,6 +323,7 @@ class Node(Service):
         )
         self._shutdown_workers(entries)
 
+    @endpoint("shutdown_worker_by_port", schema=_NODE_SCHEMAS["shutdown_worker_by_port"])
     def shutdown_worker_by_port(self, payload: dict):
         """
         Shutdown a worker by port.
@@ -358,6 +338,7 @@ class Node(Service):
         )
         self._shutdown_workers(entries)
 
+    @endpoint("shutdown_all_workers", schema=_NODE_SCHEMAS["shutdown_all_workers"])
     def shutdown_all_workers(self):
         """
         Shutdown all workers.

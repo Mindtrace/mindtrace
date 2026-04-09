@@ -34,7 +34,7 @@ def register_default_materializers():
         "builtins.bytes", "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer"
     )
     Registry.register_default_materializer(
-        "pydantic.BaseModel", "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer"
+        "pydantic.main.BaseModel", "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer"
     )
     # Path types - use PathArchiver to preserve original filenames
     Registry.register_default_materializer(Path, PathArchiver)

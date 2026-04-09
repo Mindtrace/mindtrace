@@ -194,7 +194,7 @@ Each archiver guards its framework import. You only need to install the librarie
 | timm | `timm` |
 | Ultralytics (YOLO/SAM) | `ultralytics` |
 
-All archivers also depend on `zenml` for artifact type definitions and the `mindtrace.registry` package for the `Archiver` base class.
+All archivers depend on the `mindtrace.registry` package for the `Archiver` base class.
 
 ## API Reference
 

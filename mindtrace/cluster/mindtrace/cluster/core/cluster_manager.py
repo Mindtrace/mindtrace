@@ -12,7 +12,7 @@ from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.registry.core.types import OnConflict
-from mindtrace.services import EndpointSpec, Gateway, ServerStatus
+from mindtrace.services import Gateway, ServerStatus, endpoint
 
 # -- ClusterManager endpoint schemas --
 _CM_SCHEMAS = {
@@ -84,69 +84,6 @@ _CM_SCHEMAS = {
 
 
 class ClusterManager(Gateway):
-    _endpoint_specs = [
-        EndpointSpec(path="submit_job", method_name="submit_job", schema=_CM_SCHEMAS["submit_job"]),
-        EndpointSpec(
-            path="register_job_to_endpoint",
-            method_name="register_job_to_endpoint",
-            schema=_CM_SCHEMAS["register_job_to_endpoint"],
-        ),
-        EndpointSpec(
-            path="register_job_to_worker",
-            method_name="register_job_to_worker",
-            schema=_CM_SCHEMAS["register_job_to_worker"],
-        ),
-        EndpointSpec(path="get_job_status", method_name="get_job_status", schema=_CM_SCHEMAS["get_job_status"]),
-        EndpointSpec(
-            path="worker_alert_started_job",
-            method_name="worker_alert_started_job",
-            schema=_CM_SCHEMAS["worker_alert_started_job"],
-        ),
-        EndpointSpec(
-            path="worker_alert_completed_job",
-            method_name="worker_alert_completed_job",
-            schema=_CM_SCHEMAS["worker_alert_completed_job"],
-        ),
-        EndpointSpec(path="register_node", method_name="register_node", schema=_CM_SCHEMAS["register_node"]),
-        EndpointSpec(
-            path="register_worker_type", method_name="register_worker_type", schema=_CM_SCHEMAS["register_worker_type"]
-        ),
-        EndpointSpec(path="launch_worker", method_name="launch_worker", schema=_CM_SCHEMAS["launch_worker"]),
-        EndpointSpec(
-            path="launch_worker_status", method_name="launch_worker_status", schema=_CM_SCHEMAS["launch_worker_status"]
-        ),
-        EndpointSpec(path="clear_databases", method_name="clear_databases", schema=_CM_SCHEMAS["clear_databases"]),
-        EndpointSpec(
-            path="register_job_schema_to_worker_type",
-            method_name="register_job_schema_to_worker_type",
-            schema=_CM_SCHEMAS["register_job_schema_to_worker_type"],
-        ),
-        EndpointSpec(
-            path="get_worker_status", method_name="get_worker_status", schema=_CM_SCHEMAS["get_worker_status"]
-        ),
-        EndpointSpec(
-            path="get_worker_status_by_url",
-            method_name="get_worker_status_by_url",
-            schema=_CM_SCHEMAS["get_worker_status_by_url"],
-        ),
-        EndpointSpec(
-            path="query_worker_status", method_name="query_worker_status", schema=_CM_SCHEMAS["query_worker_status"]
-        ),
-        EndpointSpec(
-            path="query_worker_status_by_url",
-            method_name="query_worker_status_by_url",
-            schema=_CM_SCHEMAS["query_worker_status_by_url"],
-        ),
-        EndpointSpec(
-            path="clear_job_schema_queue",
-            method_name="clear_job_schema_queue",
-            schema=_CM_SCHEMAS["clear_job_schema_queue"],
-        ),
-        EndpointSpec(path="get_dlq_jobs", method_name="get_dlq_jobs", schema=_CM_SCHEMAS["get_dlq_jobs"]),
-        EndpointSpec(path="requeue_from_dlq", method_name="requeue_from_dlq", schema=_CM_SCHEMAS["requeue_from_dlq"]),
-        EndpointSpec(path="discard_from_dlq", method_name="discard_from_dlq", schema=_CM_SCHEMAS["discard_from_dlq"]),
-    ]
-
     def __init__(self, minio_endpoint=None, **kwargs):
         """
         Args:
@@ -229,6 +166,7 @@ class ClusterManager(Gateway):
             cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
         )
 
+    @endpoint("register_job_to_endpoint", schema=_CM_SCHEMAS["register_job_to_endpoint"])
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
         Register a job schema to an endpoint. Jobs of this type will be routed directly to the endpoint.
@@ -284,6 +222,7 @@ class ClusterManager(Gateway):
         self.logger.info(f"Completed job {job.id} with status {job_status.status}")
         return job_status
 
+    @endpoint("submit_job", schema=_CM_SCHEMAS["submit_job"])
     def submit_job(self, job: Job):
         """
         Submit a job to the cluster. Will route to the appropriate endpoint based on the job type, or to the Orchestrator.
@@ -327,6 +266,7 @@ class ClusterManager(Gateway):
             return job_status
         return self._submit_job_to_endpoint(job, job_schema_targeting.target_endpoint)
 
+    @endpoint("register_job_to_worker", schema=_CM_SCHEMAS["register_job_to_worker"])
     def register_job_to_worker(self, payload: dict):
         """
         Register a job to an (already launched) Worker instance.
@@ -385,6 +325,7 @@ class ClusterManager(Gateway):
             )
         self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
 
+    @endpoint("register_worker_type", schema=_CM_SCHEMAS["register_worker_type"])
     def register_worker_type(self, payload: dict):
         """
         Register a worker type to the cluster. This will allow Workers of this type to be launched on Nodes.
@@ -414,6 +355,7 @@ class ClusterManager(Gateway):
         if job_schema_name:
             self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
 
+    @endpoint("register_job_schema_to_worker_type", schema=_CM_SCHEMAS["register_job_schema_to_worker_type"])
     def register_job_schema_to_worker_type(self, payload: dict):
         """
         Register a job schema to a worker type. This will allow Jobs of this type to be routed to the worker type.
@@ -440,6 +382,7 @@ class ClusterManager(Gateway):
         self.orchestrator.register(JobSchema(name=job_schema_name, input_schema=BaseModel))
         self.logger.info(f"Registered job schema {job_schema_name} to worker type {worker_type}")
 
+    @endpoint("get_job_status", schema=_CM_SCHEMAS["get_job_status"])
     def get_job_status(self, payload: dict):
         """
         Get the status of a job. Does not query the worker, only the database.
@@ -458,6 +401,7 @@ class ClusterManager(Gateway):
             raise ValueError(f"Job status not found for job id {job_id}")
         return job_status_list[0]
 
+    @endpoint("get_worker_status", schema=_CM_SCHEMAS["get_worker_status"])
     def get_worker_status(self, payload: dict):
         """
         Get the status of a worker.
@@ -477,6 +421,7 @@ class ClusterManager(Gateway):
             )
         return worker_status_list[0]
 
+    @endpoint("get_worker_status_by_url", schema=_CM_SCHEMAS["get_worker_status_by_url"])
     def get_worker_status_by_url(self, payload: dict):
         """
         Get the status of a worker.
@@ -494,6 +439,7 @@ class ClusterManager(Gateway):
             )
         return self.get_worker_status(payload={"worker_id": worker_id})
 
+    @endpoint("query_worker_status", schema=_CM_SCHEMAS["query_worker_status"])
     def query_worker_status(self, payload: dict):
         """
         Query the status of a worker.
@@ -539,6 +485,7 @@ class ClusterManager(Gateway):
         )
         return our_status
 
+    @endpoint("query_worker_status_by_url", schema=_CM_SCHEMAS["query_worker_status_by_url"])
     def query_worker_status_by_url(self, payload: dict):
         """
         Query the status of a worker.
@@ -567,6 +514,7 @@ class ClusterManager(Gateway):
             return None
         return worker_status_list[0].worker_id
 
+    @endpoint("worker_alert_started_job", schema=_CM_SCHEMAS["worker_alert_started_job"])
     def worker_alert_started_job(self, payload: dict):
         """
         Alert the cluster manager that a job has started.
@@ -593,6 +541,7 @@ class ClusterManager(Gateway):
         )
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has started")
 
+    @endpoint("worker_alert_completed_job", schema=_CM_SCHEMAS["worker_alert_completed_job"])
     def worker_alert_completed_job(self, payload: dict):
         """
         Alert the cluster manager that a job has completed.
@@ -635,6 +584,7 @@ class ClusterManager(Gateway):
             {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()},
         )
 
+    @endpoint("requeue_from_dlq", schema=_CM_SCHEMAS["requeue_from_dlq"])
     def requeue_from_dlq(self, payload: dict):
         """
         Requeue a job from the DLQ.
@@ -653,6 +603,7 @@ class ClusterManager(Gateway):
         self.logger.info(f"Requeued job {job_id} from DLQ")
         return job_status_requeued
 
+    @endpoint("discard_from_dlq", schema=_CM_SCHEMAS["discard_from_dlq"])
     def discard_from_dlq(self, payload: dict):
         """
         Discard a job from the DLQ.
@@ -665,12 +616,14 @@ class ClusterManager(Gateway):
         self.dlq_database.delete(job_status.pk)
         self.logger.info(f"Discarded job {job_id} from DLQ")
 
+    @endpoint("get_dlq_jobs", schema=_CM_SCHEMAS["get_dlq_jobs"])
     def get_dlq_jobs(self):
         """
         Get all jobs in the DLQ.
         """
         return {"jobs": self.dlq_database.all()}
 
+    @endpoint("register_node", schema=_CM_SCHEMAS["register_node"])
     def register_node(self, payload: dict):
         """
         Register a node to the cluster. This returns the Minio parameters for the node to be used in the Worker registry.
@@ -691,6 +644,7 @@ class ClusterManager(Gateway):
             "rabbitmq_password": self.config.get_secret("MINDTRACE_CLUSTER", "RABBITMQ_PASSWORD"),
         }
 
+    @endpoint("launch_worker", schema=_CM_SCHEMAS["launch_worker"])
     def launch_worker(self, payload: dict):
         """
         Launch a worker on a node asynchronously. If the worker type is registered to a job schema,
@@ -722,6 +676,7 @@ class ClusterManager(Gateway):
             "launch_id": output.launch_id,
         }
 
+    @endpoint("launch_worker_status", schema=_CM_SCHEMAS["launch_worker_status"])
     def launch_worker_status(self, payload: dict):
         """
         Proxy launch status queries to the appropriate node.
@@ -733,6 +688,7 @@ class ClusterManager(Gateway):
         node_cm = Node.connect(node_url)
         return node_cm.launch_worker_status(launch_id=launch_id)
 
+    @endpoint("clear_databases", schema=_CM_SCHEMAS["clear_databases"])
     def clear_databases(self):
         """
         Clear all databases.
@@ -748,6 +704,7 @@ class ClusterManager(Gateway):
                 db.delete(entry.pk)
         self.logger.info("Cleared all cluster manager databases")
 
+    @endpoint("clear_job_schema_queue", schema=_CM_SCHEMAS["clear_job_schema_queue"])
     def clear_job_schema_queue(self, payload: dict):
         """
         Clear the queue related to a job schema.

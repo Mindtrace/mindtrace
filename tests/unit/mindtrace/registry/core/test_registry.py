@@ -156,23 +156,21 @@ def test_save_and_load_config(registry, test_config):
     assert loaded_config == test_config
 
 
-'''
-def test_save_and_load_model(self, registry, test_model):
+def test_save_and_load_model(registry, test_model):
     """Test saving and loading a Pydantic model."""
     # Save the model
     registry.save("test:model", test_model, version="1.0.0")
-    
+
     # Verify the model exists
     assert registry.has_object("test:model", "1.0.0")
-    
+
     # Load the model
     loaded_model = registry.load("test:model", version="1.0.0")
-    
+
     # Verify the loaded model matches the original
-    assert isinstance(loaded_model, TestModel)
+    assert isinstance(loaded_model, SampleModel)
     assert loaded_model.name == test_model.name
     assert loaded_model.value == test_model.value
-'''
 
 
 def test_save_and_load_basic_types(registry, test_basic_types):
@@ -617,7 +615,7 @@ def test_registered_materializers(registry):
     assert "builtins.set" in materializers
     assert "builtins.bytes" in materializers
     assert "pathlib.PosixPath" in materializers or "pathlib._local.PosixPath" in materializers
-    assert "pydantic.BaseModel" in materializers
+    assert "pydantic.main.BaseModel" in materializers
     assert "mindtrace.core.config.config.Config" in materializers
 
     # Verify the materializer classes are correct

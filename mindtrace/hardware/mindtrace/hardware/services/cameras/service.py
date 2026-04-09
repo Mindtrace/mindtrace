@@ -94,7 +94,7 @@ from mindtrace.hardware.services.cameras.models import (
     SystemDiagnosticsResponse,
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 
 class CameraManagerService(Service):
@@ -104,211 +104,6 @@ class CameraManagerService(Service):
     Provides comprehensive camera management functionality through a Service-based
     architecture with MCP tool integration and async camera operations.
     """
-
-    _endpoint_specs = [
-        # Health check endpoint
-        EndpointSpec(path="health", method_name="health_check", schema=HealthSchema, methods=("GET",)),
-        # Backend & Discovery
-        EndpointSpec(
-            path="cameras/backends",
-            method_name="discover_backends",
-            schema=ALL_SCHEMAS["discover_backends"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/backends/info",
-            method_name="get_backend_info",
-            schema=ALL_SCHEMAS["get_backend_info"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/discover",
-            method_name="discover_cameras",
-            schema=ALL_SCHEMAS["discover_cameras"],
-            as_tool=True,
-        ),
-        # Camera Lifecycle
-        EndpointSpec(path="cameras/open", method_name="open_camera", schema=ALL_SCHEMAS["open_camera"], as_tool=True),
-        EndpointSpec(
-            path="cameras/open/batch",
-            method_name="open_cameras_batch",
-            schema=ALL_SCHEMAS["open_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/close", method_name="close_camera", schema=ALL_SCHEMAS["close_camera"], as_tool=True
-        ),
-        EndpointSpec(
-            path="cameras/close/batch",
-            method_name="close_cameras_batch",
-            schema=ALL_SCHEMAS["close_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/close/all",
-            method_name="close_all_cameras",
-            schema=ALL_SCHEMAS["close_all_cameras"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/active",
-            method_name="get_active_cameras",
-            schema=ALL_SCHEMAS["get_active_cameras"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Camera Status & Information
-        EndpointSpec(
-            path="cameras/status",
-            method_name="get_camera_status",
-            schema=ALL_SCHEMAS["get_camera_status"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/info", method_name="get_camera_info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True
-        ),
-        EndpointSpec(
-            path="cameras/capabilities",
-            method_name="get_camera_capabilities",
-            schema=ALL_SCHEMAS["get_camera_capabilities"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="system/diagnostics",
-            method_name="get_system_diagnostics",
-            schema=ALL_SCHEMAS["get_system_diagnostics"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        # Camera Configuration
-        EndpointSpec(
-            path="cameras/configure",
-            method_name="configure_camera",
-            schema=ALL_SCHEMAS["configure_camera"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/configure/batch",
-            method_name="configure_cameras_batch",
-            schema=ALL_SCHEMAS["configure_cameras_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/config/get",
-            method_name="get_camera_configuration",
-            schema=ALL_SCHEMAS["get_camera_configuration"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/config/import",
-            method_name="import_camera_config",
-            schema=ALL_SCHEMAS["import_camera_config"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/config/export",
-            method_name="export_camera_config",
-            schema=ALL_SCHEMAS["export_camera_config"],
-            as_tool=True,
-        ),
-        # Image Capture
-        EndpointSpec(
-            path="cameras/capture", method_name="capture_image", schema=ALL_SCHEMAS["capture_image"], as_tool=True
-        ),
-        EndpointSpec(
-            path="cameras/capture/batch",
-            method_name="capture_images_batch",
-            schema=ALL_SCHEMAS["capture_images_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/capture/hdr",
-            method_name="capture_hdr_image",
-            schema=ALL_SCHEMAS["capture_hdr_image"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/capture/hdr/batch",
-            method_name="capture_hdr_images_batch",
-            schema=ALL_SCHEMAS["capture_hdr_images_batch"],
-            as_tool=True,
-        ),
-        # Streaming (REST API only - not as MCP tools)
-        EndpointSpec(path="cameras/stream/start", method_name="start_stream", schema=ALL_SCHEMAS["stream_start"]),
-        EndpointSpec(path="cameras/stream/stop", method_name="stop_stream", schema=ALL_SCHEMAS["stream_stop"]),
-        EndpointSpec(
-            path="cameras/stream/status", method_name="get_stream_status", schema=ALL_SCHEMAS["stream_status"]
-        ),
-        EndpointSpec(
-            path="cameras/stream/active",
-            method_name="get_active_streams",
-            schema=ALL_SCHEMAS["get_active_streams"],
-            methods=("GET",),
-        ),
-        EndpointSpec(
-            path="cameras/stream/stop/all", method_name="stop_all_streams", schema=ALL_SCHEMAS["stop_all_streams"]
-        ),
-        # Network & Diagnostics
-        EndpointSpec(
-            path="network/diagnostics",
-            method_name="get_network_diagnostics",
-            schema=ALL_SCHEMAS["get_network_diagnostics"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/performance/get",
-            method_name="get_performance_settings",
-            schema=ALL_SCHEMAS["get_performance_settings"],
-            methods=("GET",),
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/performance/set",
-            method_name="set_performance_settings",
-            schema=ALL_SCHEMAS["set_performance_settings"],
-            as_tool=True,
-        ),
-        # Homography Calibration & Measurement
-        EndpointSpec(
-            path="cameras/homography/calibrate/checkerboard",
-            method_name="calibrate_homography_checkerboard",
-            schema=ALL_SCHEMAS["calibrate_homography_checkerboard"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/homography/calibrate/correspondences",
-            method_name="calibrate_homography_correspondences",
-            schema=ALL_SCHEMAS["calibrate_homography_correspondences"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/homography/calibrate/multi-view",
-            method_name="calibrate_homography_multi_view",
-            schema=ALL_SCHEMAS["calibrate_homography_multi_view"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/homography/measure/box",
-            method_name="measure_homography_box",
-            schema=ALL_SCHEMAS["measure_homography_box"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/homography/measure/batch",
-            method_name="measure_homography_batch",
-            schema=ALL_SCHEMAS["measure_homography_batch"],
-            as_tool=True,
-        ),
-        EndpointSpec(
-            path="cameras/homography/measure/distance",
-            method_name="measure_homography_distance",
-            schema=ALL_SCHEMAS["measure_homography_distance"],
-            as_tool=True,
-        ),
-    ]
 
     def __init__(self, include_mocks: bool = False, **kwargs):
         """Initialize CameraManagerService.
@@ -336,9 +131,6 @@ class CameraManagerService(Service):
         self._camera_manager: Optional[AsyncCameraManager] = None
         self._startup_time = time.time()
         self._active_streams: dict = {}  # Track active camera streams
-
-        # Video stream endpoint (schema=None, cannot use EndpointSpec)
-        self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
 
     async def _get_camera_manager(self) -> AsyncCameraManager:
         """Get or create camera manager instance."""
@@ -368,6 +160,7 @@ class CameraManagerService(Service):
         await super().shutdown_cleanup()
 
     # Backend & Discovery Operations
+    @endpoint("cameras/backends", schema=ALL_SCHEMAS["discover_backends"], methods=("GET",), as_tool=True)
     async def discover_backends(self) -> BackendsResponse:
         """Discover available camera backends."""
         try:
@@ -379,6 +172,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Backend discovery failed: {e}")
             raise
 
+    @endpoint("cameras/backends/info", schema=ALL_SCHEMAS["get_backend_info"], methods=("GET",), as_tool=True)
     async def get_backend_info(self) -> BackendInfoResponse:
         """Get detailed information about all backends."""
         try:
@@ -403,6 +197,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Backend info retrieval failed: {e}")
             raise
 
+    @endpoint("cameras/discover", schema=ALL_SCHEMAS["discover_cameras"], as_tool=True)
     async def discover_cameras(self, request: BackendFilterRequest) -> ListResponse:
         """Discover available cameras from all or specific backends."""
         try:
@@ -420,6 +215,7 @@ class CameraManagerService(Service):
             raise
 
     # Camera Lifecycle Operations
+    @endpoint("cameras/open", schema=ALL_SCHEMAS["open_camera"], as_tool=True)
     async def open_camera(self, request: CameraOpenRequest) -> BoolResponse:
         """Open a single camera with exposure validation."""
         try:
@@ -459,6 +255,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to open camera '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/open/batch", schema=ALL_SCHEMAS["open_cameras_batch"], as_tool=True)
     async def open_cameras_batch(self, request: CameraOpenBatchRequest) -> BatchOperationResponse:
         """Open multiple cameras in batch."""
         try:
@@ -485,6 +282,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Batch camera opening failed: {e}")
             raise
 
+    @endpoint("cameras/close", schema=ALL_SCHEMAS["close_camera"], as_tool=True)
     async def close_camera(self, request: CameraCloseRequest) -> BoolResponse:
         """Close a specific camera."""
         self.logger.info(f"Starting close_camera for '{request.camera}'")
@@ -501,6 +299,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to close camera '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/close/batch", schema=ALL_SCHEMAS["close_cameras_batch"], as_tool=True)
     async def close_cameras_batch(self, request: CameraCloseBatchRequest) -> BatchOperationResponse:
         """Close multiple cameras in batch."""
         try:
@@ -538,6 +337,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Batch camera closing failed: {e}")
             raise
 
+    @endpoint("cameras/close/all", schema=ALL_SCHEMAS["close_all_cameras"], as_tool=True)
     async def close_all_cameras(self) -> BoolResponse:
         """Close all active cameras."""
         try:
@@ -552,6 +352,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to close all cameras: {e}")
             raise
 
+    @endpoint("cameras/active", schema=ALL_SCHEMAS["get_active_cameras"], methods=("GET",), as_tool=True)
     async def get_active_cameras(self) -> ActiveCamerasResponse:
         """Get list of currently active cameras."""
         try:
@@ -566,6 +367,7 @@ class CameraManagerService(Service):
             raise
 
     # Camera Status & Information Operations
+    @endpoint("cameras/status", schema=ALL_SCHEMAS["get_camera_status"], as_tool=True)
     async def get_camera_status(self, request: CameraQueryRequest) -> CameraStatusResponse:
         """Get camera status information."""
         try:
@@ -595,6 +397,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get camera status for '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/info", schema=ALL_SCHEMAS["get_camera_info"], as_tool=True)
     async def get_camera_info(self, request: CameraQueryRequest) -> CameraInfoResponse:
         """Get detailed camera information."""
         try:
@@ -631,6 +434,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get camera info for '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/capabilities", schema=ALL_SCHEMAS["get_camera_capabilities"], as_tool=True)
     async def get_camera_capabilities(self, request: CameraQueryRequest) -> CameraCapabilitiesResponse:
         """Get camera capabilities information."""
         try:
@@ -722,6 +526,7 @@ class CameraManagerService(Service):
             raise
 
     # Camera Configuration Operations
+    @endpoint("cameras/configure", schema=ALL_SCHEMAS["configure_camera"], as_tool=True)
     async def configure_camera(self, request: CameraConfigureRequest) -> BoolResponse:
         """Configure camera parameters."""
         self.logger.info(f"Starting configure_camera for '{request.camera}' with properties: {request.properties}")
@@ -770,6 +575,7 @@ class CameraManagerService(Service):
             # For other exceptions, still raise them
             raise
 
+    @endpoint("cameras/configure/batch", schema=ALL_SCHEMAS["configure_cameras_batch"], as_tool=True)
     async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> BatchOperationResponse:
         """Configure multiple cameras in batch."""
         try:
@@ -796,6 +602,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Batch camera configuration failed: {e}")
             raise
 
+    @endpoint("cameras/config/get", schema=ALL_SCHEMAS["get_camera_configuration"], as_tool=True)
     async def get_camera_configuration(self, request: CameraQueryRequest) -> CameraConfigurationResponse:
         """Get current camera configuration."""
         try:
@@ -886,6 +693,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get camera configuration for '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/config/import", schema=ALL_SCHEMAS["import_camera_config"], as_tool=True)
     async def import_camera_config(self, request: ConfigFileImportRequest) -> ConfigFileResponse:
         """Import camera configuration from file."""
         try:
@@ -911,6 +719,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to import config for camera '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/config/export", schema=ALL_SCHEMAS["export_camera_config"], as_tool=True)
     async def export_camera_config(self, request: ConfigFileExportRequest) -> ConfigFileResponse:
         """Export camera configuration to file."""
         try:
@@ -937,6 +746,7 @@ class CameraManagerService(Service):
             raise
 
     # Image Capture Operations
+    @endpoint("cameras/capture", schema=ALL_SCHEMAS["capture_image"], as_tool=True)
     async def capture_image(self, request: CaptureImageRequest) -> CaptureResponse:
         """Capture a single image with timeout protection."""
         import asyncio
@@ -998,6 +808,7 @@ class CameraManagerService(Service):
             )
             return CaptureResponse(success=False, message=f"Capture failed: {str(e)}", data=result)
 
+    @endpoint("cameras/capture/batch", schema=ALL_SCHEMAS["capture_images_batch"], as_tool=True)
     async def capture_images_batch(self, request: CaptureBatchRequest) -> BatchCaptureResponse:
         """Capture images from multiple cameras."""
         try:
@@ -1038,6 +849,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Batch image capture failed: {e}")
             raise
 
+    @endpoint("cameras/capture/hdr", schema=ALL_SCHEMAS["capture_hdr_image"], as_tool=True)
     async def capture_hdr_image(self, request: CaptureHDRRequest) -> HDRCaptureResponse:
         """Capture HDR image sequence."""
         try:
@@ -1105,6 +917,7 @@ class CameraManagerService(Service):
             )
             return HDRCaptureResponse(success=False, message=f"HDR capture failed: {str(e)}", data=result)
 
+    @endpoint("cameras/capture/hdr/batch", schema=ALL_SCHEMAS["capture_hdr_images_batch"], as_tool=True)
     async def capture_hdr_images_batch(self, request: CaptureHDRBatchRequest) -> BatchHDRCaptureResponse:
         """Capture HDR images from multiple cameras."""
         try:
@@ -1166,6 +979,7 @@ class CameraManagerService(Service):
 
     # Network Diagnostics Operations
 
+    @endpoint("network/diagnostics", schema=ALL_SCHEMAS["get_network_diagnostics"], methods=("GET",), as_tool=True)
     async def get_network_diagnostics(self) -> NetworkDiagnosticsResponse:
         """Get network diagnostics information."""
         try:
@@ -1196,6 +1010,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get network diagnostics: {e}")
             raise
 
+    @endpoint("cameras/performance/get", schema=ALL_SCHEMAS["get_performance_settings"], methods=("GET",), as_tool=True)
     async def get_performance_settings(
         self, request: CameraPerformanceSettingsRequest = None
     ) -> CameraPerformanceSettingsResponse:
@@ -1256,6 +1071,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get performance settings: {e}")
             raise
 
+    @endpoint("cameras/performance/set", schema=ALL_SCHEMAS["set_performance_settings"], as_tool=True)
     async def set_performance_settings(self, request: CameraPerformanceSettingsRequest) -> BoolResponse:
         """Update camera performance settings.
 
@@ -1320,6 +1136,7 @@ class CameraManagerService(Service):
             raise
 
     # Streaming Operations
+    @endpoint("cameras/stream/start", schema=ALL_SCHEMAS["stream_start"])
     async def start_stream(self, request: StreamStartRequest) -> StreamInfoResponse:
         """Start camera stream with resilient state management."""
         try:
@@ -1372,6 +1189,7 @@ class CameraManagerService(Service):
                 success=False, message=f"Failed to start stream for '{request.camera}': {str(e)}", data=None
             )
 
+    @endpoint("cameras/stream/stop", schema=ALL_SCHEMAS["stream_stop"])
     def stop_stream(self, request: StreamStopRequest) -> BoolResponse:
         """Stop camera stream with resilient state management."""
         try:
@@ -1396,6 +1214,7 @@ class CameraManagerService(Service):
                 success=True, message=f"Stream stop attempted for '{request.camera}': {str(e)}", data=True
             )
 
+    @endpoint("cameras/stream/status", schema=ALL_SCHEMAS["stream_status"])
     async def get_stream_status(self, request: StreamStatusRequest) -> StreamStatusResponse:
         """Get camera stream status with resilient state management."""
         try:
@@ -1438,6 +1257,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get stream status for '{request.camera}': {e}")
             raise
 
+    @endpoint("cameras/stream/active", schema=ALL_SCHEMAS["get_active_streams"], methods=("GET",))
     def get_active_streams(self) -> ActiveStreamsResponse:
         """Get list of cameras with active streams."""
         try:
@@ -1450,6 +1270,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get active streams: {e}")
             raise
 
+    @endpoint("cameras/stream/stop/all", schema=ALL_SCHEMAS["stop_all_streams"])
     def stop_all_streams(self) -> BoolResponse:
         """Stop all active camera streams."""
         try:
@@ -1461,6 +1282,7 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to stop all streams: {e}")
             raise
 
+    @endpoint("stream/{camera_name}", methods=("GET",))
     async def serve_camera_stream(self, camera_name: str):
         """Serve MJPEG video stream for a specific camera."""
         try:
@@ -1602,6 +1424,11 @@ class CameraManagerService(Service):
             raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
 
     # Homography Calibration & Measurement Operations
+    @endpoint(
+        "cameras/homography/calibrate/checkerboard",
+        schema=ALL_SCHEMAS["calibrate_homography_checkerboard"],
+        as_tool=True,
+    )
     async def calibrate_homography_checkerboard(
         self, request: HomographyCalibrateCheckerboardRequest
     ) -> HomographyCalibrationResponse:
@@ -1673,6 +1500,11 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
+    @endpoint(
+        "cameras/homography/calibrate/correspondences",
+        schema=ALL_SCHEMAS["calibrate_homography_correspondences"],
+        as_tool=True,
+    )
     def calibrate_homography_correspondences(
         self, request: HomographyCalibrateCorrespondencesRequest
     ) -> HomographyCalibrationResponse:
@@ -1730,6 +1562,9 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
+    @endpoint(
+        "cameras/homography/calibrate/multi-view", schema=ALL_SCHEMAS["calibrate_homography_multi_view"], as_tool=True
+    )
     def calibrate_homography_multi_view(
         self, request: HomographyCalibrateMultiViewRequest
     ) -> HomographyCalibrationResponse:
@@ -1807,6 +1642,7 @@ class CameraManagerService(Service):
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 
+    @endpoint("cameras/homography/measure/box", schema=ALL_SCHEMAS["measure_homography_box"], as_tool=True)
     def measure_homography_box(self, request: HomographyMeasureBoundingBoxRequest) -> HomographyMeasurementResponse:
         """Measure bounding box dimensions using homography calibration."""
         try:
@@ -1846,6 +1682,7 @@ class CameraManagerService(Service):
             result = HomographyMeasurementResult(success=False)
             return HomographyMeasurementResponse(success=False, message=f"Measurement failed: {str(e)}", data=result)
 
+    @endpoint("cameras/homography/measure/batch", schema=ALL_SCHEMAS["measure_homography_batch"], as_tool=True)
     def measure_homography_batch(self, request: HomographyMeasureBatchRequest) -> HomographyBatchMeasurementResponse:
         """Unified batch measurement for bounding boxes and/or point-pair distances."""
         try:
@@ -1950,6 +1787,7 @@ class CameraManagerService(Service):
                 data=data,
             )
 
+    @endpoint("cameras/homography/measure/distance", schema=ALL_SCHEMAS["measure_homography_distance"], as_tool=True)
     def measure_homography_distance(self, request: HomographyMeasureDistanceRequest) -> HomographyDistanceResponse:
         """Measure distance between two points using homography calibration."""
         try:
@@ -1993,6 +1831,7 @@ class CameraManagerService(Service):
             )
 
     # Health Check
+    @endpoint("health", schema=HealthSchema, methods=("GET",))
     async def health_check(self) -> HealthCheckResponse:
         """Health check endpoint for container healthcheck."""
         try:
@@ -2013,6 +1852,7 @@ class CameraManagerService(Service):
             )
 
     # System Diagnostics
+    @endpoint("system/diagnostics", schema=ALL_SCHEMAS["get_system_diagnostics"], methods=("GET",), as_tool=True)
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics information."""
         try:

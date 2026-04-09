@@ -41,7 +41,10 @@ class TestAddEndpoint:
             mock_autolog.return_value = test_func
 
             # Apply decorator
-            _ = decorator(test_func)
+            result = decorator(test_func)
+
+            # Verify decorator returns the original function
+            assert result is test_func
 
             # Verify Mindtrace.autolog was called correctly
             mock_mindtrace.autolog.assert_called_once_with(self=mock_server)

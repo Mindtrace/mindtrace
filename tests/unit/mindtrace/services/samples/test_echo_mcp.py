@@ -29,16 +29,21 @@ class TestEchoMcpHelpers:
 
 
 class TestEchoMcpService:
+    def test_endpoint_spec_registered_via_decorator(self):
+        assert "echo" in EchoService.__endpoints__
+        spec = EchoService.__endpoints__["echo"]
+        assert spec.method_name == "echo"
+        assert spec.schema == echo_task
+        assert spec.as_tool is True
+
     @patch("mindtrace.services.samples.echo_mcp.Service.__init__")
-    def test_initialization_registers_endpoint_and_tool(self, mock_super_init):
+    def test_initialization_registers_tool(self, mock_super_init):
         mock_super_init.return_value = None
 
-        with patch.object(EchoService, "add_endpoint") as mock_add_endpoint:
-            with patch.object(EchoService, "add_tool") as mock_add_tool:
-                service = EchoService()
+        with patch.object(EchoService, "add_tool") as mock_add_tool:
+            service = EchoService()
 
         mock_super_init.assert_called_once()
-        mock_add_endpoint.assert_called_once_with("echo", service.echo, schema=echo_task, as_tool=True)
         mock_add_tool.assert_called_once_with("reverse_message", reverse_message)
 
     @patch("time.sleep")

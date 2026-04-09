@@ -15,7 +15,7 @@ from threading import RLock
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 
 
 class PipelineLoadInput(BaseModel):
@@ -76,12 +76,6 @@ class Pipeline(Service):
     register their own inference endpoints with TaskSchemas as needed.
     """
 
-    _endpoint_specs = [
-        EndpointSpec(path="load", method_name="load", schema=PipelineLoadTaskSchema),
-        EndpointSpec(path="unload", method_name="unload", schema=PipelineUnloadTaskSchema),
-        EndpointSpec(path="loaded", method_name="loaded", schema=PipelineLoadedTaskSchema),
-    ]
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._loaded = False
@@ -92,6 +86,7 @@ class Pipeline(Service):
         """Whether this Pipeline currently has resources/models loaded."""
         return self._loaded
 
+    @endpoint("load", schema=PipelineLoadTaskSchema)
     def load(self, payload: PipelineLoadInput) -> PipelineLoadOutput:
         """Load models/resources used by this Pipeline."""
         with self._load_state_lock:
@@ -102,6 +97,7 @@ class Pipeline(Service):
             self._loaded = True
             return PipelineLoadOutput(loaded=True, message="Pipeline loaded successfully.")
 
+    @endpoint("unload", schema=PipelineUnloadTaskSchema)
     def unload(self, payload: PipelineUnloadInput) -> PipelineUnloadOutput:
         """Unload models/resources used by this Pipeline."""
         with self._load_state_lock:
@@ -112,6 +108,7 @@ class Pipeline(Service):
             self._loaded = False
             return PipelineUnloadOutput(loaded=False, message="Pipeline unloaded successfully.")
 
+    @endpoint("loaded", schema=PipelineLoadedTaskSchema)
     def loaded(self) -> PipelineLoadedOutput:
         """Return current loaded state for this Pipeline."""
         return PipelineLoadedOutput(loaded=self._loaded)

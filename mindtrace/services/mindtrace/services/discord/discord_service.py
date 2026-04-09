@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import discord
 from urllib3.util.url import Url
 
-from mindtrace.services import EndpointSpec, Service
+from mindtrace.services import Service, endpoint
 from mindtrace.services.discord.discord_client import DiscordClient
 from mindtrace.services.discord.types import (
     DiscordCommandInput,
@@ -34,17 +34,6 @@ class DiscordService(Service):
     - Service lifecycle management
     - Integration with Mindtrace infrastructure
     """
-
-    _endpoint_specs = [
-        EndpointSpec(
-            path="discord.execute",
-            method_name="execute_command",
-            schema=DiscordCommandSchema(),
-            autolog_kwargs={"log_level": logging.INFO},
-        ),
-        EndpointSpec(path="discord.status", method_name="get_bot_status", schema=DiscordStatusSchema()),
-        EndpointSpec(path="discord.commands", method_name="get_commands", schema=DiscordCommandsSchema()),
-    ]
 
     def __init__(self, *, token: str | None = None, intents: Optional[Any] = None, **kwargs):
         """Initialize the Discord service.
@@ -104,6 +93,7 @@ class DiscordService(Service):
             self.logger.error(f"Discord bot task failed: {e}")
             raise
 
+    @endpoint("discord.execute", schema=DiscordCommandSchema(), autolog_kwargs={"log_level": logging.INFO})
     async def execute_command(self, payload: DiscordCommandInput) -> DiscordCommandOutput:
         """Execute a command via the service API.
 
@@ -353,6 +343,7 @@ class DiscordService(Service):
 
         return mock_interaction
 
+    @endpoint("discord.status", schema=DiscordStatusSchema())
     def get_bot_status(self) -> DiscordStatusOutput:
         """Get the current bot status.
 
@@ -372,6 +363,7 @@ class DiscordService(Service):
             status=str(self.discord_client.bot.status),
         )
 
+    @endpoint("discord.commands", schema=DiscordCommandsSchema())
     def get_commands(self) -> DiscordCommandsOutput:
         """Get list of registered commands.
 
