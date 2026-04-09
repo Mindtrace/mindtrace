@@ -623,3 +623,55 @@ class TestAsyncDatalakeUnit:
                     "geometry": {"x": 1},
                 }],
             )
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake):
+        schema = AnnotationSchema(
+            name="bbox-demo",
+            version="1.0.0",
+            task_type="detection",
+            allowed_annotation_kinds=["bbox"],
+            labels=[AnnotationLabelDefinition(name="dent", id=7)],
+        )
+        annotation_set = AnnotationSet(
+            name="gt",
+            purpose="ground_truth",
+            source_type="human",
+            annotation_schema_id=schema.annotation_schema_id,
+        )
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            label_id=7,
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        inserted_record.annotation_id = "annotation_1"
+        async_datalake.annotation_record_database.insert = AsyncMock(return_value=inserted_record)
+        async_datalake.annotation_set_database.update = AsyncMock(side_effect=lambda obj: obj)
+
+        with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
+            await async_datalake.add_annotation_records(
+                annotation_set.annotation_set_id,
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "dent",
+                        "label_id": 7,
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    },
+                    {
+                        "kind": "bbox",
+                        "label": "unknown",
+                        "source": {"type": "human", "name": "review-ui"},
+                        "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
+                    },
+                ],
+            )
+
+        assert async_datalake.annotation_record_database.insert.await_count == 0
+        async_datalake.annotation_set_database.update.assert_not_awaited()
+        assert annotation_set.annotation_record_ids == []
