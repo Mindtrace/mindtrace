@@ -336,6 +336,57 @@ class TestAsyncDatalakeUnit:
         await async_datalake.delete_asset_retention(asset_retention.asset_retention_id)
 
     @pytest.mark.asyncio
+    async def test_collection_and_retention_missing_paths_raise(self, async_datalake, mock_odm):
+        mock_odm.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError):
+            await async_datalake.get_collection("missing")
+
+        with pytest.raises(DocumentNotFoundError):
+            await async_datalake.get_collection_item("missing")
+
+        with pytest.raises(DocumentNotFoundError):
+            await async_datalake.get_asset_retention("missing")
+
+    @pytest.mark.asyncio
+    async def test_update_collection_item_validates_changed_relationships(self, async_datalake):
+        collection_item = CollectionItem(collection_id="collection_1", asset_id="asset_1")
+        async_datalake.get_collection_item = AsyncMock(return_value=collection_item)
+        async_datalake.get_collection = AsyncMock()
+        async_datalake.get_asset = AsyncMock()
+        async_datalake.collection_item_database.update = AsyncMock(side_effect=lambda obj: obj)
+
+        updated = await async_datalake.update_collection_item(
+            collection_item.collection_item_id,
+            collection_id="collection_2",
+            asset_id="asset_2",
+            status="hidden",
+        )
+
+        async_datalake.get_collection.assert_awaited_once_with("collection_2")
+        async_datalake.get_asset.assert_awaited_once_with("asset_2")
+        assert updated.collection_id == "collection_2"
+        assert updated.asset_id == "asset_2"
+        assert updated.status == "hidden"
+
+    @pytest.mark.asyncio
+    async def test_update_asset_retention_validates_changed_asset(self, async_datalake):
+        asset_retention = AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1")
+        async_datalake.get_asset_retention = AsyncMock(return_value=asset_retention)
+        async_datalake.get_asset = AsyncMock()
+        async_datalake.asset_retention_database.update = AsyncMock(side_effect=lambda obj: obj)
+
+        updated = await async_datalake.update_asset_retention(
+            asset_retention.asset_retention_id,
+            asset_id="asset_2",
+            retention_policy="archive_when_unreferenced",
+        )
+
+        async_datalake.get_asset.assert_awaited_once_with("asset_2")
+        assert updated.asset_id == "asset_2"
+        assert updated.retention_policy == "archive_when_unreferenced"
+
+    @pytest.mark.asyncio
     async def test_datum_crud_async(self, async_datalake, mock_odm):
         datum = await async_datalake.create_datum(
             asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"}, annotation_set_ids=["set_1"]
