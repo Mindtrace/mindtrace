@@ -2228,7 +2228,7 @@ def test_backend_internal_lock_contention(registry):
         assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
         with pytest.raises(LockAcquisitionError):
-            with registry.backend._internal_lock(lock_key, timeout=0.5):
+            with registry.backend._internal_lock(lock_key, timeout=0.01):
                 pass
     finally:
         # Release the lock
