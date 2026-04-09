@@ -6,7 +6,7 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import SubjectRef
+from mindtrace.datalake.types import AnnotationLabelDefinition, SubjectRef
 
 
 def _bare_datalake() -> Datalake:
@@ -326,3 +326,42 @@ def test_datalake_collection_and_retention_lifecycle(sync_datalake: Datalake):
         sync_datalake.get_collection_item("missing")
     with pytest.raises(DocumentNotFoundError):
         sync_datalake.get_asset_retention("missing")
+
+
+def test_sync_datalake_schema_wrappers_and_annotation_set_updates(sync_datalake: Datalake):
+    schema = sync_datalake.create_annotation_schema(
+        name="sync-schema",
+        version="1.0.0",
+        task_type="classification",
+        allowed_annotation_kinds=["classification"],
+        labels=[AnnotationLabelDefinition(name="cat", id=1)],
+    )
+
+    fetched_schema = sync_datalake.get_annotation_schema(schema.annotation_schema_id)
+    fetched_by_name = sync_datalake.get_annotation_schema_by_name_version("sync-schema", "1.0.0")
+    listed_schemas = sync_datalake.list_annotation_schemas({"task_type": "classification"})
+    updated_schema = sync_datalake.update_annotation_schema(
+        schema.annotation_schema_id,
+        labels=[{"name": "cat", "id": 1, "display_name": "Cat"}],
+    )
+
+    annotation_set = sync_datalake.create_annotation_set(
+        name="schema-rebind",
+        purpose="ground_truth",
+        source_type="human",
+    )
+    rebound_set = sync_datalake.update_annotation_set(
+        annotation_set.annotation_set_id,
+        annotation_schema_id=schema.annotation_schema_id,
+        status="active",
+    )
+    detached_set = sync_datalake.update_annotation_set(annotation_set.annotation_set_id, annotation_schema_id=None)
+    sync_datalake.delete_annotation_schema(schema.annotation_schema_id)
+
+    assert fetched_schema.annotation_schema_id == schema.annotation_schema_id
+    assert fetched_by_name.annotation_schema_id == schema.annotation_schema_id
+    assert any(item.annotation_schema_id == schema.annotation_schema_id for item in listed_schemas)
+    assert updated_schema.labels[0].display_name == "Cat"
+    assert rebound_set.annotation_schema_id == schema.annotation_schema_id
+    assert rebound_set.status == "active"
+    assert detached_set.annotation_schema_id is None
