@@ -499,7 +499,9 @@ class TestGainRoiTimeoutAndConfig:
         await cam.set_triggermode("trigger")
         await cam.set_ROI(1, 1, 4, 4)
 
-        with patch("mindtrace.hardware.cameras.backends.genicam.mock_genicam_camera_backend.time.time", return_value=123.0):
+        with patch(
+            "mindtrace.hardware.cameras.backends.genicam.mock_genicam_camera_backend.time.time", return_value=123.0
+        ):
             await cam.export_config(str(config_path))
 
         config_data = json.loads(config_path.read_text())

@@ -263,7 +263,9 @@ class TestCameraBackendBlockingExecution:
         ):
             result = await backend._run_blocking(str.upper, "abc", timeout=2.0)
 
-        executor_cls.assert_called_once_with(max_workers=1, thread_name_prefix="MinimalThreadAffinityBackend_affinity-cam")
+        executor_cls.assert_called_once_with(
+            max_workers=1, thread_name_prefix="MinimalThreadAffinityBackend_affinity-cam"
+        )
         loop.run_in_executor.assert_called_once()
         assert result == "done"
         assert backend._sdk_executor is executor_cls.return_value

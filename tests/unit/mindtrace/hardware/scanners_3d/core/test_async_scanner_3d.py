@@ -40,7 +40,9 @@ def _make_scanner():
         ),
     ],
 )
-async def test_open_selects_backend_parses_name_and_initializes(monkeypatch, name, module_path, class_name, expected_serial):
+async def test_open_selects_backend_parses_name_and_initializes(
+    monkeypatch, name, module_path, class_name, expected_serial
+):
     backend = Mock()
     backend.initialize = AsyncMock(return_value=True)
     factory = Mock(return_value=backend)
