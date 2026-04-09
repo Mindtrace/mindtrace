@@ -8,8 +8,12 @@ from mindtrace.datalake.types import (
     AnnotationRecord,
     AnnotationSet,
     Asset,
+    AssetRetention,
+    Collection,
+    CollectionItem,
     DatasetVersion,
     Datum,
+    ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
@@ -88,6 +92,26 @@ class TestDatalakeSyncFacade:
                 kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
             ),
             "delete_asset": None,
+            "create_collection": Collection(name="demo-collection"),
+            "get_collection": Collection(name="demo-collection"),
+            "list_collections": [],
+            "update_collection": Collection(name="demo-collection"),
+            "delete_collection": None,
+            "create_collection_item": CollectionItem(collection_id="collection_1", asset_id="asset_1"),
+            "get_collection_item": CollectionItem(collection_id="collection_1", asset_id="asset_1"),
+            "list_collection_items": [],
+            "resolve_collection_item": ResolvedCollectionItem(
+                collection_item=CollectionItem(collection_id="collection_1", asset_id="asset_1"),
+                collection=Collection(name="demo-collection"),
+                asset=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")),
+            ),
+            "update_collection_item": CollectionItem(collection_id="collection_1", asset_id="asset_1"),
+            "delete_collection_item": None,
+            "create_asset_retention": AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"),
+            "get_asset_retention": AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"),
+            "list_asset_retentions": [],
+            "update_asset_retention": AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"),
+            "delete_asset_retention": None,
             "create_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "get_annotation_set": AnnotationSet(name="gt", purpose="ground_truth", source_type="human"),
             "list_annotation_sets": [],
@@ -205,17 +229,26 @@ class TestDatalakeSyncFacade:
 
     def test_sync_facade_basic_methods(self, datalake, mock_backend):
         mock_backend.summary = AsyncMock(
-            return_value="Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            return_value=(
+                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            )
         )
         datalake.initialize()
         assert datalake.get_health()["status"] == "ok"
         assert (
             datalake.summary()
-            == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            == (
+                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            )
         )
         assert (
             str(datalake)
-            == "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            == (
+                "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            )
         )
         assert datalake.get_mounts()["default_mount"] == "temp"
         assert datalake.put_object(name="hopper.png", obj=b"bytes").version == "v1"
@@ -239,6 +272,31 @@ class TestDatalakeSyncFacade:
         assert datalake.list_assets() == []
         assert isinstance(datalake.update_asset_metadata("asset_1", {"source": "demo"}), Asset)
         datalake.delete_asset("asset_1")
+        assert isinstance(datalake.create_collection(name="demo-collection"), Collection)
+        assert isinstance(datalake.get_collection("collection_1"), Collection)
+        assert datalake.list_collections() == []
+        assert isinstance(datalake.update_collection("collection_1", status="archived"), Collection)
+        datalake.delete_collection("collection_1")
+        assert isinstance(
+            datalake.create_collection_item(collection_id="collection_1", asset_id="asset_1"),
+            CollectionItem,
+        )
+        assert isinstance(datalake.get_collection_item("collection_item_1"), CollectionItem)
+        assert datalake.list_collection_items() == []
+        assert isinstance(datalake.resolve_collection_item("collection_item_1"), ResolvedCollectionItem)
+        assert isinstance(datalake.update_collection_item("collection_item_1", status="hidden"), CollectionItem)
+        datalake.delete_collection_item("collection_item_1")
+        assert isinstance(
+            datalake.create_asset_retention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"),
+            AssetRetention,
+        )
+        assert isinstance(datalake.get_asset_retention("asset_retention_1"), AssetRetention)
+        assert datalake.list_asset_retentions() == []
+        assert isinstance(
+            datalake.update_asset_retention("asset_retention_1", retention_policy="archive_when_unreferenced"),
+            AssetRetention,
+        )
+        datalake.delete_asset_retention("asset_retention_1")
         assert isinstance(
             datalake.create_annotation_set(name="gt", purpose="ground_truth", source_type="human"), AnnotationSet
         )
@@ -268,12 +326,15 @@ class TestDatalakeSyncFacade:
 
     def test_summary_rewrites_async_prefix(self, datalake, mock_backend):
         mock_backend.summary = AsyncMock(
-            return_value="AsyncDatalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            return_value=(
+                "AsyncDatalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+                "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+            )
         )
 
         assert datalake.summary() == (
-            "Datalake(database=test_db, default_mount=temp, assets=0, annotation_sets=0, "
-            "annotation_records=0, datums=0, dataset_versions=0)"
+            "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
+            "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
         )
 
     def test_close_handles_cleanup_exceptions_and_context_manager(self, datalake):

@@ -3,8 +3,12 @@ from mindtrace.datalake.types import (
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetRetention,
+    Collection,
+    CollectionItem,
     DatasetVersion,
     Datum,
+    ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
@@ -38,17 +42,29 @@ def test_annotation_source_defaults_metadata():
 def test_main_type_str_methods_are_readable():
     storage_ref = StorageRef(mount="temp", name="hopper.png")
     asset = Asset(kind="image", media_type="image/png", storage_ref=storage_ref)
+    collection = Collection(name="demo-collection")
+    collection_item = CollectionItem(collection_id=collection.collection_id, asset_id=asset.asset_id)
+    asset_retention = AssetRetention(asset_id=asset.asset_id, owner_type="manual_pin", owner_id="owner_1")
     record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
     annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
     datum = Datum(asset_refs={"image": asset.asset_id}, split="train")
     dataset_version = DatasetVersion(dataset_name="demo", version="0.1.0", manifest=[datum.datum_id])
+    resolved_collection_item = ResolvedCollectionItem(
+        collection_item=collection_item,
+        collection=collection,
+        asset=asset,
+    )
     resolved_datum = ResolvedDatum(datum=datum, assets={"image": asset}, annotation_sets=[annotation_set])
     resolved_dataset = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[resolved_datum])
 
     assert "Asset(asset_id=" in str(asset)
+    assert "Collection(collection_id=" in str(collection)
+    assert "CollectionItem(collection_item_id=" in str(collection_item)
+    assert "AssetRetention(asset_retention_id=" in str(asset_retention)
     assert "AnnotationRecord(annotation_id=" in str(record)
     assert "AnnotationSet(annotation_set_id=" in str(annotation_set)
     assert "Datum(datum_id=" in str(datum)
+    assert "ResolvedCollectionItem(collection_item_id=" in str(resolved_collection_item)
     assert str(dataset_version) == "DatasetVersion(dataset=demo, version=0.1.0, datums=1)"
     assert str(resolved_datum) == f"ResolvedDatum(datum_id={datum.datum_id}, assets=1, annotation_sets=1)"
     assert str(resolved_dataset) == "ResolvedDatasetVersion(dataset=demo, version=0.1.0, datums=1)"
