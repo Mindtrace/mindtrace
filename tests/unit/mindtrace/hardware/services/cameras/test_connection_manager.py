@@ -73,7 +73,9 @@ class TestGetWrappers:
             ("get_network_diagnostics", "/network/diagnostics", {"latency_ms": 4.2}),
         ],
     )
-    async def test_get_wrappers_return_response_data(self, cm, monkeypatch, method_name, expected_endpoint, expected_data):
+    async def test_get_wrappers_return_response_data(
+        self, cm, monkeypatch, method_name, expected_endpoint, expected_data
+    ):
         monkeypatch.setattr(cm, "get", AsyncMock(return_value={"data": expected_data}))
 
         result = await getattr(cm, method_name)()
@@ -97,9 +99,25 @@ class TestPostWrappers:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("method_name", "args", "kwargs", "expected_endpoint", "expected_subset", "expected_timeout", "expected_result"),
+        (
+            "method_name",
+            "args",
+            "kwargs",
+            "expected_endpoint",
+            "expected_subset",
+            "expected_timeout",
+            "expected_result",
+        ),
         [
-            ("open_camera", ("Basler:cam",), {"test_connection": True}, "/cameras/open", {"camera": "Basler:cam", "test_connection": True}, None, True),
+            (
+                "open_camera",
+                ("Basler:cam",),
+                {"test_connection": True},
+                "/cameras/open",
+                {"camera": "Basler:cam", "test_connection": True},
+                None,
+                True,
+            ),
             (
                 "open_cameras_batch",
                 (["Basler:cam", "GenICam:cam"],),
@@ -120,8 +138,24 @@ class TestPostWrappers:
                 {"closed": 2},
             ),
             ("close_all_cameras", (), {}, "/cameras/close/all", {}, None, True),
-            ("get_camera_status", ("Basler:cam",), {}, "/cameras/status", {"camera": "Basler:cam"}, None, {"open": True}),
-            ("get_camera_info", ("Basler:cam",), {}, "/cameras/info", {"camera": "Basler:cam"}, None, {"serial": "123"}),
+            (
+                "get_camera_status",
+                ("Basler:cam",),
+                {},
+                "/cameras/status",
+                {"camera": "Basler:cam"},
+                None,
+                {"open": True},
+            ),
+            (
+                "get_camera_info",
+                ("Basler:cam",),
+                {},
+                "/cameras/info",
+                {"camera": "Basler:cam"},
+                None,
+                {"serial": "123"},
+            ),
             (
                 "get_camera_capabilities",
                 ("Basler:cam",),

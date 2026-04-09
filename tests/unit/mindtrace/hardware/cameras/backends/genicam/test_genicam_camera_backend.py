@@ -766,8 +766,12 @@ class TestDiscoveryAndHelperMethods:
         from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
 
         with (
-            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.getenv", return_value="/env.cti"),
-            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True),
+            patch(
+                "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.getenv", return_value="/env.cti"
+            ),
+            patch(
+                "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True
+            ),
         ):
             assert GenICamCameraBackend._detect_cti_path() == "/env.cti"
 
@@ -776,9 +780,17 @@ class TestDiscoveryAndHelperMethods:
 
         with (
             patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.getenv", return_value=None),
-            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=False),
-            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.system", return_value="Linux"),
-            patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.machine", return_value="x86_64"),
+            patch(
+                "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=False
+            ),
+            patch(
+                "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.system",
+                return_value="Linux",
+            ),
+            patch(
+                "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.platform.machine",
+                return_value="x86_64",
+            ),
         ):
             with pytest.raises(CameraConfigurationError, match="GenTL Producer not found"):
                 GenICamCameraBackend._detect_cti_path()
@@ -965,7 +977,9 @@ class TestAdditionalGenICamOperations:
         async def raise_from_to_thread(_func):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.asyncio.to_thread", raise_from_to_thread)
+        monkeypatch.setattr(
+            "mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.asyncio.to_thread", raise_from_to_thread
+        )
 
         with pytest.raises(CameraCaptureError, match="Image enhancement failed"):
             await backend._enhance_image(np.zeros((2, 2, 3), dtype=np.uint8))
@@ -1006,7 +1020,9 @@ class TestAdditionalGenICamOperations:
         assert wb_node.value == "Once"
 
     @pytest.mark.asyncio
-    async def test_import_config_supports_legacy_exposure_and_genicam_nodes(self, genicam_backend_uninitialized, tmp_path):
+    async def test_import_config_supports_legacy_exposure_and_genicam_nodes(
+        self, genicam_backend_uninitialized, tmp_path
+    ):
         backend = attach_mock_acquirer(genicam_backend_uninitialized)
         backend.set_exposure = AsyncMock()
         backend.set_gain = AsyncMock()
