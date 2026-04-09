@@ -173,6 +173,90 @@ class AnnotationSet(DatalakeDocument):
         indexes = ["purpose", "source_type", "status"]
 
 
+class Collection(DatalakeDocument):
+    """Logical workspace, labeling scope, or collaboration boundary over assets."""
+
+    def __str__(self) -> str:
+        return f"Collection(collection_id={self.collection_id}, name={self.name}, status={self.status})"
+
+    collection_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("collection"))
+    name: str
+    description: str | None = None
+    status: Literal["active", "archived", "deleted"] = "active"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_collections"
+        indexes = ["name", "status"]
+
+
+class CollectionItem(DatalakeDocument):
+    """Membership record connecting a collection to an asset."""
+
+    def __str__(self) -> str:
+        return f"CollectionItem(collection_item_id={self.collection_item_id}, collection_id={self.collection_id}, asset_id={self.asset_id})"
+
+    collection_item_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("collection_item"))
+    collection_id: Annotated[str, Indexed(unique=False)]
+    asset_id: Annotated[str, Indexed(unique=False)]
+    split: Literal["train", "val", "test"] | None = None
+    status: Literal["active", "hidden", "removed"] = "active"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    added_at: datetime = Field(default_factory=utc_now)
+    added_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_collection_items"
+        indexes = [
+            "collection_id",
+            "asset_id",
+            "split",
+            "status",
+            [("collection_id", 1), ("asset_id", 1)],
+        ]
+
+
+class AssetRetention(DatalakeDocument):
+    """Retention/stewardship record describing why an asset should continue to exist."""
+
+    def __str__(self) -> str:
+        return (
+            f"AssetRetention(asset_retention_id={self.asset_retention_id}, asset_id={self.asset_id}, "
+            f"owner_type={self.owner_type}, owner_id={self.owner_id})"
+        )
+
+    asset_retention_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("asset_retention"))
+    asset_id: Annotated[str, Indexed(unique=False)]
+    owner_type: Literal[
+        "collection_import",
+        "dataset_version",
+        "global_corpus",
+        "job_run",
+        "manual_pin",
+        "system",
+    ]
+    owner_id: str
+    retention_policy: Literal["retain", "delete_when_unreferenced", "archive_when_unreferenced"] = "retain"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_asset_retentions"
+        indexes = [
+            "asset_id",
+            "owner_type",
+            "owner_id",
+            "retention_policy",
+            [("asset_id", 1), ("owner_type", 1), ("owner_id", 1)],
+        ]
+
+
 class Datum(DatalakeDocument):
     """Reusable unit of dataset membership."""
 
@@ -211,6 +295,20 @@ class DatasetVersion(DatalakeDocument):
     class Settings:
         name = "datalake_dataset_versions"
         indexes = [[("dataset_name", 1), ("version", 1)]]
+
+
+class ResolvedCollectionItem(BaseModel):
+    """Resolved collection item with linked collection and asset."""
+
+    collection_item: CollectionItem
+    collection: Collection
+    asset: Asset
+
+    def __str__(self) -> str:
+        return (
+            f"ResolvedCollectionItem(collection_item_id={self.collection_item.collection_item_id}, "
+            f"collection={self.collection.name}, asset_id={self.asset.asset_id})"
+        )
 
 
 class ResolvedDatum(BaseModel):
