@@ -292,6 +292,7 @@ def _ensure_voc_schemas(datalake: Datalake) -> dict[str, AnnotationSchema]:
             task_type="classification",
             allowed_annotation_kinds=["classification"],
             labels=_schema_labels(),
+            optional_attributes=["layer"],
         ),
         "detection": _ensure_schema(
             datalake,
@@ -307,6 +308,7 @@ def _ensure_voc_schemas(datalake: Datalake) -> dict[str, AnnotationSchema]:
             task_type="segmentation",
             allowed_annotation_kinds=["mask"],
             labels=_schema_labels(),
+            optional_attributes=["layer", "source_mask"],
         ),
     }
 
