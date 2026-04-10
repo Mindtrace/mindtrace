@@ -263,8 +263,27 @@ def _schema_labels(include_background: bool = False) -> list[AnnotationLabelDefi
 
 
 def _ensure_schema(datalake: Datalake, *, name: str, task_type: str, allowed_annotation_kinds: list[str], labels: list[AnnotationLabelDefinition], required_attributes: list[str] | None = None, optional_attributes: list[str] | None = None) -> AnnotationSchema:
+    required_attributes = required_attributes or []
+    optional_attributes = optional_attributes or []
     try:
-        return datalake.get_annotation_schema_by_name_version(name, PASCAL_VOC_SCHEMA_VERSION)
+        existing = datalake.get_annotation_schema_by_name_version(name, PASCAL_VOC_SCHEMA_VERSION)
+        desired_optional = sorted(set(existing.optional_attributes) | set(optional_attributes))
+        desired_required = sorted(set(existing.required_attributes) | set(required_attributes))
+        desired_kinds = list(dict.fromkeys([*existing.allowed_annotation_kinds, *allowed_annotation_kinds]))
+        if (
+            existing.task_type != task_type
+            or desired_optional != sorted(existing.optional_attributes)
+            or desired_required != sorted(existing.required_attributes)
+            or desired_kinds != list(existing.allowed_annotation_kinds)
+        ):
+            existing = datalake.update_annotation_schema(
+                existing.annotation_schema_id,
+                task_type=task_type,
+                allowed_annotation_kinds=desired_kinds,
+                required_attributes=desired_required,
+                optional_attributes=desired_optional,
+            )
+        return existing
     except Exception:
         pass
     try:
@@ -275,8 +294,8 @@ def _ensure_schema(datalake: Datalake, *, name: str, task_type: str, allowed_ann
             allowed_annotation_kinds=allowed_annotation_kinds,
             labels=labels,
             allow_scores=False,
-            required_attributes=required_attributes or [],
-            optional_attributes=optional_attributes or [],
+            required_attributes=required_attributes,
+            optional_attributes=optional_attributes,
             allow_additional_attributes=False,
             metadata={"source_dataset": "pascal_voc", "year": "2012"},
         )
@@ -409,6 +428,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             },
             size_bytes=len(image_bytes),
             created_by=config.created_by,
+            on_conflict="overwrite",
         )
         image_asset_count += 1
 
@@ -503,6 +523,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                         "source_class_name": class_name,
                     },
                     created_by=config.created_by,
+                    on_conflict="overwrite",
                 )
                 mask_asset_count += 1
                 records.append(

@@ -246,6 +246,77 @@ For the evolving architecture and canonical V3 design discussion, see:
 
 - `docs/datalake-v3-proposal.md`
 
+## Built-in Pascal VOC importer
+
+The Datalake package now includes a built-in importer for **Pascal VOC 2012**.
+
+Current scope:
+
+- VOC **2012** only
+- splits: `train`, `val`, `trainval`
+- one image -> one `Asset`
+- one sample -> one `Datum`
+- separate annotation sets for:
+  - classification
+  - detection
+  - segmentation
+- segmentation imported from `SegmentationClass` as:
+  - one per-class binary mask asset
+  - one `mask` annotation record per class present
+
+### CLI usage
+
+After installing the package from a branch or editable checkout:
+
+```bash
+mindtrace-datalake-import-pascal-voc \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/pascal-voc" \
+  --split train \
+  --dataset-name "pascal-voc-2012-train" \
+  --download
+```
+
+Or directly as a module:
+
+```bash
+python -m mindtrace.datalake.importers.pascal_voc \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/pascal-voc" \
+  --split train \
+  --dataset-name "pascal-voc-2012-train" \
+  --download
+```
+
+### Python API
+
+```python
+from mindtrace.datalake import Datalake, PascalVocImportConfig, import_pascal_voc
+
+with Datalake.create(
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+) as datalake:
+    summary = import_pascal_voc(
+        datalake,
+        PascalVocImportConfig(
+            root_dir="./data/pascal-voc",
+            split="train",
+            dataset_name="pascal-voc-2012-train",
+            download=True,
+        ),
+    )
+    print(summary)
+```
+
+### Notes
+
+- The importer will reuse an already-downloaded VOC tarball or extracted `VOCdevkit/VOC2012` tree when present.
+- Importer-managed image and mask payload writes use overwrite-on-conflict semantics so local retries after failed partial imports are less brittle.
+- The importer still fails if the target `DatasetVersion` already exists.
+
 ## Near-term development direction
 
 The near-term direction for the Datalake is:
