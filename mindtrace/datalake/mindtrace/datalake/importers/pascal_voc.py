@@ -245,7 +245,13 @@ def _extract_present_segmentation_classes(mask_path: Path) -> list[tuple[str, Im
 
 
 def _asset_object_name(prefix: str, split: str, kind: str, filename: str) -> str:
-    return f"{prefix}/{split}/{kind}/{filename}"
+    """Build a flat registry object name.
+
+    The current local/temp registry backend does not safely handle slash-delimited object names,
+    so we flatten importer-managed keys while preserving the original source path in metadata.
+    """
+    safe_prefix = prefix.replace("/", "__")
+    return f"{safe_prefix}__{split}__{kind}__{filename}"
 
 
 def _schema_labels(include_background: bool = False) -> list[AnnotationLabelDefinition]:
