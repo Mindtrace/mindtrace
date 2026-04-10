@@ -98,6 +98,19 @@ def _voc_root_from_base(root_dir: Path) -> Path:
     return nested
 
 
+def _download_archive(source_url: str, archive_path: Path) -> None:
+    urllib.request.urlretrieve(source_url, archive_path)
+
+
+def _safe_extract_tar(archive_path: Path, root_dir: Path) -> None:
+    try:
+        with tarfile.open(archive_path, "r") as tar:
+            tar.extractall(path=root_dir, filter="data")
+    except TypeError:
+        with tarfile.open(archive_path, "r") as tar:
+            tar.extractall(path=root_dir)
+
+
 def _download_if_missing(root_dir: Path, *, download: bool, source_url: str) -> Path:
     voc_root = _voc_root_from_base(root_dir)
     if voc_root.exists():
@@ -109,15 +122,30 @@ def _download_if_missing(root_dir: Path, *, download: bool, source_url: str) -> 
 
     root_dir.mkdir(parents=True, exist_ok=True)
     archive_path = root_dir / PASCAL_VOC_2012_ARCHIVE_NAME
-    if not archive_path.exists():
-        urllib.request.urlretrieve(source_url, archive_path)
-    with tarfile.open(archive_path, "r") as tar:
-        tar.extractall(path=root_dir)
 
-    voc_root = _voc_root_from_base(root_dir)
-    if not voc_root.exists():
-        raise FileNotFoundError(f"Downloaded Pascal VOC archive, but could not find extracted directory at {voc_root}")
-    return voc_root
+    attempts = 2
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            if not archive_path.exists():
+                _download_archive(source_url, archive_path)
+            _safe_extract_tar(archive_path, root_dir)
+            voc_root = _voc_root_from_base(root_dir)
+            if not voc_root.exists():
+                raise FileNotFoundError(
+                    f"Downloaded Pascal VOC archive, but could not find extracted directory at {voc_root}"
+                )
+            return voc_root
+        except (tarfile.TarError, EOFError, OSError) as exc:
+            last_error = exc
+            if archive_path.exists():
+                archive_path.unlink()
+            if attempt == attempts:
+                break
+
+    raise RuntimeError(
+        f"Failed to download/extract Pascal VOC 2012 after {attempts} attempts; last error: {last_error}"
+    ) from last_error
 
 
 def _ensure_required_layout(voc_root: Path) -> None:
