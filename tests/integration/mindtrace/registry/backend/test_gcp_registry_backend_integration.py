@@ -228,12 +228,16 @@ def test_delete_object(backend, sample_object_dir, sample_metadata):
 
 
 def test_invalid_object_name(backend, sample_object_dir):
-    """Test handling of invalid object names."""
+    """Test handling of invalid object names.
+
+    Underscores are now allowed in object names. Only truly invalid characters
+    (like @) or empty names should fail.
+    """
     # Backend returns failed OpResult for invalid names (doesn't raise)
-    results = backend.push("invalid_name", "1.0.0", sample_object_dir, metadata={"_files": []})
+    results = backend.push("invalid@name", "1.0.0", sample_object_dir, metadata={"_files": []})
     result = results.first()
     assert result.is_error
-    assert "underscore" in result.message.lower()
+    assert "cannot contain '@'" in result.message.lower()
 
 
 def test_register_materializer(backend):
