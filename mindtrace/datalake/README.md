@@ -317,6 +317,47 @@ with Datalake.create(
 - Importer-managed image and mask payload writes use overwrite-on-conflict semantics so local retries after failed partial imports are less brittle.
 - The importer still fails if the target `DatasetVersion` already exists.
 
+## Datalake service
+
+The Datalake package now also includes a `DatalakeService` class for exposing an `AsyncDatalake` through the Mindtrace `Service` framework (FastAPI + MCP).
+
+Design notes:
+
+- uses `AsyncDatalake` internally rather than the sync `Datalake`
+- initialization is lazy with optional startup initialization for live service processes
+- service endpoints are registered as typed `TaskSchema`-backed operations
+- selected read endpoints are also exposed as MCP tools
+
+Example:
+
+```python
+from mindtrace.datalake import DatalakeService
+
+service = DatalakeService.launch(
+    host="localhost",
+    port=8080,
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+)
+
+print(service.health())
+print(service.dataset_versions_list(dataset_name="surface-defects"))
+```
+
+Initial endpoint families include:
+
+- `health`, `summary`, `mounts`
+- `objects.*`
+- `assets.*`
+- `collections.*`
+- `collection_items.*`
+- `asset_retentions.*`
+- `annotation_schemas.*`
+- `annotation_sets.*`
+- `annotation_records.*`
+- `datums.*`
+- `dataset_versions.*`
+
 ## Near-term development direction
 
 The near-term direction for the Datalake is:
