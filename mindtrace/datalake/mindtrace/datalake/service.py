@@ -50,6 +50,7 @@ from mindtrace.datalake.service_types import (
     DatalakeSummarySchema,
     DatasetVersionListOutput,
     DatumOutput,
+    DatumListOutput,
     DatasetVersionOutput,
     DeleteAnnotationRecordSchema,
     DeleteAnnotationSchemaSchema,
