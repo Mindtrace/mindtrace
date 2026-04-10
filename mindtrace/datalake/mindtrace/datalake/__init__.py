@@ -1,5 +1,6 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
+from .importers import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
 from .types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -27,6 +28,8 @@ __all__ = [
     "AnnotationSource",
     "AnnotationSchemaInUseError",
     "Asset",
+    "PascalVocImportConfig",
+    "PascalVocImportSummary",
     "AssetRetention",
     "AsyncDatalake",
     "Collection",
@@ -38,6 +41,7 @@ __all__ = [
     "ResolvedCollectionItem",
     "ResolvedDatasetVersion",
     "ResolvedDatum",
+    "import_pascal_voc",
     "StorageRef",
     "SubjectRef",
 ]

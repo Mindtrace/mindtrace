@@ -16,7 +16,11 @@ dependencies = [
     "mindtrace-registry>=0.10.0",
     "mindtrace-database>=0.10.0",
     "mindtrace-services>=0.10.0",
+    "Pillow>=10.0.0",
 ]
+
+[project.scripts]
+mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
 
 [project.urls]
 Homepage = "https://mindtrace.ai"
