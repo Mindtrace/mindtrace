@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import tarfile
-import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from io import BytesIO
@@ -11,6 +10,8 @@ from typing import Iterable
 
 from PIL import Image
 from tqdm import tqdm
+
+from mindtrace.core.utils.download import download_with_progress
 
 from ..async_datalake import DuplicateAnnotationSchemaError
 from ..datalake import Datalake
@@ -98,8 +99,13 @@ def _voc_root_from_base(root_dir: Path) -> Path:
     return nested
 
 
-def _download_archive(source_url: str, archive_path: Path) -> None:
-    urllib.request.urlretrieve(source_url, archive_path)
+def _download_archive(source_url: str, archive_path: Path, *, show_progress: bool) -> None:
+    if show_progress:
+        download_with_progress(source_url, archive_path, desc=f"Downloading {archive_path.name}")
+    else:
+        from urllib.request import urlretrieve
+
+        urlretrieve(source_url, archive_path)
 
 
 def _safe_extract_tar(archive_path: Path, root_dir: Path) -> None:
@@ -111,7 +117,7 @@ def _safe_extract_tar(archive_path: Path, root_dir: Path) -> None:
             tar.extractall(path=root_dir)
 
 
-def _download_if_missing(root_dir: Path, *, download: bool, source_url: str) -> Path:
+def _download_if_missing(root_dir: Path, *, download: bool, source_url: str, show_progress: bool) -> Path:
     voc_root = _voc_root_from_base(root_dir)
     if voc_root.exists():
         return voc_root
@@ -128,7 +134,7 @@ def _download_if_missing(root_dir: Path, *, download: bool, source_url: str) -> 
     for attempt in range(1, attempts + 1):
         try:
             if not archive_path.exists():
-                _download_archive(source_url, archive_path)
+                _download_archive(source_url, archive_path, show_progress=show_progress)
             _safe_extract_tar(archive_path, root_dir)
             voc_root = _voc_root_from_base(root_dir)
             if not voc_root.exists():
@@ -332,7 +338,12 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
 
     dataset_name = config.dataset_name or _default_dataset_name(config.split)
     root_dir = _normalize_root(config.root_dir)
-    voc_root = _download_if_missing(root_dir, download=config.download, source_url=config.source_url)
+    voc_root = _download_if_missing(
+        root_dir,
+        download=config.download,
+        source_url=config.source_url,
+        show_progress=config.show_progress,
+    )
     _ensure_required_layout(voc_root)
 
     try:
