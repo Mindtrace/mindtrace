@@ -143,7 +143,7 @@ class DatalakeService(Service):
         self.initialize_on_startup = initialize_on_startup
 
         if live_service and initialize_on_startup:
-            self.app.add_event_handler("startup", self._startup_initialize)
+            self.app.router.on_startup.append(self._startup_initialize)
 
         self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
