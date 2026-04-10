@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterable
 
 from PIL import Image
+from tqdm import tqdm
 
 from ..async_datalake import DuplicateAnnotationSchemaError
 from ..datalake import Datalake
@@ -60,6 +61,7 @@ class PascalVocImportConfig:
     created_by: str | None = None
     object_name_prefix: str | None = None
     source_url: str = PASCAL_VOC_2012_URL
+    show_progress: bool = True
 
 
 @dataclass(slots=True)
@@ -327,7 +329,9 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     detection_record_count = 0
     segmentation_record_count = 0
 
-    for image_id in image_ids:
+    image_iterator = tqdm(image_ids, desc=f"Importing {dataset_name}", unit="image") if config.show_progress else image_ids
+
+    for image_id in image_iterator:
         image_path = image_dir / f"{image_id}.jpg"
         annotation_path = annotation_dir / f"{image_id}.xml"
         if not image_path.exists():
@@ -506,6 +510,11 @@ def _build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--object-name-prefix", help="Optional object-name prefix for imported assets")
     parser.add_argument("--download", action="store_true", help="Download Pascal VOC 2012 if it is missing locally")
     parser.add_argument("--source-url", default=PASCAL_VOC_2012_URL)
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the tqdm progress bar during per-image import",
+    )
     return parser
 
 
@@ -527,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
                 created_by=args.created_by,
                 object_name_prefix=args.object_name_prefix,
                 source_url=args.source_url,
+                show_progress=not args.no_progress,
             ),
         )
     finally:
