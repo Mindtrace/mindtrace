@@ -1,5 +1,6 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
+from .service import DatalakeService
 from .types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -35,6 +36,7 @@ __all__ = [
     "CollectionItem",
     "DatasetVersion",
     "Datalake",
+    "DatalakeService",
     "Datum",
     "DuplicateAnnotationSchemaError",
     "ResolvedCollectionItem",
