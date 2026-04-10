@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.service_types import (
+    AddAnnotationRecordsSchema,
     AddAnnotationRecordsInput,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
