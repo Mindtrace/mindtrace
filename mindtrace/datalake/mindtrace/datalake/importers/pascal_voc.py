@@ -232,7 +232,7 @@ def _parse_detection_annotations(annotation_path: Path) -> list[dict]:
 def _extract_present_segmentation_classes(mask_path: Path) -> list[tuple[str, Image.Image]]:
     with Image.open(mask_path) as mask_image:
         palette_image = mask_image.convert("P")
-        pixels = list(palette_image.getdata())
+        pixels = list(palette_image.get_flattened_data())
         width, height = palette_image.size
         class_ids = sorted({value for value in pixels if value not in (0, 255) and value in VOC_SEGMENTATION_ID_TO_CLASS})
         masks: list[tuple[str, Image.Image]] = []
