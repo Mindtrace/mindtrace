@@ -162,7 +162,9 @@ def _ensure_required_layout(voc_root: Path) -> None:
     ]
     missing = [path for path in required if not path.exists()]
     if missing:
-        raise FileNotFoundError(f"Pascal VOC 2012 layout is incomplete. Missing: {', '.join(str(path) for path in missing)}")
+        raise FileNotFoundError(
+            f"Pascal VOC 2012 layout is incomplete. Missing: {', '.join(str(path) for path in missing)}"
+        )
 
 
 def _read_split_ids(voc_root: Path, split: str) -> list[str]:
@@ -234,7 +236,9 @@ def _extract_present_segmentation_classes(mask_path: Path) -> list[tuple[str, Im
         palette_image = mask_image.convert("P")
         pixels = list(palette_image.get_flattened_data())
         width, height = palette_image.size
-        class_ids = sorted({value for value in pixels if value not in (0, 255) and value in VOC_SEGMENTATION_ID_TO_CLASS})
+        class_ids = sorted(
+            {value for value in pixels if value not in (0, 255) and value in VOC_SEGMENTATION_ID_TO_CLASS}
+        )
         masks: list[tuple[str, Image.Image]] = []
         for class_id in class_ids:
             class_name = VOC_SEGMENTATION_ID_TO_CLASS[class_id]
@@ -262,7 +266,16 @@ def _schema_labels(include_background: bool = False) -> list[AnnotationLabelDefi
     return labels
 
 
-def _ensure_schema(datalake: Datalake, *, name: str, task_type: str, allowed_annotation_kinds: list[str], labels: list[AnnotationLabelDefinition], required_attributes: list[str] | None = None, optional_attributes: list[str] | None = None) -> AnnotationSchema:
+def _ensure_schema(
+    datalake: Datalake,
+    *,
+    name: str,
+    task_type: str,
+    allowed_annotation_kinds: list[str],
+    labels: list[AnnotationLabelDefinition],
+    required_attributes: list[str] | None = None,
+    optional_attributes: list[str] | None = None,
+) -> AnnotationSchema:
     required_attributes = required_attributes or []
     optional_attributes = optional_attributes or []
     try:
@@ -395,7 +408,9 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     detection_record_count = 0
     segmentation_record_count = 0
 
-    image_iterator = tqdm(image_ids, desc=f"Importing {dataset_name}", unit="image") if config.show_progress else image_ids
+    image_iterator = (
+        tqdm(image_ids, desc=f"Importing {dataset_name}", unit="image") if config.show_progress else image_ids
+    )
 
     for image_id in image_iterator:
         image_path = image_dir / f"{image_id}.jpg"
