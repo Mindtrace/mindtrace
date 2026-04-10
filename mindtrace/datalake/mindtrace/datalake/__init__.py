@@ -1,6 +1,5 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
-from .importers import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
 from .types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -45,3 +44,16 @@ __all__ = [
     "StorageRef",
     "SubjectRef",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"PascalVocImportConfig", "PascalVocImportSummary", "import_pascal_voc"}:
+        from .importers import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
+
+        exports = {
+            "PascalVocImportConfig": PascalVocImportConfig,
+            "PascalVocImportSummary": PascalVocImportSummary,
+            "import_pascal_voc": import_pascal_voc,
+        }
+        return exports[name]
+    raise AttributeError(name)
