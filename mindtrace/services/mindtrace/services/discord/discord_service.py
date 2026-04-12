@@ -7,7 +7,6 @@ maintaining the Discord bot functionality.
 import asyncio
 import logging
 from typing import Any, Optional
-from unittest.mock import AsyncMock, Mock
 
 import discord
 from urllib3.util.url import Url
@@ -15,6 +14,10 @@ from urllib3.util.url import Url
 from mindtrace.services import Service, endpoint
 from mindtrace.services.discord.discord_client import DiscordClient
 from mindtrace.services.discord.types import (
+    APIChannel,
+    APIGuild,
+    APIInteraction,
+    APIUser,
     DiscordCommandInput,
     DiscordCommandOutput,
     DiscordCommandSchema,
@@ -292,56 +295,35 @@ class DiscordService(Service):
 
         return type_mapping.get(discord_type, str)  # Default to str if unknown
 
-    def _create_minimal_interaction(self, payload: DiscordCommandInput) -> Mock:
-        """Create a minimal mock Discord interaction for command execution.
-
-        This creates only the essential attributes needed for command execution
-        without generating fake Discord server data. The focus is on exposing
-        the same functionality through both Discord and HTTP interfaces.
+    @staticmethod
+    def _create_minimal_interaction(payload: DiscordCommandInput) -> APIInteraction:
+        """Create a lightweight interaction for executing Discord commands via HTTP.
 
         Args:
-            payload: Command input data
+            payload: Command input data.
 
         Returns:
-            Minimal mock interaction object
+            An :class:`APIInteraction` that satisfies the interface Discord slash
+            command callbacks expect.
         """
-        # Create minimal mock user
-        mock_user = Mock()
-        mock_user.id = payload.author_id
-        mock_user.mention = f"<@{payload.author_id}>" if payload.author_id else "<@0>"
-        mock_user.display_name = f"User{payload.author_id}" if payload.author_id else "API User"
+        user = APIUser(
+            id=payload.author_id,
+            mention=f"<@{payload.author_id}>" if payload.author_id else "<@0>",
+            display_name=f"User{payload.author_id}" if payload.author_id else "API User",
+        )
 
-        # Create minimal mock guild if guild_id is provided (for guild-specific commands)
-        mock_guild = None
+        guild = None
         if payload.guild_id:
-            mock_guild = Mock()
-            mock_guild.id = payload.guild_id
-            # Don't populate fake data - let commands handle missing data gracefully
-            mock_guild.get_member = Mock(return_value=mock_user)
+            guild = APIGuild(id=payload.guild_id, _member=user)
 
-        # Create minimal mock channel
-        mock_channel = Mock()
-        mock_channel.id = payload.channel_id
+        channel = APIChannel(id=payload.channel_id)
 
-        # Create minimal mock interaction
-        mock_interaction = Mock()
-        mock_interaction.user = mock_user
-        mock_interaction.guild = mock_guild
-        mock_interaction.channel = mock_channel
-        mock_interaction.message_id = payload.message_id
-
-        # Create mock response
-        mock_response = Mock()
-        mock_response.send_message = AsyncMock()
-        mock_response.defer = AsyncMock()
-        mock_interaction.response = mock_response
-
-        # Create mock followup
-        mock_followup = Mock()
-        mock_followup.send = AsyncMock()
-        mock_interaction.followup = mock_followup
-
-        return mock_interaction
+        return APIInteraction(
+            user=user,
+            guild=guild,
+            channel=channel,
+            message_id=payload.message_id,
+        )
 
     @endpoint("discord.status", schema=DiscordStatusSchema())
     def get_bot_status(self) -> DiscordStatusOutput:

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -98,3 +98,82 @@ class DiscordEventHandler(ABC):
     async def handle(self, event_type: DiscordEventType, **kwargs) -> None:
         """Handle a Discord event."""
         pass  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# Lightweight interaction types for executing Discord commands via HTTP API.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CapturedCall:
+    """An async callable that records whether it was invoked and with what arguments.
+
+    Used to capture responses from Discord command callbacks when executing
+    commands programmatically via the HTTP API.
+    """
+
+    called: bool = False
+    call_args: tuple = ()
+
+    async def __call__(self, *args, **kwargs):
+        self.called = True
+        self.call_args = (args, kwargs)
+
+
+@dataclass
+class APIUser:
+    """Minimal user representation for programmatic command execution."""
+
+    id: int | None
+    mention: str
+    display_name: str
+
+
+@dataclass
+class APIGuild:
+    """Minimal guild representation for programmatic command execution."""
+
+    id: int
+    _member: APIUser | None = field(default=None, repr=False)
+
+    def get_member(self, member_id: int) -> APIUser | None:
+        return self._member
+
+
+@dataclass
+class APIChannel:
+    """Minimal channel representation for programmatic command execution."""
+
+    id: int | None
+
+
+@dataclass
+class APIResponse:
+    """Captures calls to interaction.response methods."""
+
+    send_message: CapturedCall = field(default_factory=CapturedCall)
+    defer: CapturedCall = field(default_factory=CapturedCall)
+
+
+@dataclass
+class APIFollowup:
+    """Captures calls to interaction.followup methods."""
+
+    send: CapturedCall = field(default_factory=CapturedCall)
+
+
+@dataclass
+class APIInteraction:
+    """Lightweight Discord interaction for executing commands via the HTTP API.
+
+    Provides the minimal interface that Discord slash command callbacks expect,
+    without depending on discord.py internals.
+    """
+
+    user: APIUser
+    guild: APIGuild | None
+    channel: APIChannel
+    message_id: int | None
+    response: APIResponse = field(default_factory=APIResponse)
+    followup: APIFollowup = field(default_factory=APIFollowup)
