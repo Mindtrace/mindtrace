@@ -57,7 +57,6 @@ class LocalRegistryBackend(RegistryBackend):
         if isinstance(uri, str) and uri.startswith("file://"):
             uri = uri[len("file://") :]
         super().__init__(uri=uri, **kwargs)
-        self.logger.propagate = False
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"

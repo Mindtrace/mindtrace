@@ -80,7 +80,6 @@ class _RegistryCore(Mindtrace):
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
-        self.logger.propagate = False
 
         from mindtrace.registry import _ensure_default_materializers
 

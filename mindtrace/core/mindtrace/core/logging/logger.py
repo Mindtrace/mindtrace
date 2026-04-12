@@ -238,12 +238,22 @@ def get_logger(
         name = "mindtrace"
 
     full_name = name if name.startswith("mindtrace") else f"mindtrace.{name}"
+    caller_provided_kwargs = bool(kwargs)
     kwargs.setdefault("propagate", True)
 
-    # Ensure the root "mindtrace" logger exists (once) so propagated messages have a handler
+    # Ensure the root "mindtrace" logger exists so propagated messages have a handler.
     root = logging.getLogger("mindtrace")
     if not root.handlers and full_name != "mindtrace":
-        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog, **kwargs)
+        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog)
+
+    # Fast path: return existing logger if caller didn't request specific configuration.
+    # Check for structlog by testing whether the existing logger was wrapped (has .bind).
+    if not caller_provided_kwargs:
+        existing = logging.getLogger(full_name)
+        if existing.handlers:
+            if use_structlog:
+                return structlog.get_logger(full_name)
+            return existing
 
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
 
