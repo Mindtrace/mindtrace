@@ -1,17 +1,5 @@
-from mindtrace.core.config.config import (
-    Config,
-    CoreConfig,
-    CoreSettings,
-    SettingsLike,
-    get_core_settings,
-    invalidate_core_settings,
-)
+from mindtrace.core.config.config import Config, ConfigModel
 
-__all__ = [
-    "Config",
-    "CoreConfig",
-    "CoreSettings",
-    "SettingsLike",
-    "get_core_settings",
-    "invalidate_core_settings",
-]
+CoreConfig = Config
+
+__all__ = ["Config", "ConfigModel", "CoreConfig"]

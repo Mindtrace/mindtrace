@@ -24,15 +24,24 @@ class DiscordClient(Mindtrace):
     - Configurable bot behavior
     """
 
-    def __init__(self, *, token: str | None = None, intents: Optional[discord.Intents] = None, **kwargs):
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        intents: Optional[discord.Intents] = None,
+        description: str | None = None,
+        **kwargs,
+    ):
         """Initialize the Discord client.
 
         Args:
             token: Discord bot token (optional, will use config if not provided)
             intents: Discord intents configuration
+            description: Bot description
             **kwargs: Additional arguments passed to Mindtrace
         """
         super().__init__(**kwargs)
+        self.description = description
 
         # Discord bot configuration
         default_token = self.config.get_secret("MINDTRACE_API_KEYS", "DISCORD")

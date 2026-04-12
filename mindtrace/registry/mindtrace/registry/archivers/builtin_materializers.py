@@ -51,7 +51,6 @@ class BuiltInContainerMaterializer(BaseMaterializer):
     def load(self, data_type: Type[Any]) -> Any:
         json_path = os.path.join(self.uri, "data.json")
         pkl_path = os.path.join(self.uri, "data.pkl")
-        metadata_path = os.path.join(self.uri, "metadata.json")
 
         if os.path.exists(json_path):
             with open(json_path) as f:

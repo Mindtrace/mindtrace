@@ -24,9 +24,9 @@ class TestStructLogger:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
 
-            with patch("mindtrace.core.logging.logger.get_core_settings") as mock_config:
-                mock_config.return_value.MINDTRACE_LOGGER.USE_STRUCTLOG = True
-                mock_config.return_value.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR = str(log_dir)
+            with patch("mindtrace.core.logging.logger.Config") as mock_config_cls:
+                mock_config_cls.return_value.MINDTRACE_LOGGER.USE_STRUCTLOG = True
+                mock_config_cls.return_value.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR = str(log_dir)
 
                 logger = setup_logger(
                     name="test_struct_logger", log_dir=log_dir, use_structlog=True, structlog_json=True
@@ -418,9 +418,9 @@ class TestStructLogger:
         with tempfile.TemporaryDirectory() as tmpdir:
             struct_logger_dir = Path(tmpdir)
 
-            with patch("mindtrace.core.logging.logger.get_core_settings") as mock_config:
-                mock_config.return_value.MINDTRACE_LOGGER.USE_STRUCTLOG = True
-                mock_config.return_value.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR = str(struct_logger_dir)
+            with patch("mindtrace.core.logging.logger.Config") as mock_config_cls:
+                mock_config_cls.return_value.MINDTRACE_LOGGER.USE_STRUCTLOG = True
+                mock_config_cls.return_value.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR = str(struct_logger_dir)
 
                 # Call setup_logger without log_dir (None) and with use_structlog=True
                 logger = setup_logger(name="test_no_log_dir", log_dir=None, use_structlog=True)

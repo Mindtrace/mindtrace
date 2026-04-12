@@ -14,7 +14,7 @@ from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Minimal middleware for request-scoped logging without duplicating autolog.
+    """Minimal middleware for request-scoped logging without duplicating track_operation.
 
     Responsibilities:
     - Generate/bind a correlation id (request_id) via structlog.contextvars
@@ -23,7 +23,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     - Attach request_id to response headers
     - Global error capture with structured logs
 
-    Avoids per-operation details already handled by @Mindtrace.autolog
+    Avoids per-operation details already handled by @track_operation
     (duration_ms, per-endpoint metrics, start/completed of handlers).
     """
 

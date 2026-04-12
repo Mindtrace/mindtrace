@@ -13,7 +13,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from mindtrace.core.config import get_core_settings
+from mindtrace.core.config import Config
 from mindtrace.core.utils import ifnone
 
 if TYPE_CHECKING:
@@ -144,7 +144,7 @@ def setup_logger(
     logger.propagate = propagate
 
     # Get config
-    default_config = get_core_settings()
+    default_config = Config()
     use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
 
     # Determine log file path
@@ -291,7 +291,7 @@ def get_logger(
     kwargs.setdefault("propagate", True)
 
     if use_structlog is None:
-        use_structlog = get_core_settings().MINDTRACE_LOGGER.USE_STRUCTLOG
+        use_structlog = Config().MINDTRACE_LOGGER.USE_STRUCTLOG
 
     # Ensure the root "mindtrace" logger exists (lazy init, replaces the old __init__.py side effect)
     if "mindtrace" not in _configured_loggers and full_name != "mindtrace":

@@ -1,17 +1,11 @@
 from abc import abstractmethod
 from typing import Any, Set, Type
 
-from mindtrace.core import Mindtrace, MindtraceMeta
+from mindtrace.core import Mindtrace
 from mindtrace.registry.core.base_materializer import ArtifactType, BaseMaterializer
 
 
-class ArchiverMeta(MindtraceMeta):
-    """Meta class for Archiver."""
-
-    pass
-
-
-class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
+class Archiver(Mindtrace, BaseMaterializer):
     """Base Archiver class for handling data persistence."""
 
     # Required by BaseMaterializer

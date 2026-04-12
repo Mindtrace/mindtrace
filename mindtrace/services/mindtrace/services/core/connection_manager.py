@@ -141,11 +141,10 @@ class ConnectionManager(Mindtrace):
         self.logger.debug(f"Shutting down {self.name} Server.")
         try:
             self.shutdown()
-        finally:
-            if exc_type is not None:
-                info = (exc_type, exc_val, exc_tb)
-                self.logger.exception("Exception occurred", exc_info=info)
-                return self.suppress
+        except Exception:
+            self.logger.exception("Shutdown failed during context manager exit")
+        if exc_type is not None:
+            self.logger.exception("Exception occurred", exc_info=(exc_type, exc_val, exc_tb))
         return False
 
     @property

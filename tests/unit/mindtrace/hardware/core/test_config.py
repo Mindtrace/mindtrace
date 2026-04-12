@@ -65,9 +65,6 @@ class TestHardwareConfig:
         config = get_hardware_config()
 
         # Check basic properties exist and have expected types
-        assert hasattr(config, "suppress"), "Should have suppress attribute"
-        assert isinstance(config.suppress, bool), "suppress should be boolean"
-
         assert hasattr(config, "unique_name"), "Should have unique_name attribute"
         assert isinstance(config.unique_name, str), "unique_name should be string"
 
@@ -109,7 +106,6 @@ class TestHardwareConfig:
         # Test type safety of key attributes
         assert isinstance(config.name, str)
         assert isinstance(config.config_file, str)
-        assert isinstance(config.suppress, bool)
         assert isinstance(config.unique_name, str)
 
 

@@ -19,11 +19,9 @@ def _set_minimal_env(monkeypatch):
     monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
     monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
     # Reload class-level config each test to pick up env
-    from mindtrace.core import CoreConfig
-    from mindtrace.core.config import invalidate_core_settings
+    from mindtrace.core import Config
 
-    invalidate_core_settings()
-    Service.config = CoreConfig()
+    Service.config = Config()
 
 
 class SampleInput(BaseModel):
@@ -505,11 +503,9 @@ class TestServiceUrlBuilding:
         """Test default_url returns URL from SERVICE when set via env (no config patch)."""
         monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
         # Force reload of class-level config to pick up new env
-        from mindtrace.core import CoreConfig
-        from mindtrace.core.config import invalidate_core_settings
+        from mindtrace.core import Config
 
-        invalidate_core_settings()
-        Service.config = CoreConfig()
+        Service.config = Config()
         result = Service.default_url()
         assert str(result) == "http://service.example.com:8080"
 
@@ -680,7 +676,7 @@ class TestServiceLaunchExceptionHandling:
 
         # Create a mock logger and patch it at the class level
         mock_logger = Mock()
-        with patch.object(type(Service), "logger", mock_logger, create=True):
+        with patch.object(Service, "logger", mock_logger):
             with pytest.raises(RuntimeError, match="Connection failed"):
                 Service.launch()
 
@@ -870,7 +866,7 @@ class TestServiceCleanupMethods:
 
         try:
             mock_logger = Mock()
-            with patch.object(type(Service), "logger", mock_logger, create=True):
+            with patch.object(Service, "logger", mock_logger):
                 # Should handle NoSuchProcess exception gracefully
                 Service._cleanup_server(test_uuid)
 
@@ -1255,11 +1251,9 @@ class TestServiceInterruption:
         try:
             # Ensure SERVICE host matches expected in assertion
             monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
-            from mindtrace.core import CoreConfig
-            from mindtrace.core.config import invalidate_core_settings
+            from mindtrace.core import Config
 
-            invalidate_core_settings()
-            Service.config = CoreConfig()
+            Service.config = Config()
 
             with patch("mindtrace.services.core.service.Timeout") as mock_timeout_class:
                 mock_timeout_instance = Mock()

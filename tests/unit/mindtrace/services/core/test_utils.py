@@ -35,10 +35,10 @@ class TestAddEndpoint:
         def test_func():
             return {"test": "response"}
 
-        with patch("mindtrace.services.core.utils.Mindtrace") as mock_mindtrace:
-            mock_autolog = Mock()
-            mock_mindtrace.autolog.return_value = mock_autolog
-            mock_autolog.return_value = test_func
+        with patch("mindtrace.services.core.utils.track_operation") as mock_track:
+            mock_tracker = Mock()
+            mock_track.return_value = mock_tracker
+            mock_tracker.return_value = test_func
 
             # Apply decorator
             result = decorator(test_func)
@@ -46,11 +46,11 @@ class TestAddEndpoint:
             # Verify decorator returns the original function
             assert result is test_func
 
-            # Verify Mindtrace.autolog was called correctly
-            mock_mindtrace.autolog.assert_called_once_with(self=mock_server)
-            mock_autolog.assert_called_once_with(test_func)
+            # Verify track_operation was called correctly
+            mock_track.assert_called_once_with("test", logger=mock_server.logger)
+            mock_tracker.assert_called_once_with(test_func)
 
-            # Verify add_api_route was called (note: the actual implementation adds "//test")
+            # Verify add_api_route was called
             mock_app.add_api_route.assert_called_once_with("//test", endpoint=test_func, methods=["POST"])
 
     def test_add_endpoint_with_leading_slash(self):
@@ -80,10 +80,10 @@ class TestAddEndpoint:
         def test_func():
             return {}
 
-        with patch("mindtrace.services.core.utils.Mindtrace") as mock_mindtrace:
-            mock_autolog = Mock()
-            mock_mindtrace.autolog.return_value = mock_autolog
-            mock_autolog.return_value = test_func
+        with patch("mindtrace.services.core.utils.track_operation") as mock_track:
+            mock_tracker = Mock()
+            mock_track.return_value = mock_tracker
+            mock_tracker.return_value = test_func
 
             decorator(test_func)
 

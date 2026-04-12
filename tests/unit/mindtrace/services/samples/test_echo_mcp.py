@@ -41,7 +41,7 @@ class TestEchoMcpService:
         mock_super_init.return_value = None
 
         with patch.object(EchoService, "add_tool") as mock_add_tool:
-            service = EchoService()
+            _ = EchoService()
 
         mock_super_init.assert_called_once()
         mock_add_tool.assert_called_once_with("reverse_message", reverse_message)

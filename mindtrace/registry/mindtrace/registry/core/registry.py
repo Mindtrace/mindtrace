@@ -106,11 +106,12 @@ class Registry(Mindtrace):
                 Default ``True``.
             **kwargs: Additional arguments forwarded to the backend.
         """
+        super().__init__(**kwargs)
+
         # Registry is a library-facing API; avoid leaking debug records into
         # globally configured root handlers (e.g. ZenML import-time logging).
-        kwargs.setdefault("propagate", False)
-
-        super().__init__(**kwargs)
+        if hasattr(self.logger, "propagate"):
+            self.logger.propagate = False
 
         is_remote = backend is not None and not isinstance(backend, (str, Path, LocalRegistryBackend))
 

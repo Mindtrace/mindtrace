@@ -18,8 +18,8 @@ class ConfigArchiver(Archiver):
 
     def save(self, config: Config):
         with open(Path(self.uri) / "config.json", "w") as f:
-            json.dump(config, f)
+            json.dump(config.model_dump(mode="json"), f)
 
     def load(self, data_type: Type[Any]) -> Config:
         with open(Path(self.uri) / "config.json", "r") as f:
-            return Config(json.load(f))
+            return Config(**json.load(f))

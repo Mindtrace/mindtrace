@@ -450,7 +450,6 @@ class TestConnectionManagerContextManager:
             patch.object(self.cm.logger, "exception") as mock_log_exception,
         ):
             mock_shutdown.return_value = ShutdownOutput(shutdown=True)
-            self.cm.suppress = False  # Default suppress behavior
 
             # Simulate exit with exception
             exc_type = ValueError
@@ -461,7 +460,7 @@ class TestConnectionManagerContextManager:
 
             mock_shutdown.assert_called_once()
             mock_log_exception.assert_called_once_with("Exception occurred", exc_info=(exc_type, exc_val, exc_tb))
-            assert result == self.cm.suppress
+            assert result is False
 
     def test_exit_shutdown_fails_still_handles_exception(self):
         """Test that __exit__ handles exceptions even if shutdown fails."""
@@ -471,7 +470,6 @@ class TestConnectionManagerContextManager:
         ):
             # Make shutdown raise an exception
             mock_shutdown.side_effect = Exception("Shutdown failed")
-            self.cm.suppress = True
 
             exc_type = ValueError
             exc_val = ValueError("Test error")
@@ -480,8 +478,11 @@ class TestConnectionManagerContextManager:
             result = self.cm.__exit__(exc_type, exc_val, exc_tb)
 
             mock_shutdown.assert_called_once()
-            mock_log_exception.assert_called_once_with("Exception occurred", exc_info=(exc_type, exc_val, exc_tb))
-            assert result == self.cm.suppress
+            # Two exception logs: one for shutdown failure, one for the context manager exception
+            assert mock_log_exception.call_count == 2
+            mock_log_exception.assert_any_call("Shutdown failed during context manager exit")
+            mock_log_exception.assert_any_call("Exception occurred", exc_info=(exc_type, exc_val, exc_tb))
+            assert result is False
 
 
 class TestConnectionManagerIntegration:

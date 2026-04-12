@@ -3,20 +3,19 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from mindtrace.core.config.config import MINDTRACE_API_KEYS, MINDTRACE_DIR_PATHS, CoreSettings
+from mindtrace.core.config.config import MINDTRACE_API_KEYS, MINDTRACE_DIR_PATHS, Config
 
 
-class TestCoreSettings:
-    """Test cases for CoreSettings class."""
+class TestConfig:
+    """Test cases for Config class (formerly CoreSettings)."""
 
-    def test_core_settings_model_config(self):
-        """Test CoreSettings model configuration."""
-        assert CoreSettings.model_config["env_nested_delimiter"] == "__"
+    def test_config_model_config(self):
+        """Test Config model configuration."""
+        assert Config.model_config["env_nested_delimiter"] == "__"
 
-    def test_core_settings_fields(self):
-        """Test that CoreSettings has expected fields."""
-        # Check that the class has the expected field definitions
-        model_fields = CoreSettings.model_fields
+    def test_config_fields(self):
+        """Test that Config has expected fields."""
+        model_fields = Config.model_fields
         assert "MINDTRACE_API_KEYS" in model_fields
         assert "MINDTRACE_TESTING_API_KEYS" in model_fields
         assert "MINDTRACE_DIR_PATHS" in model_fields
@@ -27,103 +26,22 @@ class TestCoreSettings:
         assert "MINDTRACE_WORKER" in model_fields
         assert "MINDTRACE_TEST_PARAM" in model_fields
 
-    def test_core_settings_default_values(self):
-        """Test CoreSettings default values."""
-        # MINDTRACE_TEST_PARAM should have a default value
-        with patch.dict(
-            os.environ,
-            {
-                "MINDTRACE_API_KEYS__OPENAI": "test_key",
-                "MINDTRACE_API_KEYS__DISCORD": "discord_key",
-                "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
-                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
-                "MINDTRACE_DIR_PATHS__ROOT": "/test/root",
-                "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
-                "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
-                "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
-                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
-                "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
-                "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
-                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
-                "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
-                "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
-                "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ENDPOINT": "localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
-                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
-                "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
-                "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
-                "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
-                "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
-                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
-                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
-                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
-                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
-                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "gs://test-bucket",
-                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "test-bucket",
-                "MINDTRACE_TEST_PARAM": "",
-            },
-        ):
-            settings = CoreSettings()
+    def test_config_default_values(self):
+        """Test Config default values."""
+        with patch.dict(os.environ, {"MINDTRACE_TEST_PARAM": ""}):
+            settings = Config()
             assert settings.MINDTRACE_TEST_PARAM == ""
 
-    def test_core_settings_env_nested_delimiter(self):
+    def test_config_env_nested_delimiter(self):
         """Test that environment variables use __ as delimiter."""
-        with patch.dict(
-            os.environ,
-            {
-                "MINDTRACE_API_KEYS__OPENAI": "test_key",
-                "MINDTRACE_API_KEYS__DISCORD": "discord_key",
-                "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
-                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
-                "MINDTRACE_DIR_PATHS__ROOT": "/test/root",
-                "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
-                "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
-                "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
-                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
-                "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
-                "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
-                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
-                "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
-                "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
-                "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ENDPOINT": "localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
-                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
-                "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
-                "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
-                "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
-                "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
-                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
-                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
-                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
-                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
-                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "https://storage.googleapis.com",
-                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "test-bucket",
-                "MINDTRACE_TEST_PARAM": "test_value",
-            },
-        ):
-            settings = CoreSettings()
+        with patch.dict(os.environ, {"MINDTRACE_TEST_PARAM": "test_value"}):
+            settings = Config()
             assert settings.MINDTRACE_TEST_PARAM == "test_value"
 
-    def test_core_settings_customise_sources(self):
-        """Test CoreSettings source customization."""
-        sources = CoreSettings.settings_customise_sources(
-            CoreSettings,
+    def test_config_customise_sources(self):
+        """Test Config source customization."""
+        sources = Config.settings_customise_sources(
+            Config,
             None,  # init_settings
             None,  # dotenv_settings
             None,  # env_settings
@@ -132,55 +50,15 @@ class TestCoreSettings:
 
         # Should return a tuple of source functions
         assert isinstance(sources, tuple)
-        assert len(sources) == 5  # init, env_expanded, dotenv, ini, file_secret
+        assert len(sources) == 5  # init, env, dotenv, ini, file_secret
 
-    def test_core_settings_env_expansion(self):
+    def test_config_env_expansion(self):
         """Test that environment variables with ~ are expanded."""
-        with patch.dict(
-            os.environ,
-            {
-                "MINDTRACE_API_KEYS__OPENAI": "test_key",
-                "MINDTRACE_API_KEYS__DISCORD": "discord_key",
-                "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
-                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
-                "MINDTRACE_DIR_PATHS__ROOT": "~/test/path",
-                "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
-                "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
-                "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
-                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
-                "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
-                "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
-                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
-                "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
-                "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
-                "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ENDPOINT": "localhost:9000",
-                "MINDTRACE_MINIO__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_MINIO__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_CLUSTER__MINIO_REGISTRY_URI": "http://localhost:9000",
-                "MINDTRACE_CLUSTER__MINIO_HOST": "localhost",
-                "MINDTRACE_CLUSTER__MINIO_PORT": "9000",
-                "MINDTRACE_CLUSTER__MINIO_ACCESS_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_SECRET_KEY": "minioadmin",
-                "MINDTRACE_CLUSTER__MINIO_BUCKET": "mindtrace",
-                "MINDTRACE_MCP__MOUNT_PATH": "/mnt",
-                "MINDTRACE_MCP__HTTP_APP_PATH": "/app",
-                "MINDTRACE_WORKER__DEFAULT_REDIS_URL": "redis://localhost:6379",
-                "MINDTRACE_GCP__GCP_PROJECT_ID": "test-project",
-                "MINDTRACE_GCP__GCP_BUCKET_NAME": "test-bucket",
-                "MINDTRACE_GCP__GCP_CREDENTIALS_PATH": "/path/to/credentials.json",
-                "MINDTRACE_GCP__GCP_LOCATION": "us-central1",
-                "MINDTRACE_GCP__GCP_STORAGE_CLASS": "STANDARD",
-                "MINDTRACE_GCP_REGISTRY__GCP_REGISTRY_URI": "gs://mindtrace-test-bucket",
-                "MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME": "mindtrace-test-bucket",
-            },
-        ):
-            settings = CoreSettings()
-            # The path should be expanded
+        with patch.dict(os.environ, {"MINDTRACE_DIR_PATHS__ROOT": "~/test/path"}):
+            settings = Config()
             assert settings.MINDTRACE_DIR_PATHS.ROOT == os.path.expanduser("~/test/path")
 
-    def test_core_settings_precedence(self):
+    def test_config_precedence(self):
         """Test that environment variables take precedence over INI."""
         ini_content = """
 [MINDTRACE_API_KEYS]
@@ -256,7 +134,7 @@ value = ini_value
         try:
 
             def mock_load_ini_settings():
-                from mindtrace.core.config.config import load_ini_as_dict
+                from mindtrace.core.utils import load_ini_as_dict
 
                 return load_ini_as_dict(Path(temp_ini_path))
 
@@ -268,7 +146,7 @@ value = ini_value
                         "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key_from_env",
                     },
                 ):
-                    settings = CoreSettings()
+                    settings = Config()
                     # Environment should override INI
                     assert settings.MINDTRACE_TEST_PARAM == "env_value"
         finally:
@@ -315,18 +193,12 @@ class TestMindtraceModels:
 
     def test_mindtrace_models_validation(self):
         """Test that Mindtrace models validate correctly."""
-        # Test with valid data
         api_keys = MINDTRACE_API_KEYS(OPENAI="valid_key", DISCORD="discord_key", ROBOFLOW="roboflow_key")
         assert api_keys.OPENAI.get_secret_value() == "valid_key"
-
-        # Test with None values (should be allowed for optional fields)
-        api_keys_none = MINDTRACE_API_KEYS(OPENAI="test_key", DISCORD="discord_key", ROBOFLOW="roboflow_key")
-        assert api_keys_none.OPENAI.get_secret_value() == "test_key"
 
     def test_mindtrace_models_deserialization(self):
         """Test that Mindtrace models can be deserialized."""
         data = {"OPENAI": "test_key", "DISCORD": "discord_key", "ROBOFLOW": "roboflow_key"}
-
         api_keys = MINDTRACE_API_KEYS(**data)
         assert api_keys.OPENAI.get_secret_value() == "test_key"
         assert api_keys.DISCORD.get_secret_value() == "discord_key"
@@ -336,15 +208,12 @@ class TestMindtraceModels:
         """Test MINDTRACE_TESTING_API_KEYS model."""
         from mindtrace.core.config.config import MINDTRACE_TESTING_API_KEYS
 
-        # Test with Discord key
         model = MINDTRACE_TESTING_API_KEYS(DISCORD="test_discord_key")
         assert model.DISCORD.get_secret_value() == "test_discord_key"
 
-        # Test with None (should be allowed since it's Optional)
         model_none = MINDTRACE_TESTING_API_KEYS(DISCORD=None)
         assert model_none.DISCORD is None
 
-        # Test deserialization
         data = {"DISCORD": "test_discord_key"}
         model_deserialized = MINDTRACE_TESTING_API_KEYS(**data)
         assert model_deserialized.DISCORD.get_secret_value() == "test_discord_key"
