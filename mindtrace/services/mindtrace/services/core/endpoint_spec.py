@@ -12,22 +12,14 @@ from mindtrace.core import TaskSchema
 class EndpointSpec:
     """Static description of a service endpoint.
 
-    Can be created explicitly in an ``_endpoint_specs`` list **or** implicitly
-    via the :func:`endpoint` decorator.
+    Created implicitly via the :func:`endpoint` decorator.
 
-    Example using the decorator (preferred)::
+    Example::
 
         class EchoService(Service):
             @endpoint("echo", schema=echo_task)
             def echo(self, payload: EchoInput) -> EchoOutput:
                 return EchoOutput(echoed=payload.message)
-
-    Example using a class-level list (legacy, still supported)::
-
-        class EchoService(Service):
-            _endpoint_specs = [
-                EndpointSpec(path="echo", method_name="echo", schema=echo_task),
-            ]
     """
 
     path: str

@@ -109,40 +109,6 @@ class TestEndpointCollection:
         spec = MyService.__endpoints__["status"]
         assert spec.schema is _other_schema
 
-    def test_mixed_mode_endpoint_specs_and_decorators(self):
-        """Both _endpoint_specs list and @endpoint decorators collected."""
-
-        class MyService(Service):
-            _endpoint_specs = [
-                EndpointSpec(path="legacy", method_name="legacy_handler", schema=_test_schema),
-            ]
-
-            @endpoint("modern", schema=_other_schema)
-            def modern_handler(self):
-                pass
-
-            def legacy_handler(self):
-                pass
-
-        assert "legacy" in MyService.__endpoints__
-        assert "modern" in MyService.__endpoints__
-
-    def test_decorator_wins_over_endpoint_specs_on_conflict(self):
-        """When same path exists in both, @endpoint takes precedence."""
-
-        class MyService(Service):
-            _endpoint_specs = [
-                EndpointSpec(path="echo", method_name="echo_old", schema=_test_schema),
-            ]
-
-            @endpoint("echo", schema=_other_schema)
-            def echo(self):
-                pass
-
-        spec = MyService.__endpoints__["echo"]
-        assert spec.method_name == "echo"
-        assert spec.schema is _other_schema
-
     def test_multi_level_inheritance(self):
         class Base(Service):
             @endpoint("base_only", schema=_test_schema)

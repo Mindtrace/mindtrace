@@ -16,6 +16,48 @@ from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionM
 from mindtrace.services.gateway.types import AppConfig, RegisterAppTaskSchema
 
 
+class GatewayConnectionManager(ConnectionManager):
+    """Connection manager for Gateway services with app registration and proxy support."""
+
+    def __init__(self, url: Url | None = None, **kwargs):
+        super().__init__(url=url, **kwargs)
+        self._registered_apps: dict[str, ProxyConnectionManager] = {}
+
+    @property
+    def registered_apps(self) -> list[str]:
+        return list(self._registered_apps.keys())
+
+    def register_app(self, name: str, url: str, connection_manager: ConnectionManager | None = None, **kwargs):
+        """Register an app with the gateway, optionally creating a proxy for it."""
+        res = httpx.post(
+            str(self.url).rstrip("/") + "/register_app",
+            json={"name": name, "url": url},
+            timeout=60,
+        )
+        if res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+
+        if connection_manager is not None:
+            proxy_cm = ProxyConnectionManager(gateway_url=self.url, app_name=name, original_cm=connection_manager)
+            self._registered_apps[name] = proxy_cm
+            setattr(self, name, proxy_cm)
+
+    async def aregister_app(self, name: str, url: str, connection_manager: ConnectionManager | None = None, **kwargs):
+        """Async version of register_app."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            res = await client.post(
+                str(self.url).rstrip("/") + "/register_app",
+                json={"name": name, "url": url},
+            )
+        if res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+
+        if connection_manager is not None:
+            proxy_cm = ProxyConnectionManager(gateway_url=self.url, app_name=name, original_cm=connection_manager)
+            self._registered_apps[name] = proxy_cm
+            setattr(self, name, proxy_cm)
+
+
 class Gateway(Service):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -53,7 +95,6 @@ class Gateway(Service):
             raise HTTPException(status_code=404, detail=f"App '{app_name}' not found")
 
         app_url = self.registered_routers[app_name]
-        # Ensure proper URL construction with correct path separator
         if app_url.endswith("/"):
             url = f"{app_url}{path}"
         else:
@@ -72,69 +113,26 @@ class Gateway(Service):
 
     @classmethod
     def connect(cls: Type["Gateway"], url: str | Url | None = None, timeout: int = 60) -> Any:
-        """Connect to an existing Gateway service with enhanced connection manager."""
+        """Connect to an existing Gateway service.
+
+        Returns a GatewayConnectionManager that inherits both the dynamically
+        generated endpoint methods (heartbeat, endpoints, etc.) and the
+        enhanced register_app/aregister_app with proxy support.
+        """
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)
 
         if host_status == ServerStatus.AVAILABLE:
-            # Generate the base connection manager constructor for this specific Gateway class
-            base_cm_constructor = generate_connection_manager(cls)
+            # Generate a CM class with dynamic methods for all gateway endpoints
+            base_cm_cls = generate_connection_manager(cls)
 
-            # Create the base connection manager instance
-            base_cm = base_cm_constructor(url=url)
-
-            # Add enhanced functionality to the instance
-            base_cm._registered_apps = {}
-
-            # Store original methods if they exist
-            original_register_app = getattr(base_cm, "register_app", None)
-            original_aregister_app = getattr(base_cm, "aregister_app", None)
-
-            def enhanced_register_app(
-                name: str, url: str, connection_manager: ConnectionManager | None = None, **kwargs
-            ):
-                """Enhanced register_app that also sets up proxy functionality."""
-                # Call the original method to register with Gateway
-                result = original_register_app(name=name, url=url, **kwargs) if original_register_app else None
-
-                if connection_manager:
-                    # Create proxy and attach as attribute
-                    proxy_cm = ProxyConnectionManager(
-                        gateway_url=base_cm.url, app_name=name, original_cm=connection_manager
-                    )
-                    base_cm._registered_apps[name] = proxy_cm
-                    setattr(base_cm, name, proxy_cm)
-
-                return result
-
-            async def enhanced_aregister_app(
-                name: str, url: str, connection_manager: ConnectionManager | None = None, **kwargs
-            ):
-                """Async version of enhanced register_app."""
-                # Call the original async method
-                result = await original_aregister_app(name=name, url=url, **kwargs) if original_aregister_app else None
-
-                if connection_manager:
-                    # Create proxy and attach as attribute
-                    proxy_cm = ProxyConnectionManager(
-                        gateway_url=base_cm.url, app_name=name, original_cm=connection_manager
-                    )
-                    base_cm._registered_apps[name] = proxy_cm
-                    setattr(base_cm, name, proxy_cm)
-
-                return result
-
-            # Add enhanced methods to the instance
-            base_cm.register_app = enhanced_register_app
-            base_cm.aregister_app = enhanced_aregister_app
-
-            # Add registered_apps as a dynamic property
-            def get_registered_apps(self):
-                return list(self._registered_apps.keys())
-
-            # Create a property descriptor and bind it to the instance
-            base_cm.__class__.registered_apps = property(get_registered_apps)
-
-            return base_cm
+            # Create a combined class: GatewayConnectionManager's register_app/aregister_app
+            # take precedence (MRO) over the dynamically generated versions
+            combined_cls = type(
+                "GatewayConnectionManager",
+                (GatewayConnectionManager, base_cm_cls),
+                {},
+            )
+            return combined_cls(url=url)
 
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")

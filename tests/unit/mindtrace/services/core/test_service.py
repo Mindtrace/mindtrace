@@ -88,15 +88,17 @@ class TestServiceClass:
         assert echo_task.input_schema == SampleInput
         assert echo_task.output_schema == SampleOutput
 
-    def test_add_endpoint_without_task(self):
+    def test_add_endpoint_without_schema(self):
         service = Service()
 
         def dummy_handler():
             return {"status": "ok"}
 
-        # The schema parameter is now required, so this should raise TypeError
-        with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)  # type: ignore
+        # add_endpoint without a schema should work (schema defaults to None)
+        with pytest.warns(DeprecationWarning, match="add_endpoint"):
+            service.add_endpoint("dummy", dummy_handler)
+        # No schema entry added since schema is None
+        assert "dummy" not in service._endpoints
 
 
 class TestServiceInitialization:

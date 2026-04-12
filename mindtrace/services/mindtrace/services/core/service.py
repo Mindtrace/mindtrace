@@ -150,19 +150,13 @@ class Service(Mindtrace):
 
     @staticmethod
     def _collect_endpoints(cls) -> dict[str, EndpointSpec]:
-        """Collect endpoint specs from both ``_endpoint_specs`` lists and ``@endpoint``-decorated methods.
+        """Collect ``@endpoint``-decorated methods from the class hierarchy.
 
         Walks the MRO from most general to most specific so that subclasses
-        override base-class specs for the same path.  ``@endpoint``-decorated
-        methods take precedence over ``_endpoint_specs`` entries on the same
-        class when paths collide.
+        override base-class specs for the same path.
         """
         collected: dict[str, EndpointSpec] = {}
         for base in reversed(cls.__mro__):
-            # Legacy _endpoint_specs lists
-            for spec in getattr(base, "_endpoint_specs", []):
-                collected[spec.path] = spec
-            # @endpoint-decorated methods
             for attr in vars(base).values():
                 # Unwrap staticmethod/classmethod descriptors to reach the inner function
                 func = getattr(attr, "__func__", attr)
@@ -629,48 +623,40 @@ class Service(Mindtrace):
         self,
         path,
         func,
-        schema: TaskSchema,
+        schema: TaskSchema | None = None,
         api_route_kwargs=None,
         autolog_kwargs=None,
         methods: list[str] | None = None,
         scope: str = "public",
         as_tool: bool = False,
     ):
-        """Register a new endpoint with optional role.
+        """Register a new endpoint at runtime.
 
         .. deprecated::
-            Use class-level ``_endpoint_specs`` with :class:`EndpointSpec` instead.
-            This method is kept for endpoints that require ``schema=None`` or other
-            dynamic registration patterns.
+            Use the ``@endpoint`` decorator instead. This method is kept for
+            dynamic registration patterns but will be removed in a future release.
         """
-        path = path.removeprefix("/")
-        api_route_kwargs = ifnone(api_route_kwargs, default={})
-        # Merge and override default autolog_kwargs
-        default_autolog_kwargs = {
-            "log_level": logging.INFO,
-            "include_duration": True,
-            "include_system_metrics": False,
-            "system_metrics": ["cpu_percent", "memory_percent"],
-        }
-        autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
-        self._endpoints[path] = schema
-        if as_tool:
-            self.add_tool(tool_name=path, func=func)
-        wrapped = track_operation(
-            name=func.__name__,
-            service_name=self.name,
-            logger=self.logger,
-            log_level=autolog_kwargs.get("log_level", logging.INFO),
-            include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
-            system_metrics=autolog_kwargs.get("system_metrics"),
-        )(func)
+        import warnings
 
-        self.app.add_api_route(
-            "/" + path,
-            endpoint=wrapped,
-            methods=ifnone(methods, default=["POST"]),
-            **api_route_kwargs,
+        warnings.warn(
+            "Service.add_endpoint() is deprecated. Use the @endpoint decorator instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        path = path.removeprefix("/")
+        spec = EndpointSpec(
+            path=path,
+            method_name=func.__name__,
+            schema=schema,
+            methods=tuple(methods) if methods else ("POST",),
+            scope=scope,
+            as_tool=as_tool,
+            autolog_kwargs=autolog_kwargs,
+            api_route_kwargs=api_route_kwargs,
+        )
+        self._register_route(path, func, spec)
+        if schema is not None:
+            self._endpoints[path] = schema
 
     def add_tool(self, tool_name, func):
         """Add a tool to the MCP server, with an informative description including the tool and service name."""

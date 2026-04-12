@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from urllib3.util.url import parse_url
 
 from mindtrace.services.core.types import ServerStatus
-from mindtrace.services.gateway.gateway import Gateway
+from mindtrace.services.gateway.gateway import Gateway, GatewayConnectionManager
 from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 from mindtrace.services.gateway.types import AppConfig
 
@@ -158,22 +158,16 @@ class TestGateway:
             assert "Network error" in str(exc_info.value.detail)
 
     @patch("mindtrace.services.gateway.gateway.ifnone_url")
-    @patch("mindtrace.services.gateway.gateway.generate_connection_manager")
-    def test_connect_success(self, mock_generate_cm, mock_ifnone_url):
-        """Test successful connection to Gateway."""
-        # Setup mocks
+    def test_connect_success(self, mock_ifnone_url):
+        """Test successful connection to Gateway returns a GatewayConnectionManager."""
         mock_url = "http://localhost:8090/"
         mock_ifnone_url.return_value = mock_url
-
-        mock_base_cm_class = Mock()
-        mock_generate_cm.return_value = mock_base_cm_class
 
         with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
             result = Gateway.connect(url=mock_url)
 
-            # Test that the enhanced connection manager is returned
             assert result is not None
-            mock_generate_cm.assert_called_once_with(Gateway)
+            assert isinstance(result, GatewayConnectionManager)
 
     @patch("mindtrace.services.gateway.gateway.ifnone_url")
     def test_connect_service_unavailable(self, mock_ifnone_url):
@@ -202,119 +196,78 @@ class TestGateway:
             assert exc_info.value.status_code == 503
             assert "Server failed to connect: ServerStatus.LAUNCHING" in str(exc_info.value.detail)
 
-    @pytest.mark.asyncio
-    async def test_enhanced_connection_manager_register_app_with_proxy(self, gateway, mock_app_config):
-        """Test enhanced connection manager's register_app with ProxyConnectionManager."""
-        # Create enhanced connection manager
-        with patch("mindtrace.services.gateway.gateway.generate_connection_manager") as mock_generate:
-            mock_base_cm = Mock()
-            mock_base_cm.url = "http://localhost:8090/"
-            mock_base_cm.register_app = Mock(return_value={"status": "registered"})
-            mock_base_cm.aregister_app = AsyncMock(return_value={"status": "registered"})
+    def test_gateway_cm_register_app_with_proxy(self, gateway, mock_app_config):
+        """Test GatewayConnectionManager register_app with ProxyConnectionManager."""
+        with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
+            cm = Gateway.connect(url="http://localhost:8090/")
+            assert isinstance(cm, GatewayConnectionManager)
 
-            # The mock should return a constructor function that returns the mock instance
-            mock_generate.return_value = lambda url: mock_base_cm
+            mock_original_cm = Mock()
+            mock_original_cm._service_endpoints = {"echo": Mock(input_schema=None, output_schema=None, name="echo")}
 
-            with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
-                enhanced_cm = Gateway.connect(url="http://localhost:8090/")
+            with (
+                patch("mindtrace.services.gateway.gateway.httpx") as mock_httpx,
+                patch("mindtrace.services.gateway.gateway.ProxyConnectionManager") as mock_proxy_class,
+            ):
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_httpx.post.return_value = mock_response
 
-                # The enhanced_cm should be the same object as mock_base_cm since we're enhancing in place
-                assert enhanced_cm is mock_base_cm
+                mock_proxy_instance = Mock()
+                mock_proxy_class.return_value = mock_proxy_instance
 
-                # Create mock connection manager
-                mock_original_cm = Mock()
+                cm.register_app(name="test-service", url="http://localhost:8001/", connection_manager=mock_original_cm)
 
-                # Test sync register_app with connection_manager
-                with patch("mindtrace.services.gateway.gateway.ProxyConnectionManager") as mock_proxy_class:
-                    mock_proxy_instance = Mock()
-                    mock_proxy_class.return_value = mock_proxy_instance
-
-                    result = enhanced_cm.register_app(
-                        name="test-service", url="http://localhost:8001/", connection_manager=mock_original_cm
-                    )
-
-                    # Test that original method was called
-                    # Since we replace the method, we need to check if it was called
-                    # The enhanced method should call the original, so we verify the result
-                    assert result == {"status": "registered"}
-
-                    # Test that ProxyConnectionManager was created
-                    mock_proxy_class.assert_called_once_with(
-                        gateway_url="http://localhost:8090/", app_name="test-service", original_cm=mock_original_cm
-                    )
-
-                    # Test that proxy was attached as attribute
-                    assert hasattr(enhanced_cm, "test-service")
-                    assert getattr(enhanced_cm, "test-service") == mock_proxy_instance
-
-                    # Test that registered_apps property works
-                    assert "test-service" in enhanced_cm.registered_apps
+                mock_proxy_class.assert_called_once()
+                assert hasattr(cm, "test-service")
+                assert getattr(cm, "test-service") is mock_proxy_instance
+                assert "test-service" in cm.registered_apps
 
     @pytest.mark.asyncio
-    async def test_enhanced_connection_manager_aregister_app_with_proxy(self, gateway):
-        """Test enhanced connection manager's async register_app with ProxyConnectionManager."""
-        with patch("mindtrace.services.gateway.gateway.generate_connection_manager") as mock_generate:
-            mock_base_cm = Mock()
-            mock_base_cm.url = "http://localhost:8090/"
-            mock_base_cm.aregister_app = AsyncMock(return_value={"status": "registered"})
+    async def test_gateway_cm_aregister_app_with_proxy(self, gateway):
+        """Test GatewayConnectionManager async register_app with ProxyConnectionManager."""
+        with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
+            cm = Gateway.connect(url="http://localhost:8090/")
+            assert isinstance(cm, GatewayConnectionManager)
 
-            mock_generate.return_value = lambda url: mock_base_cm
+            mock_original_cm = Mock()
+            mock_original_cm._service_endpoints = {"echo": Mock(input_schema=None, output_schema=None, name="echo")}
 
-            with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
-                enhanced_cm = Gateway.connect(url="http://localhost:8090/")
+            with (
+                patch("httpx.AsyncClient") as mock_async_client_class,
+                patch("mindtrace.services.gateway.gateway.ProxyConnectionManager") as mock_proxy_class,
+            ):
+                mock_client = AsyncMock()
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_client.post.return_value = mock_response
+                mock_async_client_class.return_value.__aenter__.return_value = mock_client
 
-                # The enhanced_cm should be the same object as mock_base_cm
-                assert enhanced_cm is mock_base_cm
+                mock_proxy_instance = Mock()
+                mock_proxy_class.return_value = mock_proxy_instance
 
-                mock_original_cm = Mock()
+                await cm.aregister_app(
+                    name="async-service", url="http://localhost:8002/", connection_manager=mock_original_cm
+                )
 
-                with patch("mindtrace.services.gateway.gateway.ProxyConnectionManager") as mock_proxy_class:
-                    mock_proxy_instance = Mock()
-                    mock_proxy_class.return_value = mock_proxy_instance
+                mock_proxy_class.assert_called_once()
+                assert hasattr(cm, "async-service")
 
-                    result = await enhanced_cm.aregister_app(
-                        name="async-service", url="http://localhost:8002/", connection_manager=mock_original_cm
-                    )
+    def test_gateway_cm_register_app_without_proxy(self, gateway):
+        """Test GatewayConnectionManager register_app without ProxyConnectionManager."""
+        with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
+            cm = Gateway.connect(url="http://localhost:8090/")
+            assert isinstance(cm, GatewayConnectionManager)
 
-                    # Test that async original method was called
-                    # Since we replace the method, we verify the result
-                    assert result == {"status": "registered"}
+            with patch("mindtrace.services.gateway.gateway.httpx") as mock_httpx:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_httpx.post.return_value = mock_response
 
-                    # Test that ProxyConnectionManager was created
-                    mock_proxy_class.assert_called_once_with(
-                        gateway_url="http://localhost:8090/", app_name="async-service", original_cm=mock_original_cm
-                    )
+                cm.register_app(name="simple-service", url="http://localhost:8003/")
 
-                    # Test that proxy was attached as attribute
-                    assert hasattr(enhanced_cm, "async-service")
-
-    def test_enhanced_connection_manager_without_proxy(self, gateway):
-        """Test enhanced connection manager's register_app without ProxyConnectionManager."""
-        with patch("mindtrace.services.gateway.gateway.generate_connection_manager") as mock_generate:
-            mock_base_cm = Mock()
-            mock_base_cm.url = "http://localhost:8090/"
-            mock_base_cm.register_app = Mock(return_value={"status": "registered"})
-
-            mock_generate.return_value = lambda url: mock_base_cm
-
-            with patch.object(Gateway, "status_at_host", return_value=ServerStatus.AVAILABLE):
-                enhanced_cm = Gateway.connect(url="http://localhost:8090/")
-
-                # The enhanced_cm should be the same object as mock_base_cm
-                assert enhanced_cm is mock_base_cm
-
-                # Test register_app without connection_manager
-                result = enhanced_cm.register_app(name="simple-service", url="http://localhost:8003/")
-
-                # Test that original method was called by verifying the result
-                assert result == {"status": "registered"}
-
-                # Test that no proxy attribute was created (Mock objects auto-create attributes,
-                # so we check that _registered_apps is empty instead)
-                assert len(enhanced_cm._registered_apps) == 0
-
-                # Test that registered_apps is empty
-                assert len(enhanced_cm.registered_apps) == 0
+                assert len(cm._registered_apps) == 0
+                assert len(cm.registered_apps) == 0
 
 
 class TestProxyConnectionManagerIntegration:
@@ -322,9 +275,8 @@ class TestProxyConnectionManagerIntegration:
 
     @pytest.fixture
     def mock_original_cm(self):
-        """Create a mock original connection manager."""
-        # Create a mock with a limited spec to avoid having all attributes
-        mock_cm = Mock(spec=["echo", "status"])
+        """Create a mock original connection manager with service endpoints."""
+        mock_cm = Mock()
         mock_cm.echo = Mock(return_value={"echoed": "test"})
         mock_cm._service_endpoints = {
             "echo": Mock(input_schema=None, output_schema=None, name="echo"),
@@ -335,19 +287,17 @@ class TestProxyConnectionManagerIntegration:
     @pytest.fixture
     def proxy_cm(self, mock_original_cm):
         """Create a ProxyConnectionManager for testing."""
-        # Create the proxy but avoid triggering HTTP requests during creation
-        with patch("requests.get"), patch("requests.post"):
-            return ProxyConnectionManager(
-                gateway_url="http://localhost:8090", app_name="test-service", original_cm=mock_original_cm
-            )
+        return ProxyConnectionManager(
+            gateway_url="http://localhost:8090", app_name="test-service", original_cm=mock_original_cm
+        )
 
     def test_proxy_method_call_success(self, proxy_cm):
         """Test successful method call through proxy."""
-        with patch("requests.post") as mock_post:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"echoed": "test message"}
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
             # Get the dynamically created method directly from instance dict to avoid __getattribute__
             instance_dict = object.__getattribute__(proxy_cm, "__dict__")
@@ -357,7 +307,7 @@ class TestProxyConnectionManagerIntegration:
             result = echo_method(message="test message")
 
             # Verify the request was made correctly
-            mock_post.assert_called_once_with(
+            mock_httpx.post.assert_called_once_with(
                 "http://localhost:8090/test-service/echo", json={"message": "test message"}, timeout=60
             )
 
@@ -365,11 +315,11 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_no_args(self, proxy_cm):
         """Test method call with no arguments through proxy."""
-        with patch("requests.post") as mock_post:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"status": "ok"}
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
             # Get the dynamically created method directly from instance dict to avoid __getattribute__
             instance_dict = object.__getattribute__(proxy_cm, "__dict__")
@@ -379,24 +329,26 @@ class TestProxyConnectionManagerIntegration:
             _ = status_method()
 
             # Verify POST was used (all proxy methods use POST)
-            mock_post.assert_called_once_with("http://localhost:8090/test-service/status", json={}, timeout=60)
+            mock_httpx.post.assert_called_once_with("http://localhost:8090/test-service/status", json={}, timeout=60)
 
     def test_proxy_method_call_failure(self, proxy_cm):
         """Test failed method call through proxy."""
-        with patch("requests.post") as mock_post:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
             # Get the dynamically created method directly from instance dict to avoid __getattribute__
             instance_dict = object.__getattribute__(proxy_cm, "__dict__")
             echo_method = instance_dict["echo"]
 
-            with pytest.raises(RuntimeError) as exc_info:
+            from fastapi import HTTPException
+
+            with pytest.raises(HTTPException) as exc_info:
                 echo_method(message="test")
 
-            assert "Gateway proxy request failed: Internal Server Error" in str(exc_info.value)
+            assert exc_info.value.status_code == 500
 
     def test_proxy_attribute_access(self, proxy_cm, mock_original_cm):
         """Test accessing internal attributes of proxy."""

@@ -6,107 +6,7 @@ from urllib3.util.url import parse_url
 
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.endpoint_spec import EndpointSpec
-from mindtrace.services.core.utils import (
-    add_endpoint,
-    generate_connection_manager,
-)
-
-
-class TestAddEndpoint:
-    """Test suite for the add_endpoint function."""
-
-    def test_add_endpoint_basic_functionality(self):
-        """Test basic functionality of add_endpoint decorator."""
-        # Mock FastAPI app
-        mock_app = Mock()
-        mock_app.add_api_route = Mock()
-
-        # Mock server instance
-        mock_server = Mock()
-        mock_server._endpoints = []
-
-        # Create the decorator
-        decorator = add_endpoint(mock_app, "/test", self=mock_server)
-
-        # Verify the endpoint was added to server's endpoints list
-        assert "test" in mock_server._endpoints
-
-        # Test the decorator wrapper
-        def test_func():
-            return {"test": "response"}
-
-        with patch("mindtrace.services.core.utils.track_operation") as mock_track:
-            mock_tracker = Mock()
-            mock_track.return_value = mock_tracker
-            mock_tracker.return_value = test_func
-
-            # Apply decorator
-            result = decorator(test_func)
-
-            # Verify decorator returns the original function
-            assert result is test_func
-
-            # Verify track_operation was called correctly
-            mock_track.assert_called_once_with("test", logger=mock_server.logger)
-            mock_tracker.assert_called_once_with(test_func)
-
-            # Verify add_api_route was called
-            mock_app.add_api_route.assert_called_once_with("//test", endpoint=test_func, methods=["POST"])
-
-    def test_add_endpoint_with_leading_slash(self):
-        """Test add_endpoint removes leading slash from path."""
-        mock_app = Mock()
-        mock_server = Mock()
-        mock_server._endpoints = []
-
-        # Test with leading slash
-        add_endpoint(mock_app, "/leading_slash", self=mock_server)
-        assert "leading_slash" in mock_server._endpoints
-
-        # Test without leading slash
-        mock_server._endpoints = []
-        add_endpoint(mock_app, "no_slash", self=mock_server)
-        assert "no_slash" in mock_server._endpoints
-
-    def test_add_endpoint_with_kwargs(self):
-        """Test add_endpoint passes kwargs to add_api_route."""
-        mock_app = Mock()
-        mock_server = Mock()
-        mock_server._endpoints = []
-
-        custom_kwargs = {"tags": ["test"], "summary": "Test endpoint"}
-        decorator = add_endpoint(mock_app, "/test", self=mock_server, **custom_kwargs)
-
-        def test_func():
-            return {}
-
-        with patch("mindtrace.services.core.utils.track_operation") as mock_track:
-            mock_tracker = Mock()
-            mock_track.return_value = mock_tracker
-            mock_tracker.return_value = test_func
-
-            decorator(test_func)
-
-            # Verify kwargs were passed
-            mock_app.add_api_route.assert_called_once_with(
-                "//test", endpoint=test_func, methods=["POST"], tags=["test"], summary="Test endpoint"
-            )
-
-    def test_add_endpoint_multiple_calls(self):
-        """Test multiple add_endpoint calls accumulate in _endpoints."""
-        mock_app = Mock()
-        mock_server = Mock()
-        mock_server._endpoints = []
-
-        # Add multiple endpoints
-        add_endpoint(mock_app, "/first", self=mock_server)
-        add_endpoint(mock_app, "/second", self=mock_server)
-        add_endpoint(mock_app, "/third", self=mock_server)
-
-        assert "first" in mock_server._endpoints
-        assert "second" in mock_server._endpoints
-        assert "third" in mock_server._endpoints
-        assert len(mock_server._endpoints) == 3
+from mindtrace.services.core.utils import generate_connection_manager
 
 
 class TestGenerateConnectionManager:
@@ -699,22 +599,6 @@ class TestGenerateConnectionManager:
         # Should call async client with dumped payload
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "async_success"}
-
-
-class TestTypeCheckingImport:
-    """Test suite for the TYPE_CHECKING import block."""
-
-    def test_type_checking_import_coverage(self):
-        """Test the TYPE_CHECKING import block."""
-        from typing import TYPE_CHECKING
-
-        # Verify TYPE_CHECKING is False at runtime
-        assert TYPE_CHECKING is False
-
-        # The import should have worked without errors
-        from mindtrace.services.core import utils
-
-        assert utils is not None
 
 
 class TestUtilsIntegration:

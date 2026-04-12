@@ -48,14 +48,13 @@ class MCPClientManager:
                 tools = await mcp_client.list_tools()
                 print(f"Available tools: {tools}")
         """
-        # Build the URL with priority logic
         from fastmcp import Client
 
+        from mindtrace.services.core.utils import build_mcp_url
+
         service_url = self.service_cls.build_url(url=url)
-        # Build MCP URL from centralized class helper
         mcp_mount_path, mcp_http_app_path = self.service_cls.get_mcp_paths()
-        mcp_url = f"{str(service_url).rstrip('/')}{mcp_mount_path}{mcp_http_app_path}"
-        return Client(mcp_url)
+        return Client(build_mcp_url(service_url, mcp_mount_path, mcp_http_app_path))
 
     def launch(self, **launch_kwargs) -> Client:
         """Launch a new service and return an MCP client for it.
@@ -86,7 +85,8 @@ class MCPClientManager:
         """
         from fastmcp import Client
 
+        from mindtrace.services.core.utils import build_mcp_url
+
         connection_manager = self.service_cls.launch(**launch_kwargs)
         mcp_mount_path, mcp_http_app_path = self.service_cls.get_mcp_paths()
-        mcp_url = f"{str(connection_manager.url).rstrip('/')}{mcp_mount_path}{mcp_http_app_path}"
-        return Client(mcp_url)
+        return Client(build_mcp_url(connection_manager.url, mcp_mount_path, mcp_http_app_path))
