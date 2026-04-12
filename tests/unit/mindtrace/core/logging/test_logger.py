@@ -3,17 +3,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from mindtrace.core.logging.logger import get_logger, reset_logging, setup_logger
-
-
-@pytest.fixture(autouse=True)
-def _fresh_logging_state():
-    """Reset logging state before each test so structlog can be reconfigured."""
-    reset_logging()
-    yield
-    reset_logging()
+from mindtrace.core.logging.logger import get_logger, setup_logger
 
 
 class TestLogger:

@@ -1,9 +1,7 @@
 """Unit tests for track_operation function."""
 
 import asyncio
-import importlib
 import logging
-import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -99,10 +97,7 @@ class TestTrackOperationDecorator:
             await asyncio.sleep(0.2)
             return "done"
 
-        # When FastAPI is available, it raises HTTPException instead of TimeoutError
-        from fastapi.exceptions import HTTPException
-
-        with pytest.raises(HTTPException, match="504"):
+        with pytest.raises(TimeoutError):
             await slow_function()
 
     def test_decorator_preserves_function_metadata(self):
@@ -322,19 +317,15 @@ class TestTrackOperationFastAPIIntegration:
     """Test track_operation FastAPI integration."""
 
     @pytest.mark.asyncio
-    async def test_timeout_raises_http_exception_when_fastapi_available(self):
-        """Test that timeout raises HTTPException when FastAPI is available."""
+    async def test_timeout_raises_timeout_error(self):
+        """Test that timeout raises TimeoutError."""
         logger = get_logger("test", use_structlog=True)
-
-        # FastAPI is available by default in the test environment
-        from fastapi.exceptions import HTTPException
 
         @track_operation("op", logger=logger, timeout=0.1)
         async def slow_function():
             await asyncio.sleep(0.2)
 
-        # Should raise HTTPException when FastAPI is available
-        with pytest.raises(HTTPException, match="504"):
+        with pytest.raises(TimeoutError):
             await slow_function()
 
 
@@ -380,52 +371,6 @@ class TestTrackOperationEdgeCases:
         )
 
         assert results == ["completed_op1", "completed_op2", "completed_op3"]
-
-
-class TestTrackOperationFastAPINotAvailable:
-    """Test track_operation when FastAPI is not available."""
-
-    @pytest.mark.asyncio
-    async def test_timeout_without_fastapi_raises_timeout_error(self):
-        """Test that timeout raises asyncio.TimeoutError when FastAPI is not available."""
-        logger = get_logger("test", use_structlog=True)
-
-        # Mock FastAPI import to fail (simulating it not being installed)
-        with patch.dict(sys.modules, {"fastapi": None, "fastapi.exceptions": None}):
-            # Need to reimport to get the None value for _HTTPException
-            from mindtrace.core import logging as logging_module
-
-            importlib.reload(logging_module.logger)
-            from mindtrace.core.logging.logger import track_operation as track_op_no_fastapi
-
-            @track_op_no_fastapi("op", logger=logger, timeout=0.1)
-            async def slow_function():
-                await asyncio.sleep(0.2)
-
-            # Should raise asyncio.TimeoutError when FastAPI is not available
-            with pytest.raises(asyncio.TimeoutError):
-                await slow_function()
-
-            # Reload again to restore FastAPI
-            importlib.reload(logging_module.logger)
-
-    @pytest.mark.asyncio
-    async def test_timeout_logs_correctly_without_fastapi(self):
-        """Test that timeout is logged correctly even without FastAPI."""
-        logger = get_logger("test", use_structlog=True)
-
-        # This test verifies the code handles the case where FastAPI isn't available
-        # Since FastAPI IS available in our test environment, we just verify
-        # that the timeout mechanism works (HTTPException will be raised)
-        from fastapi.exceptions import HTTPException
-
-        @track_operation("op", logger=logger, timeout=0.1)
-        async def slow_function():
-            await asyncio.sleep(0.2)
-
-        # In our test environment, FastAPI is available, so HTTPException is raised
-        with pytest.raises(HTTPException, match="504"):
-            await slow_function()
 
 
 class TestTrackOperationLoggerWithoutBindSupport:
@@ -522,13 +467,10 @@ class TestTrackOperationContextManagerWithActualTimeout:
     async def test_context_manager_timeout_error_in_aexit(self):
         """Test context manager properly handles TimeoutError in __aexit__."""
         logger = get_logger("test", use_structlog=True)
-        from fastapi.exceptions import HTTPException
 
-        # To test the timeout path in __aexit__, we need to raise asyncio.TimeoutError
-        # directly within the context manager
-        with pytest.raises(HTTPException, match="504"):
+        # Raise asyncio.TimeoutError directly to trigger the timeout path in __aexit__
+        with pytest.raises(TimeoutError):
             async with track_operation("op", logger=logger, timeout=0.1):
-                # Directly raise asyncio.TimeoutError to trigger the timeout path in __aexit__
                 raise asyncio.TimeoutError()
 
     @pytest.mark.asyncio
@@ -693,32 +635,6 @@ class TestTrackOperationClassMethodWithoutLogger:
         instance = TestClass()
         result = test_method(instance)
         assert result == "success"
-
-    @pytest.mark.asyncio
-    async def test_context_manager_timeout_without_fastapi_raises_timeout_error(self):
-        """Test context manager timeout raises TimeoutError when FastAPI is not available.
-
-        Tests the fallback raise statement when _HTTPException is None.
-        """
-        logger = get_logger("test", use_structlog=True)
-
-        # Mock FastAPI import to fail (simulating it not being installed)
-        with patch.dict(sys.modules, {"fastapi": None, "fastapi.exceptions": None}):
-            # Need to reimport to get the None value for _HTTPException
-            from mindtrace.core import logging as logging_module
-
-            importlib.reload(logging_module.logger)
-            from mindtrace.core.logging.logger import track_operation as track_op_no_fastapi
-
-            # Test context manager with timeout that will be exceeded
-            with pytest.raises(asyncio.TimeoutError):
-                async with track_op_no_fastapi("op", logger=logger, timeout=0.1):
-                    # Directly raise asyncio.TimeoutError to trigger the timeout path in __aexit__
-                    # This tests the raise statement when _HTTPException is None
-                    raise asyncio.TimeoutError()
-
-            # Reload again to restore FastAPI
-            importlib.reload(logging_module.logger)
 
     @pytest.mark.asyncio
     async def test_async_decorator_with_metrics_snapshot(self):

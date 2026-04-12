@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import logging
 import os
@@ -11,45 +9,12 @@ from inspect import signature
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Any, Callable, Optional
+
+import structlog
 
 from mindtrace.core.config import Config
 from mindtrace.core.utils import ifnone
-
-if TYPE_CHECKING:
-    import structlog
-
-
-def _get_http_exception():
-    """Lazily resolve FastAPI's HTTPException, returning None if unavailable."""
-    try:
-        from fastapi import HTTPException
-
-        return HTTPException
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Module-level state
-# ---------------------------------------------------------------------------
-_configured_loggers: set[str] = set()
-_structlog_configured: bool = False
-
-
-def reset_logging() -> None:
-    """Reset all logging state so loggers can be reconfigured.
-
-    Primarily useful in tests that need fresh logger setup between test cases.
-    """
-    global _configured_loggers, _structlog_configured
-    _configured_loggers = set()
-    _structlog_configured = False
-
-
-# ---------------------------------------------------------------------------
-# Formatter
-# ---------------------------------------------------------------------------
 
 
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
@@ -60,33 +25,10 @@ def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
             ``"[%(asctime)s] %(levelname)s: %(name)s: %(message)s"``
 
     Returns:
-        logging.Formatter: Configured formatter instance ready to use with handlers.
+        Configured formatter instance.
     """
     default_fmt = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
     return logging.Formatter(fmt or default_fmt)
-
-
-# ---------------------------------------------------------------------------
-# Key-order processor for structlog
-# ---------------------------------------------------------------------------
-
-
-def _enforce_key_order_processor(key_order: list[str]):
-    def _processor(_logger, _method_name, event_dict):
-        ordered = OrderedDict()
-        for key in key_order:
-            if key in event_dict:
-                ordered[key] = event_dict.pop(key)
-        for k in sorted(event_dict.keys()):
-            ordered[k] = event_dict[k]
-        return ordered
-
-    return _processor
-
-
-# ---------------------------------------------------------------------------
-# setup_logger
-# ---------------------------------------------------------------------------
 
 
 def setup_logger(
@@ -109,35 +51,33 @@ def setup_logger(
     structlog_renderer: Optional[object] = None,
     structlog_bind: Optional[object] = None,
 ) -> Logger | structlog.BoundLogger:
-    """Configure and initialize logging for Mindtrace components programmatically.
+    """Configure and initialize logging for Mindtrace components.
 
     Sets up a rotating file handler and a console handler on the given logger.
-    Log file defaults to ~/.cache/mindtrace/{name}.log.
+    Log file defaults to ``~/.cache/mindtrace/{name}.log``.
 
     Args:
-        name: Logger name, defaults to "mindtrace".
+        name: Logger name, defaults to ``"mindtrace"``.
         log_dir: Custom directory for log file.
         logger_level: Overall logger level.
-        stream_level: StreamHandler level (e.g., ERROR).
+        stream_level: StreamHandler level (e.g., ``ERROR``).
         add_stream_handler: Whether to add a stream handler.
-        file_level: FileHandler level (e.g., DEBUG).
-        file_mode: Mode for file handler, default is 'a' (append).
+        file_level: FileHandler level (e.g., ``DEBUG``).
+        file_mode: Mode for file handler, default is ``'a'`` (append).
         add_file_handler: Whether to add a file handler.
         propagate: Whether the logger should propagate messages to ancestor loggers.
         max_bytes: Maximum size in bytes before rotating log file.
         backup_count: Number of backup files to retain.
-        use_structlog: Optional bool. If True, configure and return a structlog BoundLogger.
-        structlog_json: Optional bool. If True, render JSON; otherwise use console/dev renderer.
-        structlog_pre_chain: Optional list of pre-processors for stdlib log records.
-        structlog_processors: Optional list of processors after pre_chain (before render).
-        structlog_renderer: Optional custom renderer processor. Overrides ``structlog_json``.
+        use_structlog: If ``True``, configure and return a structlog ``BoundLogger``.
+        structlog_json: If ``True``, render JSON; otherwise use console renderer.
+        structlog_pre_chain: Optional pre-processors for stdlib log records.
+        structlog_processors: Optional processors after pre_chain (before render).
+        structlog_renderer: Optional custom renderer processor.
         structlog_bind: Optional dict or callable(name)->dict to bind fields.
 
     Returns:
-        Logger | structlog.BoundLogger: Configured logger instance.
+        Configured logger instance.
     """
-    import structlog
-
     logger = logging.getLogger(name)
     logger.handlers.clear()
     logger.setLevel(logger_level)
@@ -179,10 +119,7 @@ def setup_logger(
             file_handler.setFormatter(default_formatter())
             logger.addHandler(file_handler)
 
-        _configured_loggers.add(name)
         return logger
-
-    # -- Structlog setup --
 
     pre_chain = (
         list(structlog_pre_chain)
@@ -211,22 +148,27 @@ def setup_logger(
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             _enforce_key_order_processor(
-                ["timestamp", "event", "service", "duration_ms", "metrics", "level", "logger"]
+                [
+                    "timestamp",
+                    "event",
+                    "service",
+                    "duration_ms",
+                    "metrics",
+                    "level",
+                    "logger",
+                ]
             ),
             renderer,
         ]
     )
 
-    # Configure structlog exactly once (repeated calls have undefined behavior in structlog)
-    global _structlog_configured
-    if not _structlog_configured:
-        structlog.configure(
-            processors=pre_chain + processors,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
-        )
-        _structlog_configured = True
+    # Configure structlog with proper processors
+    structlog.configure(
+        processors=pre_chain + processors,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
 
     # Set up handlers on the underlying stdlib logger
     stdlib_logger = logging.getLogger(name)
@@ -260,13 +202,20 @@ def setup_logger(
         if bind_dict:
             bound_logger = bound_logger.bind(**bind_dict)
 
-    _configured_loggers.add(name)
     return bound_logger
 
 
-# ---------------------------------------------------------------------------
-# get_logger  (simplified — no parent-walking)
-# ---------------------------------------------------------------------------
+def _enforce_key_order_processor(key_order: list[str]):
+    def _processor(_logger, _method_name, event_dict):
+        ordered = OrderedDict()
+        for key in key_order:
+            if key in event_dict:
+                ordered[key] = event_dict.pop(key)
+        for k in sorted(event_dict.keys()):
+            ordered[k] = event_dict[k]
+        return ordered
+
+    return _processor
 
 
 def get_logger(
@@ -274,15 +223,13 @@ def get_logger(
 ) -> logging.Logger | structlog.BoundLogger:
     """Create or retrieve a named logger instance.
 
-    Wraps :func:`setup_logger` with sensible defaults.
-
     Args:
         name: The name of the logger. Defaults to ``"mindtrace"``.
-        use_structlog: Whether to use structured logging. If None, uses config default.
+        use_structlog: Whether to use structured logging. If ``None``, uses config default.
         **kwargs: Additional keyword arguments passed to :func:`setup_logger`.
 
     Returns:
-        logging.Logger | structlog.BoundLogger: A configured logger instance.
+        A configured logger instance.
     """
     if not name:
         name = "mindtrace"
@@ -290,29 +237,75 @@ def get_logger(
     full_name = name if name.startswith("mindtrace") else f"mindtrace.{name}"
     kwargs.setdefault("propagate", True)
 
-    if use_structlog is None:
-        use_structlog = Config().MINDTRACE_LOGGER.USE_STRUCTLOG
+    default_config = Config()
+    use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
 
-    # Ensure the root "mindtrace" logger exists (lazy init, replaces the old __init__.py side effect)
-    if "mindtrace" not in _configured_loggers and full_name != "mindtrace":
-        # Pass structlog kwargs so the first configure() call uses the caller's processors
-        structlog_kwargs = {k: v for k, v in kwargs.items() if k.startswith("structlog_")}
-        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog, **structlog_kwargs)
-
+    if kwargs.get("propagate"):
+        parts = full_name.split(".") if "." in full_name else [full_name]
+        parent_name = parts[0]
+        parent_logger = logging.getLogger(parent_name)
+        if parent_logger.handlers:
+            setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
+        for part in parts[1:-1]:
+            parent_name = f"{parent_name}.{part}"
+            parent_logger = logging.getLogger(parent_name)
+            if parent_logger.handlers:
+                setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
 
 
 # ---------------------------------------------------------------------------
-# _UnifiedTrack  (module-level class for track_operation)
+# track_operation — context manager / decorator for structured operation logging
 # ---------------------------------------------------------------------------
 
 
-class _UnifiedTrack:
-    """Unified object that can act as both async context manager and decorator.
+def _get_structlog_logger(logger, logger_name, op_name):
+    """Return a structlog-compatible logger, warning once if the provided one lacks ``.bind()``."""
+    if logger and hasattr(logger, "bind"):
+        return logger
+    if logger:
+        warnings.warn(
+            f"Logger {logger} does not support .bind(). Creating new structlog logger.",
+            UserWarning,
+            stacklevel=3,
+        )
+    name = logger_name or f"mindtrace.operations.{op_name}"
+    return get_logger(name, use_structlog=True)
 
-    Used by :func:`track_operation`.  Defined at module level so the class is
-    created once rather than on every ``track_operation()`` call.
-    """
+
+def _determine_logger_for_decorator(logger, logger_name, args, op_name):
+    """Pick the best structlog logger for a decorated method call."""
+    if logger and hasattr(logger, "bind"):
+        return logger
+
+    # For bound methods, try the instance's logger
+    if args and hasattr(args[0], "logger"):
+        class_logger = args[0].logger
+        if hasattr(class_logger, "bind"):
+            return class_logger
+        warnings.warn(
+            f"Logger {class_logger} does not support .bind(). Creating new structlog logger.",
+            UserWarning,
+            stacklevel=3,
+        )
+        logger_name = getattr(class_logger, "name", None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
+        return get_logger(logger_name, use_structlog=True)
+
+    if logger_name:
+        return get_logger(logger_name, use_structlog=True)
+
+    if logger:
+        warnings.warn(
+            f"Logger {logger} does not support .bind(). Creating new structlog logger.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    return get_logger(f"mindtrace.methods.{op_name}", use_structlog=True)
+
+
+class _OperationTracker:
+    """Tracks a named operation as both an async context manager and a decorator."""
 
     def __init__(
         self,
@@ -340,128 +333,55 @@ class _UnifiedTrack:
         self._metrics_collector = None
 
     def _get_structlog_logger(self):
-        """Get a structlog logger, caching the result and warning only once."""
-        if self._structlog_logger is not None:
-            return self._structlog_logger
-
-        if self.logger and hasattr(self.logger, "bind"):
-            self._structlog_logger = self.logger
-        else:
-            if self.logger:
-                warnings.warn(
-                    f"Logger {self.logger} does not support .bind() method. Creating new structlog logger.",
-                    UserWarning,
-                )
-            logger_name = self.logger_name or f"mindtrace.operations.{self.name}"
-            self._structlog_logger = get_logger(logger_name, use_structlog=True)
-
+        if self._structlog_logger is None:
+            self._structlog_logger = _get_structlog_logger(self.logger, self.logger_name, self.name)
         return self._structlog_logger
 
     def _get_metrics_collector(self):
-        """Get a metrics collector, caching the result."""
         if self._metrics_collector is not None:
             return self._metrics_collector
-
         if self.include_system_metrics:
             try:
                 from mindtrace.core.utils import SystemMetricsCollector
 
                 self._metrics_collector = SystemMetricsCollector(metrics_to_collect=self.system_metrics)
             except Exception as e:
-                self._metrics_collector = None
-                warnings.warn(
-                    f"Failed to initialize SystemMetricsCollector; metrics will be omitted: {e}",
-                    UserWarning,
-                )
-
+                warnings.warn(f"Failed to initialize SystemMetricsCollector: {e}", UserWarning, stacklevel=2)
         return self._metrics_collector
 
     def _get_metrics_snapshot(self):
-        """Get current metrics snapshot if available."""
         collector = self._get_metrics_collector()
         if collector is not None:
             try:
                 return collector()
             except Exception as e:
-                warnings.warn(
-                    f"Failed to collect system metrics snapshot; omitting metrics: {e}",
-                    UserWarning,
-                )
-                return None
+                warnings.warn(f"Failed to collect system metrics: {e}", UserWarning, stacklevel=2)
         return None
 
-    def _determine_logger(self, args, op_name):
-        """Determine the appropriate logger for the operation."""
-        if self.logger and hasattr(self.logger, "bind"):
-            return self.logger
+    def _build_context(self):
+        ctx = dict(self.context)
+        snapshot = self._get_metrics_snapshot()
+        if snapshot is not None:
+            ctx["metrics"] = snapshot
+        return ctx
 
-        # For class methods, try to use the class's logger if it exists
-        if args and hasattr(args[0], "__class__") and hasattr(args[0], "logger"):
-            class_logger = args[0].logger
-            if hasattr(class_logger, "bind"):
-                return class_logger
-            else:
-                warnings.warn(
-                    f"Logger {class_logger} does not support .bind() method. Creating new structlog logger.",
-                    UserWarning,
-                )
-                logger_name = getattr(class_logger, "name", None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
-                return get_logger(logger_name, use_structlog=True)
-        elif self.logger_name:
-            return get_logger(self.logger_name, use_structlog=True)
-        else:
-            if self.logger:
-                warnings.warn(
-                    f"Logger {self.logger} does not support .bind() method. Creating new structlog logger.",
-                    UserWarning,
-                )
-            return get_logger(f"mindtrace.methods.{op_name}", use_structlog=True)
-
-    # -- Context manager protocol --
+    # --- Async context manager ---
 
     async def __aenter__(self):
-        """Async context manager entry."""
-        logger = self._get_structlog_logger()
-
-        context = dict(self.context)
-        metrics_snapshot = self._get_metrics_snapshot()
-        if metrics_snapshot is not None:
-            context["metrics"] = metrics_snapshot
-
-        bound = logger.bind(operation=self.name, **context)
-
+        bound = self._get_structlog_logger().bind(operation=self.name, **self._build_context())
         self.start_time = time.time()
         bound.log(self.log_level, f"{self.name}_started")
         return bound
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        logger = self._get_structlog_logger()
-
-        context = dict(self.context)
-        metrics_snapshot = self._get_metrics_snapshot()
-        if metrics_snapshot is not None:
-            context["metrics"] = metrics_snapshot
-
-        bound = logger.bind(operation=self.name, **context)
-
+        bound = self._get_structlog_logger().bind(operation=self.name, **self._build_context())
         duration = time.time() - self.start_time
+        dur_ms = round(duration * 1000, 2)
 
         if exc_type is None:
-            bound.log(
-                self.log_level, f"{self.name}_completed", duration=duration, duration_ms=round(duration * 1000, 2)
-            )
-        elif issubclass(exc_type, asyncio.TimeoutError):
-            bound.error(
-                f"{self.name}_timeout",
-                timeout_after=self.timeout,
-                duration=duration,
-                duration_ms=round(duration * 1000, 2),
-            )
-            _http_exc = _get_http_exception()
-            if _http_exc is not None:
-                raise _http_exc(status_code=504, detail="Operation timed out")
-
+            bound.log(self.log_level, f"{self.name}_completed", duration=duration, duration_ms=dur_ms)
+        elif issubclass(exc_type, TimeoutError):
+            bound.error(f"{self.name}_timeout", timeout_after=self.timeout, duration=duration, duration_ms=dur_ms)
             raise
         else:
             bound.error(
@@ -469,111 +389,83 @@ class _UnifiedTrack:
                 error=str(exc_val),
                 error_type=type(exc_val).__name__,
                 duration=duration,
-                duration_ms=round(duration * 1000, 2),
+                duration_ms=dur_ms,
             )
             raise
 
-    # -- Decorator protocol --
+    # --- Decorator ---
 
     def __call__(self, func: Callable) -> Callable:
-        """Make the object usable as a decorator."""
         op_name = self.name or func.__name__
 
-        def extract_context(inner_func: Callable, args: tuple, kwargs: dict) -> dict[str, Any]:
+        def _extract_context(inner_func, args, kwargs):
             sig = signature(inner_func)
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
             wanted = self.include_args or []
             return {name: bound_args.arguments[name] for name in wanted if name in bound_args.arguments}
 
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            start_time_ = time.time()
-            extracted_context = extract_context(func, args, kwargs)
-            base_logger = self._determine_logger(args, op_name)
+        if asyncio.iscoroutinefunction(func):
 
-            context = dict(self.context)
-            metrics_snapshot = self._get_metrics_snapshot()
-            if metrics_snapshot is not None:
-                context["metrics"] = metrics_snapshot
-
-            bound = base_logger.bind(operation=op_name, **extracted_context, **context)
-            bound.log(self.log_level, f"{op_name}_started")
-
-            try:
-                if self.timeout:
-                    async with asyncio.timeout(self.timeout):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                extracted = _extract_context(func, args, kwargs)
+                base_logger = _determine_logger_for_decorator(self.logger, self.logger_name, args, op_name)
+                bound = base_logger.bind(operation=op_name, **extracted, **self._build_context())
+                bound.log(self.log_level, f"{op_name}_started")
+                start = time.time()
+                try:
+                    if self.timeout:
+                        async with asyncio.timeout(self.timeout):
+                            result = await func(*args, **kwargs)
+                    else:
                         result = await func(*args, **kwargs)
-                else:
-                    result = await func(*args, **kwargs)
+                    dur = time.time() - start
+                    bound.log(self.log_level, f"{op_name}_completed", duration=dur, duration_ms=round(dur * 1000, 2))
+                    return result
+                except TimeoutError:
+                    dur = time.time() - start
+                    bound.error(
+                        f"{op_name}_timeout", timeout_after=self.timeout, duration=dur, duration_ms=round(dur * 1000, 2)
+                    )
+                    raise
+                except Exception as e:
+                    dur = time.time() - start
+                    bound.error(
+                        f"{op_name}_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        duration=dur,
+                        duration_ms=round(dur * 1000, 2),
+                    )
+                    raise
 
-                duration = time.time() - start_time_
-                bound.log(
-                    self.log_level, f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2)
-                )
-                return result
+        else:
 
-            except asyncio.TimeoutError:
-                duration = time.time() - start_time_
-                bound.error(
-                    f"{op_name}_timeout",
-                    timeout_after=self.timeout,
-                    duration=duration,
-                    duration_ms=round(duration * 1000, 2),
-                )
-                _http_exc = _get_http_exception()
-                if _http_exc is not None:
-                    raise _http_exc(status_code=504, detail="Operation timed out")
-                raise
-            except Exception as e:
-                duration = time.time() - start_time_
-                bound.error(
-                    f"{op_name}_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    duration=duration,
-                    duration_ms=round(duration * 1000, 2),
-                )
-                raise
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                extracted = _extract_context(func, args, kwargs)
+                base_logger = _determine_logger_for_decorator(self.logger, self.logger_name, args, op_name)
+                bound = base_logger.bind(operation=op_name, **extracted, **self._build_context())
+                bound.log(self.log_level, f"{op_name}_started")
+                start = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    dur = time.time() - start
+                    bound.log(self.log_level, f"{op_name}_completed", duration=dur, duration_ms=round(dur * 1000, 2))
+                    return result
+                except Exception as e:
+                    dur = time.time() - start
+                    bound.error(
+                        f"{op_name}_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        duration=dur,
+                        duration_ms=round(dur * 1000, 2),
+                    )
+                    raise
 
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            start_time_ = time.time()
-            extracted_context = extract_context(func, args, kwargs)
-            base_logger = self._determine_logger(args, op_name)
-
-            context = dict(self.context)
-            metrics_snapshot = self._get_metrics_snapshot()
-            if metrics_snapshot is not None:
-                context["metrics"] = metrics_snapshot
-
-            bound = base_logger.bind(operation=op_name, **extracted_context, **context)
-            bound.log(self.log_level, f"{op_name}_started")
-
-            try:
-                result = func(*args, **kwargs)
-                duration = time.time() - start_time_
-                bound.log(
-                    self.log_level, f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2)
-                )
-                return result
-            except Exception as e:
-                duration = time.time() - start_time_
-                bound.error(
-                    f"{op_name}_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    duration=duration,
-                    duration_ms=round(duration * 1000, 2),
-                )
-                raise
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
-
-# ---------------------------------------------------------------------------
-# track_operation  (thin factory)
-# ---------------------------------------------------------------------------
+        return wrapper
 
 
 def track_operation(
@@ -587,29 +479,30 @@ def track_operation(
     system_metrics: list[str] | None = None,
     **context: Any,
 ):
-    """Unified function that works as both context manager and decorator.
+    """Track an operation as either an async context manager or a decorator.
 
-    This function can be used in two ways:
-    1. As a context manager: ``async with track_operation("name") as log:``
-    2. As a decorator: ``@track_operation("name")``
+    Usage as context manager::
 
-    Provides structured logging for operations, automatically logging start, completion,
-    timeout, and errors with duration metrics.
+        async with track_operation("fetch_data", user_id="123") as log:
+            result = await some_operation()
+            log.info("fetched", count=len(result))
+
+    Usage as decorator::
+
+        @track_operation("process", timeout=5.0)
+        async def process(data): ...
 
     Args:
-        name: The name of the operation being tracked. When used as decorator,
-            defaults to the function name if not provided.
-        timeout: Optional timeout in seconds. If provided, raises asyncio.TimeoutError
-            when exceeded. If FastAPI is available, raises HTTPException(504) instead.
-        logger: Optional structlog logger instance. If None, creates a new logger.
-        logger_name: Optional logger name. If None, uses "mindtrace.operations.{name}"
-            for context manager or "mindtrace.methods.{name}" for decorator.
-        include_args: List of argument names to include in the log context (decorator only).
-        log_level: Log level for the operation logs. Defaults to logging.DEBUG.
-        include_system_metrics: If True, include system metrics in the log context.
-        system_metrics: Optional list of metric names to include.
-        **context: Additional context fields to bind to the logger for this operation.
+        name: Operation name. Defaults to function name when used as decorator.
+        timeout: Optional timeout in seconds (raises ``TimeoutError``).
+        logger: Optional structlog logger. If ``None``, creates one automatically.
+        logger_name: Optional logger name override.
+        include_args: Argument names to include in log context (decorator only).
+        log_level: Log level for operation events.
+        include_system_metrics: If ``True``, include system metrics in context.
+        system_metrics: Specific metric names to collect. ``None`` = all.
+        **context: Additional fields bound to the logger for this operation.
     """
-    return _UnifiedTrack(
+    return _OperationTracker(
         name, timeout, logger, logger_name, include_args, log_level, include_system_metrics, system_metrics, context
     )
