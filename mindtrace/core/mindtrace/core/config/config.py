@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
@@ -109,6 +110,7 @@ class MINDTRACE_GCP_REGISTRY(ConfigModel):
     GCP_BUCKET_NAME: str
 
 
+@lru_cache(maxsize=1)
 def load_ini_settings() -> dict[str, Any]:
     ini_path = Path(__file__).parent / "config.ini"
     return load_ini_as_dict(ini_path)

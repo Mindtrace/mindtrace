@@ -162,7 +162,7 @@ def setup_logger(
         ]
     )
 
-    # Configure structlog with proper processors
+    # Configure structlog globally — processors are process-wide by design
     structlog.configure(
         processors=pre_chain + processors,
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -223,6 +223,9 @@ def get_logger(
 ) -> logging.Logger | structlog.BoundLogger:
     """Create or retrieve a named logger instance.
 
+    Ensures the root ``"mindtrace"`` logger exists before setting up child
+    loggers so that propagated messages are handled correctly.
+
     Args:
         name: The name of the logger. Defaults to ``"mindtrace"``.
         use_structlog: Whether to use structured logging. If ``None``, uses config default.
@@ -237,20 +240,11 @@ def get_logger(
     full_name = name if name.startswith("mindtrace") else f"mindtrace.{name}"
     kwargs.setdefault("propagate", True)
 
-    default_config = Config()
-    use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
+    # Ensure the root "mindtrace" logger exists (once) so propagated messages have a handler
+    root = logging.getLogger("mindtrace")
+    if not root.handlers and full_name != "mindtrace":
+        setup_logger("mindtrace", add_stream_handler=True, use_structlog=use_structlog, **kwargs)
 
-    if kwargs.get("propagate"):
-        parts = full_name.split(".") if "." in full_name else [full_name]
-        parent_name = parts[0]
-        parent_logger = logging.getLogger(parent_name)
-        if parent_logger.handlers:
-            setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
-        for part in parts[1:-1]:
-            parent_name = f"{parent_name}.{part}"
-            parent_logger = logging.getLogger(parent_name)
-            if parent_logger.handlers:
-                setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
 
 
