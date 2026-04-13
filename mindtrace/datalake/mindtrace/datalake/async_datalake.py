@@ -594,9 +594,12 @@ class AsyncDatalake(Mindtrace):
         source = annotation.get("source")
         if isinstance(source, dict):
             source = AnnotationSource(**source)
+        subject = annotation.get("subject")
+        if isinstance(subject, dict):
+            subject = SubjectRef(**subject)
         return self._build_document(
             AnnotationRecord,
-            subject=annotation.get("subject"),
+            subject=subject,
             kind=annotation["kind"],
             label=annotation["label"],
             label_id=annotation.get("label_id"),
