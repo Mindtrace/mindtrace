@@ -153,6 +153,39 @@ def sync_datalake(datalake_store):
 
 
 @pytest.fixture(scope="function")
+def sync_datalake_gcs(datalake_gcs_mounts, gcs_client, gcp_test_bucket, gcp_test_prefix):
+    db_name = f"test_datalake_sync_gcs_{uuid4().hex[:12]}"
+    datalake = Datalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        mounts=datalake_gcs_mounts,
+        default_mount="gcs",
+    )
+    try:
+        yield datalake
+    finally:
+        client = datalake._backend.asset_database.client
+
+        async def _drop_database():
+            await client.drop_database(db_name)
+
+        datalake._call_in_loop(_drop_database)
+        datalake.close()
+        try:
+            client.close()
+        except Exception:
+            pass
+
+        try:
+            bucket = gcs_client.bucket(gcp_test_bucket)
+            blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+            for blob in blobs:
+                blob.delete()
+        except Exception:
+            pass
+
+
+@pytest.fixture(scope="function")
 def temp_registry_dir():
     temp_dir = tempfile.mkdtemp(prefix="mindtrace-datalake-registry-")
     try:
