@@ -1030,6 +1030,32 @@ def test_get_presigned_url_put(mock_boto3):
 
 
 @patch("mindtrace.storage.s3.boto3")
+def test_get_presigned_url_put_with_content_type(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.generate_presigned_url.return_value = "https://signed-put-url"
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    url = handler.get_presigned_url(
+        "file.txt",
+        method="PUT",
+        expiration_minutes=60,
+        content_type="application/octet-stream",
+    )
+
+    assert url == "https://signed-put-url"
+    mock_client.generate_presigned_url.assert_called_once_with(
+        "put_object",
+        Params={"Bucket": "bucket", "Key": "file.txt", "ContentType": "application/octet-stream"},
+        ExpiresIn=3600,
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
 def test_get_presigned_url_invalid_method(mock_boto3):
     _prepare_client(mock_boto3)
 

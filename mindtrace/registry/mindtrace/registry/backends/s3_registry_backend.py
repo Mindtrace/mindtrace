@@ -239,8 +239,8 @@ class S3RegistryBackend(RegistryBackend):
         staged_path = self._prefixed(f"_direct_uploads/{upload_id}/data.txt")
         upload_url = self.storage.get_presigned_url(
             staged_path,
-            expiration=expiration_minutes * 60,
-            http_method="PUT",
+            expiration_minutes=expiration_minutes,
+            method="PUT",
             content_type=content_type,
         )
         return {

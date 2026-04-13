@@ -458,6 +458,7 @@ class S3StorageHandler(StorageHandler):
         *,
         expiration_minutes: int = 60,
         method: str = "GET",
+        content_type: str | None = None,
     ) -> str:
         """Get a presigned URL for an object in the bucket.
 
@@ -476,9 +477,12 @@ class S3StorageHandler(StorageHandler):
                 ExpiresIn=expiration_minutes * 60,
             )
         elif method.upper() == "PUT":
+            params = {"Bucket": self.bucket_name, "Key": remote_path}
+            if content_type is not None:
+                params["ContentType"] = content_type
             return self.client.generate_presigned_url(
                 "put_object",
-                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                Params=params,
                 ExpiresIn=expiration_minutes * 60,
             )
         else:
