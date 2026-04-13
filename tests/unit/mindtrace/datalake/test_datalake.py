@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,6 +16,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -76,6 +78,16 @@ class TestDatalakeSyncFacade:
         }
         backend.mongo_db_uri = "mongodb://test:27017"
         backend.mongo_db_name = "test_db"
+        upload_session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="hopper.png",
+            mount="temp",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=datetime.now(timezone.utc),
+        )
         for name, value in {
             "initialize": None,
             "get_health": {"status": "ok", "database": "test_db", "default_mount": "temp"},
@@ -83,6 +95,10 @@ class TestDatalakeSyncFacade:
             "get_object": b"payload",
             "head_object": {"size": 123},
             "copy_object": StorageRef(mount="archive", name="hopper.png", version="v2"),
+            "create_object_upload_session": upload_session,
+            "get_object_upload_session": upload_session,
+            "complete_object_upload_session": upload_session.model_copy(update={"status": "completed"}),
+            "reconcile_upload_sessions": [upload_session.model_copy(update={"status": "completed"})],
             "create_asset": Asset(
                 kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
             ),
@@ -291,6 +307,10 @@ class TestDatalakeSyncFacade:
             ).version
             == "v2"
         )
+        assert datalake.create_object_upload_session(name="hopper.png").upload_session_id == "upload_session_1"
+        assert datalake.get_object_upload_session("upload_session_1").finalize_token == "token-1"
+        assert datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1").status == "completed"
+        assert datalake.reconcile_upload_sessions()[0].status == "completed"
         assert isinstance(
             datalake.create_asset(
                 kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
@@ -365,6 +385,14 @@ class TestDatalakeSyncFacade:
         assert isinstance(datalake.resolve_dataset_version("demo", "0.1.0"), ResolvedDatasetVersion)
         assert isinstance(
             datalake.create_asset_from_object(name="hopper.png", obj=b"bytes", kind="image", media_type="image/png"),
+            Asset,
+        )
+        assert isinstance(
+            datalake.create_asset_from_uploaded_object(
+                kind="image",
+                media_type="image/png",
+                storage_ref=StorageRef(mount="temp", name="hopper.png"),
+            ),
             Asset,
         )
         mock_backend.initialize.assert_awaited_once()
