@@ -1,7 +1,6 @@
-import asyncio
 import base64
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,7 +9,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
-from mindtrace.datalake import DatalakeService, SubjectRef
+from mindtrace.datalake import DatalakeService, StorageRef, SubjectRef
 from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
@@ -522,7 +521,7 @@ class TestDatalakeServiceIntegration:
         assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
 
         asset = datalake_service_local_manager.assets_create_from_uploaded_object(
-            kind="binary",
+            kind="artifact",
             media_type="application/octet-stream",
             storage_ref=completed.storage_ref,
             size_bytes=len(payload),
@@ -533,7 +532,7 @@ class TestDatalakeServiceIntegration:
         assert asset.asset.storage_ref == completed.storage_ref
 
     def test_datalake_service_reconciler_auto_finalizes_expired_upload(self, datalake_mounts):
-        db_name = f"test_datalake_service_direct_upload_reconciler_{uuid4().hex}"
+        db_name = f"tds_direct_upload_reconciler_{uuid4().hex[:12]}"
         service = DatalakeService(
             mongo_db_uri=MONGO_URL,
             mongo_db_name=db_name,
@@ -552,22 +551,33 @@ class TestDatalakeServiceIntegration:
             )
             Path(session.upload_path).write_bytes(b"background-finalize")
 
-            stored_session = asyncio.run(service._datalake.get_object_upload_session(session.upload_session_id))
-            stored_session.expires_at = service._datalake._utc_now() - timedelta(seconds=1)
-            asyncio.run(service._datalake.direct_upload_session_database.update(stored_session))
+            mongo_client = MongoClient(MONGO_URL)
+            try:
+                collection = mongo_client[db_name]["datalake_direct_upload_sessions"]
+                collection.update_one(
+                    {"upload_session_id": session.upload_session_id},
+                    {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+                )
 
-            deadline = time.time() + 3
-            completed = None
-            while time.time() < deadline:
-                candidate = asyncio.run(service._datalake.get_object_upload_session(session.upload_session_id))
-                if candidate.status == "completed":
-                    completed = candidate
-                    break
-                time.sleep(0.05)
+                assert client.portal is not None
+                assert service._datalake is not None
+                client.portal.call(service._datalake.reconcile_upload_sessions)
 
-            assert completed is not None
-            assert completed.storage_ref is not None
-            loaded = manager.objects_get(storage_ref=completed.storage_ref)
+                deadline = time.time() + 3
+                completed_doc = None
+                while time.time() < deadline:
+                    candidate = collection.find_one({"upload_session_id": session.upload_session_id})
+                    if candidate and candidate.get("status") == "completed":
+                        completed_doc = candidate
+                        break
+                    time.sleep(0.05)
+            finally:
+                mongo_client.close()
+
+            assert completed_doc is not None
+            assert completed_doc["storage_ref"] is not None
+            storage_ref = StorageRef(**completed_doc["storage_ref"])
+            loaded = manager.objects_get(storage_ref=storage_ref)
             assert base64.b64decode(loaded.data_base64.encode("utf-8")) == b"background-finalize"
 
         _cleanup_service_database(db_name)
