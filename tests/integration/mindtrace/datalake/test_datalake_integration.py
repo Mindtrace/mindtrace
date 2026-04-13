@@ -1,8 +1,10 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pymongo import MongoClient
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
@@ -150,6 +152,78 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     sync_datalake.delete_annotation_record(annotation_record.annotation_id)
     sync_datalake.delete_asset(created_from_object.asset_id)
     sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_direct_upload_wrappers(sync_datalake: Datalake):
+    payload = b"sync-direct-upload"
+
+    session = sync_datalake.create_object_upload_session(
+        name="sync-direct-upload.bin",
+        mount="local",
+        content_type="application/octet-stream",
+        metadata={"source": "integration"},
+        created_by="pytest",
+    )
+    assert session.upload_method == "local_path"
+    assert session.upload_path is not None
+
+    Path(session.upload_path).write_bytes(payload)
+
+    fetched = sync_datalake.get_object_upload_session(session.upload_session_id)
+    assert fetched.upload_session_id == session.upload_session_id
+
+    completed = sync_datalake.complete_object_upload_session(
+        session.upload_session_id,
+        finalize_token=session.finalize_token,
+        metadata={"verified": True},
+    )
+    assert completed.status == "completed"
+    assert completed.storage_ref is not None
+
+    loaded = sync_datalake.get_object(completed.storage_ref)
+    assert loaded == payload
+
+    asset = sync_datalake.create_asset_from_uploaded_object(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=completed.storage_ref,
+        size_bytes=len(payload),
+        metadata={"source": "integration"},
+        created_by="pytest",
+    )
+    assert asset.storage_ref == completed.storage_ref
+
+    sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_reconcile_upload_sessions(sync_datalake: Datalake):
+    payload = b"sync-reconcile-upload"
+    session = sync_datalake.create_object_upload_session(
+        name="sync-reconcile-upload.bin",
+        mount="local",
+        content_type="application/octet-stream",
+        expires_in_minutes=1,
+    )
+    assert session.upload_path is not None
+
+    Path(session.upload_path).write_bytes(payload)
+
+    mongo_client = MongoClient(sync_datalake.mongo_db_uri)
+    try:
+        collection = mongo_client[sync_datalake.mongo_db_name]["datalake_direct_upload_sessions"]
+        collection.update_one(
+            {"upload_session_id": session.upload_session_id},
+            {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+        )
+    finally:
+        mongo_client.close()
+
+    reconciled = sync_datalake.reconcile_upload_sessions()
+
+    assert len(reconciled) == 1
+    assert reconciled[0].status == "completed"
+    assert reconciled[0].storage_ref is not None
+    assert sync_datalake.get_object(reconciled[0].storage_ref) == payload
 
 
 def test_sync_datalake_init_branch_and_summary_variants():

@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
-from mindtrace.datalake import DatalakeService, StorageRef, SubjectRef
+from mindtrace.datalake import DatalakeDirectUploadClient, DatalakeService, StorageRef, SubjectRef
 from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
@@ -65,6 +65,12 @@ def _cleanup_service_database(db_name: str) -> None:
         client.drop_database(db_name)
     finally:
         client.close()
+
+
+def _skip_if_presign_unavailable(exc: Exception) -> None:
+    message = str(exc).lower()
+    if "private key" in message or "sign credentials" in message or "unable to generate a pre-signed url" in message:
+        pytest.skip(f"Unable to generate a pre-signed URL: {exc}")
 
 
 class TestDatalakeServiceIntegration:
@@ -496,6 +502,49 @@ class TestDatalakeServiceIntegration:
         assert datalake_service_local_manager.assets_delete(id=created_from_object.asset.asset_id) is None
         assert datalake_service_local_manager.assets_delete(id=asset.asset.asset_id) is None
 
+    def test_datalake_direct_upload_client_create_asset_from_bytes_local(self, datalake_service_local_manager):
+        client = DatalakeDirectUploadClient(datalake_service_local_manager)
+        payload = b"service-direct-upload-client-payload"
+
+        asset = client.create_asset_from_bytes(
+            name="service-direct-upload-client.bin",
+            data=payload,
+            kind="artifact",
+            media_type="application/octet-stream",
+            mount="local",
+            content_type="application/octet-stream",
+            asset_metadata={"source": "integration"},
+            size_bytes=len(payload),
+            created_by="pytest",
+        )
+
+        assert isinstance(asset, AssetOutput)
+        assert asset.asset.storage_ref is not None
+        assert asset.asset.metadata["source"] == "integration"
+
+        loaded = datalake_service_local_manager.objects_get(storage_ref=asset.asset.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
+
+    @pytest.mark.asyncio
+    async def test_datalake_direct_upload_client_async_local(self, datalake_service_local_manager):
+        client = DatalakeDirectUploadClient(datalake_service_local_manager)
+        payload = b"service-direct-upload-client-async-payload"
+
+        completed = await client.aupload_bytes(
+            name="service-direct-upload-client-async.bin",
+            data=payload,
+            mount="local",
+            content_type="application/octet-stream",
+            metadata={"source": "integration"},
+            created_by="pytest",
+        )
+
+        assert completed.status == "completed"
+        assert completed.storage_ref is not None
+
+        loaded = await datalake_service_local_manager.aobjects_get(storage_ref=completed.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
+
     def test_datalake_service_direct_upload_session_end_to_end(self, datalake_service_local_manager):
         session = datalake_service_local_manager.objects_upload_session_create(
             name="service-direct-upload.bin",
@@ -581,6 +630,56 @@ class TestDatalakeServiceIntegration:
         )
         assert isinstance(asset, AssetOutput)
         assert asset.asset.storage_ref == completed.storage_ref
+
+    def test_datalake_direct_upload_client_create_asset_from_bytes_gcs(self, datalake_service_gcs_manager):
+        client = DatalakeDirectUploadClient(datalake_service_gcs_manager)
+        payload = b"service-direct-upload-client-gcs-payload"
+
+        try:
+            asset = client.create_asset_from_bytes(
+                name="service-direct-upload-client-gcs.bin",
+                data=payload,
+                kind="artifact",
+                media_type="application/octet-stream",
+                mount="gcs",
+                content_type="application/octet-stream",
+                asset_metadata={"source": "integration"},
+                size_bytes=len(payload),
+                created_by="pytest",
+            )
+        except (HTTPException, AttributeError) as exc:
+            _skip_if_presign_unavailable(exc)
+            raise
+
+        assert isinstance(asset, AssetOutput)
+        assert asset.asset.storage_ref is not None
+
+        loaded = datalake_service_gcs_manager.objects_get(storage_ref=asset.asset.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
+
+    @pytest.mark.asyncio
+    async def test_datalake_direct_upload_client_async_gcs(self, datalake_service_gcs_manager):
+        client = DatalakeDirectUploadClient(datalake_service_gcs_manager)
+        payload = b"service-direct-upload-client-gcs-async-payload"
+
+        try:
+            completed = await client.aupload_bytes(
+                name="service-direct-upload-client-gcs-async.bin",
+                data=payload,
+                mount="gcs",
+                content_type="application/octet-stream",
+                metadata={"source": "integration"},
+                created_by="pytest",
+            )
+        except (HTTPException, AttributeError) as exc:
+            _skip_if_presign_unavailable(exc)
+            raise
+
+        assert completed.status == "completed"
+        assert completed.storage_ref is not None
+
+        loaded = await datalake_service_gcs_manager.aobjects_get(storage_ref=completed.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
 
     def test_datalake_service_reconciler_auto_finalizes_expired_upload(self, datalake_mounts):
         db_name = f"tds_direct_upload_reconciler_{uuid4().hex[:12]}"
