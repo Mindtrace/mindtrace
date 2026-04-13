@@ -317,6 +317,9 @@ class Datalake(Mindtrace):
     def complete_object_upload_session(self, upload_session_id: str, **kwargs: Any):
         return self._submit_coro(self._backend.complete_object_upload_session(upload_session_id, **kwargs))
 
+    def reconcile_upload_sessions(self, limit: int = 100):
+        return self._submit_coro(self._backend.reconcile_upload_sessions(limit=limit))
+
     def create_asset(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset(**kwargs))
 

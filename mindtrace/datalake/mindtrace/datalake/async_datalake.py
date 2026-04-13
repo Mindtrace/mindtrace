@@ -174,6 +174,12 @@ class AsyncDatalake(Mindtrace):
         return datetime.now(timezone.utc)
 
     @staticmethod
+    def _coerce_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    @staticmethod
     def _normalize_storage_ref(storage_ref: StorageRef) -> StorageRef:
         return StorageRef(
             mount=storage_ref.mount,
@@ -328,6 +334,7 @@ class AsyncDatalake(Mindtrace):
         now = self._utc_now()
         reconciled: list[DirectUploadSession] = []
         for session in pending[:limit]:
+            session.expires_at = self._coerce_utc(session.expires_at)
             if session.expires_at <= now:
                 reconciled.append(
                     await self._verify_and_finalize_upload_session(
@@ -351,6 +358,7 @@ class AsyncDatalake(Mindtrace):
         key = self.store.build_key(session.mount, session.name, session.requested_version)
         session.verification_attempts += 1
         session.last_verified_at = self._utc_now()
+        session.expires_at = self._coerce_utc(session.expires_at)
 
         inspection = self.store.inspect_direct_upload_target(key, staged_target=session.staged_reference)
         if not inspection.get("exists"):
