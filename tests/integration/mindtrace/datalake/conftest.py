@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import tempfile
 from pathlib import Path
@@ -5,11 +6,72 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from pymongo import MongoClient
 
-from mindtrace.datalake import AsyncDatalake, Datalake
+from mindtrace.datalake import AsyncDatalake, Datalake, DatalakeService
+from mindtrace.datalake.async_datalake import _default_datalake_store_path
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
 
 MONGO_URL = "mongodb://localhost:27018"
+
+
+class InProcessServiceConnectionManager:
+    def __init__(self, service: DatalakeService, client: TestClient):
+        self._service = service
+        self._client = client
+        self._method_to_endpoint = {endpoint.replace(".", "_"): endpoint for endpoint in self._service.endpoints}
+
+    def _payload_for(self, endpoint_name: str, args, kwargs):
+        schema = self._service.endpoints[endpoint_name].input_schema
+        if args:
+            if len(args) != 1:
+                raise ValueError(
+                    f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {schema}"
+                )
+            if kwargs:
+                raise ValueError(
+                    f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {schema}"
+                )
+            arg = args[0]
+            if schema is not None and not isinstance(arg, schema):
+                raise ValueError(
+                    f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {schema}"
+                )
+            return arg.model_dump() if hasattr(arg, "model_dump") else arg
+        return schema(**kwargs).model_dump() if schema is not None else {}
+
+    def _call(self, endpoint_name: str, *args, **kwargs):
+        payload = self._payload_for(endpoint_name, args, kwargs)
+        response = self._client.post(f"/{endpoint_name}", json=payload)
+        if response.status_code != 200:
+            raise HTTPException(response.status_code, response.text)
+        schema = self._service.endpoints[endpoint_name].output_schema
+        result = response.json()
+        return schema(**result) if schema is not None else result
+
+    def __getattr__(self, name: str):
+        endpoint_name = self._method_to_endpoint.get(name)
+        if endpoint_name in self._service.endpoints:
+
+            def method(*args, **kwargs):
+                return self._call(endpoint_name, *args, **kwargs)
+
+            return method
+
+        if name.startswith("a"):
+            sync_name = name[1:]
+            sync_endpoint_name = self._method_to_endpoint.get(sync_name)
+            if sync_endpoint_name in self._service.endpoints:
+                sync_method = self.__getattr__(sync_name)
+
+                async def async_method(*args, **kwargs):
+                    return await asyncio.to_thread(sync_method, *args, **kwargs)
+
+                return async_method
+
+        raise AttributeError(name)
 
 
 @pytest.fixture(scope="function")
@@ -88,3 +150,55 @@ def temp_registry_dir():
         yield temp_dir
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture(scope="function")
+def datalake_mounts(temp_registry_dir):
+    return [
+        Mount(
+            name="local",
+            backend=MountBackendKind.LOCAL,
+            config=LocalMountConfig(uri=Path(temp_registry_dir)),
+            is_default=True,
+            registry_options={"mutable": True},
+        )
+    ]
+
+
+@pytest.fixture(scope="function")
+def datalake_service_local_manager(datalake_mounts):
+    db_name = f"test_datalake_service_local_{uuid4().hex}"
+    service = DatalakeService(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        mounts=datalake_mounts,
+        default_mount="local",
+    )
+    with TestClient(service.app) as client:
+        yield InProcessServiceConnectionManager(service, client)
+
+    mongo_client = MongoClient(MONGO_URL)
+    try:
+        mongo_client.drop_database(db_name)
+    finally:
+        mongo_client.close()
+
+
+@pytest.fixture(scope="function")
+def datalake_service_manager():
+    db_name = f"test_datalake_service_{uuid4().hex}"
+    store_path = _default_datalake_store_path(MONGO_URL, db_name)
+    with DatalakeService.launch(
+        url="http://localhost:8095",
+        timeout=30,
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+    ) as cm:
+        yield cm
+
+    client = MongoClient(MONGO_URL)
+    try:
+        client.drop_database(db_name)
+    finally:
+        client.close()
+    shutil.rmtree(store_path, ignore_errors=True)
