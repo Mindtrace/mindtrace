@@ -89,6 +89,40 @@ def test_create_asset_from_bytes_uses_uploaded_storage_ref():
     assert result.asset_id == "asset_1"
 
 
+def test_upload_client_supports_datalake_method_names(tmp_path):
+    upload_path = tmp_path / "direct-upload" / "data.txt"
+    datalake = SimpleNamespace()
+    datalake.create_object_upload_session = Mock(
+        return_value=SimpleNamespace(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            upload_method="local_path",
+            upload_path=str(upload_path),
+            upload_url=None,
+            upload_headers={},
+        )
+    )
+    datalake.complete_object_upload_session = Mock(
+        return_value=SimpleNamespace(storage_ref=StorageRef(mount="gcs", name="images/cat.jpg", version="v1"))
+    )
+    datalake.create_asset_from_uploaded_object = Mock(return_value=SimpleNamespace(asset_id="asset_1"))
+
+    client = DatalakeDirectUploadClient(datalake)
+    result = client.create_asset_from_bytes(
+        name="images/cat.jpg",
+        data=b"payload",
+        kind="image",
+        media_type="image/jpeg",
+        mount="gcs",
+    )
+
+    datalake.create_object_upload_session.assert_called_once()
+    datalake.complete_object_upload_session.assert_called_once()
+    datalake.create_asset_from_uploaded_object.assert_called_once()
+    assert upload_path.read_bytes() == b"payload"
+    assert result.asset_id == "asset_1"
+
+
 def test_upload_payload_rejects_missing_local_path():
     client = DatalakeDirectUploadClient(Mock())
     session = SimpleNamespace(upload_method="local_path", upload_path=None, upload_url=None, upload_headers={})
@@ -134,6 +168,33 @@ async def test_aupload_bytes_writes_local_upload_path(tmp_path):
     client = DatalakeDirectUploadClient(cm)
     completed = await client.aupload_bytes(data=b"payload", name="images/cat.jpg", mount="local")
 
+    assert upload_path.read_bytes() == b"payload"
+    assert completed.storage_ref.version == "v1"
+
+
+@pytest.mark.asyncio
+async def test_aupload_bytes_supports_async_datalake_method_names(tmp_path):
+    upload_path = tmp_path / "direct-upload" / "async-data.txt"
+    async_datalake = SimpleNamespace()
+    async_datalake.create_object_upload_session = AsyncMock(
+        return_value=SimpleNamespace(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            upload_method="local_path",
+            upload_path=str(upload_path),
+            upload_url=None,
+            upload_headers={},
+        )
+    )
+    async_datalake.complete_object_upload_session = AsyncMock(
+        return_value=SimpleNamespace(storage_ref=StorageRef(mount="gcs", name="images/cat.jpg", version="v1"))
+    )
+
+    client = DatalakeDirectUploadClient(async_datalake)
+    completed = await client.aupload_bytes(data=b"payload", name="images/cat.jpg", mount="gcs")
+
+    async_datalake.create_object_upload_session.assert_awaited_once()
+    async_datalake.complete_object_upload_session.assert_awaited_once()
     assert upload_path.read_bytes() == b"payload"
     assert completed.storage_ref.version == "v1"
 
