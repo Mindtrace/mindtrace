@@ -311,7 +311,7 @@ class _RegistryCore(Mindtrace):
     def _resolve_save_version(self, name: str, version: str | None) -> str:
         """Resolve a concrete version string for a write path."""
         if not self.version_objects:
-            return "1"
+            return str(Version("1", digits=self.version_digits))
         if version is None:
             return self._next_version(name)
         if version == "latest":

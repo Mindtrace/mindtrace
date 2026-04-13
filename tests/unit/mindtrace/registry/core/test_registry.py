@@ -3994,6 +3994,12 @@ def test_resolve_load_version_not_found(registry):
         registry._resolve_load_version("nonexistent", "latest")
 
 
+def test_resolve_save_version_uses_normalized_single_version_when_versioning_disabled(temp_registry_dir):
+    registry = Registry(backend=temp_registry_dir, version_objects=False, version_digits=3)
+
+    assert registry._core._resolve_save_version("test:a", None) == "1.0.0"
+
+
 def _make_cached_facade_registry(temp_registry_dir: str) -> Registry:
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
