@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -24,16 +25,19 @@ from mindtrace.datalake.service_types import (
     CollectionItemOutput,
     CollectionListOutput,
     CollectionOutput,
+    CompleteObjectUploadSessionInput,
     CopyObjectInput,
     CreateAnnotationSchemaInput,
     CreateAnnotationSetInput,
     CreateAssetFromObjectInput,
+    CreateAssetFromUploadedObjectInput,
     CreateAssetInput,
     CreateAssetRetentionInput,
     CreateCollectionInput,
     CreateCollectionItemInput,
     CreateDatasetVersionInput,
     CreateDatumInput,
+    CreateObjectUploadSessionInput,
     DatalakeHealthOutput,
     DatalakeSummaryOutput,
     DatasetVersionListOutput,
@@ -51,6 +55,7 @@ from mindtrace.datalake.service_types import (
     ObjectDataOutput,
     ObjectHeadOutput,
     ObjectOutput,
+    ObjectUploadSessionOutput,
     PutObjectInput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
@@ -75,6 +80,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -320,6 +326,83 @@ SERVICE_CASES = [
         },
     },
     {
+        "service_method": "create_object_upload_session",
+        "payload_factory": lambda o: CreateObjectUploadSessionInput(
+            name="images/cat.jpg",
+            mount="nas",
+            version="v1",
+            metadata={"source": "unit"},
+            on_conflict="skip",
+            content_type="image/jpeg",
+            expires_in_minutes=60,
+            created_by="tester",
+        ),
+        "datalake_method": "create_object_upload_session",
+        "datalake_return_factory": lambda o: DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            requested_version="v1",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            content_type="image/jpeg",
+            metadata={"source": "unit"},
+            expires_at=o.asset.created_at,
+            created_by="tester",
+        ),
+        "expected_output_type": ObjectUploadSessionOutput,
+        "expected_output_field": "upload_session_id",
+        "expected_output_factory": lambda o: "upload_session_1",
+        "expected_args_factory": lambda o: (),
+        "expected_kwargs_factory": lambda o: {
+            "name": "images/cat.jpg",
+            "mount": "nas",
+            "version": "v1",
+            "metadata": {"source": "unit"},
+            "on_conflict": "skip",
+            "content_type": "image/jpeg",
+            "expires_in_minutes": 60,
+            "created_by": "tester",
+        },
+    },
+    {
+        "service_method": "complete_object_upload_session",
+        "payload_factory": lambda o: CompleteObjectUploadSessionInput(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            metadata={"source": "verified"},
+        ),
+        "datalake_method": "complete_object_upload_session",
+        "datalake_return_factory": lambda o: DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            requested_version="v1",
+            resolved_version="v1",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            content_type="image/jpeg",
+            metadata={"source": "verified"},
+            status="completed",
+            storage_ref=o.storage_ref,
+            expires_at=o.asset.created_at,
+            completed_at=o.asset.created_at,
+            created_by="tester",
+        ),
+        "expected_output_type": ObjectUploadSessionOutput,
+        "expected_output_field": "status",
+        "expected_output_factory": lambda o: "completed",
+        "expected_args_factory": lambda o: ("upload_session_1",),
+        "expected_kwargs_factory": lambda o: {
+            "finalize_token": "token-1",
+            "metadata": {"source": "verified"},
+        },
+    },
+    {
         "service_method": "create_asset",
         "payload_factory": lambda o: CreateAssetInput(
             kind="image",
@@ -372,7 +455,9 @@ SERVICE_CASES = [
     },
     {
         "service_method": "update_asset_metadata",
-        "payload_factory": lambda o: UpdateAssetMetadataInput(asset_id=o.asset.asset_id, metadata={"source": "updated"}),
+        "payload_factory": lambda o: UpdateAssetMetadataInput(
+            asset_id=o.asset.asset_id, metadata={"source": "updated"}
+        ),
         "datalake_method": "update_asset_metadata",
         "datalake_return_factory": lambda o: o.asset,
         "expected_output_type": AssetOutput,
@@ -429,6 +514,35 @@ SERVICE_CASES = [
             "subject": o.subject_ref,
             "created_by": "tester",
             "on_conflict": "replace",
+        },
+    },
+    {
+        "service_method": "create_asset_from_uploaded_object",
+        "payload_factory": lambda o: CreateAssetFromUploadedObjectInput(
+            kind="image",
+            media_type="image/jpeg",
+            storage_ref=o.storage_ref,
+            checksum="sha256:abc",
+            size_bytes=123,
+            subject=o.subject_ref,
+            metadata={"source": "unit"},
+            created_by="tester",
+        ),
+        "datalake_method": "create_asset",
+        "datalake_return_factory": lambda o: o.asset,
+        "expected_output_type": AssetOutput,
+        "expected_output_field": "asset",
+        "expected_output_factory": lambda o: o.asset,
+        "expected_args_factory": lambda o: (),
+        "expected_kwargs_factory": lambda o: {
+            "kind": "image",
+            "media_type": "image/jpeg",
+            "storage_ref": o.storage_ref,
+            "checksum": "sha256:abc",
+            "size_bytes": 123,
+            "subject": o.subject_ref,
+            "metadata": {"source": "unit"},
+            "created_by": "tester",
         },
     },
     {
@@ -1030,7 +1144,10 @@ class TestDatalakeServiceInitialization:
         assert service._datalake is mock_datalake
         assert service._initialized is True
         assert service.app.router.on_startup[-1] == service._startup_initialize
+        assert service.app.router.on_shutdown[-1] == service._shutdown_cleanup
         assert "objects.put" in service.endpoints
+        assert "objects.upload_session.create" in service.endpoints
+        assert "assets.create_from_uploaded_object" in service.endpoints
         assert "annotation_records.add" in service.endpoints
         assert "dataset_versions.resolve" in service.endpoints
 
@@ -1042,10 +1159,30 @@ class TestDatalakeServiceInitialization:
     @pytest.mark.asyncio
     async def test_startup_initialize_delegates_to_ensure_datalake(self, service):
         service._ensure_datalake = AsyncMock()
+        service._run_upload_reconciler = AsyncMock()
 
-        await service._startup_initialize()
+        with patch("mindtrace.datalake.service.asyncio.create_task") as create_task:
+            await service._startup_initialize()
 
         service._ensure_datalake.assert_awaited_once_with()
+        create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_cancels_reconciler_task(self, service):
+        task = asyncio.Future()
+        cancel = Mock()
+
+        def _cancel():
+            cancel()
+            task.set_exception(asyncio.CancelledError())
+
+        task.cancel = _cancel
+        service._upload_reconciler_task = task
+
+        await service._shutdown_cleanup()
+
+        cancel.assert_called_once_with()
+        assert service._upload_reconciler_task is None
 
     @pytest.mark.asyncio
     async def test_ensure_datalake_raises_without_mongo_config(self):
@@ -1122,7 +1259,9 @@ class TestDatalakeServiceUtilities:
         [
             pytest.param("payload-text", base64.b64encode(b"payload-text").decode("utf-8"), id="str"),
             pytest.param(b"payload-bytes", base64.b64encode(b"payload-bytes").decode("utf-8"), id="bytes"),
-            pytest.param(bytearray(b"payload-bytearray"), base64.b64encode(b"payload-bytearray").decode("utf-8"), id="bytearray"),
+            pytest.param(
+                bytearray(b"payload-bytearray"), base64.b64encode(b"payload-bytearray").decode("utf-8"), id="bytearray"
+            ),
         ],
     )
     def test_encode_base64_supported_inputs(self, payload, expected):
