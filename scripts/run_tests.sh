@@ -17,11 +17,32 @@ RUN_STRESS=false
 RUN_UTILS=false
 RUN_ALL=true
 MODULES=()
+REPORT_INCLUDE_PATTERNS=()
 
 export MINDTRACE_TEST_PARAM="test_1234"
 
 # Get project root directory (where tests/conftest.py is located)
 PROJECT_ROOT=$(pwd)
+COVERAGE_CONFIG="$PROJECT_ROOT/.coveragerc"
+
+finalize_coverage() {
+    if [ -f "$PROJECT_ROOT/.coverage" ] || (cd "$PROJECT_ROOT" && compgen -G ".coverage.*" > /dev/null); then
+        echo "Combining coverage data..."
+        (cd "$PROJECT_ROOT" && coverage combine)
+        echo "Reporting coverage..."
+        if [ ${#REPORT_INCLUDE_PATTERNS[@]} -gt 0 ]; then
+            local include_arg
+            include_arg=$(IFS=,; echo "${REPORT_INCLUDE_PATTERNS[*]}")
+            (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg")
+        else
+            (cd "$PROJECT_ROOT" && coverage report -m)
+        fi
+    fi
+}
+
+run_pytest_with_coverage() {
+    coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest "$@"
+}
 
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
@@ -70,6 +91,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [ ${#MODULES[@]} -gt 0 ]; then
+    for module in "${MODULES[@]}"; do
+        REPORT_INCLUDE_PATTERNS+=("mindtrace/$module/mindtrace/**/*.py")
+        REPORT_INCLUDE_PATTERNS+=("mindtrace/$module/mindtrace/*.py")
+    done
+fi
+
 # If specific paths are provided, run just those paths and exit
 if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
@@ -85,9 +113,10 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     
     # Run pytest on the specific paths with coverage
     # Use --rootdir to ensure tests/conftest.py fixtures are discoverable
-    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning --rootdir=\"$PROJECT_ROOT\" ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
-    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
+    echo "Running: coverage run --rcfile=\"$COVERAGE_CONFIG\" --parallel-mode -m pytest -rs -W ignore::DeprecationWarning --rootdir=\"$PROJECT_ROOT\" ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
+    run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
     EXIT_CODE=$?
+    finalize_coverage
     
     # Stop docker containers if they were started
     if [ "$NEEDS_DOCKER" = true ]; then
@@ -130,7 +159,7 @@ if [ "$RUN_UNIT" = true ]; then
     for module in "${MODULES[@]}"; do
         echo "Running unit tests for $module..."
         if [ -d "tests/unit/mindtrace/$module" ]; then
-            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
+            run_pytest_with_coverage -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
             if [ $? -ne 0 ]; then
                 echo "Unit tests for $module failed. Stopping test execution."
                 OVERALL_EXIT_CODE=1
@@ -140,7 +169,7 @@ if [ "$RUN_UNIT" = true ]; then
         fi
     done
     if [ ${#MODULES[@]} -eq 0 ]; then
-        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace
+        run_pytest_with_coverage -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace
         if [ $? -ne 0 ]; then
             echo "Unit tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
@@ -149,6 +178,7 @@ if [ "$RUN_UNIT" = true ]; then
     if [ $OVERALL_EXIT_CODE -ne 0 ]; then
         echo "Unit tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
+        finalize_coverage
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
@@ -164,7 +194,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
     for module in "${MODULES[@]}"; do
         echo "Running integration tests for $module..."
         if [ -d "tests/integration/mindtrace/$module" ]; then
-            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
+            run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
             if [ $? -ne 0 ]; then
                 echo "Integration tests for $module failed. Stopping test execution."
                 OVERALL_EXIT_CODE=1
@@ -174,7 +204,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         fi
     done
     if [ ${#MODULES[@]} -eq 0 ]; then
-        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace
+        run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace
         if [ $? -ne 0 ]; then
             echo "Integration tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
@@ -182,6 +212,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
     fi
     if [ $OVERALL_EXIT_CODE -ne 0 ]; then
         echo "Integration tests failed. Stopping test execution."
+        finalize_coverage
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
@@ -195,10 +226,11 @@ fi
 if [ "$RUN_UTILS" = true ]; then
     echo "Running tests/utils directory tests..."
     if [ -d "tests/utils" ]; then
-        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/utils
+        run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/utils
         if [ $? -ne 0 ]; then
             echo "tests/utils directory tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
+            finalize_coverage
             # Stop docker containers if they were started
             if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
                 echo "Stopping docker containers..."
@@ -229,7 +261,7 @@ if [ "$RUN_STRESS" = true ]; then
         cd mindtrace
         
         # Include coverage to combine with other test results
-        pytest -rs -s --cov=mindtrace --cov-report term-missing --cov-append --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
+        coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
         
         # Copy the combined coverage data back to project root
         if [ -f .coverage ]; then
@@ -248,6 +280,7 @@ if [ "$RUN_STRESS" = true ]; then
     if [ $STRESS_EXIT_CODE -ne 0 ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
+        finalize_coverage
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
@@ -255,6 +288,10 @@ if [ "$RUN_STRESS" = true ]; then
         fi
         exit $OVERALL_EXIT_CODE
     fi
+fi
+
+if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ]; then
+    finalize_coverage
 fi
 
 # Stop docker containers if they were started
