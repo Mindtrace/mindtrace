@@ -233,6 +233,33 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
         )
 
 
+@pytest.mark.asyncio
+async def test_async_datalake_direct_upload_error_paths(async_datalake: AsyncDatalake):
+    with pytest.raises(ValueError, match="expires_in_minutes must be positive"):
+        await async_datalake.create_object_upload_session(name="invalid-expiry.bin", expires_in_minutes=0)
+
+    with pytest.raises(DocumentNotFoundError, match="Upload session with upload_session_id missing-session not found"):
+        await async_datalake.get_object_upload_session("missing-session")
+
+    session = await async_datalake.create_object_upload_session(
+        name="missing-direct-upload.bin",
+        mount="local",
+        content_type="application/octet-stream",
+    )
+
+    with pytest.raises(ValueError, match="Invalid finalize token"):
+        await async_datalake.complete_object_upload_session(
+            session.upload_session_id,
+            finalize_token="wrong-token",
+        )
+
+    with pytest.raises(FileNotFoundError, match="Staged upload not found"):
+        await async_datalake.complete_object_upload_session(
+            session.upload_session_id,
+            finalize_token=session.finalize_token,
+        )
+
+
 
 @pytest.mark.asyncio
 async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatalake):
