@@ -292,7 +292,16 @@ class DatalakeService(Service):
 
     async def create_asset(self, payload: CreateAssetInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
-        asset = await datalake.create_asset(**payload.model_dump())
+        asset = await datalake.create_asset(
+            kind=payload.kind,
+            media_type=payload.media_type,
+            storage_ref=payload.storage_ref,
+            checksum=payload.checksum,
+            size_bytes=payload.size_bytes,
+            subject=payload.subject,
+            metadata=payload.metadata,
+            created_by=payload.created_by,
+        )
         return AssetOutput(asset=asset)
 
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
