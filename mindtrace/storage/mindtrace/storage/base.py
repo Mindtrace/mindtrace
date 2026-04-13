@@ -179,6 +179,11 @@ class StorageHandler(MindtraceABC, ABC):
         """
         pass  # pragma: no cover
 
+    @abstractmethod
+    def copy(self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False) -> FileResult:
+        """Copy an existing remote object within the same storage backend."""
+        pass  # pragma: no cover
+
     # String Operations (no temp files) -------------------------------------
     @abstractmethod
     def upload_string(

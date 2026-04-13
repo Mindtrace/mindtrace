@@ -266,6 +266,39 @@ class GCSStorageHandler(StorageHandler):
                 error_message=str(e),
             )
 
+    def copy(self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False) -> FileResult:
+        """Copy an existing blob to another path in the same bucket."""
+        source_path = self._sanitize_blob_path(source_remote_path)
+        destination_path = self._sanitize_blob_path(destination_remote_path)
+        try:
+            if fail_if_exists and self.exists(destination_path):
+                return FileResult(
+                    local_path="",
+                    remote_path=destination_path,
+                    status=Status.ALREADY_EXISTS,
+                    error_type="AlreadyExists",
+                    error_message=f"Blob already exists: gs://{self.bucket_name}/{destination_path}",
+                )
+            source_blob = self._bucket().blob(source_path)
+            if not source_blob.exists(self.client):
+                return FileResult(
+                    local_path="",
+                    remote_path=source_path,
+                    status=Status.NOT_FOUND,
+                    error_type="NotFound",
+                    error_message=f"Blob not found: gs://{self.bucket_name}/{source_path}",
+                )
+            self._bucket().copy_blob(source_blob, self._bucket(), new_name=destination_path)
+            return FileResult(local_path="", remote_path=destination_path, status=Status.OK)
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=destination_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
     # ------------------------------------------------------------------
     # String Operations (no temp files)
     # ------------------------------------------------------------------

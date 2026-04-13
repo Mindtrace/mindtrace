@@ -348,6 +348,58 @@ class Store(Mindtrace):
                 result.errors[item_key] = {"error": type(e).__name__, "message": str(e)}
         return result
 
+    def create_direct_upload_target(
+        self,
+        key: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+        upload_id: str | None = None,
+    ) -> dict[str, Any]:
+        mount, object_name, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        target = registry.create_direct_upload_target(
+            upload_id or hashlib.sha1(key.encode()).hexdigest(),
+            content_type=content_type,
+            expiration_minutes=expiration_minutes,
+        )
+        return {"mount": resolved_mount, "name": object_name, **target}
+
+    def inspect_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> dict[str, Any]:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.inspect_direct_upload_target(staged_target)
+
+    def cleanup_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> bool:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.cleanup_direct_upload_target(staged_target)
+
+    def commit_direct_upload(
+        self,
+        key: str,
+        *,
+        staged_target: dict[str, Any],
+        version: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str:
+        mount, object_name, key_version = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        resolved_version = registry.commit_direct_upload(
+            object_name,
+            staged_target=staged_target,
+            version=version if version is not None else key_version,
+            metadata=metadata,
+            on_conflict=on_conflict,
+        )
+        self.cache_update_location(object_name, resolved_mount)
+        return resolved_version
+
     def _single_load(
         self,
         key: str,
