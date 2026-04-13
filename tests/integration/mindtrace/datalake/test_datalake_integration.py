@@ -19,6 +19,12 @@ def _bare_datalake() -> Datalake:
     return datalake
 
 
+def _skip_if_presign_unavailable(exc: Exception) -> None:
+    message = str(exc).lower()
+    if "private key" in message or "sign credentials" in message or "unable to generate a pre-signed url" in message:
+        pytest.skip(f"Unable to generate a pre-signed URL: {exc}")
+
+
 def test_datalake_end_to_end(sync_datalake: Datalake):
     hopper_path = Path("tests/resources/hopper.png")
     image_bytes = hopper_path.read_bytes()
@@ -246,6 +252,31 @@ def test_sync_datalake_direct_upload_client_works_with_datalake(sync_datalake: D
     assert asset.metadata["source"] == "integration"
 
     sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_direct_upload_client_uploads_file_to_gcs(sync_datalake_gcs: Datalake):
+    client = DatalakeDirectUploadClient(sync_datalake_gcs)
+    hopper_path = Path("tests/resources/hopper.png")
+    payload = hopper_path.read_bytes()
+
+    try:
+        asset = client.create_asset_from_file(
+            path=hopper_path,
+            kind="image",
+            media_type="image/png",
+            mount="gcs",
+            content_type="image/png",
+            asset_metadata={"source": "integration"},
+            created_by="pytest",
+        )
+    except Exception as exc:
+        _skip_if_presign_unavailable(exc)
+        raise
+
+    assert sync_datalake_gcs.get_object(asset.storage_ref) == payload
+    assert asset.metadata["source"] == "integration"
+
+    sync_datalake_gcs.delete_asset(asset.asset_id)
 
 
 def test_sync_datalake_init_branch_and_summary_variants():
