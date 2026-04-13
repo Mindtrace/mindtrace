@@ -11,7 +11,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import yaml
 
@@ -380,6 +380,91 @@ class LocalRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
     # Artifact + Metadata Operations
     # ─────────────────────────────────────────────────────────────────────────
+
+    def create_direct_upload_target(
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        staging_dir = self.uri / "_direct_uploads" / upload_id
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        upload_path = staging_dir / "data.txt"
+        return {
+            "upload_method": "local_path",
+            "upload_url": None,
+            "upload_path": str(upload_path),
+            "upload_headers": {},
+            "staged_target": {"kind": "local_file", "path": str(upload_path)},
+            "content_type": content_type,
+            "expiration_minutes": expiration_minutes,
+        }
+
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+        upload_path = Path(staged_target.get("path", ""))
+        exists = staged_target.get("kind") == "local_file" and upload_path.exists()
+        return {
+            "exists": exists,
+            "size_bytes": upload_path.stat().st_size if exists else None,
+            "path": str(upload_path) if upload_path else None,
+        }
+
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+        upload_path = Path(staged_target.get("path", ""))
+        if staged_target.get("kind") != "local_file":
+            return False
+        try:
+            if upload_path.exists():
+                upload_path.unlink()
+            if upload_path.parent.exists():
+                shutil.rmtree(upload_path.parent, ignore_errors=True)
+            return True
+        except Exception:
+            return False
+
+    def commit_direct_upload(
+        self,
+        name: str,
+        version: str,
+        staged_target: dict[str, Any],
+        metadata: dict[str, Any],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResult:
+        upload_path = Path(staged_target.get("path", ""))
+        if staged_target.get("kind") != "local_file" or not upload_path.exists():
+            return OpResult.failed(name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}"))
+
+        try:
+            self.validate_object_name(name)
+            with self._internal_lock(f"{name}@{version}"):
+                artifact_dst = self._full_path(self._object_key(name, version))
+                meta_path = self._object_metadata_path(name, version)
+
+                is_overwrite = False
+                if meta_path.exists():
+                    if on_conflict == OnConflict.OVERWRITE:
+                        if artifact_dst.exists():
+                            shutil.rmtree(artifact_dst, ignore_errors=True)
+                        meta_path.unlink(missing_ok=True)
+                        is_overwrite = True
+                    else:
+                        return OpResult.skipped(name, version)
+
+                artifact_dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(upload_path, artifact_dst / "data.txt")
+
+                prepared_metadata = dict(metadata)
+                prepared_metadata["path"] = str(artifact_dst)
+                with open(meta_path, "w") as f:
+                    yaml.safe_dump(prepared_metadata, f)
+
+                self.cleanup_direct_upload_target(staged_target)
+                if is_overwrite:
+                    return OpResult.overwritten(name, version)
+                return OpResult.success(name, version)
+        except Exception as e:
+            return OpResult.failed(name, version, e)
 
     def push(
         self,

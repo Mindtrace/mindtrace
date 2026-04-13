@@ -308,6 +308,27 @@ class _RegistryCore(Mindtrace):
                 files.append(str(rel_path))
         return sorted(files)
 
+    def _resolve_save_version(self, name: str, version: str | None) -> str:
+        """Resolve a concrete version string for a write path."""
+        if not self.version_objects:
+            return "1"
+        if version is None:
+            return self._next_version(name)
+        if version == "latest":
+            raise ValueError("Cannot save with version='latest'. Use version=None for auto-increment.")
+        return self._validate_version(version)
+
+    @staticmethod
+    def _build_direct_bytes_metadata(metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        """Build registry metadata for a bytes artifact uploaded out-of-band."""
+        return {
+            "class": "builtins.bytes",
+            "materializer": "zenml.materializers.BytesMaterializer",
+            "init_params": {},
+            "metadata": ifnone(metadata, default={}),
+            "_files": ["data.txt"],
+        }
+
     def save(
         self,
         name: str | List[str],
