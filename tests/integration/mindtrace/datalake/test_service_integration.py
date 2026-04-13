@@ -1,9 +1,13 @@
+import asyncio
 import base64
+import time
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
 from mindtrace.datalake import DatalakeService, SubjectRef
@@ -33,6 +37,7 @@ from mindtrace.datalake.service_types import (
     ObjectDataOutput,
     ObjectHeadOutput,
     ObjectOutput,
+    ObjectUploadSessionOutput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
     ResolvedDatumOutput,
@@ -45,6 +50,7 @@ from mindtrace.services.core.types import (
     StatusOutput,
 )
 
+from .conftest import InProcessServiceConnectionManager
 
 MONGO_URL = "mongodb://localhost:27018"
 
@@ -179,7 +185,9 @@ class TestDatalakeServiceIntegration:
             metadata={"role": "example"},
             added_by="pytest",
         )
-        fetched_collection_item = datalake_service_local_manager.collection_items_get(id=collection_item.collection_item.collection_item_id)
+        fetched_collection_item = datalake_service_local_manager.collection_items_get(
+            id=collection_item.collection_item.collection_item_id
+        )
         listed_collection_items = datalake_service_local_manager.collection_items_list(
             filters={"collection_id": collection.collection.collection_id}
         )
@@ -225,7 +233,9 @@ class TestDatalakeServiceIntegration:
             name="service-schema",
             version="1.0.0",
         )
-        listed_annotation_schemas = datalake_service_local_manager.annotation_schemas_list(filters={"task_type": "detection"})
+        listed_annotation_schemas = datalake_service_local_manager.annotation_schemas_list(
+            filters={"task_type": "detection"}
+        )
         updated_annotation_schema = datalake_service_local_manager.annotation_schemas_update(
             annotation_schema_id=annotation_schema.annotation_schema.annotation_schema_id,
             changes={"labels": [{"name": "hopper", "id": 1, "display_name": "Hopper"}], "allow_scores": True},
@@ -252,8 +262,12 @@ class TestDatalakeServiceIntegration:
             metadata={"tool": "pytest"},
             created_by="pytest",
         )
-        fetched_annotation_set = datalake_service_local_manager.annotation_sets_get(id=annotation_set.annotation_set.annotation_set_id)
-        listed_annotation_sets = datalake_service_local_manager.annotation_sets_list(filters={"purpose": "ground_truth"})
+        fetched_annotation_set = datalake_service_local_manager.annotation_sets_get(
+            id=annotation_set.annotation_set.annotation_set_id
+        )
+        listed_annotation_sets = datalake_service_local_manager.annotation_sets_list(
+            filters={"purpose": "ground_truth"}
+        )
         updated_annotation_set = datalake_service_local_manager.annotation_sets_update(
             annotation_set_id=annotation_set.annotation_set.annotation_set_id,
             changes={"status": "active"},
@@ -379,21 +393,33 @@ class TestDatalakeServiceIntegration:
         assert fetched_collection.collection.collection_id == collection.collection.collection_id
         assert any(item.collection_id == collection.collection.collection_id for item in listed_collections.collections)
         assert updated_collection.collection.status == "archived"
-        assert fetched_collection_item.collection_item.collection_item_id == collection_item.collection_item.collection_item_id
+        assert (
+            fetched_collection_item.collection_item.collection_item_id
+            == collection_item.collection_item.collection_item_id
+        )
         assert any(
             item.collection_item_id == collection_item.collection_item.collection_item_id
             for item in listed_collection_items.collection_items
         )
-        assert resolved_collection_item.resolved_collection_item.collection.collection_id == collection.collection.collection_id
+        assert (
+            resolved_collection_item.resolved_collection_item.collection.collection_id
+            == collection.collection.collection_id
+        )
         assert resolved_collection_item.resolved_collection_item.asset.asset_id == asset.asset.asset_id
         assert updated_collection_item.collection_item.status == "hidden"
-        assert fetched_asset_retention.asset_retention.asset_retention_id == asset_retention.asset_retention.asset_retention_id
+        assert (
+            fetched_asset_retention.asset_retention.asset_retention_id
+            == asset_retention.asset_retention.asset_retention_id
+        )
         assert any(
             item.asset_retention_id == asset_retention.asset_retention.asset_retention_id
             for item in listed_asset_retentions.asset_retentions
         )
         assert updated_asset_retention.asset_retention.retention_policy == "archive_when_unreferenced"
-        assert fetched_annotation_schema.annotation_schema.annotation_schema_id == annotation_schema.annotation_schema.annotation_schema_id
+        assert (
+            fetched_annotation_schema.annotation_schema.annotation_schema_id
+            == annotation_schema.annotation_schema.annotation_schema_id
+        )
         assert (
             fetched_annotation_schema_by_name.annotation_schema.annotation_schema_id
             == annotation_schema.annotation_schema.annotation_schema_id
@@ -406,7 +432,9 @@ class TestDatalakeServiceIntegration:
         assert fetched_datum.datum.datum_id == datum.datum.datum_id
         assert any(item.datum_id == datum.datum.datum_id for item in listed_datums.datums)
         assert updated_datum.datum.metadata == {"batch": "updated"}
-        assert fetched_annotation_set.annotation_set.annotation_set_id == annotation_set.annotation_set.annotation_set_id
+        assert (
+            fetched_annotation_set.annotation_set.annotation_set_id == annotation_set.annotation_set.annotation_set_id
+        )
         assert any(
             item.annotation_set_id == annotation_set.annotation_set.annotation_set_id
             for item in listed_annotation_sets.annotation_sets
@@ -418,7 +446,10 @@ class TestDatalakeServiceIntegration:
         assert updated_annotation_record.annotation_record.source.name == "pytest-updated"
         assert resolved_datum.resolved_datum.datum.datum_id == datum.datum.datum_id
         assert resolved_datum.resolved_datum.assets["image"].asset_id == asset.asset.asset_id
-        assert fetched_dataset_version.dataset_version.dataset_version_id == dataset_version.dataset_version.dataset_version_id
+        assert (
+            fetched_dataset_version.dataset_version.dataset_version_id
+            == dataset_version.dataset_version.dataset_version_id
+        )
         assert len(listed_dataset_versions.dataset_versions) == 1
         assert (
             resolved_dataset_version.resolved_dataset_version.dataset_version.dataset_version_id
@@ -443,16 +474,103 @@ class TestDatalakeServiceIntegration:
             changes={"annotation_schema_id": None},
         )
         assert detached_annotation_set.annotation_set.annotation_schema_id is None
-        assert datalake_service_local_manager.collection_items_delete(id=collection_item.collection_item.collection_item_id) is None
-        assert datalake_service_local_manager.asset_retentions_delete(
-            id=asset_retention.asset_retention.asset_retention_id
-        ) is None
+        assert (
+            datalake_service_local_manager.collection_items_delete(
+                id=collection_item.collection_item.collection_item_id
+            )
+            is None
+        )
+        assert (
+            datalake_service_local_manager.asset_retentions_delete(
+                id=asset_retention.asset_retention.asset_retention_id
+            )
+            is None
+        )
         assert datalake_service_local_manager.collections_delete(id=collection.collection.collection_id) is None
-        assert datalake_service_local_manager.annotation_schemas_delete(
-            id=annotation_schema.annotation_schema.annotation_schema_id
-        ) is None
+        assert (
+            datalake_service_local_manager.annotation_schemas_delete(
+                id=annotation_schema.annotation_schema.annotation_schema_id
+            )
+            is None
+        )
         assert datalake_service_local_manager.assets_delete(id=created_from_object.asset.asset_id) is None
         assert datalake_service_local_manager.assets_delete(id=asset.asset.asset_id) is None
+
+    def test_datalake_service_direct_upload_session_end_to_end(self, datalake_service_local_manager):
+        session = datalake_service_local_manager.objects_upload_session_create(
+            name="service-direct-upload.bin",
+            mount="local",
+            content_type="application/octet-stream",
+            metadata={"source": "integration"},
+            created_by="pytest",
+        )
+        assert isinstance(session, ObjectUploadSessionOutput)
+        assert session.upload_method == "local_path"
+
+        payload = b"direct-upload-payload"
+        Path(session.upload_path).write_bytes(payload)
+
+        completed = datalake_service_local_manager.objects_upload_session_complete(
+            upload_session_id=session.upload_session_id,
+            finalize_token=session.finalize_token,
+            metadata={"verified": True},
+        )
+        assert completed.status == "completed"
+        assert completed.storage_ref is not None
+
+        loaded = datalake_service_local_manager.objects_get(storage_ref=completed.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
+
+        asset = datalake_service_local_manager.assets_create_from_uploaded_object(
+            kind="binary",
+            media_type="application/octet-stream",
+            storage_ref=completed.storage_ref,
+            size_bytes=len(payload),
+            metadata={"source": "integration"},
+            created_by="pytest",
+        )
+        assert isinstance(asset, AssetOutput)
+        assert asset.asset.storage_ref == completed.storage_ref
+
+    def test_datalake_service_reconciler_auto_finalizes_expired_upload(self, datalake_mounts):
+        db_name = f"test_datalake_service_direct_upload_reconciler_{uuid4().hex}"
+        service = DatalakeService(
+            mongo_db_uri=MONGO_URL,
+            mongo_db_name=db_name,
+            mounts=datalake_mounts,
+            default_mount="local",
+            upload_reconcile_interval_seconds=0.05,
+        )
+
+        with TestClient(service.app) as client:
+            manager = InProcessServiceConnectionManager(service, client)
+            session = manager.objects_upload_session_create(
+                name="service-auto-finalize.bin",
+                mount="local",
+                content_type="application/octet-stream",
+                expires_in_minutes=1,
+            )
+            Path(session.upload_path).write_bytes(b"background-finalize")
+
+            stored_session = asyncio.run(service._datalake.get_object_upload_session(session.upload_session_id))
+            stored_session.expires_at = service._datalake._utc_now() - timedelta(seconds=1)
+            asyncio.run(service._datalake.direct_upload_session_database.update(stored_session))
+
+            deadline = time.time() + 3
+            completed = None
+            while time.time() < deadline:
+                candidate = asyncio.run(service._datalake.get_object_upload_session(session.upload_session_id))
+                if candidate.status == "completed":
+                    completed = candidate
+                    break
+                time.sleep(0.05)
+
+            assert completed is not None
+            assert completed.storage_ref is not None
+            loaded = manager.objects_get(storage_ref=completed.storage_ref)
+            assert base64.b64decode(loaded.data_base64.encode("utf-8")) == b"background-finalize"
+
+        _cleanup_service_database(db_name)
 
     def test_datalake_service_static_helper_branches(self):
         assert DatalakeService._encode_base64("hello") == base64.b64encode(b"hello").decode("utf-8")

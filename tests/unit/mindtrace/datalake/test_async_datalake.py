@@ -22,6 +22,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -70,6 +71,16 @@ class TestAsyncDatalakeUnit:
         store.copy.return_value = "v2"
         store.load.return_value = b"payload"
         store.info.return_value = {"size": 123}
+        store.create_direct_upload_target.return_value = {
+            "upload_method": "local_path",
+            "upload_url": None,
+            "upload_path": "/tmp/direct-upload/data.txt",
+            "upload_headers": {},
+            "staged_target": {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+        }
+        store.inspect_direct_upload_target.return_value = {"exists": True, "size_bytes": 7}
+        store.commit_direct_upload.return_value = "v5"
+        store.cleanup_direct_upload_target.return_value = True
         return store
 
     @pytest.fixture
@@ -114,7 +125,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 9
+        assert mock_odm.initialize.await_count == 10
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -122,7 +133,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 9
+        assert mock_odm.initialize.await_count == 10
 
     def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
         now = async_datalake._utc_now()
@@ -186,6 +197,95 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_create_object_upload_session(self, async_datalake, mock_store):
+        session = await async_datalake.create_object_upload_session(
+            name="images/cat.jpg",
+            mount="nas",
+            version="v9",
+            metadata={"source": "unit"},
+            content_type="image/jpeg",
+            expires_in_minutes=15,
+            created_by="tester",
+        )
+
+        assert isinstance(session, DirectUploadSession)
+        assert session.mount == "nas"
+        assert session.requested_version == "v9"
+        assert session.upload_method == "local_path"
+        assert session.staged_reference == {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"}
+        mock_store.create_direct_upload_target.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session(self, async_datalake, mock_odm, mock_store):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            requested_version=None,
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+
+        completed = await async_datalake.complete_object_upload_session(
+            "upload_session_1",
+            finalize_token="token-1",
+            metadata={"source": "verified"},
+        )
+
+        assert completed.status == "completed"
+        assert completed.storage_ref == StorageRef(mount="nas", name="images/cat.jpg", version="v5")
+        mock_store.commit_direct_upload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_raises_when_staged_payload_missing(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.inspect_direct_upload_target.return_value = {"exists": False}
+
+        with pytest.raises(FileNotFoundError, match="Staged upload not found"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1")
+
+        assert session.status == "pending"
+        assert session.verification_attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_reconcile_upload_sessions_marks_expired_when_upload_never_arrives(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.inspect_direct_upload_target.return_value = {"exists": False}
+
+        reconciled = await async_datalake.reconcile_upload_sessions()
+
+        assert reconciled[0].status == "expired"
+        assert reconciled[0].failure_reason == "Upload did not complete before expiry."
 
     @pytest.mark.asyncio
     async def test_asset_crud_async(self, async_datalake, mock_odm):
@@ -956,7 +1056,9 @@ class TestAsyncDatalakeUnit:
                 ),
                 attribute_schema,
             )
-        with pytest.raises(AnnotationSchemaValidationError, match="not allowed by schema 'attribute-demo@1.0.0': extra"):
+        with pytest.raises(
+            AnnotationSchemaValidationError, match="not allowed by schema 'attribute-demo@1.0.0': extra"
+        ):
             async_datalake._validate_annotation_record_against_schema(
                 AnnotationRecord(
                     kind="classification",
