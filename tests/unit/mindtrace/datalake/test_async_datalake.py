@@ -596,6 +596,39 @@ class TestAsyncDatalakeUnit:
         assert annotation_set.annotation_record_ids == ["annotation_1"]
 
     @pytest.mark.asyncio
+    async def test_add_annotation_records_coerces_subject_dicts(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            subject=SubjectRef(kind="asset", id="asset_123"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        inserted_record.annotation_id = "annotation_1"
+        mock_odm.insert = AsyncMock(return_value=inserted_record)
+
+        inserted = await async_datalake.add_annotation_records(
+            annotation_set.annotation_set_id,
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "subject": {"kind": "asset", "id": "asset_123"},
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                }
+            ],
+        )
+
+        coerced_record = mock_odm.insert.await_args.args[0]
+        assert isinstance(coerced_record.subject, SubjectRef)
+        assert coerced_record.subject.kind == "asset"
+        assert coerced_record.subject.id == "asset_123"
+        assert inserted == [inserted_record]
+
+    @pytest.mark.asyncio
     async def test_add_annotation_records_rejects_invalid_schema_payloads(self, async_datalake):
         schema = AnnotationSchema(
             name="classification-demo",
