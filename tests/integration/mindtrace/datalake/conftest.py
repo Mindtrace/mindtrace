@@ -12,9 +12,18 @@ from pymongo import MongoClient
 
 from mindtrace.datalake import AsyncDatalake, Datalake, DatalakeService
 from mindtrace.datalake.async_datalake import _default_datalake_store_path
-from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
+from mindtrace.registry import (
+    AmbientAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    Store,
+)
 
 MONGO_URL = "mongodb://localhost:27018"
+pytest_plugins = ["tests.integration.mindtrace.registry.conftest"]
 
 
 class InProcessServiceConnectionManager:
@@ -166,6 +175,42 @@ def datalake_mounts(temp_registry_dir):
 
 
 @pytest.fixture(scope="function")
+def gcp_test_bucket_name(core_config):
+    """Get datalake GCS test bucket, preferring general GCP bucket config.
+
+    For datalake direct-upload coverage we prefer ``MINDTRACE_GCP.GCP_BUCKET_NAME``
+    because the integration harness may override the registry bucket env var for
+    unrelated registry backend tests.
+    """
+    bucket_name = core_config.get("MINDTRACE_GCP", {}).get("GCP_BUCKET_NAME") or core_config.get(
+        "MINDTRACE_GCP_REGISTRY", {}
+    ).get("GCP_BUCKET_NAME")
+    if not bucket_name:
+        pytest.skip("GCP test bucket not configured (set MINDTRACE_GCP__GCP_BUCKET_NAME or config.ini)")
+    return bucket_name
+
+
+@pytest.fixture(scope="function")
+def datalake_gcs_mounts(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
+    auth = GCSServiceAccountFileAuth(path=gcp_credentials_path) if gcp_credentials_path else AmbientAuth()
+    return [
+        Mount(
+            name="gcs",
+            backend=MountBackendKind.GCS,
+            config=GCSMountConfig(
+                bucket_name=gcp_test_bucket,
+                project_id=gcp_project_id,
+                prefix=gcp_test_prefix,
+                credentials_path=gcp_credentials_path,
+            ),
+            is_default=True,
+            auth=auth,
+            registry_options={"mutable": True},
+        )
+    ]
+
+
+@pytest.fixture(scope="function")
 def datalake_service_local_manager(datalake_mounts):
     db_name = f"test_datalake_service_local_{uuid4().hex}"
     service = DatalakeService(
@@ -182,6 +227,33 @@ def datalake_service_local_manager(datalake_mounts):
         mongo_client.drop_database(db_name)
     finally:
         mongo_client.close()
+
+
+@pytest.fixture(scope="function")
+def datalake_service_gcs_manager(datalake_gcs_mounts, gcs_client, gcp_test_bucket, gcp_test_prefix):
+    db_name = f"test_datalake_service_gcs_{uuid4().hex[:12]}"
+    service = DatalakeService(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        mounts=datalake_gcs_mounts,
+        default_mount="gcs",
+    )
+    with TestClient(service.app) as client:
+        yield InProcessServiceConnectionManager(service, client)
+
+    mongo_client = MongoClient(MONGO_URL)
+    try:
+        mongo_client.drop_database(db_name)
+    finally:
+        mongo_client.close()
+
+    try:
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+        for blob in blobs:
+            blob.delete()
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="function")

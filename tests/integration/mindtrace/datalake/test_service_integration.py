@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
@@ -521,6 +522,56 @@ class TestDatalakeServiceIntegration:
         assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
 
         asset = datalake_service_local_manager.assets_create_from_uploaded_object(
+            kind="artifact",
+            media_type="application/octet-stream",
+            storage_ref=completed.storage_ref,
+            size_bytes=len(payload),
+            metadata={"source": "integration"},
+            created_by="pytest",
+        )
+        assert isinstance(asset, AssetOutput)
+        assert asset.asset.storage_ref == completed.storage_ref
+
+    def test_datalake_service_direct_upload_session_end_to_end_gcs(self, datalake_service_gcs_manager):
+        try:
+            session = datalake_service_gcs_manager.objects_upload_session_create(
+                name="service-direct-upload-gcs.bin",
+                mount="gcs",
+                content_type="application/octet-stream",
+                metadata={"source": "integration"},
+                created_by="pytest",
+            )
+        except (HTTPException, AttributeError) as exc:
+            message = str(exc).lower()
+            if "private key" in message or "sign credentials" in message or "unable to generate a pre-signed url" in message:
+                pytest.skip(f"Unable to generate a pre-signed URL: {exc}")
+            raise
+
+        assert isinstance(session, ObjectUploadSessionOutput)
+        assert session.upload_method == "presigned_url"
+        assert session.upload_url is not None
+
+        payload = b"direct-upload-gcs-payload"
+        response = requests.put(
+            session.upload_url,
+            data=payload,
+            headers=session.upload_headers,
+            timeout=60,
+        )
+        response.raise_for_status()
+
+        completed = datalake_service_gcs_manager.objects_upload_session_complete(
+            upload_session_id=session.upload_session_id,
+            finalize_token=session.finalize_token,
+            metadata={"verified": True},
+        )
+        assert completed.status == "completed"
+        assert completed.storage_ref is not None
+
+        loaded = datalake_service_gcs_manager.objects_get(storage_ref=completed.storage_ref)
+        assert base64.b64decode(loaded.data_base64.encode("utf-8")) == payload
+
+        asset = datalake_service_gcs_manager.assets_create_from_uploaded_object(
             kind="artifact",
             media_type="application/octet-stream",
             storage_ref=completed.storage_ref,
