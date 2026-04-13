@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,34 @@ class DatalakeDirectUploadClient:
     def __init__(self, connection_manager: Any) -> None:
         self.connection_manager = connection_manager
 
+    def _call_first_available(self, method_names: tuple[str, ...], *, error_message: str, **kwargs: Any):
+        for method_name in method_names:
+            method = getattr(self.connection_manager, method_name, None)
+            if method is not None:
+                return method(**kwargs)
+        raise AttributeError(error_message)
+
+    async def _acall_first_available(self, method_names: tuple[str, ...], *, error_message: str, **kwargs: Any):
+        for method_name in method_names:
+            method = getattr(self.connection_manager, method_name, None)
+            if method is not None:
+                result = method(**kwargs)
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+        raise AttributeError(error_message)
+
     def create_upload_session(self, **kwargs: Any):
-        return self.connection_manager.objects_upload_session_create(**kwargs)
+        return self._call_first_available(
+            ("objects_upload_session_create", "create_object_upload_session"),
+            error_message="connection_manager is missing direct-upload create method",
+            **kwargs,
+        )
 
     def complete_upload_session(self, upload_session_id: str, finalize_token: str, **kwargs: Any):
-        return self.connection_manager.objects_upload_session_complete(
+        return self._call_first_available(
+            ("objects_upload_session_complete", "complete_object_upload_session"),
+            error_message="connection_manager is missing direct-upload complete method",
             upload_session_id=upload_session_id,
             finalize_token=finalize_token,
             **kwargs,
@@ -66,14 +90,15 @@ class DatalakeDirectUploadClient:
         return self.complete_upload_session(session.upload_session_id, session.finalize_token)
 
     async def aupload_bytes(self, *, data: bytes, **kwargs: Any):
-        create_upload_session = getattr(self.connection_manager, "aobjects_upload_session_create", None)
-        complete_upload_session = getattr(self.connection_manager, "aobjects_upload_session_complete", None)
-        if create_upload_session is None or complete_upload_session is None:
-            raise AttributeError("connection_manager is missing async direct-upload methods")
-
-        session = await create_upload_session(**kwargs)
+        session = await self._acall_first_available(
+            ("aobjects_upload_session_create", "create_object_upload_session"),
+            error_message="connection_manager is missing async direct-upload methods",
+            **kwargs,
+        )
         await self._aupload_payload(session, data)
-        return await complete_upload_session(
+        return await self._acall_first_available(
+            ("aobjects_upload_session_complete", "complete_object_upload_session"),
+            error_message="connection_manager is missing async direct-upload methods",
             upload_session_id=session.upload_session_id,
             finalize_token=session.finalize_token,
         )
@@ -100,7 +125,9 @@ class DatalakeDirectUploadClient:
         }
         session = self.upload_bytes(name=name, data=data, **upload_kwargs)
         asset_metadata = asset_kwargs.pop("asset_metadata", None)
-        return self.connection_manager.assets_create_from_uploaded_object(
+        return self._call_first_available(
+            ("assets_create_from_uploaded_object", "create_asset_from_uploaded_object"),
+            error_message="connection_manager is missing create-asset-from-uploaded-object method",
             kind=kind,
             media_type=media_type,
             storage_ref=session.storage_ref,
