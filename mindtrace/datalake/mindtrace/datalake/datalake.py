@@ -308,6 +308,15 @@ class Datalake(Mindtrace):
     def copy_object(self, source, **kwargs: Any):
         return self._submit_coro(self._backend.copy_object(source, **kwargs))
 
+    def create_object_upload_session(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_object_upload_session(**kwargs))
+
+    def get_object_upload_session(self, upload_session_id: str):
+        return self._submit_coro(self._backend.get_object_upload_session(upload_session_id))
+
+    def complete_object_upload_session(self, upload_session_id: str, **kwargs: Any):
+        return self._submit_coro(self._backend.complete_object_upload_session(upload_session_id, **kwargs))
+
     def create_asset(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset(**kwargs))
 
@@ -445,6 +454,9 @@ class Datalake(Mindtrace):
 
     def create_asset_from_object(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset_from_object(**kwargs))
+
+    def create_asset_from_uploaded_object(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_asset(**kwargs))
 
     def close(self) -> None:
         try:
