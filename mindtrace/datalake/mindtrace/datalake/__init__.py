@@ -13,12 +13,14 @@ from .types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
     SubjectRef,
 )
+from .upload_client import DatalakeDirectUploadClient
 
 __all__ = [
     "AnnotationLabelDefinition",
@@ -35,8 +37,10 @@ __all__ = [
     "Collection",
     "CollectionItem",
     "DatasetVersion",
+    "DatalakeDirectUploadClient",
     "Datalake",
     "DatalakeService",
+    "DirectUploadSession",
     "Datum",
     "DuplicateAnnotationSchemaError",
     "ResolvedCollectionItem",

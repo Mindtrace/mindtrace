@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -85,10 +87,83 @@ class ObjectHeadOutput(BaseModel):
     metadata: dict[str, Any]
 
 
+class CreateObjectUploadSessionInput(BaseModel):
+    name: str
+    mount: str | None = None
+    version: str | None = None
+    metadata: dict[str, Any] | None = None
+    on_conflict: str | None = None
+    content_type: str = "application/octet-stream"
+    expires_in_minutes: int = 60
+    created_by: str | None = None
+
+
+class CompleteObjectUploadSessionInput(BaseModel):
+    upload_session_id: str
+    finalize_token: str
+    metadata: dict[str, Any] | None = None
+
+
+class ObjectUploadSessionOutput(BaseModel):
+    upload_session_id: str
+    finalize_token: str
+    name: str
+    mount: str
+    requested_version: str | None = None
+    resolved_version: str | None = None
+    upload_method: str
+    upload_url: str | None = None
+    upload_path: str | None = None
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    content_type: str
+    status: str
+    storage_ref: StorageRef | None = None
+    failure_reason: str | None = None
+    verification_attempts: int = 0
+    last_verified_at: datetime | None = None
+    expires_at: datetime
+    completed_at: datetime | None = None
+    cleanup_completed_at: datetime | None = None
+
+    @classmethod
+    def from_session(cls, session: DirectUploadSession) -> "ObjectUploadSessionOutput":
+        return cls(
+            upload_session_id=session.upload_session_id,
+            finalize_token=session.finalize_token,
+            name=session.name,
+            mount=session.mount,
+            requested_version=session.requested_version,
+            resolved_version=session.resolved_version,
+            upload_method=session.upload_method,
+            upload_url=session.upload_url,
+            upload_path=session.upload_path,
+            upload_headers=session.upload_headers,
+            content_type=session.content_type,
+            status=session.status,
+            storage_ref=session.storage_ref,
+            failure_reason=session.failure_reason,
+            verification_attempts=session.verification_attempts,
+            last_verified_at=session.last_verified_at,
+            expires_at=session.expires_at,
+            completed_at=session.completed_at,
+            cleanup_completed_at=session.cleanup_completed_at,
+        )
+
+
 PutObjectSchema = TaskSchema(name="objects.put", input_schema=PutObjectInput, output_schema=ObjectOutput)
 GetObjectSchema = TaskSchema(name="objects.get", input_schema=GetObjectInput, output_schema=ObjectDataOutput)
 HeadObjectSchema = TaskSchema(name="objects.head", input_schema=HeadObjectInput, output_schema=ObjectHeadOutput)
 CopyObjectSchema = TaskSchema(name="objects.copy", input_schema=CopyObjectInput, output_schema=ObjectOutput)
+CreateObjectUploadSessionSchema = TaskSchema(
+    name="objects.upload_session.create",
+    input_schema=CreateObjectUploadSessionInput,
+    output_schema=ObjectUploadSessionOutput,
+)
+CompleteObjectUploadSessionSchema = TaskSchema(
+    name="objects.upload_session.complete",
+    input_schema=CompleteObjectUploadSessionInput,
+    output_schema=ObjectUploadSessionOutput,
+)
 
 
 class CreateAssetInput(BaseModel):
@@ -143,6 +218,17 @@ class AssetListOutput(BaseModel):
     assets: list[Asset]
 
 
+class CreateAssetFromUploadedObjectInput(BaseModel):
+    kind: str
+    media_type: str
+    storage_ref: StorageRef
+    checksum: str | None = None
+    size_bytes: int | None = None
+    subject: SubjectRef | None = None
+    metadata: dict[str, Any] | None = None
+    created_by: str | None = None
+
+
 CreateAssetSchema = TaskSchema(name="assets.create", input_schema=CreateAssetInput, output_schema=AssetOutput)
 GetAssetSchema = TaskSchema(name="assets.get", input_schema=GetByIdInput, output_schema=AssetOutput)
 ListAssetsSchema = TaskSchema(name="assets.list", input_schema=ListInput, output_schema=AssetListOutput)
@@ -152,6 +238,11 @@ UpdateAssetMetadataSchema = TaskSchema(
 DeleteAssetSchema = TaskSchema(name="assets.delete", input_schema=DeleteByIdInput, output_schema=None)
 CreateAssetFromObjectSchema = TaskSchema(
     name="assets.create_from_object", input_schema=CreateAssetFromObjectInput, output_schema=AssetOutput
+)
+CreateAssetFromUploadedObjectSchema = TaskSchema(
+    name="assets.create_from_uploaded_object",
+    input_schema=CreateAssetFromUploadedObjectInput,
+    output_schema=AssetOutput,
 )
 
 
@@ -228,7 +319,9 @@ ResolveCollectionItemSchema = TaskSchema(
 UpdateCollectionItemSchema = TaskSchema(
     name="collection_items.update", input_schema=UpdateCollectionItemInput, output_schema=CollectionItemOutput
 )
-DeleteCollectionItemSchema = TaskSchema(name="collection_items.delete", input_schema=DeleteByIdInput, output_schema=None)
+DeleteCollectionItemSchema = TaskSchema(
+    name="collection_items.delete", input_schema=DeleteByIdInput, output_schema=None
+)
 
 
 class CreateAssetRetentionInput(BaseModel):
@@ -265,7 +358,9 @@ ListAssetRetentionsSchema = TaskSchema(
 UpdateAssetRetentionSchema = TaskSchema(
     name="asset_retentions.update", input_schema=UpdateAssetRetentionInput, output_schema=AssetRetentionOutput
 )
-DeleteAssetRetentionSchema = TaskSchema(name="asset_retentions.delete", input_schema=DeleteByIdInput, output_schema=None)
+DeleteAssetRetentionSchema = TaskSchema(
+    name="asset_retentions.delete", input_schema=DeleteByIdInput, output_schema=None
+)
 
 
 class CreateAnnotationSchemaInput(BaseModel):

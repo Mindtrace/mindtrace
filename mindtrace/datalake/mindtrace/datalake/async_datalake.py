@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -21,6 +21,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -130,6 +131,11 @@ class AsyncDatalake(Mindtrace):
             db_name=mongo_db_name,
             db_uri=mongo_db_uri,
         )
+        self.direct_upload_session_database = MongoMindtraceODM(
+            model_cls=DirectUploadSession,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
 
     async def initialize(self) -> None:
         await self.asset_database.initialize()
@@ -141,6 +147,7 @@ class AsyncDatalake(Mindtrace):
         await self.annotation_set_database.initialize()
         await self.datum_database.initialize()
         await self.dataset_version_database.initialize()
+        await self.direct_upload_session_database.initialize()
 
     @classmethod
     async def create(
@@ -255,6 +262,136 @@ class AsyncDatalake(Mindtrace):
             target_version=target_version,
         )
         return StorageRef(mount=target_mount, name=target_name, version=saved_version)
+
+    async def create_object_upload_session(
+        self,
+        *,
+        name: str,
+        mount: str | None = None,
+        version: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+        content_type: str = "application/octet-stream",
+        expires_in_minutes: int = 60,
+        created_by: str | None = None,
+    ) -> DirectUploadSession:
+        if expires_in_minutes <= 0:
+            raise ValueError("expires_in_minutes must be positive")
+
+        target_mount = mount or self.store.default_mount
+        session = self._build_document(
+            DirectUploadSession,
+            name=name,
+            mount=target_mount,
+            requested_version=version,
+            metadata=metadata or {},
+            on_conflict=on_conflict,
+            upload_method="local_path",
+            content_type=content_type,
+            expires_at=self._utc_now() + timedelta(minutes=expires_in_minutes),
+            created_by=created_by,
+        )
+        key = self.store.build_key(target_mount, name, version)
+        target = self.store.create_direct_upload_target(
+            key,
+            content_type=content_type,
+            expiration_minutes=expires_in_minutes,
+            upload_id=session.upload_session_id,
+        )
+        session.upload_method = target["upload_method"]
+        session.upload_url = target.get("upload_url")
+        session.upload_path = target.get("upload_path")
+        session.upload_headers = target.get("upload_headers", {})
+        session.staged_reference = target.get("staged_target", {})
+        return await self.direct_upload_session_database.insert(session)
+
+    async def get_object_upload_session(self, upload_session_id: str) -> DirectUploadSession:
+        sessions = await self.direct_upload_session_database.find({"upload_session_id": upload_session_id})
+        if not sessions:
+            raise DocumentNotFoundError(f"Upload session with upload_session_id {upload_session_id} not found")
+        return sessions[0]
+
+    async def complete_object_upload_session(
+        self,
+        upload_session_id: str,
+        *,
+        finalize_token: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> DirectUploadSession:
+        session = await self.get_object_upload_session(upload_session_id)
+        if session.finalize_token != finalize_token:
+            raise ValueError("Invalid finalize token")
+        return await self._verify_and_finalize_upload_session(session, metadata=metadata, allow_pending_missing=False)
+
+    async def reconcile_upload_sessions(self, limit: int = 100) -> list[DirectUploadSession]:
+        pending = await self.direct_upload_session_database.find({"status": "pending"})
+        now = self._utc_now()
+        reconciled: list[DirectUploadSession] = []
+        for session in pending[:limit]:
+            if session.expires_at <= now:
+                reconciled.append(
+                    await self._verify_and_finalize_upload_session(
+                        session,
+                        metadata=None,
+                        allow_pending_missing=True,
+                    )
+                )
+        return reconciled
+
+    async def _verify_and_finalize_upload_session(
+        self,
+        session: DirectUploadSession,
+        *,
+        metadata: dict[str, Any] | None,
+        allow_pending_missing: bool,
+    ) -> DirectUploadSession:
+        if session.status in {"completed", "cleaned"}:
+            return session
+
+        key = self.store.build_key(session.mount, session.name, session.requested_version)
+        session.verification_attempts += 1
+        session.last_verified_at = self._utc_now()
+
+        inspection = self.store.inspect_direct_upload_target(key, staged_target=session.staged_reference)
+        if not inspection.get("exists"):
+            if allow_pending_missing and session.expires_at <= self._utc_now():
+                session.status = "expired"
+                session.failure_reason = "Upload did not complete before expiry."
+                session.cleanup_completed_at = self._utc_now()
+            await self.direct_upload_session_database.update(session)
+            if allow_pending_missing:
+                return session
+            raise FileNotFoundError(f"Staged upload not found for session {session.upload_session_id}")
+
+        try:
+            resolved_version = self.store.commit_direct_upload(
+                key,
+                staged_target=session.staged_reference,
+                version=session.requested_version,
+                metadata={**session.metadata, **(metadata or {})},
+                on_conflict=session.on_conflict,
+            )
+        except Exception as e:
+            cleanup_ok = self.store.cleanup_direct_upload_target(key, staged_target=session.staged_reference)
+            session.status = "failed"
+            session.failure_reason = str(e)
+            if cleanup_ok:
+                session.cleanup_completed_at = self._utc_now()
+            await self.direct_upload_session_database.update(session)
+            raise
+
+        session.metadata = {**session.metadata, **(metadata or {})}
+        session.resolved_version = resolved_version
+        session.storage_ref = StorageRef(
+            mount=session.mount,
+            name=session.name,
+            version=resolved_version,
+        )
+        session.status = "completed"
+        session.failure_reason = None
+        session.completed_at = self._utc_now()
+        session.cleanup_completed_at = session.completed_at
+        return await self.direct_upload_session_database.update(session)
 
     async def create_asset(
         self,
