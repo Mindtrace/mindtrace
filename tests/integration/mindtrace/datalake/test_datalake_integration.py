@@ -7,7 +7,7 @@ import pytest
 from pymongo import MongoClient
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake import Datalake
+from mindtrace.datalake import Datalake, DatalakeDirectUploadClient
 from mindtrace.datalake.types import AnnotationLabelDefinition, SubjectRef
 
 
@@ -224,6 +224,28 @@ def test_sync_datalake_reconcile_upload_sessions(sync_datalake: Datalake):
     assert reconciled[0].status == "completed"
     assert reconciled[0].storage_ref is not None
     assert sync_datalake.get_object(reconciled[0].storage_ref) == payload
+
+
+def test_sync_datalake_direct_upload_client_works_with_datalake(sync_datalake: Datalake):
+    client = DatalakeDirectUploadClient(sync_datalake)
+    payload = b"sync-direct-upload-client"
+
+    asset = client.create_asset_from_bytes(
+        name="sync-direct-upload-client.bin",
+        data=payload,
+        kind="artifact",
+        media_type="application/octet-stream",
+        mount="local",
+        content_type="application/octet-stream",
+        asset_metadata={"source": "integration"},
+        size_bytes=len(payload),
+        created_by="pytest",
+    )
+
+    assert sync_datalake.get_object(asset.storage_ref) == payload
+    assert asset.metadata["source"] == "integration"
+
+    sync_datalake.delete_asset(asset.asset_id)
 
 
 def test_sync_datalake_init_branch_and_summary_variants():
