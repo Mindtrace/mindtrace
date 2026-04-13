@@ -1185,6 +1185,44 @@ class TestDatalakeServiceInitialization:
         assert service._upload_reconciler_task is None
 
     @pytest.mark.asyncio
+    async def test_shutdown_cleanup_returns_when_no_reconciler_task(self, service):
+        service._upload_reconciler_task = None
+
+        await service._shutdown_cleanup()
+
+        assert service._upload_reconciler_task is None
+
+    @pytest.mark.asyncio
+    async def test_run_upload_reconciler_logs_warning_on_iteration_failure(self, service):
+        datalake = Mock()
+        datalake.reconcile_upload_sessions = AsyncMock(side_effect=RuntimeError("boom"))
+        service._ensure_datalake = AsyncMock(return_value=datalake)
+        service.logger.warning = Mock()
+
+        async def _stop_after_first_sleep(_: float):
+            raise asyncio.CancelledError()
+
+        with (
+            patch("mindtrace.datalake.service.asyncio.sleep", side_effect=_stop_after_first_sleep),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await service._run_upload_reconciler()
+
+        service.logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_upload_reconciler_propagates_cancellation(self, service):
+        datalake = Mock()
+        datalake.reconcile_upload_sessions = AsyncMock(side_effect=asyncio.CancelledError())
+        service._ensure_datalake = AsyncMock(return_value=datalake)
+        service.logger.warning = Mock()
+
+        with pytest.raises(asyncio.CancelledError):
+            await service._run_upload_reconciler()
+
+        service.logger.warning.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_ensure_datalake_raises_without_mongo_config(self):
         service = DatalakeService(live_service=False, initialize_on_startup=False)
 

@@ -192,3 +192,11 @@ async def test_aupload_payload_rejects_unsupported_method():
 
     with pytest.raises(ValueError, match="Unsupported upload method"):
         await client._aupload_payload(session, b"payload")
+
+
+@pytest.mark.asyncio
+async def test_aupload_bytes_requires_async_connection_manager_methods():
+    client = DatalakeDirectUploadClient(object())
+
+    with pytest.raises(AttributeError, match="missing async direct-upload methods"):
+        await client.aupload_bytes(data=b"payload", name="images/cat.jpg", mount="local")

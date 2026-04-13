@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -139,6 +140,13 @@ class TestAsyncDatalakeUnit:
         now = async_datalake._utc_now()
         assert now.tzinfo is not None
 
+    def test_coerce_utc_attaches_timezone_to_naive_datetime(self, async_datalake):
+        naive = datetime(2026, 1, 1, 12, 0, 0)
+
+        coerced = async_datalake._coerce_utc(naive)
+
+        assert coerced.tzinfo is not None
+
     def test_build_document_uses_model_construct(self, async_datalake):
         class Dummy:
             @classmethod
@@ -218,6 +226,18 @@ class TestAsyncDatalakeUnit:
         mock_store.create_direct_upload_target.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_create_object_upload_session_rejects_nonpositive_expiry(self, async_datalake):
+        with pytest.raises(ValueError, match="expires_in_minutes must be positive"):
+            await async_datalake.create_object_upload_session(name="images/cat.jpg", expires_in_minutes=0)
+
+    @pytest.mark.asyncio
+    async def test_get_object_upload_session_raises_when_missing(self, async_datalake, mock_odm):
+        mock_odm.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError, match="Upload session with upload_session_id missing not found"):
+            await async_datalake.get_object_upload_session("missing")
+
+    @pytest.mark.asyncio
     async def test_complete_object_upload_session(self, async_datalake, mock_odm, mock_store):
         session = DirectUploadSession(
             upload_session_id="upload_session_1",
@@ -241,6 +261,23 @@ class TestAsyncDatalakeUnit:
         assert completed.status == "completed"
         assert completed.storage_ref == StorageRef(mount="nas", name="images/cat.jpg", version="v5")
         mock_store.commit_direct_upload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_raises_for_invalid_finalize_token(self, async_datalake, mock_odm):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+
+        with pytest.raises(ValueError, match="Invalid finalize token"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="wrong-token")
 
     @pytest.mark.asyncio
     async def test_complete_object_upload_session_raises_when_staged_payload_missing(
@@ -286,6 +323,55 @@ class TestAsyncDatalakeUnit:
 
         assert reconciled[0].status == "expired"
         assert reconciled[0].failure_reason == "Upload did not complete before expiry."
+
+    @pytest.mark.asyncio
+    async def test_verify_finalize_returns_existing_completed_session(self, async_datalake, mock_store):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            status="completed",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+
+        completed = await async_datalake._verify_and_finalize_upload_session(
+            session,
+            metadata={"verified": True},
+            allow_pending_missing=False,
+        )
+
+        assert completed is session
+        mock_store.inspect_direct_upload_target.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_marks_failed_when_commit_raises(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.commit_direct_upload.side_effect = RuntimeError("commit failed")
+        mock_store.cleanup_direct_upload_target.return_value = True
+
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1")
+
+        assert session.status == "failed"
+        assert session.failure_reason == "commit failed"
+        assert session.cleanup_completed_at is not None
+        mock_odm.update.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_asset_crud_async(self, async_datalake, mock_odm):
