@@ -412,13 +412,14 @@ def test_get_presigned_url_custom_args(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.generate_signed_url.return_value = "https://signed-custom"
     h = GCSStorageHandler("bucket")
-    url = h.get_presigned_url("obj", expiration_minutes=5, method="PUT")
+    url = h.get_presigned_url("obj", expiration_minutes=5, method="PUT", content_type="application/octet-stream")
     assert url == "https://signed-custom"
     blob.generate_signed_url.assert_called_once()
     args, kwargs = blob.generate_signed_url.call_args
     assert kwargs["expiration"].total_seconds() == 300
     assert kwargs["method"] == "PUT"
     assert kwargs["version"] == "v4"
+    assert kwargs["content_type"] == "application/octet-stream"
 
 
 # --- get_object_metadata with missing timestamps ---

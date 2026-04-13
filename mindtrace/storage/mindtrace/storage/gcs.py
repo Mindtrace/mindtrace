@@ -426,6 +426,7 @@ class GCSStorageHandler(StorageHandler):
         *,
         expiration_minutes: int = 60,
         method: str = "GET",
+        content_type: str | None = None,
     ) -> str:
         """Get a presigned URL for a blob in the bucket.
         Args:
@@ -436,10 +437,15 @@ class GCSStorageHandler(StorageHandler):
             A presigned URL string.
         """
         blob = self._bucket().blob(self._sanitize_blob_path(remote_path))
+        kwargs = {
+            "expiration": timedelta(minutes=expiration_minutes),
+            "method": method,
+            "version": "v4",
+        }
+        if content_type is not None:
+            kwargs["content_type"] = content_type
         return blob.generate_signed_url(
-            expiration=timedelta(minutes=expiration_minutes),
-            method=method,
-            version="v4",
+            **kwargs,
         )
 
     def get_object_metadata(self, remote_path: str) -> Dict[str, Any]:
