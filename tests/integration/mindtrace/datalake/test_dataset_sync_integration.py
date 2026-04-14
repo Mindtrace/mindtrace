@@ -17,13 +17,18 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from mindtrace.datalake import AsyncDatalake, DatalakeService
+from mindtrace.datalake.service_types import (
+    DatasetSyncBundleOutput,
+    DatasetSyncImportPlanOutput,
+    ExportDatasetVersionInput,
+)
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.sync_types import DatasetSyncImportRequest
 
-from tests.integration.mindtrace.datalake.conftest import MONGO_URL, InProcessServiceConnectionManager
+from tests.integration.mindtrace.datalake.conftest import MONGO_URL
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
 
@@ -43,6 +48,19 @@ pytestmark = pytest.mark.skipif(
     not _mongo_reachable(),
     reason="MongoDB required at mongodb://localhost:27018 for dataset sync integration tests",
 )
+
+
+async def _post_datalake_json(service: DatalakeService, path: str, payload: dict) -> dict:
+    """POST to a ``DatalakeService`` route on the **current** asyncio loop (same as ``AsyncDatalake`` fixtures).
+
+    ``starlette.testclient.TestClient`` runs the app on a different loop, which breaks Motor/Beanie
+    when the service reuses a fixture-backed ``AsyncDatalake``.
+    """
+    async with AsyncClient(transport=ASGITransport(app=service.app), base_url="http://test") as client:
+        response = await client.post(path, json=payload)
+        if response.status_code != 200:
+            raise AssertionError(f"{path} returned {response.status_code}: {response.text}")
+        return response.json()
 
 
 async def _seed_minimal_image_dataset(
@@ -232,9 +250,12 @@ async def test_datalake_service_export_dataset_version(async_datalake: AsyncData
         live_service=False,
         initialize_on_startup=False,
     )
-    with TestClient(service.app) as client:
-        mgr = InProcessServiceConnectionManager(service, client)
-        out = mgr.dataset_versions_export(dataset_name=dataset_name, version=version)
+    raw = await _post_datalake_json(
+        service,
+        "/dataset_versions.export",
+        ExportDatasetVersionInput(dataset_name=dataset_name, version=version).model_dump(mode="json"),
+    )
+    out = DatasetSyncBundleOutput.model_validate(raw)
 
     assert out.bundle.dataset_version.dataset_name == dataset_name
     assert len(out.bundle.payloads) == 1
@@ -277,16 +298,23 @@ async def test_datalake_service_import_prepare_honors_mount_map(
         initialize_on_startup=False,
     )
 
-    with TestClient(export_svc.app) as export_client, TestClient(target_svc.app) as target_client:
-        export_mgr = InProcessServiceConnectionManager(export_svc, export_client)
-        bundle_out = export_mgr.dataset_versions_export(dataset_name=dataset_name, version=version)
-        request = DatasetSyncImportRequest(
-            bundle=bundle_out.bundle,
-            transfer_policy="copy_if_missing",
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
-        )
-        target_mgr = InProcessServiceConnectionManager(target_svc, target_client)
-        plan_out = target_mgr.dataset_versions_import_prepare(request)
+    bundle_raw = await _post_datalake_json(
+        export_svc,
+        "/dataset_versions.export",
+        ExportDatasetVersionInput(dataset_name=dataset_name, version=version).model_dump(mode="json"),
+    )
+    bundle_out = DatasetSyncBundleOutput.model_validate(bundle_raw)
+    request = DatasetSyncImportRequest(
+        bundle=bundle_out.bundle,
+        transfer_policy="copy_if_missing",
+        mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+    )
+    plan_raw = await _post_datalake_json(
+        target_svc,
+        "/dataset_versions.import_prepare",
+        request.model_dump(mode="json"),
+    )
+    plan_out = DatasetSyncImportPlanOutput.model_validate(plan_raw)
 
     assert plan_out.plan.payloads[0].source_storage_ref.mount == "local"
     assert plan_out.plan.payloads[0].target_storage_ref.mount == "minio"

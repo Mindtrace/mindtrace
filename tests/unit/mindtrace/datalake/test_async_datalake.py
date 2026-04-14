@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
     AnnotationSchemaInUseError,
@@ -73,6 +72,7 @@ class TestAsyncDatalakeUnit:
         store.copy.return_value = "v2"
         store.load.return_value = b"payload"
         store.info.return_value = {"size": 123}
+        store.has_object.return_value = True
         store.create_direct_upload_target.return_value = {
             "upload_method": "local_path",
             "upload_url": None,
@@ -209,16 +209,16 @@ class TestAsyncDatalakeUnit:
         assert copied.version == "v2"
 
     @pytest.mark.asyncio
-    async def test_object_exists_returns_false_when_head_object_fails(self, async_datalake):
-        async_datalake.head_object = AsyncMock(side_effect=RegistryObjectNotFound("missing"))
+    async def test_object_exists_returns_false_when_store_has_object_false(self, async_datalake):
+        async_datalake.store.has_object.return_value = False
 
         exists = await async_datalake.object_exists(StorageRef(mount="nas", name="missing", version="v1"))
 
         assert exists is False
 
     @pytest.mark.asyncio
-    async def test_object_exists_propagates_unexpected_head_errors(self, async_datalake):
-        async_datalake.head_object = AsyncMock(side_effect=RuntimeError("infra"))
+    async def test_object_exists_propagates_unexpected_store_errors(self, async_datalake):
+        async_datalake.store.has_object.side_effect = RuntimeError("infra")
 
         with pytest.raises(RuntimeError, match="infra"):
             await async_datalake.object_exists(StorageRef(mount="nas", name="any", version="v1"))
