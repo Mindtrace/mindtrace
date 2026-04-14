@@ -6,6 +6,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
+from mindtrace.datalake.sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncImportRequest,
+)
 from mindtrace.datalake.types import (
     AnnotationRecord,
     AnnotationSchema,
@@ -570,4 +576,38 @@ ResolveDatasetVersionSchema = TaskSchema(
     name="dataset_versions.resolve",
     input_schema=GetDatasetVersionInput,
     output_schema=ResolvedDatasetVersionOutput,
+)
+
+
+class ExportDatasetVersionInput(BaseModel):
+    dataset_name: str
+    version: str
+
+
+class DatasetSyncBundleOutput(BaseModel):
+    bundle: DatasetSyncBundle
+
+
+class DatasetSyncImportPlanOutput(BaseModel):
+    plan: DatasetSyncImportPlan
+
+
+class DatasetSyncCommitResultOutput(BaseModel):
+    result: DatasetSyncCommitResult
+
+
+ExportDatasetVersionSchema = TaskSchema(
+    name="dataset_versions.export",
+    input_schema=ExportDatasetVersionInput,
+    output_schema=DatasetSyncBundleOutput,
+)
+DatasetSyncImportPrepareSchema = TaskSchema(
+    name="dataset_versions.import_prepare",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetSyncImportPlanOutput,
+)
+DatasetSyncImportCommitSchema = TaskSchema(
+    name="dataset_versions.import_commit",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetSyncCommitResultOutput,
 )
