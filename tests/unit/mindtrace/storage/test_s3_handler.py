@@ -423,6 +423,118 @@ def test_delete_returns_error_for_non_not_found_client_error(mock_boto3):
 
 
 # ---------------------------------------------------------------------------
+# copy
+# ---------------------------------------------------------------------------
+
+
+def _s3_handler() -> S3StorageHandler:
+    return S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_success(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+
+    handler = _s3_handler()
+    result = handler.copy("src/a.txt", "dst/b.txt")
+
+    assert result.status == Status.OK
+    assert result.remote_path == "dst/b.txt"
+    mock_client.copy_object.assert_called_once_with(
+        Bucket="bucket",
+        Key="dst/b.txt",
+        CopySource={"Bucket": "bucket", "Key": "src/a.txt"},
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_fail_if_exists_when_destination_present(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+
+    handler = _s3_handler()
+    result = handler.copy("src/a.txt", "dst/b.txt", fail_if_exists=True)
+
+    assert result.status == Status.ALREADY_EXISTS
+    assert "already exists" in (result.error_message or "").lower()
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_source_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("404", "missing")
+
+    handler = _s3_handler()
+    result = handler.copy("gone.txt", "dst/b.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.remote_path == "gone.txt"
+    assert "Object not found" in (result.error_message or "")
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_head_object_client_error_not_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("AccessDenied", "denied")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.remote_path == "dst.txt"
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_client_error_non_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = _make_client_error("SlowDown", "slow")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.remote_path == "dst.txt"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_not_found_maps_to_not_found(mock_boto3):
+    """ClientError with NoSuchKey from copy_object uses NOT_FOUND branch."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = _make_client_error("NoSuchKey", "missing")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.remote_path == "src.txt"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_raises_generic_exception(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = OSError("disk full")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "OSError"
+    assert "disk full" in (result.error_message or "")
+
+
+# ---------------------------------------------------------------------------
 # String Operations
 # ---------------------------------------------------------------------------
 
