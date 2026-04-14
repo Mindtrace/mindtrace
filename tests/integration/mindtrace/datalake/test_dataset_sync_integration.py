@@ -12,6 +12,7 @@ mount name ``minio`` while seeded source objects live on mount ``local``.
 
 from __future__ import annotations
 
+import hashlib
 import socket
 from pathlib import Path
 from uuid import uuid4
@@ -26,7 +27,8 @@ from mindtrace.datalake.service_types import (
     ExportDatasetVersionInput,
 )
 from mindtrace.datalake.sync import DatasetSyncManager
-from mindtrace.datalake.sync_types import DatasetSyncImportRequest
+from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest
+from mindtrace.datalake.types import AnnotationLabelDefinition
 
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL
 
@@ -318,3 +320,192 @@ async def test_datalake_service_import_prepare_honors_mount_map(
 
     assert plan_out.plan.payloads[0].source_storage_ref.mount == "local"
     assert plan_out.plan.payloads[0].target_storage_ref.mount == "minio"
+
+
+async def _seed_image_dataset_with_bbox_annotation(
+    datalake: AsyncDatalake,
+    *,
+    dataset_name: str,
+    version: str,
+) -> None:
+    image_bytes = _HOPPER.read_bytes()
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    storage_ref = await datalake.put_object(
+        name=f"sync/{dataset_name}/hopper.png",
+        obj=image_bytes,
+        mount="local",
+    )
+    asset = await datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=storage_ref,
+        size_bytes=len(image_bytes),
+        checksum=f"sha256:{digest}",
+        metadata={"integration": "dataset-sync-annotated"},
+        created_by="pytest-dataset-sync",
+    )
+    datum = await datalake.create_datum(
+        asset_refs={"image": asset.asset_id},
+        split="train",
+        metadata={},
+        annotation_set_ids=[],
+    )
+    schema = await datalake.create_annotation_schema(
+        name=f"sync-schema-{dataset_name}",
+        version="1.0.0",
+        task_type="detection",
+        allowed_annotation_kinds=["bbox"],
+        labels=[AnnotationLabelDefinition(name="hopper", id=1)],
+        required_attributes=["quality"],
+        created_by="pytest-dataset-sync",
+    )
+    ann_set = await datalake.create_annotation_set(
+        name="gt",
+        purpose="ground_truth",
+        source_type="human",
+        datum_id=datum.datum_id,
+        annotation_schema_id=schema.annotation_schema_id,
+        created_by="pytest-dataset-sync",
+    )
+    await datalake.add_annotation_records(
+        ann_set.annotation_set_id,
+        [
+            {
+                "kind": "bbox",
+                "label": "hopper",
+                "label_id": 1,
+                "source": {"type": "human", "name": "pytest-dataset-sync"},
+                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "attributes": {"quality": "high"},
+            }
+        ],
+    )
+    await datalake.create_dataset_version(
+        dataset_name=dataset_name,
+        version=version,
+        manifest=[datum.datum_id],
+        description="dataset sync integration (annotated)",
+        metadata={"suite": "dataset-sync-annotated"},
+        created_by="pytest-dataset-sync",
+    )
+
+
+async def _delete_dataset_graph_mongo_only(lake: AsyncDatalake, bundle: DatasetSyncBundle) -> None:
+    """Remove dataset graph rows while leaving registry objects (for ``metadata_only`` replay)."""
+    dv = bundle.dataset_version
+    await lake.dataset_version_database.delete(dv.id)
+    for datum in bundle.datums:
+        d = await lake.get_datum(datum.datum_id)
+        await lake.datum_database.delete(d.id)
+    for ann_id in [r.annotation_id for r in bundle.annotation_records]:
+        rec = await lake.get_annotation_record(ann_id)
+        await lake.annotation_record_database.delete(rec.id)
+    for sid in [s.annotation_set_id for s in bundle.annotation_sets]:
+        sdoc = await lake.get_annotation_set(sid)
+        await lake.annotation_set_database.delete(sdoc.id)
+    for schema in bundle.annotation_schemas:
+        sch = await lake.get_annotation_schema(schema.annotation_schema_id)
+        await lake.annotation_schema_database.delete(sch.id)
+    for asset in bundle.assets:
+        a = await lake.get_asset(asset.asset_id)
+        await lake.asset_database.delete(a.id)
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_metadata_only_restores_annotation_graph_same_lake(async_datalake: AsyncDatalake):
+    """Replay bundle with annotations on one lake (avoids Beanie single-DB binding across two ``AsyncDatalake`` fixtures)."""
+    dataset_name = f"sync-ann-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_image_dataset_with_bbox_annotation(async_datalake, dataset_name=dataset_name, version=version)
+
+    manager = DatasetSyncManager(async_datalake, async_datalake)
+    bundle = await manager.export_dataset_version(dataset_name, version)
+    assert len(bundle.annotation_schemas) >= 1
+    assert len(bundle.annotation_sets) >= 1
+    assert len(bundle.annotation_records) >= 1
+
+    await _delete_dataset_graph_mongo_only(async_datalake, bundle)
+
+    result = await manager.commit_import(
+        DatasetSyncImportRequest(
+            bundle=bundle,
+            transfer_policy="metadata_only",
+            origin_lake_id=async_datalake.mongo_db_name,
+        )
+    )
+    assert result.transferred_payloads == 0
+    assert result.skipped_payloads >= 1
+    assert result.created_annotation_schemas >= 1
+    assert result.created_annotation_sets >= 1
+    assert result.created_annotation_records >= 1
+    assert result.created_datums >= 1
+
+    remote = await async_datalake.get_dataset_version(dataset_name, version)
+    datum = await async_datalake.get_datum(remote.manifest[0])
+    assert datum.annotation_set_ids
+    ann_set_id = datum.annotation_set_ids[0]
+    ann_set = await async_datalake.get_annotation_set(ann_set_id)
+    schema = await async_datalake.get_annotation_schema(ann_set.annotation_schema_id)
+    assert schema.task_type == "detection"
+    record = await async_datalake.get_annotation_record(ann_set.annotation_record_ids[0])
+    assert record.label == "hopper"
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_plan_metadata_only_cross_lake_rejected(
+    async_datalake: AsyncDatalake,
+    async_datalake_secondary: AsyncDatalake,
+):
+    dataset_name = f"sync-meta-xl-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+    manager = DatasetSyncManager(async_datalake, async_datalake_secondary)
+    bundle = await manager.export_dataset_version(dataset_name, version)
+
+    with pytest.raises(ValueError, match="metadata_only"):
+        await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="metadata_only"))
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_fail_if_missing_payload_blocks_commit(
+    async_datalake: AsyncDatalake,
+    async_datalake_secondary: AsyncDatalake,
+):
+    dataset_name = f"sync-miss-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+    manager = DatasetSyncManager(async_datalake, async_datalake_secondary)
+    bundle = await manager.export_dataset_version(dataset_name, version)
+
+    plan = await manager.plan_import(
+        DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload")
+    )
+    assert plan.ready_to_commit is False
+
+    with pytest.raises(ValueError, match="not ready to commit"):
+        await manager.commit_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="fail_if_missing_payload",
+                origin_lake_id=async_datalake.mongo_db_name,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_fail_if_missing_payload_ready_when_present(
+    async_datalake: AsyncDatalake,
+    async_datalake_secondary: AsyncDatalake,
+):
+    dataset_name = f"sync-miss-ok-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+    manager = DatasetSyncManager(async_datalake, async_datalake_secondary)
+    await manager.sync_dataset_version(dataset_name, version, transfer_policy="copy_if_missing")
+
+    bundle = await manager.export_dataset_version(dataset_name, version)
+    plan = await manager.plan_import(
+        DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload")
+    )
+    assert plan.ready_to_commit is True
+    assert plan.transfer_required_count == 0
