@@ -42,3 +42,8 @@ def test_replication_batch_request_rejects_empty_mount_map_value():
 def test_replication_reconcile_request_rejects_empty_mount_map_value():
     with pytest.raises(ValueError, match="mount_map"):
         ReplicationReconcileRequest(mount_map={"src": ""})
+
+
+def test_replication_reconcile_request_accepts_valid_mount_map():
+    req = ReplicationReconcileRequest(mount_map={"src": "dst"}, asset_ids=["a"], limit=5, include_failed=False)
+    assert req.mount_map == {"src": "dst"}
