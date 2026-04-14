@@ -6,6 +6,8 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncPayloadPlan,
     ObjectPayloadDescriptor,
 )
+import pytest
+
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
 
 
@@ -60,3 +62,14 @@ def test_sync_type_defaults_and_nested_models():
     assert plan.payloads[0].reason == "missing_on_target"
     assert result.created_assets == 0
     assert result.dataset_version.dataset_name == "demo"
+
+
+def test_dataset_sync_import_request_rejects_preserve_ids_false():
+    storage_ref = StorageRef(mount="source", name="images/cat.jpg", version="v1")
+    asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+    datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])
+    dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=[datum.datum_id])
+    bundle = DatasetSyncBundle(dataset_version=dataset_version, datums=[datum], assets=[asset], payloads=[])
+
+    with pytest.raises(ValueError, match="preserve_ids=False"):
+        DatasetSyncImportRequest(bundle=bundle, preserve_ids=False)
