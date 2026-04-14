@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -48,6 +48,15 @@ class DatasetSyncImportRequest(BaseModel):
     transfer_policy: TransferPolicy = "copy_if_missing"
     origin_lake_id: str | None = None
     preserve_ids: bool = True
+
+    @model_validator(mode="after")
+    def _validate_preserve_ids(self) -> DatasetSyncImportRequest:
+        if not self.preserve_ids:
+            raise ValueError(
+                "preserve_ids=False is not supported yet; imports always preserve source identifiers. "
+                "Omit preserve_ids or set it to True."
+            )
+        return self
 
 
 class DatasetSyncPayloadPlan(BaseModel):
