@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.replication import MetadataFirstReplicationManager, _head_object_size_bytes
+from mindtrace.datalake.replication import (
+    LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF,
+    MetadataFirstReplicationManager,
+    _head_object_size_bytes,
+)
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationReclaimRequest,
@@ -1108,6 +1112,8 @@ class TestReplicationReclaim:
         source_datalake.store.delete.assert_called_once()
         assert updated.metadata["replication"]["local_deleted_at"] is not None
         assert updated.metadata["replication"]["payload_available"] is False
+        assert updated.metadata["replication"]["payload_status"] == "verified"
+        assert updated.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
         assert MetadataFirstReplicationManager.is_local_deleted(updated) is True
 
     @pytest.mark.asyncio
@@ -1115,7 +1121,15 @@ class TestReplicationReclaim:
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "local_deleted_at": "2026-01-01T00:01:00Z"}},
+                "storage_ref": LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF.model_dump(),
+                "metadata": {
+                    "replication": {
+                        "local_delete_eligible_at": "2026-01-01T00:00:00Z",
+                        "local_deleted_at": "2026-01-01T00:01:00Z",
+                        "payload_status": "verified",
+                        "payload_available": False,
+                    }
+                },
             }
         )
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
