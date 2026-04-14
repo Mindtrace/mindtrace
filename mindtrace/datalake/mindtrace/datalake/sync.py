@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -17,8 +18,36 @@ from mindtrace.datalake.sync_types import (
 )
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
 
+_METADATA_ONLY_CROSS_LAKE = (
+    "transfer_policy='metadata_only' is only supported when source and target are the same AsyncDatalake instance. "
+    "For cross-lake imports, materialize payloads first (for example copy_if_missing) so asset StorageRefs "
+    "resolve on the target store."
+)
+
+
+def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
+    for key in ("size_bytes", "size", "content_length", "ContentLength"):
+        val = meta.get(key)
+        if val is None:
+            continue
+        if isinstance(val, int):
+            return val
+        if isinstance(val, str) and val.isdigit():
+            return int(val)
+    return None
+
 
 class DatasetSyncManager:
+    """Orchestrates export/import of a single immutable :class:`DatasetVersion` graph.
+
+    Cross-lake imports always preserve source row identifiers today; ``preserve_ids=False`` is rejected on
+    :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest` until ID remapping is implemented.
+
+    ``metadata_only`` skips payload bytes and keeps descriptor ``StorageRef`` values verbatim, which is only
+    safe when ``source`` and ``target`` are the same lake (shared registry); cross-lake ``metadata_only``
+    requests are rejected in :meth:`plan_import`.
+    """
+
     def __init__(self, source: AsyncDatalake, target: AsyncDatalake | None = None) -> None:
         self.source = source
         self.target = target or source
@@ -77,6 +106,9 @@ class DatasetSyncManager:
         )
 
     async def plan_import(self, request: DatasetSyncImportRequest) -> DatasetSyncImportPlan:
+        if request.transfer_policy == "metadata_only" and self.source is not self.target:
+            raise ValueError(_METADATA_ONLY_CROSS_LAKE)
+
         bundle = request.bundle
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
@@ -184,7 +216,13 @@ class DatasetSyncManager:
             created = AnnotationSchema.model_validate(
                 {
                     **schema.model_dump(),
-                    "metadata": self._merge_origin_metadata(schema.metadata, origin_lake_id, schema.annotation_schema_id),
+                    "metadata": self._merge_origin_metadata(
+                        schema.metadata,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=schema.annotation_schema_id,
+                        annotation_schema_id=schema.annotation_schema_id,
+                    ),
                 }
             )
             await self.target.annotation_schema_database.insert(created)
@@ -199,7 +237,13 @@ class DatasetSyncManager:
                 {
                     **asset.model_dump(),
                     "storage_ref": storage_ref.model_dump(),
-                    "metadata": self._merge_origin_metadata(asset.metadata, origin_lake_id, asset.asset_id),
+                    "metadata": self._merge_origin_metadata(
+                        asset.metadata,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=asset.asset_id,
+                        asset_id=asset.asset_id,
+                    ),
                 }
             )
             await self.target.asset_database.insert(created)
@@ -212,7 +256,13 @@ class DatasetSyncManager:
             created = AnnotationRecord.model_validate(
                 {
                     **record.model_dump(),
-                    "metadata": self._merge_origin_metadata(record.metadata, origin_lake_id, record.annotation_id),
+                    "metadata": self._merge_origin_metadata(
+                        record.metadata,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=record.annotation_id,
+                        annotation_id=record.annotation_id,
+                    ),
                 }
             )
             await self.target.annotation_record_database.insert(created)
@@ -226,7 +276,11 @@ class DatasetSyncManager:
                 {
                     **annotation_set.model_dump(),
                     "metadata": self._merge_origin_metadata(
-                        annotation_set.metadata, origin_lake_id, annotation_set.annotation_set_id
+                        annotation_set.metadata,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=annotation_set.annotation_set_id,
+                        annotation_set_id=annotation_set.annotation_set_id,
                     ),
                 }
             )
@@ -245,7 +299,13 @@ class DatasetSyncManager:
                 {
                     **datum.model_dump(),
                     "asset_refs": mapped_asset_refs,
-                    "metadata": self._merge_origin_metadata(datum.metadata, origin_lake_id, datum.datum_id),
+                    "metadata": self._merge_origin_metadata(
+                        datum.metadata,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=datum.datum_id,
+                        datum_id=datum.datum_id,
+                    ),
                 }
             )
             await self.target.datum_database.insert(created)
@@ -260,8 +320,9 @@ class DatasetSyncManager:
                     **bundle.dataset_version.model_dump(),
                     "metadata": self._merge_origin_metadata(
                         bundle.dataset_version.metadata,
-                        origin_lake_id,
-                        bundle.dataset_version.dataset_version_id,
+                        lake_id=origin_lake_id,
+                        bundle=bundle,
+                        entity_id=bundle.dataset_version.dataset_version_id,
                     ),
                 }
             )
@@ -282,6 +343,11 @@ class DatasetSyncManager:
 
     async def _transfer_payload(self, payload: ObjectPayloadDescriptor) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)
+        if payload.size_bytes is not None and len(data) != payload.size_bytes:
+            raise ValueError(
+                f"Source read size mismatch for asset {payload.asset_id}: "
+                f"descriptor declares {payload.size_bytes} bytes, read {len(data)}"
+            )
         session = await self.target.create_object_upload_session(
             name=payload.storage_ref.name,
             mount=payload.storage_ref.mount,
@@ -313,6 +379,7 @@ class DatasetSyncManager:
         )
         if completed.storage_ref is None:
             raise RuntimeError(f"Upload session {session.upload_session_id} did not produce a storage_ref")
+        await self._verify_transferred_payload(payload, data, completed.storage_ref)
         return completed.storage_ref
 
     async def _asset_exists(self, asset_id: str) -> bool:
@@ -356,16 +423,77 @@ class DatasetSyncManager:
         except DocumentNotFoundError:
             return None
 
-    def _merge_origin_metadata(self, metadata: dict[str, Any] | None, lake_id: str, entity_id: str) -> dict[str, Any]:
+    def _merge_origin_metadata(
+        self,
+        metadata: dict[str, Any] | None,
+        *,
+        lake_id: str,
+        bundle: DatasetSyncBundle,
+        entity_id: str,
+        annotation_schema_id: str | None = None,
+        asset_id: str | None = None,
+        datum_id: str | None = None,
+        annotation_set_id: str | None = None,
+        annotation_id: str | None = None,
+    ) -> dict[str, Any]:
         merged = dict(metadata or {})
         merged.setdefault("origin", {})
         origin = merged["origin"]
         if not isinstance(origin, dict):
             origin = {}
             merged["origin"] = origin
+        dv = bundle.dataset_version
         origin.setdefault("lake_id", lake_id)
         origin.setdefault("entity_id", entity_id)
+        origin.setdefault("dataset_version_id", dv.dataset_version_id)
+        origin.setdefault("dataset_name", dv.dataset_name)
+        origin.setdefault("version", dv.version)
+        if annotation_schema_id is not None:
+            origin.setdefault("annotation_schema_id", annotation_schema_id)
+        if asset_id is not None:
+            origin.setdefault("asset_id", asset_id)
+        if datum_id is not None:
+            origin.setdefault("datum_id", datum_id)
+        if annotation_set_id is not None:
+            origin.setdefault("annotation_set_id", annotation_set_id)
+        if annotation_id is not None:
+            origin.setdefault("annotation_id", annotation_id)
         return merged
+
+    async def _verify_transferred_payload(
+        self,
+        payload: ObjectPayloadDescriptor,
+        source_bytes: bytes,
+        target_ref: StorageRef,
+    ) -> None:
+        head = await self.target.head_object(target_ref)
+        remote_size = _head_object_size_bytes(head)
+        if remote_size is not None and remote_size != len(source_bytes):
+            raise RuntimeError(
+                f"Post-upload size mismatch for asset {payload.asset_id}: "
+                f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
+            )
+        if payload.checksum and not self._payload_checksum_matches(source_bytes, payload.checksum):
+            raise RuntimeError(f"Post-upload checksum mismatch for asset {payload.asset_id}")
+
+    def _payload_checksum_matches(self, data: bytes, declared: str) -> bool:
+        declared_stripped = declared.strip()
+        lowered = declared_stripped.lower()
+        if ":" in lowered:
+            algo, _, digest = lowered.partition(":")
+            digest = digest.strip()
+            algo = algo.strip()
+            if algo == "sha256":
+                return hashlib.sha256(data).hexdigest() == digest
+            if algo == "md5":
+                return hashlib.md5(data).hexdigest() == digest
+            raise ValueError(f"Unsupported checksum algorithm in payload descriptor: {algo!r}")
+        hex_body = lowered.replace("-", "")
+        if len(hex_body) == 64 and set(hex_body) <= set("0123456789abcdef"):
+            return hashlib.sha256(data).hexdigest() == hex_body
+        if len(hex_body) == 32 and set(hex_body) <= set("0123456789abcdef"):
+            return hashlib.md5(data).hexdigest() == hex_body
+        raise ValueError(f"Unrecognized payload checksum format: {declared_stripped!r}")
 
     def _guess_content_type(self, name: str) -> str:
         guessed, _ = mimetypes.guess_type(name)

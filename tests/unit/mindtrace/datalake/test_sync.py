@@ -6,8 +6,16 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.sync import DatasetSyncManager
-from mindtrace.datalake.sync_types import DatasetSyncImportRequest, ObjectPayloadDescriptor
-from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
+from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest, ObjectPayloadDescriptor
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSchema,
+    AnnotationSet,
+    Asset,
+    DatasetVersion,
+    Datum,
+    StorageRef,
+)
 
 
 @pytest.fixture
@@ -79,6 +87,7 @@ def source_datalake(sync_objects):
     datalake.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
     datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
     datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+    datalake.object_exists = AsyncMock(return_value=False)
     return datalake
 
 
@@ -100,6 +109,7 @@ def target_datalake(sync_objects):
     datalake.complete_object_upload_session = AsyncMock(
         return_value=SimpleNamespace(storage_ref=StorageRef(mount="target", name="images/cat.jpg", version="v2"))
     )
+    datalake.head_object = AsyncMock(return_value={"size": len(b"payload-bytes")})
     datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("asset missing"))
     datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("schema missing"))
     datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("record missing"))
@@ -156,8 +166,8 @@ class TestDatasetSyncManager:
         assert plan.payloads[0].reason == "missing_payload"
 
     @pytest.mark.asyncio
-    async def test_plan_import_metadata_only_is_ready_without_transfer(self, source_datalake, target_datalake):
-        manager = DatasetSyncManager(source_datalake, target_datalake)
+    async def test_plan_import_metadata_only_is_ready_without_transfer(self, source_datalake):
+        manager = DatasetSyncManager(source_datalake)
         bundle = await manager.export_dataset_version("demo", "1.0.0")
 
         plan = await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="metadata_only"))
@@ -165,6 +175,14 @@ class TestDatasetSyncManager:
         assert plan.transfer_required_count == 0
         assert plan.ready_to_commit is True
         assert plan.payloads[0].reason == "metadata_only"
+
+    @pytest.mark.asyncio
+    async def test_plan_import_metadata_only_rejects_cross_lake(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+
+        with pytest.raises(ValueError, match="metadata_only"):
+            await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="metadata_only"))
 
     @pytest.mark.asyncio
     async def test_sync_dataset_version_delegates_to_commit(self, source_datalake, target_datalake):
@@ -181,7 +199,7 @@ class TestDatasetSyncManager:
         assert request.bundle.dataset_version.dataset_name == "demo"
 
     @pytest.mark.asyncio
-    async def test_commit_import_transfers_and_inserts_entities(self, source_datalake, target_datalake):
+    async def test_commit_import_transfers_and_inserts_entities(self, source_datalake, target_datalake, sync_objects):
         manager = DatasetSyncManager(source_datalake, target_datalake)
         bundle = await manager.export_dataset_version("demo", "1.0.0")
 
@@ -200,10 +218,14 @@ class TestDatasetSyncManager:
         inserted_asset = target_datalake.asset_database.insert.await_args.args[0]
         assert inserted_asset.storage_ref.mount == "target"
         assert inserted_asset.metadata["origin"]["lake_id"] == "lake-a"
+        assert inserted_asset.metadata["origin"]["asset_id"] == sync_objects.asset.asset_id
+        assert inserted_asset.metadata["origin"]["dataset_version_id"] == sync_objects.dataset_version.dataset_version_id
         inserted_record = target_datalake.annotation_record_database.insert.await_args.args[0]
         assert inserted_record.metadata["origin"]["entity_id"] == "annotation_1"
+        assert inserted_record.metadata["origin"]["annotation_id"] == "annotation_1"
         inserted_dataset_version = target_datalake.dataset_version_database.insert.await_args.args[0]
         assert inserted_dataset_version.metadata["origin"]["entity_id"] == "dataset_version_1"
+        assert inserted_dataset_version.metadata["origin"]["dataset_name"] == "demo"
 
     @pytest.mark.asyncio
     async def test_commit_import_skips_when_target_entities_exist(self, source_datalake, target_datalake, sync_objects):
@@ -265,6 +287,38 @@ class TestDatasetSyncManager:
         assert storage_ref.version == "v3"
         request_obj = urlopen.call_args.args[0]
         assert request_obj.full_url == "https://example.test/upload"
+        target_datalake.head_object.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_post_upload_checksum_mismatch(self, source_datalake, target_datalake):
+        import hashlib
+
+        target_datalake.head_object = AsyncMock(return_value={"size": len(b"payload-bytes")})
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="upload_session_bad",
+                finalize_token="token-bad",
+                upload_method="local_path",
+                upload_path="/tmp/upload-bad.bin",
+                upload_url=None,
+                upload_headers={},
+            )
+        )
+        target_datalake.complete_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(storage_ref=StorageRef(mount="target", name="images/cat.jpg", version="v9"))
+        )
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bad_digest = hashlib.sha256(b"other-bytes").hexdigest()
+        payload = ObjectPayloadDescriptor(
+            asset_id="asset_1",
+            storage_ref=StorageRef(mount="source", name="images/cat.jpg", version="v1"),
+            media_type="image/jpeg",
+            checksum=bad_digest,
+        )
+
+        with patch.object(Path, "write_bytes", return_value=None):
+            with pytest.raises(RuntimeError, match="checksum mismatch"):
+                await manager._transfer_payload(payload)
 
     @pytest.mark.asyncio
     async def test_transfer_payload_rejects_unknown_upload_method(self, source_datalake, target_datalake):
@@ -290,11 +344,29 @@ class TestDatasetSyncManager:
 
     def test_merge_origin_metadata_and_guess_content_type(self, source_datalake, target_datalake):
         manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = DatasetSyncBundle(
+            dataset_version=DatasetVersion(
+                dataset_version_id="dv-1",
+                dataset_name="demo",
+                version="1.0.0",
+                manifest=[],
+            )
+        )
 
-        merged = manager._merge_origin_metadata({"origin": {"other": 1}}, "lake-a", "entity-1")
+        merged = manager._merge_origin_metadata(
+            {"origin": {"other": 1}},
+            lake_id="lake-a",
+            bundle=bundle,
+            entity_id="entity-1",
+            asset_id="asset-z",
+        )
 
         assert merged["origin"]["lake_id"] == "lake-a"
         assert merged["origin"]["entity_id"] == "entity-1"
+        assert merged["origin"]["dataset_version_id"] == "dv-1"
+        assert merged["origin"]["dataset_name"] == "demo"
+        assert merged["origin"]["version"] == "1.0.0"
+        assert merged["origin"]["asset_id"] == "asset-z"
         assert merged["origin"]["other"] == 1
         assert manager._guess_content_type("image.jpg") == "image/jpeg"
         assert manager._guess_content_type("blob.unknownext") == "application/octet-stream"
