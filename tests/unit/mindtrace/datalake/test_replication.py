@@ -439,6 +439,11 @@ def test_manager_defaults_target_to_source(source_datalake):
     assert manager.target is source_datalake
 
 
+def test_manager_rejects_explicit_same_source_and_target_instance(source_datalake):
+    with pytest.raises(ValueError, match="distinct source and target"):
+        MetadataFirstReplicationManager(source_datalake, source_datalake)
+
+
 def test_local_delete_helpers(replication_objects):
     eligible = Asset.model_validate(
         {

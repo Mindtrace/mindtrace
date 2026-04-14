@@ -51,7 +51,15 @@ class MetadataFirstReplicationManager:
 
     def __init__(self, source: AsyncDatalake, target: AsyncDatalake | None = None) -> None:
         self.source = source
-        self.target = target or source
+        if target is None:
+            self.target = source
+        elif target is source:
+            raise ValueError(
+                "MetadataFirstReplicationManager requires distinct source and target when both are passed; "
+                "pass a single datalake argument for target-only ingestion and status."
+            )
+        else:
+            self.target = target
 
     @staticmethod
     def map_storage_ref_for_target(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
@@ -314,10 +322,10 @@ class MetadataFirstReplicationManager:
 
     async def delete_local_payload(self, asset_id: str) -> Asset:
         source_asset = await self.source.get_asset(asset_id)
-        if not self.is_local_delete_eligible(source_asset):
-            raise RuntimeError(f"Source asset {asset_id} is not delete-eligible")
         if self.is_local_deleted(source_asset):
             return source_asset
+        if not self.is_local_delete_eligible(source_asset):
+            raise RuntimeError(f"Source asset {asset_id} is not delete-eligible")
         storage_ref = source_asset.storage_ref
         key = self.source.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         version = storage_ref.version if storage_ref.version is not None else "latest"
