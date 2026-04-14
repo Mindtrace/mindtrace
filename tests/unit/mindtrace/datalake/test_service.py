@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationBatchResult, ReplicationStatusResult
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
@@ -44,6 +45,8 @@ from mindtrace.datalake.service_types import (
     DatasetSyncCommitResultOutput,
     DatasetSyncImportPlanOutput,
     DatasetVersionListOutput,
+    ReplicationBatchResultOutput,
+    ReplicationStatusOutput,
     DatasetVersionOutput,
     DatumListOutput,
     DatumOutput,
@@ -1394,3 +1397,36 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
     assert isinstance(result, DatasetSyncCommitResultOutput)
     assert result.result == commit_result
     manager.commit_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_upsert_batch_uses_replication_manager(service, datalake_objects):
+    request = ReplicationBatchRequest(assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source")
+    batch_result = ReplicationBatchResult(created_assets=1, created_datums=1)
+    with patch("mindtrace.datalake.service.MetadataFirstReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.upsert_metadata_batch = AsyncMock(return_value=batch_result)
+
+        result = await service.replication_upsert_batch(request)
+
+    assert isinstance(result, ReplicationBatchResultOutput)
+    assert result.result == batch_result
+    manager.upsert_metadata_batch.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_status_uses_replication_manager(service):
+    status_result = ReplicationStatusResult(
+        asset_counts_by_payload_status={"pending": 1, "transferring": 0, "uploaded": 0, "verified": 0, "failed": 0},
+        pending_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.MetadataFirstReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.status = AsyncMock(return_value=status_result)
+
+        result = await service.replication_status()
+
+    assert isinstance(result, ReplicationStatusOutput)
+    assert result.status == status_result
+    manager.status.assert_awaited_once_with()

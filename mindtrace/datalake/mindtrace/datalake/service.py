@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.replication import MetadataFirstReplicationManager
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
@@ -63,6 +64,10 @@ from mindtrace.datalake.service_types import (
     DatasetSyncImportCommitSchema,
     DatasetSyncImportPlanOutput,
     DatasetSyncImportPrepareSchema,
+    ReplicationBatchResultOutput,
+    ReplicationBatchUpsertSchema,
+    ReplicationStatusOutput,
+    ReplicationStatusSchema,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatumListOutput,
@@ -111,6 +116,7 @@ from mindtrace.datalake.service_types import (
     ObjectUploadSessionOutput,
     PutObjectInput,
     PutObjectSchema,
+    ReplicationBatchRequest,
     ResolveCollectionItemSchema,
     ResolveDatasetVersionSchema,
     ResolveDatumSchema,
@@ -279,6 +285,8 @@ class DatalakeService(Service):
             self.import_dataset_version_commit,
             schema=DatasetSyncImportCommitSchema,
         )
+        self.add_endpoint("replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema)
+        self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
 
     async def _startup_initialize(self) -> None:
         await self._ensure_datalake()
@@ -661,3 +669,15 @@ class DatalakeService(Service):
         manager = DatasetSyncManager(datalake)
         result = await manager.commit_import(payload)
         return DatasetSyncCommitResultOutput(result=result)
+
+    async def replication_upsert_batch(self, payload: ReplicationBatchRequest) -> ReplicationBatchResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = MetadataFirstReplicationManager(datalake)
+        result = await manager.upsert_metadata_batch(payload)
+        return ReplicationBatchResultOutput(result=result)
+
+    async def replication_status(self) -> ReplicationStatusOutput:
+        datalake = await self._ensure_datalake()
+        manager = MetadataFirstReplicationManager(datalake)
+        status = await manager.status()
+        return ReplicationStatusOutput(status=status)

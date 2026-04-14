@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
+from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationBatchResult, ReplicationStatusResult
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
@@ -596,6 +597,14 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
+class ReplicationBatchResultOutput(BaseModel):
+    result: ReplicationBatchResult
+
+
+class ReplicationStatusOutput(BaseModel):
+    status: ReplicationStatusResult
+
+
 ExportDatasetVersionSchema = TaskSchema(
     name="dataset_versions.export",
     input_schema=ExportDatasetVersionInput,
@@ -610,4 +619,13 @@ DatasetSyncImportCommitSchema = TaskSchema(
     name="dataset_versions.import_commit",
     input_schema=DatasetSyncImportRequest,
     output_schema=DatasetSyncCommitResultOutput,
+)
+ReplicationBatchUpsertSchema = TaskSchema(
+    name="replication.upsert_batch",
+    input_schema=ReplicationBatchRequest,
+    output_schema=ReplicationBatchResultOutput,
+)
+ReplicationStatusSchema = TaskSchema(
+    name="replication.status",
+    output_schema=ReplicationStatusOutput,
 )
