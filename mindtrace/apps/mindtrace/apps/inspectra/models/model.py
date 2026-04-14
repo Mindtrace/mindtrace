@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
 from mindtrace.database import Link, MindtraceDocument
 
+if TYPE_CHECKING:
+    from .model_version import ModelVersion
+
 
 class Model(MindtraceDocument):
     """Model model representing a machine learning model."""
 
     name: str
-    version: Link["ModelVersion"]  # noqa: F821
+    version: Link["ModelVersion"] | None = None  # noqa: F821
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)

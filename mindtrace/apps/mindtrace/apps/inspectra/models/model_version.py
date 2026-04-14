@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
 
 from mindtrace.database import Link, MindtraceDocument
+
+if TYPE_CHECKING:
+    from .model_deployment import ModelDeployment
 
 from .model import Model
 
@@ -17,7 +20,7 @@ class ModelVersion(MindtraceDocument):
     """Model version model representing a specific version of a model."""
 
     model: Link[Model]
-    model_deployment: Link["ModelDeployment"]  # noqa: F821
+    model_deployment: Link["ModelDeployment"] | None = None  # noqa: F821
     version: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

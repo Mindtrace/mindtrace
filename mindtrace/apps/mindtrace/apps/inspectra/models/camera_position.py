@@ -1,12 +1,16 @@
 """Camera position model for the Inspectra application."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
 from mindtrace.database import Link, MindtraceDocument
+
+if TYPE_CHECKING:
+    from .camera import Camera
 
 from .camera_service import CameraService
 from .camera_set import CameraSet
@@ -18,6 +22,7 @@ class CameraPosition(MindtraceDocument):
 
     position: int
 
+    camera: Link["Camera"]
     line: Link[Line]
     camera_service: Link[CameraService]
     camera_set: Link[CameraSet]
@@ -41,3 +46,6 @@ class CameraPosition(MindtraceDocument):
         """Beanie settings for the CameraPosition collection."""
 
         name = "camera_positions"
+        indexes = [
+            IndexModel([("camera", ASCENDING), ("position", ASCENDING)], unique=True),
+        ]

@@ -5,11 +5,13 @@ from typing import Any, Dict, List
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
 from mindtrace.apps.inspectra.models.enums import RoiType
 from mindtrace.database import Link, MindtraceDocument
 
 from .camera import Camera
+from .camera_position import CameraPosition
 from .camera_set import CameraSet
 from .line import Line
 from .model_deployment import ModelDeployment
@@ -22,6 +24,7 @@ class Roi(MindtraceDocument):
     line: Link[Line]
     name: str
     camera: Link[Camera]
+    camera_position: Link[CameraPosition]
     camera_set: Link[CameraSet]
     stage: Link[Stage]
     type: RoiType
@@ -49,3 +52,6 @@ class Roi(MindtraceDocument):
         """Beanie settings for the Roi collection."""
 
         name = "rois"
+        indexes = [
+            IndexModel([("line", ASCENDING), ("name", ASCENDING)], unique=True),
+        ]

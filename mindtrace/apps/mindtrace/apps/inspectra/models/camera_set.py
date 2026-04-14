@@ -1,7 +1,7 @@
 """Camera set model for the Inspectra application."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from beanie import Insert, Replace, before_event
 from pydantic import Field
@@ -18,6 +18,10 @@ class CameraSet(MindtraceDocument):
     line: Link[Line]
 
     camera_service: Link[CameraService]
+
+    name: str = Field(..., min_length=1, description="Camera set name")
+
+    cameras: List[str] = Field(default_factory=list, description="Camera names in this set")
 
     batch_size: int = 1
 

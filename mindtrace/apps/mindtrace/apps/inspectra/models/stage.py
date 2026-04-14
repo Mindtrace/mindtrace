@@ -2,24 +2,22 @@
 
 from datetime import datetime, timezone
 
-from beanie import Insert, Link, Replace, before_event
+from beanie import Insert, Replace, before_event
 from pydantic import Field
-from typing_extensions import Any, Dict, Optional
+from pymongo import ASCENDING, IndexModel
+from typing_extensions import Any, Dict
 
 from mindtrace.database import MindtraceDocument
 
-from .line import Line
-from .part import Part
-from .part_group import PartGroup
-
 
 class Stage(MindtraceDocument):
-    """Stage model representing a processing stage in a production line."""
+    """Stage model representing a reusable processing stage.
 
-    line: Link[Line]
-    part: Link[Part]
-    partgroup: Link[PartGroup]
-    name: Optional[str] = None
+    This is the building block used by `StageGraph`. Stages are not tied to a
+    specific Line/Part; they can be shared across multiple stage graphs.
+    """
+
+    name: str = Field(..., min_length=1, description="Stage name")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
@@ -39,3 +37,6 @@ class Stage(MindtraceDocument):
         """Beanie settings for the Stage collection."""
 
         name = "stages"
+        indexes = [
+            IndexModel([("name", ASCENDING)], unique=True),
+        ]

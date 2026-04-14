@@ -11,6 +11,7 @@ from mindtrace.database import MindtraceDocument
 from .line import Line
 from .organization import Organization
 from .part_group import PartGroup
+from .stage_graph import StageGraph
 
 
 class Part(MindtraceDocument):
@@ -19,6 +20,7 @@ class Part(MindtraceDocument):
     organization: Link[Organization]
     line: Link[Line]
     partgroup: Link[PartGroup]
+    stage_graph: Optional[Link[StageGraph]] = None
     name: Optional[str] = None
     part_number: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,14 +1,16 @@
 """Camera model for the Inspectra application."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from beanie import Insert, Replace, before_event
 from pydantic import BaseModel, Field
 
 from mindtrace.database import Link, MindtraceDocument
 
-from .camera_position import CameraPosition
+if TYPE_CHECKING:
+    from .camera_position import CameraPosition
+
 from .camera_service import CameraService
 from .camera_set import CameraSet
 from .line import Line
@@ -28,7 +30,7 @@ class Camera(MindtraceDocument):
     name: str  # e.g. "cam_1" or "w_11"
     camera_service: Link[CameraService]
     camera_set: Link[CameraSet]
-    camera_position: Link[CameraPosition]
+    camera_positions: list[Link["CameraPosition"]] = Field(default_factory=list)
     config: CameraConfig = Field(default_factory=CameraConfig)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

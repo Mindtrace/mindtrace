@@ -23,7 +23,16 @@ from .plant import Plant
 from .roi import Roi
 from .scan import Scan
 from .stage import Stage
+from .stage_graph import StageGraph
 from .user import User
+
+Line.model_rebuild()
+Camera.model_rebuild()
+CameraPosition.model_rebuild()
+Model.model_rebuild()
+ModelVersion.model_rebuild()
+ModelDeployment.model_rebuild()
+StageGraph.model_rebuild()
 
 __all__ = [
     "Line",
@@ -41,6 +50,7 @@ __all__ = [
     "CameraPosition",
     "Roi",
     "Stage",
+    "StageGraph",
     "Scan",
     "Media",
     "Inference",
