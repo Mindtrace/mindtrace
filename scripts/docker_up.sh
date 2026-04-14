@@ -45,7 +45,7 @@ export MINDTRACE_CLUSTER__WORKER_PORTS_RANGE=8200-8202
 
 export REDIS_OM_URL=redis://localhost:6380
 
-
-export MINDTRACE_GCP__GCP_PROJECT_ID=mindtrace-test
-export MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME=registry-test-bucket
-
+# Do not export MINDTRACE_GCP_* or MINDTRACE_GCP_REGISTRY_* here: integration tests
+# resolve GCP via CoreConfig (env vars already set by the user or CI, else config.ini).
+# Forcing placeholder buckets/projects would override repo config when this script is
+# sourced by scripts/run_tests.sh before pytest.
