@@ -219,3 +219,180 @@ class TestMetadataFirstReplicationManager:
         assert status.asset_counts_by_payload_status["failed"] == 1
         assert status.pending_asset_ids == [pending_asset.asset_id]
         assert status.failed_asset_ids == [failed_asset.asset_id]
+
+    @pytest.mark.asyncio
+    async def test_status_skips_non_replicated_and_unknown_payload_status(self, source_datalake, target_datalake, replication_objects):
+        plain = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
+        weird = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "asset_weird",
+                "metadata": {"replication": {"payload_status": "not_a_real_status"}},
+            }
+        )
+        bad_type = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "asset_bad",
+                "metadata": {"replication": "oops"},
+            }
+        )
+        transferring = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "asset_xfer",
+                "metadata": {"replication": {"payload_status": "transferring", "payload_available": False}},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[plain, weird, bad_type, transferring])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        status = await manager.status()
+
+        assert status.asset_counts_by_payload_status["transferring"] == 1
+        assert sum(status.asset_counts_by_payload_status.values()) == 1
+
+    @pytest.mark.asyncio
+    async def test_update_asset_inserts_when_find_returns_empty(self, source_datalake, target_datalake, replication_objects):
+        target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+        target_datalake.asset_database.find = AsyncMock(return_value=[])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        replicated = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "storage_ref": replication_objects.storage_ref.model_dump(),
+                "metadata": {"replication": {"payload_status": "pending"}},
+            }
+        )
+        await manager._update_asset(replicated)
+
+        target_datalake.asset_database.insert.assert_awaited_once()
+        target_datalake.asset_database.update.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_update_annotation_schema_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+        target_datalake.annotation_schema_database.find = AsyncMock(return_value=[])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._update_annotation_schema(replication_objects.schema, "lake")
+
+        target_datalake.annotation_schema_database.insert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_annotation_record_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+        target_datalake.annotation_record_database.find = AsyncMock(return_value=[])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._update_annotation_record(replication_objects.annotation_record, "lake")
+
+        target_datalake.annotation_record_database.insert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_annotation_set_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+        target_datalake.annotation_set_database.find = AsyncMock(return_value=[])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._update_annotation_set(replication_objects.annotation_set, "lake")
+
+        target_datalake.annotation_set_database.insert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_datum_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+        target_datalake.datum_database.find = AsyncMock(return_value=[])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._update_datum(replication_objects.datum, "lake")
+
+        target_datalake.datum_database.insert.assert_awaited_once()
+
+
+class TestMetadataFirstReplicationStaticHelpers:
+    def test_map_storage_ref_for_target_noop_when_unmapped(self, replication_objects):
+        ref = replication_objects.storage_ref
+        out = MetadataFirstReplicationManager.map_storage_ref_for_target(ref, {"other": "x"})
+        assert out is ref
+
+    def test_get_payload_status_and_is_payload_available(self, replication_objects):
+        asset_no_meta = replication_objects.asset
+        assert MetadataFirstReplicationManager.get_payload_status(asset_no_meta) is None
+        assert MetadataFirstReplicationManager.is_payload_available(asset_no_meta) is False
+
+        asset_bad_rep = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "metadata": {"replication": []}}
+        )
+        assert MetadataFirstReplicationManager.get_payload_status(asset_bad_rep) is None
+        assert MetadataFirstReplicationManager.is_payload_available(asset_bad_rep) is False
+
+        asset_bad_status = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"payload_status": 123}},
+            }
+        )
+        assert MetadataFirstReplicationManager.get_payload_status(asset_bad_status) is None
+
+        asset_ok = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
+            }
+        )
+        assert MetadataFirstReplicationManager.get_payload_status(asset_ok) == "verified"
+        assert MetadataFirstReplicationManager.is_payload_available(asset_ok) is True
+
+    def test_build_asset_replication_metadata_coerces_origin_and_replication(self, replication_objects):
+        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        meta = manager.build_asset_replication_metadata(
+            {
+                "origin": "not-a-dict",
+                "replication": "also-not",
+                "keep": 1,
+            },
+            origin_lake_id="L",
+            origin_asset_id="A1",
+            replication_mode="metadata_first",
+            payload_status="verified",
+        )
+        assert meta["keep"] == 1
+        assert meta["origin"]["lake_id"] == "L"
+        assert meta["origin"]["asset_id"] == "A1"
+        assert meta["replication"]["payload_status"] == "verified"
+        assert meta["replication"]["payload_available"] is True
+
+    def test_build_asset_replication_metadata_preserves_replication_timestamps(self, replication_objects):
+        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        meta = manager.build_asset_replication_metadata(
+            {
+                "replication": {
+                    "payload_last_error": "boom",
+                    "payload_last_attempt_at": None,
+                    "payload_verified_at": None,
+                    "local_delete_eligible_at": None,
+                    "local_deleted_at": None,
+                }
+            },
+            origin_lake_id="L",
+            origin_asset_id="A1",
+            replication_mode="metadata_first",
+            payload_status="pending",
+        )
+        assert meta["replication"]["payload_last_error"] == "boom"
+        assert meta["replication"]["payload_status"] == "pending"
+        assert meta["replication"]["payload_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_existence_helpers_return_false_on_document_not_found(source_datalake, target_datalake):
+    target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+    target_datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+    target_datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+    target_datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+    target_datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+
+    manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+    assert await manager._asset_exists("x") is False
+    assert await manager._annotation_schema_exists("x") is False
+    assert await manager._annotation_record_exists("x") is False
+    assert await manager._annotation_set_exists("x") is False
+    assert await manager._datum_exists("x") is False
