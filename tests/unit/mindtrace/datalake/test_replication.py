@@ -1,10 +1,11 @@
+import hashlib
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.replication import MetadataFirstReplicationManager
+from mindtrace.datalake.replication import MetadataFirstReplicationManager, _head_object_size_bytes
 from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum, StorageRef
 
@@ -60,16 +61,14 @@ def replication_objects():
 
 
 @pytest.fixture
-def source_datalake(replication_objects):
+def source_datalake():
     datalake = Mock()
     datalake.mongo_db_name = "source_db"
-    datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
-    datalake.get_object = AsyncMock(return_value=b"payload-bytes")
     return datalake
 
 
 @pytest.fixture
-def target_datalake(replication_objects):
+def target_datalake():
     datalake = Mock()
     datalake.mongo_db_name = "target_db"
     datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("asset missing"))
@@ -322,105 +321,6 @@ class TestMetadataFirstReplicationManager:
 
         target_datalake.datum_database.insert.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_hydrate_asset_payload_marks_verified(self, source_datalake, target_datalake, replication_objects):
-        target_asset = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "storage_ref": {"mount": "remote", "name": "images/cat.jpg", "version": "v1"},
-                "metadata": {
-                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {
-                        "origin_lake_id": "source-lake",
-                        "origin_asset_id": replication_objects.asset.asset_id,
-                        "replication_mode": "metadata_first",
-                        "payload_status": "pending",
-                        "payload_available": False,
-                    },
-                },
-            }
-        )
-        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
-        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
-
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
-        result = await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
-
-        assert result.metadata["replication"]["payload_status"] == "verified"
-        assert result.metadata["replication"]["payload_available"] is True
-        target_datalake.create_object_upload_session.assert_awaited_once()
-        target_datalake.complete_object_upload_session.assert_awaited_once_with("upload_session_1", finalize_token="token-1")
-
-    @pytest.mark.asyncio
-    async def test_hydrate_asset_payload_marks_failed_on_transfer_error(self, source_datalake, target_datalake, replication_objects):
-        target_asset = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "metadata": {
-                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {
-                        "origin_lake_id": "source-lake",
-                        "origin_asset_id": replication_objects.asset.asset_id,
-                        "replication_mode": "metadata_first",
-                        "payload_status": "pending",
-                        "payload_available": False,
-                    },
-                },
-            }
-        )
-        source_datalake.get_object = AsyncMock(side_effect=RuntimeError("boom"))
-        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset])
-        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
-
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
-        with pytest.raises(RuntimeError, match="boom"):
-            await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
-
-        assert target_asset.metadata["replication"]["payload_status"] == "failed"
-        assert target_asset.metadata["replication"]["payload_last_error"] == "boom"
-
-    @pytest.mark.asyncio
-    async def test_reconcile_pending_payloads_processes_pending_and_failed(self, source_datalake, target_datalake, replication_objects):
-        pending_asset = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "metadata": {
-                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "pending", "payload_available": False},
-                },
-            }
-        )
-        failed_asset = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "asset_id": "asset_failed",
-                "metadata": {
-                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "failed", "payload_available": False},
-                },
-            }
-        )
-        verified_asset = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "asset_id": "asset_verified",
-                "metadata": {
-                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified", "payload_available": True},
-                },
-            }
-        )
-        target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset, failed_asset, verified_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
-        manager.hydrate_asset_payload = AsyncMock(side_effect=[pending_asset, RuntimeError("x")])
-
-        result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(include_failed=True))
-
-        assert result.attempted_asset_ids == [pending_asset.asset_id, failed_asset.asset_id]
-        assert result.verified_asset_ids == [pending_asset.asset_id]
-        assert result.failed_asset_ids == [failed_asset.asset_id]
-        assert verified_asset.asset_id in result.skipped_asset_ids
-
 
 class TestMetadataFirstReplicationStaticHelpers:
     def test_map_storage_ref_for_target_noop_when_unmapped(self, replication_objects):
@@ -511,3 +411,453 @@ async def test_existence_helpers_return_false_on_document_not_found(source_datal
     assert await manager._annotation_record_exists("x") is False
     assert await manager._annotation_set_exists("x") is False
     assert await manager._datum_exists("x") is False
+
+
+def test_head_object_size_bytes_parsing():
+    assert _head_object_size_bytes({"size_bytes": None, "size": "42"}) == 42
+    assert _head_object_size_bytes({"content_length": "100"}) == 100
+    assert _head_object_size_bytes({"ContentLength": 7}) == 7
+    assert _head_object_size_bytes({"other": None}) is None
+
+
+def test_manager_defaults_target_to_source(source_datalake):
+    manager = MetadataFirstReplicationManager(source_datalake)
+    assert manager.target is source_datalake
+
+
+class TestReplicationTransferAndVerify:
+    @pytest.mark.asyncio
+    async def test_hydrate_falls_back_to_target_asset_id_without_origin_asset_id(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"lake_id": "source-lake"},
+                    "replication": {"payload_status": "pending", "payload_available": False},
+                },
+            }
+        )
+        source_datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+        source_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
+        source_datalake.get_asset.assert_awaited_once_with(replication_objects.asset.asset_id)
+
+    @pytest.mark.asyncio
+    async def test_hydrate_asset_payload_marks_verified(self, source_datalake, target_datalake, replication_objects):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "storage_ref": {"mount": "remote", "name": "images/cat.jpg", "version": "v1"},
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {
+                        "origin_lake_id": "source-lake",
+                        "origin_asset_id": replication_objects.asset.asset_id,
+                        "replication_mode": "metadata_first",
+                        "payload_status": "pending",
+                        "payload_available": False,
+                    },
+                },
+            }
+        )
+        source_datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+        source_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        result = await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
+
+        assert result.metadata["replication"]["payload_status"] == "verified"
+        assert result.metadata["replication"]["payload_available"] is True
+        target_datalake.create_object_upload_session.assert_awaited_once()
+        target_datalake.complete_object_upload_session.assert_awaited_once_with("upload_session_1", finalize_token="token-1")
+
+    @pytest.mark.asyncio
+    async def test_hydrate_asset_payload_marks_failed_on_transfer_error(self, source_datalake, target_datalake, replication_objects):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {
+                        "origin_lake_id": "source-lake",
+                        "origin_asset_id": replication_objects.asset.asset_id,
+                        "replication_mode": "metadata_first",
+                        "payload_status": "pending",
+                        "payload_available": False,
+                    },
+                },
+            }
+        )
+        source_datalake.get_object = AsyncMock(side_effect=RuntimeError("boom"))
+        source_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(RuntimeError, match="boom"):
+            await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
+
+        assert target_asset.metadata["replication"]["payload_status"] == "failed"
+        assert target_asset.metadata["replication"]["payload_last_error"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_hydrate_asset_payload_marks_failed_when_verify_raises(self, source_datalake, target_datalake, replication_objects):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "pending", "payload_available": False},
+                },
+            }
+        )
+        source_datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+        source_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset])
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": 999})
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
+            await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
+
+        assert target_asset.metadata["replication"]["payload_status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_reconcile_pending_payloads_processes_pending_and_failed(self, source_datalake, target_datalake, replication_objects):
+        pending_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "pending", "payload_available": False},
+                },
+            }
+        )
+        failed_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "asset_failed",
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "failed", "payload_available": False},
+                },
+            }
+        )
+        verified_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "asset_verified",
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset, failed_asset, verified_asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock(side_effect=[pending_asset, RuntimeError("x")])
+
+        result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(include_failed=True))
+
+        assert result.attempted_asset_ids == [pending_asset.asset_id, failed_asset.asset_id]
+        assert result.verified_asset_ids == [pending_asset.asset_id]
+        assert result.failed_asset_ids == [failed_asset.asset_id]
+        assert verified_asset.asset_id in result.skipped_asset_ids
+
+    @pytest.mark.asyncio
+    async def test_reconcile_records_failed_when_hydrate_raises(self, source_datalake, target_datalake, replication_objects):
+        pending_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"payload_status": "pending"}},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock(side_effect=RuntimeError("hydrate failed"))
+
+        result = await manager.reconcile_pending_payloads()
+
+        assert result.attempted_asset_ids == [pending_asset.asset_id]
+        assert result.failed_asset_ids == [pending_asset.asset_id]
+        assert result.verified_asset_ids == []
+
+    @pytest.mark.asyncio
+    async def test_reconcile_skips_non_pending_failed_status(self, source_datalake, target_datalake, replication_objects):
+        transferring = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "xfer1",
+                "metadata": {"replication": {"payload_status": "transferring"}},
+            }
+        )
+        pending_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"payload_status": "pending"}},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[transferring, pending_asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock(return_value=pending_asset)
+
+        result = await manager.reconcile_pending_payloads()
+
+        assert transferring.asset_id in result.skipped_asset_ids
+        assert pending_asset.asset_id in result.attempted_asset_ids
+
+    @pytest.mark.asyncio
+    async def test_reconcile_filters_by_asset_ids(self, source_datalake, target_datalake, replication_objects):
+        pending_a = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "a1",
+                "metadata": {"replication": {"payload_status": "pending"}},
+            }
+        )
+        pending_b = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "b2",
+                "metadata": {"replication": {"payload_status": "pending"}},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[pending_a, pending_b])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock(side_effect=[pending_a, pending_b])
+
+        result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(asset_ids=["a1"]))
+
+        assert result.attempted_asset_ids == ["a1"]
+        assert "b2" not in result.attempted_asset_ids
+        manager.hydrate_asset_payload.assert_awaited_once_with("a1", mount_map={})
+
+    @pytest.mark.asyncio
+    async def test_reconcile_skips_failed_when_include_failed_false(self, source_datalake, target_datalake, replication_objects):
+        failed = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "failed1",
+                "metadata": {"replication": {"payload_status": "failed"}},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[failed])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock()
+
+        result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(include_failed=False))
+
+        assert result.attempted_asset_ids == []
+        assert failed.asset_id in result.skipped_asset_ids
+        manager.hydrate_asset_payload.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reconcile_respects_limit(self, source_datalake, target_datalake, replication_objects):
+        assets = [
+            Asset.model_validate(
+                {
+                    **replication_objects.asset.model_dump(),
+                    "asset_id": f"id{i}",
+                    "metadata": {"replication": {"payload_status": "pending"}},
+                }
+            )
+            for i in range(3)
+        ]
+        target_datalake.asset_database.find = AsyncMock(return_value=assets)
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.hydrate_asset_payload = AsyncMock(side_effect=assets)
+
+        result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(limit=1))
+
+        assert len(result.attempted_asset_ids) == 1
+
+    @pytest.mark.asyncio
+    async def test_set_asset_replication_state_coerces_bad_origin_and_replication(self, source_datalake, target_datalake, replication_objects):
+        asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"origin": "x", "replication": "y"},
+            }
+        )
+        target_datalake.asset_database.find = AsyncMock(return_value=[asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._set_asset_replication_state(asset, payload_status="pending", payload_last_error=None)
+        assert isinstance(asset.metadata["origin"], dict)
+        assert isinstance(asset.metadata["replication"], dict)
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_raises_on_source_size_mismatch(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"ab")
+        bad = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "size_bytes": 99},
+        )
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(ValueError, match="Source read size mismatch"):
+            await manager._transfer_payload(bad, {})
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_local_path_requires_upload_path(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"x")
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="u",
+                finalize_token="t",
+                upload_method="local_path",
+                upload_path=None,
+                upload_headers={},
+            )
+        )
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(ValueError, match="missing upload_path"):
+            await manager._transfer_payload(replication_objects.asset, {})
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_presigned_requires_upload_url(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"x")
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="u",
+                finalize_token="t",
+                upload_method="presigned_url",
+                upload_url=None,
+                upload_headers={},
+            )
+        )
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(ValueError, match="missing upload_url"):
+            await manager._transfer_payload(replication_objects.asset, {})
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_presigned_success(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="u1",
+                finalize_token="t1",
+                upload_method="presigned_url",
+                upload_url="https://example/upload",
+                upload_headers={"X-Test": "1"},
+            )
+        )
+        target_datalake.complete_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(storage_ref=StorageRef(mount="m", name="n", version="v"))
+        )
+        response = MagicMock()
+        response.status = 200
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = response
+        mock_cm.__exit__.return_value = None
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with patch("mindtrace.datalake.replication.urllib_request.urlopen", return_value=mock_cm) as urlopen_mock:
+            ref = await manager._transfer_payload(replication_objects.asset, {})
+        assert ref.name == "n"
+        urlopen_mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_presigned_put_failure_status(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"x")
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="u1",
+                finalize_token="t1",
+                upload_method="presigned_url",
+                upload_url="https://example/upload",
+                upload_headers={},
+            )
+        )
+        response = MagicMock()
+        response.status = 500
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = response
+        mock_cm.__exit__.return_value = None
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with patch("mindtrace.datalake.replication.urllib_request.urlopen", return_value=mock_cm):
+            with pytest.raises(RuntimeError, match="Presigned upload failed"):
+                await manager._transfer_payload(replication_objects.asset, {})
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_unsupported_upload_method(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"x")
+        target_datalake.create_object_upload_session = AsyncMock(
+            return_value=SimpleNamespace(
+                upload_session_id="u1",
+                finalize_token="t1",
+                upload_method="multipart",
+                upload_path=None,
+                upload_url=None,
+                upload_headers={},
+            )
+        )
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(ValueError, match="Unsupported upload method"):
+            await manager._transfer_payload(replication_objects.asset, {})
+
+    @pytest.mark.asyncio
+    async def test_transfer_payload_requires_storage_ref_after_complete(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"x")
+        target_datalake.complete_object_upload_session = AsyncMock(return_value=SimpleNamespace(storage_ref=None))
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(RuntimeError, match="did not produce a storage_ref"):
+            await manager._transfer_payload(replication_objects.asset, {})
+
+    @pytest.mark.asyncio
+    async def test_verify_transferred_payload_size_mismatch(self, source_datalake, target_datalake, replication_objects):
+        source_datalake.get_object = AsyncMock(return_value=b"1234567890")
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        ref = StorageRef(mount="m", name="n", version="v")
+        with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
+            await manager._verify_transferred_payload(replication_objects.asset, ref)
+
+    @pytest.mark.asyncio
+    async def test_verify_transferred_payload_checksum_mismatch(self, source_datalake, target_datalake, replication_objects):
+        data = b"payload-bytes"
+        source_datalake.get_object = AsyncMock(return_value=data)
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(data)})
+        bad_checksum_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "checksum": "sha256:" + "0" * 64,
+            }
+        )
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        ref = StorageRef(mount="m", name="n", version="v")
+        with pytest.raises(RuntimeError, match="Post-upload checksum mismatch"):
+            await manager._verify_transferred_payload(bad_checksum_asset, ref)
+
+    def test_payload_checksum_matches_formats(self, replication_objects):
+        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        data = b"hello"
+        sha_hex = hashlib.sha256(data).hexdigest()
+        md_hex = hashlib.md5(data).hexdigest()
+        assert manager._payload_checksum_matches(data, f"sha256:{sha_hex}")
+        assert manager._payload_checksum_matches(data, f"MD5:{md_hex}")
+        assert manager._payload_checksum_matches(data, sha_hex)
+        assert manager._payload_checksum_matches(data, md_hex)
+        with pytest.raises(ValueError, match="Unsupported checksum algorithm"):
+            manager._payload_checksum_matches(data, "crc32:abcd")
+        with pytest.raises(ValueError, match="Unrecognized payload checksum format"):
+            manager._payload_checksum_matches(data, "not-hex!!!")
+
+    def test_guess_content_type_known_extension(self, replication_objects):
+        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        ct = manager._guess_content_type("photo.jpeg")
+        assert ct == "image/jpeg"
+
+    def test_get_origin_asset_id_edge_cases(self, replication_objects):
+        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"origin": []}})
+        assert manager._get_origin_asset_id(a1) is None
+        a2 = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "metadata": {"origin": {"asset_id": 123}}}
+        )
+        assert manager._get_origin_asset_id(a2) is None
