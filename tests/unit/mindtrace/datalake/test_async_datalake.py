@@ -7,6 +7,7 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.datalake.async_datalake import (
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
@@ -213,6 +214,14 @@ class TestAsyncDatalakeUnit:
         async_datalake.store.has_object.return_value = False
 
         exists = await async_datalake.object_exists(StorageRef(mount="nas", name="missing", version="v1"))
+
+        assert exists is False
+
+    @pytest.mark.asyncio
+    async def test_object_exists_returns_false_when_has_object_raises_registry_not_found(self, async_datalake):
+        async_datalake.store.has_object.side_effect = RegistryObjectNotFound("Object x@1.0.0 not found.")
+
+        exists = await async_datalake.object_exists(StorageRef(mount="nas", name="gone.bin", version="v1"))
 
         assert exists is False
 
