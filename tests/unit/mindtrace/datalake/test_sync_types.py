@@ -34,6 +34,7 @@ def test_sync_type_defaults_and_nested_models():
         payloads=[payload],
     )
     request = DatasetSyncImportRequest(bundle=bundle)
+    assert request.mount_map == {}
     plan = DatasetSyncImportPlan(
         dataset_name="demo",
         version="1.0.0",
@@ -42,6 +43,7 @@ def test_sync_type_defaults_and_nested_models():
             DatasetSyncPayloadPlan(
                 asset_id=asset.asset_id,
                 source_storage_ref=storage_ref,
+                target_storage_ref=storage_ref,
                 target_exists=False,
                 transfer_required=True,
                 reason="missing_on_target",
@@ -62,6 +64,28 @@ def test_sync_type_defaults_and_nested_models():
     assert plan.payloads[0].reason == "missing_on_target"
     assert result.created_assets == 0
     assert result.dataset_version.dataset_name == "demo"
+
+
+def test_dataset_sync_import_request_accepts_mount_map():
+    storage_ref = StorageRef(mount="src", name="images/cat.jpg", version="v1")
+    asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+    datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])
+    dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=[datum.datum_id])
+    bundle = DatasetSyncBundle(dataset_version=dataset_version, datums=[datum], assets=[asset], payloads=[])
+
+    req = DatasetSyncImportRequest(bundle=bundle, mount_map={"src": "dst"})
+    assert req.mount_map == {"src": "dst"}
+
+
+def test_dataset_sync_import_request_rejects_empty_mount_map_value():
+    storage_ref = StorageRef(mount="src", name="n", version="v1")
+    asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+    datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])
+    dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=[datum.datum_id])
+    bundle = DatasetSyncBundle(dataset_version=dataset_version, datums=[datum], assets=[asset], payloads=[])
+
+    with pytest.raises(ValueError, match="mount_map"):
+        DatasetSyncImportRequest(bundle=bundle, mount_map={"src": ""})
 
 
 def test_dataset_sync_import_request_rejects_preserve_ids_false():
