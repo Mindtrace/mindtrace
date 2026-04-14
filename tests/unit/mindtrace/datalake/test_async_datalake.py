@@ -241,6 +241,15 @@ class TestAsyncDatalakeUnit:
         assert manager.source is async_datalake
         assert manager.target is async_datalake
 
+    def test_replication_returns_manager(self, async_datalake):
+        manager = async_datalake.replication()
+
+        from mindtrace.datalake.replication import MetadataFirstReplicationManager
+
+        assert isinstance(manager, MetadataFirstReplicationManager)
+        assert manager.source is async_datalake
+        assert manager.target is async_datalake
+
     @pytest.mark.asyncio
     async def test_create_object_upload_session(self, async_datalake, mock_store):
         session = await async_datalake.create_object_upload_session(

@@ -271,6 +271,11 @@ class AsyncDatalake(Mindtrace):
 
         return DatasetSyncManager(self, target=target)
 
+    def replication(self, target: "AsyncDatalake" | None = None):
+        from mindtrace.datalake.replication import MetadataFirstReplicationManager
+
+        return MetadataFirstReplicationManager(self, target=target)
+
     async def copy_object(
         self,
         source: StorageRef,
