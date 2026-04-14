@@ -196,6 +196,7 @@ class TestAsyncDatalakeUnit:
             StorageRef(mount="nas", name="images/cat.jpg", version="v1"), verify="none"
         )
         info = await async_datalake.head_object(StorageRef(mount="nas", name="images/cat.jpg", version="v1"))
+        assert await async_datalake.object_exists(StorageRef(mount="nas", name="images/cat.jpg", version="v1")) is True
         copied = await async_datalake.copy_object(
             StorageRef(mount="nas", name="images/cat.jpg", version="v1"),
             target_mount="archive",
@@ -205,6 +206,23 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_object_exists_returns_false_when_head_object_fails(self, async_datalake):
+        async_datalake.head_object = AsyncMock(side_effect=RuntimeError("missing"))
+
+        exists = await async_datalake.object_exists(StorageRef(mount="nas", name="missing", version="v1"))
+
+        assert exists is False
+
+    def test_dataset_sync_returns_manager(self, async_datalake):
+        manager = async_datalake.dataset_sync()
+
+        from mindtrace.datalake.sync import DatasetSyncManager
+
+        assert isinstance(manager, DatasetSyncManager)
+        assert manager.source is async_datalake
+        assert manager.target is async_datalake
 
     @pytest.mark.asyncio
     async def test_create_object_upload_session(self, async_datalake, mock_store):
