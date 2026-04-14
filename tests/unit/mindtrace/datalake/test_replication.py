@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -991,6 +992,53 @@ class TestReplicationTargetLookup:
         }
         assert queries[-1] == {"metadata.origin.asset_id": replication_objects.asset.asset_id}
 
+class TestReplicationSourceReclaimMerge:
+    @pytest.mark.asyncio
+    async def test_set_source_reclaim_merge_preserves_existing_payload_status(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "replication": {
+                        "origin_lake_id": "source_db",
+                        "origin_asset_id": replication_objects.asset.asset_id,
+                        "replication_mode": "metadata_first",
+                        "payload_status": "verified",
+                        "payload_available": True,
+                    }
+                },
+            }
+        )
+        source_datalake.asset_database.find = AsyncMock(return_value=[asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        await manager._set_source_asset_reclaim_state(
+            asset, local_delete_eligible_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
+        )
+        assert asset.metadata["replication"]["payload_status"] == "verified"
+        assert asset.metadata["replication"]["payload_available"] is True
+        assert asset.metadata["replication"]["local_delete_eligible_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_set_source_reclaim_merge_rejects_missing_payload_status_when_not_initial(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"payload_available": True}},
+            }
+        )
+        source_datalake.asset_database.find = AsyncMock(return_value=[asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(ValueError, match="payload_status is missing"):
+            await manager._set_source_asset_reclaim_state(
+                asset, local_delete_eligible_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
+            )
+
+
+
 class TestReplicationReclaim:
     @pytest.mark.asyncio
     async def test_mark_local_delete_eligible_requires_verified_remote(self, source_datalake, target_datalake, replication_objects):
@@ -1048,7 +1096,7 @@ class TestReplicationReclaim:
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "payload_available": True}},
+                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "payload_status": "verified", "payload_available": True}},
             }
         )
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
