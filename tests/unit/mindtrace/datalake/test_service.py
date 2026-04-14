@@ -40,10 +40,14 @@ from mindtrace.datalake.service_types import (
     CreateObjectUploadSessionInput,
     DatalakeHealthOutput,
     DatalakeSummaryOutput,
+    DatasetSyncBundleOutput,
+    DatasetSyncCommitResultOutput,
+    DatasetSyncImportPlanOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatumListOutput,
     DatumOutput,
+    ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
     GetByIdInput,
     GetDatasetVersionInput,
@@ -69,6 +73,7 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionItemInput,
     UpdateDatumInput,
 )
+from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncCommitResult, DatasetSyncImportPlan, DatasetSyncImportRequest
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -1338,3 +1343,54 @@ async def test_service_methods_map_requests_to_async_datalake(case, service, moc
 
     assert isinstance(result, case["expected_output_type"])
     assert getattr(result, case["expected_output_field"]) == case["expected_output_factory"](datalake_objects)
+
+
+@pytest.mark.asyncio
+async def test_service_export_dataset_version_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.export_dataset_version = AsyncMock(return_value=bundle)
+
+        result = await service.export_dataset_version(ExportDatasetVersionInput(dataset_name="demo", version="1.0"))
+
+    assert isinstance(result, DatasetSyncBundleOutput)
+    assert result.bundle == bundle
+    manager.export_dataset_version.assert_awaited_once_with("demo", "1.0")
+
+
+@pytest.mark.asyncio
+async def test_service_import_dataset_version_prepare_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    plan = DatasetSyncImportPlan(
+        dataset_name="demo",
+        version="1.0",
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(return_value=plan)
+
+        result = await service.import_dataset_version_prepare(request)
+
+    assert isinstance(result, DatasetSyncImportPlanOutput)
+    assert result.plan == plan
+    manager.plan_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_import_dataset_version_commit_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.commit_import = AsyncMock(return_value=commit_result)
+
+        result = await service.import_dataset_version_commit(request)
+
+    assert isinstance(result, DatasetSyncCommitResultOutput)
+    assert result.result == commit_result
+    manager.commit_import.assert_awaited_once_with(request)

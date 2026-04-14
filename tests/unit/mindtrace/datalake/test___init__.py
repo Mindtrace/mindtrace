@@ -26,3 +26,15 @@ def test_datalake_lazy_exports_raise_attribute_error_for_unknown_name():
 
     with pytest.raises(AttributeError, match="NotARealExport"):
         getattr(datalake_module, "NotARealExport")
+
+
+def test_datalake_exports_sync_symbols():
+    datalake_module = importlib.import_module("mindtrace.datalake")
+
+    assert datalake_module.DatasetSyncManager.__name__ == "DatasetSyncManager"
+    assert datalake_module.DatasetSyncBundle.__name__ == "DatasetSyncBundle"
+    assert datalake_module.DatasetSyncImportRequest.__name__ == "DatasetSyncImportRequest"
+    assert datalake_module.DatasetSyncImportPlan.__name__ == "DatasetSyncImportPlan"
+    assert datalake_module.DatasetSyncCommitResult.__name__ == "DatasetSyncCommitResult"
+    assert datalake_module.DatasetSyncPayloadPlan.__name__ == "DatasetSyncPayloadPlan"
+    assert datalake_module.ObjectPayloadDescriptor.__name__ == "ObjectPayloadDescriptor"
