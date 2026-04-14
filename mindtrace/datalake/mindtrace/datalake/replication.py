@@ -42,6 +42,13 @@ def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
     return None
 
 
+LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF = StorageRef(
+    mount="__local_payload_deleted__",
+    name=".",
+    version=None,
+)
+
+
 class MetadataFirstReplicationManager:
     """Metadata-first replication manager for one-way source -> target mirroring.
 
@@ -330,7 +337,7 @@ class MetadataFirstReplicationManager:
         key = self.source.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         version = storage_ref.version if storage_ref.version is not None else "latest"
         self.source.store.delete(key, version=version)
-        source_asset.storage_ref = StorageRef(mount=storage_ref.mount, name=storage_ref.name, version=storage_ref.version)
+        source_asset.storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
         await self._set_source_asset_reclaim_state(
             source_asset,
             local_deleted_at=self._utc_now(),
