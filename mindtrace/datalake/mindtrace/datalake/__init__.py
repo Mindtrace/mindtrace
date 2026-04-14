@@ -1,7 +1,14 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
 from .replication import MetadataFirstReplicationManager
-from .replication_types import ReplicatedAssetState, ReplicationBatchRequest, ReplicationBatchResult, ReplicationStatusResult
+from .replication_types import (
+    ReplicatedAssetState,
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
+    ReplicationStatusResult,
+)
 from .service import DatalakeService
 from .sync import DatasetSyncManager
 from .sync_types import (
@@ -57,6 +64,8 @@ __all__ = [
     "ReplicatedAssetState",
     "ReplicationBatchRequest",
     "ReplicationBatchResult",
+    "ReplicationReconcileRequest",
+    "ReplicationReconcileResult",
     "ReplicationStatusResult",
     "DatasetVersion",
     "DatalakeDirectUploadClient",

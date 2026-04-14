@@ -1,6 +1,12 @@
 import pytest
 
-from mindtrace.datalake.replication_types import ReplicatedAssetState, ReplicationBatchRequest, ReplicationBatchResult
+from mindtrace.datalake.replication_types import (
+    ReplicatedAssetState,
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
+)
 from mindtrace.datalake.types import Asset, Datum, StorageRef
 
 
@@ -12,6 +18,8 @@ def test_replication_types_defaults():
     req = ReplicationBatchRequest(assets=[asset], datums=[datum], origin_lake_id="source-lake")
     state = ReplicatedAssetState(origin_lake_id="source-lake", origin_asset_id=asset.asset_id)
     result = ReplicationBatchResult()
+    reconcile_request = ReplicationReconcileRequest()
+    reconcile_result = ReplicationReconcileResult()
 
     assert req.replication_mode == "metadata_first"
     assert req.mount_map == {}
@@ -19,6 +27,8 @@ def test_replication_types_defaults():
     assert state.payload_available is False
     assert result.created_assets == 0
     assert result.updated_datums == 0
+    assert reconcile_request.include_failed is True
+    assert reconcile_result.attempted_asset_ids == []
 
 
 def test_replication_batch_request_rejects_empty_mount_map_value():
@@ -27,3 +37,8 @@ def test_replication_batch_request_rejects_empty_mount_map_value():
 
     with pytest.raises(ValueError, match="mount_map"):
         ReplicationBatchRequest(assets=[asset], origin_lake_id="source-lake", mount_map={"src": ""})
+
+
+def test_replication_reconcile_request_rejects_empty_mount_map_value():
+    with pytest.raises(ValueError, match="mount_map"):
+        ReplicationReconcileRequest(mount_map={"src": ""})
