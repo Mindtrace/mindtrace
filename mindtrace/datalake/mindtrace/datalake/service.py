@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     AddAnnotationRecordsSchema,
@@ -56,6 +57,12 @@ from mindtrace.datalake.service_types import (
     DatalakeHealthSchema,
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
+    DatasetSyncBundleOutput,
+    DatasetSyncImportRequest,
+    DatasetSyncCommitResultOutput,
+    DatasetSyncImportCommitSchema,
+    DatasetSyncImportPlanOutput,
+    DatasetSyncImportPrepareSchema,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatumListOutput,
@@ -66,6 +73,8 @@ from mindtrace.datalake.service_types import (
     DeleteAssetSchema,
     DeleteCollectionItemSchema,
     DeleteCollectionSchema,
+    ExportDatasetVersionInput,
+    ExportDatasetVersionSchema,
     GetAnnotationRecordSchema,
     GetAnnotationSchemaByNameVersionInput,
     GetAnnotationSchemaByNameVersionSchema,
@@ -258,6 +267,17 @@ class DatalakeService(Service):
         )
         self.add_endpoint(
             "dataset_versions.resolve", self.resolve_dataset_version, schema=ResolveDatasetVersionSchema, as_tool=True
+        )
+        self.add_endpoint("dataset_versions.export", self.export_dataset_version, schema=ExportDatasetVersionSchema)
+        self.add_endpoint(
+            "dataset_versions.import_prepare",
+            self.import_dataset_version_prepare,
+            schema=DatasetSyncImportPrepareSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_commit",
+            self.import_dataset_version_commit,
+            schema=DatasetSyncImportCommitSchema,
         )
 
     async def _startup_initialize(self) -> None:
@@ -623,3 +643,21 @@ class DatalakeService(Service):
         datalake = await self._ensure_datalake()
         resolved = await datalake.resolve_dataset_version(payload.dataset_name, payload.version)
         return ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
+
+    async def export_dataset_version(self, payload: ExportDatasetVersionInput) -> DatasetSyncBundleOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
+        return DatasetSyncBundleOutput(bundle=bundle)
+
+    async def import_dataset_version_prepare(self, payload: DatasetSyncImportRequest) -> DatasetSyncImportPlanOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        plan = await manager.plan_import(payload)
+        return DatasetSyncImportPlanOutput(plan=plan)
+
+    async def import_dataset_version_commit(self, payload: DatasetSyncImportRequest) -> DatasetSyncCommitResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        result = await manager.commit_import(payload)
+        return DatasetSyncCommitResultOutput(result=result)

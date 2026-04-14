@@ -250,6 +250,18 @@ class AsyncDatalake(Mindtrace):
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
 
+    async def object_exists(self, storage_ref: StorageRef) -> bool:
+        try:
+            await self.head_object(storage_ref)
+            return True
+        except Exception:
+            return False
+
+    def dataset_sync(self, target: "AsyncDatalake" | None = None):
+        from mindtrace.datalake.sync import DatasetSyncManager
+
+        return DatasetSyncManager(self, target=target)
+
     async def copy_object(
         self,
         source: StorageRef,
@@ -752,6 +764,7 @@ class AsyncDatalake(Mindtrace):
             source=source,
             geometry=annotation.get("geometry", {}),
             attributes=annotation.get("attributes", {}),
+            metadata=annotation.get("metadata", {}),
             updated_at=self._utc_now(),
         )
 

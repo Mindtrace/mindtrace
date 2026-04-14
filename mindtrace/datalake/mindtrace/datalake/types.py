@@ -189,6 +189,7 @@ class AnnotationRecord(DatalakeDocument):
     source: AnnotationSource
     geometry: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

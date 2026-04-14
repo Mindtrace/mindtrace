@@ -1,6 +1,15 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .datalake import Datalake
 from .service import DatalakeService
+from .sync import DatasetSyncManager
+from .sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncImportRequest,
+    DatasetSyncPayloadPlan,
+    ObjectPayloadDescriptor,
+)
 from .types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -36,6 +45,12 @@ __all__ = [
     "AsyncDatalake",
     "Collection",
     "CollectionItem",
+    "DatasetSyncBundle",
+    "DatasetSyncCommitResult",
+    "DatasetSyncImportPlan",
+    "DatasetSyncImportRequest",
+    "DatasetSyncManager",
+    "DatasetSyncPayloadPlan",
     "DatasetVersion",
     "DatalakeDirectUploadClient",
     "Datalake",
@@ -47,6 +62,7 @@ __all__ = [
     "ResolvedDatasetVersion",
     "ResolvedDatum",
     "import_pascal_voc",
+    "ObjectPayloadDescriptor",
     "StorageRef",
     "SubjectRef",
 ]
