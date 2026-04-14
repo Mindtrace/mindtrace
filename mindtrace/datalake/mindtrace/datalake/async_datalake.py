@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -251,10 +252,16 @@ class AsyncDatalake(Mindtrace):
         return self.store.info(key, version=storage_ref.version)
 
     async def object_exists(self, storage_ref: StorageRef) -> bool:
+        """Return True if ``head_object`` resolves for ``storage_ref`` on this lake's store.
+
+        Missing objects are expected to surface as :class:`RegistryObjectNotFound` or related
+        store/IO errors; those return False. Unexpected failures (e.g. bad mount configuration)
+        propagate so callers are not misled into treating infrastructure errors as a missing blob.
+        """
         try:
             await self.head_object(storage_ref)
             return True
-        except Exception:
+        except (RegistryObjectNotFound, StoreLocationNotFound, FileNotFoundError, KeyError, OSError):
             return False
 
     def dataset_sync(self, target: "AsyncDatalake" | None = None):

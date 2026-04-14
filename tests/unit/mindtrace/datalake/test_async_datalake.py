@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
     AnnotationSchemaInUseError,
@@ -209,11 +210,18 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_object_exists_returns_false_when_head_object_fails(self, async_datalake):
-        async_datalake.head_object = AsyncMock(side_effect=RuntimeError("missing"))
+        async_datalake.head_object = AsyncMock(side_effect=RegistryObjectNotFound("missing"))
 
         exists = await async_datalake.object_exists(StorageRef(mount="nas", name="missing", version="v1"))
 
         assert exists is False
+
+    @pytest.mark.asyncio
+    async def test_object_exists_propagates_unexpected_head_errors(self, async_datalake):
+        async_datalake.head_object = AsyncMock(side_effect=RuntimeError("infra"))
+
+        with pytest.raises(RuntimeError, match="infra"):
+            await async_datalake.object_exists(StorageRef(mount="nas", name="any", version="v1"))
 
     def test_dataset_sync_returns_manager(self, async_datalake):
         manager = async_datalake.dataset_sync()
