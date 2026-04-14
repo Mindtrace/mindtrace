@@ -19,6 +19,8 @@ from mindtrace.registry import (
     LocalMountConfig,
     Mount,
     MountBackendKind,
+    S3AccessKeyAuth,
+    S3MountConfig,
     Store,
 )
 
@@ -48,8 +50,8 @@ class InProcessServiceConnectionManager:
                 raise ValueError(
                     f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {schema}"
                 )
-            return arg.model_dump() if hasattr(arg, "model_dump") else arg
-        return schema(**kwargs).model_dump() if schema is not None else {}
+            return arg.model_dump(mode="json") if hasattr(arg, "model_dump") else arg
+        return schema(**kwargs).model_dump(mode="json") if schema is not None else {}
 
     def _call(self, endpoint_name: str, *args, **kwargs):
         payload = self._payload_for(endpoint_name, args, kwargs)
@@ -104,6 +106,28 @@ def datalake_store():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+@pytest.fixture(scope="function")
+def datalake_store_secondary():
+    """Second isolated local store (separate filesystem root from ``datalake_store``)."""
+    temp_dir = Path(tempfile.mkdtemp(prefix="mindtrace-datalake-store-secondary-"))
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="local",
+                backend=MountBackendKind.LOCAL,
+                config=LocalMountConfig(uri=temp_dir),
+                is_default=True,
+                registry_options={"mutable": True},
+            )
+        ],
+        default_mount="local",
+    )
+    try:
+        yield store
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def async_datalake(datalake_store):
     db_name = f"test_datalake_async_{uuid4().hex}"
@@ -111,6 +135,73 @@ async def async_datalake(datalake_store):
         mongo_db_uri=MONGO_URL,
         mongo_db_name=db_name,
         store=datalake_store,
+    )
+    try:
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_datalake_secondary(datalake_store_secondary):
+    """Second ``AsyncDatalake`` with its own Mongo database and local store (for cross-lake sync)."""
+    db_name = f"test_datalake_async_secondary_{uuid4().hex}"
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        store=datalake_store_secondary,
+    )
+    try:
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
+    """``AsyncDatalake`` backed by MinIO/S3.
+
+    Uses mount name ``minio`` (not ``local``) so integration tests exercise
+    :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest.mount_map`
+    when syncing from a filesystem-backed source lake whose default mount is ``local``.
+    """
+    db_name = f"test_datalake_async_minio_{uuid4().hex[:12]}"
+    prefix = f"{s3_test_prefix.rstrip('/')}/datalake-sync-{uuid4().hex[:10]}/"
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="minio",
+                backend=MountBackendKind.S3,
+                config=S3MountConfig(
+                    bucket=s3_test_bucket,
+                    prefix=prefix,
+                    endpoint=s3_config["endpoint"],
+                    secure=s3_config["secure"],
+                ),
+                is_default=True,
+                auth=S3AccessKeyAuth(
+                    access_key=s3_config["access_key"],
+                    secret_key=s3_config["secret_key"],
+                ),
+                registry_options={"mutable": True},
+            )
+        ],
+        default_mount="minio",
+    )
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        store=store,
     )
     try:
         yield datalake
