@@ -12,6 +12,7 @@ mount name ``minio`` while seeded source objects live on mount ``local``.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import socket
 from pathlib import Path
@@ -20,9 +21,10 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from mindtrace.datalake import AsyncDatalake, DatalakeService
+from mindtrace.datalake import AsyncDatalake, DatalakeDirectUploadClient, DatalakeService
 from mindtrace.datalake.service_types import (
     DatasetSyncBundleOutput,
+    DatasetSyncCommitResultOutput,
     DatasetSyncImportPlanOutput,
     ExportDatasetVersionInput,
 )
@@ -509,3 +511,138 @@ async def test_dataset_sync_fail_if_missing_payload_ready_when_present(
     )
     assert plan.ready_to_commit is True
     assert plan.transfer_required_count == 0
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_import_commit_metadata_only_roundtrip(
+    async_datalake: AsyncDatalake,
+):
+    """``import_commit`` uses ``DatasetSyncManager(target)`` only; cross-store bytes need in-process sync.
+
+    Same-lake ``metadata_only`` re-materializes Mongo rows while reusing existing registry objects.
+    """
+    dataset_name = f"sync-svc-commit-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+
+    svc = DatalakeService(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=async_datalake.mongo_db_name,
+        async_datalake=async_datalake,
+        live_service=False,
+        initialize_on_startup=False,
+    )
+
+    bundle_raw = await _post_datalake_json(
+        svc,
+        "/dataset_versions.export",
+        ExportDatasetVersionInput(dataset_name=dataset_name, version=version).model_dump(mode="json"),
+    )
+    bundle_out = DatasetSyncBundleOutput.model_validate(bundle_raw)
+
+    dv = await async_datalake.get_dataset_version(dataset_name, version)
+    datum = await async_datalake.get_datum(dv.manifest[0])
+    asset_id = next(iter(datum.asset_refs.values()))
+    _ = await async_datalake.get_asset(asset_id)
+    await async_datalake.dataset_version_database.delete(dv.id)
+    await async_datalake.datum_database.delete(datum.id)
+    await async_datalake.asset_database.delete(asset.id)
+
+    request = DatasetSyncImportRequest(
+        bundle=bundle_out.bundle,
+        transfer_policy="metadata_only",
+        origin_lake_id=async_datalake.mongo_db_name,
+    )
+    commit_raw = await _post_datalake_json(
+        svc,
+        "/dataset_versions.import_commit",
+        request.model_dump(mode="json"),
+    )
+    commit_out = DatasetSyncCommitResultOutput.model_validate(commit_raw)
+    assert commit_out.result.transferred_payloads == 0
+    assert commit_out.result.skipped_payloads >= 1
+    remote = await async_datalake.get_dataset_version(dataset_name, version)
+    assert remote.dataset_name == dataset_name
+    restored = await async_datalake.get_asset(asset_id)
+    loaded = await async_datalake.get_object(restored.storage_ref)
+    assert len(loaded) > 0
+
+
+@pytest.mark.asyncio
+async def test_datalake_direct_upload_client_presigned_minio(async_datalake_minio: AsyncDatalake):
+    """``DatalakeDirectUploadClient`` async path against MinIO uses presigned PUT (``_aupload_payload``)."""
+    client = DatalakeDirectUploadClient(async_datalake_minio)
+    name = f"upload-client/{uuid4().hex[:12]}.bin"
+    payload = b"presigned-upload-client-bytes"
+    session = await client.aupload_bytes(
+        name=name,
+        data=payload,
+        mount="minio",
+        content_type="application/octet-stream",
+        expires_in_minutes=60,
+        created_by="pytest-upload-client",
+    )
+    assert session.storage_ref is not None
+    assert session.storage_ref.mount == "minio"
+    loaded = await async_datalake_minio.get_object(session.storage_ref)
+    assert loaded == payload
+
+
+@pytest.mark.asyncio
+async def test_datalake_direct_upload_client_acreate_asset_from_bytes_minio(async_datalake_minio: AsyncDatalake):
+    client = DatalakeDirectUploadClient(async_datalake_minio)
+    name = f"upload-client-asset/{uuid4().hex[:12]}.png"
+    data = _HOPPER.read_bytes()
+    asset = await client.acreate_asset_from_bytes(
+        name=name,
+        data=data,
+        kind="image",
+        media_type="image/png",
+        mount="minio",
+        created_by="pytest-upload-client",
+    )
+    assert asset.storage_ref.mount == "minio"
+    loaded = await async_datalake_minio.get_object(asset.storage_ref)
+    assert loaded == data
+
+
+@pytest.mark.asyncio
+async def test_complete_object_upload_session_is_idempotent(async_datalake: AsyncDatalake):
+    """Second finalize on an already-completed session returns the session (short-circuit path)."""
+    session = await async_datalake.create_object_upload_session(
+        name=f"idempotent/{uuid4().hex[:10]}.bin",
+        mount="local",
+        content_type="application/octet-stream",
+    )
+    assert session.upload_path
+    Path(session.upload_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(session.upload_path).write_bytes(b"done")
+
+    first = await async_datalake.complete_object_upload_session(
+        session.upload_session_id,
+        finalize_token=session.finalize_token,
+    )
+    second = await async_datalake.complete_object_upload_session(
+        session.upload_session_id,
+        finalize_token=session.finalize_token,
+    )
+    assert first.status == "completed"
+    assert second.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_upload_reconciler_starts_and_stops(async_datalake: AsyncDatalake):
+    """Exercise ``_startup_initialize`` / ``_shutdown_cleanup`` and the upload reconciler loop."""
+    service = DatalakeService(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=async_datalake.mongo_db_name,
+        async_datalake=async_datalake,
+        live_service=True,
+        initialize_on_startup=False,
+        upload_reconcile_interval_seconds=0.05,
+    )
+    await service._startup_initialize()
+    try:
+        await asyncio.sleep(0.12)
+    finally:
+        await service._shutdown_cleanup()
