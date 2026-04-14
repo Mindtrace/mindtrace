@@ -112,6 +112,10 @@ class LocalRegistryBackend(RegistryBackend):
         """
         return self.uri / f"_meta_{name.replace(':', '%3A')}@{version}.yaml"
 
+    def _ensure_metadata_parent(self, meta_path: Path) -> None:
+        """Create parent dirs for metadata files when object names contain path separators."""
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+
     def _object_metadata_prefix(self, name: str) -> str:
         """Generate the metadata file prefix for listing versions of an object.
 
@@ -456,6 +460,7 @@ class LocalRegistryBackend(RegistryBackend):
 
                 prepared_metadata = dict(metadata)
                 prepared_metadata["path"] = str(artifact_dst)
+                self._ensure_metadata_parent(meta_path)
                 with open(meta_path, "w") as f:
                     yaml.safe_dump(prepared_metadata, f)
 
@@ -538,6 +543,7 @@ class LocalRegistryBackend(RegistryBackend):
                             obj_meta["path"] = str(artifact_dst)
 
                             self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
+                            self._ensure_metadata_parent(meta_path)
                             with open(meta_path, "w") as f:
                                 yaml.safe_dump(obj_meta, f)
 
@@ -728,6 +734,7 @@ class LocalRegistryBackend(RegistryBackend):
             if meta_path.exists():
                 if on_conflict == OnConflict.OVERWRITE:
                     self.logger.debug(f"Overwriting metadata at {meta_path}: {obj_meta}")
+                    self._ensure_metadata_parent(meta_path)
                     with open(meta_path, "w") as f:
                         yaml.safe_dump(obj_meta, f)
                     results.add(OpResult.overwritten(obj_name, obj_version))
@@ -736,6 +743,7 @@ class LocalRegistryBackend(RegistryBackend):
                     results.add(OpResult.skipped(obj_name, obj_version))
             else:
                 self.logger.debug(f"Saving metadata to {meta_path}: {obj_meta}")
+                self._ensure_metadata_parent(meta_path)
                 with open(meta_path, "w") as f:
                     yaml.safe_dump(obj_meta, f)
                 results.add(OpResult.success(obj_name, obj_version))
