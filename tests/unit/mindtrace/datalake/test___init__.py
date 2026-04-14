@@ -42,6 +42,8 @@ def test_datalake_exports_sync_symbols():
     assert datalake_module.ReplicatedAssetState.__name__ == "ReplicatedAssetState"
     assert datalake_module.ReplicationBatchRequest.__name__ == "ReplicationBatchRequest"
     assert datalake_module.ReplicationBatchResult.__name__ == "ReplicationBatchResult"
+    assert datalake_module.ReplicationReclaimRequest.__name__ == "ReplicationReclaimRequest"
+    assert datalake_module.ReplicationReclaimResult.__name__ == "ReplicationReclaimResult"
     assert datalake_module.ReplicationReconcileRequest.__name__ == "ReplicationReconcileRequest"
     assert datalake_module.ReplicationReconcileResult.__name__ == "ReplicationReconcileResult"
     assert datalake_module.ReplicationStatusResult.__name__ == "ReplicationStatusResult"

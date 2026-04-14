@@ -6,7 +6,11 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.replication import MetadataFirstReplicationManager, _head_object_size_bytes
-from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
+from mindtrace.datalake.replication_types import (
+    ReplicationBatchRequest,
+    ReplicationReclaimRequest,
+    ReplicationReconcileRequest,
+)
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum, StorageRef
 
 
@@ -61,9 +65,19 @@ def replication_objects():
 
 
 @pytest.fixture
-def source_datalake():
+def source_datalake(replication_objects):
     datalake = Mock()
     datalake.mongo_db_name = "source_db"
+    datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+    datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+    datalake.store = Mock()
+    datalake.store.build_key = Mock(side_effect=lambda mount, name, version: f"{mount}/{name}@{version}")
+    datalake.store.delete = Mock()
+    datalake.asset_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        update=AsyncMock(),
+        find=AsyncMock(return_value=[]),
+    )
     return datalake
 
 
@@ -423,6 +437,25 @@ def test_head_object_size_bytes_parsing():
 def test_manager_defaults_target_to_source(source_datalake):
     manager = MetadataFirstReplicationManager(source_datalake)
     assert manager.target is source_datalake
+
+
+def test_local_delete_helpers(replication_objects):
+    eligible = Asset.model_validate(
+        {
+            **replication_objects.asset.model_dump(),
+            "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z"}},
+        }
+    )
+    deleted = Asset.model_validate(
+        {
+            **replication_objects.asset.model_dump(),
+            "asset_id": "deleted",
+            "metadata": {"replication": {"local_deleted_at": "2026-01-01T00:00:00Z"}},
+        }
+    )
+    assert MetadataFirstReplicationManager.is_local_delete_eligible(eligible) is True
+    assert MetadataFirstReplicationManager.is_local_deleted(eligible) is False
+    assert MetadataFirstReplicationManager.is_local_deleted(deleted) is True
 
 
 class TestReplicationTransferAndVerify:
@@ -861,3 +894,151 @@ class TestReplicationTransferAndVerify:
             {**replication_objects.asset.model_dump(), "metadata": {"origin": {"asset_id": 123}}}
         )
         assert manager._get_origin_asset_id(a2) is None
+
+
+class TestReplicationReclaim:
+    @pytest.mark.asyncio
+    async def test_mark_local_delete_eligible_requires_verified_remote(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "pending", "payload_available": False},
+                },
+            }
+        )
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(RuntimeError, match="not delete-eligible"):
+            await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
+
+    @pytest.mark.asyncio
+    async def test_mark_local_delete_eligible_sets_timestamp(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        updated = await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
+
+        assert updated.metadata["replication"]["local_delete_eligible_at"] is not None
+        assert MetadataFirstReplicationManager.is_local_delete_eligible(updated) is True
+
+    @pytest.mark.asyncio
+    async def test_delete_local_payload_requires_eligibility(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": {}}})
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+
+        with pytest.raises(RuntimeError, match="not delete-eligible"):
+            await manager.delete_local_payload(replication_objects.asset.asset_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_local_payload_marks_deleted_and_calls_store(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "payload_available": True}},
+            }
+        )
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+
+        updated = await manager.delete_local_payload(replication_objects.asset.asset_id)
+
+        source_datalake.store.delete.assert_called_once()
+        assert updated.metadata["replication"]["local_deleted_at"] is not None
+        assert updated.metadata["replication"]["payload_available"] is False
+        assert MetadataFirstReplicationManager.is_local_deleted(updated) is True
+
+    @pytest.mark.asyncio
+    async def test_delete_local_payload_is_idempotent_when_already_deleted(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "local_deleted_at": "2026-01-01T00:01:00Z"}},
+            }
+        )
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+
+        updated = await manager.delete_local_payload(replication_objects.asset.asset_id)
+
+        source_datalake.store.delete.assert_not_called()
+        assert updated is source_asset
+
+    @pytest.mark.asyncio
+    async def test_reclaim_verified_payloads_reclaims_verified_assets(self, source_datalake, target_datalake, replication_objects):
+        source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": {}}})
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
+        source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.mark_local_delete_eligible = AsyncMock(return_value=source_asset)
+        manager.delete_local_payload = AsyncMock(return_value=source_asset)
+
+        result = await manager.reclaim_verified_payloads()
+
+        assert result.attempted_asset_ids == [source_asset.asset_id]
+        assert result.reclaimed_asset_ids == [source_asset.asset_id]
+
+    @pytest.mark.asyncio
+    async def test_reclaim_verified_payloads_skips_unverified_and_deleted_assets(self, source_datalake, target_datalake, replication_objects):
+        unverified = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "u1", "metadata": {"replication": {}}})
+        deleted = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "d1",
+                "metadata": {"replication": {"local_deleted_at": "2026-01-01T00:00:00Z"}},
+            }
+        )
+        source_datalake.asset_database.find = AsyncMock(return_value=[unverified, deleted])
+        target_datalake.asset_database.find = AsyncMock(return_value=[])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+
+        result = await manager.reclaim_verified_payloads()
+
+        assert result.attempted_asset_ids == []
+        assert set(result.skipped_asset_ids) == {"u1", "d1"}
+
+    @pytest.mark.asyncio
+    async def test_reclaim_verified_payloads_respects_limit_and_asset_ids(self, source_datalake, target_datalake, replication_objects):
+        a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "a1", "metadata": {"replication": {}}})
+        a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "a2", "metadata": {"replication": {}}})
+        t1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta1", "metadata": {"origin": {"asset_id": "a1"}, "replication": {"payload_status": "verified", "payload_available": True}}})
+        t2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta2", "metadata": {"origin": {"asset_id": "a2"}, "replication": {"payload_status": "verified", "payload_available": True}}})
+        source_datalake.asset_database.find = AsyncMock(return_value=[a1, a2])
+        target_datalake.asset_database.find = AsyncMock(return_value=[t1, t2])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager.mark_local_delete_eligible = AsyncMock(side_effect=[a1, a2])
+        manager.delete_local_payload = AsyncMock(side_effect=[a1, a2])
+
+        result = await manager.reclaim_verified_payloads(ReplicationReclaimRequest(asset_ids=["a2"], limit=1))
+
+        assert result.attempted_asset_ids == ["a2"]
+        assert result.reclaimed_asset_ids == ["a2"]

@@ -4,6 +4,8 @@ from mindtrace.datalake.replication_types import (
     ReplicatedAssetState,
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
     ReplicationReconcileRequest,
     ReplicationReconcileResult,
 )
@@ -20,6 +22,8 @@ def test_replication_types_defaults():
     result = ReplicationBatchResult()
     reconcile_request = ReplicationReconcileRequest()
     reconcile_result = ReplicationReconcileResult()
+    reclaim_request = ReplicationReclaimRequest()
+    reclaim_result = ReplicationReclaimResult()
 
     assert req.replication_mode == "metadata_first"
     assert req.mount_map == {}
@@ -29,6 +33,8 @@ def test_replication_types_defaults():
     assert result.updated_datums == 0
     assert reconcile_request.include_failed is True
     assert reconcile_result.attempted_asset_ids == []
+    assert reclaim_request.require_verified_payload is True
+    assert reclaim_result.reclaimed_asset_ids == []
 
 
 def test_replication_batch_request_rejects_empty_mount_map_value():
