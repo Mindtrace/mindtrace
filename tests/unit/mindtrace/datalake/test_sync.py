@@ -1,10 +1,10 @@
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.sync import DatasetSyncManager, _head_object_size_bytes
 from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest, ObjectPayloadDescriptor
 from mindtrace.datalake.types import (
@@ -771,3 +771,134 @@ class TestDatasetSyncManager:
             ref = await manager._transfer_payload(payload, {})
 
         assert ref.mount == "target"
+
+    @pytest.mark.asyncio
+    async def test_commit_import_same_lake_skips_existing_asset(self, source_datalake, target_datalake, sync_objects):
+        """Same-lake commit skips inserting an asset when the row already exists."""
+        lake = source_datalake
+        lake.object_exists = AsyncMock(return_value=True)
+        lake.get_asset = AsyncMock(return_value=sync_objects.asset)
+        lake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        lake.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        lake.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        lake.get_datum = AsyncMock(return_value=sync_objects.datum)
+        lake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        for attr in (
+            "asset_database",
+            "annotation_schema_database",
+            "annotation_record_database",
+            "annotation_set_database",
+            "datum_database",
+            "dataset_version_database",
+        ):
+            setattr(lake, attr, getattr(target_datalake, attr))
+
+        manager = DatasetSyncManager(lake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        result = await manager.commit_import(
+            DatasetSyncImportRequest(bundle=bundle, transfer_policy="metadata_only")
+        )
+
+        lake.asset_database.insert.assert_not_awaited()
+        assert result.created_assets == 0
+
+    @pytest.mark.asyncio
+    async def test_commit_import_cross_lake_refreshes_asset_when_storage_ref_differs(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        """Cross-lake import updates an existing asset row when the stored ref does not match."""
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        existing_on_target = Asset(
+            asset_id=sync_objects.asset.asset_id,
+            kind="image",
+            media_type="image/jpeg",
+            storage_ref=StorageRef(mount="legacy", name="legacy.bin", version="v0"),
+            metadata={},
+        )
+        target_datalake.get_asset = AsyncMock(return_value=existing_on_target)
+        row = MagicMock()
+        row.id = "row-asset-1"
+        target_datalake.asset_database.find = AsyncMock(return_value=[row])
+        target_datalake.asset_database.update = AsyncMock(return_value=row)
+
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+
+        with patch.object(Path, "write_bytes", return_value=None):
+            await manager.commit_import(DatasetSyncImportRequest(bundle=bundle))
+
+        target_datalake.asset_database.insert.assert_not_awaited()
+        target_datalake.asset_database.update.assert_awaited_once()
+        assert row.storage_ref.mount == "target"
+        assert row.storage_ref.name == "images/cat.jpg"
+
+    @pytest.mark.asyncio
+    async def test_commit_import_duplicate_asset_insert_triggers_refresh(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        """If insert races with another writer, ``DuplicateInsertError`` triggers a refresh."""
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.asset_database.insert = AsyncMock(side_effect=DuplicateInsertError("dup"))
+        row = MagicMock()
+        row.id = "row-dup-1"
+        target_datalake.asset_database.find = AsyncMock(return_value=[row])
+        target_datalake.asset_database.update = AsyncMock(return_value=row)
+
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+
+        with patch.object(Path, "write_bytes", return_value=None):
+            await manager.commit_import(DatasetSyncImportRequest(bundle=bundle))
+
+        target_datalake.asset_database.update.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_refresh_target_asset_inserts_when_find_returns_empty(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        target_datalake.asset_database.find = AsyncMock(return_value=[])
+        target_datalake.asset_database.update = AsyncMock()
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        new_asset = Asset(
+            asset_id=sync_objects.asset.asset_id,
+            kind="image",
+            media_type="image/jpeg",
+            storage_ref=StorageRef(mount="target", name="images/cat.jpg", version="v9"),
+            metadata={"refreshed": True},
+        )
+
+        await manager._refresh_target_asset_for_cross_lake_import(new_asset)
+
+        target_datalake.asset_database.insert.assert_awaited_once_with(new_asset)
+        target_datalake.asset_database.update.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_refresh_target_asset_updates_when_find_returns_row(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        row = MagicMock()
+        row.id = "mongo-row-1"
+        target_datalake.asset_database.find = AsyncMock(return_value=[row])
+        target_datalake.asset_database.update = AsyncMock(return_value=row)
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        new_asset = Asset(
+            asset_id=sync_objects.asset.asset_id,
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="target", name="images/cat.jpg", version="v9"),
+            checksum="sha256:abcd",
+            size_bytes=42,
+            metadata={"k": "v"},
+        )
+
+        await manager._refresh_target_asset_for_cross_lake_import(new_asset)
+
+        assert row.storage_ref == new_asset.storage_ref
+        assert row.checksum == new_asset.checksum
+        assert row.size_bytes == new_asset.size_bytes
+        assert row.media_type == new_asset.media_type
+        assert row.kind == new_asset.kind
+        assert row.metadata == new_asset.metadata
+        target_datalake.asset_database.update.assert_awaited_once_with(row)
+        target_datalake.asset_database.insert.assert_not_awaited()
