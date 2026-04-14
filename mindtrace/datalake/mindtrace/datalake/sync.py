@@ -25,6 +25,15 @@ _METADATA_ONLY_CROSS_LAKE = (
 )
 
 
+def _apply_mount_map_to_storage_ref(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
+    if not mount_map:
+        return storage_ref
+    mapped = mount_map.get(storage_ref.mount)
+    if mapped is None:
+        return storage_ref
+    return StorageRef(mount=mapped, name=storage_ref.name, version=storage_ref.version)
+
+
 def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
     for key in ("size_bytes", "size", "content_length", "ContentLength"):
         val = meta.get(key)
@@ -46,11 +55,21 @@ class DatasetSyncManager:
     ``metadata_only`` skips payload bytes and keeps descriptor ``StorageRef`` values verbatim, which is only
     safe when ``source`` and ``target`` are the same lake (shared registry); cross-lake ``metadata_only``
     requests are rejected in :meth:`plan_import`.
+
+    For cross-lake imports where source and target use different mount names, pass ``mount_map`` on
+    :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest` (source mount → target mount). Object
+    existence checks, upload sessions, skipped-transfer refs, and assets without payload descriptors all
+    use the mapped target coordinates; bytes are still read from the **source** using the original ref.
     """
 
     def __init__(self, source: AsyncDatalake, target: AsyncDatalake | None = None) -> None:
         self.source = source
         self.target = target or source
+
+    @staticmethod
+    def map_storage_ref_for_target(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
+        """Return ``storage_ref`` with ``mount`` rewritten via ``mount_map`` when the source mount is listed."""
+        return _apply_mount_map_to_storage_ref(storage_ref, mount_map)
 
     async def export_dataset_version(self, dataset_name: str, version: str) -> DatasetSyncBundle:
         dataset_version = await self.source.get_dataset_version(dataset_name, version)
@@ -112,8 +131,10 @@ class DatasetSyncManager:
         bundle = request.bundle
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
+        mount_map = request.mount_map
         for payload in bundle.payloads:
-            target_exists = await self.target.object_exists(payload.storage_ref)
+            target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
+            target_exists = await self.target.object_exists(target_storage_ref)
             if request.transfer_policy == "copy":
                 transfer_required = True
                 reason = "policy_copy"
@@ -132,6 +153,7 @@ class DatasetSyncManager:
                 DatasetSyncPayloadPlan(
                     asset_id=payload.asset_id,
                     source_storage_ref=payload.storage_ref,
+                    target_storage_ref=target_storage_ref,
                     target_exists=target_exists,
                     transfer_required=transfer_required,
                     reason=reason,
@@ -165,6 +187,7 @@ class DatasetSyncManager:
         transfer_policy: str = "copy_if_missing",
         origin_lake_id: str | None = None,
         preserve_ids: bool = True,
+        mount_map: dict[str, str] | None = None,
     ) -> DatasetSyncCommitResult:
         bundle = await self.export_dataset_version(dataset_name, version)
         return await self.commit_import(
@@ -173,6 +196,7 @@ class DatasetSyncManager:
                 transfer_policy=transfer_policy,
                 origin_lake_id=origin_lake_id,
                 preserve_ids=preserve_ids,
+                mount_map=mount_map or {},
             )
         )
 
@@ -185,6 +209,7 @@ class DatasetSyncManager:
 
         bundle = request.bundle
         origin_lake_id = request.origin_lake_id or self.source.mongo_db_name
+        mount_map = request.mount_map
         payload_by_asset_id = {payload.asset_id: payload for payload in bundle.payloads}
         plan_by_asset_id = {plan.asset_id: plan for plan in plan.payloads}
 
@@ -196,17 +221,17 @@ class DatasetSyncManager:
             payload = payload_by_asset_id.get(asset.asset_id)
             asset_plan = plan_by_asset_id.get(asset.asset_id)
             if payload is None or asset_plan is None:
-                resolved_storage_refs[asset.asset_id] = asset.storage_ref
+                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
                 continue
             if request.transfer_policy == "metadata_only":
-                resolved_storage_refs[asset.asset_id] = asset.storage_ref
+                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
                 skipped_payloads += 1
                 continue
             if asset_plan.transfer_required:
-                resolved_storage_refs[asset.asset_id] = await self._transfer_payload(payload)
+                resolved_storage_refs[asset.asset_id] = await self._transfer_payload(payload, mount_map)
                 transferred_payloads += 1
             else:
-                resolved_storage_refs[asset.asset_id] = payload.storage_ref
+                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
                 skipped_payloads += 1
 
         created_annotation_schemas = 0
@@ -341,17 +366,18 @@ class DatasetSyncManager:
             skipped_payloads=skipped_payloads,
         )
 
-    async def _transfer_payload(self, payload: ObjectPayloadDescriptor) -> StorageRef:
+    async def _transfer_payload(self, payload: ObjectPayloadDescriptor, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)
         if payload.size_bytes is not None and len(data) != payload.size_bytes:
             raise ValueError(
                 f"Source read size mismatch for asset {payload.asset_id}: "
                 f"descriptor declares {payload.size_bytes} bytes, read {len(data)}"
             )
+        target_write_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         session = await self.target.create_object_upload_session(
-            name=payload.storage_ref.name,
-            mount=payload.storage_ref.mount,
-            version=payload.storage_ref.version,
+            name=target_write_ref.name,
+            mount=target_write_ref.mount,
+            version=target_write_ref.version,
             metadata=payload.metadata,
             on_conflict="skip",
             content_type=payload.content_type or payload.media_type or self._guess_content_type(payload.storage_ref.name),
