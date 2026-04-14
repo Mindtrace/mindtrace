@@ -252,15 +252,17 @@ class AsyncDatalake(Mindtrace):
         return self.store.info(key, version=storage_ref.version)
 
     async def object_exists(self, storage_ref: StorageRef) -> bool:
-        """Return True if ``head_object`` resolves for ``storage_ref`` on this lake's store.
+        """Return True if the object version exists on this lake's store.
 
-        Missing objects are expected to surface as :class:`RegistryObjectNotFound` or related
-        store/IO errors; those return False. Unexpected failures (e.g. bad mount configuration)
-        propagate so callers are not misled into treating infrastructure errors as a missing blob.
+        Uses :meth:`Store.has_object` so existence matches registry metadata (including nested
+        object names). :meth:`Registry.info` can return an empty dict for missing objects without
+        raising, so ``head_object`` alone would falsely report existence.
         """
+        storage_ref = self._normalize_storage_ref(storage_ref)
+        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        version = storage_ref.version if storage_ref.version is not None else "latest"
         try:
-            await self.head_object(storage_ref)
-            return True
+            return self.store.has_object(key, version=version)
         except (RegistryObjectNotFound, StoreLocationNotFound, FileNotFoundError, KeyError, OSError):
             return False
 

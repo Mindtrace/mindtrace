@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib import request as urllib_request
 
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
@@ -23,6 +23,12 @@ _METADATA_ONLY_CROSS_LAKE = (
     "For cross-lake imports, materialize payloads first (for example copy_if_missing) so asset StorageRefs "
     "resolve on the target store."
 )
+
+
+def _storage_refs_equivalent(a: StorageRef, b: StorageRef) -> bool:
+    av = a.version if a.version is not None else "latest"
+    bv = b.version if b.version is not None else "latest"
+    return a.mount == b.mount and a.name == b.name and av == bv
 
 
 def _apply_mount_map_to_storage_ref(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
@@ -255,9 +261,10 @@ class DatasetSyncManager:
 
         created_assets = 0
         for asset in bundle.assets:
-            if await self._asset_exists(asset.asset_id):
-                continue
-            storage_ref = resolved_storage_refs.get(asset.asset_id, asset.storage_ref)
+            storage_ref = _apply_mount_map_to_storage_ref(
+                resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
+                mount_map,
+            )
             created = Asset.model_validate(
                 {
                     **asset.model_dump(),
@@ -271,8 +278,25 @@ class DatasetSyncManager:
                     ),
                 }
             )
-            await self.target.asset_database.insert(created)
-            created_assets += 1
+            if self.source is self.target:
+                if await self._asset_exists(asset.asset_id):
+                    continue
+                await self.target.asset_database.insert(created)
+                created_assets += 1
+                continue
+
+            if await self._asset_exists(asset.asset_id):
+                existing = await self.target.get_asset(asset.asset_id)
+                if _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
+                    continue
+                await self._refresh_target_asset_for_cross_lake_import(created)
+                continue
+
+            try:
+                await self.target.asset_database.insert(created)
+                created_assets += 1
+            except DuplicateInsertError:
+                await self._refresh_target_asset_for_cross_lake_import(created)
 
         created_annotation_records = 0
         for record in bundle.annotation_records:
@@ -407,6 +431,28 @@ class DatasetSyncManager:
             raise RuntimeError(f"Upload session {session.upload_session_id} did not produce a storage_ref")
         await self._verify_transferred_payload(payload, data, completed.storage_ref)
         return completed.storage_ref
+
+    async def _refresh_target_asset_for_cross_lake_import(self, new_asset: Asset) -> None:
+        """Persist payload metadata for an asset row that already exists on the target.
+
+        When multiple ``AsyncDatalake`` instances share one Beanie database binding (last
+        ``init_beanie`` wins), the source graph can appear to already exist on the target before
+        import. In that case we must still align ``storage_ref`` (and related fields) with the
+        target store after payload transfer.
+        """
+        existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})
+        if not existing:
+            await self.target.asset_database.insert(new_asset)
+            return
+        current = existing[0]
+        current.storage_ref = new_asset.storage_ref
+        current.checksum = new_asset.checksum
+        current.size_bytes = new_asset.size_bytes
+        current.media_type = new_asset.media_type
+        current.kind = new_asset.kind
+        current.metadata = new_asset.metadata
+        current.updated_at = new_asset.updated_at
+        await self.target.asset_database.update(current)
 
     async def _asset_exists(self, asset_id: str) -> bool:
         try:
