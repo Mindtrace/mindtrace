@@ -14,6 +14,8 @@ from mindtrace.datalake.replication_types import (
     ReplicatedAssetState,
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
     ReplicationReconcileRequest,
     ReplicationReconcileResult,
     ReplicationStatusResult,
@@ -296,6 +298,79 @@ class MetadataFirstReplicationManager:
             skipped_asset_ids=skipped_asset_ids,
         )
 
+    async def mark_local_delete_eligible(self, asset_id: str, *, when: datetime | None = None) -> Asset:
+        source_asset = await self.source.get_asset(asset_id)
+        target_asset = await self._get_target_asset_for_source_asset(asset_id)
+        if target_asset is None:
+            raise RuntimeError(f"No replicated target asset found for source asset {asset_id}")
+        if self.get_payload_status(target_asset) != "verified":
+            raise RuntimeError(f"Source asset {asset_id} is not delete-eligible until target payload is verified")
+        await self._set_source_asset_reclaim_state(
+            source_asset,
+            local_delete_eligible_at=when or self._utc_now(),
+            payload_last_error=None,
+        )
+        return source_asset
+
+    async def delete_local_payload(self, asset_id: str) -> Asset:
+        source_asset = await self.source.get_asset(asset_id)
+        if not self.is_local_delete_eligible(source_asset):
+            raise RuntimeError(f"Source asset {asset_id} is not delete-eligible")
+        if self.is_local_deleted(source_asset):
+            return source_asset
+        storage_ref = source_asset.storage_ref
+        key = self.source.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        version = storage_ref.version if storage_ref.version is not None else "latest"
+        self.source.store.delete(key, version=version)
+        source_asset.storage_ref = StorageRef(mount=storage_ref.mount, name=storage_ref.name, version=storage_ref.version)
+        await self._set_source_asset_reclaim_state(
+            source_asset,
+            local_deleted_at=self._utc_now(),
+            payload_available=False,
+            payload_last_error=None,
+        )
+        return source_asset
+
+    async def reclaim_verified_payloads(
+        self, request: ReplicationReclaimRequest | None = None
+    ) -> ReplicationReclaimResult:
+        request = request or ReplicationReclaimRequest()
+        assets = await self.source.asset_database.find({})
+        attempted_asset_ids: list[str] = []
+        reclaimed_asset_ids: list[str] = []
+        failed_asset_ids: list[str] = []
+        skipped_asset_ids: list[str] = []
+
+        candidate_ids = set(request.asset_ids)
+        processed = 0
+        for asset in assets:
+            if candidate_ids and asset.asset_id not in candidate_ids:
+                continue
+            if self.is_local_deleted(asset):
+                skipped_asset_ids.append(asset.asset_id)
+                continue
+            if request.require_verified_payload and not await self._is_remote_payload_verified_for_source_asset(asset.asset_id):
+                skipped_asset_ids.append(asset.asset_id)
+                continue
+            attempted_asset_ids.append(asset.asset_id)
+            try:
+                if not self.is_local_delete_eligible(asset):
+                    await self.mark_local_delete_eligible(asset.asset_id)
+                await self.delete_local_payload(asset.asset_id)
+                reclaimed_asset_ids.append(asset.asset_id)
+            except Exception:
+                failed_asset_ids.append(asset.asset_id)
+            processed += 1
+            if request.limit is not None and processed >= request.limit:
+                break
+
+        return ReplicationReclaimResult(
+            attempted_asset_ids=attempted_asset_ids,
+            reclaimed_asset_ids=reclaimed_asset_ids,
+            failed_asset_ids=failed_asset_ids,
+            skipped_asset_ids=skipped_asset_ids,
+        )
+
     async def status(self) -> ReplicationStatusResult:
         assets = await self.target.asset_database.find({})
         counts: dict[PayloadStatus, int] = {
@@ -307,6 +382,8 @@ class MetadataFirstReplicationManager:
         }
         pending_asset_ids: list[str] = []
         failed_asset_ids: list[str] = []
+        local_delete_eligible_ids: list[str] = []
+        local_deleted_ids: list[str] = []
         for asset in assets:
             status = self.get_payload_status(asset)
             if status is None or status not in counts:
@@ -316,11 +393,35 @@ class MetadataFirstReplicationManager:
                 pending_asset_ids.append(asset.asset_id)
             elif status == "failed":
                 failed_asset_ids.append(asset.asset_id)
+        source_assets = await self.source.asset_database.find({}) if getattr(self.source, "asset_database", None) else []
+        for asset in source_assets:
+            if self.is_local_delete_eligible(asset):
+                local_delete_eligible_ids.append(asset.asset_id)
+            if self.is_local_deleted(asset):
+                local_deleted_ids.append(asset.asset_id)
         return ReplicationStatusResult(
             asset_counts_by_payload_status=counts,
             pending_asset_ids=pending_asset_ids,
             failed_asset_ids=failed_asset_ids,
+            metadata={
+                "local_delete_eligible_asset_ids": local_delete_eligible_ids,
+                "local_deleted_asset_ids": local_deleted_ids,
+            },
         )
+
+    @staticmethod
+    def is_local_delete_eligible(asset: Asset) -> bool:
+        replication = (asset.metadata or {}).get("replication")
+        if not isinstance(replication, dict):
+            return False
+        return replication.get("local_delete_eligible_at") is not None and replication.get("local_deleted_at") is None
+
+    @staticmethod
+    def is_local_deleted(asset: Asset) -> bool:
+        replication = (asset.metadata or {}).get("replication")
+        if not isinstance(replication, dict):
+            return False
+        return replication.get("local_deleted_at") is not None
 
     def _merge_origin_metadata(
         self,
@@ -375,6 +476,53 @@ class MetadataFirstReplicationManager:
         metadata["replication"] = state.model_dump(mode="json")
         asset.metadata = metadata
         await self._update_asset(asset)
+
+    async def _set_source_asset_reclaim_state(
+        self,
+        asset: Asset,
+        *,
+        local_delete_eligible_at: datetime | None = None,
+        local_deleted_at: datetime | None = None,
+        payload_available: bool | None = None,
+        payload_last_error: str | None = None,
+    ) -> None:
+        metadata = dict(asset.metadata or {})
+        origin = metadata.get("origin")
+        if not isinstance(origin, dict):
+            origin = {}
+        origin.setdefault("lake_id", self.source.mongo_db_name)
+        origin.setdefault("asset_id", asset.asset_id)
+        replication = metadata.get("replication")
+        if not isinstance(replication, dict):
+            replication = {}
+        state = ReplicatedAssetState(
+            origin_lake_id=replication.get("origin_lake_id", self.source.mongo_db_name),
+            origin_asset_id=replication.get("origin_asset_id", asset.asset_id),
+            replication_mode=replication.get("replication_mode", "metadata_first"),
+            payload_status=replication.get("payload_status", "verified"),
+            payload_available=replication.get("payload_available", True) if payload_available is None else payload_available,
+            payload_last_error=payload_last_error,
+            payload_last_attempt_at=replication.get("payload_last_attempt_at"),
+            payload_verified_at=replication.get("payload_verified_at"),
+            local_delete_eligible_at=local_delete_eligible_at or replication.get("local_delete_eligible_at"),
+            local_deleted_at=local_deleted_at or replication.get("local_deleted_at"),
+        )
+        metadata["origin"] = origin
+        metadata["replication"] = state.model_dump(mode="json")
+        asset.metadata = metadata
+        existing = await self.source.asset_database.find({"asset_id": asset.asset_id})
+        if not existing:
+            await self.source.asset_database.insert(asset)
+            return
+        current = existing[0]
+        current.storage_ref = asset.storage_ref
+        current.checksum = asset.checksum
+        current.size_bytes = asset.size_bytes
+        current.media_type = asset.media_type
+        current.kind = asset.kind
+        current.metadata = asset.metadata
+        current.updated_at = asset.updated_at
+        await self.source.asset_database.update(current)
 
     async def _transfer_payload(self, source_asset: Asset, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(source_asset.storage_ref)
@@ -458,6 +606,22 @@ class MetadataFirstReplicationManager:
             return None
         value = origin.get("asset_id")
         return value if isinstance(value, str) else None
+
+    async def _get_target_asset_for_source_asset(self, source_asset_id: str) -> Asset | None:
+        assets = await self.target.asset_database.find({})
+        for asset in assets:
+            if asset.asset_id == source_asset_id:
+                return asset
+            origin = (asset.metadata or {}).get("origin")
+            if isinstance(origin, dict) and origin.get("asset_id") == source_asset_id:
+                return asset
+        return None
+
+    async def _is_remote_payload_verified_for_source_asset(self, source_asset_id: str) -> bool:
+        asset = await self._get_target_asset_for_source_asset(source_asset_id)
+        if asset is None:
+            return False
+        return self.get_payload_status(asset) == "verified"
 
     async def _update_asset(self, new_asset: Asset) -> None:
         existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})

@@ -84,3 +84,17 @@ class ReplicationReconcileResult(BaseModel):
     failed_asset_ids: list[str] = Field(default_factory=list)
     skipped_asset_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReplicationReclaimRequest(BaseModel):
+    asset_ids: list[str] = Field(default_factory=list)
+    limit: int | None = None
+    require_verified_payload: bool = True
+
+
+class ReplicationReclaimResult(BaseModel):
+    attempted_asset_ids: list[str] = Field(default_factory=list)
+    reclaimed_asset_ids: list[str] = Field(default_factory=list)
+    failed_asset_ids: list[str] = Field(default_factory=list)
+    skipped_asset_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
