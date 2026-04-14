@@ -543,7 +543,7 @@ async def test_datalake_service_import_commit_metadata_only_roundtrip(
     dv = await async_datalake.get_dataset_version(dataset_name, version)
     datum = await async_datalake.get_datum(dv.manifest[0])
     asset_id = next(iter(datum.asset_refs.values()))
-    _ = await async_datalake.get_asset(asset_id)
+    asset = await async_datalake.get_asset(asset_id)
     await async_datalake.dataset_version_database.delete(dv.id)
     await async_datalake.datum_database.delete(datum.id)
     await async_datalake.asset_database.delete(asset.id)
