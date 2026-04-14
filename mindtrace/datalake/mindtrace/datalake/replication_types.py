@@ -61,3 +61,26 @@ class ReplicationStatusResult(BaseModel):
     pending_asset_ids: list[str] = Field(default_factory=list)
     failed_asset_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReplicationReconcileRequest(BaseModel):
+    asset_ids: list[str] = Field(default_factory=list)
+    limit: int | None = None
+    include_failed: bool = True
+    mount_map: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("mount_map")
+    @classmethod
+    def _validate_mount_map_entries(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, val in v.items():
+            if not key or not val:
+                raise ValueError("mount_map keys and target mount names must be non-empty strings")
+        return v
+
+
+class ReplicationReconcileResult(BaseModel):
+    attempted_asset_ids: list[str] = Field(default_factory=list)
+    verified_asset_ids: list[str] = Field(default_factory=list)
+    failed_asset_ids: list[str] = Field(default_factory=list)
+    skipped_asset_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

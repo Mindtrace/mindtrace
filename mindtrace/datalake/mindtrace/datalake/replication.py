@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import mimetypes
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from urllib import request as urllib_request
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.async_datalake import AsyncDatalake
@@ -9,6 +14,8 @@ from mindtrace.datalake.replication_types import (
     ReplicatedAssetState,
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
     ReplicationStatusResult,
 )
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum, StorageRef
@@ -21,15 +28,23 @@ def _apply_mount_map_to_storage_ref(storage_ref: StorageRef, mount_map: dict[str
     return StorageRef(mount=mapped, name=storage_ref.name, version=storage_ref.version)
 
 
+def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
+    for key in ("size_bytes", "size", "content_length", "ContentLength"):
+        val = meta.get(key)
+        if val is None:
+            continue
+        if isinstance(val, int):
+            return val
+        if isinstance(val, str) and val.isdigit():
+            return int(val)
+    return None
+
+
 class MetadataFirstReplicationManager:
     """Metadata-first replication manager for one-way source -> target mirroring.
 
-    MVP-A intentionally implements only the lightweight control-plane portion:
-
-    - upsert placeholder assets on the target
-    - mirror annotation schemas / sets / records / datums
-    - preserve source identifiers for idempotency
-    - attach explicit replication metadata showing payload availability is pending
+    MVP-A implemented the control-plane foundation (placeholder assets + metadata upsert).
+    MVP-B adds payload-state transitions and hydration using the direct-upload flow.
     """
 
     def __init__(self, source: AsyncDatalake, target: AsyncDatalake | None = None) -> None:
@@ -39,6 +54,10 @@ class MetadataFirstReplicationManager:
     @staticmethod
     def map_storage_ref_for_target(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
         return _apply_mount_map_to_storage_ref(storage_ref, mount_map)
+
+    @staticmethod
+    def _utc_now() -> datetime:
+        return datetime.now(timezone.utc)
 
     @staticmethod
     def get_payload_status(asset: Asset) -> PayloadStatus | None:
@@ -199,6 +218,84 @@ class MetadataFirstReplicationManager:
 
         return result
 
+    async def hydrate_asset_payload(self, asset_id: str, *, mount_map: dict[str, str] | None = None) -> Asset:
+        target_asset = await self.target.get_asset(asset_id)
+        source_asset_id = self._get_origin_asset_id(target_asset)
+        if source_asset_id is None:
+            source_asset_id = asset_id
+        source_asset = await self.source.get_asset(source_asset_id)
+
+        await self._set_asset_replication_state(
+            target_asset,
+            payload_status="transferring",
+            payload_last_attempt_at=self._utc_now(),
+            payload_last_error=None,
+        )
+
+        try:
+            completed_ref = await self._transfer_payload(source_asset, mount_map or {})
+            await self._verify_transferred_payload(source_asset, completed_ref)
+            refreshed_target_asset = await self.target.get_asset(asset_id)
+            refreshed_target_asset.storage_ref = completed_ref
+            await self._set_asset_replication_state(
+                refreshed_target_asset,
+                payload_status="verified",
+                payload_available=True,
+                payload_last_attempt_at=self._utc_now(),
+                payload_verified_at=self._utc_now(),
+                payload_last_error=None,
+            )
+            return refreshed_target_asset
+        except Exception as exc:
+            failed_asset = await self.target.get_asset(asset_id)
+            await self._set_asset_replication_state(
+                failed_asset,
+                payload_status="failed",
+                payload_available=False,
+                payload_last_attempt_at=self._utc_now(),
+                payload_last_error=str(exc),
+            )
+            raise
+
+    async def reconcile_pending_payloads(
+        self, request: ReplicationReconcileRequest | None = None
+    ) -> ReplicationReconcileResult:
+        request = request or ReplicationReconcileRequest()
+        assets = await self.target.asset_database.find({})
+        attempted_asset_ids: list[str] = []
+        verified_asset_ids: list[str] = []
+        failed_asset_ids: list[str] = []
+        skipped_asset_ids: list[str] = []
+
+        candidate_ids = set(request.asset_ids)
+        processed = 0
+        for asset in assets:
+            if candidate_ids and asset.asset_id not in candidate_ids:
+                continue
+            status = self.get_payload_status(asset)
+            if status not in {"pending", "failed"}:
+                skipped_asset_ids.append(asset.asset_id)
+                continue
+            if status == "failed" and not request.include_failed:
+                skipped_asset_ids.append(asset.asset_id)
+                continue
+            attempted_asset_ids.append(asset.asset_id)
+            try:
+                await self.hydrate_asset_payload(asset.asset_id, mount_map=request.mount_map)
+                verified_asset_ids.append(asset.asset_id)
+            except Exception:
+                failed_asset_ids.append(asset.asset_id)
+            processed += 1
+            if request.limit is not None and processed >= request.limit:
+                break
+
+        return ReplicationReconcileResult(
+            attempted_asset_ids=attempted_asset_ids,
+            verified_asset_ids=verified_asset_ids,
+            failed_asset_ids=failed_asset_ids,
+            skipped_asset_ids=skipped_asset_ids,
+        )
+
     async def status(self) -> ReplicationStatusResult:
         assets = await self.target.asset_database.find({})
         counts: dict[PayloadStatus, int] = {
@@ -242,6 +339,125 @@ class MetadataFirstReplicationManager:
         origin.setdefault("entity_kind", entity_kind)
         merged["origin"] = origin
         return merged
+
+    async def _set_asset_replication_state(
+        self,
+        asset: Asset,
+        *,
+        payload_status: PayloadStatus,
+        payload_available: bool | None = None,
+        payload_last_attempt_at: datetime | None = None,
+        payload_verified_at: datetime | None = None,
+        payload_last_error: str | None = None,
+    ) -> None:
+        metadata = dict(asset.metadata or {})
+        origin = metadata.get("origin")
+        if not isinstance(origin, dict):
+            origin = {}
+        origin_lake_id = origin.get("lake_id") or self.source.mongo_db_name
+        origin_asset_id = origin.get("asset_id") or asset.asset_id
+        replication = metadata.get("replication")
+        if not isinstance(replication, dict):
+            replication = {}
+        state = ReplicatedAssetState(
+            origin_lake_id=origin_lake_id,
+            origin_asset_id=origin_asset_id,
+            replication_mode=replication.get("replication_mode", "metadata_first"),
+            payload_status=payload_status,
+            payload_available=(payload_status == "verified") if payload_available is None else payload_available,
+            payload_last_error=payload_last_error,
+            payload_last_attempt_at=payload_last_attempt_at or replication.get("payload_last_attempt_at"),
+            payload_verified_at=payload_verified_at or replication.get("payload_verified_at"),
+            local_delete_eligible_at=replication.get("local_delete_eligible_at"),
+            local_deleted_at=replication.get("local_deleted_at"),
+        )
+        metadata["origin"] = origin
+        metadata["replication"] = state.model_dump(mode="json")
+        asset.metadata = metadata
+        await self._update_asset(asset)
+
+    async def _transfer_payload(self, source_asset: Asset, mount_map: dict[str, str]) -> StorageRef:
+        data = await self.source.get_object(source_asset.storage_ref)
+        if source_asset.size_bytes is not None and len(data) != source_asset.size_bytes:
+            raise ValueError(
+                f"Source read size mismatch for asset {source_asset.asset_id}: "
+                f"expected {source_asset.size_bytes} bytes, read {len(data)}"
+            )
+        target_write_ref = _apply_mount_map_to_storage_ref(source_asset.storage_ref, mount_map)
+        session = await self.target.create_object_upload_session(
+            name=target_write_ref.name,
+            mount=target_write_ref.mount,
+            version=target_write_ref.version,
+            metadata=source_asset.metadata,
+            on_conflict="skip",
+            content_type=source_asset.media_type or self._guess_content_type(source_asset.storage_ref.name),
+        )
+        if session.upload_method == "local_path":
+            if not session.upload_path:
+                raise ValueError(f"Upload session {session.upload_session_id} is missing upload_path")
+            upload_path = Path(session.upload_path)
+            upload_path.parent.mkdir(parents=True, exist_ok=True)
+            upload_path.write_bytes(data)
+        elif session.upload_method == "presigned_url":
+            if not session.upload_url:
+                raise ValueError(f"Upload session {session.upload_session_id} is missing upload_url")
+            req = urllib_request.Request(session.upload_url, data=data, method="PUT")
+            for key, value in session.upload_headers.items():
+                req.add_header(key, value)
+            with urllib_request.urlopen(req) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"Presigned upload failed with status {response.status}")
+        else:
+            raise ValueError(f"Unsupported upload method: {session.upload_method}")
+        completed = await self.target.complete_object_upload_session(
+            session.upload_session_id,
+            finalize_token=session.finalize_token,
+        )
+        if completed.storage_ref is None:
+            raise RuntimeError(f"Upload session {session.upload_session_id} did not produce a storage_ref")
+        return completed.storage_ref
+
+    async def _verify_transferred_payload(self, source_asset: Asset, target_ref: StorageRef) -> None:
+        source_bytes = await self.source.get_object(source_asset.storage_ref)
+        head = await self.target.head_object(target_ref)
+        remote_size = _head_object_size_bytes(head)
+        if remote_size is not None and remote_size != len(source_bytes):
+            raise RuntimeError(
+                f"Post-upload size mismatch for asset {source_asset.asset_id}: "
+                f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
+            )
+        if source_asset.checksum and not self._payload_checksum_matches(source_bytes, source_asset.checksum):
+            raise RuntimeError(f"Post-upload checksum mismatch for asset {source_asset.asset_id}")
+
+    def _payload_checksum_matches(self, data: bytes, declared: str) -> bool:
+        declared_stripped = declared.strip()
+        lowered = declared_stripped.lower()
+        if ":" in lowered:
+            algo, _, digest = lowered.partition(":")
+            digest = digest.strip()
+            algo = algo.strip()
+            if algo == "sha256":
+                return hashlib.sha256(data).hexdigest() == digest
+            if algo == "md5":
+                return hashlib.md5(data).hexdigest() == digest
+            raise ValueError(f"Unsupported checksum algorithm in payload descriptor: {algo!r}")
+        hex_body = lowered.replace("-", "")
+        if len(hex_body) == 64 and set(hex_body) <= set("0123456789abcdef"):
+            return hashlib.sha256(data).hexdigest() == hex_body
+        if len(hex_body) == 32 and set(hex_body) <= set("0123456789abcdef"):
+            return hashlib.md5(data).hexdigest() == hex_body
+        raise ValueError(f"Unrecognized payload checksum format: {declared_stripped!r}")
+
+    def _guess_content_type(self, name: str) -> str:
+        guessed, _ = mimetypes.guess_type(name)
+        return guessed or "application/octet-stream"
+
+    def _get_origin_asset_id(self, asset: Asset) -> str | None:
+        origin = (asset.metadata or {}).get("origin")
+        if not isinstance(origin, dict):
+            return None
+        value = origin.get("asset_id")
+        return value if isinstance(value, str) else None
 
     async def _update_asset(self, new_asset: Asset) -> None:
         existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})
