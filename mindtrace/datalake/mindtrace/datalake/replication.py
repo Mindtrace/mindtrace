@@ -212,7 +212,7 @@ class MetadataFirstReplicationManager:
         failed_asset_ids: list[str] = []
         for asset in assets:
             status = self.get_payload_status(asset)
-            if status is None:
+            if status is None or status not in counts:
                 continue
             counts[status] += 1
             if status == "pending":
@@ -269,7 +269,10 @@ class MetadataFirstReplicationManager:
         current.task_type = schema.task_type
         current.allowed_annotation_kinds = schema.allowed_annotation_kinds
         current.labels = schema.labels
+        current.allow_scores = schema.allow_scores
         current.required_attributes = schema.required_attributes
+        current.optional_attributes = schema.optional_attributes
+        current.allow_additional_attributes = schema.allow_additional_attributes
         current.metadata = self._merge_origin_metadata(
             schema.metadata,
             origin_lake_id=origin_lake_id,
@@ -285,9 +288,11 @@ class MetadataFirstReplicationManager:
             await self.target.annotation_record_database.insert(record)
             return
         current = existing[0]
+        current.subject = record.subject
         current.kind = record.kind
         current.label = record.label
         current.label_id = record.label_id
+        current.score = record.score
         current.source = record.source
         current.geometry = record.geometry
         current.attributes = record.attributes
@@ -309,7 +314,7 @@ class MetadataFirstReplicationManager:
         current.name = annotation_set.name
         current.purpose = annotation_set.purpose
         current.source_type = annotation_set.source_type
-        current.datum_id = annotation_set.datum_id
+        current.status = annotation_set.status
         current.annotation_schema_id = annotation_set.annotation_schema_id
         current.annotation_record_ids = annotation_set.annotation_record_ids
         current.metadata = self._merge_origin_metadata(
