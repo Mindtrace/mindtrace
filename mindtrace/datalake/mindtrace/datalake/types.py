@@ -166,6 +166,8 @@ class Asset(DatalakeDocument):
             "storage_ref.version",
             "subject.kind",
             "subject.id",
+            "metadata.origin.asset_id",
+            [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
         ]
 
 

@@ -901,6 +901,96 @@ class TestReplicationTransferAndVerify:
         assert manager._get_origin_asset_id(a2) is None
 
 
+
+
+class TestReplicationTargetLookup:
+    @pytest.mark.asyncio
+    async def test_get_target_uses_compound_origin_filter_before_loose_fallback(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "target_row_id",
+                "metadata": {
+                    "origin": {
+                        "lake_id": source_datalake.mongo_db_name,
+                        "asset_id": replication_objects.asset.asset_id,
+                    },
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        queries: list[dict] = []
+
+        async def find_side_effect(q: dict):
+            queries.append(q)
+            if q == {
+                "metadata.origin.asset_id": replication_objects.asset.asset_id,
+                "metadata.origin.lake_id": source_datalake.mongo_db_name,
+            }:
+                return [target_asset]
+            return []
+
+        target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        out = await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
+        assert out is target_asset
+        assert {
+            "metadata.origin.asset_id": replication_objects.asset.asset_id,
+            "metadata.origin.lake_id": source_datalake.mongo_db_name,
+        } in queries
+        assert not any(set(q.keys()) == {"metadata.origin.asset_id"} for q in queries)
+
+    @pytest.mark.asyncio
+    async def test_get_target_raises_on_ambiguous_origin_matches(self, source_datalake, target_datalake, replication_objects):
+        a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "t1"})
+        a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "t2"})
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.asset_database.find = AsyncMock(return_value=[a1, a2])
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        with pytest.raises(RuntimeError, match="Ambiguous replication target"):
+            await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
+
+    @pytest.mark.asyncio
+    async def test_get_target_falls_back_to_origin_asset_id_when_lake_id_mismatch(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "target_row",
+                "metadata": {
+                    "origin": {"asset_id": replication_objects.asset.asset_id},
+                    "replication": {"payload_status": "verified"},
+                },
+            }
+        )
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        queries: list[dict] = []
+
+        async def find_side_effect(q: dict):
+            queries.append(q)
+            if q == {
+                "metadata.origin.asset_id": replication_objects.asset.asset_id,
+                "metadata.origin.lake_id": source_datalake.mongo_db_name,
+            }:
+                return []
+            if q == {"metadata.origin.asset_id": replication_objects.asset.asset_id}:
+                return [target_asset]
+            return []
+
+        target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
+        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        out = await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
+        assert out is target_asset
+        assert queries[0] == {
+            "metadata.origin.asset_id": replication_objects.asset.asset_id,
+            "metadata.origin.lake_id": source_datalake.mongo_db_name,
+        }
+        assert queries[-1] == {"metadata.origin.asset_id": replication_objects.asset.asset_id}
+
 class TestReplicationReclaim:
     @pytest.mark.asyncio
     async def test_mark_local_delete_eligible_requires_verified_remote(self, source_datalake, target_datalake, replication_objects):
@@ -1038,7 +1128,16 @@ class TestReplicationReclaim:
         t1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta1", "metadata": {"origin": {"asset_id": "a1"}, "replication": {"payload_status": "verified", "payload_available": True}}})
         t2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta2", "metadata": {"origin": {"asset_id": "a2"}, "replication": {"payload_status": "verified", "payload_available": True}}})
         source_datalake.asset_database.find = AsyncMock(return_value=[a1, a2])
-        target_datalake.asset_database.find = AsyncMock(return_value=[t1, t2])
+
+        async def target_find(q: dict):
+            aid = q.get("metadata.origin.asset_id")
+            if aid == "a1":
+                return [t1]
+            if aid == "a2":
+                return [t2]
+            return []
+
+        target_datalake.asset_database.find = AsyncMock(side_effect=target_find)
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
         manager.mark_local_delete_eligible = AsyncMock(side_effect=[a1, a2])
         manager.delete_local_payload = AsyncMock(side_effect=[a1, a2])
