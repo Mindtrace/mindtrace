@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -48,6 +48,21 @@ class DatasetSyncImportRequest(BaseModel):
     transfer_policy: TransferPolicy = "copy_if_missing"
     origin_lake_id: str | None = None
     preserve_ids: bool = True
+    mount_map: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Maps source registry mount names to target mount names for payload probes, uploads, and "
+            "persisted StorageRef values. Unlisted mounts pass through unchanged."
+        ),
+    )
+
+    @field_validator("mount_map")
+    @classmethod
+    def _validate_mount_map_entries(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, val in v.items():
+            if not key or not val:
+                raise ValueError("mount_map keys and target mount names must be non-empty strings")
+        return v
 
     @model_validator(mode="after")
     def _validate_preserve_ids(self) -> DatasetSyncImportRequest:
@@ -62,6 +77,7 @@ class DatasetSyncImportRequest(BaseModel):
 class DatasetSyncPayloadPlan(BaseModel):
     asset_id: str
     source_storage_ref: StorageRef
+    target_storage_ref: StorageRef
     target_exists: bool
     transfer_required: bool
     reason: str
