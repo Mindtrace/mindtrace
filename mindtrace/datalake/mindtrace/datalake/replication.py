@@ -500,22 +500,36 @@ class MetadataFirstReplicationManager:
             origin = {}
         origin.setdefault("lake_id", self.source.mongo_db_name)
         origin.setdefault("asset_id", asset.asset_id)
-        replication = metadata.get("replication")
-        if not isinstance(replication, dict):
-            replication = {}
-        state = ReplicatedAssetState(
-            origin_lake_id=replication.get("origin_lake_id", self.source.mongo_db_name),
-            origin_asset_id=replication.get("origin_asset_id", asset.asset_id),
-            replication_mode=replication.get("replication_mode", "metadata_first"),
-            payload_status=replication.get("payload_status", "verified"),
-            payload_available=replication.get("payload_available", True) if payload_available is None else payload_available,
-            payload_last_error=payload_last_error,
-            payload_last_attempt_at=replication.get("payload_last_attempt_at"),
-            payload_verified_at=replication.get("payload_verified_at"),
-            local_delete_eligible_at=local_delete_eligible_at or replication.get("local_delete_eligible_at"),
-            local_deleted_at=local_deleted_at or replication.get("local_deleted_at"),
-        )
         metadata["origin"] = origin
+
+        base = metadata.get("replication")
+        if not isinstance(base, dict):
+            base = {}
+        replication_was_empty = len(base) == 0
+        merged: dict[str, Any] = dict(base)
+
+        if local_delete_eligible_at is not None:
+            merged["local_delete_eligible_at"] = local_delete_eligible_at
+        if local_deleted_at is not None:
+            merged["local_deleted_at"] = local_deleted_at
+        if payload_available is not None:
+            merged["payload_available"] = payload_available
+        merged["payload_last_error"] = payload_last_error
+
+        merged.setdefault("origin_lake_id", merged.get("origin_lake_id") or origin.get("lake_id") or self.source.mongo_db_name)
+        merged.setdefault("origin_asset_id", merged.get("origin_asset_id") or origin.get("asset_id") or asset.asset_id)
+        merged.setdefault("replication_mode", merged.get("replication_mode") or "metadata_first")
+
+        if merged.get("payload_status") is None:
+            if replication_was_empty:
+                merged["payload_status"] = "verified"
+                merged.setdefault("payload_available", True)
+            else:
+                raise ValueError(
+                    f"Cannot merge reclaim metadata for asset {asset.asset_id!r}: replication.payload_status is missing"
+                )
+
+        state = ReplicatedAssetState.model_validate(merged)
         metadata["replication"] = state.model_dump(mode="json")
         asset.metadata = metadata
         existing = await self.source.asset_database.find({"asset_id": asset.asset_id})
