@@ -616,13 +616,38 @@ class MetadataFirstReplicationManager:
         return value if isinstance(value, str) else None
 
     async def _get_target_asset_for_source_asset(self, source_asset_id: str) -> Asset | None:
-        assets = await self.target.asset_database.find({})
-        for asset in assets:
-            if asset.asset_id == source_asset_id:
-                return asset
-            origin = (asset.metadata or {}).get("origin")
-            if isinstance(origin, dict) and origin.get("asset_id") == source_asset_id:
-                return asset
+        try:
+            return await self.target.get_asset(source_asset_id)
+        except DocumentNotFoundError:
+            pass
+
+        origin_asset_filter: dict[str, Any] = {"metadata.origin.asset_id": source_asset_id}
+        source_lake_id = getattr(self.source, "mongo_db_name", None)
+        if isinstance(source_lake_id, str) and source_lake_id:
+            matches = await self.target.asset_database.find(
+                {**origin_asset_filter, "metadata.origin.lake_id": source_lake_id}
+            )
+        else:
+            matches = await self.target.asset_database.find(origin_asset_filter)
+
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"Ambiguous replication target lookup for source asset {source_asset_id!r}: "
+                f"found {len(matches)} target assets for origin filter"
+            )
+        if len(matches) == 1:
+            return matches[0]
+
+        if isinstance(source_lake_id, str) and source_lake_id:
+            loose = await self.target.asset_database.find(origin_asset_filter)
+            if len(loose) > 1:
+                raise RuntimeError(
+                    f"Ambiguous replication target lookup for source asset {source_asset_id!r}: "
+                    f"found {len(loose)} target assets for origin asset id only"
+                )
+            if len(loose) == 1:
+                return loose[0]
+
         return None
 
     async def _is_remote_payload_verified_for_source_asset(self, source_asset_id: str) -> bool:
