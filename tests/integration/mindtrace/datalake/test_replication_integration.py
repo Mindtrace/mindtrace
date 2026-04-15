@@ -1,0 +1,220 @@
+"""End-to-end metadata-first replication with mixed registry backends.
+
+Requires:
+
+- Primary MongoDB at ``mongodb://localhost:27018`` (``mongodb`` service).
+- MinIO / S3 configuration (``MINDTRACE_MINIO__*`` / ``config.ini``), same as other
+  datalake integration tests that use ``async_datalake_minio``.
+
+The replication scenarios use **local** object storage on the source lake and
+**MinIO** on the target, with **separate Mongo database names** on the primary host
+for source versus target metadata. Docker Compose also starts a **second MongoDB
+container** on port ``27019``; ``test_mongodb_secondary_container_accept_connections``
+asserts it is reachable. The replication tests intentionally share the primary Mongo
+URI for both lakes because Beanie's ``init_beanie`` binds document models to a single
+database client per process, so two different cluster URIs would clobber ``Asset``
+routing in one pytest worker.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import socket
+import time
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+import pytest
+from pymongo import MongoClient
+
+from mindtrace.datalake import AsyncDatalake, MetadataFirstReplicationManager
+from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
+
+from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
+
+_MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
+_HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
+_SENTINEL = object()
+
+
+def _mongo_primary_reachable() -> bool:
+    try:
+        with socket.create_connection(("localhost", 27018), timeout=2.0):
+            return True
+    except OSError:
+        return False
+
+
+def _mongo_secondary_reachable() -> bool:
+    try:
+        with socket.create_connection(("localhost", 27019), timeout=2.0):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _mongo_primary_reachable(),
+    reason="Replication integration tests require MongoDB on localhost:27018",
+)
+
+
+async def _create_image_asset(datalake: AsyncDatalake, *, name: str) -> Any:
+    """Seed a PNG asset the same way as other datalake integration tests (stable ``get_object`` size)."""
+    image_bytes = _HOPPER.read_bytes()
+    storage_ref = await datalake.put_object(name=name, obj=image_bytes, mount="local")
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    return await datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=storage_ref,
+        size_bytes=len(image_bytes),
+        checksum=f"sha256:{digest}",
+        metadata={"integration": "replication", "name": name},
+        created_by="pytest-replication-integration",
+    )
+
+
+async def _drain_pending_payloads(
+    manager: MetadataFirstReplicationManager,
+    mount_map: dict[str, str],
+    *,
+    max_rounds: int = 100,
+) -> None:
+    for _ in range(max_rounds):
+        st = await manager.status()
+        pending = st.asset_counts_by_payload_status.get("pending", 0)
+        if st.failed_asset_ids:
+            details: list[str] = []
+            for aid in st.failed_asset_ids[:5]:
+                ta = await manager.target.get_asset(aid)
+                rep = (ta.metadata or {}).get("replication") or {}
+                details.append(f"{aid}: {rep.get('payload_last_error')!r}")
+            raise AssertionError(
+                f"Payload hydration failed for assets {st.failed_asset_ids!r} ; samples: {'; '.join(details)}"
+            )
+        if pending == 0:
+            return
+        await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=mount_map))
+        await asyncio.sleep(0.05)
+    st = await manager.status()
+    raise AssertionError(f"Timed out with pending assets: {st.pending_asset_ids!r}")
+
+
+async def _assert_target_bytes_match_source(
+    *,
+    source: AsyncDatalake,
+    target: AsyncDatalake,
+    asset_ids: list[str],
+) -> None:
+    for aid in asset_ids:
+        src_asset = await source.get_asset(aid)
+        tgt_asset = await target.get_asset(aid)
+        assert MetadataFirstReplicationManager.get_payload_status(tgt_asset) == "verified"
+        src_bytes = await source.get_object(src_asset.storage_ref)
+        tgt_bytes = await target.get_object(tgt_asset.storage_ref)
+        assert src_bytes == tgt_bytes, f"byte mismatch for asset {aid}"
+        assert tgt_asset.checksum == src_asset.checksum
+
+
+def test_mongodb_secondary_container_accept_connections() -> None:
+    """Compose starts ``mongodb_secondary`` on 27019; keep it exercised even when Beanie stays on one URI."""
+    if not _mongo_secondary_reachable():
+        pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
+    client = MongoClient(MONGO_URL_SECONDARY, serverSelectionTimeoutMS=5000)
+    try:
+        names = client.list_database_names()
+    finally:
+        client.close()
+    assert "admin" in names
+
+
+@pytest.mark.asyncio
+async def test_replication_continuous_ingest_local_to_minio_separate_metadata_dbs(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio: AsyncDatalake,
+):
+    """Producer and consumer tasks: ingest waves on source while replicating to MinIO target."""
+    source = async_datalake
+    target = async_datalake_minio
+
+    assert source.mongo_db_uri == MONGO_URL
+    assert target.mongo_db_uri == MONGO_URL
+    assert source.mongo_db_name != target.mongo_db_name
+    assert source.store.default_mount == "local"
+    assert target.store.default_mount == "minio"
+
+    manager = MetadataFirstReplicationManager(source, target)
+    work: asyncio.Queue[Any] = asyncio.Queue(maxsize=8)
+    created_asset_ids: list[str] = []
+
+    async def producer() -> None:
+        for wave in range(4):
+            wave_assets = []
+            for i in range(2):
+                name = f"replication/continuous/w{wave}_i{i}_{uuid4().hex}.png"
+                asset = await _create_image_asset(source, name=name)
+                wave_assets.append(asset)
+                created_asset_ids.append(asset.asset_id)
+            await work.put(wave_assets)
+            await asyncio.to_thread(time.sleep, 0.02)
+        await work.put(_SENTINEL)
+
+    async def consumer() -> None:
+        while True:
+            item = await work.get()
+            if item is _SENTINEL:
+                break
+            batch = ReplicationBatchRequest(
+                assets=item,
+                origin_lake_id=source.mongo_db_name,
+                mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            )
+            await manager.upsert_metadata_batch(batch)
+            await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
+
+    await asyncio.gather(producer(), consumer())
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+
+    ids = list(created_asset_ids)
+    assert len(ids) == 8
+    await _assert_target_bytes_match_source(source=source, target=target, asset_ids=ids)
+
+
+@pytest.mark.asyncio
+async def test_replication_concurrent_hydration_gather_local_to_minio(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio: AsyncDatalake,
+):
+    """Concurrent ``hydrate_asset_payload`` calls (same loop) stress MinIO hydration paths."""
+    source = async_datalake
+    target = async_datalake_minio
+    manager = MetadataFirstReplicationManager(source, target)
+
+    assets = []
+    for i in range(5):
+        name = f"replication/parallel/{i}_{uuid4().hex}.png"
+        assets.append(await _create_image_asset(source, name=name))
+
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=assets,
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+
+    st0 = await manager.status()
+    assert st0.asset_counts_by_payload_status.get("pending", 0) == len(assets)
+
+    await asyncio.gather(
+        *[
+            manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_MINIO)
+            for a in assets
+        ]
+    )
+
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    await _assert_target_bytes_match_source(source=source, target=target, asset_ids=[a.asset_id for a in assets])
