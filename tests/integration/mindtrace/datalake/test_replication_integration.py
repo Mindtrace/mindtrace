@@ -2,18 +2,15 @@
 
 Requires:
 
-- Primary MongoDB at ``mongodb://localhost:27018`` (``mongodb`` service).
+- Primary MongoDB at ``mongodb://localhost:27018`` (``mongodb`` service) for the source lake.
+- Secondary MongoDB at ``mongodb://localhost:27019`` (``mongodb_secondary``) for the MinIO-backed target lake.
 - MinIO / S3 configuration (``MINDTRACE_MINIO__*`` / ``config.ini``), same as other
-  datalake integration tests that use ``async_datalake_minio``.
+  datalake integration tests that use MinIO.
 
-The replication scenarios use **local** object storage on the source lake and
-**MinIO** on the target, with **separate Mongo database names** on the primary host
-for source versus target metadata. Docker Compose also starts a **second MongoDB
-container** on port ``27019``; ``test_mongodb_secondary_container_accept_connections``
-asserts it is reachable. The replication tests intentionally share the primary Mongo
-URI for both lakes because Beanie's ``init_beanie`` binds document models to a single
-database client per process, so two different cluster URIs would clobber ``Asset``
-routing in one pytest worker.
+The replication scenarios use **local** storage on the source (primary Mongo metadata)
+and **MinIO** on the target (secondary Mongo metadata). ``MongoMindtraceODM`` routes
+later document-model backends through Motor so multiple ``AsyncDatalake`` instances
+can coexist in one process across two URIs.
 """
 
 from __future__ import annotations
@@ -56,8 +53,8 @@ def _mongo_secondary_reachable() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _mongo_primary_reachable(),
-    reason="Replication integration tests require MongoDB on localhost:27018",
+    not (_mongo_primary_reachable() and _mongo_secondary_reachable()),
+    reason="Replication integration tests require MongoDB on localhost:27018 and :27019",
 )
 
 
@@ -120,7 +117,7 @@ async def _assert_target_bytes_match_source(
 
 
 def test_mongodb_secondary_container_accept_connections() -> None:
-    """Compose starts ``mongodb_secondary`` on 27019; keep it exercised even when Beanie stays on one URI."""
+    """Sanity-check the compose ``mongodb_secondary`` service used by the MinIO-on-secondary-Mongo fixture."""
     if not _mongo_secondary_reachable():
         pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
     client = MongoClient(MONGO_URL_SECONDARY, serverSelectionTimeoutMS=5000)
@@ -134,14 +131,14 @@ def test_mongodb_secondary_container_accept_connections() -> None:
 @pytest.mark.asyncio
 async def test_replication_continuous_ingest_local_to_minio_separate_metadata_dbs(
     async_datalake: AsyncDatalake,
-    async_datalake_minio: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
 ):
     """Producer and consumer tasks: ingest waves on source while replicating to MinIO target."""
     source = async_datalake
-    target = async_datalake_minio
+    target = async_datalake_minio_secondary_mongo
 
     assert source.mongo_db_uri == MONGO_URL
-    assert target.mongo_db_uri == MONGO_URL
+    assert target.mongo_db_uri == MONGO_URL_SECONDARY
     assert source.mongo_db_name != target.mongo_db_name
     assert source.store.default_mount == "local"
     assert target.store.default_mount == "minio"
@@ -186,11 +183,11 @@ async def test_replication_continuous_ingest_local_to_minio_separate_metadata_db
 @pytest.mark.asyncio
 async def test_replication_concurrent_hydration_gather_local_to_minio(
     async_datalake: AsyncDatalake,
-    async_datalake_minio: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
 ):
     """Concurrent ``hydrate_asset_payload`` calls (same loop) stress MinIO hydration paths."""
     source = async_datalake
-    target = async_datalake_minio
+    target = async_datalake_minio_secondary_mongo
     manager = MetadataFirstReplicationManager(source, target)
 
     assets = []
