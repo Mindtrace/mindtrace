@@ -411,9 +411,7 @@ class CameraManagerConnectionManager(ConnectionManager):
 
     # Capture Groups (stage+set batching)
 
-    async def configure_capture_groups(
-        self, config: Dict[str, Dict[str, Dict[str, Any]]]
-    ) -> bool:
+    async def configure_capture_groups(self, config: Dict[str, Dict[str, Dict[str, Any]]]) -> bool:
         """Configure stage+set capture groups with per-group concurrency semaphores.
 
         Args:

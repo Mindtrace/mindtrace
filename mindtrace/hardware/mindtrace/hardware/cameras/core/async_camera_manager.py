@@ -111,9 +111,7 @@ class AsyncCameraManager(Mindtrace):
         # Camera config preservation directory
         camera_config_dir = self._hardware_config.cameras.camera_config_dir
         if not camera_config_dir:
-            camera_config_dir = str(
-                Path(self._hardware_config.paths.config_dir).expanduser() / "cameras"
-            )
+            camera_config_dir = str(Path(self._hardware_config.paths.config_dir).expanduser() / "cameras")
         self._camera_config_dir = camera_config_dir
 
         self.logger.info(
@@ -639,9 +637,7 @@ class AsyncCameraManager(Mindtrace):
         groups, camera_map = build_capture_groups(config)
         self._capture_groups = groups
         self._camera_group_keys = camera_map
-        self.logger.info(
-            f"Configured {len(groups)} capture groups for {len(camera_map)} cameras"
-        )
+        self.logger.info(f"Configured {len(groups)} capture groups for {len(camera_map)} cameras")
 
     def remove_capture_groups(self) -> None:
         """Clear all capture group configurations."""
@@ -699,9 +695,7 @@ class AsyncCameraManager(Mindtrace):
         last_attempt = self._last_reinit_attempt.get(camera_name, 0.0)
         if current_time - last_attempt < self._reinitialization_cooldown:
             remaining = self._reinitialization_cooldown - (current_time - last_attempt)
-            self.logger.info(
-                f"Reinit cooldown for '{camera_name}', {remaining:.1f}s remaining"
-            )
+            self.logger.info(f"Reinit cooldown for '{camera_name}', {remaining:.1f}s remaining")
             return
 
         self.logger.warning(
@@ -740,8 +734,7 @@ class AsyncCameraManager(Mindtrace):
         count = self._failure_counts.get(camera_name, 0) + 1
         self._failure_counts[camera_name] = count
         self.logger.warning(
-            f"Capture failure #{count} for '{camera_name}' "
-            f"(threshold: {self._max_consecutive_failures})"
+            f"Capture failure #{count} for '{camera_name}' " f"(threshold: {self._max_consecutive_failures})"
         )
         if count >= self._max_consecutive_failures:
             await self._handle_camera_failure(camera_name)

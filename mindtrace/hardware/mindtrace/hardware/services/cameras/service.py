@@ -62,10 +62,10 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureResponse,
     CaptureResult,
     ConfigFileExportRequest,
-    ConfigureCaptureGroupsRequest,
     ConfigFileImportRequest,
     ConfigFileOperationResult,
     ConfigFileResponse,
+    ConfigureCaptureGroupsRequest,
     HDRCaptureResponse,
     HDRCaptureResult,
     HealthCheckResponse,
@@ -1323,9 +1323,7 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
             groups = manager.get_capture_groups()
-            data = {
-                key: CaptureGroupInfo(**info) for key, info in groups.items()
-            }
+            data = {key: CaptureGroupInfo(**info) for key, info in groups.items()}
             return CaptureGroupsResponse(
                 success=True,
                 message=f"Retrieved {len(data)} capture groups",

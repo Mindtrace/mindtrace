@@ -1432,9 +1432,7 @@ class BaslerCameraBackend(CameraBackend):
                             )
                             success_count += 1
                     except Exception as e:
-                        self.logger.warning(
-                            f"Could not restore bandwidth limit for camera '{self.camera_name}': {e}"
-                        )
+                        self.logger.warning(f"Could not restore bandwidth limit for camera '{self.camera_name}': {e}")
 
             self.logger.debug(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "

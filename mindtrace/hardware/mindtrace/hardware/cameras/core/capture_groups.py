@@ -90,31 +90,23 @@ def validate_stage_set_configs(
 
         for set_name, set_config in sets_dict.items():
             if not isinstance(set_config, dict):
-                return False, (
-                    f"Invalid config structure for stage='{stage}', set='{set_name}'. Expected dict."
-                )
+                return False, (f"Invalid config structure for stage='{stage}', set='{set_name}'. Expected dict.")
 
             if "batch_size" not in set_config or "cameras" not in set_config:
-                return False, (
-                    f"Missing 'batch_size' or 'cameras' in stage='{stage}', set='{set_name}'"
-                )
+                return False, (f"Missing 'batch_size' or 'cameras' in stage='{stage}', set='{set_name}'")
 
             batch_size = set_config["batch_size"]
             cameras = set_config["cameras"]
 
             if not isinstance(batch_size, int) or batch_size <= 0:
-                return False, (
-                    f"batch_size must be a positive integer for stage='{stage}', set='{set_name}'"
-                )
+                return False, (f"batch_size must be a positive integer for stage='{stage}', set='{set_name}'")
 
             if not isinstance(cameras, list):
                 return False, f"'cameras' must be a list for stage='{stage}', set='{set_name}'"
 
             for camera in cameras:
                 if camera not in available_cameras:
-                    return False, (
-                        f"Camera '{camera}' in stage_set_configs not found in active cameras"
-                    )
+                    return False, (f"Camera '{camera}' in stage_set_configs not found in active cameras")
 
             if set_name not in stage_camera_sets[stage]:
                 stage_camera_sets[stage][set_name] = []
@@ -127,8 +119,7 @@ def validate_stage_set_configs(
             for camera in cameras:
                 if camera in all_cameras_in_stage:
                     return False, (
-                        f"Camera '{camera}' cannot be in multiple sets within "
-                        f"the same stage ('{stage}')"
+                        f"Camera '{camera}' cannot be in multiple sets within " f"the same stage ('{stage}')"
                     )
                 all_cameras_in_stage.append(camera)
 
