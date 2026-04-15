@@ -38,7 +38,7 @@ def test_datalake_exports_sync_symbols():
     assert datalake_module.DatasetSyncCommitResult.__name__ == "DatasetSyncCommitResult"
     assert datalake_module.DatasetSyncPayloadPlan.__name__ == "DatasetSyncPayloadPlan"
     assert datalake_module.ObjectPayloadDescriptor.__name__ == "ObjectPayloadDescriptor"
-    assert datalake_module.MetadataFirstReplicationManager.__name__ == "MetadataFirstReplicationManager"
+    assert datalake_module.ReplicationManager.__name__ == "ReplicationManager"
     assert datalake_module.ReplicatedAssetState.__name__ == "ReplicatedAssetState"
     assert datalake_module.ReplicationBatchRequest.__name__ == "ReplicationBatchRequest"
     assert datalake_module.ReplicationBatchResult.__name__ == "ReplicationBatchResult"

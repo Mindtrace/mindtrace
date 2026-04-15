@@ -49,8 +49,8 @@ LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF = StorageRef(
 )
 
 
-class MetadataFirstReplicationManager:
-    """Metadata-first replication manager for one-way source -> target mirroring.
+class ReplicationManager:
+    """One-way source -> target replication (metadata-first: control plane before payloads).
 
     MVP-A implemented the control-plane foundation (placeholder assets + metadata upsert).
     MVP-B adds payload-state transitions and hydration using the direct-upload flow.
@@ -62,7 +62,7 @@ class MetadataFirstReplicationManager:
             self.target = source
         elif target is source:
             raise ValueError(
-                "MetadataFirstReplicationManager requires distinct source and target when both are passed; "
+                "ReplicationManager requires distinct source and target when both are passed; "
                 "pass a single datalake argument for target-only ingestion and status."
             )
         else:

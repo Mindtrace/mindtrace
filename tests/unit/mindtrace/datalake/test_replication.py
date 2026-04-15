@@ -8,7 +8,7 @@ import pytest
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.replication import (
     LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF,
-    MetadataFirstReplicationManager,
+    ReplicationManager,
     _head_object_size_bytes,
 )
 from mindtrace.datalake.replication_types import (
@@ -137,12 +137,12 @@ def target_datalake():
     return datalake
 
 
-class TestMetadataFirstReplicationManager:
+class TestReplicationManager:
     @pytest.mark.asyncio
     async def test_upsert_metadata_batch_creates_placeholder_graph(
         self, source_datalake, target_datalake, replication_objects
     ):
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         result = await manager.upsert_metadata_batch(
             ReplicationBatchRequest(
                 assets=[replication_objects.asset],
@@ -197,7 +197,7 @@ class TestMetadataFirstReplicationManager:
         target_datalake.annotation_set_database.find = AsyncMock(return_value=[replication_objects.annotation_set])
         target_datalake.datum_database.find = AsyncMock(return_value=[replication_objects.datum])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         result = await manager.upsert_metadata_batch(
             ReplicationBatchRequest(
                 assets=[replication_objects.asset],
@@ -252,7 +252,7 @@ class TestMetadataFirstReplicationManager:
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset, failed_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         status = await manager.status()
 
         assert status.asset_counts_by_payload_status["pending"] == 1
@@ -288,7 +288,7 @@ class TestMetadataFirstReplicationManager:
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[plain, weird, bad_type, transferring])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         status = await manager.status()
 
         assert status.asset_counts_by_payload_status["transferring"] == 1
@@ -301,7 +301,7 @@ class TestMetadataFirstReplicationManager:
         target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
         target_datalake.asset_database.find = AsyncMock(return_value=[])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         replicated = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -320,7 +320,7 @@ class TestMetadataFirstReplicationManager:
     ):
         target_datalake.annotation_schema_database.find = AsyncMock(return_value=[])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._update_annotation_schema(replication_objects.schema, "lake")
 
         target_datalake.annotation_schema_database.insert.assert_awaited_once()
@@ -331,7 +331,7 @@ class TestMetadataFirstReplicationManager:
     ):
         target_datalake.annotation_record_database.find = AsyncMock(return_value=[])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._update_annotation_record(replication_objects.annotation_record, "lake")
 
         target_datalake.annotation_record_database.insert.assert_awaited_once()
@@ -342,7 +342,7 @@ class TestMetadataFirstReplicationManager:
     ):
         target_datalake.annotation_set_database.find = AsyncMock(return_value=[])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._update_annotation_set(replication_objects.annotation_set, "lake")
 
         target_datalake.annotation_set_database.insert.assert_awaited_once()
@@ -351,28 +351,28 @@ class TestMetadataFirstReplicationManager:
     async def test_update_datum_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
         target_datalake.datum_database.find = AsyncMock(return_value=[])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._update_datum(replication_objects.datum, "lake")
 
         target_datalake.datum_database.insert.assert_awaited_once()
 
 
-class TestMetadataFirstReplicationStaticHelpers:
+class TestReplicationStaticHelpers:
     def test_map_storage_ref_for_target_noop_when_unmapped(self, replication_objects):
         ref = replication_objects.storage_ref
-        out = MetadataFirstReplicationManager.map_storage_ref_for_target(ref, {"other": "x"})
+        out = ReplicationManager.map_storage_ref_for_target(ref, {"other": "x"})
         assert out is ref
 
     def test_get_payload_status_and_is_payload_available(self, replication_objects):
         asset_no_meta = replication_objects.asset
-        assert MetadataFirstReplicationManager.get_payload_status(asset_no_meta) is None
-        assert MetadataFirstReplicationManager.is_payload_available(asset_no_meta) is False
+        assert ReplicationManager.get_payload_status(asset_no_meta) is None
+        assert ReplicationManager.is_payload_available(asset_no_meta) is False
 
         asset_bad_rep = Asset.model_validate(
             {**replication_objects.asset.model_dump(), "metadata": {"replication": []}}
         )
-        assert MetadataFirstReplicationManager.get_payload_status(asset_bad_rep) is None
-        assert MetadataFirstReplicationManager.is_payload_available(asset_bad_rep) is False
+        assert ReplicationManager.get_payload_status(asset_bad_rep) is None
+        assert ReplicationManager.is_payload_available(asset_bad_rep) is False
 
         asset_bad_status = Asset.model_validate(
             {
@@ -380,7 +380,7 @@ class TestMetadataFirstReplicationStaticHelpers:
                 "metadata": {"replication": {"payload_status": 123}},
             }
         )
-        assert MetadataFirstReplicationManager.get_payload_status(asset_bad_status) is None
+        assert ReplicationManager.get_payload_status(asset_bad_status) is None
 
         asset_ok = Asset.model_validate(
             {
@@ -388,11 +388,11 @@ class TestMetadataFirstReplicationStaticHelpers:
                 "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
             }
         )
-        assert MetadataFirstReplicationManager.get_payload_status(asset_ok) == "verified"
-        assert MetadataFirstReplicationManager.is_payload_available(asset_ok) is True
+        assert ReplicationManager.get_payload_status(asset_ok) == "verified"
+        assert ReplicationManager.is_payload_available(asset_ok) is True
 
     def test_build_asset_replication_metadata_coerces_origin_and_replication(self, replication_objects):
-        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        manager = ReplicationManager(Mock(), Mock())
         meta = manager.build_asset_replication_metadata(
             {
                 "origin": "not-a-dict",
@@ -411,7 +411,7 @@ class TestMetadataFirstReplicationStaticHelpers:
         assert meta["replication"]["payload_available"] is True
 
     def test_build_asset_replication_metadata_preserves_replication_timestamps(self, replication_objects):
-        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        manager = ReplicationManager(Mock(), Mock())
         meta = manager.build_asset_replication_metadata(
             {
                 "replication": {
@@ -440,7 +440,7 @@ async def test_existence_helpers_return_false_on_document_not_found(source_datal
     target_datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("missing"))
     target_datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("missing"))
 
-    manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+    manager = ReplicationManager(source_datalake, target_datalake)
     assert await manager._asset_exists("x") is False
     assert await manager._annotation_schema_exists("x") is False
     assert await manager._annotation_record_exists("x") is False
@@ -456,13 +456,13 @@ def test_head_object_size_bytes_parsing():
 
 
 def test_manager_defaults_target_to_source(source_datalake):
-    manager = MetadataFirstReplicationManager(source_datalake)
+    manager = ReplicationManager(source_datalake)
     assert manager.target is source_datalake
 
 
 def test_manager_rejects_explicit_same_source_and_target_instance(source_datalake):
     with pytest.raises(ValueError, match="distinct source and target"):
-        MetadataFirstReplicationManager(source_datalake, source_datalake)
+        ReplicationManager(source_datalake, source_datalake)
 
 
 def test_local_delete_helpers(replication_objects):
@@ -479,15 +479,15 @@ def test_local_delete_helpers(replication_objects):
             "metadata": {"replication": {"local_deleted_at": "2026-01-01T00:00:00Z"}},
         }
     )
-    assert MetadataFirstReplicationManager.is_local_delete_eligible(eligible) is True
-    assert MetadataFirstReplicationManager.is_local_deleted(eligible) is False
-    assert MetadataFirstReplicationManager.is_local_deleted(deleted) is True
+    assert ReplicationManager.is_local_delete_eligible(eligible) is True
+    assert ReplicationManager.is_local_deleted(eligible) is False
+    assert ReplicationManager.is_local_deleted(deleted) is True
 
 
 def test_is_local_reclaim_helpers_false_when_replication_not_a_mapping(replication_objects):
     bad = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": []}})
-    assert MetadataFirstReplicationManager.is_local_delete_eligible(bad) is False
-    assert MetadataFirstReplicationManager.is_local_deleted(bad) is False
+    assert ReplicationManager.is_local_delete_eligible(bad) is False
+    assert ReplicationManager.is_local_deleted(bad) is False
 
 
 class TestReplicationTransferAndVerify:
@@ -509,7 +509,7 @@ class TestReplicationTransferAndVerify:
         target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
         source_datalake.get_asset.assert_awaited_once_with(replication_objects.asset.asset_id)
 
@@ -536,7 +536,7 @@ class TestReplicationTransferAndVerify:
         target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         result = await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
 
         assert result.metadata["replication"]["payload_status"] == "verified"
@@ -570,7 +570,7 @@ class TestReplicationTransferAndVerify:
         target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset])
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="boom"):
             await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
 
@@ -596,7 +596,7 @@ class TestReplicationTransferAndVerify:
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": 999})
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
             await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
 
@@ -636,7 +636,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset, failed_asset, verified_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock(side_effect=[pending_asset, RuntimeError("x")])
 
         result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(include_failed=True))
@@ -657,7 +657,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock(side_effect=RuntimeError("hydrate failed"))
 
         result = await manager.reconcile_pending_payloads()
@@ -684,7 +684,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[transferring, pending_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock(return_value=pending_asset)
 
         result = await manager.reconcile_pending_payloads()
@@ -709,7 +709,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_a, pending_b])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock(side_effect=[pending_a, pending_b])
 
         result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(asset_ids=["a1"]))
@@ -730,7 +730,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[failed])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock()
 
         result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(include_failed=False))
@@ -752,7 +752,7 @@ class TestReplicationTransferAndVerify:
             for i in range(3)
         ]
         target_datalake.asset_database.find = AsyncMock(return_value=assets)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.hydrate_asset_payload = AsyncMock(side_effect=assets)
 
         result = await manager.reconcile_pending_payloads(ReplicationReconcileRequest(limit=1))
@@ -770,7 +770,7 @@ class TestReplicationTransferAndVerify:
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._set_asset_replication_state(asset, payload_status="pending", payload_last_error=None)
         assert isinstance(asset.metadata["origin"], dict)
         assert isinstance(asset.metadata["replication"], dict)
@@ -783,7 +783,7 @@ class TestReplicationTransferAndVerify:
         bad = Asset.model_validate(
             {**replication_objects.asset.model_dump(), "size_bytes": 99},
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(ValueError, match="Source read size mismatch"):
             await manager._transfer_payload(bad, {})
 
@@ -801,7 +801,7 @@ class TestReplicationTransferAndVerify:
                 upload_headers={},
             )
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(ValueError, match="missing upload_path"):
             await manager._transfer_payload(replication_objects.asset, {})
 
@@ -819,7 +819,7 @@ class TestReplicationTransferAndVerify:
                 upload_headers={},
             )
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(ValueError, match="missing upload_url"):
             await manager._transfer_payload(replication_objects.asset, {})
 
@@ -843,7 +843,7 @@ class TestReplicationTransferAndVerify:
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = response
         mock_cm.__exit__.return_value = None
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with patch("mindtrace.datalake.replication.urllib_request.urlopen", return_value=mock_cm) as urlopen_mock:
             ref = await manager._transfer_payload(replication_objects.asset, {})
         assert ref.name == "n"
@@ -868,7 +868,7 @@ class TestReplicationTransferAndVerify:
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = response
         mock_cm.__exit__.return_value = None
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with patch("mindtrace.datalake.replication.urllib_request.urlopen", return_value=mock_cm):
             with pytest.raises(RuntimeError, match="Presigned upload failed"):
                 await manager._transfer_payload(replication_objects.asset, {})
@@ -888,7 +888,7 @@ class TestReplicationTransferAndVerify:
                 upload_headers={},
             )
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(ValueError, match="Unsupported upload method"):
             await manager._transfer_payload(replication_objects.asset, {})
 
@@ -898,7 +898,7 @@ class TestReplicationTransferAndVerify:
     ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.complete_object_upload_session = AsyncMock(return_value=SimpleNamespace(storage_ref=None))
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="did not produce a storage_ref"):
             await manager._transfer_payload(replication_objects.asset, {})
 
@@ -908,7 +908,7 @@ class TestReplicationTransferAndVerify:
     ):
         source_datalake.get_object = AsyncMock(return_value=b"1234567890")
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
         with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
             await manager._verify_transferred_payload(replication_objects.asset, ref)
@@ -926,13 +926,13 @@ class TestReplicationTransferAndVerify:
                 "checksum": "sha256:" + "0" * 64,
             }
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
         with pytest.raises(RuntimeError, match="Post-upload checksum mismatch"):
             await manager._verify_transferred_payload(bad_checksum_asset, ref)
 
     def test_payload_checksum_matches_formats(self, replication_objects):
-        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        manager = ReplicationManager(Mock(), Mock())
         data = b"hello"
         sha_hex = hashlib.sha256(data).hexdigest()
         md_hex = hashlib.md5(data).hexdigest()
@@ -946,12 +946,12 @@ class TestReplicationTransferAndVerify:
             manager._payload_checksum_matches(data, "not-hex!!!")
 
     def test_guess_content_type_known_extension(self, replication_objects):
-        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        manager = ReplicationManager(Mock(), Mock())
         ct = manager._guess_content_type("photo.jpeg")
         assert ct == "image/jpeg"
 
     def test_get_origin_asset_id_edge_cases(self, replication_objects):
-        manager = MetadataFirstReplicationManager(Mock(), Mock())
+        manager = ReplicationManager(Mock(), Mock())
         a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"origin": []}})
         assert manager._get_origin_asset_id(a1) is None
         a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"origin": {"asset_id": 123}}})
@@ -989,7 +989,7 @@ class TestReplicationTargetLookup:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         out = await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
         assert out is target_asset
         assert {
@@ -1006,7 +1006,7 @@ class TestReplicationTargetLookup:
         a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "t2"})
         target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
         target_datalake.asset_database.find = AsyncMock(return_value=[a1, a2])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="Ambiguous replication target"):
             await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
 
@@ -1039,7 +1039,7 @@ class TestReplicationTargetLookup:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         out = await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
         assert out is target_asset
         assert queries[0] == {
@@ -1069,7 +1069,7 @@ class TestReplicationSourceReclaimMerge:
             }
         )
         source_datalake.asset_database.find = AsyncMock(return_value=[asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._set_source_asset_reclaim_state(
             asset, local_delete_eligible_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
         )
@@ -1088,7 +1088,7 @@ class TestReplicationSourceReclaimMerge:
             }
         )
         source_datalake.asset_database.find = AsyncMock(return_value=[asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(ValueError, match="payload_status is missing"):
             await manager._set_source_asset_reclaim_state(
                 asset, local_delete_eligible_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -1114,7 +1114,7 @@ class TestReplicationReclaim:
         source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="not delete-eligible"):
             await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
 
@@ -1136,11 +1136,11 @@ class TestReplicationReclaim:
         source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
 
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         updated = await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
 
         assert updated.metadata["replication"]["local_delete_eligible_at"] is not None
-        assert MetadataFirstReplicationManager.is_local_delete_eligible(updated) is True
+        assert ReplicationManager.is_local_delete_eligible(updated) is True
 
     @pytest.mark.asyncio
     async def test_delete_local_payload_requires_eligibility(
@@ -1148,7 +1148,7 @@ class TestReplicationReclaim:
     ):
         source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": {}}})
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
 
         with pytest.raises(RuntimeError, match="not delete-eligible"):
             await manager.delete_local_payload(replication_objects.asset.asset_id)
@@ -1171,7 +1171,7 @@ class TestReplicationReclaim:
         )
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
         source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
 
         updated = await manager.delete_local_payload(replication_objects.asset.asset_id)
 
@@ -1180,7 +1180,7 @@ class TestReplicationReclaim:
         assert updated.metadata["replication"]["payload_available"] is False
         assert updated.metadata["replication"]["payload_status"] == "verified"
         assert updated.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
-        assert MetadataFirstReplicationManager.is_local_deleted(updated) is True
+        assert ReplicationManager.is_local_deleted(updated) is True
 
     @pytest.mark.asyncio
     async def test_delete_local_payload_is_idempotent_when_already_deleted(
@@ -1201,7 +1201,7 @@ class TestReplicationReclaim:
             }
         )
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
 
         updated = await manager.delete_local_payload(replication_objects.asset.asset_id)
 
@@ -1225,7 +1225,7 @@ class TestReplicationReclaim:
         source_datalake.asset_database.find = AsyncMock(return_value=[source_asset])
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
         target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.mark_local_delete_eligible = AsyncMock(return_value=source_asset)
         manager.delete_local_payload = AsyncMock(return_value=source_asset)
 
@@ -1250,7 +1250,7 @@ class TestReplicationReclaim:
         )
         source_datalake.asset_database.find = AsyncMock(return_value=[unverified, deleted])
         target_datalake.asset_database.find = AsyncMock(return_value=[])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
 
         result = await manager.reclaim_verified_payloads()
 
@@ -1298,7 +1298,7 @@ class TestReplicationReclaim:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=target_find)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.mark_local_delete_eligible = AsyncMock(side_effect=[a1, a2])
         manager.delete_local_payload = AsyncMock(side_effect=[a1, a2])
 
@@ -1316,7 +1316,7 @@ class TestReplicationCoverageCompleteness:
         source_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
         target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
         target_datalake.asset_database.find = AsyncMock(return_value=[])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="No replicated target asset found"):
             await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
 
@@ -1355,7 +1355,7 @@ class TestReplicationCoverageCompleteness:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=target_find)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         manager.delete_local_payload = AsyncMock(side_effect=RuntimeError("delete failed"))
         result = await manager.reclaim_verified_payloads()
         assert result.failed_asset_ids == [source_asset.asset_id]
@@ -1398,7 +1398,7 @@ class TestReplicationCoverageCompleteness:
             update=AsyncMock(),
             find=AsyncMock(return_value=[eligible_source, deleted_source]),
         )
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         status = await manager.status()
         assert status.metadata["local_delete_eligible_asset_ids"] == ["src_elig"]
         assert status.metadata["local_deleted_asset_ids"] == ["src_del"]
@@ -1409,7 +1409,7 @@ class TestReplicationCoverageCompleteness:
     ):
         asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
         source_datalake.asset_database.find = AsyncMock(return_value=[])
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         await manager._set_source_asset_reclaim_state(
             asset, local_delete_eligible_at=datetime(2026, 2, 1, tzinfo=timezone.utc)
         )
@@ -1441,7 +1441,7 @@ class TestReplicationCoverageCompleteness:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         out = await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)
         assert out is target_asset
         assert queries == [{"metadata.origin.asset_id": replication_objects.asset.asset_id}]
@@ -1460,6 +1460,6 @@ class TestReplicationCoverageCompleteness:
             return []
 
         target_datalake.asset_database.find = AsyncMock(side_effect=find_side_effect)
-        manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
+        manager = ReplicationManager(source_datalake, target_datalake)
         with pytest.raises(RuntimeError, match="origin asset id only"):
             await manager._get_target_asset_for_source_asset(replication_objects.asset.asset_id)

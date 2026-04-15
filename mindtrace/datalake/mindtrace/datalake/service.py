@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
-from mindtrace.datalake.replication import MetadataFirstReplicationManager
+from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     AddAnnotationRecordsSchema,
@@ -674,12 +674,12 @@ class DatalakeService(Service):
 
     async def replication_upsert_batch(self, payload: ReplicationBatchRequest) -> ReplicationBatchResultOutput:
         datalake = await self._ensure_datalake()
-        manager = MetadataFirstReplicationManager(datalake)
+        manager = ReplicationManager(datalake)
         result = await manager.upsert_metadata_batch(payload)
         return ReplicationBatchResultOutput(result=result)
 
     async def replication_status(self) -> ReplicationStatusOutput:
         datalake = await self._ensure_datalake()
-        manager = MetadataFirstReplicationManager(datalake)
+        manager = ReplicationManager(datalake)
         status = await manager.status()
         return ReplicationStatusOutput(status=status)

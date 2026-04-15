@@ -1,4 +1,4 @@
-"""End-to-end metadata-first replication with mixed registry backends.
+"""End-to-end one-way replication (metadata-first) with mixed registry backends.
 
 Requires:
 
@@ -26,7 +26,7 @@ from uuid import uuid4
 import pytest
 from pymongo import MongoClient
 
-from mindtrace.datalake import AsyncDatalake, MetadataFirstReplicationManager
+from mindtrace.datalake import AsyncDatalake, ReplicationManager
 from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
 
@@ -74,7 +74,7 @@ async def _create_image_asset(datalake: AsyncDatalake, *, name: str) -> Any:
 
 
 async def _drain_pending_payloads(
-    manager: MetadataFirstReplicationManager,
+    manager: ReplicationManager,
     mount_map: dict[str, str],
     *,
     max_rounds: int = 100,
@@ -89,7 +89,7 @@ async def _drain_pending_payloads(
                 rep = (ta.metadata or {}).get("replication") or {}
                 details.append(f"{aid}: {rep.get('payload_last_error')!r}")
             raise AssertionError(
-                f"Payload hydration failed for assets {st.failed_asset_ids!r} ; samples: {'; '.join(details)}"
+                f"Payload hydration failed for assets {st.failed_asset_ids!r}; samples: {'; '.join(details)}"
             )
         if pending == 0:
             return
@@ -108,7 +108,7 @@ async def _assert_target_bytes_match_source(
     for aid in asset_ids:
         src_asset = await source.get_asset(aid)
         tgt_asset = await target.get_asset(aid)
-        assert MetadataFirstReplicationManager.get_payload_status(tgt_asset) == "verified"
+        assert ReplicationManager.get_payload_status(tgt_asset) == "verified"
         src_bytes = await source.get_object(src_asset.storage_ref)
         tgt_bytes = await target.get_object(tgt_asset.storage_ref)
         assert src_bytes == tgt_bytes, f"byte mismatch for asset {aid}"
@@ -142,7 +142,7 @@ async def test_replication_continuous_ingest_local_to_minio_separate_metadata_db
     assert source.store.default_mount == "local"
     assert target.store.default_mount == "minio"
 
-    manager = MetadataFirstReplicationManager(source, target)
+    manager = ReplicationManager(source, target)
     work: asyncio.Queue[Any] = asyncio.Queue(maxsize=8)
     created_asset_ids: list[str] = []
 
@@ -187,7 +187,7 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
     """Concurrent ``hydrate_asset_payload`` calls (same loop) stress MinIO hydration paths."""
     source = async_datalake
     target = async_datalake_minio_secondary_mongo
-    manager = MetadataFirstReplicationManager(source, target)
+    manager = ReplicationManager(source, target)
 
     assets = []
     for i in range(5):
