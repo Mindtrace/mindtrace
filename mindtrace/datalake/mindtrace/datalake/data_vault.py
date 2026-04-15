@@ -3,8 +3,13 @@
 Serialization uses the same registry/store stack as :class:`~mindtrace.datalake.AsyncDatalake`
 (``put_object`` / ``get_object``), so ZenML materializers registered on ``Registry`` apply.
 
-- :class:`AsyncDataVault` -- use with :class:`AsyncDatalake` (``async`` / ``await``).
-- :class:`DataVault` -- use with :class:`Datalake` (blocking, same thread as other sync datalake APIs).
+Facades:
+
+- :class:`AsyncDataVault` — async API; supply :class:`~mindtrace.datalake.AsyncDatalake`, an
+  :class:`~mindtrace.datalake.data_vault_backends.AsyncDataVaultBackend`, or a duck-typed async
+  object with the same methods as ``AsyncDatalake`` for vault operations.
+- :class:`DataVault` — blocking API; supply :class:`~mindtrace.datalake.Datalake`, a
+  :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`, or a duck-typed sync object.
 
 Typical async usage::
 
@@ -17,6 +22,16 @@ Typical sync usage::
     vault = DataVault(datalake)
     asset = vault.save("my-key", image_bytes, kind="image", media_type="image/png")
     data = vault.load("my-key")
+
+Remote service example (async)::
+
+    from mindtrace.datalake.data_vault_backends import (
+        DatalakeServiceAsyncDataVaultBackend,
+        LocalAsyncDataVaultBackend,
+    )
+
+    cm = ...  # DatalakeServiceConnectionManager from ``generate_connection_manager(DatalakeService)``
+    vault = AsyncDataVault(DatalakeServiceAsyncDataVaultBackend(cm))
 """
 
 from __future__ import annotations
@@ -26,9 +41,18 @@ from pathlib import Path
 from typing import Any
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.data_vault_backends import (
+    _ASYNC_VAULT_METHOD_NAMES,
+    _SYNC_VAULT_METHOD_NAMES,
+    AsyncDataVaultBackend,
+    DataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
+)
+from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.types import Asset, DuplicateAliasError
 
-_SYNC_VAULT_METHODS = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
+_SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
 
 
 def _sanitize_object_name_component(alias: str) -> str:
@@ -70,16 +94,44 @@ def _infer_kind_media(
     return (kind or "artifact", media_type or "application/octet-stream")
 
 
+def _normalize_async_backend(backend: Any) -> AsyncDataVaultBackend:
+    if isinstance(backend, AsyncDatalake):
+        return LocalAsyncDataVaultBackend(backend)
+    if isinstance(backend, AsyncDataVaultBackend):
+        return backend
+    for name in _ASYNC_VAULT_METHOD_NAMES:
+        if not callable(getattr(backend, name, None)):
+            raise TypeError(
+                f"AsyncDataVault requires AsyncDatalake, an AsyncDataVaultBackend, or an object with "
+                f"callable async method {name!r}, got {type(backend)!r}"
+            )
+    return LocalAsyncDataVaultBackend(backend)
+
+
+def _normalize_sync_backend(backend: Any) -> DataVaultBackend:
+    if isinstance(backend, Datalake):
+        return LocalDataVaultBackend(backend)
+    if isinstance(backend, DataVaultBackend):
+        return backend
+    for name in _SYNC_VAULT_METHOD_NAMES:
+        if not callable(getattr(backend, name, None)):
+            raise TypeError(
+                f"DataVault requires Datalake, a DataVaultBackend, or an object with callable "
+                f"method {name!r}, got {type(backend)!r}"
+            )
+    return LocalDataVaultBackend(backend)
+
+
 class AsyncDataVault:
-    """Alias-based save/load on top of :class:`AsyncDatalake`."""
+    """Alias-based save/load with a pluggable :class:`~mindtrace.datalake.data_vault_backends.AsyncDataVaultBackend`."""
 
     def __init__(
         self,
-        datalake: AsyncDatalake,
+        backend: AsyncDatalake | AsyncDataVaultBackend | Any,
         *,
         object_name_prefix: str = "vault",
     ) -> None:
-        self._datalake = datalake
+        self._backend = _normalize_async_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
 
     def _object_name(self, alias: str) -> str:
@@ -88,8 +140,8 @@ class AsyncDataVault:
 
     async def load(self, alias: str, **get_object_kwargs: Any) -> Any:
         """Resolve ``alias`` to an asset and return the stored object (decoded by the store)."""
-        asset = await self._datalake.get_asset_by_alias(alias)
-        return await self._datalake.get_object(asset.storage_ref, **get_object_kwargs)
+        asset = await self._backend.get_asset_by_alias(alias)
+        return await self._backend.get_object(asset.storage_ref, **get_object_kwargs)
 
     async def save(
         self,
@@ -107,7 +159,7 @@ class AsyncDataVault:
         """Store ``obj`` and register ``alias`` (unless it equals the new ``asset_id``)."""
         resolved_kind, resolved_media = _infer_kind_media(obj, kind, media_type)
         name = self._object_name(alias)
-        asset = await self._datalake.create_asset_from_object(
+        asset = await self._backend.create_asset_from_object(
             name=name,
             obj=obj if not isinstance(obj, Path) else obj.read_bytes(),
             kind=resolved_kind,
@@ -120,31 +172,22 @@ class AsyncDataVault:
         )
         if alias != asset.asset_id:
             try:
-                await self._datalake.add_alias(asset.asset_id, alias)
+                await self._backend.add_alias(asset.asset_id, alias)
             except DuplicateAliasError:
                 raise
         return asset
 
 
 class DataVault:
-    """Blocking alias-based save/load on top of :class:`~mindtrace.datalake.Datalake`.
-
-    The constructor accepts any object exposing the same sync methods as ``Datalake``:
-    ``get_asset_by_alias``, ``get_object``, ``create_asset_from_object``, ``add_alias``.
-    """
+    """Blocking alias-based save/load with a pluggable :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`."""
 
     def __init__(
         self,
-        datalake: Any,
+        backend: Datalake | DataVaultBackend | Any,
         *,
         object_name_prefix: str = "vault",
     ) -> None:
-        for name in _SYNC_VAULT_METHODS:
-            if not callable(getattr(datalake, name, None)):
-                raise TypeError(
-                    f"DataVault requires a sync datalake with callable {name!r}, got {type(datalake)!r}"
-                )
-        self._dl = datalake
+        self._backend = _normalize_sync_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
 
     def _object_name(self, alias: str) -> str:
@@ -153,8 +196,8 @@ class DataVault:
 
     def load(self, alias: str, **get_object_kwargs: Any) -> Any:
         """Resolve ``alias`` to an asset and return the stored object (decoded by the store)."""
-        asset = self._dl.get_asset_by_alias(alias)
-        return self._dl.get_object(asset.storage_ref, **get_object_kwargs)
+        asset = self._backend.get_asset_by_alias(alias)
+        return self._backend.get_object(asset.storage_ref, **get_object_kwargs)
 
     def save(
         self,
@@ -172,7 +215,7 @@ class DataVault:
         """Store ``obj`` and register ``alias`` (unless it equals the new ``asset_id``)."""
         resolved_kind, resolved_media = _infer_kind_media(obj, kind, media_type)
         name = self._object_name(alias)
-        asset = self._dl.create_asset_from_object(
+        asset = self._backend.create_asset_from_object(
             name=name,
             obj=obj if not isinstance(obj, Path) else obj.read_bytes(),
             kind=resolved_kind,
@@ -185,7 +228,7 @@ class DataVault:
         )
         if alias != asset.asset_id:
             try:
-                self._dl.add_alias(asset.asset_id, alias)
+                self._backend.add_alias(asset.asset_id, alias)
             except DuplicateAliasError:
                 raise
         return asset

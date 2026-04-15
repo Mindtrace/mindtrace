@@ -1,0 +1,346 @@
+"""Pluggable backends for :class:`~mindtrace.datalake.AsyncDataVault` and :class:`~mindtrace.datalake.DataVault`.
+
+Local backends delegate to :class:`~mindtrace.datalake.AsyncDatalake` / :class:`~mindtrace.datalake.Datalake`
+(or duck-typed facades with the same methods). Service backends call a generated
+``DatalakeService`` connection manager (``assets.get_by_alias``, ``objects.get``,
+``assets.create_from_object``, ``aliases.add``).
+"""
+
+from __future__ import annotations
+
+import base64
+from abc import ABC, abstractmethod
+from typing import Any
+
+from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.datalake import Datalake
+from mindtrace.datalake.service_types import (
+    AddAliasInput,
+    CreateAssetFromObjectInput,
+    GetAssetByAliasInput,
+    GetObjectInput,
+)
+from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
+
+_SYNC_VAULT_METHOD_NAMES = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
+_ASYNC_VAULT_METHOD_NAMES = _SYNC_VAULT_METHOD_NAMES
+
+
+class AsyncDataVaultBackend(ABC):
+    """Async backend contract for :class:`~mindtrace.datalake.AsyncDataVault`."""
+
+    @abstractmethod
+    async def get_asset_by_alias(self, alias: str) -> Asset: ...
+
+    @abstractmethod
+    async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any: ...
+
+    @abstractmethod
+    async def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset: ...
+
+    @abstractmethod
+    async def add_alias(self, asset_id: str, alias: str) -> AssetAlias: ...
+
+
+class DataVaultBackend(ABC):
+    """Blocking backend contract for :class:`~mindtrace.datalake.DataVault`."""
+
+    @abstractmethod
+    def get_asset_by_alias(self, alias: str) -> Asset: ...
+
+    @abstractmethod
+    def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any: ...
+
+    @abstractmethod
+    def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset: ...
+
+    @abstractmethod
+    def add_alias(self, asset_id: str, alias: str) -> AssetAlias: ...
+
+
+class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
+    """Delegates to :class:`~mindtrace.datalake.AsyncDatalake` (or a compatible async facade)."""
+
+    def __init__(self, datalake: AsyncDatalake | Any) -> None:
+        self._datalake = datalake
+
+    async def get_asset_by_alias(self, alias: str) -> Asset:
+        return await self._datalake.get_asset_by_alias(alias)
+
+    async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
+        return await self._datalake.get_object(storage_ref, **kwargs)
+
+    async def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        return await self._datalake.create_asset_from_object(
+            name=name,
+            obj=obj,
+            kind=kind,
+            media_type=media_type,
+            mount=mount,
+            version=version,
+            object_metadata=object_metadata,
+            asset_metadata=asset_metadata,
+            checksum=checksum,
+            size_bytes=size_bytes,
+            subject=subject,
+            created_by=created_by,
+            on_conflict=on_conflict,
+        )
+
+    async def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        return await self._datalake.add_alias(asset_id, alias)
+
+
+class LocalDataVaultBackend(DataVaultBackend):
+    """Delegates to :class:`~mindtrace.datalake.Datalake` (or a compatible sync facade)."""
+
+    def __init__(self, datalake: Datalake | Any) -> None:
+        self._datalake = datalake
+
+    def get_asset_by_alias(self, alias: str) -> Asset:
+        return self._datalake.get_asset_by_alias(alias)
+
+    def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
+        return self._datalake.get_object(storage_ref, **kwargs)
+
+    def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        return self._datalake.create_asset_from_object(
+            name=name,
+            obj=obj,
+            kind=kind,
+            media_type=media_type,
+            mount=mount,
+            version=version,
+            object_metadata=object_metadata,
+            asset_metadata=asset_metadata,
+            checksum=checksum,
+            size_bytes=size_bytes,
+            subject=subject,
+            created_by=created_by,
+            on_conflict=on_conflict,
+        )
+
+    def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        return self._datalake.add_alias(asset_id, alias)
+
+
+def _encode_obj_for_service(obj: Any) -> str:
+    if isinstance(obj, str):
+        raw = obj.encode("utf-8")
+    elif isinstance(obj, (bytes, bytearray)):
+        raw = bytes(obj)
+    else:
+        raise TypeError(
+            "DatalakeServiceDataVaultBackend requires bytes, bytearray, or str payloads for remote "
+            "create_asset_from_object; serialize via your materializer first."
+        )
+    return base64.b64encode(raw).decode("ascii")
+
+
+class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
+    """Calls a ``DatalakeService`` connection manager's async task methods (``aassets_*``, ``aobjects_*``, ``aaliases_*``)."""
+
+    def __init__(self, connection_manager: Any) -> None:
+        self._cm = connection_manager
+
+    async def _call(self, *method_names: str, input_obj: Any) -> Any:
+        for name in method_names:
+            method = getattr(self._cm, name, None)
+            if method is not None:
+                return await method(input_obj)
+        raise AttributeError(
+            f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}"
+        )
+
+    async def get_asset_by_alias(self, alias: str) -> Asset:
+        out = await self._call(
+            "aassets_get_by_alias",
+            input_obj=GetAssetByAliasInput(alias=alias),
+        )
+        return out.asset
+
+    async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
+        if kwargs:
+            raise TypeError(
+                "DatalakeServiceAsyncDataVaultBackend.get_object does not support extra kwargs; "
+                "use the in-process datalake for advanced store.load options."
+            )
+        out = await self._call("aobjects_get", input_obj=GetObjectInput(storage_ref=storage_ref))
+        return base64.b64decode(out.data_base64.encode("ascii"))
+
+    async def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        data_base64 = _encode_obj_for_service(obj)
+        out = await self._call(
+            "aassets_create_from_object",
+            input_obj=CreateAssetFromObjectInput(
+                name=name,
+                data_base64=data_base64,
+                kind=kind,
+                media_type=media_type,
+                mount=mount,
+                version=version,
+                object_metadata=object_metadata,
+                asset_metadata=asset_metadata,
+                checksum=checksum,
+                size_bytes=size_bytes,
+                subject=subject,
+                created_by=created_by,
+                on_conflict=on_conflict,
+            ),
+        )
+        return out.asset
+
+    async def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        out = await self._call("aaliases_add", input_obj=AddAliasInput(asset_id=asset_id, alias=alias))
+        return out.asset_alias
+
+
+class DatalakeServiceDataVaultBackend(DataVaultBackend):
+    """Calls a ``DatalakeService`` connection manager's sync task methods (``assets_*``, ``objects_*``, ``aliases_*``)."""
+
+    def __init__(self, connection_manager: Any) -> None:
+        self._cm = connection_manager
+
+    def _call(self, *method_names: str, input_obj: Any) -> Any:
+        for name in method_names:
+            method = getattr(self._cm, name, None)
+            if method is not None:
+                return method(input_obj)
+        raise AttributeError(
+            f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}"
+        )
+
+    def get_asset_by_alias(self, alias: str) -> Asset:
+        out = self._call("assets_get_by_alias", input_obj=GetAssetByAliasInput(alias=alias))
+        return out.asset
+
+    def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
+        if kwargs:
+            raise TypeError(
+                "DatalakeServiceDataVaultBackend.get_object does not support extra kwargs; "
+                "use the in-process datalake for advanced store.load options."
+            )
+        out = self._call("objects_get", input_obj=GetObjectInput(storage_ref=storage_ref))
+        return base64.b64decode(out.data_base64.encode("ascii"))
+
+    def create_asset_from_object(
+        self,
+        *,
+        name: str,
+        obj: Any,
+        kind: str,
+        media_type: str,
+        mount: str | None = None,
+        version: str | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        checksum: str | None = None,
+        size_bytes: int | None = None,
+        subject: Any = None,
+        created_by: str | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        data_base64 = _encode_obj_for_service(obj)
+        out = self._call(
+            "assets_create_from_object",
+            input_obj=CreateAssetFromObjectInput(
+                name=name,
+                data_base64=data_base64,
+                kind=kind,
+                media_type=media_type,
+                mount=mount,
+                version=version,
+                object_metadata=object_metadata,
+                asset_metadata=asset_metadata,
+                checksum=checksum,
+                size_bytes=size_bytes,
+                subject=subject,
+                created_by=created_by,
+                on_conflict=on_conflict,
+            ),
+        )
+        return out.asset
+
+    def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        out = self._call("aliases_add", input_obj=AddAliasInput(asset_id=asset_id, alias=alias))
+        return out.asset_alias
