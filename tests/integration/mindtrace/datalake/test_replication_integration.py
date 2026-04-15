@@ -28,7 +28,6 @@ from pymongo import MongoClient
 
 from mindtrace.datalake import AsyncDatalake, MetadataFirstReplicationManager
 from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
-
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
 
 _MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
@@ -207,10 +206,7 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
     assert st0.asset_counts_by_payload_status.get("pending", 0) == len(assets)
 
     await asyncio.gather(
-        *[
-            manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_MINIO)
-            for a in assets
-        ]
+        *[manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_MINIO) for a in assets]
     )
 
     await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)

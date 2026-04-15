@@ -16,7 +16,15 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncPayloadPlan,
     ObjectPayloadDescriptor,
 )
-from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSchema,
+    AnnotationSet,
+    Asset,
+    DatasetVersion,
+    Datum,
+    StorageRef,
+)
 
 _METADATA_ONLY_CROSS_LAKE = (
     "transfer_policy='metadata_only' is only supported when source and target are the same AsyncDatalake instance. "
@@ -340,10 +348,7 @@ class DatasetSyncManager:
         for datum in bundle.datums:
             if await self._datum_exists(datum.datum_id):
                 continue
-            mapped_asset_refs = {
-                role: asset_id
-                for role, asset_id in datum.asset_refs.items()
-            }
+            mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
             created = Datum.model_validate(
                 {
                     **datum.model_dump(),
@@ -404,7 +409,9 @@ class DatasetSyncManager:
             version=target_write_ref.version,
             metadata=payload.metadata,
             on_conflict="skip",
-            content_type=payload.content_type or payload.media_type or self._guess_content_type(payload.storage_ref.name),
+            content_type=payload.content_type
+            or payload.media_type
+            or self._guess_content_type(payload.storage_ref.name),
         )
         if session.upload_method == "local_path":
             if not session.upload_path:

@@ -11,9 +11,15 @@ from mindtrace.datalake.async_datalake import (
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
     DuplicateAnnotationSchemaError,
+    _default_datalake_store_path,
 )
-from mindtrace.datalake.async_datalake import _default_datalake_store_path
-from mindtrace.datalake.types import AnnotationLabelDefinition, AnnotationRecord, AnnotationSet, AnnotationSource, SubjectRef
+from mindtrace.datalake.types import (
+    AnnotationLabelDefinition,
+    AnnotationRecord,
+    AnnotationSet,
+    AnnotationSource,
+    SubjectRef,
+)
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind
 
 
@@ -260,7 +266,6 @@ async def test_async_datalake_direct_upload_error_paths(async_datalake: AsyncDat
         )
 
 
-
 @pytest.mark.asyncio
 async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatalake):
     schema = await async_datalake.create_annotation_schema(
@@ -288,27 +293,31 @@ async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatala
 
     inserted = await async_datalake.add_annotation_records(
         annotation_set.annotation_set_id,
-        [{
-            "kind": "bbox",
-            "label": "hopper",
-            "label_id": 1,
-            "source": {"type": "human", "name": "pytest"},
-            "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
-            "attributes": {"quality": "high"},
-            "score": 0.5,
-        }],
+        [
+            {
+                "kind": "bbox",
+                "label": "hopper",
+                "label_id": 1,
+                "source": {"type": "human", "name": "pytest"},
+                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "attributes": {"quality": "high"},
+                "score": 0.5,
+            }
+        ],
     )
 
     with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
         await async_datalake.add_annotation_records(
             annotation_set.annotation_set_id,
-            [{
-                "kind": "bbox",
-                "label": "unknown",
-                "source": {"type": "human", "name": "pytest"},
-                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
-                "attributes": {"quality": "high"},
-            }],
+            [
+                {
+                    "kind": "bbox",
+                    "label": "unknown",
+                    "source": {"type": "human", "name": "pytest"},
+                    "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    "attributes": {"quality": "high"},
+                }
+            ],
         )
 
     assert fetched_schema.annotation_schema_id == schema.annotation_schema_id
@@ -367,7 +376,9 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
         status="active",
     )
     assert updated_set.status == "active"
-    detached_set = await async_datalake.update_annotation_set(annotation_set.annotation_set_id, annotation_schema_id=None)
+    detached_set = await async_datalake.update_annotation_set(
+        annotation_set.annotation_set_id, annotation_schema_id=None
+    )
     assert detached_set.annotation_schema_id is None
 
     invalid_classification_set = await async_datalake.create_annotation_set(
@@ -434,7 +445,9 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
             ],
         )
 
-    with pytest.raises(AnnotationSchemaValidationError, match="not allowed by schema 'classification-errors@1.0.0': extra"):
+    with pytest.raises(
+        AnnotationSchemaValidationError, match="not allowed by schema 'classification-errors@1.0.0': extra"
+    ):
         await async_datalake.add_annotation_records(
             invalid_classification_set.annotation_set_id,
             [

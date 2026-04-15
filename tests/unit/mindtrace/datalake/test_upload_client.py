@@ -1,4 +1,3 @@
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -111,6 +110,7 @@ def test_upload_file_uses_presigned_url(tmp_path):
     with patch("mindtrace.datalake.upload_client.requests.put") as put:
         response = Mock()
         response.raise_for_status = Mock()
+
         def put_side_effect(url, *, data, headers, timeout):
             assert data.read() == b"payload"
             assert headers == {"Content-Type": "application/octet-stream"}

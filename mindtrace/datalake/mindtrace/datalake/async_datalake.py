@@ -9,7 +9,6 @@ from typing import Any, TypeVar
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -30,6 +29,7 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 
 DocumentT = TypeVar("DocumentT")
 

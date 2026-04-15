@@ -6,7 +6,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationBatchResult, ReplicationStatusResult
+from mindtrace.datalake.replication_types import (
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationStatusResult,
+)
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,

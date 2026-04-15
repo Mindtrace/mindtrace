@@ -7,7 +7,6 @@ import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.datalake.async_datalake import (
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
@@ -31,6 +30,7 @@ from mindtrace.datalake.types import (
     StorageRef,
     SubjectRef,
 )
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 
 class TestAsyncDatalakeUnit:

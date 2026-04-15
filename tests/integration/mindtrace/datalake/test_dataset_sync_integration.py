@@ -31,7 +31,6 @@ from mindtrace.datalake.service_types import (
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest
 from mindtrace.datalake.types import AnnotationLabelDefinition
-
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
@@ -104,7 +103,9 @@ async def _seed_minimal_image_dataset(
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_local_to_local_transfers_bytes(async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake):
+async def test_dataset_sync_local_to_local_transfers_bytes(
+    async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake
+):
     dataset_name = f"sync-local-{uuid4().hex[:10]}"
     version = "1.0.0"
     image_bytes = _HOPPER.read_bytes()
@@ -129,7 +130,9 @@ async def test_dataset_sync_local_to_local_transfers_bytes(async_datalake: Async
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_local_to_minio_transfers_bytes(async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake):
+async def test_dataset_sync_local_to_minio_transfers_bytes(
+    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+):
     dataset_name = f"sync-s3-{uuid4().hex[:10]}"
     version = "2.0.0"
     image_bytes = _HOPPER.read_bytes()
@@ -200,7 +203,9 @@ async def test_dataset_sync_copy_if_missing_second_run_skips_transfer(
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_export_prepare_commit_flow(async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake):
+async def test_dataset_sync_export_prepare_commit_flow(
+    async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake
+):
     dataset_name = f"sync-plan-{uuid4().hex[:10]}"
     version = "0.5.0"
     await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
@@ -210,9 +215,7 @@ async def test_dataset_sync_export_prepare_commit_flow(async_datalake: AsyncData
     assert bundle.dataset_version.dataset_name == dataset_name
     assert len(bundle.payloads) == 1
 
-    plan = await manager.plan_import(
-        DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing")
-    )
+    plan = await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
     assert plan.transfer_required_count >= 1
     assert plan.ready_to_commit is True
 
@@ -267,7 +270,9 @@ async def test_datalake_service_export_dataset_version(async_datalake: AsyncData
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_copy_policy_forces_transfer(async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake):
+async def test_dataset_sync_copy_policy_forces_transfer(
+    async_datalake: AsyncDatalake, async_datalake_secondary: AsyncDatalake
+):
     dataset_name = f"sync-copy-{uuid4().hex[:10]}"
     version = "1.0.0"
     await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
@@ -479,9 +484,7 @@ async def test_dataset_sync_fail_if_missing_payload_blocks_commit(
     manager = DatasetSyncManager(async_datalake, async_datalake_secondary)
     bundle = await manager.export_dataset_version(dataset_name, version)
 
-    plan = await manager.plan_import(
-        DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload")
-    )
+    plan = await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload"))
     assert plan.ready_to_commit is False
 
     with pytest.raises(ValueError, match="not ready to commit"):
@@ -506,9 +509,7 @@ async def test_dataset_sync_fail_if_missing_payload_ready_when_present(
     await manager.sync_dataset_version(dataset_name, version, transfer_policy="copy_if_missing")
 
     bundle = await manager.export_dataset_version(dataset_name, version)
-    plan = await manager.plan_import(
-        DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload")
-    )
+    plan = await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload"))
     assert plan.ready_to_commit is True
     assert plan.transfer_required_count == 0
 
