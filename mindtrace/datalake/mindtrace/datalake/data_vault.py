@@ -25,14 +25,16 @@ Typical sync usage::
     asset = vault.save("my-key", image_bytes, kind="image", media_type="image/png")
     data = vault.load("my-key")
 
-Remote service (blocking), after ``DatalakeService`` is running::
+Remote service (blocking), after ``DatalakeService`` is running (URL must match the deployed service; example uses the Docker compose default)::
+
+    from pathlib import Path
 
     from mindtrace.datalake import DataVault, DatalakeService
 
-    cm = DatalakeService.connect(url="http://localhost:8080")
-    vault = DataVault(cm)
-    vault.save("my-key", blob, kind="artifact", media_type="application/octet-stream")
-    data = vault.load("my-key")
+    hopper = Path("tests/resources/hopper.png")
+    vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
+    vault.save("demo/hopper", hopper, kind="image", media_type="image/png")
+    data = vault.load("demo/hopper")
 """
 
 from __future__ import annotations
