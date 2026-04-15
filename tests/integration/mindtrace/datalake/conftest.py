@@ -25,6 +25,7 @@ from mindtrace.registry import (
 )
 
 MONGO_URL = "mongodb://localhost:27018"
+MONGO_URL_SECONDARY = "mongodb://localhost:27019"
 pytest_plugins = ["tests.integration.mindtrace.registry.conftest"]
 
 
