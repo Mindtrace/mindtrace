@@ -34,28 +34,23 @@ Service endpoints:
 
 With the stack running, use **`DataVault`** with a client from **`DatalakeService.connect`**. The vault detects the connection manager and speaks the right service tasks (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, etc.).
 
-**Example** (run from a repo environment where `mindtrace` is installed, with the stack up on port 8080):
+**Example** (run from the **repository root** so `tests/resources/hopper.png` resolves; `mindtrace` installed; stack listening on port 8080—the URL must match where the service is reachable):
 
 ```python
+from pathlib import Path
+
 from mindtrace.datalake import DataVault, DatalakeService
 
-SERVICE_URL = "http://localhost:8080"
+hopper = Path("tests/resources/hopper.png")
+vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
 
-cm = DatalakeService.connect(url=SERVICE_URL)
-vault = DataVault(cm)
-
-vault.save(
-    "demo/my-payload",
-    b"hello from DataVault",
-    kind="artifact",
-    media_type="application/octet-stream",
-)
-data = vault.load("demo/my-payload")
-assert data == b"hello from DataVault"
-print("round-trip ok:", data)
+vault.save("demo/hopper", hopper, kind="image", media_type="image/png")
+data = vault.load("demo/hopper")
+assert data == hopper.read_bytes()
+print("round-trip ok:", len(data), "bytes")
 ```
 
-**Async:** use `AsyncDataVault(DatalakeService.connect(url=SERVICE_URL))` the same way; the client’s async task methods (`aassets_get_by_alias`, …) are detected automatically.
+**Async:** same pattern with `AsyncDataVault(DatalakeService.connect(url="http://localhost:8080"))` and `await vault.save(...)` / `await vault.load(...)`; async task methods (`aassets_get_by_alias`, …) are detected automatically.
 
 **Payloads:** over HTTP, `create_from_object` carries **base64-encoded bytes**. Pass **`bytes`**, **`bytearray`**, or **`str`** (UTF-8) to `save`. For structured objects, **serialize with your registry/materializer on the client** before calling `save`, and deserialize after `load`, matching the in-process vault story.
 
