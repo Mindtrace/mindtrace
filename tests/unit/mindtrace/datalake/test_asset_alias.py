@@ -1,9 +1,12 @@
 """Unit tests for asset alias indexing and data vault facades."""
 
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from urllib3.util import parse_url
 
+from mindtrace.core import CoreConfig
+from mindtrace.datalake import DatalakeService
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.data_vault import (
     AsyncDataVault,
@@ -14,17 +17,35 @@ from mindtrace.datalake.data_vault import (
 )
 from mindtrace.datalake.data_vault_backends import (
     AsyncDataVaultBackend,
+    DatalakeServiceAsyncDataVaultBackend,
+    DatalakeServiceDataVaultBackend,
     DataVaultBackend,
     LocalAsyncDataVaultBackend,
     LocalDataVaultBackend,
 )
 from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.types import Asset, StorageRef
+from mindtrace.services import Service
+from mindtrace.services.core.utils import generate_connection_manager
+
+
+@pytest.fixture(autouse=True)
+def _minimal_service_config(monkeypatch):
+    monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
+    Service.config = CoreConfig()
+
+
+@pytest.fixture
+def datalake_service_connection_manager():
+    CM = generate_connection_manager(DatalakeService)
+    return CM(url=parse_url("http://127.0.0.1:8080"))
 
 
 @pytest.fixture
 def mock_async_datalake():
-    dl = MagicMock()
+    dl = Mock(spec=AsyncDatalake)
     dl.ensure_primary_asset_alias = AsyncMock()
     dl.resolve_alias = AsyncMock(return_value="asset_target")
     dl.get_asset_by_alias = AsyncMock()
@@ -130,20 +151,20 @@ def test_data_vault_save_adds_secondary_alias(mock_sync_datalake):
 
 
 def test_data_vault_rejects_incomplete_duck():
-    bad = MagicMock()
-    bad.get_asset_by_alias = Mock()
-    del bad.get_object
+    class BadDuck:
+        get_asset_by_alias = Mock()
+
     with pytest.raises(TypeError, match="get_object"):
-        DataVault(bad)
+        DataVault(BadDuck())
 
 
 @pytest.mark.asyncio
 async def test_async_data_vault_rejects_incomplete_duck():
-    bad = MagicMock()
-    bad.get_asset_by_alias = AsyncMock()
-    del bad.get_object
+    class BadDuck:
+        get_asset_by_alias = AsyncMock()
+
     with pytest.raises(TypeError, match="get_object"):
-        AsyncDataVault(bad)
+        AsyncDataVault(BadDuck())
 
 
 def test_normalize_async_backend_wraps_async_datalake_instance():
@@ -170,6 +191,26 @@ def test_normalize_sync_backend_wraps_datalake_instance():
 def test_normalize_sync_backend_passes_through_explicit_backend(mock_sync_datalake):
     inner = LocalDataVaultBackend(mock_sync_datalake)
     assert _normalize_sync_backend(inner) is inner
+
+
+def test_normalize_sync_backend_wraps_datalake_service_client(datalake_service_connection_manager):
+    cm = datalake_service_connection_manager
+    backend = _normalize_sync_backend(cm)
+    assert isinstance(backend, DatalakeServiceDataVaultBackend)
+    assert backend._cm is cm
+
+
+@pytest.mark.asyncio
+async def test_normalize_async_backend_wraps_datalake_service_client(datalake_service_connection_manager):
+    cm = datalake_service_connection_manager
+    backend = _normalize_async_backend(cm)
+    assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
+    assert backend._cm is cm
+
+
+def test_data_vault_accepts_service_connection_manager(datalake_service_connection_manager):
+    vault = DataVault(datalake_service_connection_manager)
+    assert isinstance(vault._backend, DatalakeServiceDataVaultBackend)
 
 
 def test_sanitize_object_name_component():
