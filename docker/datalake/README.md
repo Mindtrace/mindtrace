@@ -30,6 +30,52 @@ Service endpoints:
 - MinIO API: <http://localhost:9000>
 - MinIO Console: <http://localhost:9001>
 
+## Using DataVault against the compose stack
+
+With the stack running, you can use the high-level **`DataVault`** / **`AsyncDataVault`** API from Python by pointing a generated **`DatalakeService`** connection manager at `http://localhost:8080`. The service exposes the tasks those backends need (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, and the rest of the lake API).
+
+**Async example** (run from a repo environment where `mindtrace` is installed):
+
+```python
+import asyncio
+
+from urllib3.util.url import parse_url
+
+from mindtrace.datalake import (
+    AsyncDataVault,
+    DatalakeService,
+    DatalakeServiceAsyncDataVaultBackend,
+)
+from mindtrace.services.core.utils import generate_connection_manager
+
+SERVICE_URL = "http://localhost:8080"
+
+
+async def main() -> None:
+    DatalakeCM = generate_connection_manager(DatalakeService)
+    cm = DatalakeCM(url=parse_url(SERVICE_URL))
+
+    vault = AsyncDataVault(DatalakeServiceAsyncDataVaultBackend(cm))
+
+    await vault.save(
+        "demo/my-payload",
+        b"hello from DataVault",
+        kind="artifact",
+        media_type="application/octet-stream",
+    )
+    data = await vault.load("demo/my-payload")
+    assert data == b"hello from DataVault"
+    print("round-trip ok:", data)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Blocking variant:** use `DataVault(DatalakeServiceDataVaultBackend(cm))` with the same `cm`; the sync backend calls the connection manager’s non-`a`-prefixed task methods.
+
+**Payloads:** over HTTP, `create_from_object` carries **base64-encoded bytes**. Pass **`bytes`**, **`bytearray`**, or **`str`** (UTF-8) to `save`. For structured objects, **serialize with your registry/materializer on the client** before calling `save`, and deserialize after `load`, matching the in-process vault story.
+
 ## Default runtime shape
 
 The service image configures a single default S3-compatible mount named `minio` using:
