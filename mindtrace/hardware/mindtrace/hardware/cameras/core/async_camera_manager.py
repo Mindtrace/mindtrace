@@ -734,7 +734,7 @@ class AsyncCameraManager(Mindtrace):
         count = self._failure_counts.get(camera_name, 0) + 1
         self._failure_counts[camera_name] = count
         self.logger.warning(
-            f"Capture failure #{count} for '{camera_name}' " f"(threshold: {self._max_consecutive_failures})"
+            f"Capture failure #{count} for '{camera_name}' (threshold: {self._max_consecutive_failures})"
         )
         if count >= self._max_consecutive_failures:
             await self._handle_camera_failure(camera_name)
