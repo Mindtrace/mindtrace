@@ -1414,7 +1414,7 @@ async def test_service_replication_upsert_batch_uses_replication_manager(service
         assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source"
     )
     batch_result = ReplicationBatchResult(created_assets=1, created_datums=1)
-    with patch("mindtrace.datalake.service.MetadataFirstReplicationManager") as manager_cls:
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.upsert_metadata_batch = AsyncMock(return_value=batch_result)
 
@@ -1432,7 +1432,7 @@ async def test_service_replication_status_uses_replication_manager(service):
         pending_asset_ids=["asset_1"],
         failed_asset_ids=[],
     )
-    with patch("mindtrace.datalake.service.MetadataFirstReplicationManager") as manager_cls:
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.status = AsyncMock(return_value=status_result)
 

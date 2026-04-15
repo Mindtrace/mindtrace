@@ -244,9 +244,9 @@ class TestAsyncDatalakeUnit:
     def test_replication_returns_manager(self, async_datalake):
         manager = async_datalake.replication()
 
-        from mindtrace.datalake.replication import MetadataFirstReplicationManager
+        from mindtrace.datalake.replication import ReplicationManager
 
-        assert isinstance(manager, MetadataFirstReplicationManager)
+        assert isinstance(manager, ReplicationManager)
         assert manager.source is async_datalake
         assert manager.target is async_datalake
 
