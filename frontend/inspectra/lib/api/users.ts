@@ -6,8 +6,6 @@ import type { User, UserListResponse } from "./types";
 import { getApiBase, handleResponse } from "./core";
 import { fetchWithAuth } from "@/lib/api/auth";
 
-const API_BASE = getApiBase();
-
 export async function listUsers(
   organizationId?: string,
   params?: { skip?: number; limit?: number; search?: string }
@@ -19,7 +17,7 @@ export async function listUsers(
   if (params?.search != null && params.search.trim() !== "")
     searchParams.set("search", params.search.trim());
   const qs = searchParams.toString();
-  const url = qs ? `${API_BASE}/users?${qs}` : `${API_BASE}/users`;
+  const url = qs ? `${getApiBase()}/users?${qs}` : `${getApiBase()}/users`;
   const res = await fetchWithAuth(url, {});
   return handleResponse<UserListResponse>(res);
 }
@@ -32,7 +30,7 @@ export async function createUser(payload: {
   first_name: string;
   last_name: string;
 }): Promise<User> {
-  const res = await fetchWithAuth(`${API_BASE}/users`, {
+  const res = await fetchWithAuth(`${getApiBase()}/users`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -40,7 +38,7 @@ export async function createUser(payload: {
 }
 
 export async function getUser(id: string): Promise<User> {
-  const res = await fetchWithAuth(`${API_BASE}/users/${id}`, {});
+  const res = await fetchWithAuth(`${getApiBase()}/users/${id}`, {});
   return handleResponse<User>(res);
 }
 
@@ -53,7 +51,7 @@ export async function updateUser(
     status?: "active" | "inactive";
   }
 ): Promise<User> {
-  const res = await fetchWithAuth(`${API_BASE}/users/${id}`, {
+  const res = await fetchWithAuth(`${getApiBase()}/users/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

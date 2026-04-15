@@ -26,4 +26,41 @@ export {
   updateOrganization,
 } from "./organizations";
 
+export { createPlant, getPlant, listPlants, updatePlant } from "./plants";
+
+export { createLine, getLine, listLines, updateLine } from "./lines";
+
+export { getLineStructure, updateLineStructure } from "./line-structure";
+
+export { createModel, getModel, listModels, updateModel } from "./models";
+
+export {
+  getModelDeployment,
+  listModelDeployments,
+  updateModelDeployment,
+} from "./model-deployments";
+
+export {
+  getCameraService,
+  listCameraServices,
+  updateCameraService,
+} from "./camera-services";
+
+export {
+  createCameraSet,
+  deleteCameraSet,
+  listCameraSets,
+  updateCameraSet,
+} from "./camera-sets";
+
+export { getCamera, listCameras, updateCameraConfig } from "./cameras";
+
+export { createStageGraph, listStageGraphs } from "./stage-graphs";
+
+export { createStage, listStages } from "./stages";
+
+export { upsertCameraPosition } from "./camera-positions";
+
+export { createRoi, deleteRoi, listRois } from "./rois";
+
 export { createUser, getUser, listUsers, updateUser } from "./users";

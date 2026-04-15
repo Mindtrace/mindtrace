@@ -1,4 +1,5 @@
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.middleware import RequestLoggingMiddleware
 from mindtrace.services.core.service import Service
 from mindtrace.services.core.types import (
     EndpointsSchema,
@@ -27,6 +28,7 @@ __all__ = [
     "HeartbeatSchema",
     "PIDFileSchema",
     "ProxyConnectionManager",
+    "RequestLoggingMiddleware",
     "RegisterAppTaskSchema",
     "ServerIDSchema",
     "Service",

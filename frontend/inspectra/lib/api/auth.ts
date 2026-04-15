@@ -13,8 +13,6 @@ import {
   handleResponse,
 } from "./core";
 
-const API_BASE = getApiBase();
-
 export async function fetchWithAuth(
   url: string,
   init: RequestInit
@@ -52,7 +50,7 @@ export async function login(
   email: string,
   password: string
 ): Promise<TokenResponse> {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await fetch(`${getApiBase()}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -75,7 +73,7 @@ export async function refreshTokens(): Promise<TokenResponse | null> {
       ? localStorage.getItem(REFRESH_TOKEN_KEY)
       : null;
   if (!r) return null;
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
+  const res = await fetch(`${getApiBase()}/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: r }),
@@ -91,6 +89,6 @@ export async function refreshTokens(): Promise<TokenResponse | null> {
 }
 
 export async function getMe(): Promise<User> {
-  const res = await fetchWithAuth(`${API_BASE}/auth/me`, {});
+  const res = await fetchWithAuth(`${getApiBase()}/auth/me`, {});
   return handleResponse<User>(res);
 }

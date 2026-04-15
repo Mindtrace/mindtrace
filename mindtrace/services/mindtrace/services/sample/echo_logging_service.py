@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from mindtrace.core import TaskSchema
 from mindtrace.services import Service
-from mindtrace.services.core.middleware import RequestLoggingMiddleware
+from mindtrace.services import RequestLoggingMiddleware
 
 
 class EchoInput(BaseModel):

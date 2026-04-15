@@ -5,10 +5,14 @@ import { usePathname } from "next/navigation";
 import {
   Building2,
   ChevronDown,
+  Camera,
+  Factory,
   LogOut,
   ScanSearch,
   Settings,
+  Server,
   Users,
+  Workflow,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import {
@@ -49,6 +53,54 @@ const managementItems: {
     href: "/organizations",
     label: "Organizations",
     icon: Building2,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/plants",
+    label: "Plants",
+    icon: Factory,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/lines",
+    label: "Lines",
+    icon: Workflow,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/models",
+    label: "Models",
+    icon: Settings,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/model-deployments",
+    label: "Model deployments",
+    icon: Server,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/camera-services",
+    label: "Camera services",
+    icon: Camera,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/cameras",
+    label: "Cameras",
+    icon: Camera,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/camera-sets",
+    label: "Camera sets",
+    icon: Camera,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/stage-graphs",
+    label: "Stage graphs",
+    icon: Workflow,
     roles: ["super_admin"],
   },
   {
