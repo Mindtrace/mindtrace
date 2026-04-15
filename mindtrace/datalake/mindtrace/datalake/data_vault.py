@@ -5,10 +5,12 @@ Serialization uses the same registry/store stack as :class:`~mindtrace.datalake.
 
 Facades:
 
-- :class:`AsyncDataVault` — async API; supply :class:`~mindtrace.datalake.AsyncDatalake`, an
+- :class:`AsyncDataVault` — async API; supply :class:`~mindtrace.datalake.AsyncDatalake`, a client
+  from :meth:`~mindtrace.datalake.service.DatalakeService.connect` (async task methods), an
   :class:`~mindtrace.datalake.data_vault_backends.AsyncDataVaultBackend`, or a duck-typed async
   object with the same methods as ``AsyncDatalake`` for vault operations.
-- :class:`DataVault` — blocking API; supply :class:`~mindtrace.datalake.Datalake`, a
+- :class:`DataVault` — blocking API; supply :class:`~mindtrace.datalake.Datalake`, a client from
+  :meth:`~mindtrace.datalake.service.DatalakeService.connect` (sync task methods), a
   :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`, or a duck-typed sync object.
 
 Typical async usage::
@@ -23,15 +25,14 @@ Typical sync usage::
     asset = vault.save("my-key", image_bytes, kind="image", media_type="image/png")
     data = vault.load("my-key")
 
-Remote service example (async)::
+Remote service (blocking), after ``DatalakeService`` is running::
 
-    from mindtrace.datalake.data_vault_backends import (
-        DatalakeServiceAsyncDataVaultBackend,
-        LocalAsyncDataVaultBackend,
-    )
+    from mindtrace.datalake import DataVault, DatalakeService
 
-    cm = ...  # DatalakeServiceConnectionManager from ``generate_connection_manager(DatalakeService)``
-    vault = AsyncDataVault(DatalakeServiceAsyncDataVaultBackend(cm))
+    cm = DatalakeService.connect(url="http://localhost:8080")
+    vault = DataVault(cm)
+    vault.save("my-key", blob, kind="artifact", media_type="application/octet-stream")
+    data = vault.load("my-key")
 """
 
 from __future__ import annotations
@@ -45,9 +46,13 @@ from mindtrace.datalake.data_vault_backends import (
     _ASYNC_VAULT_METHOD_NAMES,
     _SYNC_VAULT_METHOD_NAMES,
     AsyncDataVaultBackend,
+    DatalakeServiceAsyncDataVaultBackend,
+    DatalakeServiceDataVaultBackend,
     DataVaultBackend,
     LocalAsyncDataVaultBackend,
     LocalDataVaultBackend,
+    looks_like_datalake_service_async_client,
+    looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.types import Asset, DuplicateAliasError
@@ -99,6 +104,8 @@ def _normalize_async_backend(backend: Any) -> AsyncDataVaultBackend:
         return LocalAsyncDataVaultBackend(backend)
     if isinstance(backend, AsyncDataVaultBackend):
         return backend
+    if looks_like_datalake_service_async_client(backend):
+        return DatalakeServiceAsyncDataVaultBackend(backend)
     for name in _ASYNC_VAULT_METHOD_NAMES:
         if not callable(getattr(backend, name, None)):
             raise TypeError(
@@ -113,6 +120,8 @@ def _normalize_sync_backend(backend: Any) -> DataVaultBackend:
         return LocalDataVaultBackend(backend)
     if isinstance(backend, DataVaultBackend):
         return backend
+    if looks_like_datalake_service_sync_client(backend):
+        return DatalakeServiceDataVaultBackend(backend)
     for name in _SYNC_VAULT_METHOD_NAMES:
         if not callable(getattr(backend, name, None)):
             raise TypeError(
