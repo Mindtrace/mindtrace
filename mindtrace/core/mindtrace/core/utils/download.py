@@ -11,7 +11,9 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def download_with_progress(url: str, destination: Union[str, Path], desc: Optional[str] = None, chunk_size: int = 1024 * 1024) -> Path:
+def download_with_progress(
+    url: str, destination: Union[str, Path], desc: Optional[str] = None, chunk_size: int = 1024 * 1024
+) -> Path:
     """Download a URL to a local file with a tqdm progress bar when content-length is available."""
     destination = Path(destination).expanduser()
     destination.parent.mkdir(parents=True, exist_ok=True)

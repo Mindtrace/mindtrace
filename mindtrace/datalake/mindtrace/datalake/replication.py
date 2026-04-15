@@ -365,7 +365,9 @@ class MetadataFirstReplicationManager:
             if self.is_local_deleted(asset):
                 skipped_asset_ids.append(asset.asset_id)
                 continue
-            if request.require_verified_payload and not await self._is_remote_payload_verified_for_source_asset(asset.asset_id):
+            if request.require_verified_payload and not await self._is_remote_payload_verified_for_source_asset(
+                asset.asset_id
+            ):
                 skipped_asset_ids.append(asset.asset_id)
                 continue
             attempted_asset_ids.append(asset.asset_id)
@@ -409,7 +411,9 @@ class MetadataFirstReplicationManager:
                 pending_asset_ids.append(asset.asset_id)
             elif status == "failed":
                 failed_asset_ids.append(asset.asset_id)
-        source_assets = await self.source.asset_database.find({}) if getattr(self.source, "asset_database", None) else []
+        source_assets = (
+            await self.source.asset_database.find({}) if getattr(self.source, "asset_database", None) else []
+        )
         for asset in source_assets:
             if self.is_local_delete_eligible(asset):
                 local_delete_eligible_ids.append(asset.asset_id)
@@ -524,7 +528,9 @@ class MetadataFirstReplicationManager:
             merged["payload_available"] = payload_available
         merged["payload_last_error"] = payload_last_error
 
-        merged.setdefault("origin_lake_id", merged.get("origin_lake_id") or origin.get("lake_id") or self.source.mongo_db_name)
+        merged.setdefault(
+            "origin_lake_id", merged.get("origin_lake_id") or origin.get("lake_id") or self.source.mongo_db_name
+        )
         merged.setdefault("origin_asset_id", merged.get("origin_asset_id") or origin.get("asset_id") or asset.asset_id)
         merged.setdefault("replication_mode", merged.get("replication_mode") or "metadata_first")
 
@@ -694,7 +700,9 @@ class MetadataFirstReplicationManager:
         await self.target.asset_database.update(current)
 
     async def _update_annotation_schema(self, schema: AnnotationSchema, origin_lake_id: str) -> None:
-        existing = await self.target.annotation_schema_database.find({"annotation_schema_id": schema.annotation_schema_id})
+        existing = await self.target.annotation_schema_database.find(
+            {"annotation_schema_id": schema.annotation_schema_id}
+        )
         if not existing:
             await self.target.annotation_schema_database.insert(schema)
             return
@@ -741,7 +749,9 @@ class MetadataFirstReplicationManager:
         await self.target.annotation_record_database.update(current)
 
     async def _update_annotation_set(self, annotation_set: AnnotationSet, origin_lake_id: str) -> None:
-        existing = await self.target.annotation_set_database.find({"annotation_set_id": annotation_set.annotation_set_id})
+        existing = await self.target.annotation_set_database.find(
+            {"annotation_set_id": annotation_set.annotation_set_id}
+        )
         if not existing:
             await self.target.annotation_set_database.insert(annotation_set)
             return

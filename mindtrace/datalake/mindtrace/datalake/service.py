@@ -9,7 +9,6 @@ from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.replication import MetadataFirstReplicationManager
-from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     AddAnnotationRecordsSchema,
@@ -59,15 +58,11 @@ from mindtrace.datalake.service_types import (
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
     DatasetSyncBundleOutput,
-    DatasetSyncImportRequest,
     DatasetSyncCommitResultOutput,
     DatasetSyncImportCommitSchema,
     DatasetSyncImportPlanOutput,
     DatasetSyncImportPrepareSchema,
-    ReplicationBatchResultOutput,
-    ReplicationBatchUpsertSchema,
-    ReplicationStatusOutput,
-    ReplicationStatusSchema,
+    DatasetSyncImportRequest,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatumListOutput,
@@ -117,6 +112,10 @@ from mindtrace.datalake.service_types import (
     PutObjectInput,
     PutObjectSchema,
     ReplicationBatchRequest,
+    ReplicationBatchResultOutput,
+    ReplicationBatchUpsertSchema,
+    ReplicationStatusOutput,
+    ReplicationStatusSchema,
     ResolveCollectionItemSchema,
     ResolveDatasetVersionSchema,
     ResolveDatumSchema,
@@ -140,6 +139,7 @@ from mindtrace.datalake.service_types import (
     UpdateDatumInput,
     UpdateDatumSchema,
 )
+from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.registry import Mount
 from mindtrace.services import Service
 
@@ -285,7 +285,9 @@ class DatalakeService(Service):
             self.import_dataset_version_commit,
             schema=DatasetSyncImportCommitSchema,
         )
-        self.add_endpoint("replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema)
+        self.add_endpoint(
+            "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
+        )
         self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
 
     async def _startup_initialize(self) -> None:

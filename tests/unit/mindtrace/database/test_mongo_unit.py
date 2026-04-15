@@ -1136,6 +1136,7 @@ async def test_second_odm_same_model_uses_motor_routing_and_single_init_beanie(m
 def test_mongo_odm_helpers_and_to_object_id():
     """Cover static helpers and ``_mongo_doc_to_model`` edge cases."""
     from beanie import PydanticObjectId
+
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
@@ -1377,7 +1378,9 @@ async def test_motor_update_document_and_basemodel_merge():
     object.__setattr__(patch_obj, "id", str(oid))
 
     with patch.object(backend, "_motor_collection", return_value=mock_coll):
-        with patch.object(backend, "_mongo_doc_to_model", return_value=MotorDoc(name="A", age=1, email="a@b.com", id=str(oid))):
+        with patch.object(
+            backend, "_mongo_doc_to_model", return_value=MotorDoc(name="A", age=1, email="a@b.com", id=str(oid))
+        ):
             with patch.object(backend, "_motor_model_dump", return_value=dict(existing)):
                 out = await backend.update(patch_obj)
                 assert out.name == "B"
@@ -1386,8 +1389,8 @@ async def test_motor_update_document_and_basemodel_merge():
 
 @pytest.mark.asyncio
 async def test_motor_update_basemodel_existing_not_found():
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
     backend._is_initialized = True
@@ -1407,8 +1410,8 @@ async def test_motor_update_basemodel_existing_not_found():
 
 @pytest.mark.asyncio
 async def test_motor_get_mongo_doc_to_model_returns_none_raises():
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
     from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
     backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
     backend._is_initialized = True

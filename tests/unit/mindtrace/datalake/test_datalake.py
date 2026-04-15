@@ -309,7 +309,9 @@ class TestDatalakeSyncFacade:
         )
         assert datalake.create_object_upload_session(name="hopper.png").upload_session_id == "upload_session_1"
         assert datalake.get_object_upload_session("upload_session_1").finalize_token == "token-1"
-        assert datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1").status == "completed"
+        assert (
+            datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1").status == "completed"
+        )
         assert datalake.reconcile_upload_sessions()[0].status == "completed"
         assert isinstance(
             datalake.create_asset(

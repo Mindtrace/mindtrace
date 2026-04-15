@@ -139,7 +139,9 @@ def target_datalake():
 
 class TestMetadataFirstReplicationManager:
     @pytest.mark.asyncio
-    async def test_upsert_metadata_batch_creates_placeholder_graph(self, source_datalake, target_datalake, replication_objects):
+    async def test_upsert_metadata_batch_creates_placeholder_graph(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
         result = await manager.upsert_metadata_batch(
             ReplicationBatchRequest(
@@ -171,7 +173,9 @@ class TestMetadataFirstReplicationManager:
         assert inserted_datum.metadata["origin"]["entity_kind"] == "datum"
 
     @pytest.mark.asyncio
-    async def test_upsert_metadata_batch_updates_existing_graph(self, source_datalake, target_datalake, replication_objects):
+    async def test_upsert_metadata_batch_updates_existing_graph(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         existing_asset = Asset(
             asset_id=replication_objects.asset.asset_id,
             kind="image",
@@ -187,7 +191,9 @@ class TestMetadataFirstReplicationManager:
 
         target_datalake.asset_database.find = AsyncMock(return_value=[existing_asset])
         target_datalake.annotation_schema_database.find = AsyncMock(return_value=[replication_objects.schema])
-        target_datalake.annotation_record_database.find = AsyncMock(return_value=[replication_objects.annotation_record])
+        target_datalake.annotation_record_database.find = AsyncMock(
+            return_value=[replication_objects.annotation_record]
+        )
         target_datalake.annotation_set_database.find = AsyncMock(return_value=[replication_objects.annotation_set])
         target_datalake.datum_database.find = AsyncMock(return_value=[replication_objects.datum])
 
@@ -255,7 +261,9 @@ class TestMetadataFirstReplicationManager:
         assert status.failed_asset_ids == [failed_asset.asset_id]
 
     @pytest.mark.asyncio
-    async def test_status_skips_non_replicated_and_unknown_payload_status(self, source_datalake, target_datalake, replication_objects):
+    async def test_status_skips_non_replicated_and_unknown_payload_status(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         plain = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
         weird = Asset.model_validate(
             {
@@ -287,7 +295,9 @@ class TestMetadataFirstReplicationManager:
         assert sum(status.asset_counts_by_payload_status.values()) == 1
 
     @pytest.mark.asyncio
-    async def test_update_asset_inserts_when_find_returns_empty(self, source_datalake, target_datalake, replication_objects):
+    async def test_update_asset_inserts_when_find_returns_empty(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
         target_datalake.asset_database.find = AsyncMock(return_value=[])
 
@@ -305,7 +315,9 @@ class TestMetadataFirstReplicationManager:
         target_datalake.asset_database.update.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_update_annotation_schema_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+    async def test_update_annotation_schema_inserts_when_find_empty(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_datalake.annotation_schema_database.find = AsyncMock(return_value=[])
 
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -314,7 +326,9 @@ class TestMetadataFirstReplicationManager:
         target_datalake.annotation_schema_database.insert.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_update_annotation_record_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+    async def test_update_annotation_record_inserts_when_find_empty(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_datalake.annotation_record_database.find = AsyncMock(return_value=[])
 
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -323,7 +337,9 @@ class TestMetadataFirstReplicationManager:
         target_datalake.annotation_record_database.insert.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_update_annotation_set_inserts_when_find_empty(self, source_datalake, target_datalake, replication_objects):
+    async def test_update_annotation_set_inserts_when_find_empty(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_datalake.annotation_set_database.find = AsyncMock(return_value=[])
 
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -526,10 +542,14 @@ class TestReplicationTransferAndVerify:
         assert result.metadata["replication"]["payload_status"] == "verified"
         assert result.metadata["replication"]["payload_available"] is True
         target_datalake.create_object_upload_session.assert_awaited_once()
-        target_datalake.complete_object_upload_session.assert_awaited_once_with("upload_session_1", finalize_token="token-1")
+        target_datalake.complete_object_upload_session.assert_awaited_once_with(
+            "upload_session_1", finalize_token="token-1"
+        )
 
     @pytest.mark.asyncio
-    async def test_hydrate_asset_payload_marks_failed_on_transfer_error(self, source_datalake, target_datalake, replication_objects):
+    async def test_hydrate_asset_payload_marks_failed_on_transfer_error(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -558,7 +578,9 @@ class TestReplicationTransferAndVerify:
         assert target_asset.metadata["replication"]["payload_last_error"] == "boom"
 
     @pytest.mark.asyncio
-    async def test_hydrate_asset_payload_marks_failed_when_verify_raises(self, source_datalake, target_datalake, replication_objects):
+    async def test_hydrate_asset_payload_marks_failed_when_verify_raises(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         target_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -581,7 +603,9 @@ class TestReplicationTransferAndVerify:
         assert target_asset.metadata["replication"]["payload_status"] == "failed"
 
     @pytest.mark.asyncio
-    async def test_reconcile_pending_payloads_processes_pending_and_failed(self, source_datalake, target_datalake, replication_objects):
+    async def test_reconcile_pending_payloads_processes_pending_and_failed(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -623,7 +647,9 @@ class TestReplicationTransferAndVerify:
         assert verified_asset.asset_id in result.skipped_asset_ids
 
     @pytest.mark.asyncio
-    async def test_reconcile_records_failed_when_hydrate_raises(self, source_datalake, target_datalake, replication_objects):
+    async def test_reconcile_records_failed_when_hydrate_raises(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -641,7 +667,9 @@ class TestReplicationTransferAndVerify:
         assert result.verified_asset_ids == []
 
     @pytest.mark.asyncio
-    async def test_reconcile_skips_non_pending_failed_status(self, source_datalake, target_datalake, replication_objects):
+    async def test_reconcile_skips_non_pending_failed_status(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         transferring = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -691,7 +719,9 @@ class TestReplicationTransferAndVerify:
         manager.hydrate_asset_payload.assert_awaited_once_with("a1", mount_map={})
 
     @pytest.mark.asyncio
-    async def test_reconcile_skips_failed_when_include_failed_false(self, source_datalake, target_datalake, replication_objects):
+    async def test_reconcile_skips_failed_when_include_failed_false(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         failed = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -730,7 +760,9 @@ class TestReplicationTransferAndVerify:
         assert len(result.attempted_asset_ids) == 1
 
     @pytest.mark.asyncio
-    async def test_set_asset_replication_state_coerces_bad_origin_and_replication(self, source_datalake, target_datalake, replication_objects):
+    async def test_set_asset_replication_state_coerces_bad_origin_and_replication(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -744,7 +776,9 @@ class TestReplicationTransferAndVerify:
         assert isinstance(asset.metadata["replication"], dict)
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_raises_on_source_size_mismatch(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_raises_on_source_size_mismatch(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"ab")
         bad = Asset.model_validate(
             {**replication_objects.asset.model_dump(), "size_bytes": 99},
@@ -754,7 +788,9 @@ class TestReplicationTransferAndVerify:
             await manager._transfer_payload(bad, {})
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_local_path_requires_upload_path(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_local_path_requires_upload_path(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.create_object_upload_session = AsyncMock(
             return_value=SimpleNamespace(
@@ -770,7 +806,9 @@ class TestReplicationTransferAndVerify:
             await manager._transfer_payload(replication_objects.asset, {})
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_presigned_requires_upload_url(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_presigned_requires_upload_url(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.create_object_upload_session = AsyncMock(
             return_value=SimpleNamespace(
@@ -812,7 +850,9 @@ class TestReplicationTransferAndVerify:
         urlopen_mock.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_presigned_put_failure_status(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_presigned_put_failure_status(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.create_object_upload_session = AsyncMock(
             return_value=SimpleNamespace(
@@ -834,7 +874,9 @@ class TestReplicationTransferAndVerify:
                 await manager._transfer_payload(replication_objects.asset, {})
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_unsupported_upload_method(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_unsupported_upload_method(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.create_object_upload_session = AsyncMock(
             return_value=SimpleNamespace(
@@ -851,7 +893,9 @@ class TestReplicationTransferAndVerify:
             await manager._transfer_payload(replication_objects.asset, {})
 
     @pytest.mark.asyncio
-    async def test_transfer_payload_requires_storage_ref_after_complete(self, source_datalake, target_datalake, replication_objects):
+    async def test_transfer_payload_requires_storage_ref_after_complete(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"x")
         target_datalake.complete_object_upload_session = AsyncMock(return_value=SimpleNamespace(storage_ref=None))
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -859,7 +903,9 @@ class TestReplicationTransferAndVerify:
             await manager._transfer_payload(replication_objects.asset, {})
 
     @pytest.mark.asyncio
-    async def test_verify_transferred_payload_size_mismatch(self, source_datalake, target_datalake, replication_objects):
+    async def test_verify_transferred_payload_size_mismatch(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_datalake.get_object = AsyncMock(return_value=b"1234567890")
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -868,7 +914,9 @@ class TestReplicationTransferAndVerify:
             await manager._verify_transferred_payload(replication_objects.asset, ref)
 
     @pytest.mark.asyncio
-    async def test_verify_transferred_payload_checksum_mismatch(self, source_datalake, target_datalake, replication_objects):
+    async def test_verify_transferred_payload_checksum_mismatch(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         data = b"payload-bytes"
         source_datalake.get_object = AsyncMock(return_value=data)
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(data)})
@@ -906,12 +954,8 @@ class TestReplicationTransferAndVerify:
         manager = MetadataFirstReplicationManager(Mock(), Mock())
         a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"origin": []}})
         assert manager._get_origin_asset_id(a1) is None
-        a2 = Asset.model_validate(
-            {**replication_objects.asset.model_dump(), "metadata": {"origin": {"asset_id": 123}}}
-        )
+        a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"origin": {"asset_id": 123}}})
         assert manager._get_origin_asset_id(a2) is None
-
-
 
 
 class TestReplicationTargetLookup:
@@ -955,7 +999,9 @@ class TestReplicationTargetLookup:
         assert not any(set(q.keys()) == {"metadata.origin.asset_id"} for q in queries)
 
     @pytest.mark.asyncio
-    async def test_get_target_raises_on_ambiguous_origin_matches(self, source_datalake, target_datalake, replication_objects):
+    async def test_get_target_raises_on_ambiguous_origin_matches(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "t1"})
         a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "t2"})
         target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
@@ -1001,6 +1047,7 @@ class TestReplicationTargetLookup:
             "metadata.origin.lake_id": source_datalake.mongo_db_name,
         }
         assert queries[-1] == {"metadata.origin.asset_id": replication_objects.asset.asset_id}
+
 
 class TestReplicationSourceReclaimMerge:
     @pytest.mark.asyncio
@@ -1048,10 +1095,11 @@ class TestReplicationSourceReclaimMerge:
             )
 
 
-
 class TestReplicationReclaim:
     @pytest.mark.asyncio
-    async def test_mark_local_delete_eligible_requires_verified_remote(self, source_datalake, target_datalake, replication_objects):
+    async def test_mark_local_delete_eligible_requires_verified_remote(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
         target_asset = Asset.model_validate(
             {
@@ -1071,7 +1119,9 @@ class TestReplicationReclaim:
             await manager.mark_local_delete_eligible(replication_objects.asset.asset_id)
 
     @pytest.mark.asyncio
-    async def test_mark_local_delete_eligible_sets_timestamp(self, source_datalake, target_datalake, replication_objects):
+    async def test_mark_local_delete_eligible_sets_timestamp(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
         target_asset = Asset.model_validate(
             {
@@ -1093,7 +1143,9 @@ class TestReplicationReclaim:
         assert MetadataFirstReplicationManager.is_local_delete_eligible(updated) is True
 
     @pytest.mark.asyncio
-    async def test_delete_local_payload_requires_eligibility(self, source_datalake, target_datalake, replication_objects):
+    async def test_delete_local_payload_requires_eligibility(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": {}}})
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
         manager = MetadataFirstReplicationManager(source_datalake, target_datalake)
@@ -1102,11 +1154,19 @@ class TestReplicationReclaim:
             await manager.delete_local_payload(replication_objects.asset.asset_id)
 
     @pytest.mark.asyncio
-    async def test_delete_local_payload_marks_deleted_and_calls_store(self, source_datalake, target_datalake, replication_objects):
+    async def test_delete_local_payload_marks_deleted_and_calls_store(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"local_delete_eligible_at": "2026-01-01T00:00:00Z", "payload_status": "verified", "payload_available": True}},
+                "metadata": {
+                    "replication": {
+                        "local_delete_eligible_at": "2026-01-01T00:00:00Z",
+                        "payload_status": "verified",
+                        "payload_available": True,
+                    }
+                },
             }
         )
         source_datalake.get_asset = AsyncMock(return_value=source_asset)
@@ -1123,7 +1183,9 @@ class TestReplicationReclaim:
         assert MetadataFirstReplicationManager.is_local_deleted(updated) is True
 
     @pytest.mark.asyncio
-    async def test_delete_local_payload_is_idempotent_when_already_deleted(self, source_datalake, target_datalake, replication_objects):
+    async def test_delete_local_payload_is_idempotent_when_already_deleted(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -1147,7 +1209,9 @@ class TestReplicationReclaim:
         assert updated is source_asset
 
     @pytest.mark.asyncio
-    async def test_reclaim_verified_payloads_reclaims_verified_assets(self, source_datalake, target_datalake, replication_objects):
+    async def test_reclaim_verified_payloads_reclaims_verified_assets(
+        self, source_datalake, target_datalake, replication_objects
+    ):
         source_asset = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {"replication": {}}})
         target_asset = Asset.model_validate(
             {
@@ -1171,8 +1235,12 @@ class TestReplicationReclaim:
         assert result.reclaimed_asset_ids == [source_asset.asset_id]
 
     @pytest.mark.asyncio
-    async def test_reclaim_verified_payloads_skips_unverified_and_deleted_assets(self, source_datalake, target_datalake, replication_objects):
-        unverified = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "u1", "metadata": {"replication": {}}})
+    async def test_reclaim_verified_payloads_skips_unverified_and_deleted_assets(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        unverified = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "asset_id": "u1", "metadata": {"replication": {}}}
+        )
         deleted = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
@@ -1190,11 +1258,35 @@ class TestReplicationReclaim:
         assert set(result.skipped_asset_ids) == {"u1", "d1"}
 
     @pytest.mark.asyncio
-    async def test_reclaim_verified_payloads_respects_limit_and_asset_ids(self, source_datalake, target_datalake, replication_objects):
-        a1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "a1", "metadata": {"replication": {}}})
-        a2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "a2", "metadata": {"replication": {}}})
-        t1 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta1", "metadata": {"origin": {"asset_id": "a1"}, "replication": {"payload_status": "verified", "payload_available": True}}})
-        t2 = Asset.model_validate({**replication_objects.asset.model_dump(), "asset_id": "ta2", "metadata": {"origin": {"asset_id": "a2"}, "replication": {"payload_status": "verified", "payload_available": True}}})
+    async def test_reclaim_verified_payloads_respects_limit_and_asset_ids(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        a1 = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "asset_id": "a1", "metadata": {"replication": {}}}
+        )
+        a2 = Asset.model_validate(
+            {**replication_objects.asset.model_dump(), "asset_id": "a2", "metadata": {"replication": {}}}
+        )
+        t1 = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "ta1",
+                "metadata": {
+                    "origin": {"asset_id": "a1"},
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
+        t2 = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "asset_id": "ta2",
+                "metadata": {
+                    "origin": {"asset_id": "a2"},
+                    "replication": {"payload_status": "verified", "payload_available": True},
+                },
+            }
+        )
         source_datalake.asset_database.find = AsyncMock(return_value=[a1, a2])
 
         async def target_find(q: dict):
@@ -1214,6 +1306,7 @@ class TestReplicationReclaim:
 
         assert result.attempted_asset_ids == ["a2"]
         assert result.reclaimed_asset_ids == ["a2"]
+
 
 class TestReplicationCoverageCompleteness:
     @pytest.mark.asyncio

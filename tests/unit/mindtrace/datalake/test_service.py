@@ -7,7 +7,11 @@ import pytest
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
-from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationBatchResult, ReplicationStatusResult
+from mindtrace.datalake.replication_types import (
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationStatusResult,
+)
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
@@ -45,8 +49,6 @@ from mindtrace.datalake.service_types import (
     DatasetSyncCommitResultOutput,
     DatasetSyncImportPlanOutput,
     DatasetVersionListOutput,
-    ReplicationBatchResultOutput,
-    ReplicationStatusOutput,
     DatasetVersionOutput,
     DatumListOutput,
     DatumOutput,
@@ -64,6 +66,8 @@ from mindtrace.datalake.service_types import (
     ObjectOutput,
     ObjectUploadSessionOutput,
     PutObjectInput,
+    ReplicationBatchResultOutput,
+    ReplicationStatusOutput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
     ResolvedDatumOutput,
@@ -76,7 +80,12 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionItemInput,
     UpdateDatumInput,
 )
-from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncCommitResult, DatasetSyncImportPlan, DatasetSyncImportRequest
+from mindtrace.datalake.sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncImportRequest,
+)
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -1401,7 +1410,9 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
 
 @pytest.mark.asyncio
 async def test_service_replication_upsert_batch_uses_replication_manager(service, datalake_objects):
-    request = ReplicationBatchRequest(assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source")
+    request = ReplicationBatchRequest(
+        assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source"
+    )
     batch_result = ReplicationBatchResult(created_assets=1, created_datums=1)
     with patch("mindtrace.datalake.service.MetadataFirstReplicationManager") as manager_cls:
         manager = manager_cls.return_value
