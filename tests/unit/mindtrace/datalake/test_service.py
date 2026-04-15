@@ -58,6 +58,9 @@ from mindtrace.datalake.service_types import (
     DatumOutput,
     ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
+    AddAliasInput,
+    AssetAliasOutput,
+    GetAssetByAliasInput,
     GetByIdInput,
     GetDatasetVersionInput,
     GetObjectInput,
@@ -100,6 +103,7 @@ from mindtrace.datalake.types import (
     AnnotationSchema,
     AnnotationSet,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
@@ -143,6 +147,7 @@ def datalake_objects():
         metadata={"source": "unit"},
         created_by="tester",
     )
+    asset_alias = AssetAlias(alias="friendly", asset_id=asset.asset_id, is_primary=False)
     collection = Collection(name="demo-collection", description="unit collection", metadata={"team": "qa"})
     collection_item = CollectionItem(
         collection_id=collection.collection_id,
@@ -235,6 +240,7 @@ def datalake_objects():
         raw_bytes=raw_bytes,
         raw_text=raw_text,
         encoded_bytes=encoded_bytes,
+        asset_alias=asset_alias,
     )
 
 
@@ -465,6 +471,28 @@ SERVICE_CASES = [
         "expected_output_field": "asset",
         "expected_output_factory": lambda o: o.asset,
         "expected_args_factory": lambda o: (o.asset.asset_id,),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "get_asset_by_alias",
+        "payload_factory": lambda o: GetAssetByAliasInput(alias="friendly"),
+        "datalake_method": "get_asset_by_alias",
+        "datalake_return_factory": lambda o: o.asset,
+        "expected_output_type": AssetOutput,
+        "expected_output_field": "asset",
+        "expected_output_factory": lambda o: o.asset,
+        "expected_args_factory": lambda o: ("friendly",),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "add_alias",
+        "payload_factory": lambda o: AddAliasInput(asset_id=o.asset.asset_id, alias=o.asset_alias.alias),
+        "datalake_method": "add_alias",
+        "datalake_return_factory": lambda o: o.asset_alias,
+        "expected_output_type": AssetAliasOutput,
+        "expected_output_field": "asset_alias",
+        "expected_output_factory": lambda o: o.asset_alias,
+        "expected_args_factory": lambda o: (o.asset.asset_id, o.asset_alias.alias),
         "expected_kwargs_factory": lambda o: {},
     },
     {

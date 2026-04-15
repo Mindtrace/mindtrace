@@ -4,7 +4,21 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from mindtrace.datalake.data_vault import AsyncDataVault, DataVault, _sanitize_object_name_component
+from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.data_vault import (
+    AsyncDataVault,
+    DataVault,
+    _normalize_async_backend,
+    _normalize_sync_backend,
+    _sanitize_object_name_component,
+)
+from mindtrace.datalake.data_vault_backends import (
+    AsyncDataVaultBackend,
+    DataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
+)
+from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.types import Asset, StorageRef
 
 
@@ -121,6 +135,41 @@ def test_data_vault_rejects_incomplete_duck():
     del bad.get_object
     with pytest.raises(TypeError, match="get_object"):
         DataVault(bad)
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_rejects_incomplete_duck():
+    bad = MagicMock()
+    bad.get_asset_by_alias = AsyncMock()
+    del bad.get_object
+    with pytest.raises(TypeError, match="get_object"):
+        AsyncDataVault(bad)
+
+
+def test_normalize_async_backend_wraps_async_datalake_instance():
+    raw = AsyncDatalake.__new__(AsyncDatalake)
+    backend = _normalize_async_backend(raw)
+    assert isinstance(backend, LocalAsyncDataVaultBackend)
+    assert isinstance(backend, AsyncDataVaultBackend)
+    assert backend._datalake is raw
+
+
+def test_normalize_async_backend_passes_through_explicit_backend(mock_async_datalake):
+    inner = LocalAsyncDataVaultBackend(mock_async_datalake)
+    assert _normalize_async_backend(inner) is inner
+
+
+def test_normalize_sync_backend_wraps_datalake_instance():
+    raw = Datalake.__new__(Datalake)
+    backend = _normalize_sync_backend(raw)
+    assert isinstance(backend, LocalDataVaultBackend)
+    assert isinstance(backend, DataVaultBackend)
+    assert backend._datalake is raw
+
+
+def test_normalize_sync_backend_passes_through_explicit_backend(mock_sync_datalake):
+    inner = LocalDataVaultBackend(mock_sync_datalake)
+    assert _normalize_sync_backend(inner) is inner
 
 
 def test_sanitize_object_name_component():
