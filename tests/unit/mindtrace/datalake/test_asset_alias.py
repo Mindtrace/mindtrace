@@ -1,15 +1,15 @@
-"""Unit tests for asset alias indexing and :class:`~mindtrace.datalake.DataVault`."""
+"""Unit tests for asset alias indexing and data vault facades."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from mindtrace.datalake.data_vault import DataVault, _sanitize_object_name_component
-from mindtrace.datalake.types import Asset, DuplicateAliasError, StorageRef
+from mindtrace.datalake.data_vault import AsyncDataVault, DataVault, _sanitize_object_name_component
+from mindtrace.datalake.types import Asset, StorageRef
 
 
 @pytest.fixture
-def mock_datalake():
+def mock_async_datalake():
     dl = MagicMock()
     dl.ensure_primary_asset_alias = AsyncMock()
     dl.resolve_alias = AsyncMock(return_value="asset_target")
@@ -22,55 +22,105 @@ def mock_datalake():
 
 
 @pytest.mark.asyncio
-async def test_data_vault_load_delegates(mock_datalake):
+async def test_async_data_vault_load_delegates(mock_async_datalake):
     asset = Asset(
         kind="image",
         media_type="image/png",
         storage_ref=StorageRef(mount="m", name="n", version="1"),
         asset_id="asset_target",
     )
-    mock_datalake.get_asset_by_alias = AsyncMock(return_value=asset)
+    mock_async_datalake.get_asset_by_alias = AsyncMock(return_value=asset)
 
-    vault = DataVault(mock_datalake)
+    vault = AsyncDataVault(mock_async_datalake)
     out = await vault.load("my-alias")
 
-    mock_datalake.get_asset_by_alias.assert_awaited_once_with("my-alias")
-    mock_datalake.get_object.assert_awaited_once_with(asset.storage_ref)
+    mock_async_datalake.get_asset_by_alias.assert_awaited_once_with("my-alias")
+    mock_async_datalake.get_object.assert_awaited_once_with(asset.storage_ref)
     assert out == b"payload"
 
 
 @pytest.mark.asyncio
-async def test_data_vault_save_registers_secondary_alias(mock_datalake):
+async def test_async_data_vault_save_registers_secondary_alias(mock_async_datalake):
     created = Asset(
         kind="image",
         media_type="image/png",
         storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
         asset_id="asset_new123",
     )
-    mock_datalake.create_asset_from_object = AsyncMock(return_value=created)
+    mock_async_datalake.create_asset_from_object = AsyncMock(return_value=created)
 
-    vault = DataVault(mock_datalake)
+    vault = AsyncDataVault(mock_async_datalake)
     asset = await vault.save("friendly", b"data", kind="image", media_type="image/png")
 
     assert asset.asset_id == "asset_new123"
-    mock_datalake.create_asset_from_object.assert_awaited()
-    mock_datalake.add_alias.assert_awaited_once_with("asset_new123", "friendly")
+    mock_async_datalake.create_asset_from_object.assert_awaited()
+    mock_async_datalake.add_alias.assert_awaited_once_with("asset_new123", "friendly")
 
 
 @pytest.mark.asyncio
-async def test_data_vault_save_skips_add_alias_when_same_as_asset_id(mock_datalake):
+async def test_async_data_vault_save_skips_add_alias_when_same_as_asset_id(mock_async_datalake):
     created = Asset(
         kind="artifact",
         media_type="application/octet-stream",
         storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
         asset_id="same_id",
     )
-    mock_datalake.create_asset_from_object = AsyncMock(return_value=created)
+    mock_async_datalake.create_asset_from_object = AsyncMock(return_value=created)
 
-    vault = DataVault(mock_datalake)
+    vault = AsyncDataVault(mock_async_datalake)
     await vault.save("same_id", b"data", kind="artifact", media_type="application/octet-stream")
 
-    mock_datalake.add_alias.assert_not_called()
+    mock_async_datalake.add_alias.assert_not_called()
+
+
+@pytest.fixture
+def mock_sync_datalake():
+    dl = Mock()
+    dl.get_asset_by_alias = Mock()
+    dl.get_object = Mock(return_value=b"sync-payload")
+    dl.create_asset_from_object = Mock()
+    dl.add_alias = Mock()
+    return dl
+
+
+def test_data_vault_load(mock_sync_datalake):
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    mock_sync_datalake.get_asset_by_alias.return_value = asset
+
+    vault = DataVault(mock_sync_datalake)
+    out = vault.load("alias1")
+
+    mock_sync_datalake.get_asset_by_alias.assert_called_once_with("alias1")
+    mock_sync_datalake.get_object.assert_called_once_with(asset.storage_ref)
+    assert out == b"sync-payload"
+
+
+def test_data_vault_save_adds_secondary_alias(mock_sync_datalake):
+    created = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="new_asset",
+    )
+    mock_sync_datalake.create_asset_from_object = Mock(return_value=created)
+
+    vault = DataVault(mock_sync_datalake)
+    vault.save("friendly", b"bytes", kind="image", media_type="image/png")
+
+    mock_sync_datalake.add_alias.assert_called_once_with("new_asset", "friendly")
+
+
+def test_data_vault_rejects_incomplete_duck():
+    bad = MagicMock()
+    bad.get_asset_by_alias = Mock()
+    del bad.get_object
+    with pytest.raises(TypeError, match="get_object"):
+        DataVault(bad)
 
 
 def test_sanitize_object_name_component():
