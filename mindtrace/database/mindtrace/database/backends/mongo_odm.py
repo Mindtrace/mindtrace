@@ -1,7 +1,9 @@
 import asyncio
-from typing import Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
+from bson import ObjectId
+from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
@@ -43,6 +45,10 @@ class MindtraceDocument(Document):
 
 
 ModelType = TypeVar("ModelType", bound=MindtraceDocument)
+
+# Beanie binds each Document class to one database. When the same model class is used with another
+# ``db_name`` on the same URI, skip a second ``init_beanie`` and route I/O through Motor to this ODM's database.
+_BEANIE_PRIMARY_DB: dict[tuple[Type[Any], str], str] = {}
 
 
 class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
@@ -129,6 +135,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
+        self._db_uri = db_uri
+        self._motor_routing = False
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
         self._model_odms: Dict[str, "MongoMindtraceODM"] = {}
@@ -192,6 +200,33 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             # Defer initialization - operations will auto-init on first use
             self._needs_init = True
 
+    def _collection_name(self) -> str:
+        if self.model_cls is None:
+            raise ValueError("model_cls is required for collection name resolution")
+        return getattr(self.model_cls.Settings, "name")
+
+    def _motor_collection(self):
+        return self.client[self.db_name][self._collection_name()]
+
+    def _mongo_doc_to_model(self, doc: dict | None) -> T | None:
+        if doc is None:
+            return None
+        payload = dict(doc)
+        if "_id" in payload and "id" not in payload:
+            payload["id"] = payload["_id"]
+        return self.model_cls.model_validate(payload)
+
+    @staticmethod
+    def _to_object_id(id: str | PydanticObjectId | ObjectId) -> ObjectId:
+        if isinstance(id, ObjectId):
+            return id
+        if isinstance(id, PydanticObjectId):
+            return ObjectId(str(id))
+        try:
+            return ObjectId(str(id))
+        except InvalidId as exc:
+            raise DocumentNotFoundError(f"Invalid document id {id!r}") from exc
+
     async def _do_initialize(self):
         """Internal method to perform the actual initialization."""
         if not self._is_initialized:
@@ -199,7 +234,14 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 # Multi-model mode: initialize all models together
                 document_models = list(self._models.values())
             else:
-                # Single model mode
+                # Single model mode: avoid re-binding the same Beanie model to a different database.
+                key = (self.model_cls, self._db_uri)
+                if key in _BEANIE_PRIMARY_DB:
+                    if _BEANIE_PRIMARY_DB[key] != self.db_name:
+                        self._motor_routing = True
+                    self._is_initialized = True
+                    return
+                _BEANIE_PRIMARY_DB[key] = self.db_name
                 document_models = [self.model_cls]
 
             await init_beanie(
@@ -340,6 +382,19 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         doc.id = None
 
         try:
+            if self._motor_routing:
+                raw = doc.model_dump(mode="python", by_alias=True)
+                raw.pop("_id", None)
+                if raw.get("id") is None:
+                    raw.pop("id", None)
+                result = await self._motor_collection().insert_one(raw)
+                inserted = await self._motor_collection().find_one({"_id": result.inserted_id})
+                if inserted is None:
+                    raise DuplicateInsertError("insert_one did not persist a readable document")
+                out = self._mongo_doc_to_model(inserted)
+                if out is None:
+                    raise DuplicateInsertError("Could not deserialize inserted document")
+                return out
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
@@ -381,6 +436,18 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not self._is_initialized:
             await self.initialize()
 
+        if self._motor_routing:
+            if fetch_links:
+                raise NotImplementedError("fetch_links is not supported for this database routing mode")
+            oid = self._to_object_id(id)
+            doc = await self._motor_collection().find_one({"_id": oid})
+            if not doc:
+                raise DocumentNotFoundError(f"Object with id {id} not found")
+            out = self._mongo_doc_to_model(doc)
+            if out is None:
+                raise DocumentNotFoundError(f"Object with id {id} not found")
+            return out
+
         doc = await self.model_cls.get(id, fetch_links=fetch_links)
         if not doc:
             raise DocumentNotFoundError(f"Object with id {id} not found")
@@ -420,6 +487,29 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Auto-initialize if needed
         if not self._is_initialized:
             await self.initialize()
+
+        if self._motor_routing:
+            if isinstance(obj, self.model_cls):
+                if not obj.id:
+                    raise DocumentNotFoundError("Document must have an id to be updated")
+                oid = self._to_object_id(obj.id)
+                raw = obj.model_dump(mode="python", by_alias=True)
+                await self._motor_collection().replace_one({"_id": oid}, raw)
+                return obj
+            if not hasattr(obj, "id") or not obj.id:
+                raise DocumentNotFoundError("Document must have an id to be updated")
+            oid = self._to_object_id(obj.id)
+            existing = await self._motor_collection().find_one({"_id": oid})
+            if not existing:
+                raise DocumentNotFoundError(f"Object with id {obj.id} not found")
+            doc = self._mongo_doc_to_model(existing)
+            if doc is None:
+                raise DocumentNotFoundError(f"Object with id {obj.id} not found")
+            for key, value in obj.model_dump(exclude={"id"}).items():
+                setattr(doc, key, value)
+            raw = doc.model_dump(mode="python", by_alias=True)
+            await self._motor_collection().replace_one({"_id": oid}, raw)
+            return doc
 
         # Check if obj is already a document instance
         if isinstance(obj, self.model_cls):
@@ -471,6 +561,13 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not self._is_initialized:
             await self.initialize()
 
+        if self._motor_routing:
+            oid = self._to_object_id(id)
+            result = await self._motor_collection().delete_one({"_id": oid})
+            if result.deleted_count == 0:
+                raise DocumentNotFoundError(f"Object with id {id} not found")
+            return
+
         doc = await self.model_cls.get(id)
         if doc:
             await doc.delete()
@@ -501,6 +598,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Auto-initialize if needed (backward compatible)
         if not self._is_initialized:
             await self.initialize()
+
+        if self._motor_routing:
+            raw = await self._motor_collection().find({}).to_list(length=None)
+            return [m for m in (self._mongo_doc_to_model(d) for d in raw) if m is not None]
 
         return await self.model_cls.find_all().to_list()
 
@@ -541,6 +642,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Remove fetch_links from kwargs if present (it's a parameter, not a query field)
         kwargs_without_fetch_links = {k: v for k, v in kwargs.items() if k != "fetch_links"}
 
+        if self._motor_routing:
+            if fetch_links:
+                raise NotImplementedError("fetch_links is not supported for this database routing mode")
+            if len(args) != 1 or not isinstance(args[0], dict) or kwargs_without_fetch_links:
+                raise NotImplementedError(
+                    "Only a single dict filter is supported for find() in this database routing mode"
+                )
+            raw = await self._motor_collection().find(args[0]).to_list(length=None)
+            return [m for m in (self._mongo_doc_to_model(d) for d in raw) if m is not None]
+
         # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
         query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
         return await query.to_list()
@@ -568,6 +679,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # Auto-initialize if needed (backward compatible)
         if not self._is_initialized:
             await self.initialize()
+        if self._motor_routing:
+            return await self._motor_collection().aggregate(pipeline).to_list(None)
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
     def get_raw_model(self) -> Type[T]:
