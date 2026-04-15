@@ -128,7 +128,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 10
+        assert mock_odm.initialize.await_count == 11
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -136,7 +136,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 10
+        assert mock_odm.initialize.await_count == 11
 
     def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
         now = async_datalake._utc_now()

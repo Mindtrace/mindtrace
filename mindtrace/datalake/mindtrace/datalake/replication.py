@@ -171,6 +171,7 @@ class ReplicationManager:
                 result.updated_assets += 1
             else:
                 await self.target.asset_database.insert(replicated)
+                await self.target.ensure_primary_asset_alias(replicated)
                 result.created_assets += 1
 
         for record in request.annotation_records:
@@ -549,6 +550,7 @@ class ReplicationManager:
         existing = await self.source.asset_database.find({"asset_id": asset.asset_id})
         if not existing:
             await self.source.asset_database.insert(asset)
+            await self.source.ensure_primary_asset_alias(asset)
             return
         current = existing[0]
         current.storage_ref = asset.storage_ref
@@ -688,6 +690,7 @@ class ReplicationManager:
         existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})
         if not existing:
             await self.target.asset_database.insert(new_asset)
+            await self.target.ensure_primary_asset_alias(new_asset)
             return
         current = existing[0]
         current.storage_ref = new_asset.storage_ref

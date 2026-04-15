@@ -83,6 +83,7 @@ def source_datalake(replication_objects):
         update=AsyncMock(),
         find=AsyncMock(return_value=[]),
     )
+    datalake.ensure_primary_asset_alias = AsyncMock(side_effect=lambda obj: obj)
     return datalake
 
 
@@ -114,6 +115,7 @@ def target_datalake():
         update=AsyncMock(),
         find=AsyncMock(return_value=[]),
     )
+    datalake.ensure_primary_asset_alias = AsyncMock(side_effect=lambda obj: obj)
     datalake.annotation_schema_database = SimpleNamespace(
         insert=AsyncMock(side_effect=lambda obj: obj),
         update=AsyncMock(),

@@ -290,6 +290,7 @@ class DatasetSyncManager:
                 if await self._asset_exists(asset.asset_id):
                     continue
                 await self.target.asset_database.insert(created)
+                await self.target.ensure_primary_asset_alias(created)
                 created_assets += 1
                 continue
 
@@ -302,6 +303,7 @@ class DatasetSyncManager:
 
             try:
                 await self.target.asset_database.insert(created)
+                await self.target.ensure_primary_asset_alias(created)
                 created_assets += 1
             except DuplicateInsertError:
                 await self._refresh_target_asset_for_cross_lake_import(created)
@@ -450,6 +452,7 @@ class DatasetSyncManager:
         existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})
         if not existing:
             await self.target.asset_database.insert(new_asset)
+            await self.target.ensure_primary_asset_alias(new_asset)
             return
         current = existing[0]
         current.storage_ref = new_asset.storage_ref
