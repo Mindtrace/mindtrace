@@ -9,7 +9,10 @@ from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.replication import ReplicationManager
+from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
 from mindtrace.datalake.service_types import (
+    AddAliasInput,
+    AddAliasSchema,
     AddAnnotationRecordsInput,
     AddAnnotationRecordsSchema,
     AddedAnnotationRecordsOutput,
@@ -19,6 +22,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSchemaOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetRetentionListOutput,
@@ -80,6 +84,8 @@ from mindtrace.datalake.service_types import (
     GetAnnotationSchemaByNameVersionSchema,
     GetAnnotationSchemaSchema,
     GetAnnotationSetSchema,
+    GetAssetByAliasInput,
+    GetAssetByAliasSchema,
     GetAssetRetentionSchema,
     GetAssetSchema,
     GetByIdInput,
@@ -119,10 +125,8 @@ from mindtrace.datalake.service_types import (
     ReplicationHydrateAssetPayloadSchema,
     ReplicationMarkLocalDeleteEligibleInput,
     ReplicationMarkLocalDeleteEligibleSchema,
-    ReplicationReclaimRequest,
     ReplicationReclaimResultOutput,
     ReplicationReclaimSchema,
-    ReplicationReconcileRequest,
     ReplicationReconcileResultOutput,
     ReplicationReconcileSchema,
     ReplicationStatusOutput,
@@ -205,9 +209,13 @@ class DatalakeService(Service):
 
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
+        self.add_endpoint(
+            "assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True
+        )
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
         self.add_endpoint("assets.delete", self.delete_asset, schema=DeleteAssetSchema)
+        self.add_endpoint("aliases.add", self.add_alias, schema=AddAliasSchema)
         self.add_endpoint(
             "assets.create_from_object", self.create_asset_from_object, schema=CreateAssetFromObjectSchema
         )
@@ -452,6 +460,15 @@ class DatalakeService(Service):
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
         return AssetOutput(asset=await datalake.get_asset(payload.id))
+
+    async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        return AssetOutput(asset=await datalake.get_asset_by_alias(payload.alias))
+
+    async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
+        datalake = await self._ensure_datalake()
+        row = await datalake.add_alias(payload.asset_id, payload.alias)
+        return AssetAliasOutput(asset_alias=row)
 
     async def list_assets(self, payload: ListInput) -> AssetListOutput:
         datalake = await self._ensure_datalake()
@@ -710,7 +727,9 @@ class DatalakeService(Service):
         result = await manager.upsert_metadata_batch(payload)
         return ReplicationBatchResultOutput(result=result)
 
-    async def replication_hydrate_asset_payload(self, payload: ReplicationHydrateAssetPayloadInput) -> AssetOutput:
+    async def replication_hydrate_asset_payload(
+        self, payload: ReplicationHydrateAssetPayloadInput
+    ) -> AssetOutput:
         datalake = await self._ensure_datalake()
         manager = ReplicationManager(datalake)
         asset = await manager.hydrate_asset_payload(payload.asset_id, mount_map=payload.mount_map)
