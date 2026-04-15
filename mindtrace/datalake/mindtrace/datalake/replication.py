@@ -241,6 +241,7 @@ class MetadataFirstReplicationManager:
         if source_asset_id is None:
             source_asset_id = asset_id
         source_asset = await self.source.get_asset(source_asset_id)
+        source_payload_view = Asset.model_validate(source_asset.model_dump(mode="python"))
 
         await self._set_asset_replication_state(
             target_asset,
@@ -250,8 +251,8 @@ class MetadataFirstReplicationManager:
         )
 
         try:
-            completed_ref = await self._transfer_payload(source_asset, mount_map or {})
-            await self._verify_transferred_payload(source_asset, completed_ref)
+            completed_ref = await self._transfer_payload(source_payload_view, mount_map or {})
+            await self._verify_transferred_payload(source_payload_view, completed_ref)
             refreshed_target_asset = await self.target.get_asset(asset_id)
             refreshed_target_asset.storage_ref = completed_ref
             await self._set_asset_replication_state(
