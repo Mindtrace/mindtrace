@@ -27,9 +27,9 @@ const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 describe("Main layout", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseRouter.mockReturnValue({ replace: mockReplace } as ReturnType<
-      typeof useRouter
-    >);
+    mockUseRouter.mockReturnValue({
+      replace: mockReplace,
+    } as unknown as ReturnType<typeof useRouter>);
   });
 
   it("shows LoadingOverlay when isLoading", () => {

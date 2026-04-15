@@ -13,9 +13,9 @@ const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 describe("Home Page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseRouter.mockReturnValue({ replace: mockReplace } as ReturnType<
-      typeof useRouter
-    >);
+    mockUseRouter.mockReturnValue({
+      replace: mockReplace,
+    } as unknown as ReturnType<typeof useRouter>);
   });
 
   it("redirects to /login when not authenticated", () => {
