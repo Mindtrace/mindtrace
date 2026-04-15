@@ -6,6 +6,16 @@ from pydantic import BaseModel, Field
 from mindtrace.database import MindtraceDocument
 
 
+@pytest.fixture(autouse=True)
+def _clear_mongo_beanie_primary_db():
+    """``MongoMindtraceODM`` tracks a global (model, uri) -> first db_name; reset between tests."""
+    from mindtrace.database.backends import mongo_odm
+
+    mongo_odm._BEANIE_PRIMARY_DB.clear()
+    yield
+    mongo_odm._BEANIE_PRIMARY_DB.clear()
+
+
 class UserCreate(BaseModel):
     name: str
     age: int
