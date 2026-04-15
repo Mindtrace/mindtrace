@@ -46,9 +46,11 @@ class MindtraceDocument(Document):
 
 ModelType = TypeVar("ModelType", bound=MindtraceDocument)
 
-# Beanie binds each Document class to one database. When the same model class is used with another
-# ``db_name`` on the same URI, skip a second ``init_beanie`` and route I/O through Motor to this ODM's database.
-_BEANIE_PRIMARY_DB: dict[tuple[Type[Any], str], str] = {}
+# Beanie binds each Document class to one database *process-wide*. A second ``init_beanie`` for the same
+# ``model_cls`` (whether another ``db_name``, another URI, or another ``MongoMindtraceODM`` instance)
+# would re-bind that class and break earlier lakes. Only the first ODM per ``model_cls`` runs
+# ``init_beanie``; subsequent backends set ``_motor_routing`` and use Motor on ``self.client[self.db_name]``.
+_BEANIE_INITIALIZED_MODEL_CLASSES: set[Type[Any]] = set()
 
 
 class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
@@ -135,7 +137,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
-        self._db_uri = db_uri
         self._motor_routing = False
         self._allow_index_dropping = allow_index_dropping
         self._is_initialized = False
@@ -234,14 +235,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 # Multi-model mode: initialize all models together
                 document_models = list(self._models.values())
             else:
-                # Single model mode: avoid re-binding the same Beanie model to a different database.
-                key = (self.model_cls, self._db_uri)
-                if key in _BEANIE_PRIMARY_DB:
-                    if _BEANIE_PRIMARY_DB[key] != self.db_name:
-                        self._motor_routing = True
+                # Single model mode: at most one init_beanie per Document subclass in this process.
+                if self.model_cls in _BEANIE_INITIALIZED_MODEL_CLASSES:
+                    self._motor_routing = True
                     self._is_initialized = True
                     return
-                _BEANIE_PRIMARY_DB[key] = self.db_name
+                _BEANIE_INITIALIZED_MODEL_CLASSES.add(self.model_cls)
                 document_models = [self.model_cls]
 
             await init_beanie(

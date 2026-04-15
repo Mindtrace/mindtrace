@@ -8,12 +8,12 @@ from mindtrace.database import MindtraceDocument
 
 @pytest.fixture(autouse=True)
 def _clear_mongo_beanie_primary_db():
-    """``MongoMindtraceODM`` tracks a global (model, uri) -> first db_name; reset between tests."""
+    """Reset ``_BEANIE_INITIALIZED_MODEL_CLASSES`` so each test gets a predictable ``init_beanie`` mock."""
     from mindtrace.database.backends import mongo_odm
 
-    mongo_odm._BEANIE_PRIMARY_DB.clear()
+    mongo_odm._BEANIE_INITIALIZED_MODEL_CLASSES.clear()
     yield
-    mongo_odm._BEANIE_PRIMARY_DB.clear()
+    mongo_odm._BEANIE_INITIALIZED_MODEL_CLASSES.clear()
 
 
 class UserCreate(BaseModel):
