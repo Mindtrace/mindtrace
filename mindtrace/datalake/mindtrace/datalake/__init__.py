@@ -1,5 +1,13 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .data_vault import AsyncDataVault, DataVault
+from .data_vault_backends import (
+    AsyncDataVaultBackend,
+    DataVaultBackend,
+    DatalakeServiceAsyncDataVaultBackend,
+    DatalakeServiceDataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
+)
 from .datalake import Datalake
 from .replication import ReplicationManager
 from .replication_types import (
@@ -55,7 +63,13 @@ __all__ = [
     "Asset",
     "AssetAlias",
     "AsyncDataVault",
+    "AsyncDataVaultBackend",
     "DataVault",
+    "DataVaultBackend",
+    "DatalakeServiceAsyncDataVaultBackend",
+    "DatalakeServiceDataVaultBackend",
+    "LocalAsyncDataVaultBackend",
+    "LocalDataVaultBackend",
     "DuplicateAliasError",
     "PascalVocImportConfig",
     "PascalVocImportSummary",
