@@ -21,9 +21,44 @@ from mindtrace.datalake.service_types import (
     GetObjectInput,
 )
 from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
+from mindtrace.services.core.connection_manager import ConnectionManager
 
 _SYNC_VAULT_METHOD_NAMES = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
 _ASYNC_VAULT_METHOD_NAMES = _SYNC_VAULT_METHOD_NAMES
+
+# Sync/async method names on a ``DatalakeService`` client from ``Service.connect`` /
+# ``generate_connection_manager(DatalakeService)``.
+_SYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
+    "assets_get_by_alias",
+    "objects_get",
+    "assets_create_from_object",
+    "aliases_add",
+)
+_ASYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
+    "aassets_get_by_alias",
+    "aobjects_get",
+    "aassets_create_from_object",
+    "aaliases_add",
+)
+
+
+def looks_like_datalake_service_sync_client(obj: Any) -> bool:
+    """Return True if ``obj`` is a :class:`~mindtrace.services.ConnectionManager` with sync datalake task methods.
+
+    ``MagicMock`` and plain ducks are rejected so in-process datalake fakes are not mistaken for HTTP clients.
+    """
+
+    if not isinstance(obj, ConnectionManager):
+        return False
+    return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+
+
+def looks_like_datalake_service_async_client(obj: Any) -> bool:
+    """Return True if ``obj`` is a connection manager with async ``a``-prefixed datalake task methods."""
+
+    if not isinstance(obj, ConnectionManager):
+        return False
+    return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
 
 
 class AsyncDataVaultBackend(ABC):
