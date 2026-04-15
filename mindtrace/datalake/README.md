@@ -48,6 +48,17 @@ flowchart TD
 
 ---
 
+## DataVault (`AsyncDataVault` / `DataVault`)
+
+**DataVault** is a small facade over **`save(alias, payload, …)`** and **`load(alias)`**: it creates/links assets, registers aliases, and reads objects through the same registry stack as **`AsyncDatalake`**.
+
+- **In-process:** `AsyncDataVault(async_datalake)` or `DataVault(datalake)` (or pass an explicit **`LocalAsyncDataVaultBackend`** / **`LocalDataVaultBackend`**).
+- **Remote HTTP/MCP:** build a connection manager with **`generate_connection_manager(DatalakeService)`** and wrap it in **`DatalakeServiceAsyncDataVaultBackend`** or **`DatalakeServiceDataVaultBackend`**.
+
+When the lake is running in **Docker** (Mongo + MinIO + `DatalakeService`), see **[docker/datalake/README.md](../../docker/datalake/README.md#using-datavault-against-the-compose-stack)** for a copy-paste sample against `http://localhost:8080`.
+
+---
+
 ## Datalake service (`DatalakeService`)
 
 The package provides **`DatalakeService`**, which wraps **`AsyncDatalake`** with the Mindtrace **`Service`** layer (FastAPI + MCP). Initialization can be lazy; live processes may enable startup initialization and background helpers (for example upload-session reconciliation).
@@ -72,7 +83,7 @@ Includes, among others:
 
 - **`health`**, **`summary`**, **`mounts`**
 - **`objects.*`** — put/get/head/copy, upload session create/complete
-- **`assets.*`**, **`collections.*`**, **`collection_items.*`**, **`asset_retentions.*`**
+- **`assets.*`**, **`assets.get_by_alias`**, **`aliases.add`**, **`collections.*`**, **`collection_items.*`**, **`asset_retentions.*`**
 - **`annotation_*`**, **`datums.*`**
 - **`dataset_versions.*`** — CRUD, resolve, **export**, **import_prepare**, **import_commit**
 - **`replication.*`** — **upsert_batch**, **hydrate_asset_payload**, **reconcile**, **mark_local_delete_eligible**, **delete_local_payload**, **reclaim_verified_payloads**, **status**
