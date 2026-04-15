@@ -16,12 +16,14 @@ from mindtrace.datalake.types import (
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    DuplicateAliasError,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -137,6 +139,11 @@ class AsyncDatalake(Mindtrace):
             db_name=mongo_db_name,
             db_uri=mongo_db_uri,
         )
+        self.asset_alias_database = MongoMindtraceODM(
+            model_cls=AssetAlias,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
 
     async def initialize(self) -> None:
         await self.asset_database.initialize()
@@ -149,6 +156,7 @@ class AsyncDatalake(Mindtrace):
         await self.datum_database.initialize()
         await self.dataset_version_database.initialize()
         await self.direct_upload_session_database.initialize()
+        await self.asset_alias_database.initialize()
 
     @classmethod
     async def create(
@@ -451,7 +459,80 @@ class AsyncDatalake(Mindtrace):
             created_by=created_by,
             updated_at=self._utc_now(),
         )
-        return await self.asset_database.insert(asset)
+        inserted = await self.asset_database.insert(asset)
+        await self.ensure_primary_asset_alias(inserted)
+        return inserted
+
+    async def ensure_primary_asset_alias(self, asset: Asset) -> AssetAlias:
+        """Ensure a primary alias row exists with ``alias == asset.asset_id`` (idempotent)."""
+        existing = await self.asset_alias_database.find({"alias": asset.asset_id})
+        if existing:
+            row = existing[0]
+            if row.asset_id != asset.asset_id:
+                raise DuplicateAliasError(
+                    f"Alias {asset.asset_id!r} is already mapped to asset_id {row.asset_id!r}"
+                )
+            return row
+        doc = self._build_document(
+            AssetAlias,
+            alias=asset.asset_id,
+            asset_id=asset.asset_id,
+            is_primary=True,
+            created_at=self._utc_now(),
+        )
+        return await self.asset_alias_database.insert(doc)
+
+    async def resolve_alias(self, alias: str) -> str:
+        """Return ``asset_id`` for a string alias, or raise :class:`~mindtrace.database.core.exceptions.DocumentNotFoundError`."""
+        rows = await self.asset_alias_database.find({"alias": alias})
+        if not rows:
+            raise DocumentNotFoundError(f"No asset alias {alias!r}")
+        return rows[0].asset_id
+
+    async def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        """Register an additional alias for ``asset_id``. Raises :class:`~mindtrace.datalake.types.DuplicateAliasError` on conflict."""
+        await self.get_asset(asset_id)
+        if alias == asset_id:
+            return await self.ensure_primary_asset_alias(await self.get_asset(asset_id))
+        existing = await self.asset_alias_database.find({"alias": alias})
+        if existing:
+            if existing[0].asset_id == asset_id:
+                return existing[0]
+            raise DuplicateAliasError(
+                f"Alias {alias!r} is already mapped to asset_id {existing[0].asset_id!r}"
+            )
+        doc = self._build_document(
+            AssetAlias,
+            alias=alias,
+            asset_id=asset_id,
+            is_primary=False,
+            created_at=self._utc_now(),
+        )
+        try:
+            return await self.asset_alias_database.insert(doc)
+        except DuplicateInsertError as e:
+            raise DuplicateAliasError(f"Alias {alias!r} already exists") from e
+
+    async def remove_alias(self, alias: str) -> None:
+        """Remove an alias mapping. Refuses to remove the primary alias where ``alias == asset_id``."""
+        rows = await self.asset_alias_database.find({"alias": alias})
+        if not rows:
+            raise DocumentNotFoundError(f"No asset alias {alias!r}")
+        row = rows[0]
+        if row.is_primary and row.alias == row.asset_id:
+            raise ValueError(
+                "Cannot remove the primary alias (alias equal to asset_id); delete the asset instead"
+            )
+        await self.asset_alias_database.delete(row.id)
+
+    async def list_aliases_for_asset(self, asset_id: str) -> list[str]:
+        """Return all alias strings registered for ``asset_id``."""
+        rows = await self.asset_alias_database.find({"asset_id": asset_id})
+        return [r.alias for r in rows]
+
+    async def get_asset_by_alias(self, alias: str) -> Asset:
+        """Load :class:`Asset` by alias string."""
+        return await self.get_asset(await self.resolve_alias(alias))
 
     async def get_asset(self, asset_id: str) -> Asset:
         results = await self.asset_database.find({"asset_id": asset_id})
@@ -470,6 +551,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
+        alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
+        for row in alias_rows:
+            await self.asset_alias_database.delete(row.id)
         await self.asset_database.delete(asset.id)
 
     async def create_collection(

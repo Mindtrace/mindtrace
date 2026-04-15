@@ -335,6 +335,24 @@ class Datalake(Mindtrace):
     def delete_asset(self, asset_id: str) -> None:
         self._submit_coro(self._backend.delete_asset(asset_id))
 
+    def ensure_primary_asset_alias(self, asset):
+        return self._submit_coro(self._backend.ensure_primary_asset_alias(asset))
+
+    def resolve_alias(self, alias: str) -> str:
+        return self._submit_coro(self._backend.resolve_alias(alias))
+
+    def add_alias(self, asset_id: str, alias: str):
+        return self._submit_coro(self._backend.add_alias(asset_id, alias))
+
+    def remove_alias(self, alias: str) -> None:
+        self._submit_coro(self._backend.remove_alias(alias))
+
+    def list_aliases_for_asset(self, asset_id: str) -> list[str]:
+        return self._submit_coro(self._backend.list_aliases_for_asset(asset_id))
+
+    def get_asset_by_alias(self, alias: str):
+        return self._submit_coro(self._backend.get_asset_by_alias(alias))
+
     def create_collection(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_collection(**kwargs))
 

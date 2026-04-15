@@ -1,4 +1,5 @@
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
+from .data_vault import DataVault
 from .datalake import Datalake
 from .replication import ReplicationManager
 from .replication_types import (
@@ -28,7 +29,9 @@ from .types import (
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetAlias,
     AssetRetention,
+    DuplicateAliasError,
     Collection,
     CollectionItem,
     DatasetVersion,
@@ -50,6 +53,9 @@ __all__ = [
     "AnnotationSource",
     "AnnotationSchemaInUseError",
     "Asset",
+    "AssetAlias",
+    "DataVault",
+    "DuplicateAliasError",
     "PascalVocImportConfig",
     "PascalVocImportSummary",
     "AssetRetention",
