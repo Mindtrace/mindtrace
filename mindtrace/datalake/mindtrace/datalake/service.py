@@ -114,6 +114,17 @@ from mindtrace.datalake.service_types import (
     ReplicationBatchRequest,
     ReplicationBatchResultOutput,
     ReplicationBatchUpsertSchema,
+    ReplicationDeleteLocalPayloadSchema,
+    ReplicationHydrateAssetPayloadInput,
+    ReplicationHydrateAssetPayloadSchema,
+    ReplicationMarkLocalDeleteEligibleInput,
+    ReplicationMarkLocalDeleteEligibleSchema,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResultOutput,
+    ReplicationReclaimSchema,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResultOutput,
+    ReplicationReconcileSchema,
     ReplicationStatusOutput,
     ReplicationStatusSchema,
     ResolveCollectionItemSchema,
@@ -287,6 +298,27 @@ class DatalakeService(Service):
         )
         self.add_endpoint(
             "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
+        )
+        self.add_endpoint(
+            "replication.hydrate_asset_payload",
+            self.replication_hydrate_asset_payload,
+            schema=ReplicationHydrateAssetPayloadSchema,
+        )
+        self.add_endpoint("replication.reconcile", self.replication_reconcile, schema=ReplicationReconcileSchema)
+        self.add_endpoint(
+            "replication.mark_local_delete_eligible",
+            self.replication_mark_local_delete_eligible,
+            schema=ReplicationMarkLocalDeleteEligibleSchema,
+        )
+        self.add_endpoint(
+            "replication.delete_local_payload",
+            self.replication_delete_local_payload,
+            schema=ReplicationDeleteLocalPayloadSchema,
+        )
+        self.add_endpoint(
+            "replication.reclaim_verified_payloads",
+            self.replication_reclaim_verified_payloads,
+            schema=ReplicationReclaimSchema,
         )
         self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
 
@@ -677,6 +709,40 @@ class DatalakeService(Service):
         manager = ReplicationManager(datalake)
         result = await manager.upsert_metadata_batch(payload)
         return ReplicationBatchResultOutput(result=result)
+
+    async def replication_hydrate_asset_payload(self, payload: ReplicationHydrateAssetPayloadInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.hydrate_asset_payload(payload.asset_id, mount_map=payload.mount_map)
+        return AssetOutput(asset=asset)
+
+    async def replication_reconcile(self, payload: ReplicationReconcileRequest) -> ReplicationReconcileResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reconcile_pending_payloads(payload)
+        return ReplicationReconcileResultOutput(result=result)
+
+    async def replication_mark_local_delete_eligible(
+        self, payload: ReplicationMarkLocalDeleteEligibleInput
+    ) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.mark_local_delete_eligible(payload.asset_id, when=payload.when)
+        return AssetOutput(asset=asset)
+
+    async def replication_delete_local_payload(self, payload: GetByIdInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.delete_local_payload(payload.id)
+        return AssetOutput(asset=asset)
+
+    async def replication_reclaim_verified_payloads(
+        self, payload: ReplicationReclaimRequest
+    ) -> ReplicationReclaimResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reclaim_verified_payloads(payload)
+        return ReplicationReclaimResultOutput(result=result)
 
     async def replication_status(self) -> ReplicationStatusOutput:
         datalake = await self._ensure_datalake()

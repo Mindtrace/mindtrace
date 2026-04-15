@@ -10,6 +10,10 @@ from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
     ReplicationStatusResult,
 )
 from mindtrace.datalake.service import DatalakeService
@@ -67,6 +71,10 @@ from mindtrace.datalake.service_types import (
     ObjectUploadSessionOutput,
     PutObjectInput,
     ReplicationBatchResultOutput,
+    ReplicationHydrateAssetPayloadInput,
+    ReplicationMarkLocalDeleteEligibleInput,
+    ReplicationReclaimResultOutput,
+    ReplicationReconcileResultOutput,
     ReplicationStatusOutput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
@@ -1423,6 +1431,88 @@ async def test_service_replication_upsert_batch_uses_replication_manager(service
     assert isinstance(result, ReplicationBatchResultOutput)
     assert result.result == batch_result
     manager.upsert_metadata_batch.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_hydrate_asset_payload_uses_replication_manager(service, datalake_objects):
+    request = ReplicationHydrateAssetPayloadInput(asset_id=datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.hydrate_asset_payload = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_hydrate_asset_payload(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.hydrate_asset_payload.assert_awaited_once_with(datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+
+
+@pytest.mark.asyncio
+async def test_service_replication_reconcile_uses_replication_manager(service):
+    request = ReplicationReconcileRequest(asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"})
+    reconcile_result = ReplicationReconcileResult(
+        attempted_asset_ids=["asset_1"],
+        verified_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+        skipped_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.reconcile_pending_payloads = AsyncMock(return_value=reconcile_result)
+
+        result = await service.replication_reconcile(request)
+
+    assert isinstance(result, ReplicationReconcileResultOutput)
+    assert result.result == reconcile_result
+    manager.reconcile_pending_payloads.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_mark_local_delete_eligible_uses_replication_manager(service, datalake_objects):
+    request = ReplicationMarkLocalDeleteEligibleInput(asset_id=datalake_objects.asset.asset_id)
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.mark_local_delete_eligible = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_mark_local_delete_eligible(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.mark_local_delete_eligible.assert_awaited_once_with(datalake_objects.asset.asset_id, when=None)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_delete_local_payload_uses_replication_manager(service, datalake_objects):
+    request = GetByIdInput(id=datalake_objects.asset.asset_id)
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.delete_local_payload = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_delete_local_payload(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.delete_local_payload.assert_awaited_once_with(datalake_objects.asset.asset_id)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_reclaim_verified_payloads_uses_replication_manager(service):
+    request = ReplicationReclaimRequest(asset_ids=["asset_1"], limit=5, require_verified_payload=True)
+    reclaim_result = ReplicationReclaimResult(
+        attempted_asset_ids=["asset_1"],
+        reclaimed_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+        skipped_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.reclaim_verified_payloads = AsyncMock(return_value=reclaim_result)
+
+        result = await service.replication_reclaim_verified_payloads(request)
+
+    assert isinstance(result, ReplicationReclaimResultOutput)
+    assert result.result == reclaim_result
+    manager.reclaim_verified_payloads.assert_awaited_once_with(request)
 
 
 @pytest.mark.asyncio
