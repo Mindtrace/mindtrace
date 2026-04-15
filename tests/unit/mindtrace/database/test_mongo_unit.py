@@ -1,7 +1,11 @@
+import builtins
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic import BaseModel, Field
+from beanie import Document as BeanieDocument
+from bson import ObjectId
+from pydantic import BaseModel, Field, field_validator
 
 from mindtrace.database import MindtraceDocument
 
@@ -30,6 +34,25 @@ class UserDoc(MindtraceDocument):
     class Settings:
         name = "users"
         use_cache = False
+
+
+class MotorDoc(BaseModel):
+    """Plain Pydantic model for motor-routing unit tests (avoids Beanie ``__init__`` / collection binding)."""
+
+    name: str
+    age: int
+    email: str
+    id: Optional[str] = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_to_str(cls, v):
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
+
+    class Settings:
+        name = "users"
 
 
 @pytest.fixture
@@ -1083,3 +1106,439 @@ def test_mongo_backend_update_sync_from_async_context_raises_error():
     with patch("asyncio.get_running_loop", return_value=mock_loop):
         with pytest.raises(RuntimeError, match="update_sync\\(\\) called from async context"):
             backend.update_sync(mock_doc)
+
+
+def test_mindtrace_database_unknown_attribute_raises():
+    """``__getattr__`` fallback raises for unknown exports (covers ``__init__.py``)."""
+    import mindtrace.database as md
+
+    with pytest.raises(AttributeError, match="has no attribute"):
+        getattr(md, "NotARealExport999")
+
+
+@patch("mindtrace.database.backends.mongo_odm.init_beanie")
+@pytest.mark.asyncio
+async def test_second_odm_same_model_uses_motor_routing_and_single_init_beanie(mock_init_beanie):
+    """Only the first ``MongoMindtraceODM`` per ``model_cls`` calls ``init_beanie``; the second uses Motor."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    b1 = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "db1")
+    await b1.initialize()
+    assert b1._motor_routing is False
+    mock_init_beanie.assert_called_once()
+
+    b2 = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "db2")
+    await b2.initialize()
+    assert b2._motor_routing is True
+    mock_init_beanie.assert_called_once()
+
+
+def test_mongo_odm_helpers_and_to_object_id():
+    """Cover static helpers and ``_mongo_doc_to_model`` edge cases."""
+    from beanie import PydanticObjectId
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+
+    oid = ObjectId()
+    assert MongoMindtraceODM._to_object_id(oid) is oid
+    pid = PydanticObjectId()
+    assert MongoMindtraceODM._to_object_id(pid) == ObjectId(str(pid))
+    assert MongoMindtraceODM._to_object_id(str(oid)) == oid
+
+    from mindtrace.database import DocumentNotFoundError
+
+    with pytest.raises(DocumentNotFoundError, match="Invalid document id"):
+        MongoMindtraceODM._to_object_id("not-a-valid-object-id")
+
+    assert backend._mongo_doc_to_model(None) is None
+
+
+@pytest.mark.asyncio
+async def test_motor_insert_non_beanie_model_uses_model_dump_and_motor_collection():
+    """Motor insert path for plain ``BaseModel`` uses ``model_dump`` + Motor ``insert_one`` / ``find_one``."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    stored = {"_id": oid, "name": "A", "age": 1, "email": "a@b.com"}
+
+    mock_coll = MagicMock()
+    mock_coll.insert_one = AsyncMock(return_value=MagicMock(inserted_id=oid))
+    mock_coll.find_one = AsyncMock(return_value=stored)
+
+    user_in = UserCreate(name="A", age=1, email="a@b.com")
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        out = await backend.insert(user_in)
+        assert out.name == "A"
+        assert str(out.id) == str(oid)
+
+
+def test_motor_patch_fields_basemodel():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    u = UserCreate(name="U", age=1, email="e@e.com")
+    object.__setattr__(u, "id", "507f1f77bcf86cd799439011")
+    pm = backend._motor_patch_fields(u)
+    assert "id" not in pm
+    assert pm["name"] == "U"
+
+
+def test_motor_model_dump_delegates_get_dict_for_document():
+    """``isinstance(..., Document)`` selects ``get_dict``; covered without a live Beanie collection."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    fake_doc = MagicMock()
+    fake_doc.get_settings.return_value.keep_nulls = True
+
+    real_isinstance = builtins.isinstance
+
+    def fake_isinstance(obj, cls):
+        if obj is fake_doc and cls is BeanieDocument:
+            return True
+        return real_isinstance(obj, cls)
+
+    with patch("builtins.isinstance", fake_isinstance):
+        with patch("mindtrace.database.backends.mongo_odm.get_dict", return_value={"name": "Z"}) as mock_get_dict:
+            dumped = backend._motor_model_dump(fake_doc)
+            assert dumped == {"name": "Z"}
+            mock_get_dict.assert_called_once_with(fake_doc, to_db=True, keep_nulls=True)
+
+
+def test_motor_patch_fields_document_branch():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    fake_doc = MagicMock()
+    fake_doc.model_fields = {"name": None, "age": None, "email": None, "id": None}
+    fake_doc.name = "N"
+    fake_doc.age = 3
+    fake_doc.email = "e@e.com"
+    fake_doc.id = "507f1f77bcf86cd799439011"
+
+    real_isinstance = builtins.isinstance
+
+    def fake_isinstance(obj, cls):
+        if obj is fake_doc and cls is BeanieDocument:
+            return True
+        return real_isinstance(obj, cls)
+
+    with patch("builtins.isinstance", fake_isinstance):
+        patch_map = backend._motor_patch_fields(fake_doc)
+        assert "id" not in patch_map
+        assert patch_map["name"] == "N"
+
+
+@pytest.mark.asyncio
+async def test_motor_insert_inserted_none_raises_duplicate_insert_error():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database.core.exceptions import DuplicateInsertError
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    mock_coll = MagicMock()
+    mock_coll.insert_one = AsyncMock(return_value=MagicMock(inserted_id=oid))
+    mock_coll.find_one = AsyncMock(return_value=None)
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DuplicateInsertError, match="did not persist"):
+            await backend.insert(UserCreate(name="A", age=1, email="x@y.com"))
+
+
+@pytest.mark.asyncio
+async def test_motor_insert_mongo_doc_to_model_none_raises():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database.core.exceptions import DuplicateInsertError
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    mock_coll = MagicMock()
+    mock_coll.insert_one = AsyncMock(return_value=MagicMock(inserted_id=oid))
+    mock_coll.find_one = AsyncMock(return_value={"_id": oid, "name": "A", "age": 1, "email": "x@y.com"})
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with patch.object(backend, "_mongo_doc_to_model", return_value=None):
+            with pytest.raises(DuplicateInsertError, match="Could not deserialize"):
+                await backend.insert(UserCreate(name="A", age=1, email="x@y.com"))
+
+
+@pytest.mark.asyncio
+async def test_motor_get_find_delete_all_aggregate():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    row = {"_id": oid, "name": "A", "age": 1, "email": "a@b.com"}
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value=row)
+    mock_coll.find = MagicMock(return_value=MagicMock(to_list=AsyncMock(return_value=[row])))
+    mock_coll.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+    mock_agg = MagicMock()
+    mock_agg.to_list = AsyncMock(return_value=[{"_id": 1}])
+    mock_coll.aggregate = MagicMock(return_value=mock_agg)
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        got = await backend.get(str(oid))
+        assert got.email == "a@b.com"
+
+        all_rows = await backend.all()
+        assert len(all_rows) == 1
+
+        found = await backend.find({"name": "A"})
+        assert len(found) == 1
+
+        agg = await backend.aggregate([{"$group": {"_id": "$name"}}])
+        assert agg == [{"_id": 1}]
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value=None)
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        from mindtrace.database import DocumentNotFoundError
+
+        with pytest.raises(DocumentNotFoundError):
+            await backend.get(str(oid))
+
+    mock_coll = MagicMock()
+    mock_coll.delete_one = AsyncMock(return_value=MagicMock(deleted_count=0))
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DocumentNotFoundError):
+            await backend.delete(str(oid))
+
+
+@pytest.mark.asyncio
+async def test_motor_get_fetch_links_not_implemented():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    with pytest.raises(NotImplementedError, match="fetch_links"):
+        await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
+
+
+@pytest.mark.asyncio
+async def test_motor_find_not_implemented_for_expression_query():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    with pytest.raises(NotImplementedError, match="single dict filter"):
+        await backend.find({"name": "x"}, skip=1)
+
+    with pytest.raises(NotImplementedError, match="fetch_links"):
+        await backend.find({"name": "x"}, fetch_links=True)
+
+
+@pytest.mark.asyncio
+async def test_motor_update_document_and_basemodel_merge():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    existing = {"_id": oid, "name": "A", "age": 1, "email": "a@b.com"}
+    mock_coll = MagicMock()
+    mock_coll.replace_one = AsyncMock()
+
+    doc = MotorDoc(name="A", age=1, email="a@b.com", id=str(oid))
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with patch.object(backend, "_motor_model_dump", return_value=dict(existing)):
+            out = await backend.update(doc)
+            assert out.id == str(oid)
+            mock_coll.replace_one.assert_awaited()
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value=existing)
+    mock_coll.replace_one = AsyncMock()
+    patch_obj = UserCreate(name="B", age=2, email="b@b.com")
+    object.__setattr__(patch_obj, "id", str(oid))
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with patch.object(backend, "_mongo_doc_to_model", return_value=MotorDoc(name="A", age=1, email="a@b.com", id=str(oid))):
+            with patch.object(backend, "_motor_model_dump", return_value=dict(existing)):
+                out = await backend.update(patch_obj)
+                assert out.name == "B"
+                mock_coll.replace_one.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_motor_update_basemodel_existing_not_found():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database import DocumentNotFoundError
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    patch_obj = UserCreate(name="B", age=2, email="b@b.com")
+    object.__setattr__(patch_obj, "id", str(oid))
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value=None)
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DocumentNotFoundError):
+            await backend.update(patch_obj)
+
+
+@pytest.mark.asyncio
+async def test_motor_get_mongo_doc_to_model_returns_none_raises():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database import DocumentNotFoundError
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value={"_id": oid})
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with patch.object(backend, "_mongo_doc_to_model", return_value=None):
+            with pytest.raises(DocumentNotFoundError, match="not found"):
+                await backend.get(str(oid))
+
+
+def test_multi_model_parent_collection_name_and_motor_collection():
+    """Parent ODM in multi-model mode has ``model_cls is None`` for internal helpers."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    parent = MongoMindtraceODM(models={"u": UserDoc}, db_uri="mongodb://localhost:27017", db_name="test_db")
+    with pytest.raises(ValueError, match="model_cls is required"):
+        parent._collection_name()
+
+    leaf = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    mc = leaf._motor_collection()
+    assert mc is not None
+
+
+@pytest.mark.asyncio
+async def test_motor_update_document_without_id_raises():
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    doc = MotorDoc(name="A", age=1, email="a@a.com", id=None)
+    with pytest.raises(DocumentNotFoundError, match="must have an id"):
+        await backend.update(doc)
+
+
+@pytest.mark.asyncio
+async def test_motor_update_merge_missing_id_on_patch_object_raises():
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    with pytest.raises(DocumentNotFoundError, match="must have an id"):
+        await backend.update(UserCreate(name="A", age=1, email="a@a.com"))
+
+
+@pytest.mark.asyncio
+async def test_motor_update_merge_existing_not_found_raises():
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    patch_obj = UserCreate(name="B", age=2, email="b@b.com")
+    object.__setattr__(patch_obj, "id", "507f1f77bcf86cd799439011")
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value=None)
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DocumentNotFoundError, match="not found"):
+            await backend.update(patch_obj)
+
+
+@pytest.mark.asyncio
+async def test_motor_update_merge_mongo_doc_to_model_none_raises():
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    oid = ObjectId()
+    patch_obj = UserCreate(name="B", age=2, email="b@b.com")
+    object.__setattr__(patch_obj, "id", str(oid))
+
+    mock_coll = MagicMock()
+    mock_coll.find_one = AsyncMock(return_value={"_id": oid})
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with patch.object(backend, "_mongo_doc_to_model", return_value=None):
+            with pytest.raises(DocumentNotFoundError, match="not found"):
+                await backend.update(patch_obj)
+
+
+@pytest.mark.asyncio
+async def test_motor_delete_deleted_count_zero_raises():
+    from mindtrace.database import DocumentNotFoundError
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    class _DelResult:
+        deleted_count = 0
+
+    mock_coll = MagicMock()
+    mock_coll.delete_one = AsyncMock(return_value=_DelResult())
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DocumentNotFoundError, match="not found"):
+            await backend.delete("507f1f77bcf86cd799439011")
+
+
+@pytest.mark.asyncio
+async def test_motor_delete_success_returns_none():
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    class _DelResult:
+        deleted_count = 1
+
+    mock_coll = MagicMock()
+    mock_coll.delete_one = AsyncMock(return_value=_DelResult())
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        assert await backend.delete("507f1f77bcf86cd799439011") is None
