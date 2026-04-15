@@ -118,9 +118,7 @@ def validate_stage_set_configs(
         for set_name, cameras in sets_dict.items():
             for camera in cameras:
                 if camera in all_cameras_in_stage:
-                    return False, (
-                        f"Camera '{camera}' cannot be in multiple sets within " f"the same stage ('{stage}')"
-                    )
+                    return False, (f"Camera '{camera}' cannot be in multiple sets within the same stage ('{stage}')")
                 all_cameras_in_stage.append(camera)
 
     return True, None
