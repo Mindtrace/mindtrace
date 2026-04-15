@@ -2,6 +2,7 @@ import asyncio
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
+from beanie.odm.utils.dump import get_dict
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -217,12 +218,30 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             payload["id"] = payload["_id"]
         return self.model_cls.model_validate(payload)
 
+    def _motor_model_dump(self, doc: BaseModel) -> dict[str, Any]:
+        """Serialize a model for raw Motor insert/replace.
+
+        Pydantic v2 ``model_dump`` on Beanie ``Document`` can fail (class-level
+        descriptors such as ``ExpressionField``). Beanie's BSON ``get_dict`` matches
+        ``Document.insert`` and avoids that serializer path.
+        """
+        if isinstance(doc, Document):
+            return get_dict(doc, to_db=True, keep_nulls=doc.get_settings().keep_nulls)
+        return doc.model_dump(mode="python", by_alias=True, serialize_as_any=True)
+
+    def _motor_patch_fields(self, obj: BaseModel) -> dict[str, Any]:
+        """Shallow field map from ``obj`` for merge-into-document updates (Motor mode)."""
+        if isinstance(obj, Document):
+            return {name: getattr(obj, name) for name in obj.model_fields if name != "id"}
+        return obj.model_dump(exclude={"id"}, serialize_as_any=True)
+
     @staticmethod
     def _to_object_id(id: str | PydanticObjectId | ObjectId) -> ObjectId:
-        if isinstance(id, ObjectId):
-            return id
+        # ``PydanticObjectId`` subclasses ``ObjectId``; check it first so we normalize via ``str``.
         if isinstance(id, PydanticObjectId):
             return ObjectId(str(id))
+        if isinstance(id, ObjectId):
+            return id
         try:
             return ObjectId(str(id))
         except InvalidId as exc:
@@ -382,7 +401,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         try:
             if self._motor_routing:
-                raw = doc.model_dump(mode="python", by_alias=True)
+                raw = self._motor_model_dump(doc)
                 raw.pop("_id", None)
                 if raw.get("id") is None:
                     raw.pop("id", None)
@@ -492,7 +511,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 if not obj.id:
                     raise DocumentNotFoundError("Document must have an id to be updated")
                 oid = self._to_object_id(obj.id)
-                raw = obj.model_dump(mode="python", by_alias=True)
+                raw = self._motor_model_dump(obj)
                 await self._motor_collection().replace_one({"_id": oid}, raw)
                 return obj
             if not hasattr(obj, "id") or not obj.id:
@@ -504,9 +523,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             doc = self._mongo_doc_to_model(existing)
             if doc is None:
                 raise DocumentNotFoundError(f"Object with id {obj.id} not found")
-            for key, value in obj.model_dump(exclude={"id"}).items():
+            for key, value in self._motor_patch_fields(obj).items():
                 setattr(doc, key, value)
-            raw = doc.model_dump(mode="python", by_alias=True)
+            raw = self._motor_model_dump(doc)
             await self._motor_collection().replace_one({"_id": oid}, raw)
             return doc
 
