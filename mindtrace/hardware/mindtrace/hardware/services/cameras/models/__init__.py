@@ -27,6 +27,9 @@ from mindtrace.hardware.services.cameras.models.requests import (
     # Specific Parameters
     ExposureRequest,
     GainRequest,
+    # Capture Groups & Save
+    ConfigureCaptureGroupsRequest,
+    CaptureSaveRequest,
     # Homography
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
@@ -63,6 +66,10 @@ from mindtrace.hardware.services.cameras.models.responses import (
     # Batch Operations
     BatchOperationResult,
     BoolResponse,
+    # Capture Groups & Save
+    CaptureGroupInfo,
+    CaptureGroupsResponse,
+    CaptureSaveResponse,
     CameraCapabilities,
     CameraCapabilitiesResponse,
     CameraConfiguration,
@@ -153,6 +160,8 @@ __all__ = [
     "HomographyMeasureBoundingBoxRequest",
     "HomographyMeasureBatchRequest",
     "HomographyMeasureDistanceRequest",
+    "ConfigureCaptureGroupsRequest",
+    "CaptureSaveRequest",
     # Responses
     "BaseResponse",
     "BoolResponse",
@@ -208,6 +217,9 @@ __all__ = [
     "HomographyBatchMeasurementResponse",
     "HomographyDistanceResult",
     "HomographyDistanceResponse",
+    "CaptureGroupInfo",
+    "CaptureGroupsResponse",
+    "CaptureSaveResponse",
     "HealthCheckResponse",
     "ServiceStatus",
 ]
