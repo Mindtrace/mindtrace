@@ -9,6 +9,10 @@ from mindtrace.core import TaskSchema
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
     ReplicationStatusResult,
 )
 from mindtrace.datalake.sync_types import (
@@ -601,8 +605,26 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
+class ReplicationHydrateAssetPayloadInput(BaseModel):
+    asset_id: str
+    mount_map: dict[str, str] = Field(default_factory=dict)
+
+
+class ReplicationMarkLocalDeleteEligibleInput(BaseModel):
+    asset_id: str
+    when: datetime | None = None
+
+
 class ReplicationBatchResultOutput(BaseModel):
     result: ReplicationBatchResult
+
+
+class ReplicationReconcileResultOutput(BaseModel):
+    result: ReplicationReconcileResult
+
+
+class ReplicationReclaimResultOutput(BaseModel):
+    result: ReplicationReclaimResult
 
 
 class ReplicationStatusOutput(BaseModel):
@@ -628,6 +650,31 @@ ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",
     input_schema=ReplicationBatchRequest,
     output_schema=ReplicationBatchResultOutput,
+)
+ReplicationHydrateAssetPayloadSchema = TaskSchema(
+    name="replication.hydrate_asset_payload",
+    input_schema=ReplicationHydrateAssetPayloadInput,
+    output_schema=AssetOutput,
+)
+ReplicationReconcileSchema = TaskSchema(
+    name="replication.reconcile",
+    input_schema=ReplicationReconcileRequest,
+    output_schema=ReplicationReconcileResultOutput,
+)
+ReplicationMarkLocalDeleteEligibleSchema = TaskSchema(
+    name="replication.mark_local_delete_eligible",
+    input_schema=ReplicationMarkLocalDeleteEligibleInput,
+    output_schema=AssetOutput,
+)
+ReplicationDeleteLocalPayloadSchema = TaskSchema(
+    name="replication.delete_local_payload",
+    input_schema=GetByIdInput,
+    output_schema=AssetOutput,
+)
+ReplicationReclaimSchema = TaskSchema(
+    name="replication.reclaim_verified_payloads",
+    input_schema=ReplicationReclaimRequest,
+    output_schema=ReplicationReclaimResultOutput,
 )
 ReplicationStatusSchema = TaskSchema(
     name="replication.status",
