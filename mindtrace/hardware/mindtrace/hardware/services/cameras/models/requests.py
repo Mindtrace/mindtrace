@@ -561,9 +561,7 @@ class ConfigureCaptureGroupsRequest(BaseModel):
 
     config: Dict[str, Dict[str, Dict[str, Any]]] = Field(
         ...,
-        description=(
-            "Stage+set config: {stage: {set: {'batch_size': int, 'cameras': [str]}}}"
-        ),
+        description=("Stage+set config: {stage: {set: {'batch_size': int, 'cameras': [str]}}}"),
     )
 
 
