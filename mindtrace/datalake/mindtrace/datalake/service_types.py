@@ -26,6 +26,7 @@ from mindtrace.datalake.types import (
     AnnotationSchema,
     AnnotationSet,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
@@ -196,6 +197,15 @@ class GetByIdInput(BaseModel):
     id: str
 
 
+class GetAssetByAliasInput(BaseModel):
+    alias: str
+
+
+class AddAliasInput(BaseModel):
+    asset_id: str
+    alias: str
+
+
 class ListInput(BaseModel):
     filters: dict[str, Any] | None = None
 
@@ -229,6 +239,10 @@ class AssetOutput(BaseModel):
     asset: Asset
 
 
+class AssetAliasOutput(BaseModel):
+    asset_alias: AssetAlias
+
+
 class AssetListOutput(BaseModel):
     assets: list[Asset]
 
@@ -246,6 +260,10 @@ class CreateAssetFromUploadedObjectInput(BaseModel):
 
 CreateAssetSchema = TaskSchema(name="assets.create", input_schema=CreateAssetInput, output_schema=AssetOutput)
 GetAssetSchema = TaskSchema(name="assets.get", input_schema=GetByIdInput, output_schema=AssetOutput)
+GetAssetByAliasSchema = TaskSchema(
+    name="assets.get_by_alias", input_schema=GetAssetByAliasInput, output_schema=AssetOutput
+)
+AddAliasSchema = TaskSchema(name="aliases.add", input_schema=AddAliasInput, output_schema=AssetAliasOutput)
 ListAssetsSchema = TaskSchema(name="assets.list", input_schema=ListInput, output_schema=AssetListOutput)
 UpdateAssetMetadataSchema = TaskSchema(
     name="assets.update_metadata", input_schema=UpdateAssetMetadataInput, output_schema=AssetOutput
