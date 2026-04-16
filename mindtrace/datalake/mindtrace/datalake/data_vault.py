@@ -65,7 +65,7 @@ from mindtrace.datalake.data_vault_backends import (
     looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.datalake import Datalake
-from mindtrace.datalake.types import Asset, DuplicateAliasError
+from mindtrace.datalake.types import AnnotationRecord, Asset, DuplicateAliasError, SubjectRef
 from mindtrace.datalake.vault_serialization import (
     augment_asset_metadata_for_vault_save,
     extract_serialization_block,
@@ -96,6 +96,24 @@ def _pil_image_from_payload(payload: Any) -> Image.Image:
         "load_image expected PNG bytes or PIL.Image.Image after load; got "
         f"{type(payload).__name__}. Use load() for non-image payloads."
     )
+
+
+def _annotations_bound_to_asset(annotations: list[Any], asset_id: str) -> list[Any]:
+    """Force each annotation payload to reference ``asset_id`` as its ``subject``."""
+    out: list[Any] = []
+    for a in annotations:
+        if isinstance(a, dict):
+            merged = dict(a)
+            merged["subject"] = {"kind": "asset", "id": asset_id}
+            out.append(merged)
+        elif isinstance(a, AnnotationRecord):
+            out.append(a.model_copy(update={"subject": SubjectRef(kind="asset", id=asset_id)}))
+        else:
+            raise TypeError(
+                "annotations must contain only dicts or AnnotationRecord instances; "
+                f"got {type(a).__name__}"
+            )
+    return out
 
 
 def _sanitize_object_name_component(alias: str) -> str:
@@ -311,6 +329,28 @@ class AsyncDataVault:
         )
         return _pil_image_from_payload(payload)
 
+    async def add_annotations_for_asset(
+        self,
+        alias: str,
+        annotations: list[Any],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        """Resolve ``alias`` to an asset and insert annotations with ``subject`` set to that asset."""
+        asset = await self._backend.get_asset_by_alias(alias)
+        merged = _annotations_bound_to_asset(annotations, asset.asset_id)
+        return await self._backend.add_annotation_records(
+            merged,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    async def list_annotations_for_asset(self, alias: str) -> list[AnnotationRecord]:
+        """List annotation records whose subject is the asset resolved from ``alias``."""
+        asset = await self._backend.get_asset_by_alias(alias)
+        return await self._backend.list_annotation_records_for_asset(asset.asset_id)
+
 
 class DataVault:
     """Blocking alias-based save/load with a pluggable :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`."""
@@ -453,3 +493,25 @@ class DataVault:
             **get_object_kwargs,
         )
         return _pil_image_from_payload(payload)
+
+    def add_annotations_for_asset(
+        self,
+        alias: str,
+        annotations: list[Any],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        """Resolve ``alias`` to an asset and insert annotations with ``subject`` set to that asset."""
+        asset = self._backend.get_asset_by_alias(alias)
+        merged = _annotations_bound_to_asset(annotations, asset.asset_id)
+        return self._backend.add_annotation_records(
+            merged,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    def list_annotations_for_asset(self, alias: str) -> list[AnnotationRecord]:
+        """List annotation records whose subject is the asset resolved from ``alias``."""
+        asset = self._backend.get_asset_by_alias(alias)
+        return self._backend.list_annotation_records_for_asset(asset.asset_id)

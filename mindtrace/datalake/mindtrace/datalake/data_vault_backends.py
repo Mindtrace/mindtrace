@@ -17,11 +17,13 @@ from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.service_types import (
     AddAliasInput,
+    AddAnnotationRecordsInput,
     CreateAssetFromObjectInput,
     GetAssetByAliasInput,
     GetObjectInput,
+    ListAnnotationRecordsForAssetInput,
 )
-from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
+from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef
 from mindtrace.services.core.connection_manager import ConnectionManager
 
 _SYNC_VAULT_METHOD_NAMES = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
@@ -103,6 +105,18 @@ class AsyncDataVaultBackend(ABC):
     @abstractmethod
     async def add_alias(self, asset_id: str, alias: str) -> AssetAlias: ...
 
+    @abstractmethod
+    async def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]: ...
+
+    @abstractmethod
+    async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]: ...
+
 
 class DataVaultBackend(ABC):
     """Blocking backend contract for :class:`~mindtrace.datalake.DataVault`."""
@@ -134,6 +148,18 @@ class DataVaultBackend(ABC):
 
     @abstractmethod
     def add_alias(self, asset_id: str, alias: str) -> AssetAlias: ...
+
+    @abstractmethod
+    def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]: ...
+
+    @abstractmethod
+    def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]: ...
 
 
 class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
@@ -184,6 +210,22 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
     async def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
         return await self._datalake.add_alias(asset_id, alias)
 
+    async def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        return await self._datalake.add_annotation_records(
+            annotations,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        return await self._datalake.list_annotation_records_for_asset(asset_id)
+
 
 class LocalDataVaultBackend(DataVaultBackend):
     """Delegates to :class:`~mindtrace.datalake.Datalake` (or a compatible sync facade)."""
@@ -232,6 +274,22 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
         return self._datalake.add_alias(asset_id, alias)
+
+    def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        return self._datalake.add_annotation_records(
+            annotations,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        return self._datalake.list_annotation_records_for_asset(asset_id)
 
 
 def _encode_obj_for_service(obj: Any) -> str:
@@ -320,6 +378,30 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         out = await self._call("aaliases_add", input_obj=AddAliasInput(asset_id=asset_id, alias=alias))
         return out.asset_alias
 
+    async def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        out = await self._call(
+            "aannotation_records_add",
+            input_obj=AddAnnotationRecordsInput(
+                annotations=list(annotations),
+                annotation_set_id=annotation_set_id,
+                annotation_schema_id=annotation_schema_id,
+            ),
+        )
+        return out.annotation_records
+
+    async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        out = await self._call(
+            "aannotation_records_list_for_asset",
+            input_obj=ListAnnotationRecordsForAssetInput(asset_id=asset_id),
+        )
+        return out.annotation_records
+
 
 class DatalakeServiceDataVaultBackend(DataVaultBackend):
     """Calls a ``DatalakeService`` connection manager's sync task methods (``assets_*``, ``objects_*``, ``aliases_*``)."""
@@ -390,3 +472,27 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
     def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
         out = self._call("aliases_add", input_obj=AddAliasInput(asset_id=asset_id, alias=alias))
         return out.asset_alias
+
+    def add_annotation_records(
+        self,
+        annotations: Any,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        out = self._call(
+            "annotation_records_add",
+            input_obj=AddAnnotationRecordsInput(
+                annotations=list(annotations),
+                annotation_set_id=annotation_set_id,
+                annotation_schema_id=annotation_schema_id,
+            ),
+        )
+        return out.annotation_records
+
+    def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        out = self._call(
+            "annotation_records_list_for_asset",
+            input_obj=ListAnnotationRecordsForAssetInput(asset_id=asset_id),
+        )
+        return out.annotation_records
