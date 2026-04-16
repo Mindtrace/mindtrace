@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import socket
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
+from PIL import Image
 
 from mindtrace.datalake import AsyncDataVault, DataVault, Datalake
+from mindtrace.datalake.data_vault import _pil_image_to_png_bytes
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
 
@@ -86,3 +89,53 @@ def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: D
     aliases = sync_datalake.list_aliases_for_asset(asset.asset_id)
     assert asset.asset_id in aliases
     assert "sync-vault-hopper" in aliases
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_save_load_image_hopper(async_datalake):
+    if not _HOPPER.is_file():
+        pytest.skip(f"Missing test fixture: {_HOPPER}")
+    vault = AsyncDataVault(async_datalake)
+    im = Image.open(_HOPPER)
+    im.load()
+    alias = f"integration-hopper-pil-{uuid4().hex[:10]}"
+    await vault.save_image(alias, im)
+    out = await vault.load_image(alias)
+    assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+def test_sync_data_vault_save_load_image_hopper(sync_datalake: Datalake):
+    if not _HOPPER.is_file():
+        pytest.skip(f"Missing test fixture: {_HOPPER}")
+    vault = DataVault(sync_datalake)
+    im = Image.open(_HOPPER)
+    im.load()
+    alias = f"sync-vault-pil-{uuid4().hex[:10]}"
+    vault.save_image(alias, im)
+    out = vault.load_image(alias)
+    assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_save_load_image_inprocess_service(datalake_service_local_manager):
+    if not _HOPPER.is_file():
+        pytest.skip(f"Missing test fixture: {_HOPPER}")
+    vault = AsyncDataVault(datalake_service_local_manager)
+    im = Image.open(_HOPPER)
+    im.load()
+    alias = f"svc-async-pil-{uuid4().hex[:10]}"
+    await vault.save_image(alias, im)
+    out = await vault.load_image(alias)
+    assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_local_manager):
+    if not _HOPPER.is_file():
+        pytest.skip(f"Missing test fixture: {_HOPPER}")
+    vault = DataVault(datalake_service_local_manager)
+    im = Image.open(_HOPPER)
+    im.load()
+    alias = f"svc-sync-pil-{uuid4().hex[:10]}"
+    vault.save_image(alias, im)
+    out = vault.load_image(alias)
+    assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
