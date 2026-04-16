@@ -316,9 +316,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return await method(input_obj)
-        raise AttributeError(
-            f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}"
-        )
+        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
 
     async def get_asset_by_alias(self, alias: str) -> Asset:
         out = await self._call(
@@ -414,9 +412,7 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return method(input_obj)
-        raise AttributeError(
-            f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}"
-        )
+        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
 
     def get_asset_by_alias(self, alias: str) -> Asset:
         out = self._call("assets_get_by_alias", input_obj=GetAssetByAliasInput(alias=alias))

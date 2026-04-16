@@ -469,9 +469,7 @@ class AsyncDatalake(Mindtrace):
         if existing:
             row = existing[0]
             if row.asset_id != asset.asset_id:
-                raise DuplicateAliasError(
-                    f"Alias {asset.asset_id!r} is already mapped to asset_id {row.asset_id!r}"
-                )
+                raise DuplicateAliasError(f"Alias {asset.asset_id!r} is already mapped to asset_id {row.asset_id!r}")
             return row
         doc = self._build_document(
             AssetAlias,
@@ -498,9 +496,7 @@ class AsyncDatalake(Mindtrace):
         if existing:
             if existing[0].asset_id == asset_id:
                 return existing[0]
-            raise DuplicateAliasError(
-                f"Alias {alias!r} is already mapped to asset_id {existing[0].asset_id!r}"
-            )
+            raise DuplicateAliasError(f"Alias {alias!r} is already mapped to asset_id {existing[0].asset_id!r}")
         doc = self._build_document(
             AssetAlias,
             alias=alias,
@@ -520,9 +516,7 @@ class AsyncDatalake(Mindtrace):
             raise DocumentNotFoundError(f"No asset alias {alias!r}")
         row = rows[0]
         if row.is_primary and row.alias == row.asset_id:
-            raise ValueError(
-                "Cannot remove the primary alias (alias equal to asset_id); delete the asset instead"
-            )
+            raise ValueError("Cannot remove the primary alias (alias equal to asset_id); delete the asset instead")
         await self.asset_alias_database.delete(row.id)
 
     async def list_aliases_for_asset(self, asset_id: str) -> list[str]:
@@ -937,14 +931,9 @@ class AsyncDatalake(Mindtrace):
                     "subject=SubjectRef(kind='asset', id=<asset_id>)."
                 )
             if sub.kind != "asset":
-                raise ValueError(
-                    "When annotation_set_id is omitted, subject.kind must be 'asset', "
-                    f"got {sub.kind!r}."
-                )
+                raise ValueError(f"When annotation_set_id is omitted, subject.kind must be 'asset', got {sub.kind!r}.")
             if not str(sub.id).strip():
-                raise ValueError(
-                    "When annotation_set_id is omitted, subject.id must be a non-empty asset id."
-                )
+                raise ValueError("When annotation_set_id is omitted, subject.id must be a non-empty asset id.")
 
     async def _schema_for_annotation_insert(
         self,

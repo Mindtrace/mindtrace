@@ -18,6 +18,7 @@ from mindtrace.datalake.replication_types import (
 )
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.service_types import (
+    AddAliasInput,
     AddAnnotationRecordsInput,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
@@ -26,6 +27,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSchemaOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetRetentionListOutput,
@@ -58,15 +60,13 @@ from mindtrace.datalake.service_types import (
     DatumOutput,
     ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
-    AddAliasInput,
-    AssetAliasOutput,
     GetAssetByAliasInput,
     GetByIdInput,
     GetDatasetVersionInput,
     GetObjectInput,
     HeadObjectInput,
-    ListDatasetVersionsInput,
     ListAnnotationRecordsForAssetInput,
+    ListDatasetVersionsInput,
     ListInput,
     MountsOutput,
     ObjectDataOutput,
@@ -1492,7 +1492,9 @@ async def test_service_replication_hydrate_asset_payload_uses_replication_manage
 
 @pytest.mark.asyncio
 async def test_service_replication_reconcile_uses_replication_manager(service):
-    request = ReplicationReconcileRequest(asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"})
+    request = ReplicationReconcileRequest(
+        asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"}
+    )
     reconcile_result = ReplicationReconcileResult(
         attempted_asset_ids=["asset_1"],
         verified_asset_ids=["asset_1"],

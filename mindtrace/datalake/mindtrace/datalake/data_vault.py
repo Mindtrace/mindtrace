@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
+from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
 from mindtrace.datalake.async_datalake import AsyncDatalake
@@ -78,7 +79,6 @@ from mindtrace.datalake.vault_serialization import (
     materialize_payload_with_hints,
 )
 from mindtrace.registry import Registry
-from zenml.materializers.base_materializer import BaseMaterializer
 
 _SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
 
@@ -116,8 +116,7 @@ def _annotations_bound_to_asset(annotations: list[Any], asset_id: str) -> list[A
             out.append(a.model_copy(update={"subject": SubjectRef(kind="asset", id=asset_id)}))
         else:
             raise TypeError(
-                "annotations must contain only dicts or AnnotationRecord instances; "
-                f"got {type(a).__name__}"
+                f"annotations must contain only dicts or AnnotationRecord instances; got {type(a).__name__}"
             )
     return out
 

@@ -211,9 +211,7 @@ class DatalakeService(Service):
 
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
-        self.add_endpoint(
-            "assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True
-        )
+        self.add_endpoint("assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True)
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
         self.add_endpoint("assets.delete", self.delete_asset, schema=DeleteAssetSchema)
@@ -657,7 +655,9 @@ class DatalakeService(Service):
         )
         return AddedAnnotationRecordsOutput(annotation_records=records)
 
-    async def list_annotation_records_for_asset(self, payload: ListAnnotationRecordsForAssetInput) -> AnnotationRecordListOutput:
+    async def list_annotation_records_for_asset(
+        self, payload: ListAnnotationRecordsForAssetInput
+    ) -> AnnotationRecordListOutput:
         datalake = await self._ensure_datalake()
         return AnnotationRecordListOutput(
             annotation_records=await datalake.list_annotation_records_for_asset(payload.asset_id),
@@ -744,9 +744,7 @@ class DatalakeService(Service):
         result = await manager.upsert_metadata_batch(payload)
         return ReplicationBatchResultOutput(result=result)
 
-    async def replication_hydrate_asset_payload(
-        self, payload: ReplicationHydrateAssetPayloadInput
-    ) -> AssetOutput:
+    async def replication_hydrate_asset_payload(self, payload: ReplicationHydrateAssetPayloadInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
         manager = ReplicationManager(datalake)
         asset = await manager.hydrate_asset_payload(payload.asset_id, mount_map=payload.mount_map)

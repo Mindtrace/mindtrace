@@ -220,7 +220,9 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
         source=AnnotationSource(type="human", name="pytest"),
         geometry={"x": 1, "y": 2, "width": 3, "height": 4},
     )
-    inserted_records = await async_datalake.add_annotation_records([record], annotation_set_id=annotation_set.annotation_set_id)
+    inserted_records = await async_datalake.add_annotation_records(
+        [record], annotation_set_id=annotation_set.annotation_set_id
+    )
 
     refreshed_annotation_set = await async_datalake.get_annotation_set(annotation_set.annotation_set_id)
     assert inserted_records[0].annotation_id in refreshed_annotation_set.annotation_record_ids
