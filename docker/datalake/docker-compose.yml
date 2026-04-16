@@ -1,0 +1,72 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - datalake_mongodb_data:/data/db
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --address ":9000" --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - datalake_minio_data:/data
+
+  minio-setup:
+    image: minio/mc
+    depends_on:
+      - minio
+    restart: "no"
+    entrypoint: >-
+      /bin/sh -c '
+      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+        sleep 1;
+      done;
+      mc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}";
+      '
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINDTRACE_DATALAKE__S3_BUCKET: ${MINDTRACE_DATALAKE__S3_BUCKET:-datalake}
+
+  datalake-service:
+    build:
+      context: ../..
+      dockerfile: docker/datalake/Dockerfile
+    depends_on:
+      - mongodb
+      - minio
+      - minio-setup
+    restart: unless-stopped
+    environment:
+      MINDTRACE_DATALAKE__SERVICE_HOST: ${MINDTRACE_DATALAKE__SERVICE_HOST:-0.0.0.0}
+      MINDTRACE_DATALAKE__SERVICE_PORT: ${MINDTRACE_DATALAKE__SERVICE_PORT:-8080}
+      MINDTRACE_DATALAKE__MONGO_DB_URI: ${MINDTRACE_DATALAKE__MONGO_DB_URI:-mongodb://mongodb:27017}
+      MINDTRACE_DATALAKE__MONGO_DB_NAME: ${MINDTRACE_DATALAKE__MONGO_DB_NAME:-mindtrace_datalake}
+      MINDTRACE_DATALAKE__MOUNT_NAME: ${MINDTRACE_DATALAKE__MOUNT_NAME:-minio}
+      MINDTRACE_DATALAKE__S3_BUCKET: ${MINDTRACE_DATALAKE__S3_BUCKET:-datalake}
+      MINDTRACE_DATALAKE__S3_PREFIX: ${MINDTRACE_DATALAKE__S3_PREFIX:-}
+      MINDTRACE_DATALAKE__S3_ENDPOINT: ${MINDTRACE_DATALAKE__S3_ENDPOINT:-minio:9000}
+      MINDTRACE_DATALAKE__S3_ACCESS_KEY: ${MINDTRACE_DATALAKE__S3_ACCESS_KEY:-minioadmin}
+      MINDTRACE_DATALAKE__S3_SECRET_KEY: ${MINDTRACE_DATALAKE__S3_SECRET_KEY:-minioadmin}
+      MINDTRACE_DATALAKE__S3_SECURE: ${MINDTRACE_DATALAKE__S3_SECURE:-false}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  datalake_mongodb_data:
+  datalake_minio_data:

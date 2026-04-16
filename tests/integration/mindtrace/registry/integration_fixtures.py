@@ -1,4 +1,7 @@
-"""Pytest configuration for registry integration tests.
+"""Shared integration fixtures for registry, datalake, and other tests (S3/MinIO, GCP).
+
+Loaded from ``tests/conftest.py`` via ``pytest_plugins`` (pytest 8+ disallows
+``pytest_plugins`` in nested conftest files).
 
 Contains fixtures for MinIO and GCP backends.
 Config resolution order: env vars (only if set in the shell/CI) → config.ini → skip.

@@ -7,8 +7,18 @@ import pytest
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.replication_types import (
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
+    ReplicationStatusResult,
+)
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.service_types import (
+    AddAliasInput,
     AddAnnotationRecordsInput,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
@@ -17,6 +27,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSchemaOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetRetentionListOutput,
@@ -40,15 +51,21 @@ from mindtrace.datalake.service_types import (
     CreateObjectUploadSessionInput,
     DatalakeHealthOutput,
     DatalakeSummaryOutput,
+    DatasetSyncBundleOutput,
+    DatasetSyncCommitResultOutput,
+    DatasetSyncImportPlanOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatumListOutput,
     DatumOutput,
+    ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
+    GetAssetByAliasInput,
     GetByIdInput,
     GetDatasetVersionInput,
     GetObjectInput,
     HeadObjectInput,
+    ListAnnotationRecordsForAssetInput,
     ListDatasetVersionsInput,
     ListInput,
     MountsOutput,
@@ -57,6 +74,12 @@ from mindtrace.datalake.service_types import (
     ObjectOutput,
     ObjectUploadSessionOutput,
     PutObjectInput,
+    ReplicationBatchResultOutput,
+    ReplicationHydrateAssetPayloadInput,
+    ReplicationMarkLocalDeleteEligibleInput,
+    ReplicationReclaimResultOutput,
+    ReplicationReconcileResultOutput,
+    ReplicationStatusOutput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
     ResolvedDatumOutput,
@@ -69,12 +92,19 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionItemInput,
     UpdateDatumInput,
 )
+from mindtrace.datalake.sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncImportRequest,
+)
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
     AnnotationSchema,
     AnnotationSet,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
@@ -118,6 +148,7 @@ def datalake_objects():
         metadata={"source": "unit"},
         created_by="tester",
     )
+    asset_alias = AssetAlias(alias="friendly", asset_id=asset.asset_id, is_primary=False)
     collection = Collection(name="demo-collection", description="unit collection", metadata={"team": "qa"})
     collection_item = CollectionItem(
         collection_id=collection.collection_id,
@@ -210,6 +241,7 @@ def datalake_objects():
         raw_bytes=raw_bytes,
         raw_text=raw_text,
         encoded_bytes=encoded_bytes,
+        asset_alias=asset_alias,
     )
 
 
@@ -440,6 +472,28 @@ SERVICE_CASES = [
         "expected_output_field": "asset",
         "expected_output_factory": lambda o: o.asset,
         "expected_args_factory": lambda o: (o.asset.asset_id,),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "get_asset_by_alias",
+        "payload_factory": lambda o: GetAssetByAliasInput(alias="friendly"),
+        "datalake_method": "get_asset_by_alias",
+        "datalake_return_factory": lambda o: o.asset,
+        "expected_output_type": AssetOutput,
+        "expected_output_field": "asset",
+        "expected_output_factory": lambda o: o.asset,
+        "expected_args_factory": lambda o: ("friendly",),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "add_alias",
+        "payload_factory": lambda o: AddAliasInput(asset_id=o.asset.asset_id, alias=o.asset_alias.alias),
+        "datalake_method": "add_alias",
+        "datalake_return_factory": lambda o: o.asset_alias,
+        "expected_output_type": AssetAliasOutput,
+        "expected_output_field": "asset_alias",
+        "expected_output_factory": lambda o: o.asset_alias,
+        "expected_args_factory": lambda o: (o.asset.asset_id, o.asset_alias.alias),
         "expected_kwargs_factory": lambda o: {},
     },
     {
@@ -931,7 +985,6 @@ SERVICE_CASES = [
     {
         "service_method": "add_annotation_records",
         "payload_factory": lambda o: AddAnnotationRecordsInput(
-            annotation_set_id=o.annotation_set.annotation_set_id,
             annotations=[
                 {
                     "kind": "bbox",
@@ -940,6 +993,7 @@ SERVICE_CASES = [
                     "geometry": {"x": 1, "y": 2, "w": 3, "h": 4},
                 }
             ],
+            annotation_set_id=o.annotation_set.annotation_set_id,
         ),
         "datalake_method": "add_annotation_records",
         "datalake_return_factory": lambda o: [o.annotation_record],
@@ -947,7 +1001,6 @@ SERVICE_CASES = [
         "expected_output_field": "annotation_records",
         "expected_output_factory": lambda o: [o.annotation_record],
         "expected_args_factory": lambda o: (
-            o.annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -957,7 +1010,10 @@ SERVICE_CASES = [
                 }
             ],
         ),
-        "expected_kwargs_factory": lambda o: {},
+        "expected_kwargs_factory": lambda o: {
+            "annotation_set_id": o.annotation_set.annotation_set_id,
+            "annotation_schema_id": None,
+        },
     },
     {
         "service_method": "get_annotation_record",
@@ -979,6 +1035,17 @@ SERVICE_CASES = [
         "expected_output_field": "annotation_records",
         "expected_output_factory": lambda o: [o.annotation_record],
         "expected_args_factory": lambda o: ({"label": "cat"},),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "list_annotation_records_for_asset",
+        "payload_factory": lambda o: ListAnnotationRecordsForAssetInput(asset_id=o.asset.asset_id),
+        "datalake_method": "list_annotation_records_for_asset",
+        "datalake_return_factory": lambda o: [o.annotation_record],
+        "expected_output_type": AnnotationRecordListOutput,
+        "expected_output_field": "annotation_records",
+        "expected_output_factory": lambda o: [o.annotation_record],
+        "expected_args_factory": lambda o: (o.asset.asset_id,),
         "expected_kwargs_factory": lambda o: {},
     },
     {
@@ -1149,6 +1216,7 @@ class TestDatalakeServiceInitialization:
         assert "objects.upload_session.create" in service.endpoints
         assert "assets.create_from_uploaded_object" in service.endpoints
         assert "annotation_records.add" in service.endpoints
+        assert "annotation_records.list_for_asset" in service.endpoints
         assert "dataset_versions.resolve" in service.endpoints
 
     def test_initialization_skips_startup_hook_when_not_live(self, mock_datalake):
@@ -1338,3 +1406,173 @@ async def test_service_methods_map_requests_to_async_datalake(case, service, moc
 
     assert isinstance(result, case["expected_output_type"])
     assert getattr(result, case["expected_output_field"]) == case["expected_output_factory"](datalake_objects)
+
+
+@pytest.mark.asyncio
+async def test_service_export_dataset_version_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.export_dataset_version = AsyncMock(return_value=bundle)
+
+        result = await service.export_dataset_version(ExportDatasetVersionInput(dataset_name="demo", version="1.0"))
+
+    assert isinstance(result, DatasetSyncBundleOutput)
+    assert result.bundle == bundle
+    manager.export_dataset_version.assert_awaited_once_with("demo", "1.0")
+
+
+@pytest.mark.asyncio
+async def test_service_import_dataset_version_prepare_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    plan = DatasetSyncImportPlan(
+        dataset_name="demo",
+        version="1.0",
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(return_value=plan)
+
+        result = await service.import_dataset_version_prepare(request)
+
+    assert isinstance(result, DatasetSyncImportPlanOutput)
+    assert result.plan == plan
+    manager.plan_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_import_dataset_version_commit_uses_sync_manager(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.commit_import = AsyncMock(return_value=commit_result)
+
+        result = await service.import_dataset_version_commit(request)
+
+    assert isinstance(result, DatasetSyncCommitResultOutput)
+    assert result.result == commit_result
+    manager.commit_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_upsert_batch_uses_replication_manager(service, datalake_objects):
+    request = ReplicationBatchRequest(
+        assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source"
+    )
+    batch_result = ReplicationBatchResult(created_assets=1, created_datums=1)
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.upsert_metadata_batch = AsyncMock(return_value=batch_result)
+
+        result = await service.replication_upsert_batch(request)
+
+    assert isinstance(result, ReplicationBatchResultOutput)
+    assert result.result == batch_result
+    manager.upsert_metadata_batch.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_hydrate_asset_payload_uses_replication_manager(service, datalake_objects):
+    request = ReplicationHydrateAssetPayloadInput(asset_id=datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.hydrate_asset_payload = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_hydrate_asset_payload(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.hydrate_asset_payload.assert_awaited_once_with(datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+
+
+@pytest.mark.asyncio
+async def test_service_replication_reconcile_uses_replication_manager(service):
+    request = ReplicationReconcileRequest(
+        asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"}
+    )
+    reconcile_result = ReplicationReconcileResult(
+        attempted_asset_ids=["asset_1"],
+        verified_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+        skipped_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.reconcile_pending_payloads = AsyncMock(return_value=reconcile_result)
+
+        result = await service.replication_reconcile(request)
+
+    assert isinstance(result, ReplicationReconcileResultOutput)
+    assert result.result == reconcile_result
+    manager.reconcile_pending_payloads.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_mark_local_delete_eligible_uses_replication_manager(service, datalake_objects):
+    request = ReplicationMarkLocalDeleteEligibleInput(asset_id=datalake_objects.asset.asset_id)
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.mark_local_delete_eligible = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_mark_local_delete_eligible(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.mark_local_delete_eligible.assert_awaited_once_with(datalake_objects.asset.asset_id, when=None)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_delete_local_payload_uses_replication_manager(service, datalake_objects):
+    request = GetByIdInput(id=datalake_objects.asset.asset_id)
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.delete_local_payload = AsyncMock(return_value=datalake_objects.asset)
+
+        result = await service.replication_delete_local_payload(request)
+
+    assert isinstance(result, AssetOutput)
+    assert result.asset == datalake_objects.asset
+    manager.delete_local_payload.assert_awaited_once_with(datalake_objects.asset.asset_id)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_reclaim_verified_payloads_uses_replication_manager(service):
+    request = ReplicationReclaimRequest(asset_ids=["asset_1"], limit=5, require_verified_payload=True)
+    reclaim_result = ReplicationReclaimResult(
+        attempted_asset_ids=["asset_1"],
+        reclaimed_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+        skipped_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.reclaim_verified_payloads = AsyncMock(return_value=reclaim_result)
+
+        result = await service.replication_reclaim_verified_payloads(request)
+
+    assert isinstance(result, ReplicationReclaimResultOutput)
+    assert result.result == reclaim_result
+    manager.reclaim_verified_payloads.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_status_uses_replication_manager(service):
+    status_result = ReplicationStatusResult(
+        asset_counts_by_payload_status={"pending": 1, "transferring": 0, "uploaded": 0, "verified": 0, "failed": 0},
+        pending_asset_ids=["asset_1"],
+        failed_asset_ids=[],
+    )
+    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.status = AsyncMock(return_value=status_result)
+
+        result = await service.replication_status()
+
+    assert isinstance(result, ReplicationStatusOutput)
+    assert result.status == status_result
+    manager.status.assert_awaited_once_with()
