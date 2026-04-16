@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 
-from mindtrace.datalake import AsyncDataVault, DataVault, Datalake
+from mindtrace.datalake import AsyncDataVault, Datalake, DataVault
 from mindtrace.datalake.data_vault import _pil_image_to_png_bytes
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"

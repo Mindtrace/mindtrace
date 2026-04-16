@@ -18,9 +18,9 @@ from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, Duplicate
 from .data_vault import AsyncDataVault, DataVault
 from .data_vault_backends import (
     AsyncDataVaultBackend,
-    DataVaultBackend,
     DatalakeServiceAsyncDataVaultBackend,
     DatalakeServiceDataVaultBackend,
+    DataVaultBackend,
     LocalAsyncDataVaultBackend,
     LocalDataVaultBackend,
 )
@@ -55,12 +55,12 @@ from .types import (
     Asset,
     AssetAlias,
     AssetRetention,
-    DuplicateAliasError,
     Collection,
     CollectionItem,
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    DuplicateAliasError,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
