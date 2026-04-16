@@ -98,6 +98,8 @@ from mindtrace.datalake.service_types import (
     GetObjectSchema,
     HeadObjectInput,
     HeadObjectSchema,
+    ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetSchema,
     ListAnnotationRecordsSchema,
     ListAnnotationSchemasSchema,
     ListAnnotationSetsSchema,
@@ -270,6 +272,11 @@ class DatalakeService(Service):
         self.add_endpoint("annotation_records.add", self.add_annotation_records, schema=AddAnnotationRecordsSchema)
         self.add_endpoint("annotation_records.get", self.get_annotation_record, schema=GetAnnotationRecordSchema)
         self.add_endpoint("annotation_records.list", self.list_annotation_records, schema=ListAnnotationRecordsSchema)
+        self.add_endpoint(
+            "annotation_records.list_for_asset",
+            self.list_annotation_records_for_asset,
+            schema=ListAnnotationRecordsForAssetSchema,
+        )
         self.add_endpoint(
             "annotation_records.update", self.update_annotation_record, schema=UpdateAnnotationRecordSchema
         )
@@ -643,8 +650,18 @@ class DatalakeService(Service):
 
     async def add_annotation_records(self, payload: AddAnnotationRecordsInput) -> AddedAnnotationRecordsOutput:
         datalake = await self._ensure_datalake()
-        records = await datalake.add_annotation_records(payload.annotation_set_id, payload.annotations)
+        records = await datalake.add_annotation_records(
+            payload.annotations,
+            annotation_set_id=payload.annotation_set_id,
+            annotation_schema_id=payload.annotation_schema_id,
+        )
         return AddedAnnotationRecordsOutput(annotation_records=records)
+
+    async def list_annotation_records_for_asset(self, payload: ListAnnotationRecordsForAssetInput) -> AnnotationRecordListOutput:
+        datalake = await self._ensure_datalake()
+        return AnnotationRecordListOutput(
+            annotation_records=await datalake.list_annotation_records_for_asset(payload.asset_id),
+        )
 
     async def get_annotation_record(self, payload: GetByIdInput) -> AnnotationRecordOutput:
         datalake = await self._ensure_datalake()
