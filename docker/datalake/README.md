@@ -37,22 +37,31 @@ With the stack running, use **`DataVault`** with a client from **`DatalakeServic
 **Example** (run from the **repository root** so `tests/resources/hopper.png` resolves; `mindtrace` installed; stack listening on port 8080—the URL must match where the service is reachable):
 
 ```python
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from mindtrace.datalake import DataVault, DatalakeService
 
 hopper = Path("tests/resources/hopper.png")
 vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
 
-vault.save("demo/hopper", hopper, kind="image", media_type="image/png")
-data = vault.load("demo/hopper")
-assert data == hopper.read_bytes()
-print("round-trip ok:", len(data), "bytes")
+# ``kind`` / ``media_type`` are inferred from a Path suffix (.png → image / image/png).
+vault.save("images:hopper", hopper)
+
+png_bytes = vault.load("images:hopper")
+image = Image.open(BytesIO(png_bytes))
+image.show()
 ```
+
+**Why not `save(..., pil_image)` and get a PIL back from `load`?** Over HTTP the service only accepts **bytes** (or **str**); a PIL `Image` is not encoded automatically. `load` therefore returns **raw file bytes**—wrap with `Image.open(BytesIO(...))` when you want a PIL object.
 
 **Async:** same pattern with `AsyncDataVault(DatalakeService.connect(url="http://localhost:8080"))` and `await vault.save(...)` / `await vault.load(...)`; async task methods (`aassets_get_by_alias`, …) are detected automatically.
 
-**Payloads:** over HTTP, `create_from_object` carries **base64-encoded bytes**. Pass **`bytes`**, **`bytearray`**, or **`str`** (UTF-8) to `save`. For structured objects, **serialize with your registry/materializer on the client** before calling `save`, and deserialize after `load`, matching the in-process vault story.
+**Payloads:** remote `save` accepts **`Path`** (read as bytes on the client; suffix may set `kind` / `media_type`), **`bytes`**, **`bytearray`**, or **`str`**. Other Python objects need **client-side serialization** before `save` and **deserialization** after `load` (in-process `Datalake` can use the full registry/materializer stack instead).
+
+**Asset metadata and optional `load(..., materialize=...)`:** Each `save` stores ZenML-oriented serialization hints on the asset under `metadata["mindtrace.serialization"]` (`class` + `materializer`, and for byte payloads a `data.txt` layout). That is automatic; you do not need to set it by hand for normal `Path` / bytes saves. If you construct the vault with a **`Registry`**—`DataVault(cm, registry=Registry(...))`—then `load` (default **`materialize=True`**) can run the matching ZenML materializer on the **raw bytes** returned by `objects.get`, *when* the bytes match a **single-file** staged artifact (the default bytes materializer round-trips to the same `bytes`). **Multi-file** ZenML layouts are not supported on this path; use in-process `Registry.load` / `Datalake.get_object` or serialize on the client. The `Registry` you pass must use the same materializer registration as the code path that wrote the object. Use **`materialize=False`** if you always want the raw response bytes (e.g. the PIL + `BytesIO` pattern above).
 
 ## Default runtime shape
 
