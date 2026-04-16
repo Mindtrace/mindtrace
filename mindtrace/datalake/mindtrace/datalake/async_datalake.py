@@ -927,17 +927,69 @@ class AsyncDatalake(Mindtrace):
         annotation_set.updated_at = self._utc_now()
         return await self.annotation_set_database.update(annotation_set)
 
+    def _assert_asset_subject_for_set_less_records(self, records: list[AnnotationRecord]) -> None:
+        """When inserting without an :class:`AnnotationSet`, each record must target an asset."""
+        for record in records:
+            sub = record.subject
+            if sub is None:
+                raise ValueError(
+                    "When annotation_set_id is omitted, each annotation must include "
+                    "subject=SubjectRef(kind='asset', id=<asset_id>)."
+                )
+            if sub.kind != "asset":
+                raise ValueError(
+                    "When annotation_set_id is omitted, subject.kind must be 'asset', "
+                    f"got {sub.kind!r}."
+                )
+            if not str(sub.id).strip():
+                raise ValueError(
+                    "When annotation_set_id is omitted, subject.id must be a non-empty asset id."
+                )
+
+    async def _schema_for_annotation_insert(
+        self,
+        *,
+        annotation_set_id: str | None,
+        annotation_schema_id: str | None,
+    ) -> AnnotationSchema | None:
+        if annotation_set_id is not None:
+            annotation_set = await self.get_annotation_set(annotation_set_id)
+            if annotation_set.annotation_schema_id is None:
+                return None
+            return await self.get_annotation_schema(annotation_set.annotation_schema_id)
+        if annotation_schema_id is not None:
+            return await self.get_annotation_schema(annotation_schema_id)
+        return None
+
     async def add_annotation_records(
         self,
-        annotation_set_id: str,
         annotations: Iterable[AnnotationRecord | dict[str, Any]],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
     ) -> list[AnnotationRecord]:
-        annotation_set = await self.get_annotation_set(annotation_set_id)
-        schema = None
-        if annotation_set.annotation_schema_id is not None:
-            schema = await self.get_annotation_schema(annotation_set.annotation_schema_id)
+        """Insert annotation records.
 
-        candidate_records = [self._coerce_annotation_record(annotation) for annotation in annotations]
+        If ``annotation_set_id`` is set, records are registered on that set and validated against
+        its bound schema when present.
+
+        If ``annotation_set_id`` is omitted, records are stored without belonging to any set; each
+        must have ``subject`` referencing an asset (``kind='asset'``). Optional
+        ``annotation_schema_id`` enables schema validation for that free-standing insert.
+        """
+        annotations_list = list(annotations)
+        if not annotations_list:
+            return []
+
+        candidate_records = [self._coerce_annotation_record(a) for a in annotations_list]
+
+        if annotation_set_id is None:
+            self._assert_asset_subject_for_set_less_records(candidate_records)
+
+        schema = await self._schema_for_annotation_insert(
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
         for record in candidate_records:
             if schema is not None:
                 self._validate_annotation_record_against_schema(record, schema)
@@ -951,6 +1003,10 @@ class AsyncDatalake(Mindtrace):
             await self._rollback_inserted_annotation_records(inserted_records)
             raise
 
+        if annotation_set_id is None:
+            return inserted_records
+
+        annotation_set = await self.get_annotation_set(annotation_set_id)
         previous_record_ids = list(annotation_set.annotation_record_ids)
         next_record_ids = list(previous_record_ids)
         for inserted in inserted_records:
@@ -966,6 +1022,12 @@ class AsyncDatalake(Mindtrace):
             await self._rollback_inserted_annotation_records(inserted_records)
             raise
         return inserted_records
+
+    async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        """Return annotation records whose subject is the given asset."""
+        return await self.list_annotation_records(
+            filters={"subject.kind": "asset", "subject.id": asset_id},
+        )
 
     async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
         results = await self.annotation_record_database.find({"annotation_id": annotation_id})

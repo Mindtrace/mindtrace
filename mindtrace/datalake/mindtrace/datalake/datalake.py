@@ -97,7 +97,6 @@ class Datalake(Mindtrace):
             )
 
             datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -106,6 +105,7 @@ class Datalake(Mindtrace):
                         "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
             print(datum.datum_id, annotation_set.annotation_set_id)
@@ -431,14 +431,29 @@ class Datalake(Mindtrace):
     def update_annotation_set(self, annotation_set_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_set(annotation_set_id, **changes))
 
-    def add_annotation_records(self, annotation_set_id: str, annotations):
-        return self._submit_coro(self._backend.add_annotation_records(annotation_set_id, annotations))
+    def add_annotation_records(
+        self,
+        annotations,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ):
+        return self._submit_coro(
+            self._backend.add_annotation_records(
+                annotations,
+                annotation_set_id=annotation_set_id,
+                annotation_schema_id=annotation_schema_id,
+            )
+        )
 
     def get_annotation_record(self, annotation_id: str):
         return self._submit_coro(self._backend.get_annotation_record(annotation_id))
 
     def list_annotation_records(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_records(filters))
+
+    def list_annotation_records_for_asset(self, asset_id: str):
+        return self._submit_coro(self._backend.list_annotation_records_for_asset(asset_id))
 
     def update_annotation_record(self, annotation_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_record(annotation_id, **changes))
