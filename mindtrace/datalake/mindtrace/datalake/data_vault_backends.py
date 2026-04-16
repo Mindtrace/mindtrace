@@ -20,8 +20,10 @@ from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     CreateAssetFromObjectInput,
     GetAssetByAliasInput,
+    GetByIdInput,
     GetObjectInput,
     ListAnnotationRecordsForAssetInput,
+    ListInput,
 )
 from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -32,13 +34,17 @@ _ASYNC_VAULT_METHOD_NAMES = _SYNC_VAULT_METHOD_NAMES
 # Sync/async method names on a ``DatalakeService`` client from ``Service.connect`` /
 # ``generate_connection_manager(DatalakeService)``.
 _SYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
+    "assets_get",
     "assets_get_by_alias",
+    "assets_list",
     "objects_get",
     "assets_create_from_object",
     "aliases_add",
 )
 _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
+    "aassets_get",
     "aassets_get_by_alias",
+    "aassets_list",
     "aobjects_get",
     "aassets_create_from_object",
     "aaliases_add",
@@ -76,6 +82,12 @@ def looks_like_datalake_service_async_client(obj: Any) -> bool:
 
 class AsyncDataVaultBackend(ABC):
     """Async backend contract for :class:`~mindtrace.datalake.AsyncDataVault`."""
+
+    @abstractmethod
+    async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    async def get_asset(self, asset_id: str) -> Asset: ...
 
     @abstractmethod
     async def get_asset_by_alias(self, alias: str) -> Asset: ...
@@ -120,6 +132,12 @@ class AsyncDataVaultBackend(ABC):
 
 class DataVaultBackend(ABC):
     """Blocking backend contract for :class:`~mindtrace.datalake.DataVault`."""
+
+    @abstractmethod
+    def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    def get_asset(self, asset_id: str) -> Asset: ...
 
     @abstractmethod
     def get_asset_by_alias(self, alias: str) -> Asset: ...
@@ -167,6 +185,12 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     def __init__(self, datalake: AsyncDatalake | Any) -> None:
         self._datalake = datalake
+
+    async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        return await self._datalake.list_assets(filters)
+
+    async def get_asset(self, asset_id: str) -> Asset:
+        return await self._datalake.get_asset(asset_id)
 
     async def get_asset_by_alias(self, alias: str) -> Asset:
         return await self._datalake.get_asset_by_alias(alias)
@@ -232,6 +256,12 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def __init__(self, datalake: Datalake | Any) -> None:
         self._datalake = datalake
+
+    def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        return self._datalake.list_assets(filters)
+
+    def get_asset(self, asset_id: str) -> Asset:
+        return self._datalake.get_asset(asset_id)
 
     def get_asset_by_alias(self, alias: str) -> Asset:
         return self._datalake.get_asset_by_alias(alias)
@@ -317,6 +347,14 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             if method is not None:
                 return await method(input_obj)
         raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+
+    async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        out = await self._call("aassets_list", input_obj=ListInput(filters=filters))
+        return out.assets
+
+    async def get_asset(self, asset_id: str) -> Asset:
+        out = await self._call("aassets_get", input_obj=GetByIdInput(id=asset_id))
+        return out.asset
 
     async def get_asset_by_alias(self, alias: str) -> Asset:
         out = await self._call(
@@ -413,6 +451,14 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             if method is not None:
                 return method(input_obj)
         raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+
+    def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        out = self._call("assets_list", input_obj=ListInput(filters=filters))
+        return out.assets
+
+    def get_asset(self, asset_id: str) -> Asset:
+        out = self._call("assets_get", input_obj=GetByIdInput(id=asset_id))
+        return out.asset
 
     def get_asset_by_alias(self, alias: str) -> Asset:
         out = self._call("assets_get_by_alias", input_obj=GetAssetByAliasInput(alias=alias))

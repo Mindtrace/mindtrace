@@ -21,10 +21,14 @@ from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
     AssetAliasOutput,
+    AssetListOutput,
     AssetOutput,
     CreateAssetFromObjectInput,
     GetAssetByAliasInput,
+    GetByIdInput,
+    GetObjectInput,
     ListAnnotationRecordsForAssetInput,
+    ListInput,
     ObjectDataOutput,
 )
 from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef, SubjectRef
@@ -45,6 +49,30 @@ def test_encode_obj_for_service_accepts_str_bytes_bytearray(obj, expected_raw):
 def test_encode_obj_for_service_rejects_unsupported_type():
     with pytest.raises(TypeError, match="materializer"):
         _encode_obj_for_service(42)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_list_and_get_asset():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.aassets_list = AsyncMock(return_value=AssetListOutput(assets=[asset]))
+    cm.aassets_get = AsyncMock(return_value=AssetOutput(asset=asset))
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.list_assets({"kind": "image"}) == [asset]
+    lin = cm.aassets_list.await_args.args[0]
+    assert isinstance(lin, ListInput)
+    assert lin.filters == {"kind": "image"}
+
+    assert await backend.get_asset("a1") is asset
+    gin = cm.aassets_get.await_args.args[0]
+    assert isinstance(gin, GetByIdInput)
+    assert gin.id == "a1"
 
 
 @pytest.mark.asyncio
@@ -146,6 +174,29 @@ async def test_datalake_service_async_backend_call_raises_when_no_method():
         await backend._call("aassets_get_by_alias", input_obj=GetAssetByAliasInput(alias="x"))
 
 
+def test_datalake_service_sync_backend_list_and_get_asset():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.assets_list = Mock(return_value=AssetListOutput(assets=[asset]))
+    cm.assets_get = Mock(return_value=AssetOutput(asset=asset))
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.list_assets({"kind": "image"}) == [asset]
+    lin = cm.assets_list.call_args.args[0]
+    assert isinstance(lin, ListInput)
+    assert lin.filters == {"kind": "image"}
+
+    assert backend.get_asset("a1") is asset
+    gin = cm.assets_get.call_args.args[0]
+    assert isinstance(gin, GetByIdInput)
+    assert gin.id == "a1"
+
+
 def test_datalake_service_sync_backend_get_asset_by_alias():
     asset = Asset(
         kind="image",
@@ -195,10 +246,7 @@ def test_datalake_service_sync_backend_create_and_add_alias():
     cm.aliases_add = Mock(return_value=AssetAliasOutput(asset_alias=row))
 
     backend = DatalakeServiceDataVaultBackend(cm)
-    assert (
-        backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream")
-        is asset
-    )
+    assert backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream") is asset
     assert backend.add_alias("id1", "f") is row
 
 
@@ -211,6 +259,12 @@ def test_datalake_service_sync_backend_call_raises_when_no_method():
 
 class _SyncServiceFacade:
     """Non-:class:`~mindtrace.services.ConnectionManager` object with service task methods (in-process test client)."""
+
+    def assets_get(self, *_a, **_kw):
+        return None
+
+    def assets_list(self, *_a, **_kw):
+        return None
 
     def assets_get_by_alias(self, *_a, **_kw):
         return None
@@ -244,6 +298,12 @@ def test_normalize_sync_backend_wraps_service_facade():
 
 
 class _AsyncServiceFacade:
+    async def aassets_get(self, *_a, **_kw):
+        return None
+
+    async def aassets_list(self, *_a, **_kw):
+        return None
+
     async def aassets_get_by_alias(self, *_a, **_kw):
         return None
 
@@ -290,9 +350,7 @@ async def test_local_async_backend_delegates_annotation_methods():
 
     backend = LocalAsyncDataVaultBackend(dl)
     assert await backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1") == [rec]
-    dl.add_annotation_records.assert_awaited_once_with(
-        [{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None
-    )
+    dl.add_annotation_records.assert_awaited_once_with([{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None)
     assert await backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_awaited_once_with("a1")
 
@@ -311,9 +369,7 @@ def test_local_sync_backend_delegates_annotation_methods():
 
     backend = LocalDataVaultBackend(dl)
     assert backend.add_annotation_records([{"kind": "bbox"}], annotation_schema_id="sch") == [rec]
-    dl.add_annotation_records.assert_called_once_with(
-        [{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch"
-    )
+    dl.add_annotation_records.assert_called_once_with([{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch")
     assert backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_called_once_with("a1")
 
