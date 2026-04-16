@@ -817,9 +817,11 @@ class TestCameraManagerServiceCaptureAndHomography:
         assert "health" in endpoints
         assert "cameras/capture" in endpoints
         assert "cameras/stream/start" in endpoints
+        assert "stream/{camera_name}" in endpoints
         assert "cameras/homography/measure/distance" in endpoints
-        # stream/{camera_name} is registered dynamically via add_endpoint in __init__,
-        # so it won't appear in __endpoints__
+        assert "cameras/capture-groups/configure" in endpoints
+        assert "cameras/capture-groups" in endpoints
+        assert "cameras/capture-groups/remove" in endpoints
 
     @pytest.mark.asyncio
     async def test_configure_cameras_batch_formats_partial_results(self, service_with_mock_manager):

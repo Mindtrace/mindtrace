@@ -179,6 +179,11 @@ class StorageHandler(MindtraceABC, ABC):
         """
         pass  # pragma: no cover
 
+    @abstractmethod
+    def copy(self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False) -> FileResult:
+        """Copy an existing remote object within the same storage backend."""
+        pass  # pragma: no cover
+
     # String Operations (no temp files) -------------------------------------
     @abstractmethod
     def upload_string(
@@ -441,12 +446,14 @@ class StorageHandler(MindtraceABC, ABC):
         *,
         expiration_minutes: int = 60,
         method: str = "GET",
+        content_type: str | None = None,
     ) -> str:
         """Get a presigned URL for a remote object.
         Args:
             remote_path: Path in the storage backend.
             expiration_minutes: Minutes until the URL expires.
             method: HTTP method for the URL (e.g., 'GET', 'PUT').
+            content_type: Optional content type to bind to the signed request.
         Returns:
             A presigned URL string.
         """

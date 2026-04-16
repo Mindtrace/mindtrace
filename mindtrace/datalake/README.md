@@ -1,500 +1,212 @@
 # Mindtrace Datalake
 
-A unified data lake implementation that manages both database-stored and registry-stored data, providing a seamless interface for storing, retrieving, and querying data with support for derivation relationships and complex queries.
+The Mindtrace Datalake is the canonical data layer for Mindtrace. It sits on **`mindtrace.database`** (structured records) and **`mindtrace.registry`** (object storage and mounts) and exposes a unified model for assets, collections, annotations, and immutable dataset versions.
 
-## Overview
+**Start here**
 
-The Mindtrace Datalake is a core component of the Mindtrace platform that provides a unified interface for managing data regardless of where it's physically stored. It supports both direct database storage for small data and external registry storage for large data, with automatic data loading and caching.
+- **[Happy path](./HAPPY_PATH.md)** — local stack, direct upload, **dataset sync** vs **replication**, and operational caveats.
+- **Docker (Mongo + MinIO + `DatalakeService`)** — [docker/datalake/README.md](../../docker/datalake/README.md) at the repository root.
 
-## Features
+---
 
-- **Unified Data Storage**: Store data either directly in MongoDB or in external registry backends
-- **Automatic Data Loading**: Registry-stored data is automatically loaded when accessed
-- **Derivation Tracking**: Track relationships between data through derivation chains
-- **Advanced Querying**: Complex multi-level queries with MongoDB-style filtering
-- **Multiple Query Strategies**: Support for "latest", "earliest", "random", and "missing" strategies
-- **Flexible Data Formats**: Return data as list of dictionaries or transposed dictionary of lists
-- **Registry Caching**: Automatic caching of registry instances for performance
-- **Timestamp Tracking**: Automatic `added_at` timestamps for chronological ordering
+## What you can do today
 
-## Installation
+| Area | Role |
+|------|------|
+| **`DatalakeService`** | HTTP/MCP-facing API over `AsyncDatalake` (typed tasks, FastAPI). |
+| **Objects & uploads** | Put bytes in storage (`objects.put` or upload-session flow), then reference them from canonical records. |
+| **Canonical model** | Assets, collections, datums, dataset versions, annotations — persisted in Mongo, payloads in configured mounts. |
+| **Dataset sync** | Export/import **dataset version** bundles between lakes (`dataset_versions.export`, `import_prepare`, `import_commit`). |
+| **Replication** | Metadata-first mirroring and payload lifecycle (`replication.*` tasks — upsert, hydrate, reconcile, status, reclaim). |
 
-The datalake is part of the Mindtrace platform. Install it as a dependency:
+**Sync vs replication (short):**
+
+- **Dataset sync** — move a **named, versioned dataset snapshot** as an import/export bundle. Dataset-centric.
+- **Replication** — mirror **assets** across lakes with a metadata-first pipeline and optional hydration/reclaim. Asset-centric.
+
+Same-lake **`metadata_only`** transfer policies are supported where implemented; **cross-lake `metadata_only` import is intentionally rejected** until unresolved-placeholder semantics exist. See the [happy path](./HAPPY_PATH.md) and GitHub issues for detail.
+
+---
+
+## Relationship to other Mindtrace modules
+
+- **`mindtrace.database`** — persistence for canonical documents.
+- **`mindtrace.registry`** — mounts, stores, and `StorageRef` resolution.
+- **`mindtrace.jobs`** / **`mindtrace.cluster`** — execution and orchestration consume datalake data; they should not define the canonical schema.
+
+```mermaid
+flowchart TD
+    DB[database module]
+    REG[registry module]
+
+    DB --> DL[datalake module]
+    REG --> DL
+
+    JOBS[jobs module] --> CL[cluster module]
+    DL --> CL
+```
+
+---
+
+## DataVault (`AsyncDataVault` / `DataVault`)
+
+**DataVault** is a small facade over **`save(alias, payload, …)`** and **`load(alias)`**: it creates/links assets, registers aliases, and reads objects through the same registry stack as **`AsyncDatalake`**.
+
+- **In-process:** `AsyncDataVault(async_datalake)` or `DataVault(datalake)` (or pass an explicit **`LocalAsyncDataVaultBackend`** / **`LocalDataVaultBackend`**).
+- **Remote HTTP/MCP:** `cm = DatalakeService.connect(url="http://…")`, then **`DataVault(cm)`** or **`AsyncDataVault(cm)`**. The facade recognizes the service client and uses **`DatalakeServiceDataVaultBackend`** / **`DatalakeServiceAsyncDataVaultBackend`** automatically. You can still pass those backends explicitly if you prefer.
+
+When the lake is running in **Docker** (Mongo + MinIO + `DatalakeService`), see **[docker/datalake/README.md](../../docker/datalake/README.md#using-datavault-against-the-compose-stack)** for a copy-paste sample against `http://localhost:8080`.
+
+---
+
+## Datalake service (`DatalakeService`)
+
+The package provides **`DatalakeService`**, which wraps **`AsyncDatalake`** with the Mindtrace **`Service`** layer (FastAPI + MCP). Initialization can be lazy; live processes may enable startup initialization and background helpers (for example upload-session reconciliation).
+
+Example (adjust host/port and Mongo URIs for your environment):
+
+```python
+from mindtrace.datalake import DatalakeService
+
+service = DatalakeService.launch(
+    host="localhost",
+    port=8080,
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="mindtrace",
+)
+# Use async handlers or the service’s app/routes per your deployment.
+```
+
+### Task families (overview)
+
+Includes, among others:
+
+- **`health`**, **`summary`**, **`mounts`**
+- **`objects.*`** — put/get/head/copy, upload session create/complete
+- **`assets.*`**, **`assets.get_by_alias`**, **`aliases.add`**, **`collections.*`**, **`collection_items.*`**, **`asset_retentions.*`**
+- **`annotation_*`**, **`datums.*`**
+- **`dataset_versions.*`** — CRUD, resolve, **export**, **import_prepare**, **import_commit**
+- **`replication.*`** — **upsert_batch**, **hydrate_asset_payload**, **reconcile**, **mark_local_delete_eligible**, **delete_local_payload**, **reclaim_verified_payloads**, **status**
+
+Exact wire format and paths depend on how the shared `Service` framework exposes tasks; treat names above as the stable task identifiers.
+
+---
+
+## Storage model
+
+Structured records live in the database layer; large payloads live in registry-backed storage. Mounts can target local disk, S3-compatible endpoints (including MinIO), GCS, etc., via **`Mount`** and store configuration.
+
+---
+
+## Design reference (V3 direction)
+
+The datalake is evolving from earlier internal versions toward a fuller **V3** canonical model. The sections below summarize that direction; they are **not** an exhaustive API spec.
+
+### Implementation status (historical labels)
+
+- **V1** — older `mtrix`-era datalake (packaging and loading).
+- **V2** — current `mindtrace.datalake` center of gravity (`Datum`, queries, etc.).
+- **V3** — design direction: clearer entities, registry mounts, service-oriented access.
+
+### Canonical V3 concepts
+
+- **Collection**, **CollectionItem**, **AssetRetention**
+- **StorageRef**, **Asset**
+- **Annotation** schema/set/record model
+- **Datum**, **DatasetVersion**
+- **DatasetBuilder** (helper for constructing new versions — not the same as a persisted version record)
+
+### Entity relationships (conceptual)
+
+```mermaid
+erDiagram
+    STORAGE_REF ||--|| ASSET : "locates"
+    ASSET ||--o{ COLLECTION_ITEM : "included by"
+    COLLECTION ||--o{ COLLECTION_ITEM : "contains"
+    ASSET ||--o{ ASSET_RETENTION : "retained by"
+    COLLECTION ||--o{ ASSET_RETENTION : "may import/pin"
+    ASSET ||--o{ DATUM : "used by role refs"
+    DATASET_VERSION ||--o{ DATUM : "manifest contains"
+    DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
+    ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "contains"
+    DATUM ||--o{ ANNOTATION_RECORD : "annotated by"
+    ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
+```
+
+### Annotations
+
+V3 aims for first-class annotation types (classification, bbox, mask, keypoint, etc.) with provenance. See `docs/datalake-v3-proposal.md` in the repository for the full proposal.
+
+### Design principles
+
+1. Canonical data should outlive individual workflows.
+2. Storage location should be separate from logical identity.
+3. Datasets should be immutable views over reusable entities.
+4. Annotations should be structured, queryable, and provenance-aware.
+5. Collections should not imply destructive ownership of shared assets.
+6. Execution systems integrate with the datalake; they do not define its schema.
+
+---
+
+## Built-in Pascal VOC importer
+
+The package includes an importer for **Pascal VOC 2012** (splits, one image per asset, segmentation via class masks, etc.). This is **one** way to load a benchmark into the canonical model; it is separate from service upload/sync/replication flows.
+
+### CLI
 
 ```bash
-pip install mindtrace-datalake
+mindtrace-datalake-import-pascal-voc \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/pascal-voc" \
+  --split train \
+  --dataset-name "pascal-voc-2012-train" \
+  --download
 ```
 
-## Quick Start
+Or:
+
+```bash
+python -m mindtrace.datalake.importers.pascal_voc \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/pascal-voc" \
+  --split train \
+  --dataset-name "pascal-voc-2012-train" \
+  --download
+```
+
+### Python
 
 ```python
-from mindtrace.datalake import Datalake
+from mindtrace.datalake import Datalake, PascalVocImportConfig, import_pascal_voc
 
-# Initialize the datalake
-datalake = Datalake(
-    mongo_db_uri="mongodb://localhost:27017",
-    mongo_db_name="my_datalake"
-)
-await datalake.initialize()
-
-# Store data directly in the database
-datum = await datalake.add_datum(
-    data={"type": "image", "filename": "photo.jpg"},
-    metadata={"project": "computer_vision", "tags": ["nature", "outdoor"]}
-)
-
-# Store large data in a registry
-large_datum = await datalake.add_datum(
-    data={"large": "data" * 1000000},  # Large data
-    metadata={"project": "big_data"},
-    registry_uri="file:///path/to/registry"
-)
-
-# Retrieve data (registry data is automatically loaded)
-retrieved = await datalake.get_datum(datum.id)
-print(retrieved.data)  # Automatically loads registry data if needed
+with Datalake.create(
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+) as datalake:
+    summary = import_pascal_voc(
+        datalake,
+        PascalVocImportConfig(
+            root_dir="./data/pascal-voc",
+            split="train",
+            dataset_name="pascal-voc-2012-train",
+            download=True,
+        ),
+    )
+    print(summary)
 ```
 
-## Architecture
+Importer notes: reuses downloaded trees when present; overwrite-on-conflict for importer writes; fails if the target `DatasetVersion` already exists.
 
-### Core Components
+---
 
-#### Datalake Class
-The main interface for all datalake operations. Manages both database and registry backends.
+## Jobs and cluster
 
-#### Datum Model
-A unified data structure that can represent data stored in either location:
+Jobs should own execution lifecycle; cluster orchestration should resolve datalake inputs/outputs. Task output schemas are not canonical datalake schemas — persist results as datalake entities (e.g. annotation sets/records) when they represent durable data.
 
-```python
-class Datum:
-    data: Any                    # The actual data content
-    registry_uri: str | None     # Registry URI if stored externally
-    registry_key: str | None     # Key for retrieving from registry
-    derived_from: PydanticObjectId | None  # Parent datum ID
-    metadata: dict[str, Any]     # Additional metadata
-    added_at: datetime          # Timestamp when added
-```
+---
 
-### Storage Strategies
+## What this README is not
 
-#### Database Storage
-- **Use Case**: Small to medium data (< 16MB)
-- **Benefits**: Fast access, ACID transactions, complex queries
-- **Implementation**: Data stored directly in MongoDB
-
-#### Registry Storage
-- **Use Case**: Large data (> 16MB), binary files, models
-- **Benefits**: Efficient storage, versioning, materialization
-- **Implementation**: Data stored in external registry, reference stored in database
-
-## API Reference
-
-### Core Methods
-
-#### `add_datum(data, metadata, registry_uri=None, derived_from=None)`
-Add a new datum to the datalake.
-
-**Parameters:**
-- `data`: The data to store (any type)
-- `metadata`: Dictionary of metadata
-- `registry_uri`: Optional registry URI for external storage
-- `derived_from`: Optional parent datum ID for derivation tracking
-
-**Returns:** The created `Datum` object with assigned ID
-
-#### `get_datum(datum_id)`
-Retrieve a datum by its ID.
-
-**Parameters:**
-- `datum_id`: The unique identifier of the datum
-
-**Returns:** The `Datum` object (registry data automatically loaded)
-
-**Raises:** `DocumentNotFoundError` if datum not found
-
-#### `get_data(datum_ids)`
-Retrieve multiple data by their IDs.
-
-**Parameters:**
-- `datum_ids`: List of datum IDs
-
-**Returns:** List of `Datum` objects
-
-### Derivation Methods
-
-#### `get_directly_derived_data(datum_id)`
-Get IDs of data directly derived from the specified datum.
-
-**Parameters:**
-- `datum_id`: The parent datum ID
-
-**Returns:** List of child datum IDs
-
-#### `get_indirectly_derived_data(datum_id)`
-Get IDs of all data in the derivation chain (breadth-first search).
-
-**Parameters:**
-- `datum_id`: The root datum ID
-
-**Returns:** List of all datum IDs in the derivation chain
-
-### Query Methods
-
-#### `query_data(query, datums_wanted=None, transpose=False)`
-Query the datalake using MongoDB-style filters with support for multi-level derivation queries.
-
-**Parameters:**
-- `query`: Single query dict or list of queries for multi-level queries
-- `datums_wanted`: Optional limit on number of results from base query
-- `transpose`: If True, returns dict of lists; if False, returns list of dicts
-
-**Returns:** 
-- If `transpose=False`: `list[dict[str, Any]]` - List of dictionaries
-- If `transpose=True`: `dict[str, list]` - Dictionary of lists
-
-**Query Types:**
-
-1. **Single Query:**
-```python
-# Find all images in a project
-result = await datalake.query_data({
-    "metadata.project": "cv_project", 
-    "column": "image_id"
-})
-# Returns: [{"image_id": id1}, {"image_id": id2}, ...]
-```
-
-2. **Multi-Query with Derivation:**
-```python
-# Find images and their classification labels
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},  # Base query: find images
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}  # Derived query: find classifications
-])
-# Returns: [{"image_id": id1, "label_id": label1}, {"image_id": id2, "label_id": label2}, ...]
-```
-
-3. **Complex Filtering:**
-```python
-# Find images with specific criteria
-result = await datalake.query_data({
-    "data.type": "image",
-    "data.size": {"$gt": 1024},
-    "metadata.tags": {"$in": ["nature"]},
-    "metadata.quality": {"$gte": 0.9},
-    "column": "image_id"
-})
-```
-
-4. **Query Strategies:**
-```python
-# Get the latest classification for each image
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
-])
-
-# Get the earliest classification
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"}
-])
-
-# Get a random classification
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"}
-])
-
-# Find images that don't have classifications (missing strategy)
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
-])
-```
-
-5. **Transposed Results:**
-```python
-# Get results as dictionary of lists instead of list of dictionaries
-result = await datalake.query_data([
-    {"metadata.project": "cv_project", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
-], transpose=True)
-# Returns: {"image_id": [id1, id2, ...], "label_id": [label1, label2, ...]}
-```
-
-6. **Limited Results:**
-```python
-# Get only the latest 5 images
-result = await datalake.query_data({
-    "metadata.project": "cv_project", 
-    "column": "image_id"
-}, datums_wanted=5)
-```
-
-## Query Strategies
-
-The datalake supports multiple strategies for selecting data when multiple matches are found:
-
-### Available Strategies
-
-#### `"latest"` (Default)
-Selects the datum with the most recent `added_at` timestamp.
-```python
-# Get the most recent classification for each image
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
-])
-```
-
-#### `"earliest"`
-Selects the datum with the oldest `added_at` timestamp.
-```python
-# Get the first classification for each image
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"}
-])
-```
-
-#### `"random"`
-Randomly selects one datum from the available matches.
-```python
-# Get a random classification for each image
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"}
-])
-```
-
-#### `"missing"`
-**Subquery only** - Includes the base datum only if no derived data matches the subquery.
-```python
-# Find images that don't have any classifications
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
-])
-# Returns images without classifications (no label_id column in results)
-```
-
-### Data Format and Column Requirements
-
-#### Required `"column"` Key
-Every query must include a `"column"` key that specifies the name for the datum ID in the result:
-```python
-# ✅ Correct - includes column key
-query = {"metadata.project": "cv", "column": "image_id"}
-
-# ❌ Incorrect - missing column key
-query = {"metadata.project": "cv"}  # Raises ValueError
-```
-
-#### Return Formats
-
-**Default Format (List of Dictionaries):**
-```python
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
-])
-# Returns: [{"image_id": id1, "label_id": label1}, {"image_id": id2, "label_id": label2}]
-```
-
-**Transposed Format (Dictionary of Lists):**
-```python
-result = await datalake.query_data([
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
-], transpose=True)
-# Returns: {"image_id": [id1, id2], "label_id": [label1, label2]}
-```
-
-#### Derivation References
-Use column names (strings) for `derived_from`:
-```python
-# ✅ Correct - uses column name
-query = [
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
-]
-```
-
-## Advanced Usage
-
-### Derivation Chains
-
-Track complex data processing pipelines:
-
-```python
-# Original image
-image = await datalake.add_datum(
-    data={"type": "image", "filename": "photo.jpg"},
-    metadata={"project": "cv_pipeline"}
-)
-
-# Classification
-classification = await datalake.add_datum(
-    data={"type": "classification", "label": "cat", "confidence": 0.95},
-    metadata={"model": "resnet50"},
-    derived_from=image.id
-)
-
-# Bounding box
-bbox = await datalake.add_datum(
-    data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
-    metadata={"model": "yolo"},
-    derived_from=classification.id
-)
-
-# Query the entire pipeline
-pipeline_data = await datalake.query_data([
-    {"metadata.project": "cv_pipeline", "column": "image_id"},
-    {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-    {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}
-])
-# Returns: [{"image_id": img_id, "label_id": label_id, "bbox_id": bbox_id}, ...]
-```
-
-### Registry Integration
-
-Store large data efficiently:
-
-```python
-# Store a large model
-model_datum = await datalake.add_datum(
-    data=large_model_object,  # Could be a PyTorch model, large dataset, etc.
-    metadata={"model_type": "transformer", "size": "large"},
-    registry_uri="s3://my-bucket/models"
-)
-
-# Retrieve and use the model
-retrieved_model = await datalake.get_datum(model_datum.id)
-model = retrieved_model.data  # Automatically loaded from registry
-```
-
-### Complex Queries
-
-Find data with sophisticated filtering:
-
-```python
-# Find high-quality nature images with recent classifications
-result = await datalake.query_data([
-    {
-        "data.type": "image",
-        "metadata.tags": {"$in": ["nature"]},
-        "metadata.quality": {"$gte": 0.9},
-        "column": "image_id"
-    },
-    {
-        "derived_from": "image_id",
-        "data.type": "classification",
-        "data.confidence": {"$gte": 0.8},
-        "added_at": {"$gte": datetime(2024, 1, 1)},
-        "strategy": "latest",
-        "column": "label_id"
-    }
-])
-# Returns: [{"image_id": img_id, "label_id": label_id}, ...]
-
-# Get the same data in transposed format
-result_transposed = await datalake.query_data([
-    {
-        "data.type": "image",
-        "metadata.tags": {"$in": ["nature"]},
-        "metadata.quality": {"$gte": 0.9},
-        "column": "image_id"
-    },
-    {
-        "derived_from": "image_id",
-        "data.type": "classification",
-        "data.confidence": {"$gte": 0.8},
-        "strategy": "latest",
-        "column": "label_id"
-    }
-], transpose=True)
-# Returns: {"image_id": [img_id1, img_id2, ...], "label_id": [label_id1, label_id2, ...]}
-```
-
-## Configuration
-
-### MongoDB Configuration
-```python
-datalake = Datalake(
-    mongo_db_uri="mongodb://username:password@host:port",
-    mongo_db_name="datalake_db"
-)
-```
-
-### Registry Configuration
-Supported registry URIs:
-- `file:///path/to/local/registry`
-- `s3://bucket-name/path`
-- `gs://bucket-name/path`
-- Custom registry backends
-
-## Performance Considerations
-
-### Registry Caching
-- Registry instances are automatically cached by URI
-- Reduces connection overhead for repeated operations
-- Memory usage scales with number of unique registry URIs
-
-### Query Optimization
-- MongoDB indexes on `derived_from` field for fast derivation queries
-- Efficient breadth-first search for indirect derivation
-- Batch operations for multiple data retrieval
-
-### Storage Recommendations
-- Use database storage for: metadata, small data, frequently accessed data
-- Use registry storage for: large files, models, datasets, binary data
-- Consider data access patterns when choosing storage strategy
-
-## Error Handling
-
-The datalake provides comprehensive error handling:
-
-```python
-from mindtrace.database.core.exceptions import DocumentNotFoundError
-
-try:
-    datum = await datalake.get_datum(nonexistent_id)
-except DocumentNotFoundError:
-    print("Datum not found")
-
-try:
-    result = await datalake.query_data([
-        {"metadata.project": "test", "column": "image_id"},
-        {"derived_from": "image_id", "strategy": "invalid", "column": "label_id"}
-    ])
-except ValueError as e:
-    print(f"Invalid query: {e}")
-
-try:
-    # Missing strategy not allowed in base query
-    result = await datalake.query_data({
-        "metadata.project": "test", 
-        "strategy": "missing", 
-        "column": "image_id"
-    })
-except ValueError as e:
-    print(f"Invalid strategy: {e}")
-```
-
-## Contributing
-
-1. Follow the existing code style and patterns
-2. Add comprehensive tests for new functionality
-3. Update documentation for API changes
-4. Ensure 100% test coverage is maintained
-
-## License
-
-Apache License 2.0 - see LICENSE file for details.
-
-## Support
-
-For questions and support:
-- GitHub Issues: [mindtrace/mindtrace](https://github.com/mindtrace/mindtrace)
-- Documentation: [mindtrace.ai](https://mindtrace.ai)
+This file is an entry point, not a full API reference. For deeper V3 discussion see **`docs/datalake-v3-proposal.md`**. For a practical walkthrough of today’s features, use **[HAPPY_PATH.md](./HAPPY_PATH.md)**.

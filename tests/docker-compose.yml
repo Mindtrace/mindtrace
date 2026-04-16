@@ -54,6 +54,16 @@ services:
     volumes:
       - mongodb_test_data:/data/db
 
+  # Second MongoDB for cross-datalake replication / federation-style integration tests.
+  mongodb_secondary:
+    image: mongo:latest
+    ports:
+      - "27019:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=test_db
+    volumes:
+      - mongodb_secondary_test_data:/data/db
+
   pypylon-runtime:
     profiles:
       - pypylon
@@ -79,4 +89,5 @@ services:
 volumes:
   minio_data:
   mongodb_test_data:
+  mongodb_secondary_test_data:
   redis_test_data: 

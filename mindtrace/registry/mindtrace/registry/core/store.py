@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,12 +21,13 @@ from mindtrace.registry.core.exceptions import (
     StoreKeyFormatError,
     StoreLocationNotFound,
 )
+from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.types import BatchResult, VerifyLevel
 
 
 @dataclass(frozen=True)
-class StoreMount:
+class MountedRegistry:
     name: str
     registry: Registry
     read_only: bool = False
@@ -38,6 +41,28 @@ class Store(Mindtrace):
       - Unqualified: ``<name>[@<version>]``
     """
 
+    @classmethod
+    def from_mounts(
+        cls,
+        mounts: list[Mount],
+        *,
+        default_mount: str | None = None,
+        enable_location_cache: bool = True,
+        **kwargs,
+    ) -> "Store":
+        """Construct a Store from declarative mount definitions."""
+        store = cls(default_mount="temp", enable_location_cache=enable_location_cache, **kwargs)
+
+        explicit_default: str | None = default_mount
+        for mount in mounts:
+            store.add_mount(mount)
+            if explicit_default is None and mount.is_default:
+                explicit_default = mount.name
+
+        if explicit_default is not None:
+            store.set_default_mount(explicit_default)
+        return store
+
     def __init__(
         self,
         mounts: dict[str, Registry] | None = None,
@@ -48,19 +73,19 @@ class Store(Mindtrace):
     ):
         super().__init__(**kwargs)
 
-        self._mounts: dict[str, StoreMount] = {}
+        self._mounts: dict[str, MountedRegistry] = {}
         self._name_location_cache: dict[str, list[str]] = {}
         self._enable_location_cache = enable_location_cache
 
         temp_store_dir = Path(mkdtemp(prefix="mindtrace-store-"))
-        self.add_mount("temp", Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs))
+        self.add_mount(Registry(backend=LocalRegistryBackend(uri=temp_store_dir), **kwargs), name="temp")
 
         mounts = mounts or {}
         for mount_name, registry in mounts.items():
             if mount_name == "temp":
-                self._mounts["temp"] = StoreMount(name="temp", registry=registry, read_only=False)
+                self._mounts["temp"] = MountedRegistry(name="temp", registry=registry, read_only=False)
             else:
-                self.add_mount(mount_name, registry)
+                self.add_mount(registry, name=mount_name)
 
         self.set_default_mount(default_mount)
 
@@ -69,12 +94,47 @@ class Store(Mindtrace):
             raise StoreLocationNotFound(f"Default mount '{mount}' is not configured")
         self.default_mount = mount
 
-    def add_mount(self, mount: str, registry: Registry, *, read_only: bool = False) -> None:
-        if not mount or "/" in mount or "@" in mount:
+    @staticmethod
+    def _sanitize_mount_name(name: str) -> str:
+        candidate = re.sub(r"[^a-zA-Z0-9._-]+", "-", name.strip()).strip("-._")
+        return candidate or "mount"
+
+    def _derive_mount_name(self, source: Mount | Registry) -> str:
+        if isinstance(source, Mount):
+            location = source.display_uri()
+        else:
+            location = str(source.backend.uri)
+        base = self._sanitize_mount_name(location.split("://", 1)[-1].replace("/", "-"))[:48]
+        digest = hashlib.sha1(location.encode()).hexdigest()[:8]
+        candidate = f"{base}-{digest}" if base else f"mount-{digest}"
+        if candidate not in self._mounts:
+            return candidate
+        idx = 2
+        while f"{candidate}-{idx}" in self._mounts:
+            idx += 1
+        return f"{candidate}-{idx}"
+
+    def add_mount(
+        self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None
+    ) -> None:
+        if isinstance(mount_or_registry, Mount):
+            mount_name = name if name is not None else mount_or_registry.name
+            registry = Registry.from_mount(mount_or_registry)
+            resolved_read_only = mount_or_registry.read_only if read_only is None else read_only
+        elif isinstance(mount_or_registry, Registry):
+            mount_name = name if name is not None else mount_or_registry.mount.name
+            registry = mount_or_registry
+            resolved_read_only = False if read_only is None else read_only
+        else:
+            raise TypeError("add_mount expects a Mount or Registry")
+
+        if not mount_name:
+            mount_name = self._derive_mount_name(mount_or_registry)
+        if "/" in mount_name or "@" in mount_name:
             raise ValueError("Invalid mount name")
-        if mount in self._mounts:
-            raise ValueError(f"Mount '{mount}' already exists")
-        self._mounts[mount] = StoreMount(name=mount, registry=registry, read_only=read_only)
+        if mount_name in self._mounts:
+            raise ValueError(f"Mount '{mount_name}' already exists")
+        self._mounts[mount_name] = MountedRegistry(name=mount_name, registry=registry, read_only=resolved_read_only)
 
     def remove_mount(self, mount: str) -> None:
         if mount == "temp":
@@ -91,7 +151,7 @@ class Store(Mindtrace):
         if self.default_mount == mount:
             self.default_mount = "temp"
 
-    def get_mount(self, mount: str) -> StoreMount:
+    def get_mount(self, mount: str) -> MountedRegistry:
         store_mount = self._mounts.get(mount)
         if store_mount is None:
             raise StoreLocationNotFound(mount)
@@ -288,6 +348,58 @@ class Store(Mindtrace):
                 result.failed.append(item_key)
                 result.errors[item_key] = {"error": type(e).__name__, "message": str(e)}
         return result
+
+    def create_direct_upload_target(
+        self,
+        key: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+        upload_id: str | None = None,
+    ) -> dict[str, Any]:
+        mount, object_name, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        target = registry.create_direct_upload_target(
+            upload_id or hashlib.sha1(key.encode()).hexdigest(),
+            content_type=content_type,
+            expiration_minutes=expiration_minutes,
+        )
+        return {"mount": resolved_mount, "name": object_name, **target}
+
+    def inspect_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> dict[str, Any]:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.inspect_direct_upload_target(staged_target)
+
+    def cleanup_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> bool:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.cleanup_direct_upload_target(staged_target)
+
+    def commit_direct_upload(
+        self,
+        key: str,
+        *,
+        staged_target: dict[str, Any],
+        version: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str:
+        mount, object_name, key_version = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        resolved_version = registry.commit_direct_upload(
+            object_name,
+            staged_target=staged_target,
+            version=version if version is not None else key_version,
+            metadata=metadata,
+            on_conflict=on_conflict,
+        )
+        self.cache_update_location(object_name, resolved_mount)
+        return resolved_version
 
     def _single_load(
         self,

@@ -1,28 +1,43 @@
-[![PyPI version](https://img.shields.io/pypi/v/mindtrace-agents)](https://pypi.org/project/mindtrace-agents/)
-[![License](https://img.shields.io/pypi/l/mindtrace-agents)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/agents/LICENSE)
-[![Downloads](https://static.pepy.tech/badge/mindtrace-agents)](https://pepy.tech/projects/mindtrace-agents)
+# mindtrace-agents
 
-# Mindtrace Agents
+Agent framework for the Mindtrace platform. Build LLM-powered agents with tool use, conversation history, lifecycle callbacks, and pluggable model providers — all integrated with Mindtrace logging and configuration.
 
-The `Agents` module provides Mindtrace’s framework for building LLM-powered agents with tool use, conversation history, memory, callbacks, streaming, and distributed execution.
+## Installation
 
-## Features
+```bash
+uv add mindtrace-agents
+# or
+pip install mindtrace-agents
+```
 
-- **Agent runtime** with `MindtraceAgent`
-- **Pluggable models and providers** for OpenAI, Ollama, and Gemini
-- **Tool calling** with Python functions, toolsets, and remote MCP tools
-- **Lifecycle control** with callbacks, streaming events, and step-by-step iteration
-- **State and persistence** with history backends and memory toolsets
-- **Multi-agent composition** with agents-as-tools and handoff markers
-- **Distributed execution** with local and RabbitMQ-backed task queues
+---
+
+## Core Concepts
+
+| Concept | Class | What it does |
+|---------|-------|-------------|
+| **Agent** | `MindtraceAgent` | Orchestrates model + tools, runs the conversation loop |
+| **Model** | `OpenAIChatModel` | Calls the LLM API (supports streaming) |
+| **Provider** | `OpenAIProvider` / `OllamaProvider` / `GeminiProvider` | Holds the authenticated client |
+| **Tool** | `Tool` | Wraps a Python function for LLM tool-calling |
+| **Toolset** | `FunctionToolset` / `CompoundToolset` / `MCPToolset` | Groups tools and controls which are exposed to the agent |
+| **ToolFilter** | `ToolFilter` | Predicate for selectively showing/hiding tools by name or description |
+| **Callbacks** | `AgentCallbacks` | Lifecycle hooks: before/after LLM call and tool call |
+| **History** | `AbstractHistoryStrategy` / `InMemoryHistory` | Persists conversation across runs |
+| **RunContext** | `RunContext[T]` | Injected into tools — carries deps, retry count, step |
+| **Memory** | `MemoryToolset` / `InMemoryStore` / `JsonFileStore` | Agent-controlled persistent memory exposed as tools |
+| **Task Queue** | `LocalTaskQueue` / `RabbitMQTaskQueue` | Distribute agent execution across processes or workers |
+| **DistributedAgent** | `DistributedAgent` | Transparent wrapper that routes `run()` through a task queue |
+
+---
 
 ## Quick Start
 
+### Basic agent with OpenAI
+
 ```python
 import asyncio
-
 from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider
-
 
 provider = OpenAIProvider()  # reads OPENAI_API_KEY from env
 model = OpenAIChatModel("gpt-4o-mini", provider=provider)
@@ -34,380 +49,424 @@ agent = MindtraceAgent(
 )
 
 result = asyncio.run(agent.run("What is 2 + 2?"))
-print(result)
+print(result)  # "4"
 ```
 
-In practice, a `MindtraceAgent` coordinates four things:
-
-- a **model** that generates responses
-- a **provider** that talks to the backend API
-- optional **tools** or **toolsets** the model may call
-- optional **history**, **memory**, and **callbacks** around the run loop
-
-## MindtraceAgent
-
-`MindtraceAgent` is the central runtime in the package. It runs the conversation loop:
-
-1. build the message list
-2. call the model
-3. expose tools to the model when available
-4. execute tool calls and append results back into the conversation
-5. return the final output
-
-A minimal agent looks like this:
-
-```python
-from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider
-
-
-provider = OpenAIProvider()
-model = OpenAIChatModel("gpt-4o-mini", provider=provider)
-
-agent = MindtraceAgent(model=model, name="assistant")
-```
-
-## Models and Providers
-
-Models and providers are related, but they are not the same thing.
-
-- a **provider** holds the authenticated backend client or connection details
-- a **model** implements the request/response interface for a specific model family
-
-### OpenAI
-
-```python
-from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider
-
-
-provider = OpenAIProvider()
-model = OpenAIChatModel("gpt-4o-mini", provider=provider)
-agent = MindtraceAgent(model=model, name="openai_agent")
-```
-
-### Ollama
+### With Ollama (local)
 
 ```python
 from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OllamaProvider
-
 
 provider = OllamaProvider(base_url="http://localhost:11434/v1")
 model = OpenAIChatModel("llama3.2", provider=provider)
 agent = MindtraceAgent(model=model, name="local_agent")
 ```
 
-### Gemini
+### With Gemini
 
 ```python
 from mindtrace.agents import MindtraceAgent, OpenAIChatModel, GeminiProvider
 
-
-provider = GeminiProvider()
+provider = GeminiProvider()  # reads GEMINI_API_KEY from env
 model = OpenAIChatModel("gemini-2.0-flash", provider=provider)
 agent = MindtraceAgent(model=model, name="gemini_agent")
 ```
 
-## Tools and RunContext
+---
 
-Tools are Python functions that the model can call. Parameters and docstrings are used to build the schema and description exposed to the model.
+## Adding Tools
+
+Tools are Python functions (sync or async). Annotate parameters with types — these become the JSON schema shown to the model.
 
 ```python
-import asyncio
-
-from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider, RunContext, Tool
-
+from mindtrace.agents import MindtraceAgent, OpenAIChatModel, OpenAIProvider, Tool, RunContext
 
 def get_weather(ctx: RunContext[None], city: str) -> str:
     """Get the current weather for a city."""
     return f"Weather in {city}: Sunny, 22°C"
 
+async def search_web(query: str, max_results: int = 5) -> list[str]:
+    """Search the web and return URLs."""
+    # ctx is optional — omit it for plain tools
+    return [f"https://example.com/result/{i}" for i in range(max_results)]
 
 provider = OpenAIProvider()
 model = OpenAIChatModel("gpt-4o-mini", provider=provider)
-agent = MindtraceAgent(model=model, tools=[Tool(get_weather)])
+
+agent = MindtraceAgent(
+    model=model,
+    tools=[Tool(get_weather), Tool(search_web)],
+    system_prompt="You have access to weather and search tools.",
+)
 
 result = asyncio.run(agent.run("What's the weather in Paris?"))
 ```
 
-`RunContext` is injected into tools when needed. It can carry:
-
-- `deps` — your application dependencies
-- `step` — the current agent iteration
-- retry and tool-execution context
-
-### Tool dependencies
+### Tool with dependencies (typed deps)
 
 ```python
 from dataclasses import dataclass
 
-from mindtrace.agents import RunContext
-
-
 @dataclass
 class AppDeps:
     db_url: str
-
+    api_key: str
 
 def lookup_user(ctx: RunContext[AppDeps], user_id: str) -> dict:
     """Look up a user by ID."""
+    # ctx.deps is your AppDeps instance
     return {"id": user_id, "db": ctx.deps.db_url}
+
+deps = AppDeps(db_url="postgresql://...", api_key="secret")
+result = asyncio.run(agent.run("Find user 123", deps=deps))
 ```
+
+---
 
 ## Toolsets
 
-Toolsets are the main way to organize and expose tools to an agent.
+Toolsets are the primary way to supply tools to an agent. They group related tools together and give you control over which tools are visible to the model at runtime.
 
 ### FunctionToolset
 
-Use `FunctionToolset` for Python tools you want to manage directly.
+`FunctionToolset` collects Python `Tool` objects and exposes them to the agent. Use it when you want to organise tools manually or share a toolset across multiple agents.
 
 ```python
-from mindtrace.agents import MindtraceAgent, Tool
 from mindtrace.agents.toolsets import FunctionToolset
-
+from mindtrace.agents.tools import Tool
 
 def add(a: int, b: int) -> int:
     """Add two numbers."""
     return a + b
 
+async def fetch(url: str) -> str:
+    """Fetch a URL."""
+    ...
 
 toolset = FunctionToolset(max_retries=2)
 toolset.add_tool(Tool(add))
+toolset.add_tool(Tool(fetch))
 
 agent = MindtraceAgent(model=model, toolset=toolset)
 ```
 
+`max_retries` on the toolset is the default for every tool added to it. Override per-tool by setting `Tool(..., max_retries=N)` before calling `add_tool()`.
+
 ### CompoundToolset
 
-Use `CompoundToolset` to merge multiple toolsets into one.
+`CompoundToolset` merges tools from multiple toolsets into one. Later toolsets win on name collisions — use `prefix` on `MCPToolset` to avoid conflicts.
 
 ```python
-from mindtrace.agents import MindtraceAgent
-from mindtrace.agents.toolsets import CompoundToolset, FunctionToolset, MCPToolset
-
+from mindtrace.agents.toolsets import CompoundToolset, FunctionToolset
 
 agent = MindtraceAgent(
     model=model,
     toolset=CompoundToolset(
         MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/"),
-        FunctionToolset(),
+        FunctionToolset(),   # local tools
     ),
 )
 ```
 
 ### MCPToolset
 
-MCP (Model Context Protocol) is a standard way to expose application functionality as structured tools for AI clients. `MCPToolset` lets a `MindtraceAgent` use tools from any compatible remote MCP server.
-
-Requires the MCP extra:
+`MCPToolset` exposes tools from any remote MCP server. Requires `fastmcp`:
 
 ```bash
 pip install 'mindtrace-agents[mcp]'
 ```
 
-Examples:
+**Constructors**
 
 ```python
 from mindtrace.agents.toolsets import MCPToolset
 
-
-# HTTP (default for Mindtrace services)
+# HTTP (streamable-http) — default for Mindtrace services
 ts = MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/")
 
-# SSE
+# SSE (legacy HTTP)
 ts = MCPToolset.from_sse("http://localhost:9000/sse")
 
-# stdio
+# stdio — local subprocess servers (e.g. npx)
 ts = MCPToolset.from_stdio(["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
 ```
 
-To avoid tool name collisions when combining multiple MCP sources, use `prefix`:
+**Prefix** — avoid name collisions when combining multiple MCP services:
 
 ```python
 ts = MCPToolset.from_http("http://localhost:8002/mcp/", prefix="db")
-# tools become db__query, db__list_tables, ...
+# tools are exposed as "db__query", "db__list_tables", etc.
 ```
 
-## Filtering Tools
+---
 
-Toolsets can be filtered so the model sees only the tools you want to expose.
+## Filtering tools
+
+Every toolset exposes shorthand methods that return a `FilteredToolset`. Chain them to control exactly which tools the agent sees.
 
 ```python
-# Allow only selected tools
+# Allow only named tools
 toolset.include("search", "summarise")
 
-# Exclude one tool
+# Block a specific tool
 toolset.exclude("drop_table")
 
 # Glob patterns
 toolset.include_pattern("read_*", "list_*")
 toolset.exclude_pattern("admin_*")
-```
 
-You can also compose filters explicitly:
-
-```python
+# Compose via FilteredToolset.with_filter() for boolean logic
 from mindtrace.agents.toolsets import ToolFilter
-
 
 f = ToolFilter.include_pattern("read_*") & ~ToolFilter.include("read_credentials")
 toolset.with_filter(f)
 ```
 
-## Lifecycle Callbacks
+Filtering applies at `get_tools()` time — the underlying toolset is unchanged.
 
-`AgentCallbacks` lets you intercept key lifecycle points around model and tool execution.
+### ToolFilter API
+
+| Factory | Behaviour |
+|---------|-----------|
+| `ToolFilter.include(*names)` | Allow only tools whose name is in `names` |
+| `ToolFilter.exclude(*names)` | Block tools whose name is in `names` |
+| `ToolFilter.include_pattern(*globs)` | Allow tools matching any glob (e.g. `"read_*"`) |
+| `ToolFilter.exclude_pattern(*globs)` | Block tools matching any glob |
+| `ToolFilter.by_description(fn)` | Custom predicate on the tool description string |
+
+Filters compose with `&` (AND), `|` (OR), and `~` (NOT).
+
+### Combining filtering with CompoundToolset
 
 ```python
-from mindtrace.agents import AgentCallbacks, MindtraceAgent
+agent = MindtraceAgent(
+    model=model,
+    toolset=CompoundToolset(
+        MCPToolset.from_http("http://localhost:8001/mcp/").include("generate_image"),
+        MCPToolset.from_http("http://localhost:8002/mcp/").exclude_pattern("admin_*"),
+        FunctionToolset(),
+    ),
+)
+```
 
+---
+
+## Lifecycle Callbacks
+
+Attach async or sync callbacks to hook into the agent's execution.
+
+```python
+from mindtrace.agents import MindtraceAgent, AgentCallbacks
 
 def log_before_llm(messages, model_settings):
     print(f"Sending {len(messages)} messages to LLM")
+    # Return (messages, model_settings) to modify, or None to keep unchanged
     return None
-
 
 async def log_after_tool(tool_name, args, result, ctx):
     print(f"Tool {tool_name!r} returned: {result}")
+    # Return modified result or None to keep unchanged
     return None
-
 
 callbacks = AgentCallbacks(
     before_llm_call=log_before_llm,
+    after_llm_call=None,         # (response) -> response | None
+    before_tool_call=None,       # (tool_name, args, ctx) -> (name, args) | None
     after_tool_call=log_after_tool,
 )
 
 agent = MindtraceAgent(model=model, tools=[...], callbacks=callbacks)
 ```
 
-Use callbacks when you want to:
+### Callback signatures
 
-- inspect or modify messages before the model call
-- inspect or modify tool calls and tool results
-- add tracing, metrics, or custom observability around the run loop
+| Callback | Arguments | Return |
+|----------|-----------|--------|
+| `before_llm_call` | `(messages: list, model_settings: dict\|None)` | `(messages, model_settings)` or `None` |
+| `after_llm_call` | `(response: ModelResponse)` | `ModelResponse` or `None` |
+| `before_tool_call` | `(tool_name: str, args: str, ctx: RunContext)` | `(tool_name, args)` or `None` |
+| `after_tool_call` | `(tool_name: str, args: str, result: Any, ctx: RunContext)` | modified result or `None` |
+
+All callbacks can be **sync or async** — the framework handles both transparently.
+
+---
 
 ## Conversation History
 
-History backends let an agent persist and reload conversation state across runs.
+Pass `session_id` to `run()` to automatically persist and reload conversation history.
 
 ```python
-import asyncio
-
-from mindtrace.agents import InMemoryHistory, MindtraceAgent
-
+from mindtrace.agents import MindtraceAgent, InMemoryHistory
 
 history = InMemoryHistory()
+
 agent = MindtraceAgent(
     model=model,
     history=history,
     system_prompt="You are a helpful assistant.",
 )
 
+# First turn — history is empty, gets saved under "user-123"
 reply1 = asyncio.run(agent.run("My name is Alice.", session_id="user-123"))
+
+# Second turn — history is loaded automatically, agent remembers Alice
 reply2 = asyncio.run(agent.run("What's my name?", session_id="user-123"))
+# → "Your name is Alice."
 ```
 
-For a custom backend, implement `AbstractHistoryStrategy`.
+### Custom history backend
 
-## Streaming and Iteration
-
-If you want more than a single final response, the agents package gives you two good options.
-
-### Streaming events
-
-Use `run_stream_events()` when you want token deltas, tool results, and the final result as events.
+Implement `AbstractHistoryStrategy` to persist history anywhere (Redis, MongoDB, etc.):
 
 ```python
-import asyncio
+from mindtrace.agents import AbstractHistoryStrategy, ModelMessage
 
-from mindtrace.agents import AgentRunResultEvent, PartDeltaEvent, PartStartEvent, ToolResultEvent
+class RedisHistory(AbstractHistoryStrategy):
+    async def load(self, session_id: str) -> list[ModelMessage]:
+        data = await redis.get(f"history:{session_id}")
+        return deserialize(data) if data else []
 
+    async def save(self, session_id: str, messages: list[ModelMessage]) -> None:
+        await redis.set(f"history:{session_id}", serialize(messages))
+
+    async def clear(self, session_id: str) -> None:
+        await redis.delete(f"history:{session_id}")
+```
+
+---
+
+## Streaming
+
+Use `run_stream_events()` to receive events as the model generates tokens:
+
+```python
+from mindtrace.agents import PartDeltaEvent, PartStartEvent, ToolResultEvent, AgentRunResultEvent
 
 async def stream_example():
     async for event in agent.run_stream_events("Tell me a joke", session_id="s1"):
         if isinstance(event, PartStartEvent) and event.part_kind == "text":
             print("\n[Text started]")
-        elif isinstance(event, PartDeltaEvent) and hasattr(event.delta, "content_delta"):
-            print(event.delta.content_delta, end="", flush=True)
+        elif isinstance(event, PartDeltaEvent):
+            if hasattr(event.delta, "content_delta"):
+                print(event.delta.content_delta, end="", flush=True)
         elif isinstance(event, ToolResultEvent):
             print(f"\n[Tool result: {event.content}]")
         elif isinstance(event, AgentRunResultEvent):
             print(f"\n[Done: {event.result.output}]")
 
-
 asyncio.run(stream_example())
 ```
 
-### Step-by-step iteration
+---
 
-Use `iter()` when you want structured control over the execution loop itself.
+## Step-by-step iteration
+
+Use `iter()` for fine-grained control over the execution loop:
 
 ```python
 async def iterate_example():
     async with agent.iter("What's 15% of 240?") as steps:
         async for step in steps:
             if step["step"] == "model_response":
-                print(step["text"])
+                print(f"LLM said: {step['text']}")
+                print(f"Tool calls: {step['tool_calls']}")
             elif step["step"] == "tool_result":
-                print(step["tool_name"], step["result"])
+                print(f"Tool {step['tool_name']} → {step['result']}")
             elif step["step"] == "complete":
-                print(step["result"])
+                print(f"Final answer: {step['result']}")
 ```
+
+---
 
 ## WrapperAgent
 
-Use `WrapperAgent` when you want to add cross-cutting behavior around an existing agent without modifying the original class.
+Compose agents or add cross-cutting behaviour without modifying base classes:
 
 ```python
-import asyncio
-import time
-
 from mindtrace.agents import WrapperAgent
-
 
 class TimedAgent(WrapperAgent):
     async def run(self, input_data, *, deps=None, **kwargs):
+        import time
         start = time.monotonic()
         result = await super().run(input_data, deps=deps, **kwargs)
         self.logger.info(f"Run took {time.monotonic() - start:.2f}s")
         return result
 
-
 timed = TimedAgent(agent)
 result = asyncio.run(timed.run("Hello"))
 ```
 
-## Multi-Agent Composition
+---
 
-Agents are first-class tools. You can pass one agent into another agent’s `tools=[]`, and the framework converts it automatically.
+## Sync usage
+
+```python
+result = agent.run_sync("What is the capital of France?")
+# → "Paris"
+```
+
+---
+
+## Logging and config
+
+All agents, models, and providers inherit from `MindtraceABC` and automatically receive:
+
+- `self.logger` — a structured logger scoped to the class name
+- `self.config` — the `CoreConfig` instance
+
+```python
+agent.logger.info("Starting run", session_id="abc")
+```
+
+---
+
+---
+
+## Multi-Agent Coworking
+
+Agents are first-class tools. Pass any `MindtraceAgent` directly into `tools=[]` alongside regular `Tool` objects — the framework converts it automatically.
 
 ```python
 researcher = MindtraceAgent(
     model=model,
     name="researcher",
-    description="Research a topic and return facts",
+    description="Research a topic and return facts",  # shown to LLM as tool description
+    tools=[web_search_tool],
 )
 
 writer = MindtraceAgent(
     model=model,
     name="writer",
     description="Write a structured report from given facts",
+    tools=[format_tool],
 )
 
 orchestrator = MindtraceAgent(
     model=model,
-    tools=[researcher, writer],
+    tools=[researcher, writer, some_regular_tool],  # mix freely
 )
+
+result = await orchestrator.run("Write a report on climate change")
 ```
 
-When using an agent as a tool, `description` matters because that is what the parent model sees when deciding whether to call it.
+The `description` field is required when using an agent as a tool — it's what the LLM reads to decide when to call it. Parent `deps` are forwarded to sub-agents automatically via `RunContext`.
+
+### Context exchange between agents
+
+| Deployment | Mechanism |
+|---|---|
+| Same process | `deps` carries shared state directly — mutations visible across agents |
+| Distributed workers | `deps` carries a **client** (Redis, DB) — workers read/write through it, not raw data |
+
+`deps` is serialised when submitted to a task queue. Don't put live in-memory objects in deps for distributed use — put connection config and reconnect on the worker side.
 
 ### HandoffPart
 
-`HandoffPart` marks an explicit agent-to-agent handoff boundary in message history.
+Use `HandoffPart` to mark an explicit handoff boundary in an agent's message history. Useful for observability and keeping sub-agent history scoped:
 
 ```python
 from mindtrace.agents import HandoffPart
-
 
 part = HandoffPart(
     from_agent="orchestrator",
@@ -416,155 +475,150 @@ part = HandoffPart(
 )
 ```
 
+---
+
 ## Agent Memory
 
-`MemoryToolset` exposes persistent memory as agent-callable tools. The agent can decide what to save, recall, search, or forget.
+`MemoryToolset` exposes persistent memory as LLM-callable tools. The agent decides what to save and when to recall — no code wiring needed.
 
 ```python
-from mindtrace.agents import JsonFileStore, MemoryToolset, MindtraceAgent
-from mindtrace.agents.toolsets import CompoundToolset, FunctionToolset
+from mindtrace.agents import MindtraceAgent, MemoryToolset, JsonFileStore, CompoundToolset
+from mindtrace.agents.toolsets import FunctionToolset
 
-
-memory = JsonFileStore("./agent_memory.json")
+memory = JsonFileStore("./agent_memory.json")  # persists across restarts
 
 agent = MindtraceAgent(
     model=model,
     toolset=CompoundToolset(
-        FunctionToolset(),
+        FunctionToolset([my_tools]),
         MemoryToolset(memory, namespace="user_123"),
     ),
 )
 ```
 
-Exposed memory tools include:
+**Tools exposed to the agent:**
 
-- `save_memory`
-- `recall_memory`
-- `search_memory`
-- `forget_memory`
-- `list_memories`
+| Tool | Args | Effect |
+|---|---|---|
+| `save_memory` | `key, value` | Persist a fact |
+| `recall_memory` | `key` | Retrieve by key |
+| `search_memory` | `query, top_k=5` | Substring search across all memories |
+| `forget_memory` | `key` | Delete an entry |
+| `list_memories` | — | List all keys |
+
+The `namespace` parameter scopes entries per-user or per-session — two `MemoryToolset` instances on the same store with different namespaces never see each other's data.
 
 ### Memory backends
 
-- `InMemoryStore` — in-memory only
-- `JsonFileStore` — local JSON persistence
+| Class | Persistence | `search()` |
+|---|---|---|
+| `InMemoryStore` | None (lost on restart) | Substring |
+| `JsonFileStore` | Local `.json` file | Substring |
 
-Implement `AbstractMemoryStore` if you want Redis, vector DBs, or other storage systems.
+Implement `AbstractMemoryStore` for custom backends (Redis, vector DB, etc.). The only method that varies meaningfully is `search()` — simple backends use substring, vector backends use embeddings.
 
-Optional extras:
+```python
+from mindtrace.agents import AbstractMemoryStore, MemoryEntry
+
+class RedisMemoryStore(AbstractMemoryStore):
+    async def save(self, key, value, metadata=None): ...
+    async def get(self, key) -> MemoryEntry | None: ...
+    async def search(self, query, top_k=5) -> list[MemoryEntry]: ...
+    async def delete(self, key): ...
+    async def list_keys(self) -> list[str]: ...
+```
+
+Install optional extras for third-party backends:
 
 ```bash
-pip install 'mindtrace-agents[memory-redis]'
-pip install 'mindtrace-agents[memory-vector]'
+pip install 'mindtrace-agents[memory-redis]'   # Redis
+pip install 'mindtrace-agents[memory-vector]'  # ChromaDB
 ```
+
+---
 
 ## Distributed Execution
 
-For larger deployments, agent execution can be routed through a task queue.
+### Task queues
 
-### LocalTaskQueue
-
-Use `LocalTaskQueue` for single-process orchestration.
+`AbstractTaskQueue` decouples task submission from execution. Use `LocalTaskQueue` for single-process orchestration, `RabbitMQTaskQueue` for multi-worker deployments.
 
 ```python
-from mindtrace.agents import AgentTask, LocalTaskQueue
-
+from mindtrace.agents import LocalTaskQueue, AgentTask
 
 queue = LocalTaskQueue()
-queue.register(researcher)
+queue.register(researcher)   # agents must be registered by name
 
-# submit/get_result are async; shown here as the key flow
-# task_id = await queue.submit(AgentTask(...))
-# result = await queue.get_result(task_id)
+task_id = await queue.submit(AgentTask(
+    agent_name="researcher",
+    input="What caused the 2008 financial crisis?",
+    deps=my_deps,
+    session_id="s1",
+))
+result = await queue.get_result(task_id)
 ```
+
+`TaskStatus` values: `PENDING → RUNNING → DONE | FAILED`
 
 ### DistributedAgent
 
-`DistributedAgent` wraps an agent and routes `run()` through a queue, while keeping the same high-level API.
+`DistributedAgent` wraps any agent and routes `run()` through a task queue. The API is identical to `MindtraceAgent` — callers don't need to change.
 
 ```python
 from mindtrace.agents import DistributedAgent
 
-
 distributed_researcher = DistributedAgent(researcher, task_queue=queue)
-# result = await distributed_researcher.run("Research topic")
+result = await distributed_researcher.run("Research topic")  # executes via queue
 ```
 
 ### RabbitMQ
 
-Install the RabbitMQ extra when you want multi-worker execution:
+Requires `aio-pika`:
 
 ```bash
 pip install 'mindtrace-agents[distributed-rabbitmq]'
 ```
 
-Caller side:
+**Caller side** (submit tasks):
 
 ```python
 from mindtrace.agents.execution.rabbitmq import RabbitMQTaskQueue
 
-
 queue = RabbitMQTaskQueue(url="amqp://guest:guest@localhost/")
 distributed = DistributedAgent(researcher, task_queue=queue)
+result = await distributed.run("Research topic")
 ```
 
-Worker side:
+**Worker side** (consume and execute):
 
 ```python
 queue = RabbitMQTaskQueue(url="amqp://guest:guest@localhost/")
-# await queue.serve(researcher)
+await queue.serve(researcher)  # blocks; run N replicas for parallelism
 ```
 
-## Sync Usage
+RabbitMQ round-robins tasks across replicas automatically. `AgentTask` is serialised with `pickle` — `deps` must be pickle-serialisable. For cross-process use, put connection config in `deps` (not live connections).
 
-If you do not want to manage the event loop directly, use `run_sync()`:
+---
 
-```python
-result = agent.run_sync("What is the capital of France?")
+## Package layout
+
 ```
-
-## Logging and Config
-
-Agents, models, and providers inherit from Mindtrace base classes and automatically receive:
-
-- `self.logger`
-- `self.config`
-
-```python
-agent.logger.info("Starting run", session_id="abc")
+mindtrace/agents/
+├── __init__.py          # public API
+├── _run_context.py      # RunContext dataclass
+├── _function_schema.py  # type introspection + Pydantic validation
+├── _tool_manager.py     # tool dispatch + retry
+├── prompts.py           # UserPromptPart, BinaryContent, ImageUrl
+├── profiles/            # ModelProfile capability flags
+├── events/              # streaming event types
+├── messages/            # ModelMessage, parts (incl. HandoffPart), builder
+├── tools/               # Tool, ToolDefinition
+├── toolsets/            # AbstractToolset, FunctionToolset, CompoundToolset, MCPToolset, ToolFilter, FilteredToolset
+├── providers/           # Provider ABC + OpenAI, Ollama, Gemini
+├── models/              # Model ABC + OpenAIChatModel
+├── callbacks/           # AgentCallbacks + _invoke helper
+├── history/             # AbstractHistoryStrategy + InMemoryHistory
+├── memory/              # AbstractMemoryStore, InMemoryStore, JsonFileStore, MemoryToolset
+├── execution/           # AbstractTaskQueue, AgentTask, LocalTaskQueue, RabbitMQTaskQueue
+└── core/                # AbstractMindtraceAgent, MindtraceAgent, WrapperAgent, DistributedAgent
 ```
-
-## Examples
-
-See these examples and related docs in the repo for more end-to-end reference:
-
-- [Agents README quick-start examples](README.md)
-- [MCP toolset examples in this README](README.md#mcp-toolset)
-- [Memory toolset examples in this README](README.md#agent-memory)
-- [Distributed execution examples in this README](README.md#distributed-execution)
-
-## Testing
-
-If you are working in the full Mindtrace repo, run tests for this module specifically:
-
-```bash
-git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
-uv sync --dev --all-extras
-```
-
-```bash
-# Run the agents test suite
-ds test: agents
-
-# Run only unit tests for agents
-ds test: --unit agents
-```
-
-## Practical Notes and Caveats
-
-- Providers and models are separate concepts: providers handle backend connectivity, models handle the request/response interface.
-- Tool docstrings and descriptions matter because the model sees them when deciding which tools to call.
-- When using an agent as a tool, make sure it has a clear `description`.
-- Distributed execution requires serializable task payloads; avoid passing live in-memory objects through distributed queues.
-- MCP, RabbitMQ, and some memory backends require optional extras.
-- `run()` is the simplest API, but streaming and iteration provide much better observability for debugging and UX.

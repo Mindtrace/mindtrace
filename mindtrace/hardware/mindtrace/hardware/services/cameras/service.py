@@ -54,6 +54,8 @@ from mindtrace.hardware.services.cameras.models import (
     CameraStatus,
     CameraStatusResponse,
     CaptureBatchRequest,
+    CaptureGroupInfo,
+    CaptureGroupsResponse,
     CaptureHDRBatchRequest,
     CaptureHDRRequest,
     CaptureImageRequest,
@@ -63,6 +65,7 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileImportRequest,
     ConfigFileOperationResult,
     ConfigFileResponse,
+    ConfigureCaptureGroupsRequest,
     HDRCaptureResponse,
     HDRCaptureResult,
     HealthCheckResponse,
@@ -817,6 +820,8 @@ class CameraManagerService(Service):
                 request.cameras,
                 save_path_pattern=request.save_path_pattern,
                 output_format=request.output_format,
+                stage=request.stage,
+                set_name=request.set_name,
             )
 
             capture_results = {}
@@ -929,6 +934,8 @@ class CameraManagerService(Service):
                 exposure_multiplier=request.exposure_multiplier,
                 return_images=request.return_images,
                 output_format=request.output_format,
+                stage=request.stage,
+                set_name=request.set_name,
             )
 
             hdr_results = {}
@@ -1133,6 +1140,57 @@ class CameraManagerService(Service):
             return BoolResponse(success=True, message=message, data=True)
         except Exception as e:
             self.logger.error(f"Failed to set performance settings: {e}")
+            raise
+
+    # Capture Group Operations (stage+set batching)
+    @endpoint("cameras/capture-groups/configure", schema=ALL_SCHEMAS["configure_capture_groups"], as_tool=True)
+    async def configure_capture_groups(self, request: ConfigureCaptureGroupsRequest) -> BoolResponse:
+        """Configure stage+set capture groups with per-group concurrency semaphores."""
+        try:
+            manager = await self._get_camera_manager()
+            manager.configure_capture_groups(request.config)
+            groups = manager.get_capture_groups()
+            return BoolResponse(
+                success=True,
+                message=f"Configured {len(groups)} capture groups",
+                data=True,
+            )
+        except CameraConfigurationError as e:
+            self.logger.error(f"Invalid capture group config: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to configure capture groups: {e}")
+            raise
+
+    @endpoint("cameras/capture-groups", schema=ALL_SCHEMAS["get_capture_groups"], methods=("GET",), as_tool=True)
+    async def get_capture_groups(self) -> CaptureGroupsResponse:
+        """Get current capture group configuration."""
+        try:
+            manager = await self._get_camera_manager()
+            groups = manager.get_capture_groups()
+            data = {key: CaptureGroupInfo(**info) for key, info in groups.items()}
+            return CaptureGroupsResponse(
+                success=True,
+                message=f"Retrieved {len(data)} capture groups",
+                data=data,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get capture groups: {e}")
+            raise
+
+    @endpoint("cameras/capture-groups/remove", schema=ALL_SCHEMAS["remove_capture_groups"], as_tool=True)
+    async def remove_capture_groups(self) -> BoolResponse:
+        """Remove all capture group configurations."""
+        try:
+            manager = await self._get_camera_manager()
+            manager.remove_capture_groups()
+            return BoolResponse(
+                success=True,
+                message="All capture groups removed",
+                data=True,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to remove capture groups: {e}")
             raise
 
     # Streaming Operations
@@ -1870,6 +1928,9 @@ class CameraManagerService(Service):
                 recommended_settings=diagnostics_data["recommended_settings"],
                 backend_status={backend: True for backend in manager.backends()},
                 uptime_seconds=uptime_seconds,
+                failure_counts=diagnostics_data.get("failure_counts"),
+                cameras_in_cooldown=diagnostics_data.get("cameras_in_cooldown"),
+                capture_groups_count=diagnostics_data.get("capture_groups_count"),
             )
 
             return SystemDiagnosticsResponse(

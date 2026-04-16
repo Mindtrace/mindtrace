@@ -48,6 +48,26 @@ def test_ctor_creates_bucket_when_missing(mock_boto3):
 
 
 @patch("mindtrace.storage.s3.boto3")
+def test_ctor_creates_bucket_with_region_constraint_when_missing(mock_boto3):
+    mock_client = _prepare_client(mock_boto3, bucket_exists=False)
+
+    handler = S3StorageHandler(
+        "new-bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+        create_if_missing=True,
+        region="us-west-2",
+    )
+
+    mock_client.create_bucket.assert_called_once_with(
+        Bucket="new-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
+    )
+    assert handler.bucket_name == "new-bucket"
+
+
+@patch("mindtrace.storage.s3.boto3")
 def test_ctor_errors_when_bucket_missing_and_create_false(mock_boto3):
     _prepare_client(mock_boto3, bucket_exists=False)
 
@@ -364,6 +384,154 @@ def test_delete_idempotent(mock_boto3):
     # Should not raise even for non-existent objects
     handler.delete("ghost.txt")
     mock_client.delete_object.assert_called_once()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_delete_returns_not_found_for_missing_key(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("404", "missing")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.delete("ghost.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.error_type == "NotFound"
+    assert "Object not found" in result.error_message
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_delete_returns_error_for_non_not_found_client_error(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("AccessDenied", "denied")
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    result = handler.delete("blocked.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "ClientError"
+    assert "AccessDenied" in result.error_message
+
+
+# ---------------------------------------------------------------------------
+# copy
+# ---------------------------------------------------------------------------
+
+
+def _s3_handler() -> S3StorageHandler:
+    return S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_success(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+
+    handler = _s3_handler()
+    result = handler.copy("src/a.txt", "dst/b.txt")
+
+    assert result.status == Status.OK
+    assert result.remote_path == "dst/b.txt"
+    mock_client.copy_object.assert_called_once_with(
+        Bucket="bucket",
+        Key="dst/b.txt",
+        CopySource={"Bucket": "bucket", "Key": "src/a.txt"},
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_fail_if_exists_when_destination_present(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+
+    handler = _s3_handler()
+    result = handler.copy("src/a.txt", "dst/b.txt", fail_if_exists=True)
+
+    assert result.status == Status.ALREADY_EXISTS
+    assert "already exists" in (result.error_message or "").lower()
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_source_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("404", "missing")
+
+    handler = _s3_handler()
+    result = handler.copy("gone.txt", "dst/b.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.remote_path == "gone.txt"
+    assert "Object not found" in (result.error_message or "")
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_head_object_client_error_not_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.side_effect = _make_client_error("AccessDenied", "denied")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.remote_path == "dst.txt"
+    mock_client.copy_object.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_client_error_non_not_found(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = _make_client_error("SlowDown", "slow")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.remote_path == "dst.txt"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_not_found_maps_to_not_found(mock_boto3):
+    """ClientError with NoSuchKey from copy_object uses NOT_FOUND branch."""
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = _make_client_error("NoSuchKey", "missing")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.NOT_FOUND
+    assert result.remote_path == "src.txt"
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_copy_copy_object_raises_generic_exception(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.head_object.return_value = {}
+    mock_client.copy_object.side_effect = OSError("disk full")
+
+    handler = _s3_handler()
+    result = handler.copy("src.txt", "dst.txt")
+
+    assert result.status == Status.ERROR
+    assert result.error_type == "OSError"
+    assert "disk full" in (result.error_message or "")
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +1138,32 @@ def test_get_presigned_url_put(mock_boto3):
     assert url == "https://signed-put-url"
     mock_client.generate_presigned_url.assert_called_once_with(
         "put_object", Params={"Bucket": "bucket", "Key": "file.txt"}, ExpiresIn=3600
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_get_presigned_url_put_with_content_type(mock_boto3):
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.generate_presigned_url.return_value = "https://signed-put-url"
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="localhost:9000",
+        access_key="access",
+        secret_key="secret",
+    )
+    url = handler.get_presigned_url(
+        "file.txt",
+        method="PUT",
+        expiration_minutes=60,
+        content_type="application/octet-stream",
+    )
+
+    assert url == "https://signed-put-url"
+    mock_client.generate_presigned_url.assert_called_once_with(
+        "put_object",
+        Params={"Bucket": "bucket", "Key": "file.txt", "ContentType": "application/octet-stream"},
+        ExpiresIn=3600,
     )
 
 
