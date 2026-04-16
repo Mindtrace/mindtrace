@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-agents"
-version = "0.10.0"
+version = "0.10.1"
 description = "Agent framework for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -15,7 +15,7 @@ classifiers = [
 dependencies = [
     "openai>=1.0.0",
     "pydantic>=2.0.0",
-    "mindtrace-core>=0.10.0",
+    "mindtrace-core>=0.10.1",
 ]
 
 [project.optional-dependencies]
