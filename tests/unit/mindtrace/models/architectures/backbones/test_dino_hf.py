@@ -405,8 +405,9 @@ class TestLoRAUtilitiesAndPersistence:
         assert metadata["lora_state"] == "lora"
 
     def test_load_pretrained_raises_without_metadata(self, tmp_path: Path):
-        with pytest.raises(ValueError, match="No backbone metadata found"):
-            dino_hf_mod.HuggingFaceDINOBackbone.load_pretrained(tmp_path)
+        with patch.object(dino_hf_mod, "_HF_AVAILABLE", True):
+            with pytest.raises(ValueError, match="No backbone metadata found"):
+                dino_hf_mod.HuggingFaceDINOBackbone.load_pretrained(tmp_path)
 
     def test_load_pretrained_restores_plain_checkpoint(self, tmp_path: Path):
         (tmp_path / "backbone_metadata.json").write_text(

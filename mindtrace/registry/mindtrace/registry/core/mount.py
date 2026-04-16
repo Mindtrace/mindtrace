@@ -168,6 +168,7 @@ class Mount:
         credential configuration.
         """
         from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
         from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
 
         backend = registry.backend
@@ -177,7 +178,7 @@ class Mount:
             "version_digits": registry.version_digits,
         }
 
-        if backend.__class__.__name__ == "LocalRegistryBackend":
+        if isinstance(backend, LocalRegistryBackend):
             return cls(
                 name=name,
                 backend=MountBackendKind.LOCAL,

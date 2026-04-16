@@ -2,13 +2,14 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
+from unittest.mock import patch
 from urllib.parse import quote
 
 import pytest
 
 from mindtrace.registry import GCPRegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
-from mindtrace.registry.core.types import CleanupState, OpResults
+from mindtrace.registry.core.types import CleanupState, OnConflict, OpResults
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Result Classes (mimicking mindtrace.storage types)
@@ -202,6 +203,35 @@ class MockGCSHandler:
             result = self.delete(path)
             results.append(result)
         return MockBatchResult(results=results)
+
+    def get_presigned_url(
+        self,
+        remote_path: str,
+        *,
+        expiration_minutes: int = 60,
+        method: str = "GET",
+        content_type: str | None = None,
+    ) -> str:
+        return f"https://example.invalid/presign/{remote_path}"
+
+    def copy(
+        self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False
+    ) -> MockFileResult:
+        if source_remote_path not in self._objects:
+            return MockFileResult(
+                remote_path=destination_remote_path,
+                status="not_found",
+                ok=False,
+                error_message="source missing",
+            )
+        self._objects[destination_remote_path] = self._objects[source_remote_path]
+        return MockFileResult(remote_path=destination_remote_path, status="ok", ok=True)
+
+    def get_object_metadata(self, remote_path: str) -> dict:
+        if remote_path not in self._objects:
+            return {}
+        body = self._objects[remote_path]
+        return {"size": len(body), "etag": "mock-etag", "content_type": "application/octet-stream"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -647,14 +677,25 @@ def test_acquire_lock_success(backend):
 def test_acquire_lock_already_held(backend):
     """Test lock acquisition times out when lock is already held."""
     key = "test:object@1.0.0"
+    current_time = [1000.0]
 
-    # First lock succeeds (long TTL so it won't expire during test)
-    result1 = backend._acquire_lock(key, "lock-1", timeout=30)
-    assert result1 is True
+    def fake_time() -> float:
+        return current_time[0]
 
-    # Second lock times out (short timeout < first lock's TTL)
-    result2 = backend._acquire_lock(key, "lock-2", timeout=1)
-    assert result2 is False
+    def fake_sleep(seconds: float) -> None:
+        current_time[0] += seconds
+
+    with (
+        patch("mindtrace.registry.backends.gcp_registry_backend.time.time", side_effect=fake_time),
+        patch("mindtrace.registry.backends.gcp_registry_backend.time.sleep", side_effect=fake_sleep),
+    ):
+        # First lock succeeds (long TTL so it won't expire during test)
+        result1 = backend._acquire_lock(key, "lock-1", timeout=30)
+        assert result1 is True
+
+        # Second lock times out (short timeout < first lock's TTL)
+        result2 = backend._acquire_lock(key, "lock-2", timeout=1)
+        assert result2 is False
 
 
 def test_release_lock(backend):
@@ -1331,3 +1372,140 @@ def test_list_versions_has_object_and_materializer_edge_cases(backend, sample_me
 
     monkeypatch.setattr(backend, "fetch_registry_metadata", lambda: {"materializers": {"a": "A", "b": "B", "c": "C"}})
     assert backend.registered_materializers(["a", "c"]) == {"a": "A", "c": "C"}
+
+
+BYTES_DIRECT_METADATA_GCP = {
+    "class": "builtins.bytes",
+    "materializer": "zenml.materializers.BytesMaterializer",
+    "init_params": {},
+    "metadata": {},
+    "_files": ["data.txt"],
+}
+
+
+def test_gcp_direct_upload_create_inspect_cleanup(backend):
+    target = backend.create_direct_upload_target("gu1", content_type="text/plain", expiration_minutes=15)
+    assert target["upload_method"] == "presigned_url"
+    staged = target["staged_target"]
+    assert staged["kind"] == "gcs_object"
+
+    assert backend.inspect_direct_upload_target(staged)["exists"] is False
+    backend.gcs._objects[staged["path"]] = b"payload"
+    info = backend.inspect_direct_upload_target(staged)
+    assert info["exists"] is True
+    assert info["size_bytes"] == 7
+
+    assert backend.cleanup_direct_upload_target({"kind": "wrong", "path": staged["path"]}) is False
+    assert backend.cleanup_direct_upload_target(staged) is True
+    assert staged["path"] not in backend.gcs._objects
+
+
+def test_gcp_commit_direct_upload_missing_staged(backend):
+    r = backend.commit_direct_upload(
+        "obj:a",
+        "1.0.0",
+        {"kind": "gcs_object", "path": "missing/path"},
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
+
+
+def test_gcp_commit_direct_upload_success(backend):
+    target = backend.create_direct_upload_target("gu2")
+    staged = target["staged_target"]
+    backend.gcs._objects[staged["path"]] = b"hello"
+
+    r = backend.commit_direct_upload(
+        "bytes:gcp",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.ok and not r.is_error
+
+
+def test_gcp_commit_direct_upload_copy_failure(backend, monkeypatch):
+    target = backend.create_direct_upload_target("gu3")
+    staged = target["staged_target"]
+    backend.gcs._objects[staged["path"]] = b"x"
+
+    monkeypatch.setattr(
+        backend.gcs,
+        "copy",
+        lambda *args, **kwargs: MockFileResult(status="error", ok=False, error_message="copy failed"),
+    )
+    r = backend.commit_direct_upload(
+        "bytes:gcpfail",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
+
+
+def test_gcp_commit_direct_upload_metadata_conflict_skip(backend):
+    meta = {**BYTES_DIRECT_METADATA_GCP, "hash": "hg1"}
+    t1 = backend.create_direct_upload_target("gu4a")
+    s1 = t1["staged_target"]
+    backend.gcs._objects[s1["path"]] = b"a"
+    assert backend.commit_direct_upload("dup:gcp", "1.0.0", s1, meta, on_conflict=OnConflict.OVERWRITE).ok
+
+    t2 = backend.create_direct_upload_target("gu4b")
+    s2 = t2["staged_target"]
+    backend.gcs._objects[s2["path"]] = b"b"
+    r2 = backend.commit_direct_upload("dup:gcp", "1.0.0", s2, meta, on_conflict=OnConflict.SKIP)
+    assert r2.is_skipped
+
+
+def test_gcp_commit_direct_upload_wraps_validate_errors(backend):
+    target = backend.create_direct_upload_target("gu5")
+    staged = target["staged_target"]
+    backend.gcs._objects[staged["path"]] = b"z"
+    r = backend.commit_direct_upload(
+        "bad@name",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
+    assert r.exception is not None
+
+
+def test_gcp_commit_direct_upload_commit_plan_failure(backend, monkeypatch):
+    target = backend.create_direct_upload_target("gu6")
+    staged = target["staged_target"]
+    backend.gcs._objects[staged["path"]] = b"p"
+    monkeypatch.setattr(backend, "_create_commit_plan", lambda *a, **k: False)
+    r = backend.commit_direct_upload(
+        "bytes:gcp-planfail",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
+
+
+def test_gcp_commit_direct_upload_metadata_write_error(backend, monkeypatch):
+    from mindtrace.storage import Status, StringResult
+
+    target = backend.create_direct_upload_target("gu7")
+    staged = target["staged_target"]
+    backend.gcs._objects[staged["path"]] = b"p"
+
+    def bad_save(*args, **kwargs):
+        return StringResult(remote_path="meta.json", status=Status.ERROR, error_message="meta failed")
+
+    monkeypatch.setattr(backend, "_save_metadata_single", bad_save)
+    r = backend.commit_direct_upload(
+        "bytes:gcp-metafail",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_GCP,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
