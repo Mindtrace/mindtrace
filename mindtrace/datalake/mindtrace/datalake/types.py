@@ -35,6 +35,10 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
 
+class DuplicateAliasError(ValueError):
+    """Raised when an alias string is already registered to a different asset."""
+
+
 class DatalakeDocument(MindtraceDocument):
     """Beanie document that can still be instantiated before collection init in unit tests."""
 
@@ -71,6 +75,46 @@ class StorageRef(BaseModel):
         version_suffix = f"@{self.version}" if self.version is not None else ""
         self.qualified_key = f"{self.mount}/{self.name}{version_suffix}"
         return self
+
+
+class DirectUploadSession(DatalakeDocument):
+    """Control-plane record for a pending or finalized direct object upload."""
+
+    upload_session_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("upload_session"))
+    finalize_token: str = Field(default_factory=lambda: uuid4().hex)
+    name: str
+    mount: str
+    requested_version: str | None = None
+    resolved_version: str | None = None
+    upload_method: Literal["local_path", "presigned_url"]
+    upload_url: str | None = None
+    upload_path: str | None = None
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    staged_reference: dict[str, Any] = Field(default_factory=dict)
+    content_type: str = "application/octet-stream"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    on_conflict: Literal["skip", "overwrite"] | None = None
+    status: Literal["pending", "completed", "expired", "failed", "cleaned"] = "pending"
+    storage_ref: StorageRef | None = None
+    failure_reason: str | None = None
+    verification_attempts: int = 0
+    last_verified_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    completed_at: datetime | None = None
+    cleanup_completed_at: datetime | None = None
+    created_by: str | None = None
+
+    class Settings:
+        name = "datalake_direct_upload_sessions"
+        indexes = [
+            "mount",
+            "name",
+            "status",
+            "expires_at",
+            "cleanup_completed_at",
+            [("mount", 1), ("name", 1), ("status", 1)],
+        ]
 
 
 class AnnotationSource(BaseModel):
@@ -126,6 +170,30 @@ class Asset(DatalakeDocument):
             "storage_ref.version",
             "subject.kind",
             "subject.id",
+            "metadata.origin.asset_id",
+            [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
+        ]
+
+
+class AssetAlias(DatalakeDocument):
+    """Maps a string alias to an :class:`Asset` (typically ``asset_id`` as the default alias).
+
+    Multiple rows may share the same ``asset_id`` (one primary row where ``alias == asset_id``,
+    plus optional human-friendly aliases).
+    """
+
+    alias_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("alias"))
+    alias: Annotated[str, Indexed(unique=True)]
+    asset_id: Annotated[str, Indexed()]
+    is_primary: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_asset_aliases"
+        indexes = [
+            "asset_id",
+            "is_primary",
+            [("asset_id", 1), ("is_primary", 1)],
         ]
 
 
@@ -149,6 +217,7 @@ class AnnotationRecord(DatalakeDocument):
     source: AnnotationSource
     geometry: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

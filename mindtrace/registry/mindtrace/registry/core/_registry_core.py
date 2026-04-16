@@ -308,6 +308,27 @@ class _RegistryCore(Mindtrace):
                 files.append(str(rel_path))
         return sorted(files)
 
+    def _resolve_save_version(self, name: str, version: str | None) -> str:
+        """Resolve a concrete version string for a write path."""
+        if not self.version_objects:
+            return str(Version("1", digits=self.version_digits))
+        if version is None:
+            return self._next_version(name)
+        if version == "latest":
+            raise ValueError("Cannot save with version='latest'. Use version=None for auto-increment.")
+        return self._validate_version(version)
+
+    @staticmethod
+    def _build_direct_bytes_metadata(metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        """Build registry metadata for a bytes artifact uploaded out-of-band."""
+        return {
+            "class": "builtins.bytes",
+            "materializer": "zenml.materializers.BytesMaterializer",
+            "init_params": {},
+            "metadata": ifnone(metadata, default={}),
+            "_files": ["data.txt"],
+        }
+
     def save(
         self,
         name: str | List[str],
@@ -566,6 +587,41 @@ class _RegistryCore(Mindtrace):
             object_class = getattr(module, class_name)
 
         return materializer.load(data_type=object_class, **init_params)
+
+    def serialization_hints_for_object(
+        self,
+        obj: Any,
+        materializer: Type[BaseMaterializer] | None = None,
+    ) -> Dict[str, str]:
+        """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
+        return {
+            "class": f"{type(obj).__module__}.{type(obj).__name__}",
+            "materializer": self._find_materializer(obj, materializer),
+        }
+
+    def materialize_from_bytes(
+        self,
+        raw: bytes | bytearray,
+        *,
+        object_class: str,
+        materializer: str,
+        init_params: Dict[str, Any] | None = None,
+        relative_path: str = "data.txt",
+        **kwargs: Any,
+    ) -> Any:
+        """Write *raw* to *relative_path* under a staged directory and run the ZenML materializer."""
+        with TemporaryDirectory(dir=self._artifact_store.path) as base:
+            temp_dir = Path(base) / "staged"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            target = temp_dir / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(bytes(raw))
+            meta: Dict[str, Any] = {
+                "class": object_class,
+                "materializer": materializer,
+                "init_params": ifnone(init_params, default={}),
+            }
+            return self._materialize(temp_dir, meta, **kwargs)
 
     def load(
         self,

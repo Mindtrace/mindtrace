@@ -16,6 +16,7 @@ import yaml
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import LocalRegistryBackend
+from mindtrace.registry.core.types import OnConflict
 
 
 @pytest.fixture
@@ -908,18 +909,22 @@ def test_fetch_metadata_missing_entry(backend, sample_metadata):
 def test_local_backend_module_can_reload_windows_import_branch(monkeypatch):
     import mindtrace.registry.backends.local_registry_backend as local_backend_module
 
-    actual_system = platform.system()
+    # Snapshot the module namespace so the reload does not leak new class objects
+    # into sys.modules — otherwise LocalRegistryBackend identity changes break
+    # isinstance checks in downstream tests (e.g. Mount.from_registry).
+    original_dict = local_backend_module.__dict__.copy()
+
     dummy_msvcrt = types.ModuleType("msvcrt")
     monkeypatch.setitem(sys.modules, "msvcrt", dummy_msvcrt)
     monkeypatch.setattr(platform, "system", lambda: "Windows")
 
-    reloaded = importlib.reload(local_backend_module)
-
-    assert reloaded.msvcrt is dummy_msvcrt
-    assert reloaded.fcntl is None
-
-    monkeypatch.setattr(platform, "system", lambda: actual_system)
-    importlib.reload(reloaded)
+    try:
+        reloaded = importlib.reload(local_backend_module)
+        assert reloaded.msvcrt is dummy_msvcrt
+        assert reloaded.fcntl is None
+    finally:
+        local_backend_module.__dict__.clear()
+        local_backend_module.__dict__.update(original_dict)
 
 
 def test_acquire_shared_lock_cleans_up_expired_or_corrupted_exclusive_lock(backend):
@@ -1327,3 +1332,107 @@ def test_internal_lock_uses_windows_open_flags_for_shared_and_exclusive(backend,
     assert exclusive_result is True
     assert backend._release_internal_lock("test_windows_shared", "lock-1") is True
     assert backend._release_internal_lock("test_windows_exclusive", "lock-2") is True
+
+
+BYTES_DIRECT_METADATA_LOCAL = {
+    "class": "builtins.bytes",
+    "materializer": "zenml.materializers.BytesMaterializer",
+    "init_params": {},
+    "metadata": {},
+    "_files": ["data.txt"],
+}
+
+
+def test_local_direct_upload_create_inspect_cleanup_commit(backend):
+    target = backend.create_direct_upload_target("lu1", content_type="application/octet-stream")
+    assert target["upload_method"] == "local_path"
+    staged = target["staged_target"]
+    assert staged["kind"] == "local_file"
+    upload_path = Path(staged["path"])
+    assert upload_path.parent.is_dir()
+
+    assert backend.inspect_direct_upload_target(staged)["exists"] is False
+    upload_path.write_bytes(b"abc")
+    assert backend.inspect_direct_upload_target(staged)["exists"] is True
+
+    assert backend.cleanup_direct_upload_target({"kind": "other", "path": str(upload_path)}) is False
+
+    r = backend.commit_direct_upload(
+        "local:bytes",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.ok
+    assert not upload_path.exists()
+
+    r2 = backend.commit_direct_upload(
+        "local:bytes",
+        "1.0.0",
+        {"kind": "local_file", "path": "/nonexistent/nope.txt"},
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r2.is_error
+
+
+def test_local_commit_direct_upload_skip_and_overwrite(backend, sample_metadata):
+    obj_dir = backend.uri / "src_obj"
+    obj_dir.mkdir(parents=True)
+    (obj_dir / "file1.txt").write_text("x")
+    meta = {**sample_metadata, "_files": ["file1.txt"]}
+    backend.push("local:dup", "1.0.0", str(obj_dir), meta)
+
+    t = backend.create_direct_upload_target("lu2")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"new-bytes")
+
+    skip = backend.commit_direct_upload(
+        "local:dup",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.SKIP,
+    )
+    assert skip.is_skipped
+
+    t2 = backend.create_direct_upload_target("lu3")
+    staged2 = t2["staged_target"]
+    Path(staged2["path"]).write_bytes(b"overwrite-bytes")
+    ow = backend.commit_direct_upload(
+        "local:dup",
+        "1.0.0",
+        staged2,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert ow.is_overwritten
+
+
+def test_local_cleanup_direct_upload_target_returns_false_on_error(backend, monkeypatch):
+    target = backend.create_direct_upload_target("lu4")
+    staged = target["staged_target"]
+    Path(staged["path"]).write_bytes(b"z")
+
+    monkeypatch.setattr(Path, "unlink", lambda self, *a, **kw: (_ for _ in ()).throw(OSError("unlink failed")))
+    assert backend.cleanup_direct_upload_target(staged) is False
+
+
+def test_local_commit_direct_upload_metadata_yaml_failure(backend, monkeypatch):
+    t = backend.create_direct_upload_target("lu5")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"data")
+
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.yaml.safe_dump",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("yaml boom")),
+    )
+    r = backend.commit_direct_upload(
+        "local:yamlfail",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
