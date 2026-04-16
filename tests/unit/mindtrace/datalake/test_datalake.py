@@ -418,6 +418,7 @@ class TestDatalakeSyncFacade:
         assert datalake.list_annotation_sets() == []
         assert isinstance(datalake.update_annotation_set("set_1", status="active"), AnnotationSet)
         assert datalake.add_annotation_records([], annotation_set_id="set_1") == []
+        assert datalake.list_annotation_records_for_asset("asset_1") == []
         assert isinstance(datalake.get_annotation_record("ann_1"), AnnotationRecord)
         assert datalake.list_annotation_records() == []
         assert isinstance(datalake.update_annotation_record("ann_1", label="dent"), AnnotationRecord)
