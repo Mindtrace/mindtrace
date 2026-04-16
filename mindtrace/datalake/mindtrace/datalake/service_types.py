@@ -489,8 +489,13 @@ UpdateAnnotationSetSchema = TaskSchema(
 
 
 class AddAnnotationRecordsInput(BaseModel):
-    annotation_set_id: str
     annotations: list[dict[str, Any]]
+    annotation_set_id: str | None = None
+    annotation_schema_id: str | None = None
+
+
+class ListAnnotationRecordsForAssetInput(BaseModel):
+    asset_id: str
 
 
 class UpdateAnnotationRecordInput(BaseModel):
@@ -518,6 +523,11 @@ GetAnnotationRecordSchema = TaskSchema(
 )
 ListAnnotationRecordsSchema = TaskSchema(
     name="annotation_records.list", input_schema=ListInput, output_schema=AnnotationRecordListOutput
+)
+ListAnnotationRecordsForAssetSchema = TaskSchema(
+    name="annotation_records.list_for_asset",
+    input_schema=ListAnnotationRecordsForAssetInput,
+    output_schema=AnnotationRecordListOutput,
 )
 UpdateAnnotationRecordSchema = TaskSchema(
     name="annotation_records.update", input_schema=UpdateAnnotationRecordInput, output_schema=AnnotationRecordOutput
