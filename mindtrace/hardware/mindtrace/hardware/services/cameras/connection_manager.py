@@ -27,6 +27,7 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigureCaptureGroupsRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
 
@@ -406,4 +407,37 @@ class CameraManagerConnectionManager(ConnectionManager):
             Network diagnostics data
         """
         response = await self.get("/network/diagnostics")
+        return response["data"]
+
+    # Capture Groups (stage+set batching)
+
+    async def configure_capture_groups(self, config: Dict[str, Dict[str, Dict[str, Any]]]) -> bool:
+        """Configure stage+set capture groups with per-group concurrency semaphores.
+
+        Args:
+            config: ``{stage: {set: {"batch_size": int, "cameras": [str]}}}``
+
+        Returns:
+            True if successful
+        """
+        request = ConfigureCaptureGroupsRequest(config=config)
+        response = await self.post("/cameras/capture-groups/configure", request.model_dump())
+        return response["data"]
+
+    async def get_capture_groups(self) -> Dict[str, Any]:
+        """Get current capture group configuration.
+
+        Returns:
+            Dictionary of capture groups keyed by ``"stage:set_name"``
+        """
+        response = await self.get("/cameras/capture-groups")
+        return response["data"]
+
+    async def remove_capture_groups(self) -> bool:
+        """Remove all capture group configurations.
+
+        Returns:
+            True if successful
+        """
+        response = await self.post("/cameras/capture-groups/remove", {})
         return response["data"]

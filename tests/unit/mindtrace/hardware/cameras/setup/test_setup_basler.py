@@ -1,8 +1,11 @@
 """Tests for Basler SDK setup functionality."""
 
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from mindtrace.hardware.cameras.setup.setup_basler import (
@@ -230,3 +233,312 @@ class TestTyperCommands:
         result = runner.invoke(app, ["uninstall"])
 
         assert result.exit_code == 1
+
+
+@pytest.fixture
+def installer(tmp_path):
+    cfg = Mock()
+    cfg.paths.lib_dir = str(tmp_path)
+    hw = Mock()
+    hw.get_config.return_value = cfg
+
+    with patch("mindtrace.hardware.cameras.setup.setup_basler.get_hardware_config", return_value=hw):
+        inst = PylonSDKInstaller()
+    return inst
+
+
+def test_prompt_for_file_quit(installer):
+    with patch("mindtrace.hardware.cameras.setup.setup_basler.typer.prompt", return_value="q"):
+        assert installer._prompt_for_file(installer.PLATFORM_INFO["Linux"]) is None
+
+
+def test_prompt_for_file_accepts_valid_path(installer, tmp_path):
+    pkg = tmp_path / "pylon_ok.tar.gz"
+    pkg.write_bytes(b"x" * (150 * 1024 * 1024))
+
+    with patch("mindtrace.hardware.cameras.setup.setup_basler.typer.prompt", return_value=str(pkg)):
+        got = installer._prompt_for_file(installer.PLATFORM_INFO["Linux"])
+
+    assert got == pkg
+
+
+def test_open_download_page_handles_browser_error(installer):
+    with patch("mindtrace.hardware.cameras.setup.setup_basler.webbrowser.open", side_effect=RuntimeError("boom")):
+        installer._open_download_page()
+
+
+def test_install_from_package_dispatches_linux(installer, tmp_path):
+    installer.platform = "Linux"
+    pkg = tmp_path / "pylon.tar.gz"
+    pkg.write_text("x")
+
+    with patch.object(installer, "_install_linux", return_value=True) as m:
+        assert installer._install_from_package(pkg) is True
+        m.assert_called_once_with(pkg)
+
+
+def test_install_from_package_dispatches_windows(installer, tmp_path):
+    installer.platform = "Windows"
+    pkg = tmp_path / "pylon.exe"
+    pkg.write_text("x")
+
+    with patch.object(installer, "_install_windows", return_value=True) as m:
+        assert installer._install_from_package(pkg) is True
+        m.assert_called_once_with(pkg)
+
+
+def test_install_uses_package_path_without_wizard(installer, tmp_path):
+    installer.platform = "Linux"
+    installer.package_path = tmp_path / "pylon.tar.gz"
+
+    with (
+        patch.object(installer, "_install_from_package", return_value=True) as install_pkg,
+        patch.object(installer, "_run_wizard") as wizard,
+    ):
+        assert installer.install() is True
+
+    install_pkg.assert_called_once_with(installer.package_path)
+    wizard.assert_not_called()
+
+
+def test_install_runs_wizard_when_no_package(installer):
+    installer.platform = "Linux"
+    installer.package_path = None
+
+    with patch.object(installer, "_run_wizard", return_value=True) as wizard:
+        assert installer.install() is True
+
+    wizard.assert_called_once_with()
+
+
+def test_run_wizard_returns_false_when_user_declines(installer):
+    installer.platform = "Linux"
+
+    with (
+        patch.object(installer, "_display_intro"),
+        patch("mindtrace.hardware.cameras.setup.setup_basler.typer.confirm", return_value=False),
+        patch.object(installer, "_open_download_page") as open_page,
+    ):
+        assert installer._run_wizard() is False
+
+    open_page.assert_not_called()
+
+
+def test_run_wizard_happy_path(installer, tmp_path):
+    installer.platform = "Linux"
+    pkg = tmp_path / "pylon.tar.gz"
+    pkg.write_text("x")
+
+    with (
+        patch.object(installer, "_display_intro"),
+        patch("mindtrace.hardware.cameras.setup.setup_basler.typer.confirm", return_value=True),
+        patch.object(installer, "_open_download_page") as open_page,
+        patch.object(installer, "_show_download_instructions") as instructions,
+        patch("builtins.input", return_value=""),
+        patch.object(installer, "_prompt_for_file", return_value=pkg) as prompt_file,
+        patch.object(installer, "_install_from_package", return_value=True) as install_pkg,
+    ):
+        assert installer._run_wizard() is True
+
+    open_page.assert_called_once_with()
+    instructions.assert_called_once_with(installer.PLATFORM_INFO["Linux"])
+    prompt_file.assert_called_once_with(installer.PLATFORM_INFO["Linux"])
+    install_pkg.assert_called_once_with(pkg)
+
+
+def test_prompt_for_file_reprompts_after_missing_file_and_accepts_anyway(installer, tmp_path):
+    missing = tmp_path / "missing.tar.gz"
+    pkg = tmp_path / "camera_sdk.tar.gz"
+    pkg.write_bytes(b"x" * (150 * 1024 * 1024))
+
+    with (
+        patch(
+            "mindtrace.hardware.cameras.setup.setup_basler.typer.prompt",
+            side_effect=[str(missing), str(pkg)],
+        ),
+        patch("mindtrace.hardware.cameras.setup.setup_basler.typer.confirm", return_value=True),
+    ):
+        got = installer._prompt_for_file(installer.PLATFORM_INFO["Linux"])
+
+    assert got == pkg
+
+
+def test_install_linux_installs_debs(installer, tmp_path):
+    installer.platform = "Linux"
+    installer.pylon_dir = tmp_path / "pylon"
+    pkg = tmp_path / "pylon_debs.tar.gz"
+    pkg.write_bytes(b"x")
+
+    deb1 = installer.pylon_dir / "a.deb"
+    deb2 = installer.pylon_dir / "sub" / "b.deb"
+    deb2.parent.mkdir(parents=True, exist_ok=True)
+    deb1.write_text("a")
+    deb2.write_text("b")
+
+    class DummyTar:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extractall(self, path):
+            return None
+
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+
+    with patch("tarfile.open", return_value=DummyTar()), patch.object(installer, "_run_command", side_effect=fake_run):
+        ok = installer._install_linux(pkg)
+
+    assert ok is True
+    assert any(cmd[:3] == ["sudo", "apt-get", "update"] for cmd in calls)
+    assert any(cmd[:3] == ["sudo", "dpkg", "-i"] for cmd in calls)
+
+
+def test_install_from_package_wraps_exceptions(installer, tmp_path):
+    installer.platform = "Linux"
+    pkg = tmp_path / "pylon.tar.gz"
+    pkg.write_text("x")
+
+    with patch.object(installer, "_install_linux", side_effect=RuntimeError("boom")):
+        assert installer._install_from_package(pkg) is False
+
+
+def test_install_linux_returns_false_for_unsupported_archive(installer, tmp_path):
+    installer.platform = "Linux"
+    installer.pylon_dir = tmp_path / "pylon"
+    pkg = tmp_path / "pylon.zip"
+    pkg.write_text("x")
+
+    assert installer._install_linux(pkg) is False
+
+
+def test_install_linux_returns_false_on_called_process_error(installer, tmp_path):
+    installer.platform = "Linux"
+    installer.pylon_dir = tmp_path / "pylon"
+    pkg = tmp_path / "pylon.tar.gz"
+    pkg.write_bytes(b"x")
+    deb = installer.pylon_dir / "a.deb"
+    deb.parent.mkdir(parents=True, exist_ok=True)
+    deb.write_text("x")
+
+    class DummyTar:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extractall(self, path):
+            return None
+
+    with (
+        patch("tarfile.open", return_value=DummyTar()),
+        patch.object(
+            installer,
+            "_run_command",
+            side_effect=subprocess.CalledProcessError(1, ["sudo", "apt-get", "update"]),
+        ),
+    ):
+        assert installer._install_linux(pkg) is False
+
+
+def test_install_windows_runs_exe(installer, tmp_path):
+    installer.platform = "Windows"
+    pkg = tmp_path / "Basler_pylon.exe"
+    pkg.write_text("x")
+    fake_windll = SimpleNamespace(shell32=SimpleNamespace(IsUserAnAdmin=Mock(return_value=1)))
+
+    with (
+        patch("mindtrace.hardware.cameras.setup.setup_basler.ctypes.windll", fake_windll, create=True),
+        patch("subprocess.run") as run,
+        patch.object(installer, "_show_success_message") as success,
+    ):
+        assert installer._install_windows(pkg) is True
+
+    run.assert_called_once_with([str(pkg)], check=True)
+    success.assert_called_once_with()
+
+
+def test_install_windows_returns_false_when_zip_has_no_exe(installer, tmp_path):
+    installer.platform = "Windows"
+    installer.pylon_dir = tmp_path / "pylon"
+    pkg = tmp_path / "Basler_pylon.zip"
+    pkg.write_text("x")
+    fake_windll = SimpleNamespace(shell32=SimpleNamespace(IsUserAnAdmin=Mock(return_value=1)))
+
+    class DummyZip:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extractall(self, path):
+            return None
+
+    with (
+        patch("mindtrace.hardware.cameras.setup.setup_basler.ctypes.windll", fake_windll, create=True),
+        patch("zipfile.ZipFile", return_value=DummyZip()),
+        patch("pathlib.Path.rglob", return_value=[]),
+    ):
+        assert installer._install_windows(pkg) is False
+
+
+def test_install_windows_returns_false_on_called_process_error(installer, tmp_path):
+    installer.platform = "Windows"
+    pkg = tmp_path / "Basler_pylon.exe"
+    pkg.write_text("x")
+    fake_windll = SimpleNamespace(shell32=SimpleNamespace(IsUserAnAdmin=Mock(return_value=1)))
+
+    with (
+        patch("mindtrace.hardware.cameras.setup.setup_basler.ctypes.windll", fake_windll, create=True),
+        patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, [str(pkg)])),
+    ):
+        assert installer._install_windows(pkg) is False
+
+
+def test_uninstall_linux_runs_cleanup(installer):
+    installer.platform = "Linux"
+
+    calls = []
+
+    def fake_subprocess_run(cmd, check=False):
+        calls.append((cmd, check))
+        return Mock()
+
+    with patch("subprocess.run", side_effect=fake_subprocess_run), patch.object(installer, "_run_command") as rc:
+        assert installer._uninstall_linux() is True
+        rc.assert_called_once_with(["sudo", "apt-get", "autoremove", "-y"])
+
+    assert any(c[0][:4] == ["sudo", "apt-get", "remove", "-y"] for c in calls)
+
+
+def test_uninstall_windows_returns_false(installer):
+    installer.platform = "Windows"
+    assert installer._uninstall_windows() is False
+
+
+def test_uninstall_wraps_exceptions(installer):
+    installer.platform = "Linux"
+
+    with patch.object(installer, "_uninstall_linux", side_effect=RuntimeError("boom")):
+        assert installer.uninstall() is False
+
+
+def test_install_cli_verbose_and_package(tmp_path):
+    pkg = tmp_path / "Basler_pylon.exe"
+    pkg.write_text("x")
+    installer = Mock()
+    installer.install.return_value = True
+    installer.logger = Mock()
+
+    with patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller", return_value=installer) as cls:
+        result = runner.invoke(app, ["install", "--verbose", "--package", str(pkg)])
+
+    assert result.exit_code == 0
+    cls.assert_called_once_with(package_path=str(pkg))
+    installer.logger.setLevel.assert_called_once()
