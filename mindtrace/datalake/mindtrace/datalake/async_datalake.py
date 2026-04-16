@@ -1152,8 +1152,7 @@ class AsyncDatalake(Mindtrace):
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
         await self._validate_asset_refs_exist(asset_refs)
-        for annotation_set_id in annotation_set_ids or []:
-            await self.get_annotation_set(annotation_set_id)
+        await self._validate_annotation_set_ids_exist(annotation_set_ids or [])
         datum = self._build_document(
             Datum,
             split=split,
@@ -1179,10 +1178,16 @@ class AsyncDatalake(Mindtrace):
                 continue
             await self.get_asset(asset_id)
 
+    async def _validate_annotation_set_ids_exist(self, annotation_set_ids: list[str]) -> None:
+        for annotation_set_id in annotation_set_ids:
+            await self.get_annotation_set(annotation_set_id)
+
     async def update_datum(self, datum_id: str, **changes: Any) -> Datum:
         datum = await self.get_datum(datum_id)
         if "asset_refs" in changes and changes["asset_refs"] is not None:
             await self._validate_asset_refs_exist(changes["asset_refs"])
+        if "annotation_set_ids" in changes and changes["annotation_set_ids"] is not None:
+            await self._validate_annotation_set_ids_exist(changes["annotation_set_ids"])
         for key, value in changes.items():
             setattr(datum, key, value)
         datum.updated_at = self._utc_now()
