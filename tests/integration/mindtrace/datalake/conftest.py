@@ -1,5 +1,6 @@
 import asyncio
 import shutil
+import socket
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -12,9 +13,28 @@ from pymongo import MongoClient
 
 from mindtrace.datalake import AsyncDatalake, Datalake, DatalakeService
 from mindtrace.datalake.async_datalake import _default_datalake_store_path
-from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
+from mindtrace.registry import (
+    AmbientAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    S3AccessKeyAuth,
+    S3MountConfig,
+    Store,
+)
 
 MONGO_URL = "mongodb://localhost:27018"
+MONGO_URL_SECONDARY = "mongodb://localhost:27019"
+
+
+def _mongo_secondary_reachable() -> bool:
+    try:
+        with socket.create_connection(("localhost", 27019), timeout=2.0):
+            return True
+    except OSError:
+        return False
 
 
 class InProcessServiceConnectionManager:
@@ -39,8 +59,8 @@ class InProcessServiceConnectionManager:
                 raise ValueError(
                     f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {schema}"
                 )
-            return arg.model_dump() if hasattr(arg, "model_dump") else arg
-        return schema(**kwargs).model_dump() if schema is not None else {}
+            return arg.model_dump(mode="json") if hasattr(arg, "model_dump") else arg
+        return schema(**kwargs).model_dump(mode="json") if schema is not None else {}
 
     def _call(self, endpoint_name: str, *args, **kwargs):
         payload = self._payload_for(endpoint_name, args, kwargs)
@@ -95,6 +115,28 @@ def datalake_store():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+@pytest.fixture(scope="function")
+def datalake_store_secondary():
+    """Second isolated local store (separate filesystem root from ``datalake_store``)."""
+    temp_dir = Path(tempfile.mkdtemp(prefix="mindtrace-datalake-store-secondary-"))
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="local",
+                backend=MountBackendKind.LOCAL,
+                config=LocalMountConfig(uri=temp_dir),
+                is_default=True,
+                registry_options={"mutable": True},
+            )
+        ],
+        default_mount="local",
+    )
+    try:
+        yield store
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def async_datalake(datalake_store):
     db_name = f"test_datalake_async_{uuid4().hex}"
@@ -102,6 +144,127 @@ async def async_datalake(datalake_store):
         mongo_db_uri=MONGO_URL,
         mongo_db_name=db_name,
         store=datalake_store,
+    )
+    try:
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_datalake_secondary(datalake_store_secondary):
+    """Second ``AsyncDatalake`` with its own Mongo database and local store (for cross-lake sync).
+
+    Uses ``MONGO_URL_SECONDARY`` (compose ``mongodb_secondary``) so metadata lives on a
+    *different* MongoDB host than the primary :data:`datalake` fixture.
+    """
+    if not _mongo_secondary_reachable():
+        pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
+    db_name = f"test_datalake_async_secondary_{uuid4().hex}"
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL_SECONDARY,
+        mongo_db_name=db_name,
+        store=datalake_store_secondary,
+    )
+    try:
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
+    """``AsyncDatalake`` backed by MinIO/S3.
+
+    Uses mount name ``minio`` (not ``local``) so integration tests exercise
+    :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest.mount_map`
+    when syncing from a filesystem-backed source lake whose default mount is ``local``.
+    """
+    db_name = f"test_datalake_async_minio_{uuid4().hex[:12]}"
+    prefix = f"{s3_test_prefix.rstrip('/')}/datalake-sync-{uuid4().hex[:10]}/"
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="minio",
+                backend=MountBackendKind.S3,
+                config=S3MountConfig(
+                    bucket=s3_test_bucket,
+                    prefix=prefix,
+                    endpoint=s3_config["endpoint"],
+                    secure=s3_config["secure"],
+                ),
+                is_default=True,
+                auth=S3AccessKeyAuth(
+                    access_key=s3_config["access_key"],
+                    secret_key=s3_config["secret_key"],
+                ),
+                registry_options={"mutable": True},
+            )
+        ],
+        default_mount="minio",
+    )
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        store=store,
+    )
+    try:
+        yield datalake
+    finally:
+        await datalake.asset_database.client.drop_database(db_name)
+        datalake.asset_database.client.close()
+        datalake.annotation_record_database.client.close()
+        datalake.annotation_set_database.client.close()
+        datalake.datum_database.client.close()
+        datalake.dataset_version_database.client.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_datalake_minio_secondary_mongo(s3_config, s3_test_bucket, s3_test_prefix):
+    """``AsyncDatalake`` backed by MinIO on a **separate** MongoDB instance (``MONGO_URL_SECONDARY``).
+
+    Same as :func:`async_datalake_minio` but metadata uses ``mongodb_secondary`` (port 27019) so
+    replication tests can pair ``local`` + primary Mongo with ``minio`` + secondary Mongo.
+    """
+    if not _mongo_secondary_reachable():
+        pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
+    db_name = f"test_datalake_async_minio_secondary_{uuid4().hex[:12]}"
+    prefix = f"{s3_test_prefix.rstrip('/')}/datalake-replication-{uuid4().hex[:10]}/"
+    store = Store.from_mounts(
+        [
+            Mount(
+                name="minio",
+                backend=MountBackendKind.S3,
+                config=S3MountConfig(
+                    bucket=s3_test_bucket,
+                    prefix=prefix,
+                    endpoint=s3_config["endpoint"],
+                    secure=s3_config["secure"],
+                ),
+                is_default=True,
+                auth=S3AccessKeyAuth(
+                    access_key=s3_config["access_key"],
+                    secret_key=s3_config["secret_key"],
+                ),
+                registry_options={"mutable": True},
+            )
+        ],
+        default_mount="minio",
+    )
+    datalake = await AsyncDatalake.create(
+        mongo_db_uri=MONGO_URL_SECONDARY,
+        mongo_db_name=db_name,
+        store=store,
     )
     try:
         yield datalake
@@ -144,6 +307,39 @@ def sync_datalake(datalake_store):
 
 
 @pytest.fixture(scope="function")
+def sync_datalake_gcs(datalake_gcs_mounts, gcs_client, gcp_test_bucket, gcp_test_prefix):
+    db_name = f"test_datalake_sync_gcs_{uuid4().hex[:12]}"
+    datalake = Datalake.create(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        mounts=datalake_gcs_mounts,
+        default_mount="gcs",
+    )
+    try:
+        yield datalake
+    finally:
+        client = datalake._backend.asset_database.client
+
+        async def _drop_database():
+            await client.drop_database(db_name)
+
+        datalake._call_in_loop(_drop_database)
+        datalake.close()
+        try:
+            client.close()
+        except Exception:
+            pass
+
+        try:
+            bucket = gcs_client.bucket(gcp_test_bucket)
+            blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+            for blob in blobs:
+                blob.delete()
+        except Exception:
+            pass
+
+
+@pytest.fixture(scope="function")
 def temp_registry_dir():
     temp_dir = tempfile.mkdtemp(prefix="mindtrace-datalake-registry-")
     try:
@@ -166,6 +362,42 @@ def datalake_mounts(temp_registry_dir):
 
 
 @pytest.fixture(scope="function")
+def gcp_test_bucket_name(core_config):
+    """Get datalake GCS test bucket, preferring general GCP bucket config.
+
+    For datalake direct-upload coverage we prefer ``MINDTRACE_GCP.GCP_BUCKET_NAME``
+    because the integration harness may override the registry bucket env var for
+    unrelated registry backend tests.
+    """
+    bucket_name = core_config.get("MINDTRACE_GCP", {}).get("GCP_BUCKET_NAME") or core_config.get(
+        "MINDTRACE_GCP_REGISTRY", {}
+    ).get("GCP_BUCKET_NAME")
+    if not bucket_name:
+        pytest.skip("GCP test bucket not configured (set MINDTRACE_GCP__GCP_BUCKET_NAME or config.ini)")
+    return bucket_name
+
+
+@pytest.fixture(scope="function")
+def datalake_gcs_mounts(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
+    auth = GCSServiceAccountFileAuth(path=gcp_credentials_path) if gcp_credentials_path else AmbientAuth()
+    return [
+        Mount(
+            name="gcs",
+            backend=MountBackendKind.GCS,
+            config=GCSMountConfig(
+                bucket_name=gcp_test_bucket,
+                project_id=gcp_project_id,
+                prefix=gcp_test_prefix,
+                credentials_path=gcp_credentials_path,
+            ),
+            is_default=True,
+            auth=auth,
+            registry_options={"mutable": True},
+        )
+    ]
+
+
+@pytest.fixture(scope="function")
 def datalake_service_local_manager(datalake_mounts):
     db_name = f"test_datalake_service_local_{uuid4().hex}"
     service = DatalakeService(
@@ -182,6 +414,33 @@ def datalake_service_local_manager(datalake_mounts):
         mongo_client.drop_database(db_name)
     finally:
         mongo_client.close()
+
+
+@pytest.fixture(scope="function")
+def datalake_service_gcs_manager(datalake_gcs_mounts, gcs_client, gcp_test_bucket, gcp_test_prefix):
+    db_name = f"test_datalake_service_gcs_{uuid4().hex[:12]}"
+    service = DatalakeService(
+        mongo_db_uri=MONGO_URL,
+        mongo_db_name=db_name,
+        mounts=datalake_gcs_mounts,
+        default_mount="gcs",
+    )
+    with TestClient(service.app) as client:
+        yield InProcessServiceConnectionManager(service, client)
+
+    mongo_client = MongoClient(MONGO_URL)
+    try:
+        mongo_client.drop_database(db_name)
+    finally:
+        mongo_client.close()
+
+    try:
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
+        for blob in blobs:
+            blob.delete()
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="function")

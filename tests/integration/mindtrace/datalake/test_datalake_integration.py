@@ -1,11 +1,13 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pymongo import MongoClient
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake import Datalake
+from mindtrace.datalake import Datalake, DatalakeDirectUploadClient
 from mindtrace.datalake.types import AnnotationLabelDefinition, SubjectRef
 
 
@@ -15,6 +17,12 @@ def _bare_datalake() -> Datalake:
     datalake._loop_thread = None
     datalake._loop = asyncio.new_event_loop()
     return datalake
+
+
+def _skip_if_presign_unavailable(exc: Exception) -> None:
+    message = str(exc).lower()
+    if "private key" in message or "sign credentials" in message or "unable to generate a pre-signed url" in message:
+        pytest.skip(f"Unable to generate a pre-signed URL: {exc}")
 
 
 def test_datalake_end_to_end(sync_datalake: Datalake):
@@ -70,7 +78,6 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     listed_annotation_sets = sync_datalake.list_annotation_sets({"purpose": "ground_truth"})
 
     inserted_records = sync_datalake.add_annotation_records(
-        annotation_set.annotation_set_id,
         [
             {
                 "kind": "bbox",
@@ -81,6 +88,7 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
                 "attributes": {"quality": "high"},
             }
         ],
+        annotation_set_id=annotation_set.annotation_set_id,
     )
     annotation_record = inserted_records[0]
     fetched_annotation_record = sync_datalake.get_annotation_record(annotation_record.annotation_id)
@@ -150,6 +158,125 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     sync_datalake.delete_annotation_record(annotation_record.annotation_id)
     sync_datalake.delete_asset(created_from_object.asset_id)
     sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_direct_upload_wrappers(sync_datalake: Datalake):
+    payload = b"sync-direct-upload"
+
+    session = sync_datalake.create_object_upload_session(
+        name="sync-direct-upload.bin",
+        mount="local",
+        content_type="application/octet-stream",
+        metadata={"source": "integration"},
+        created_by="pytest",
+    )
+    assert session.upload_method == "local_path"
+    assert session.upload_path is not None
+
+    Path(session.upload_path).write_bytes(payload)
+
+    fetched = sync_datalake.get_object_upload_session(session.upload_session_id)
+    assert fetched.upload_session_id == session.upload_session_id
+
+    completed = sync_datalake.complete_object_upload_session(
+        session.upload_session_id,
+        finalize_token=session.finalize_token,
+        metadata={"verified": True},
+    )
+    assert completed.status == "completed"
+    assert completed.storage_ref is not None
+
+    loaded = sync_datalake.get_object(completed.storage_ref)
+    assert loaded == payload
+
+    asset = sync_datalake.create_asset_from_uploaded_object(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=completed.storage_ref,
+        size_bytes=len(payload),
+        metadata={"source": "integration"},
+        created_by="pytest",
+    )
+    assert asset.storage_ref == completed.storage_ref
+
+    sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_reconcile_upload_sessions(sync_datalake: Datalake):
+    payload = b"sync-reconcile-upload"
+    session = sync_datalake.create_object_upload_session(
+        name="sync-reconcile-upload.bin",
+        mount="local",
+        content_type="application/octet-stream",
+        expires_in_minutes=1,
+    )
+    assert session.upload_path is not None
+
+    Path(session.upload_path).write_bytes(payload)
+
+    mongo_client = MongoClient(sync_datalake.mongo_db_uri)
+    try:
+        collection = mongo_client[sync_datalake.mongo_db_name]["datalake_direct_upload_sessions"]
+        collection.update_one(
+            {"upload_session_id": session.upload_session_id},
+            {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+        )
+    finally:
+        mongo_client.close()
+
+    reconciled = sync_datalake.reconcile_upload_sessions()
+
+    assert len(reconciled) == 1
+    assert reconciled[0].status == "completed"
+    assert reconciled[0].storage_ref is not None
+    assert sync_datalake.get_object(reconciled[0].storage_ref) == payload
+
+
+def test_sync_datalake_direct_upload_client_works_with_datalake(sync_datalake: Datalake):
+    client = DatalakeDirectUploadClient(sync_datalake)
+    payload = b"sync-direct-upload-client"
+
+    asset = client.create_asset_from_bytes(
+        name="sync-direct-upload-client.bin",
+        data=payload,
+        kind="artifact",
+        media_type="application/octet-stream",
+        mount="local",
+        content_type="application/octet-stream",
+        asset_metadata={"source": "integration"},
+        size_bytes=len(payload),
+        created_by="pytest",
+    )
+
+    assert sync_datalake.get_object(asset.storage_ref) == payload
+    assert asset.metadata["source"] == "integration"
+
+    sync_datalake.delete_asset(asset.asset_id)
+
+
+def test_sync_datalake_direct_upload_client_uploads_file_to_gcs(sync_datalake_gcs: Datalake):
+    client = DatalakeDirectUploadClient(sync_datalake_gcs)
+    hopper_path = Path("tests/resources/hopper.png")
+    payload = hopper_path.read_bytes()
+
+    try:
+        asset = client.create_asset_from_file(
+            path=hopper_path,
+            kind="image",
+            media_type="image/png",
+            mount="gcs",
+            content_type="image/png",
+            asset_metadata={"source": "integration"},
+            created_by="pytest",
+        )
+    except Exception as exc:
+        _skip_if_presign_unavailable(exc)
+        raise
+
+    assert sync_datalake_gcs.get_object(asset.storage_ref) == payload
+    assert asset.metadata["source"] == "integration"
+
+    sync_datalake_gcs.delete_asset(asset.asset_id)
 
 
 def test_sync_datalake_init_branch_and_summary_variants():

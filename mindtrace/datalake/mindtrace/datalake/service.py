@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+from contextlib import suppress
 from typing import Any
 
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.replication import ReplicationManager
+from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
 from mindtrace.datalake.service_types import (
-    AddAnnotationRecordsSchema,
+    AddAliasInput,
+    AddAliasSchema,
     AddAnnotationRecordsInput,
+    AddAnnotationRecordsSchema,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
     AnnotationRecordOutput,
@@ -16,6 +22,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSchemaOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetRetentionListOutput,
@@ -24,6 +31,8 @@ from mindtrace.datalake.service_types import (
     CollectionItemOutput,
     CollectionListOutput,
     CollectionOutput,
+    CompleteObjectUploadSessionInput,
+    CompleteObjectUploadSessionSchema,
     CopyObjectInput,
     CopyObjectSchema,
     CreateAnnotationSchemaInput,
@@ -32,6 +41,8 @@ from mindtrace.datalake.service_types import (
     CreateAnnotationSetSchema,
     CreateAssetFromObjectInput,
     CreateAssetFromObjectSchema,
+    CreateAssetFromUploadedObjectInput,
+    CreateAssetFromUploadedObjectSchema,
     CreateAssetInput,
     CreateAssetRetentionInput,
     CreateAssetRetentionSchema,
@@ -44,25 +55,37 @@ from mindtrace.datalake.service_types import (
     CreateDatasetVersionSchema,
     CreateDatumInput,
     CreateDatumSchema,
+    CreateObjectUploadSessionInput,
+    CreateObjectUploadSessionSchema,
     DatalakeHealthOutput,
     DatalakeHealthSchema,
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
+    DatasetSyncBundleOutput,
+    DatasetSyncCommitResultOutput,
+    DatasetSyncImportCommitSchema,
+    DatasetSyncImportPlanOutput,
+    DatasetSyncImportPrepareSchema,
+    DatasetSyncImportRequest,
     DatasetVersionListOutput,
-    DatumOutput,
-    DatumListOutput,
     DatasetVersionOutput,
+    DatumListOutput,
+    DatumOutput,
     DeleteAnnotationRecordSchema,
     DeleteAnnotationSchemaSchema,
     DeleteAssetRetentionSchema,
     DeleteAssetSchema,
     DeleteCollectionItemSchema,
     DeleteCollectionSchema,
+    ExportDatasetVersionInput,
+    ExportDatasetVersionSchema,
     GetAnnotationRecordSchema,
     GetAnnotationSchemaByNameVersionInput,
     GetAnnotationSchemaByNameVersionSchema,
     GetAnnotationSchemaSchema,
     GetAnnotationSetSchema,
+    GetAssetByAliasInput,
+    GetAssetByAliasSchema,
     GetAssetRetentionSchema,
     GetAssetSchema,
     GetByIdInput,
@@ -75,30 +98,47 @@ from mindtrace.datalake.service_types import (
     GetObjectSchema,
     HeadObjectInput,
     HeadObjectSchema,
+    ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetSchema,
     ListAnnotationRecordsSchema,
     ListAnnotationSchemasSchema,
     ListAnnotationSetsSchema,
+    ListAssetRetentionsSchema,
     ListAssetsSchema,
-    ListCollectionsSchema,
     ListCollectionItemsSchema,
+    ListCollectionsSchema,
     ListDatasetVersionsInput,
     ListDatasetVersionsSchema,
     ListDatumsSchema,
     ListInput,
-    ListAssetRetentionsSchema,
     MountsOutput,
     MountsSchema,
     ObjectDataOutput,
     ObjectHeadOutput,
     ObjectOutput,
+    ObjectUploadSessionOutput,
     PutObjectInput,
     PutObjectSchema,
+    ReplicationBatchRequest,
+    ReplicationBatchResultOutput,
+    ReplicationBatchUpsertSchema,
+    ReplicationDeleteLocalPayloadSchema,
+    ReplicationHydrateAssetPayloadInput,
+    ReplicationHydrateAssetPayloadSchema,
+    ReplicationMarkLocalDeleteEligibleInput,
+    ReplicationMarkLocalDeleteEligibleSchema,
+    ReplicationReclaimResultOutput,
+    ReplicationReclaimSchema,
+    ReplicationReconcileResultOutput,
+    ReplicationReconcileSchema,
+    ReplicationStatusOutput,
+    ReplicationStatusSchema,
     ResolveCollectionItemSchema,
+    ResolveDatasetVersionSchema,
+    ResolveDatumSchema,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
     ResolvedDatumOutput,
-    ResolveDatasetVersionSchema,
-    ResolveDatumSchema,
     UpdateAnnotationRecordInput,
     UpdateAnnotationRecordSchema,
     UpdateAnnotationSchemaInput,
@@ -116,6 +156,7 @@ from mindtrace.datalake.service_types import (
     UpdateDatumInput,
     UpdateDatumSchema,
 )
+from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.registry import Mount
 from mindtrace.services import Service
 
@@ -133,6 +174,7 @@ class DatalakeService(Service):
         async_datalake: AsyncDatalake | None = None,
         initialize_on_startup: bool = True,
         live_service: bool = True,
+        upload_reconcile_interval_seconds: float = 30.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(live_service=live_service, **kwargs)
@@ -143,9 +185,12 @@ class DatalakeService(Service):
         self._datalake: AsyncDatalake | None = async_datalake
         self._initialized = async_datalake is not None
         self.initialize_on_startup = initialize_on_startup
+        self.upload_reconcile_interval_seconds = upload_reconcile_interval_seconds
+        self._upload_reconciler_task: asyncio.Task[None] | None = None
 
         if live_service and initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
+            self.app.router.on_shutdown.append(self._shutdown_cleanup)
 
         self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
@@ -155,13 +200,30 @@ class DatalakeService(Service):
         self.add_endpoint("objects.get", self.get_object, schema=GetObjectSchema)
         self.add_endpoint("objects.head", self.head_object, schema=HeadObjectSchema)
         self.add_endpoint("objects.copy", self.copy_object, schema=CopyObjectSchema)
+        self.add_endpoint(
+            "objects.upload_session.create", self.create_object_upload_session, schema=CreateObjectUploadSessionSchema
+        )
+        self.add_endpoint(
+            "objects.upload_session.complete",
+            self.complete_object_upload_session,
+            schema=CompleteObjectUploadSessionSchema,
+        )
 
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
+        self.add_endpoint("assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True)
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
         self.add_endpoint("assets.delete", self.delete_asset, schema=DeleteAssetSchema)
-        self.add_endpoint("assets.create_from_object", self.create_asset_from_object, schema=CreateAssetFromObjectSchema)
+        self.add_endpoint("aliases.add", self.add_alias, schema=AddAliasSchema)
+        self.add_endpoint(
+            "assets.create_from_object", self.create_asset_from_object, schema=CreateAssetFromObjectSchema
+        )
+        self.add_endpoint(
+            "assets.create_from_uploaded_object",
+            self.create_asset_from_uploaded_object,
+            schema=CreateAssetFromUploadedObjectSchema,
+        )
 
         self.add_endpoint("collections.create", self.create_collection, schema=CreateCollectionSchema)
         self.add_endpoint("collections.get", self.get_collection, schema=GetCollectionSchema)
@@ -182,7 +244,9 @@ class DatalakeService(Service):
         self.add_endpoint("asset_retentions.update", self.update_asset_retention, schema=UpdateAssetRetentionSchema)
         self.add_endpoint("asset_retentions.delete", self.delete_asset_retention, schema=DeleteAssetRetentionSchema)
 
-        self.add_endpoint("annotation_schemas.create", self.create_annotation_schema, schema=CreateAnnotationSchemaSchema)
+        self.add_endpoint(
+            "annotation_schemas.create", self.create_annotation_schema, schema=CreateAnnotationSchemaSchema
+        )
         self.add_endpoint("annotation_schemas.get", self.get_annotation_schema, schema=GetAnnotationSchemaSchema)
         self.add_endpoint(
             "annotation_schemas.get_by_name_version",
@@ -191,8 +255,12 @@ class DatalakeService(Service):
             as_tool=True,
         )
         self.add_endpoint("annotation_schemas.list", self.list_annotation_schemas, schema=ListAnnotationSchemasSchema)
-        self.add_endpoint("annotation_schemas.update", self.update_annotation_schema, schema=UpdateAnnotationSchemaSchema)
-        self.add_endpoint("annotation_schemas.delete", self.delete_annotation_schema, schema=DeleteAnnotationSchemaSchema)
+        self.add_endpoint(
+            "annotation_schemas.update", self.update_annotation_schema, schema=UpdateAnnotationSchemaSchema
+        )
+        self.add_endpoint(
+            "annotation_schemas.delete", self.delete_annotation_schema, schema=DeleteAnnotationSchemaSchema
+        )
 
         self.add_endpoint("annotation_sets.create", self.create_annotation_set, schema=CreateAnnotationSetSchema)
         self.add_endpoint("annotation_sets.get", self.get_annotation_set, schema=GetAnnotationSetSchema)
@@ -202,8 +270,17 @@ class DatalakeService(Service):
         self.add_endpoint("annotation_records.add", self.add_annotation_records, schema=AddAnnotationRecordsSchema)
         self.add_endpoint("annotation_records.get", self.get_annotation_record, schema=GetAnnotationRecordSchema)
         self.add_endpoint("annotation_records.list", self.list_annotation_records, schema=ListAnnotationRecordsSchema)
-        self.add_endpoint("annotation_records.update", self.update_annotation_record, schema=UpdateAnnotationRecordSchema)
-        self.add_endpoint("annotation_records.delete", self.delete_annotation_record, schema=DeleteAnnotationRecordSchema)
+        self.add_endpoint(
+            "annotation_records.list_for_asset",
+            self.list_annotation_records_for_asset,
+            schema=ListAnnotationRecordsForAssetSchema,
+        )
+        self.add_endpoint(
+            "annotation_records.update", self.update_annotation_record, schema=UpdateAnnotationRecordSchema
+        )
+        self.add_endpoint(
+            "annotation_records.delete", self.delete_annotation_record, schema=DeleteAnnotationRecordSchema
+        )
 
         self.add_endpoint("datums.create", self.create_datum, schema=CreateDatumSchema)
         self.add_endpoint("datums.get", self.get_datum, schema=GetDatumSchema)
@@ -212,17 +289,71 @@ class DatalakeService(Service):
         self.add_endpoint("datums.resolve", self.resolve_datum, schema=ResolveDatumSchema, as_tool=True)
 
         self.add_endpoint("dataset_versions.create", self.create_dataset_version, schema=CreateDatasetVersionSchema)
-        self.add_endpoint("dataset_versions.get", self.get_dataset_version, schema=GetDatasetVersionSchema, as_tool=True)
-        self.add_endpoint("dataset_versions.list", self.list_dataset_versions, schema=ListDatasetVersionsSchema, as_tool=True)
-        self.add_endpoint("dataset_versions.resolve", self.resolve_dataset_version, schema=ResolveDatasetVersionSchema, as_tool=True)
+        self.add_endpoint(
+            "dataset_versions.get", self.get_dataset_version, schema=GetDatasetVersionSchema, as_tool=True
+        )
+        self.add_endpoint(
+            "dataset_versions.list", self.list_dataset_versions, schema=ListDatasetVersionsSchema, as_tool=True
+        )
+        self.add_endpoint(
+            "dataset_versions.resolve", self.resolve_dataset_version, schema=ResolveDatasetVersionSchema, as_tool=True
+        )
+        self.add_endpoint("dataset_versions.export", self.export_dataset_version, schema=ExportDatasetVersionSchema)
+        self.add_endpoint(
+            "dataset_versions.import_prepare",
+            self.import_dataset_version_prepare,
+            schema=DatasetSyncImportPrepareSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_commit",
+            self.import_dataset_version_commit,
+            schema=DatasetSyncImportCommitSchema,
+        )
+        self.add_endpoint(
+            "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
+        )
+        self.add_endpoint(
+            "replication.hydrate_asset_payload",
+            self.replication_hydrate_asset_payload,
+            schema=ReplicationHydrateAssetPayloadSchema,
+        )
+        self.add_endpoint("replication.reconcile", self.replication_reconcile, schema=ReplicationReconcileSchema)
+        self.add_endpoint(
+            "replication.mark_local_delete_eligible",
+            self.replication_mark_local_delete_eligible,
+            schema=ReplicationMarkLocalDeleteEligibleSchema,
+        )
+        self.add_endpoint(
+            "replication.delete_local_payload",
+            self.replication_delete_local_payload,
+            schema=ReplicationDeleteLocalPayloadSchema,
+        )
+        self.add_endpoint(
+            "replication.reclaim_verified_payloads",
+            self.replication_reclaim_verified_payloads,
+            schema=ReplicationReclaimSchema,
+        )
+        self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
 
     async def _startup_initialize(self) -> None:
         await self._ensure_datalake()
+        if self._upload_reconciler_task is None:
+            self._upload_reconciler_task = asyncio.create_task(self._run_upload_reconciler())
+
+    async def _shutdown_cleanup(self) -> None:
+        if self._upload_reconciler_task is None:
+            return
+        self._upload_reconciler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._upload_reconciler_task
+        self._upload_reconciler_task = None
 
     async def _ensure_datalake(self) -> AsyncDatalake:
         if self._datalake is None:
             if not self.mongo_db_uri or not self.mongo_db_name:
-                raise HTTPException(status_code=500, detail="DatalakeService is missing mongo_db_uri and/or mongo_db_name")
+                raise HTTPException(
+                    status_code=500, detail="DatalakeService is missing mongo_db_uri and/or mongo_db_name"
+                )
             self._datalake = AsyncDatalake(
                 mongo_db_uri=self.mongo_db_uri,
                 mongo_db_name=self.mongo_db_name,
@@ -243,7 +374,9 @@ class DatalakeService(Service):
         if isinstance(data, str):
             data = data.encode("utf-8")
         elif not isinstance(data, (bytes, bytearray)):
-            raise HTTPException(status_code=500, detail=f"Object payload type is not serializable to base64: {type(data)!r}")
+            raise HTTPException(
+                status_code=500, detail=f"Object payload type is not serializable to base64: {type(data)!r}"
+            )
         return base64.b64encode(bytes(data)).decode("utf-8")
 
     async def health(self) -> DatalakeHealthOutput:
@@ -290,6 +423,31 @@ class DatalakeService(Service):
         )
         return ObjectOutput(storage_ref=storage_ref)
 
+    async def create_object_upload_session(self, payload: CreateObjectUploadSessionInput) -> ObjectUploadSessionOutput:
+        datalake = await self._ensure_datalake()
+        session = await datalake.create_object_upload_session(
+            name=payload.name,
+            mount=payload.mount,
+            version=payload.version,
+            metadata=payload.metadata,
+            on_conflict=payload.on_conflict,
+            content_type=payload.content_type,
+            expires_in_minutes=payload.expires_in_minutes,
+            created_by=payload.created_by,
+        )
+        return ObjectUploadSessionOutput.from_session(session)
+
+    async def complete_object_upload_session(
+        self, payload: CompleteObjectUploadSessionInput
+    ) -> ObjectUploadSessionOutput:
+        datalake = await self._ensure_datalake()
+        session = await datalake.complete_object_upload_session(
+            payload.upload_session_id,
+            finalize_token=payload.finalize_token,
+            metadata=payload.metadata,
+        )
+        return ObjectUploadSessionOutput.from_session(session)
+
     async def create_asset(self, payload: CreateAssetInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
         asset = await datalake.create_asset(
@@ -307,6 +465,15 @@ class DatalakeService(Service):
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
         return AssetOutput(asset=await datalake.get_asset(payload.id))
+
+    async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        return AssetOutput(asset=await datalake.get_asset_by_alias(payload.alias))
+
+    async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
+        datalake = await self._ensure_datalake()
+        row = await datalake.add_alias(payload.asset_id, payload.alias)
+        return AssetAliasOutput(asset_alias=row)
 
     async def list_assets(self, payload: ListInput) -> AssetListOutput:
         datalake = await self._ensure_datalake()
@@ -339,6 +506,31 @@ class DatalakeService(Service):
             on_conflict=payload.on_conflict,
         )
         return AssetOutput(asset=asset)
+
+    async def create_asset_from_uploaded_object(self, payload: CreateAssetFromUploadedObjectInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        asset = await datalake.create_asset(
+            kind=payload.kind,
+            media_type=payload.media_type,
+            storage_ref=payload.storage_ref,
+            checksum=payload.checksum,
+            size_bytes=payload.size_bytes,
+            subject=payload.subject,
+            metadata=payload.metadata,
+            created_by=payload.created_by,
+        )
+        return AssetOutput(asset=asset)
+
+    async def _run_upload_reconciler(self) -> None:
+        while True:
+            try:
+                datalake = await self._ensure_datalake()
+                await datalake.reconcile_upload_sessions()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.logger.warning(f"Upload reconciler iteration failed: {exc}")
+            await asyncio.sleep(self.upload_reconcile_interval_seconds)
 
     async def create_collection(self, payload: CreateCollectionInput) -> CollectionOutput:
         datalake = await self._ensure_datalake()
@@ -456,8 +648,20 @@ class DatalakeService(Service):
 
     async def add_annotation_records(self, payload: AddAnnotationRecordsInput) -> AddedAnnotationRecordsOutput:
         datalake = await self._ensure_datalake()
-        records = await datalake.add_annotation_records(payload.annotation_set_id, payload.annotations)
+        records = await datalake.add_annotation_records(
+            payload.annotations,
+            annotation_set_id=payload.annotation_set_id,
+            annotation_schema_id=payload.annotation_schema_id,
+        )
         return AddedAnnotationRecordsOutput(annotation_records=records)
+
+    async def list_annotation_records_for_asset(
+        self, payload: ListAnnotationRecordsForAssetInput
+    ) -> AnnotationRecordListOutput:
+        datalake = await self._ensure_datalake()
+        return AnnotationRecordListOutput(
+            annotation_records=await datalake.list_annotation_records_for_asset(payload.asset_id),
+        )
 
     async def get_annotation_record(self, payload: GetByIdInput) -> AnnotationRecordOutput:
         datalake = await self._ensure_datalake()
@@ -515,3 +719,67 @@ class DatalakeService(Service):
         datalake = await self._ensure_datalake()
         resolved = await datalake.resolve_dataset_version(payload.dataset_name, payload.version)
         return ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
+
+    async def export_dataset_version(self, payload: ExportDatasetVersionInput) -> DatasetSyncBundleOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
+        return DatasetSyncBundleOutput(bundle=bundle)
+
+    async def import_dataset_version_prepare(self, payload: DatasetSyncImportRequest) -> DatasetSyncImportPlanOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        plan = await manager.plan_import(payload)
+        return DatasetSyncImportPlanOutput(plan=plan)
+
+    async def import_dataset_version_commit(self, payload: DatasetSyncImportRequest) -> DatasetSyncCommitResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        result = await manager.commit_import(payload)
+        return DatasetSyncCommitResultOutput(result=result)
+
+    async def replication_upsert_batch(self, payload: ReplicationBatchRequest) -> ReplicationBatchResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.upsert_metadata_batch(payload)
+        return ReplicationBatchResultOutput(result=result)
+
+    async def replication_hydrate_asset_payload(self, payload: ReplicationHydrateAssetPayloadInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.hydrate_asset_payload(payload.asset_id, mount_map=payload.mount_map)
+        return AssetOutput(asset=asset)
+
+    async def replication_reconcile(self, payload: ReplicationReconcileRequest) -> ReplicationReconcileResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reconcile_pending_payloads(payload)
+        return ReplicationReconcileResultOutput(result=result)
+
+    async def replication_mark_local_delete_eligible(
+        self, payload: ReplicationMarkLocalDeleteEligibleInput
+    ) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.mark_local_delete_eligible(payload.asset_id, when=payload.when)
+        return AssetOutput(asset=asset)
+
+    async def replication_delete_local_payload(self, payload: GetByIdInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.delete_local_payload(payload.id)
+        return AssetOutput(asset=asset)
+
+    async def replication_reclaim_verified_payloads(
+        self, payload: ReplicationReclaimRequest
+    ) -> ReplicationReclaimResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reclaim_verified_payloads(payload)
+        return ReplicationReclaimResultOutput(result=result)
+
+    async def replication_status(self) -> ReplicationStatusOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        status = await manager.status()
+        return ReplicationStatusOutput(status=status)

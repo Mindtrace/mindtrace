@@ -10,7 +10,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 from urllib.parse import quote
 
 from mindtrace.registry.backends.registry_backend import (
@@ -228,6 +228,118 @@ class S3RegistryBackend(RegistryBackend):
         safe_name = quote(name, safe="")
         safe_version = quote(str(version), safe="")
         return self._prefixed(f"_staging/{safe_name}/{safe_version}/{uuid_str}.json")
+
+    def create_direct_upload_target(
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        staged_path = self._prefixed(f"_direct_uploads/{upload_id}/data.txt")
+        upload_url = self.storage.get_presigned_url(
+            staged_path,
+            expiration_minutes=expiration_minutes,
+            method="PUT",
+            content_type=content_type,
+        )
+        return {
+            "upload_method": "presigned_url",
+            "upload_url": upload_url,
+            "upload_path": None,
+            "upload_headers": {"Content-Type": content_type},
+            "staged_target": {"kind": "s3_object", "path": staged_path},
+            "content_type": content_type,
+            "expiration_minutes": expiration_minutes,
+        }
+
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+        staged_path = staged_target.get("path", "")
+        exists = staged_target.get("kind") == "s3_object" and self.storage.exists(staged_path)
+        metadata = self.storage.get_object_metadata(staged_path) if exists else {}
+        return {
+            "exists": exists,
+            "size_bytes": metadata.get("size"),
+            "etag": metadata.get("etag"),
+            "content_type": metadata.get("content_type"),
+            "path": staged_path,
+        }
+
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+        staged_path = staged_target.get("path", "")
+        if staged_target.get("kind") != "s3_object":
+            return False
+        result = self.storage.delete(staged_path)
+        return result.ok or result.status == Status.NOT_FOUND
+
+    def commit_direct_upload(
+        self,
+        name: str,
+        version: str,
+        staged_target: dict[str, Any],
+        metadata: dict[str, Any],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResult:
+        staged_path = staged_target.get("path", "")
+        if staged_target.get("kind") != "s3_object" or not self.storage.exists(staged_path):
+            return OpResult.failed(name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}"))
+
+        try:
+            self.validate_object_name(name)
+            uuid_str = str(uuid.uuid4())
+            remote_key = self._object_key_with_uuid(name, version, uuid_str)
+            final_data_key = f"{remote_key}/data.txt"
+
+            if not self._create_commit_plan(name, version, uuid_str):
+                return OpResult.failed(name, version, RuntimeError("Failed to create commit plan"))
+
+            copy_result = self.storage.copy(staged_path, final_data_key)
+            if not copy_result.ok:
+                rollback_ok = self._attempt_rollback(name, version, uuid_str)
+                return OpResult.failed(
+                    name,
+                    version,
+                    RuntimeError(copy_result.error_message or "Failed to copy staged upload"),
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                )
+
+            prepared_meta = dict(metadata)
+            prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
+            prepared_meta["_storage"] = {
+                "uuid": uuid_str,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            meta_result = self._save_metadata_single(
+                name,
+                version,
+                prepared_meta,
+                on_conflict,
+                check_exists_for_overwrite=False,
+            )
+            if meta_result.status == Status.ALREADY_EXISTS:
+                rollback_ok = self._attempt_rollback(name, version, uuid_str)
+                return OpResult.skipped(
+                    name,
+                    version,
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                )
+            if not meta_result.ok:
+                rollback_ok = self._attempt_rollback(name, version, uuid_str)
+                return OpResult.failed(
+                    name,
+                    version,
+                    RuntimeError(meta_result.error_message or f"Metadata write failed: {meta_result.status}"),
+                    cleanup=CleanupState.OK if rollback_ok else CleanupState.ORPHANED,
+                )
+
+            self.cleanup_direct_upload_target(staged_target)
+            return (
+                OpResult.overwritten(name, version)
+                if meta_result.status == Status.OVERWRITTEN
+                else OpResult.success(name, version)
+            )
+        except Exception as e:
+            return OpResult.failed(name, version, e)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Commit Plan Helpers (for lock-free MVCC)

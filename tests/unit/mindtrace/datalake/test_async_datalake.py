@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,15 +23,35 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
     SubjectRef,
 )
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 
 class TestAsyncDatalakeUnit:
+    @staticmethod
+    def _patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set_id: str, *, image_asset_id: str) -> None:
+        """Return a linked Datum when AsyncDatalake looks up datums by ``annotation_set_ids``."""
+
+        async def find_side_effect(query=None):
+            q = query or {}
+            if q.get("annotation_set_ids") == annotation_set_id:
+                return [
+                    Datum(
+                        datum_id="datum_merge",
+                        asset_refs={"image": image_asset_id},
+                        annotation_set_ids=[annotation_set_id],
+                    )
+                ]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+
     def test_default_datalake_store_path_uses_cache_directory(self):
         from mindtrace.datalake.async_datalake import _default_datalake_store_path
 
@@ -70,6 +91,17 @@ class TestAsyncDatalakeUnit:
         store.copy.return_value = "v2"
         store.load.return_value = b"payload"
         store.info.return_value = {"size": 123}
+        store.has_object.return_value = True
+        store.create_direct_upload_target.return_value = {
+            "upload_method": "local_path",
+            "upload_url": None,
+            "upload_path": "/tmp/direct-upload/data.txt",
+            "upload_headers": {},
+            "staged_target": {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+        }
+        store.inspect_direct_upload_target.return_value = {"exists": True, "size_bytes": 7}
+        store.commit_direct_upload.return_value = "v5"
+        store.cleanup_direct_upload_target.return_value = True
         return store
 
     @pytest.fixture
@@ -114,7 +146,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 9
+        assert mock_odm.initialize.await_count == 11
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -122,11 +154,18 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 9
+        assert mock_odm.initialize.await_count == 11
 
     def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
         now = async_datalake._utc_now()
         assert now.tzinfo is not None
+
+    def test_coerce_utc_attaches_timezone_to_naive_datetime(self, async_datalake):
+        naive = datetime(2026, 1, 1, 12, 0, 0)
+
+        coerced = async_datalake._coerce_utc(naive)
+
+        assert coerced.tzinfo is not None
 
     def test_build_document_uses_model_construct(self, async_datalake):
         class Dummy:
@@ -177,6 +216,7 @@ class TestAsyncDatalakeUnit:
             StorageRef(mount="nas", name="images/cat.jpg", version="v1"), verify="none"
         )
         info = await async_datalake.head_object(StorageRef(mount="nas", name="images/cat.jpg", version="v1"))
+        assert await async_datalake.object_exists(StorageRef(mount="nas", name="images/cat.jpg", version="v1")) is True
         copied = await async_datalake.copy_object(
             StorageRef(mount="nas", name="images/cat.jpg", version="v1"),
             target_mount="archive",
@@ -186,6 +226,214 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_object_exists_returns_false_when_store_has_object_false(self, async_datalake):
+        async_datalake.store.has_object.return_value = False
+
+        exists = await async_datalake.object_exists(StorageRef(mount="nas", name="missing", version="v1"))
+
+        assert exists is False
+
+    @pytest.mark.asyncio
+    async def test_object_exists_returns_false_when_has_object_raises_registry_not_found(self, async_datalake):
+        async_datalake.store.has_object.side_effect = RegistryObjectNotFound("Object x@1.0.0 not found.")
+
+        exists = await async_datalake.object_exists(StorageRef(mount="nas", name="gone.bin", version="v1"))
+
+        assert exists is False
+
+    @pytest.mark.asyncio
+    async def test_object_exists_propagates_unexpected_store_errors(self, async_datalake):
+        async_datalake.store.has_object.side_effect = RuntimeError("infra")
+
+        with pytest.raises(RuntimeError, match="infra"):
+            await async_datalake.object_exists(StorageRef(mount="nas", name="any", version="v1"))
+
+    def test_dataset_sync_returns_manager(self, async_datalake):
+        manager = async_datalake.dataset_sync()
+
+        from mindtrace.datalake.sync import DatasetSyncManager
+
+        assert isinstance(manager, DatasetSyncManager)
+        assert manager.source is async_datalake
+        assert manager.target is async_datalake
+
+    def test_replication_returns_manager(self, async_datalake):
+        manager = async_datalake.replication()
+
+        from mindtrace.datalake.replication import ReplicationManager
+
+        assert isinstance(manager, ReplicationManager)
+        assert manager.source is async_datalake
+        assert manager.target is async_datalake
+
+    @pytest.mark.asyncio
+    async def test_create_object_upload_session(self, async_datalake, mock_store):
+        session = await async_datalake.create_object_upload_session(
+            name="images/cat.jpg",
+            mount="nas",
+            version="v9",
+            metadata={"source": "unit"},
+            content_type="image/jpeg",
+            expires_in_minutes=15,
+            created_by="tester",
+        )
+
+        assert isinstance(session, DirectUploadSession)
+        assert session.mount == "nas"
+        assert session.requested_version == "v9"
+        assert session.upload_method == "local_path"
+        assert session.staged_reference == {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"}
+        mock_store.create_direct_upload_target.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_object_upload_session_rejects_nonpositive_expiry(self, async_datalake):
+        with pytest.raises(ValueError, match="expires_in_minutes must be positive"):
+            await async_datalake.create_object_upload_session(name="images/cat.jpg", expires_in_minutes=0)
+
+    @pytest.mark.asyncio
+    async def test_get_object_upload_session_raises_when_missing(self, async_datalake, mock_odm):
+        mock_odm.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError, match="Upload session with upload_session_id missing not found"):
+            await async_datalake.get_object_upload_session("missing")
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session(self, async_datalake, mock_odm, mock_store):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            requested_version=None,
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+
+        completed = await async_datalake.complete_object_upload_session(
+            "upload_session_1",
+            finalize_token="token-1",
+            metadata={"source": "verified"},
+        )
+
+        assert completed.status == "completed"
+        assert completed.storage_ref == StorageRef(mount="nas", name="images/cat.jpg", version="v5")
+        mock_store.commit_direct_upload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_raises_for_invalid_finalize_token(self, async_datalake, mock_odm):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+
+        with pytest.raises(ValueError, match="Invalid finalize token"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="wrong-token")
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_raises_when_staged_payload_missing(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.inspect_direct_upload_target.return_value = {"exists": False}
+
+        with pytest.raises(FileNotFoundError, match="Staged upload not found"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1")
+
+        assert session.status == "pending"
+        assert session.verification_attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_reconcile_upload_sessions_marks_expired_when_upload_never_arrives(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.inspect_direct_upload_target.return_value = {"exists": False}
+
+        reconciled = await async_datalake.reconcile_upload_sessions()
+
+        assert reconciled[0].status == "expired"
+        assert reconciled[0].failure_reason == "Upload did not complete before expiry."
+
+    @pytest.mark.asyncio
+    async def test_verify_finalize_returns_existing_completed_session(self, async_datalake, mock_store):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            status="completed",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+
+        completed = await async_datalake._verify_and_finalize_upload_session(
+            session,
+            metadata={"verified": True},
+            allow_pending_missing=False,
+        )
+
+        assert completed is session
+        mock_store.inspect_direct_upload_target.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_object_upload_session_marks_failed_when_commit_raises(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        session = DirectUploadSession(
+            upload_session_id="upload_session_1",
+            finalize_token="token-1",
+            name="images/cat.jpg",
+            mount="nas",
+            upload_method="local_path",
+            upload_path="/tmp/direct-upload/data.txt",
+            staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
+            expires_at=async_datalake._utc_now(),
+        )
+        mock_odm.find.return_value = [session]
+        mock_store.commit_direct_upload.side_effect = RuntimeError("commit failed")
+        mock_store.cleanup_direct_upload_target.return_value = True
+
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await async_datalake.complete_object_upload_session("upload_session_1", finalize_token="token-1")
+
+        assert session.status == "failed"
+        assert session.failure_reason == "commit failed"
+        assert session.cleanup_completed_at is not None
+        mock_odm.update.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_asset_crud_async(self, async_datalake, mock_odm):
@@ -231,6 +479,9 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123"
+        )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         inserted_model = AnnotationRecord(
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -245,11 +496,134 @@ class TestAsyncDatalakeUnit:
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
         )
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [record_instance, {"kind": "bbox", "label": "crack", "source": {"type": "machine", "name": "detector"}}],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
         assert inserted == [inserted_model, inserted_dict]
         assert annotation_set.annotation_record_ids == ["annotation_model", "annotation_dict"]
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_without_set_requires_asset_subject(self, async_datalake, mock_odm):
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            subject=SubjectRef(kind="asset", id="asset_abc"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
+        )
+        inserted_record.annotation_id = "ann_free"
+        mock_odm.insert = AsyncMock(return_value=inserted_record)
+
+        inserted = await async_datalake.add_annotation_records(
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "subject": {"kind": "asset", "id": "asset_abc"},
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {},
+                }
+            ],
+        )
+        assert inserted == [inserted_record]
+        mock_odm.insert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_without_set_rejects_missing_subject(self, async_datalake):
+        with pytest.raises(ValueError, match="subject=SubjectRef"):
+            await async_datalake.add_annotation_records(
+                [{"kind": "bbox", "label": "x", "source": {"type": "human", "name": "a"}, "geometry": {}}],
+            )
+
+    @pytest.mark.asyncio
+    async def test_list_annotation_records_for_asset_delegates_to_list(self, async_datalake):
+        record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            subject=SubjectRef(kind="asset", id="asset_123"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
+        )
+        async_datalake.list_annotation_records = AsyncMock(return_value=[record])
+        result = await async_datalake.list_annotation_records_for_asset("asset_123")
+        assert result == [record]
+        async_datalake.list_annotation_records.assert_awaited_once_with(
+            filters={"subject.kind": "asset", "subject.id": "asset_123"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_set_less_rejects_non_asset_subject_kind(self, async_datalake):
+        with pytest.raises(ValueError, match="subject.kind must be 'asset'"):
+            await async_datalake.add_annotation_records(
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "x",
+                        "subject": {"kind": "annotation", "id": "subj_1"},
+                        "source": {"type": "human", "name": "a"},
+                        "geometry": {},
+                    }
+                ],
+            )
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_set_less_rejects_blank_subject_id(self, async_datalake):
+        with pytest.raises(ValueError, match="non-empty asset id"):
+            await async_datalake.add_annotation_records(
+                [
+                    {
+                        "kind": "bbox",
+                        "label": "x",
+                        "subject": {"kind": "asset", "id": "   "},
+                        "source": {"type": "human", "name": "a"},
+                        "geometry": {},
+                    }
+                ],
+            )
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_empty_iterable_returns_without_insert(self, async_datalake):
+        async_datalake.annotation_record_database.insert = AsyncMock()
+        assert await async_datalake.add_annotation_records([]) == []
+        async_datalake.annotation_record_database.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_free_standing_uses_annotation_schema_id(self, async_datalake, mock_odm):
+        schema = AnnotationSchema(
+            name="solo",
+            version="1.0.0",
+            task_type="detection",
+            allowed_annotation_kinds=["bbox"],
+            labels=[AnnotationLabelDefinition(name="dent", id=7)],
+        )
+        async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            label_id=7,
+            subject=SubjectRef(kind="asset", id="asset_solo"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+        )
+        inserted_record.annotation_id = "ann_solo"
+        mock_odm.insert = AsyncMock(return_value=inserted_record)
+
+        inserted = await async_datalake.add_annotation_records(
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "label_id": 7,
+                    "subject": {"kind": "asset", "id": "asset_solo"},
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+                }
+            ],
+            annotation_schema_id=schema.annotation_schema_id,
+        )
+
+        assert inserted == [inserted_record]
+        async_datalake.get_annotation_schema.assert_awaited_once_with(schema.annotation_schema_id)
 
     @pytest.mark.asyncio
     async def test_annotation_record_crud_async(self, async_datalake, mock_odm):
@@ -567,6 +941,9 @@ class TestAsyncDatalakeUnit:
         )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_schema_merge"
+        )
         inserted_record = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -579,7 +956,6 @@ class TestAsyncDatalakeUnit:
         mock_odm.insert = AsyncMock(side_effect=[inserted_record])
 
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -590,6 +966,7 @@ class TestAsyncDatalakeUnit:
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
         assert inserted == [inserted_record]
@@ -610,7 +987,6 @@ class TestAsyncDatalakeUnit:
         mock_odm.insert = AsyncMock(return_value=inserted_record)
 
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -620,6 +996,7 @@ class TestAsyncDatalakeUnit:
                     "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
                 }
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
         coerced_record = mock_odm.insert.await_args.args[0]
@@ -629,7 +1006,7 @@ class TestAsyncDatalakeUnit:
         assert inserted == [inserted_record]
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_rejects_invalid_schema_payloads(self, async_datalake):
+    async def test_add_annotation_records_rejects_invalid_schema_payloads(self, async_datalake, mock_odm):
         schema = AnnotationSchema(
             name="classification-demo",
             version="1.0.0",
@@ -645,10 +1022,12 @@ class TestAsyncDatalakeUnit:
         )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_schema_val"
+        )
 
         with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "classification",
@@ -656,11 +1035,11 @@ class TestAsyncDatalakeUnit:
                         "source": {"type": "human", "name": "review-ui"},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         with pytest.raises(AnnotationSchemaValidationError, match="must not include geometry"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "classification",
@@ -669,10 +1048,13 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 1},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake):
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(
+        self, async_datalake, mock_odm
+    ):
         schema = AnnotationSchema(
             name="bbox-demo",
             version="1.0.0",
@@ -688,6 +1070,9 @@ class TestAsyncDatalakeUnit:
         )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         async_datalake.get_annotation_schema = AsyncMock(return_value=schema)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_atomic_batch"
+        )
         inserted_record = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -701,7 +1086,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -717,6 +1101,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
                     },
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         assert async_datalake.annotation_record_database.insert.await_count == 0
@@ -956,7 +1341,9 @@ class TestAsyncDatalakeUnit:
                 ),
                 attribute_schema,
             )
-        with pytest.raises(AnnotationSchemaValidationError, match="not allowed by schema 'attribute-demo@1.0.0': extra"):
+        with pytest.raises(
+            AnnotationSchemaValidationError, match="not allowed by schema 'attribute-demo@1.0.0': extra"
+        ):
             async_datalake._validate_annotation_record_against_schema(
                 AnnotationRecord(
                     kind="classification",
@@ -980,7 +1367,7 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_annotation_record_rollbacks_handle_delete_errors_and_update_failures(self, async_datalake):
+    async def test_annotation_record_rollbacks_handle_delete_errors_and_update_failures(self, async_datalake, mock_odm):
         record_without_id = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -1000,6 +1387,9 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_rollback"
+        )
         successful_insert = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -1015,7 +1405,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(RuntimeError, match="insert failed"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -1030,6 +1419,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
                     },
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
@@ -1039,7 +1429,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(RuntimeError, match="set update failed"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -1048,7 +1437,177 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         assert annotation_set.annotation_record_ids == []
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(
+        self, async_datalake, mock_odm
+    ):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        mock_odm.find = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="No Datum references this annotation set"):
+            await async_datalake.add_annotation_records(
+                [{"kind": "bbox", "label": "x", "source": {"type": "human", "name": "a"}, "geometry": {}}],
+                annotation_set_id=annotation_set.annotation_set_id,
+            )
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_merge_rejects_conflicting_image_datums(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        sid = annotation_set.annotation_set_id
+
+        async def find_side_effect(query=None):
+            q = query or {}
+            if q.get("annotation_set_ids") == sid:
+                return [
+                    Datum(asset_refs={"image": "a1"}, annotation_set_ids=[sid]),
+                    Datum(asset_refs={"image": "a2"}, annotation_set_ids=[sid]),
+                ]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+
+        with pytest.raises(ValueError, match="multiple datums whose asset_refs"):
+            await async_datalake.add_annotation_records(
+                [{"kind": "bbox", "label": "x", "source": {"type": "human", "name": "t"}, "geometry": {}}],
+                annotation_set_id=sid,
+            )
+
+    @pytest.mark.asyncio
+    async def test_merge_non_dict_annotation_needs_subject_uses_getattr_branch(self, async_datalake, mock_odm):
+        """`_needs_subject` must evaluate the non-dict branch (no short-circuit from a dict first)."""
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_getattr_merge"
+        )
+
+        async def insert_echo(record):
+            return record
+
+        mock_odm.insert = AsyncMock(side_effect=insert_echo)
+        out = await async_datalake.add_annotation_records(
+            [
+                AnnotationRecord(
+                    kind="bbox",
+                    label="only-model",
+                    source={"type": "human", "name": "t"},
+                    geometry={},
+                ),
+            ],
+            annotation_set_id=annotation_set.annotation_set_id,
+        )
+        assert out[0].subject == SubjectRef(kind="asset", id="asset_getattr_merge")
+
+    @pytest.mark.asyncio
+    async def test_merge_datums_without_image_allowed_when_subjects_explicit(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        sid = annotation_set.annotation_set_id
+
+        async def find_side_effect(query=None):
+            q = query or {}
+            if q.get("annotation_set_ids") == sid:
+                return [Datum(datum_id="d1", asset_refs={"depth": "other"}, annotation_set_ids=[sid])]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+        subj = SubjectRef(kind="asset", id="explicit_asset")
+        inserted = AnnotationRecord(
+            kind="bbox",
+            label="x",
+            subject=subj,
+            source={"type": "human", "name": "t"},
+            geometry={},
+        )
+        inserted.annotation_id = "ann1"
+        mock_odm.insert = AsyncMock(return_value=inserted)
+        rec = AnnotationRecord(
+            kind="bbox",
+            label="x",
+            subject=subj,
+            source={"type": "human", "name": "t"},
+            geometry={},
+        )
+        out = await async_datalake.add_annotation_records(
+            [rec],
+            annotation_set_id=sid,
+        )
+        assert out == [inserted]
+        assert out[0].subject == subj
+
+    @pytest.mark.asyncio
+    async def test_merge_rejects_missing_subject_when_datums_lack_image_ref(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        sid = annotation_set.annotation_set_id
+
+        async def find_side_effect(query=None):
+            q = query or {}
+            if q.get("annotation_set_ids") == sid:
+                return [Datum(datum_id="d1", asset_refs={"depth": "other"}, annotation_set_ids=[sid])]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+
+        with pytest.raises(ValueError, match=r"no asset_refs\['image'\]"):
+            await async_datalake.add_annotation_records(
+                [{"kind": "bbox", "label": "x", "source": {"type": "human", "name": "t"}, "geometry": {}}],
+                annotation_set_id=sid,
+            )
+
+    @pytest.mark.asyncio
+    async def test_merge_preserves_explicit_dict_and_record_subjects(self, async_datalake, mock_odm):
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm,
+            annotation_set.annotation_set_id,
+            image_asset_id="datum_default_image",
+        )
+        explicit = SubjectRef(kind="asset", id="user_chosen")
+        inserted_dict = AnnotationRecord(
+            kind="bbox",
+            label="d",
+            subject=explicit,
+            source={"type": "human", "name": "t"},
+            geometry={},
+        )
+        inserted_dict.annotation_id = "a_dict"
+        inserted_rec = AnnotationRecord(
+            kind="bbox",
+            label="r",
+            subject=explicit,
+            source={"type": "human", "name": "t"},
+            geometry={},
+        )
+        inserted_rec.annotation_id = "a_rec"
+        mock_odm.insert = AsyncMock(side_effect=[inserted_dict, inserted_rec])
+        out = await async_datalake.add_annotation_records(
+            [
+                {
+                    "kind": "bbox",
+                    "label": "d",
+                    "subject": {"kind": "asset", "id": "user_chosen"},
+                    "source": {"type": "human", "name": "t"},
+                    "geometry": {},
+                },
+                AnnotationRecord(
+                    kind="bbox",
+                    label="r",
+                    subject=explicit,
+                    source={"type": "human", "name": "t"},
+                    geometry={},
+                ),
+            ],
+            annotation_set_id=annotation_set.annotation_set_id,
+        )
+        assert out[0].subject == explicit
+        assert out[1].subject == explicit

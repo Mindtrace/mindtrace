@@ -1,7 +1,13 @@
-"""Pytest configuration for registry integration tests.
+"""Shared integration fixtures for registry, datalake, and other tests (S3/MinIO, GCP).
+
+Loaded from ``tests/conftest.py`` via ``pytest_plugins`` (pytest 8+ disallows
+``pytest_plugins`` in nested conftest files).
 
 Contains fixtures for MinIO and GCP backends.
-Config resolution order: env vars → config.ini → skip.
+Config resolution order: env vars (only if set in the shell/CI) → config.ini → skip.
+
+Note: ``scripts/docker_up.sh`` intentionally does not set GCP env vars; sourcing it via
+``scripts/run_tests.sh`` must not override bucket or project from ``config.ini``.
 """
 
 import os
@@ -225,12 +231,17 @@ def gcs_client(gcp_project_id, gcp_credentials_path):
 def gcp_test_bucket_name(core_config):
     """Get registry test bucket: env vars → config.ini → skip.
 
-    Reads from MINDTRACE_GCP_REGISTRY.GCP_BUCKET_NAME.
+    Prefer ``MINDTRACE_GCP_REGISTRY.GCP_BUCKET_NAME`` (registry-specific), then fall back
+    to ``MINDTRACE_GCP.GCP_BUCKET_NAME`` when the registry section omits a bucket so local
+    setups with a single shared bucket still work.
     """
-    bucket_name = core_config.get("MINDTRACE_GCP_REGISTRY", {}).get("GCP_BUCKET_NAME")
+    bucket_name = core_config.get("MINDTRACE_GCP_REGISTRY", {}).get("GCP_BUCKET_NAME") or core_config.get(
+        "MINDTRACE_GCP", {}
+    ).get("GCP_BUCKET_NAME")
     if not bucket_name:
         pytest.skip(
-            "GCP registry test bucket not configured (set MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME or config.ini)"
+            "GCP registry test bucket not configured "
+            "(set MINDTRACE_GCP_REGISTRY__GCP_BUCKET_NAME, MINDTRACE_GCP__GCP_BUCKET_NAME, or config.ini)"
         )
     return bucket_name
 
