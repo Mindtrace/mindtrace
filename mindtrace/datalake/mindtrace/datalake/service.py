@@ -9,7 +9,10 @@ from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.replication import ReplicationManager
+from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
 from mindtrace.datalake.service_types import (
+    AddAliasInput,
+    AddAliasSchema,
     AddAnnotationRecordsInput,
     AddAnnotationRecordsSchema,
     AddedAnnotationRecordsOutput,
@@ -19,6 +22,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSchemaOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetRetentionListOutput,
@@ -80,6 +84,8 @@ from mindtrace.datalake.service_types import (
     GetAnnotationSchemaByNameVersionSchema,
     GetAnnotationSchemaSchema,
     GetAnnotationSetSchema,
+    GetAssetByAliasInput,
+    GetAssetByAliasSchema,
     GetAssetRetentionSchema,
     GetAssetSchema,
     GetByIdInput,
@@ -92,6 +98,8 @@ from mindtrace.datalake.service_types import (
     GetObjectSchema,
     HeadObjectInput,
     HeadObjectSchema,
+    ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetSchema,
     ListAnnotationRecordsSchema,
     ListAnnotationSchemasSchema,
     ListAnnotationSetsSchema,
@@ -114,6 +122,15 @@ from mindtrace.datalake.service_types import (
     ReplicationBatchRequest,
     ReplicationBatchResultOutput,
     ReplicationBatchUpsertSchema,
+    ReplicationDeleteLocalPayloadSchema,
+    ReplicationHydrateAssetPayloadInput,
+    ReplicationHydrateAssetPayloadSchema,
+    ReplicationMarkLocalDeleteEligibleInput,
+    ReplicationMarkLocalDeleteEligibleSchema,
+    ReplicationReclaimResultOutput,
+    ReplicationReclaimSchema,
+    ReplicationReconcileResultOutput,
+    ReplicationReconcileSchema,
     ReplicationStatusOutput,
     ReplicationStatusSchema,
     ResolveCollectionItemSchema,
@@ -194,9 +211,11 @@ class DatalakeService(Service):
 
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
+        self.add_endpoint("assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True)
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
         self.add_endpoint("assets.delete", self.delete_asset, schema=DeleteAssetSchema)
+        self.add_endpoint("aliases.add", self.add_alias, schema=AddAliasSchema)
         self.add_endpoint(
             "assets.create_from_object", self.create_asset_from_object, schema=CreateAssetFromObjectSchema
         )
@@ -252,6 +271,11 @@ class DatalakeService(Service):
         self.add_endpoint("annotation_records.get", self.get_annotation_record, schema=GetAnnotationRecordSchema)
         self.add_endpoint("annotation_records.list", self.list_annotation_records, schema=ListAnnotationRecordsSchema)
         self.add_endpoint(
+            "annotation_records.list_for_asset",
+            self.list_annotation_records_for_asset,
+            schema=ListAnnotationRecordsForAssetSchema,
+        )
+        self.add_endpoint(
             "annotation_records.update", self.update_annotation_record, schema=UpdateAnnotationRecordSchema
         )
         self.add_endpoint(
@@ -287,6 +311,27 @@ class DatalakeService(Service):
         )
         self.add_endpoint(
             "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
+        )
+        self.add_endpoint(
+            "replication.hydrate_asset_payload",
+            self.replication_hydrate_asset_payload,
+            schema=ReplicationHydrateAssetPayloadSchema,
+        )
+        self.add_endpoint("replication.reconcile", self.replication_reconcile, schema=ReplicationReconcileSchema)
+        self.add_endpoint(
+            "replication.mark_local_delete_eligible",
+            self.replication_mark_local_delete_eligible,
+            schema=ReplicationMarkLocalDeleteEligibleSchema,
+        )
+        self.add_endpoint(
+            "replication.delete_local_payload",
+            self.replication_delete_local_payload,
+            schema=ReplicationDeleteLocalPayloadSchema,
+        )
+        self.add_endpoint(
+            "replication.reclaim_verified_payloads",
+            self.replication_reclaim_verified_payloads,
+            schema=ReplicationReclaimSchema,
         )
         self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
 
@@ -420,6 +465,15 @@ class DatalakeService(Service):
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
         return AssetOutput(asset=await datalake.get_asset(payload.id))
+
+    async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        return AssetOutput(asset=await datalake.get_asset_by_alias(payload.alias))
+
+    async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
+        datalake = await self._ensure_datalake()
+        row = await datalake.add_alias(payload.asset_id, payload.alias)
+        return AssetAliasOutput(asset_alias=row)
 
     async def list_assets(self, payload: ListInput) -> AssetListOutput:
         datalake = await self._ensure_datalake()
@@ -594,8 +648,20 @@ class DatalakeService(Service):
 
     async def add_annotation_records(self, payload: AddAnnotationRecordsInput) -> AddedAnnotationRecordsOutput:
         datalake = await self._ensure_datalake()
-        records = await datalake.add_annotation_records(payload.annotation_set_id, payload.annotations)
+        records = await datalake.add_annotation_records(
+            payload.annotations,
+            annotation_set_id=payload.annotation_set_id,
+            annotation_schema_id=payload.annotation_schema_id,
+        )
         return AddedAnnotationRecordsOutput(annotation_records=records)
+
+    async def list_annotation_records_for_asset(
+        self, payload: ListAnnotationRecordsForAssetInput
+    ) -> AnnotationRecordListOutput:
+        datalake = await self._ensure_datalake()
+        return AnnotationRecordListOutput(
+            annotation_records=await datalake.list_annotation_records_for_asset(payload.asset_id),
+        )
 
     async def get_annotation_record(self, payload: GetByIdInput) -> AnnotationRecordOutput:
         datalake = await self._ensure_datalake()
@@ -677,6 +743,40 @@ class DatalakeService(Service):
         manager = ReplicationManager(datalake)
         result = await manager.upsert_metadata_batch(payload)
         return ReplicationBatchResultOutput(result=result)
+
+    async def replication_hydrate_asset_payload(self, payload: ReplicationHydrateAssetPayloadInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.hydrate_asset_payload(payload.asset_id, mount_map=payload.mount_map)
+        return AssetOutput(asset=asset)
+
+    async def replication_reconcile(self, payload: ReplicationReconcileRequest) -> ReplicationReconcileResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reconcile_pending_payloads(payload)
+        return ReplicationReconcileResultOutput(result=result)
+
+    async def replication_mark_local_delete_eligible(
+        self, payload: ReplicationMarkLocalDeleteEligibleInput
+    ) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.mark_local_delete_eligible(payload.asset_id, when=payload.when)
+        return AssetOutput(asset=asset)
+
+    async def replication_delete_local_payload(self, payload: GetByIdInput) -> AssetOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        asset = await manager.delete_local_payload(payload.id)
+        return AssetOutput(asset=asset)
+
+    async def replication_reclaim_verified_payloads(
+        self, payload: ReplicationReclaimRequest
+    ) -> ReplicationReclaimResultOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationManager(datalake)
+        result = await manager.reclaim_verified_payloads(payload)
+        return ReplicationReclaimResultOutput(result=result)
 
     async def replication_status(self) -> ReplicationStatusOutput:
         datalake = await self._ensure_datalake()

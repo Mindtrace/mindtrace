@@ -9,6 +9,10 @@ from mindtrace.core import TaskSchema
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
     ReplicationStatusResult,
 )
 from mindtrace.datalake.sync_types import (
@@ -22,6 +26,7 @@ from mindtrace.datalake.types import (
     AnnotationSchema,
     AnnotationSet,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
@@ -192,6 +197,15 @@ class GetByIdInput(BaseModel):
     id: str
 
 
+class GetAssetByAliasInput(BaseModel):
+    alias: str
+
+
+class AddAliasInput(BaseModel):
+    asset_id: str
+    alias: str
+
+
 class ListInput(BaseModel):
     filters: dict[str, Any] | None = None
 
@@ -225,6 +239,10 @@ class AssetOutput(BaseModel):
     asset: Asset
 
 
+class AssetAliasOutput(BaseModel):
+    asset_alias: AssetAlias
+
+
 class AssetListOutput(BaseModel):
     assets: list[Asset]
 
@@ -242,6 +260,10 @@ class CreateAssetFromUploadedObjectInput(BaseModel):
 
 CreateAssetSchema = TaskSchema(name="assets.create", input_schema=CreateAssetInput, output_schema=AssetOutput)
 GetAssetSchema = TaskSchema(name="assets.get", input_schema=GetByIdInput, output_schema=AssetOutput)
+GetAssetByAliasSchema = TaskSchema(
+    name="assets.get_by_alias", input_schema=GetAssetByAliasInput, output_schema=AssetOutput
+)
+AddAliasSchema = TaskSchema(name="aliases.add", input_schema=AddAliasInput, output_schema=AssetAliasOutput)
 ListAssetsSchema = TaskSchema(name="assets.list", input_schema=ListInput, output_schema=AssetListOutput)
 UpdateAssetMetadataSchema = TaskSchema(
     name="assets.update_metadata", input_schema=UpdateAssetMetadataInput, output_schema=AssetOutput
@@ -467,8 +489,13 @@ UpdateAnnotationSetSchema = TaskSchema(
 
 
 class AddAnnotationRecordsInput(BaseModel):
-    annotation_set_id: str
     annotations: list[dict[str, Any]]
+    annotation_set_id: str | None = None
+    annotation_schema_id: str | None = None
+
+
+class ListAnnotationRecordsForAssetInput(BaseModel):
+    asset_id: str
 
 
 class UpdateAnnotationRecordInput(BaseModel):
@@ -496,6 +523,11 @@ GetAnnotationRecordSchema = TaskSchema(
 )
 ListAnnotationRecordsSchema = TaskSchema(
     name="annotation_records.list", input_schema=ListInput, output_schema=AnnotationRecordListOutput
+)
+ListAnnotationRecordsForAssetSchema = TaskSchema(
+    name="annotation_records.list_for_asset",
+    input_schema=ListAnnotationRecordsForAssetInput,
+    output_schema=AnnotationRecordListOutput,
 )
 UpdateAnnotationRecordSchema = TaskSchema(
     name="annotation_records.update", input_schema=UpdateAnnotationRecordInput, output_schema=AnnotationRecordOutput
@@ -601,8 +633,26 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
+class ReplicationHydrateAssetPayloadInput(BaseModel):
+    asset_id: str
+    mount_map: dict[str, str] = Field(default_factory=dict)
+
+
+class ReplicationMarkLocalDeleteEligibleInput(BaseModel):
+    asset_id: str
+    when: datetime | None = None
+
+
 class ReplicationBatchResultOutput(BaseModel):
     result: ReplicationBatchResult
+
+
+class ReplicationReconcileResultOutput(BaseModel):
+    result: ReplicationReconcileResult
+
+
+class ReplicationReclaimResultOutput(BaseModel):
+    result: ReplicationReclaimResult
 
 
 class ReplicationStatusOutput(BaseModel):
@@ -628,6 +678,31 @@ ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",
     input_schema=ReplicationBatchRequest,
     output_schema=ReplicationBatchResultOutput,
+)
+ReplicationHydrateAssetPayloadSchema = TaskSchema(
+    name="replication.hydrate_asset_payload",
+    input_schema=ReplicationHydrateAssetPayloadInput,
+    output_schema=AssetOutput,
+)
+ReplicationReconcileSchema = TaskSchema(
+    name="replication.reconcile",
+    input_schema=ReplicationReconcileRequest,
+    output_schema=ReplicationReconcileResultOutput,
+)
+ReplicationMarkLocalDeleteEligibleSchema = TaskSchema(
+    name="replication.mark_local_delete_eligible",
+    input_schema=ReplicationMarkLocalDeleteEligibleInput,
+    output_schema=AssetOutput,
+)
+ReplicationDeleteLocalPayloadSchema = TaskSchema(
+    name="replication.delete_local_payload",
+    input_schema=GetByIdInput,
+    output_schema=AssetOutput,
+)
+ReplicationReclaimSchema = TaskSchema(
+    name="replication.reclaim_verified_payloads",
+    input_schema=ReplicationReclaimRequest,
+    output_schema=ReplicationReclaimResultOutput,
 )
 ReplicationStatusSchema = TaskSchema(
     name="replication.status",

@@ -122,6 +122,7 @@ def target_datalake(sync_objects):
     datalake.annotation_set_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
     datalake.datum_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
     datalake.dataset_version_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
+    datalake.ensure_primary_asset_alias = AsyncMock(side_effect=lambda obj: obj)
     return datalake
 
 
@@ -565,6 +566,7 @@ class TestDatasetSyncManager:
         lake.create_object_upload_session = target_datalake.create_object_upload_session
         lake.complete_object_upload_session = target_datalake.complete_object_upload_session
         lake.head_object = target_datalake.head_object
+        lake.ensure_primary_asset_alias = target_datalake.ensure_primary_asset_alias
 
         manager = DatasetSyncManager(lake)
         result = await manager.commit_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="metadata_only"))
