@@ -1,6 +1,7 @@
 import importlib
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -20,6 +21,7 @@ from mindtrace.registry import (
 )
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.types import OnConflict, OpResult
 
 
 class DummyRemoteBackend(RegistryBackend):
@@ -69,6 +71,31 @@ class DummyRemoteBackend(RegistryBackend):
 
     def registered_materializers(self, object_class=None):  # pragma: no cover - not used in these tests
         return {}
+
+    def create_direct_upload_target(  # pragma: no cover - not used in these tests
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        return {"upload_id": upload_id, "kind": "dummy"}
+
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover
+        return {"exists": False}
+
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:  # pragma: no cover
+        return True
+
+    def commit_direct_upload(  # pragma: no cover
+        self,
+        name: str,
+        version: str,
+        staged_target: dict[str, Any],
+        metadata: dict[str, Any],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResult:
+        return OpResult.success(name, version)
 
 
 class DummyS3Backend(DummyRemoteBackend):

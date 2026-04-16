@@ -171,14 +171,19 @@ class TestSystemMetricsCollectorContextManager:
 
     def test_context_manager_with_interval(self):
         """Test context manager with interval."""
-        with SystemMetricsCollector(interval=0.1) as collector:
-            time.sleep(0.15)
+        with SystemMetricsCollector(interval=0.02) as collector:
+            deadline = time.monotonic() + 0.2
+            while collector.metrics_cache is None and time.monotonic() < deadline:
+                time.sleep(0.005)
+
             metrics = collector()
             assert isinstance(metrics, dict)
             assert collector.metrics_cache is not None
 
         # After exit, thread should be stopped
-        time.sleep(0.2)
+        deadline = time.monotonic() + 0.1
+        while collector._thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.005)
         assert not collector._thread.is_alive()
 
     def test_context_manager_stops_on_exception(self):

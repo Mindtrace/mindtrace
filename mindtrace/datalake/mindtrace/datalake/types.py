@@ -7,8 +7,24 @@ from uuid import uuid4
 from beanie import Indexed
 from beanie.exceptions import CollectionWasNotInitialized
 from pydantic import BaseModel, Field, model_validator
+from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
+
+AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
+AnnotationKind = Literal[
+    "classification",
+    "regression",
+    "bbox",
+    "rotated_bbox",
+    "polygon",
+    "polyline",
+    "ellipse",
+    "keypoint",
+    "mask",
+    "instance_mask",
+    "pointcloud_segmentation",
+]
 
 
 def utc_now() -> datetime:
@@ -17,6 +33,10 @@ def utc_now() -> datetime:
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+class DuplicateAliasError(ValueError):
+    """Raised when an alias string is already registered to a different asset."""
 
 
 class DatalakeDocument(MindtraceDocument):
@@ -57,6 +77,46 @@ class StorageRef(BaseModel):
         return self
 
 
+class DirectUploadSession(DatalakeDocument):
+    """Control-plane record for a pending or finalized direct object upload."""
+
+    upload_session_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("upload_session"))
+    finalize_token: str = Field(default_factory=lambda: uuid4().hex)
+    name: str
+    mount: str
+    requested_version: str | None = None
+    resolved_version: str | None = None
+    upload_method: Literal["local_path", "presigned_url"]
+    upload_url: str | None = None
+    upload_path: str | None = None
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    staged_reference: dict[str, Any] = Field(default_factory=dict)
+    content_type: str = "application/octet-stream"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    on_conflict: Literal["skip", "overwrite"] | None = None
+    status: Literal["pending", "completed", "expired", "failed", "cleaned"] = "pending"
+    storage_ref: StorageRef | None = None
+    failure_reason: str | None = None
+    verification_attempts: int = 0
+    last_verified_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    completed_at: datetime | None = None
+    cleanup_completed_at: datetime | None = None
+    created_by: str | None = None
+
+    class Settings:
+        name = "datalake_direct_upload_sessions"
+        indexes = [
+            "mount",
+            "name",
+            "status",
+            "expires_at",
+            "cleanup_completed_at",
+            [("mount", 1), ("name", 1), ("status", 1)],
+        ]
+
+
 class AnnotationSource(BaseModel):
     """Provenance for an annotation record."""
 
@@ -68,6 +128,19 @@ class AnnotationSource(BaseModel):
     def __str__(self) -> str:
         version = f", version={self.version}" if self.version else ""
         return f"AnnotationSource(type={self.type}, name={self.name}{version})"
+
+
+class AnnotationLabelDefinition(BaseModel):
+    """Explicit label contract for schema-governed annotation sets."""
+
+    name: str
+    id: int | None = None
+    display_name: str | None = None
+    color: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def __str__(self) -> str:
+        return f"AnnotationLabelDefinition(name={self.name}, id={self.id})"
 
 
 class Asset(DatalakeDocument):
@@ -97,6 +170,30 @@ class Asset(DatalakeDocument):
             "storage_ref.version",
             "subject.kind",
             "subject.id",
+            "metadata.origin.asset_id",
+            [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
+        ]
+
+
+class AssetAlias(DatalakeDocument):
+    """Maps a string alias to an :class:`Asset` (typically ``asset_id`` as the default alias).
+
+    Multiple rows may share the same ``asset_id`` (one primary row where ``alias == asset_id``,
+    plus optional human-friendly aliases).
+    """
+
+    alias_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("alias"))
+    alias: Annotated[str, Indexed(unique=True)]
+    asset_id: Annotated[str, Indexed()]
+    is_primary: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_asset_aliases"
+        indexes = [
+            "asset_id",
+            "is_primary",
+            [("asset_id", 1), ("is_primary", 1)],
         ]
 
 
@@ -113,25 +210,14 @@ class AnnotationRecord(DatalakeDocument):
 
     annotation_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation"))
     subject: SubjectRef | None = None
-    kind: Literal[
-        "classification",
-        "regression",
-        "bbox",
-        "rotated_bbox",
-        "polygon",
-        "polyline",
-        "ellipse",
-        "keypoint",
-        "mask",
-        "instance_mask",
-        "pointcloud_segmentation",
-    ]
+    kind: AnnotationKind
     label: str
     label_id: int | None = None
     score: float | None = None
     source: AnnotationSource
     geometry: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -147,6 +233,40 @@ class AnnotationRecord(DatalakeDocument):
         ]
 
 
+class AnnotationSchema(DatalakeDocument):
+    """Canonical annotation contract applied to schema-bound annotation sets."""
+
+    def __str__(self) -> str:
+        return (
+            f"AnnotationSchema(annotation_schema_id={self.annotation_schema_id}, name={self.name}, "
+            f"version={self.version}, task_type={self.task_type})"
+        )
+
+    annotation_schema_id: Annotated[str, Indexed(unique=True)] = Field(
+        default_factory=lambda: new_id("annotation_schema")
+    )
+    name: str
+    version: str
+    task_type: AnnotationTaskType
+    allowed_annotation_kinds: list[AnnotationKind] = Field(default_factory=list)
+    labels: list[AnnotationLabelDefinition] = Field(default_factory=list)
+    allow_scores: bool = False
+    required_attributes: list[str] = Field(default_factory=list)
+    optional_attributes: list[str] = Field(default_factory=list)
+    allow_additional_attributes: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_annotation_schemas"
+        indexes = [
+            "task_type",
+            IndexModel([("name", 1), ("version", 1)], unique=True),
+        ]
+
+
 class AnnotationSet(DatalakeDocument):
     """Grouping/provenance boundary for annotation records.
 
@@ -155,13 +275,17 @@ class AnnotationSet(DatalakeDocument):
     """
 
     def __str__(self) -> str:
-        return f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, records={len(self.annotation_record_ids)})"
+        return (
+            f"AnnotationSet(annotation_set_id={self.annotation_set_id}, name={self.name}, "
+            f"records={len(self.annotation_record_ids)})"
+        )
 
     annotation_set_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("annotation_set"))
     name: str
     purpose: Literal["ground_truth", "prediction", "review", "snapshot", "other"]
     source_type: Literal["human", "machine", "mixed"]
     status: Literal["draft", "active", "archived"] = "draft"
+    annotation_schema_id: str | None = None
     annotation_record_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -170,7 +294,7 @@ class AnnotationSet(DatalakeDocument):
 
     class Settings:
         name = "datalake_annotation_sets"
-        indexes = ["purpose", "source_type", "status"]
+        indexes = ["purpose", "source_type", "status", "annotation_schema_id"]
 
 
 class Collection(DatalakeDocument):

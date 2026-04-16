@@ -1,37 +1,152 @@
-from .async_datalake import AsyncDatalake
+from .annotations import (
+    Annotation,
+    AnnotationVariants,
+    BboxAnnotation,
+    ClassificationAnnotation,
+    EllipseAnnotation,
+    InstanceMaskAnnotation,
+    KeypointAnnotation,
+    MaskAnnotation,
+    PointcloudSegmentationAnnotation,
+    PolygonAnnotation,
+    PolylineAnnotation,
+    RegressionAnnotation,
+    RotatedBboxAnnotation,
+    annotation_from_record,
+)
+from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
+from .data_vault import AsyncDataVault, DataVault
+from .data_vault_backends import (
+    AsyncDataVaultBackend,
+    DatalakeServiceAsyncDataVaultBackend,
+    DatalakeServiceDataVaultBackend,
+    DataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
+)
 from .datalake import Datalake
+from .replication import ReplicationManager
+from .replication_types import (
+    ReplicatedAssetState,
+    ReplicationBatchRequest,
+    ReplicationBatchResult,
+    ReplicationReclaimRequest,
+    ReplicationReclaimResult,
+    ReplicationReconcileRequest,
+    ReplicationReconcileResult,
+    ReplicationStatusResult,
+)
+from .service import DatalakeService
+from .sync import DatasetSyncManager
+from .sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncImportRequest,
+    DatasetSyncPayloadPlan,
+    ObjectPayloadDescriptor,
+)
 from .types import (
+    AnnotationLabelDefinition,
     AnnotationRecord,
+    AnnotationSchema,
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
     DatasetVersion,
     Datum,
+    DirectUploadSession,
+    DuplicateAliasError,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
     SubjectRef,
 )
+from .upload_client import DatalakeDirectUploadClient
 
 __all__ = [
+    "Annotation",
+    "AnnotationVariants",
+    "annotation_from_record",
+    "BboxAnnotation",
+    "ClassificationAnnotation",
+    "EllipseAnnotation",
+    "InstanceMaskAnnotation",
+    "KeypointAnnotation",
+    "MaskAnnotation",
+    "PointcloudSegmentationAnnotation",
+    "PolygonAnnotation",
+    "PolylineAnnotation",
+    "RegressionAnnotation",
+    "RotatedBboxAnnotation",
+    "AnnotationLabelDefinition",
     "AnnotationRecord",
+    "AnnotationSchema",
     "AnnotationSet",
     "AnnotationSource",
+    "AnnotationSchemaInUseError",
     "Asset",
+    "AssetAlias",
+    "AsyncDataVault",
+    "AsyncDataVaultBackend",
+    "DataVault",
+    "DataVaultBackend",
+    "DatalakeServiceAsyncDataVaultBackend",
+    "DatalakeServiceDataVaultBackend",
+    "LocalAsyncDataVaultBackend",
+    "LocalDataVaultBackend",
+    "DuplicateAliasError",
+    "PascalVocImportConfig",
+    "PascalVocImportSummary",
     "AssetRetention",
     "AsyncDatalake",
     "Collection",
     "CollectionItem",
+    "DatasetSyncBundle",
+    "DatasetSyncCommitResult",
+    "DatasetSyncImportPlan",
+    "DatasetSyncImportRequest",
+    "DatasetSyncManager",
+    "DatasetSyncPayloadPlan",
+    "ReplicationManager",
+    "ReplicatedAssetState",
+    "ReplicationBatchRequest",
+    "ReplicationBatchResult",
+    "ReplicationReclaimRequest",
+    "ReplicationReclaimResult",
+    "ReplicationReconcileRequest",
+    "ReplicationReconcileResult",
+    "ReplicationStatusResult",
     "DatasetVersion",
+    "DatalakeDirectUploadClient",
     "Datalake",
+    "DatalakeService",
+    "DirectUploadSession",
     "Datum",
+    "DuplicateAnnotationSchemaError",
     "ResolvedCollectionItem",
     "ResolvedDatasetVersion",
     "ResolvedDatum",
+    "import_pascal_voc",
+    "ObjectPayloadDescriptor",
     "StorageRef",
     "SubjectRef",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"PascalVocImportConfig", "PascalVocImportSummary", "import_pascal_voc"}:
+        from .importers import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
+
+        exports = {
+            "PascalVocImportConfig": PascalVocImportConfig,
+            "PascalVocImportSummary": PascalVocImportSummary,
+            "import_pascal_voc": import_pascal_voc,
+        }
+        return exports[name]
+    raise AttributeError(name)

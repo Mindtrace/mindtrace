@@ -1,10 +1,11 @@
 import tempfile
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import pytest
 
 from mindtrace.registry import RegistryBackend
+from mindtrace.registry.core.types import OnConflict, OpResult
 
 
 @pytest.fixture
@@ -81,6 +82,31 @@ def concrete_backend():
             if not hasattr(self, "_registry_metadata"):
                 return {}
             return self._registry_metadata.copy()
+
+        def create_direct_upload_target(
+            self,
+            upload_id: str,
+            *,
+            content_type: str = "application/octet-stream",
+            expiration_minutes: int = 60,
+        ) -> dict[str, Any]:
+            return {"upload_id": upload_id, "kind": "test"}
+
+        def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+            return {"exists": False}
+
+        def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+            return True
+
+        def commit_direct_upload(
+            self,
+            name: str,
+            version: str,
+            staged_target: dict[str, Any],
+            metadata: dict[str, Any],
+            on_conflict: str = OnConflict.SKIP,
+        ) -> OpResult:
+            return OpResult.success(name, version)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         yield ConcreteBackend(temp_dir)

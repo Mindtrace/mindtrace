@@ -11,7 +11,7 @@ import pytest
 from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
-from mindtrace.registry import LocalRegistryBackend, Registry
+from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import (
@@ -30,6 +30,7 @@ from mindtrace.registry.core.mount import (
     S3MountConfig,
 )
 from mindtrace.registry.core.types import BatchResult, CleanupState, OnConflict, OpResult, OpResults, VerifyLevel
+from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockMinioHandler
 
 
 class SampleModel(BaseModel):
@@ -2181,7 +2182,7 @@ def test_backend_internal_lock_contention(registry):
         assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
         with pytest.raises(LockAcquisitionError):
-            with registry.backend._internal_lock(lock_key, timeout=0.5):
+            with registry.backend._internal_lock(lock_key, timeout=0.01):
                 pass
     finally:
         # Release the lock
@@ -3994,6 +3995,12 @@ def test_resolve_load_version_not_found(registry):
         registry._resolve_load_version("nonexistent", "latest")
 
 
+def test_resolve_save_version_uses_normalized_single_version_when_versioning_disabled(temp_registry_dir):
+    registry = Registry(backend=temp_registry_dir, version_objects=False, version_digits=3)
+
+    assert registry._core._resolve_save_version("test:a", None) == "1.0.0"
+
+
 def _make_cached_facade_registry(temp_registry_dir: str) -> Registry:
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
@@ -4618,3 +4625,125 @@ class TestRegistryCoreCoverage:
 
             with patch.object(target, "delete", side_effect=KeyError("boom")):
                 assert target.pop("test:default", "delete-fallback") == "delete-fallback"
+
+
+REGISTRY_BYTES_META = {
+    "class": "builtins.bytes",
+    "materializer": "zenml.materializers.BytesMaterializer",
+    "init_params": {},
+    "metadata": {},
+    "_files": ["data.txt"],
+}
+
+
+def test_registry_direct_upload_local_round_trip(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid", content_type="application/octet-stream")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"xyz")
+    assert reg.inspect_direct_upload_target(staged)["exists"] is True
+    assert reg.cleanup_direct_upload_target(staged) is True
+
+
+def test_registry_commit_direct_upload_local_success(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid2")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"data")
+    ver = reg.commit_direct_upload("reg:bytes", staged_target=staged, version="1.0.0", metadata=None)
+    assert ver == "1.0.0"
+
+
+def test_registry_commit_direct_upload_auto_assigns_version_when_none(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid-auto")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"auto")
+    ver = reg.commit_direct_upload(
+        "reg:auto-versioned",
+        staged_target=staged,
+        version=None,
+        metadata=REGISTRY_BYTES_META,
+    )
+    assert ver == "1.0.0"
+
+
+def test_registry_commit_direct_upload_rejects_version_latest_when_versioned(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid3")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    with pytest.raises(ValueError, match="latest"):
+        reg.commit_direct_upload("reg:late", staged_target=staged, version="latest")
+
+
+def test_registry_commit_direct_upload_on_conflict_and_immutable_validation(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=False)
+    t = reg.create_direct_upload_target("sid4")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    with pytest.raises(ValueError, match="on_conflict"):
+        reg.commit_direct_upload("a:b", staged_target=staged, on_conflict="maybe")
+    with pytest.raises(ValueError, match="immutable"):
+        reg.commit_direct_upload("a:b", staged_target=staged, on_conflict=OnConflict.OVERWRITE)
+
+
+def test_registry_commit_direct_upload_propagates_backend_failure(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid5")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+
+    def boom(*args, **kwargs):
+        return OpResult.failed("n", "1.0.0", ValueError("backend boom"))
+
+    reg.backend.commit_direct_upload = boom
+    with pytest.raises(ValueError, match="backend boom"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_commit_direct_upload_error_without_exception_raises_runtime(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid6")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+
+    reg.backend.commit_direct_upload = lambda *a, **k: OpResult.failed(
+        "n", "1.0.0", exception=None, error_type="E", message="no details"
+    )
+    with pytest.raises(RuntimeError, match="Failed to commit direct upload"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_commit_direct_upload_skipped_raises_runtime(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid7")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    reg.backend.commit_direct_upload = lambda *a, **k: OpResult.skipped("n", "1.0.0")
+    with pytest.raises(RuntimeError, match="already exists"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_cached_remote_direct_upload_delegates(monkeypatch, tmp_path):
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockMinioHandler)
+    s3 = S3RegistryBackend(
+        uri=str(tmp_path / "s3_cache"),
+        endpoint="localhost:9000",
+        access_key="a",
+        secret_key="b",
+        bucket="bucket",
+        secure=False,
+    )
+    reg = Registry(backend=s3, use_cache=True, version_objects=True, mutable=True)
+    out = reg.create_direct_upload_target("up1", content_type="text/plain")
+    assert out["upload_method"] == "presigned_url"
+    staged = out["staged_target"]
+    reg.backend.storage._objects[staged["path"]] = b"payload"
+    ver = reg.commit_direct_upload(
+        "cached:obj",
+        staged_target=staged,
+        version="1.0.0",
+        metadata=REGISTRY_BYTES_META,
+    )
+    assert ver == "1.0.0"

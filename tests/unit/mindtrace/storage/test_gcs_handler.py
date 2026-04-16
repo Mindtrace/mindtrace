@@ -406,19 +406,99 @@ def test_delete_when_object_exists(mock_client_cls):
     blob.delete.assert_called_once()
 
 
+# --- copy ---
+def _blob_registry(bucket: MagicMock) -> dict[str, MagicMock]:
+    """Return a per-path blob registry wired to ``bucket.blob``."""
+    blobs: dict[str, MagicMock] = {}
+
+    def _blob(name: str) -> MagicMock:
+        if name not in blobs:
+            blobs[name] = MagicMock(name=f"blob-{name}")
+        return blobs[name]
+
+    bucket.blob.side_effect = lambda n: _blob(n)
+    return blobs
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_copy_success(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls)
+    blobs = _blob_registry(bucket)
+    bucket.blob("src/a.txt")
+    blobs["src/a.txt"].exists.return_value = True
+    bucket.copy_blob = MagicMock()
+
+    h = GCSStorageHandler("bucket")
+    result = h.copy("src/a.txt", "dst/b.txt")
+
+    assert result.status == "ok"
+    assert result.remote_path == "dst/b.txt"
+    bucket.copy_blob.assert_called_once()
+    (src_blob, _dest_bucket), ckwargs = bucket.copy_blob.call_args
+    assert src_blob is blobs["src/a.txt"]
+    assert ckwargs.get("new_name") == "dst/b.txt"
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_copy_fail_if_exists_when_destination_present(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls)
+    blobs = _blob_registry(bucket)
+    bucket.blob("dst/b.txt")
+    blobs["dst/b.txt"].exists.return_value = True
+
+    h = GCSStorageHandler("bucket")
+    result = h.copy("src/a.txt", "dst/b.txt", fail_if_exists=True)
+
+    assert result.status == "already_exists"
+    assert "already exists" in (result.error_message or "").lower()
+    bucket.copy_blob.assert_not_called()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_copy_source_not_found(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls)
+    blobs = _blob_registry(bucket)
+    bucket.blob("src/missing.txt")
+    blobs["src/missing.txt"].exists.return_value = False
+
+    h = GCSStorageHandler("bucket")
+    result = h.copy("src/missing.txt", "dst/b.txt")
+
+    assert result.status == "not_found"
+    assert "Blob not found" in (result.error_message or "")
+    bucket.copy_blob.assert_not_called()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_copy_copy_blob_raises(mock_client_cls):
+    _, bucket, _ = _prepare_client(mock_client_cls)
+    blobs = _blob_registry(bucket)
+    bucket.blob("src/a.txt")
+    blobs["src/a.txt"].exists.return_value = True
+    bucket.copy_blob = MagicMock(side_effect=RuntimeError("copy failed"))
+
+    h = GCSStorageHandler("bucket")
+    result = h.copy("src/a.txt", "dst/b.txt")
+
+    assert result.status == "error"
+    assert result.error_type == "RuntimeError"
+    assert "copy failed" in (result.error_message or "")
+
+
 # --- get_presigned_url with custom args ---
 @patch("mindtrace.storage.gcs.storage.Client")
 def test_get_presigned_url_custom_args(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.generate_signed_url.return_value = "https://signed-custom"
     h = GCSStorageHandler("bucket")
-    url = h.get_presigned_url("obj", expiration_minutes=5, method="PUT")
+    url = h.get_presigned_url("obj", expiration_minutes=5, method="PUT", content_type="application/octet-stream")
     assert url == "https://signed-custom"
     blob.generate_signed_url.assert_called_once()
     args, kwargs = blob.generate_signed_url.call_args
     assert kwargs["expiration"].total_seconds() == 300
     assert kwargs["method"] == "PUT"
     assert kwargs["version"] == "v4"
+    assert kwargs["content_type"] == "application/octet-stream"
 
 
 # --- get_object_metadata with missing timestamps ---
