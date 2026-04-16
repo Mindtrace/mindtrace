@@ -1,11 +1,48 @@
+import importlib.util
 import json
+import platform
+import runpy
+import sys
+from pathlib import Path
+from types import ModuleType
 from unittest.mock import Mock, call, patch
 
 import pytest
 
+import mindtrace.services.core.launcher as launcher_module
 from mindtrace.services.core.launcher import Launcher, main
 
+LAUNCHER_PATH = Path(launcher_module.__file__)
 
+
+def _load_launcher_for_os(monkeypatch: pytest.MonkeyPatch, os_name: str):
+    monkeypatch.setattr(platform, "system", lambda: os_name)
+
+    if os_name != "Windows":
+        gunicorn_module = ModuleType("gunicorn")
+        gunicorn_app_module = ModuleType("gunicorn.app")
+        gunicorn_base_module = ModuleType("gunicorn.app.base")
+
+        class FakeBaseApplication:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run(self):
+                pass
+
+        gunicorn_base_module.BaseApplication = FakeBaseApplication
+        monkeypatch.setitem(sys.modules, "gunicorn", gunicorn_module)
+        monkeypatch.setitem(sys.modules, "gunicorn.app", gunicorn_app_module)
+        monkeypatch.setitem(sys.modules, "gunicorn.app.base", gunicorn_base_module)
+
+    spec = importlib.util.spec_from_file_location(f"_test_launcher_{os_name.lower()}", LAUNCHER_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.skipif(launcher_module.IS_WINDOWS, reason="These tests exercise the native non-Windows launcher import.")
 class TestLauncher:
     """Test suite for the Launcher class."""
 
@@ -343,37 +380,40 @@ class TestMain:
         assert args.init_params == '{"test": true}'
 
     def test_main_entry_point(self):
-        """Test the if __name__ == '__main__' entry point using subprocess."""
-        from unittest.mock import Mock, patch
+        """Test the if __name__ == '__main__' entry point with run_path."""
+        mock_args = Mock()
+        mock_args.server_class = "test.Server"
+        mock_args.num_workers = 1
+        mock_args.bind = "127.0.0.1:8080"
+        mock_args.pid = None
+        mock_args.worker_class = "uvicorn.workers.UvicornWorker"
+        mock_args.init_params = None
 
-        # Mock subprocess.run to avoid slow subprocess execution
-        # This tests that the entry point logic works without the overhead of starting Python
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "MINDTRACE SERVER LAUNCHER\n\nusage: launcher.py [-h] ..."
-        mock_result.stderr = ""
+        with patch("argparse.ArgumentParser.parse_args", return_value=mock_args):
+            if launcher_module.IS_WINDOWS:
+                mock_server = Mock()
+                mock_server.unique_name = "test_server"
+                mock_server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
+                mock_server.app = Mock()
+                uvicorn_module = ModuleType("uvicorn")
+                uvicorn_module.run = Mock()
 
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            import subprocess
-            import sys
+                with (
+                    patch("mindtrace.core.instantiate_target", return_value=mock_server),
+                    patch("mindtrace.core.setup_logger", return_value=Mock()),
+                    patch.dict(sys.modules, {"uvicorn": uvicorn_module}),
+                ):
+                    runpy.run_path(str(LAUNCHER_PATH), run_name="__main__")
 
-            # Test that the script can be executed (will fail due to missing args, but entry point works)
-            result = subprocess.run(
-                [sys.executable, "mindtrace/services/mindtrace/services/core/launcher.py", "--help"],
-                capture_output=True,
-                text=True,
-            )
+                uvicorn_module.run.assert_called_once()
+            else:
+                with (
+                    patch("gunicorn.app.base.BaseApplication.__init__", return_value=None),
+                    patch("gunicorn.app.base.BaseApplication.run", autospec=True) as mock_run,
+                ):
+                    runpy.run_path(str(LAUNCHER_PATH), run_name="__main__")
 
-            # Verify subprocess.run was called with correct arguments
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args[0][0]
-            assert "--help" in call_args
-            assert "launcher.py" in " ".join(call_args)
-
-            # The script should exit with code 0 for help and show usage information
-            assert result.returncode == 0
-            assert "MINDTRACE SERVER LAUNCHER" in result.stdout
-            assert "usage:" in result.stdout
+                mock_run.assert_called_once()
 
     def test_main_entry_point_direct(self):
         """Test that if __name__ == '__main__' calls main()."""
@@ -398,6 +438,7 @@ class TestMain:
                 mock_launcher.return_value.run.assert_called_once()
 
 
+@pytest.mark.skipif(launcher_module.IS_WINDOWS, reason="These tests exercise the native non-Windows launcher import.")
 class TestLauncherIntegration:
     """Integration tests for the Launcher with more realistic scenarios."""
 
@@ -440,3 +481,92 @@ class TestLauncherIntegration:
             debug=True,
             pid_file=None,
         )
+
+
+class TestLauncherCrossPlatformReloaded:
+    def test_non_windows_launcher_loads_application(self, monkeypatch):
+        module = _load_launcher_for_os(monkeypatch, "Linux")
+        options = Mock(
+            bind="127.0.0.1:8080",
+            num_workers=2,
+            worker_class="uvicorn.workers.UvicornWorker",
+            pid="/tmp/test.pid",
+            server_class="test.server.TestServer",
+            init_params='{"param1": "value1"}',
+        )
+        mock_server = Mock()
+        mock_server.unique_name = "test_server"
+        mock_server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
+        mock_server.app = Mock()
+
+        with (
+            patch.object(module, "instantiate_target", return_value=mock_server) as mock_instantiate,
+            patch.object(module, "setup_logger", return_value=Mock()),
+            patch.object(module.BaseApplication, "__init__", return_value=None),
+        ):
+            launcher = module.Launcher(options)
+            result = launcher.load()
+
+        mock_instantiate.assert_called_once_with("test.server.TestServer", pid_file="/tmp/test.pid", param1="value1")
+        assert result == mock_server.app
+        assert launcher.application == mock_server.app
+
+    def test_non_windows_launcher_load_config_sets_supported_values(self, monkeypatch):
+        module = _load_launcher_for_os(monkeypatch, "Linux")
+        options = Mock(
+            bind="0.0.0.0:9000",
+            num_workers=1,
+            worker_class="sync",
+            pid=None,
+            server_class="test.Server",
+            init_params=None,
+        )
+
+        with patch.object(module.BaseApplication, "__init__", return_value=None):
+            launcher = module.Launcher(options)
+
+        launcher.cfg = Mock()
+        launcher.cfg.settings = {"bind": Mock(), "workers": Mock(), "worker_class": Mock(), "pidfile": Mock()}
+
+        launcher.load_config()
+
+        launcher.cfg.set.assert_has_calls(
+            [call("bind", "0.0.0.0:9000"), call("workers", 1), call("worker_class", "sync")],
+            any_order=True,
+        )
+        assert launcher.cfg.set.call_count == 3
+
+    def test_windows_launcher_initializes_and_runs_uvicorn(self, monkeypatch):
+        module = _load_launcher_for_os(monkeypatch, "Windows")
+        options = Mock(
+            bind="0.0.0.0:9090",
+            num_workers=3,
+            worker_class="ignored",
+            pid="/tmp/test.pid",
+            server_class="test.server.TestServer",
+            init_params='{"debug": true}',
+        )
+        mock_server = Mock()
+        mock_server.unique_name = "test_server"
+        mock_server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
+        mock_server.app = Mock()
+        uvicorn_module = ModuleType("uvicorn")
+        uvicorn_module.run = Mock()
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn_module)
+
+        with (
+            patch.object(module, "instantiate_target", return_value=mock_server) as mock_instantiate,
+            patch.object(module, "setup_logger", return_value=Mock()),
+        ):
+            launcher = module.Launcher(options)
+            launcher.run()
+
+        mock_instantiate.assert_called_once_with("test.server.TestServer", pid_file="/tmp/test.pid", debug=True)
+        assert launcher.application == mock_server.app
+        assert launcher.uvicorn_config == {
+            "app": mock_server.app,
+            "host": "0.0.0.0",
+            "port": 9090,
+            "workers": 3,
+        }
+        uvicorn_module.run.assert_called_once_with(**launcher.uvicorn_config)

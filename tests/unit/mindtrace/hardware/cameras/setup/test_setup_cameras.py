@@ -444,6 +444,18 @@ class TestModuleFunctions:
     """Test module-level functions (via Typer CLI)."""
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.CameraSystemSetup")
+    def test_configure_firewall_helper_delegates(self, mock_setup_class):
+        """Test helper delegates to CameraSystemSetup."""
+        from mindtrace.hardware.cameras.setup.setup_cameras import configure_firewall_helper
+
+        mock_setup = Mock()
+        mock_setup.configure_firewall.return_value = True
+        mock_setup_class.return_value = mock_setup
+
+        assert configure_firewall_helper("10.0.0.0/24") is True
+        mock_setup.configure_firewall.assert_called_once_with("10.0.0.0/24")
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.CameraSystemSetup")
     def test_configure_firewall_function(self, mock_setup_class):
         """Test configure_firewall via CLI."""
         # Mock CameraSystemSetup instance
@@ -600,6 +612,30 @@ class TestMainFunction:
         mock_setup.configure_firewall.assert_called_once_with(None)
         assert result.exit_code == 1
 
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.CameraSystemSetup")
+    def test_main_uninstall_verbose_logging(self, mock_setup_class):
+        """Test uninstall command with verbose logging."""
+        mock_setup = Mock()
+        mock_setup.uninstall_all_sdks.return_value = True
+        mock_setup_class.return_value = mock_setup
+
+        result = runner.invoke(app, ["uninstall", "--verbose"])
+
+        mock_setup.logger.setLevel.assert_called_once()
+        assert result.exit_code == 0
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.CameraSystemSetup")
+    def test_main_configure_firewall_verbose_failure(self, mock_setup_class):
+        """Test configure-firewall command with verbose logging on failure."""
+        mock_setup = Mock()
+        mock_setup.configure_firewall.return_value = False
+        mock_setup_class.return_value = mock_setup
+
+        result = runner.invoke(app, ["configure-firewall", "--verbose"])
+
+        mock_setup.logger.setLevel.assert_called_once()
+        assert result.exit_code == 1
+
 
 class TestScriptIntegration:
     """Test script integration and error handling."""
@@ -641,3 +677,97 @@ class TestScriptIntegration:
             result = runner.invoke(app, ["configure-firewall"])
             # Exception should cause non-zero exit code
             assert result.exit_code != 0 or "Test exception" in str(result.exception)
+
+
+class TestMoreCameraSystemSetupBranches:
+    """Additional high-value branch coverage for camera system setup."""
+
+    @staticmethod
+    def _mock_hw_config():
+        mock_hw_config = Mock()
+        mock_config_obj = Mock()
+        mock_config_obj.network.camera_ip_range = "192.168.50.0/24"
+        mock_config_obj.network.firewall_rule_name = "Allow Camera Network"
+        mock_hw_config.get_config.return_value = mock_config_obj
+        return mock_hw_config
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.install_genicam_cti")
+    def test_install_all_sdks_partial_success_warns(self, mock_genicam_install, mock_pylon_class, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        mock_installer = Mock()
+        mock_installer.install.return_value = True
+        mock_pylon_class.return_value = mock_installer
+        mock_genicam_install.return_value = False
+
+        setup = CameraSystemSetup()
+
+        assert setup.install_all_sdks() is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.install_genicam_cti")
+    def test_install_all_sdks_handles_basler_exception(self, mock_genicam_install, mock_pylon_class, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        mock_pylon_class.side_effect = RuntimeError("boom")
+        mock_genicam_install.return_value = True
+
+        setup = CameraSystemSetup()
+
+        assert setup.install_all_sdks() is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.uninstall_genicam_cti")
+    def test_uninstall_all_sdks_partial_success_warns(self, mock_genicam_uninstall, mock_pylon_class, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        mock_installer = Mock()
+        mock_installer.uninstall.return_value = False
+        mock_pylon_class.return_value = mock_installer
+        mock_genicam_uninstall.return_value = True
+
+        setup = CameraSystemSetup()
+
+        assert setup.uninstall_all_sdks() is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    def test_configure_firewall_wraps_unexpected_exception(self, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        setup = CameraSystemSetup()
+        setup.platform = "Linux"
+
+        with patch.object(setup, "_configure_linux_firewall", side_effect=RuntimeError("boom")):
+            assert setup.configure_firewall() is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("subprocess.run")
+    def test_configure_windows_firewall_called_process_error(self, mock_subprocess, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        mock_result = Mock(stdout="No rules match the specified criteria")
+        mock_subprocess.side_effect = [mock_result, subprocess.CalledProcessError(1, "netsh")]
+
+        setup = CameraSystemSetup()
+
+        assert setup._configure_windows_firewall("192.168.50.0/24") is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("subprocess.run")
+    def test_configure_linux_firewall_called_process_error(self, mock_subprocess, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        status_result = Mock(returncode=0, stdout="Status: active")
+        mock_subprocess.side_effect = [status_result, subprocess.CalledProcessError(1, ["sudo", "ufw", "allow"])]
+
+        setup = CameraSystemSetup()
+
+        assert setup._configure_linux_firewall("192.168.50.0/24") is False
+
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
+    @patch("subprocess.run")
+    def test_configure_linux_firewall_timeout(self, mock_subprocess, mock_config):
+        mock_config.return_value = TestMoreCameraSystemSetupBranches._mock_hw_config()
+        mock_subprocess.side_effect = subprocess.TimeoutExpired("ufw", 30)
+
+        setup = CameraSystemSetup()
+
+        assert setup._configure_linux_firewall("192.168.50.0/24") is False

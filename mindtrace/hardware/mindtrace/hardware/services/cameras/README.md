@@ -71,9 +71,17 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 ### Image Capture
 
 - `POST /cameras/capture` - Capture single image
-- `POST /cameras/capture/batch` - Capture from multiple cameras
+- `POST /cameras/capture/batch` - Capture from multiple cameras (supports `stage`/`set_name` for capture group routing)
 - `POST /cameras/capture/hdr` - Capture HDR image with multiple exposures
-- `POST /cameras/capture/hdr/batch` - Batch HDR capture
+- `POST /cameras/capture/hdr/batch` - Batch HDR capture (supports `stage`/`set_name` for capture group routing)
+
+### Capture Groups (Stage+Set Batching)
+
+Control per-group concurrency for production-line camera setups:
+
+- `POST /cameras/capture-groups/configure` - Configure stage+set capture groups
+- `GET /cameras/capture-groups` - Get current capture group configuration
+- `POST /cameras/capture-groups/remove` - Remove all capture groups
 
 ### Streaming
 
@@ -180,7 +188,12 @@ Most REST endpoints are automatically exposed as MCP tools for integration with 
 - `camera_manager_capture_image` - Capture image
 - `camera_manager_configure_camera` - Configure camera parameters
 - `camera_manager_get_camera_status` - Get camera status
-- `camera_manager_get_system_diagnostics` - Get system diagnostics
+- `camera_manager_get_system_diagnostics` - Get system diagnostics (includes failure_counts, cameras_in_cooldown, capture_groups_count)
+
+**Capture Groups:**
+- `camera_manager_configure_capture_groups` - Configure stage+set capture groups
+- `camera_manager_get_capture_groups` - Get current capture group configuration
+- `camera_manager_remove_capture_groups` - Remove all capture groups
 
 **Homography Calibration:**
 - `camera_manager_calibrate_homography_checkerboard` - Single-image calibration (live capture)
@@ -191,6 +204,84 @@ Most REST endpoints are automatically exposed as MCP tools for integration with 
 - `camera_manager_measure_homography_box` - Measure single bounding box
 - `camera_manager_measure_homography_distance` - Measure distance between two points
 - `camera_manager_measure_homography_batch` - Unified batch (boxes + distances)
+
+## Capture Groups (Stage+Set Batching)
+
+Capture groups provide per-group concurrency control for production-line setups where multiple cameras share a GigE network link. Each group creates an `asyncio.Semaphore` sized to `batch_size`, limiting how many cameras within the group can capture simultaneously.
+
+### Configuration
+
+```bash
+# Configure 1 stage with 2 sets, max 1 concurrent per set
+curl -X POST http://localhost:8002/cameras/capture-groups/configure \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "inspection": {
+        "top_cameras": {"batch_size": 1, "cameras": ["Basler:cam0", "Basler:cam1", "Basler:cam4"]},
+        "side_cameras": {"batch_size": 1, "cameras": ["Basler:cam6", "Basler:cam7", "Basler:cam8"]}
+      }
+    }
+  }'
+```
+
+### Capture with Group Routing
+
+Once groups are configured, batch capture requests must include `stage` and `set_name`:
+
+```bash
+curl -X POST http://localhost:8002/cameras/capture/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cameras": ["Basler:cam0", "Basler:cam1", "Basler:cam4"],
+    "output_format": "numpy",
+    "stage": "inspection",
+    "set_name": "top_cameras"
+  }'
+```
+
+### Semaphore Routing Logic
+
+1. **stage + set_name provided** and camera is assigned → use group semaphore
+2. **Camera has group assignments** but stage/set_name not provided → error (forces callers to be explicit)
+3. **No assignments, no stage/set_name** → fall back to global semaphore
+
+### GigE Bandwidth Considerations
+
+For GigE cameras sharing a single NIC, the `batch_size` per group must account for the link's concurrent transfer capacity. Key factors:
+
+- **Jumbo frames** (`sudo ip link set <iface> mtu 9000`) reduce packet overhead
+- **`packet_size`** (camera setting, e.g., 8164) should match the NIC's MTU
+- **`inter_packet_delay`** (camera setting, e.g., 1000 ticks) spaces out packets to prevent NIC buffer overflow
+- With 12.5MP cameras on 1Gbps, typically max 2 concurrent transfers are reliable
+
+## Auto-Reconnection
+
+The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
+
+1. Checks the reinitialization cooldown (prevents thrashing)
+2. Exports the current camera config to disk
+3. Closes the camera
+4. Re-opens and restores the saved configuration
+5. Resets the failure counter
+
+### Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` | 5 | Failures before attempting reinit |
+| `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` | 30.0 | Seconds between reinit attempts |
+| `MINDTRACE_HW_CAMERA_CONFIG_DIR` | `~/.config/mindtrace/cameras` | Directory for preserved configs |
+
+### Diagnostics
+
+Failure tracking and reconnection status are exposed via the diagnostics endpoint:
+
+```bash
+curl http://localhost:8002/system/diagnostics
+```
+
+Response includes `failure_counts`, `cameras_in_cooldown`, and `capture_groups_count`.
 
 ## Configuration Parameters
 
@@ -205,7 +296,9 @@ Can be changed dynamically without reinitialization:
 - `white_balance` - White balance setting
 - `image_quality_enhancement` - Enable CLAHE enhancement
 - `pixel_format` - Pixel format (BGR8, RGB8, Mono8, etc.)
-- Network parameters (packet_size, inter_packet_delay, bandwidth_limit)
+- `packet_size` - GigE packet size in bytes (set to match NIC MTU, e.g., 8164 for jumbo frames)
+- `inter_packet_delay` - Ticks between GigE packets (e.g., 1000 = ~8us gap)
+- `bandwidth_limit` - Bandwidth limit in Mbps
 
 ### Startup-Only Parameters
 
@@ -213,6 +306,22 @@ Require camera reinitialization (set via config.py):
 
 - `buffer_count` - Number of frame buffers (memory allocation)
 - `basler_multicast_*` - Multicast streaming settings (network reconnection)
+
+### System Configuration
+
+Set via environment variables with `MINDTRACE_HW_CAMERA_*` prefix:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES` | 1 | Global concurrent capture limit |
+| `MINDTRACE_HW_CAMERA_RETRY_COUNT` | 3 | Capture retry attempts |
+| `MINDTRACE_HW_CAMERA_TIMEOUT_MS` | 2000 | Capture timeout in ms |
+| `MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE` | 6000 | Default exposure in us |
+| `MINDTRACE_HW_CAMERA_TRIGGER_MODE` | trigger | Default trigger mode |
+| `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` | 5 | Auto-reconnect threshold |
+| `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` | 30.0 | Reconnect cooldown (s) |
+| `MINDTRACE_HW_CAMERA_SAVE_API_URL` | (empty) | External save API for capture forwarding |
+| `MINDTRACE_HW_CAMERA_SAVE_API_TIMEOUT` | 10.0 | Save API timeout (s) |
 
 See `/mindtrace/hardware/core/config.py` for complete configuration options.
 
@@ -227,72 +336,80 @@ Once the service is running, visit:
 
 The service follows a 4-layer architecture:
 
-1. **API Layer** (`api/cameras/service.py`) - REST endpoints and MCP tools
-2. **Manager Layer** (`cameras/core/async_camera_manager.py`) - Multi-camera orchestration
+1. **API Layer** (`services/cameras/service.py`) - REST endpoints and MCP tools
+2. **Manager Layer** (`cameras/core/async_camera_manager.py`) - Multi-camera orchestration, capture groups, auto-reconnection
 3. **Camera Layer** (`cameras/core/async_camera.py`) - Unified async camera interface
 4. **Backend Layer** (`cameras/backends/`) - Hardware-specific implementations
 
+Supporting modules:
+- `cameras/core/capture_groups.py` - Stage+set semaphore routing (CaptureGroup dataclass, validation, 3-way routing)
+- `core/config.py` - HardwareConfig with CameraSettings (auto-reconnection, save forwarding, GigE tuning)
+
 ## Usage Examples
 
-### Discover and Open Camera
+### Discover and Open Cameras
 
 ```bash
-# Discover Basler cameras
+# Discover all cameras
 curl -X POST http://localhost:8002/cameras/discover \
-  -H "Content-Type: application/json" \
-  -d '{"backend": "basler"}'
+  -H "Content-Type: application/json" -d '{}'
 
-# Open discovered camera
+# Open a camera (format: "Backend:device_name")
 curl -X POST http://localhost:8002/cameras/open \
   -H "Content-Type: application/json" \
-  -d '{"camera_name": "BaslerCamera_001", "backend": "basler"}'
+  -d '{"camera": "Basler:cam0", "test_connection": false}'
+
+# Open multiple cameras
+curl -X POST http://localhost:8002/cameras/open/batch \
+  -H "Content-Type: application/json" \
+  -d '{"cameras": ["Basler:cam0", "Basler:cam1", "Basler:cam4"], "test_connection": false}'
 ```
 
 ### Configure and Capture
 
 ```bash
-# Configure camera settings
+# Configure camera (trigger mode, exposure, GigE tuning)
 curl -X POST http://localhost:8002/cameras/configure \
   -H "Content-Type: application/json" \
   -d '{
-    "camera": "BaslerCamera_001",
+    "camera": "Basler:cam0",
     "properties": {
-      "exposure_time": 2000,
-      "gain": 1.5,
-      "timeout_ms": 3000
+      "trigger_mode": "trigger",
+      "exposure_time": 10000,
+      "packet_size": 8164,
+      "inter_packet_delay": 1000
     }
   }'
 
 # Capture image
 curl -X POST http://localhost:8002/cameras/capture \
   -H "Content-Type: application/json" \
-  -d '{
-    "camera_name": "BaslerCamera_001",
-    "file_path": "/tmp/capture.png"
-  }'
+  -d '{"camera": "Basler:cam0", "save_path": "/tmp/capture.jpg", "output_format": "numpy"}'
 ```
 
-### Batch Operations
+### Batch Capture with Capture Groups
 
 ```bash
-# Open multiple cameras
-curl -X POST http://localhost:8002/cameras/open/batch \
+# Configure capture groups
+curl -X POST http://localhost:8002/cameras/capture-groups/configure \
   -H "Content-Type: application/json" \
   -d '{
-    "cameras": [
-      {"camera_name": "Camera_001", "backend": "basler"},
-      {"camera_name": "Camera_002", "backend": "basler"}
-    ]
+    "config": {
+      "production": {
+        "left": {"batch_size": 1, "cameras": ["Basler:cam0", "Basler:cam1"]},
+        "right": {"batch_size": 1, "cameras": ["Basler:cam4", "Basler:cam6"]}
+      }
+    }
   }'
 
-# Batch capture
+# Batch capture with group routing
 curl -X POST http://localhost:8002/cameras/capture/batch \
   -H "Content-Type: application/json" \
   -d '{
-    "captures": [
-      {"camera_name": "Camera_001", "file_path": "/tmp/cam1.png"},
-      {"camera_name": "Camera_002", "file_path": "/tmp/cam2.png"}
-    ]
+    "cameras": ["Basler:cam0", "Basler:cam1"],
+    "output_format": "numpy",
+    "stage": "production",
+    "set_name": "left"
   }'
 ```
 

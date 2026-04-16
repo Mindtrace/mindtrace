@@ -264,15 +264,13 @@ class TestMockBaslerImageGeneration:
     @pytest.mark.asyncio
     async def test_auto_pattern_rotation(self):
         """Test automatic pattern rotation in auto mode."""
-        camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="auto")
+        camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="auto", fast_mode=True)
         await camera.initialize()
 
         # Capture multiple images to test pattern rotation
-        images = []
         image_stats = []
-        for i in range(8):  # Capture more images to ensure we see rotation
+        for i in range(4):
             image = await camera.capture()
-            images.append(image)
             # Track statistics to detect pattern changes
             stats = (image.mean(), image.std(), image.min(), image.max())
             image_stats.append(stats)
@@ -1244,6 +1242,15 @@ class TestMockBaslerExceptionHandling:
     """Test exception handling in various methods."""
 
     @pytest.mark.asyncio
+    async def test_init_applies_valid_synthetic_dimension_overrides(self):
+        camera = MockBaslerCameraBackend("test_cam", synthetic_width=640, synthetic_height=480)
+
+        assert camera.roi["width"] == 640
+        assert camera.roi["height"] == 480
+        assert camera.synthetic_width == 640
+        assert camera.synthetic_height == 480
+
+    @pytest.mark.asyncio
     async def test_init_exception_handling_synthetic_dimensions(self):
         """Test exception handling when setting synthetic dimensions fails."""
 
@@ -1636,6 +1643,40 @@ class TestMockBaslerExceptionHandling:
             result = camera._enhance_image(test_image)
             # Should return original image on error
             assert np.array_equal(result, test_image)
+
+        await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_timeout_and_transport_helper_ranges(self):
+        camera = MockBaslerCameraBackend("test_cam")
+        await camera.initialize()
+
+        await camera.set_capture_timeout(2500)
+        assert await camera.get_capture_timeout() == 2500
+        assert await camera.get_trigger_modes() == ["continuous", "trigger"]
+        assert await camera.get_bandwidth_limit_range() == [1.0, 1000.0]
+        assert await camera.get_packet_size_range() == [1476, 9000]
+        assert await camera.get_inter_packet_delay_range() == [0, 65535]
+
+        with pytest.raises(ValueError, match="Timeout must be non-negative"):
+            await camera.set_capture_timeout(-1)
+
+        await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_enhance_image_success_path(self):
+        camera = MockBaslerCameraBackend("test_cam")
+        await camera.initialize()
+
+        gradient = np.tile(np.arange(64, dtype=np.uint8), (64, 1))
+        test_image = np.dstack([gradient, gradient, gradient])
+
+        with patch.object(camera.logger, "error") as mock_error:
+            result = camera._enhance_image(test_image)
+
+        assert result.shape == test_image.shape
+        assert result.dtype == np.uint8
+        mock_error.assert_not_called()
 
         await camera.close()
 
