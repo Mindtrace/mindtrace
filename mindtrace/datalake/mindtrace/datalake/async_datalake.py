@@ -548,6 +548,9 @@ class AsyncDatalake(Mindtrace):
         datums = await self.list_datums()
         if any(asset_id in getattr(datum, "asset_refs", {}).values() for datum in datums):
             raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
+        collection_items = await self.collection_item_database.find({"asset_id": asset_id})
+        if collection_items:
+            raise ValueError(f"Asset {asset_id} is still referenced by one or more collection items")
         alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
         for row in alias_rows:
             await self.asset_alias_database.delete(row.id)
