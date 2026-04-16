@@ -1,7 +1,7 @@
 """Integration tests for S3 storage handler.
 
 MinIO fixtures (minio_client, minio_test_bucket, minio_test_prefix) are inherited
-from tests/integration/mindtrace/registry/conftest.py
+from tests/integration/mindtrace/registry/integration_fixtures.py
 """
 
 import os

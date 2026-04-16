@@ -1,7 +1,7 @@
 """Integration tests for GCPRegistryBackend.
 
 GCP fixtures (gcs_client, gcp_test_bucket, gcp_project_id, gcp_credentials_path, gcp_test_prefix)
-are inherited from tests/integration/mindtrace/registry/conftest.py
+are inherited from tests/integration/mindtrace/registry/integration_fixtures.py
 
 Backend fixture (gcp_backend) is inherited from tests/integration/mindtrace/registry/backend/conftest.py
 """
