@@ -591,6 +591,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_collection(self, collection_id: str) -> None:
         collection = await self.get_collection(collection_id)
+        collection_items = await self.collection_item_database.find({"collection_id": collection_id})
+        for collection_item in collection_items:
+            await self.collection_item_database.delete(collection_item.id)
         await self.collection_database.delete(collection.id)
 
     async def create_collection_item(
