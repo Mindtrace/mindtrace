@@ -121,6 +121,28 @@ async def _assert_target_bytes_match_source(
         assert tgt_asset.checksum == src_asset.checksum
 
 
+async def _replicate_asset_to_verified(
+    *,
+    source: AsyncDatalake,
+    target: AsyncDatalake,
+    manager: ReplicationManager,
+    asset_name: str,
+):
+    asset = await _create_image_asset(source, name=asset_name)
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=[asset],
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    target_asset = await target.get_asset(asset.asset_id)
+    assert ReplicationManager.get_payload_status(target_asset) == "verified"
+    return asset, target_asset
+
+
 def test_mongodb_secondary_container_accept_connections() -> None:
     """Sanity-check the compose ``mongodb_secondary`` service used by the MinIO-on-secondary-Mongo fixture."""
     if not _mongo_secondary_reachable():
@@ -220,6 +242,73 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
 
 
 @pytest.mark.asyncio
+async def test_replication_reupsert_preserves_verified_payload_state(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
+):
+    source = async_datalake
+    target = async_datalake_minio_secondary_mongo
+    manager = ReplicationManager(source, target)
+
+    asset, verified_target_asset = await _replicate_asset_to_verified(
+        source=source,
+        target=target,
+        manager=manager,
+        asset_name=f"replication/reupsert/state_{uuid4().hex}.png",
+    )
+    verified_storage_ref = verified_target_asset.storage_ref
+    verified_bytes = await target.get_object(verified_storage_ref)
+
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=[asset],
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+
+    refreshed_target_asset = await target.get_asset(asset.asset_id)
+    assert ReplicationManager.get_payload_status(refreshed_target_asset) == "verified"
+    assert ReplicationManager.is_payload_available(refreshed_target_asset) is True
+    assert refreshed_target_asset.storage_ref == verified_storage_ref
+    assert await target.get_object(refreshed_target_asset.storage_ref) == verified_bytes
+
+
+@pytest.mark.asyncio
+async def test_replication_reconcile_after_reupsert_skips_verified_asset(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
+):
+    source = async_datalake
+    target = async_datalake_minio_secondary_mongo
+    manager = ReplicationManager(source, target)
+
+    asset, _ = await _replicate_asset_to_verified(
+        source=source,
+        target=target,
+        manager=manager,
+        asset_name=f"replication/reupsert/reconcile_{uuid4().hex}.png",
+    )
+
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=[asset],
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+
+    reconcile_result = await manager.reconcile_pending_payloads(
+        ReplicationReconcileRequest(asset_ids=[asset.asset_id], mount_map=_MOUNT_MAP_LOCAL_TO_MINIO)
+    )
+
+    assert reconcile_result.attempted_asset_ids == []
+    assert reconcile_result.verified_asset_ids == []
+    assert reconcile_result.failed_asset_ids == []
+    assert reconcile_result.skipped_asset_ids == [asset.asset_id]
+
+
+@pytest.mark.asyncio
 async def test_replication_mark_local_delete_eligible_requires_verified_target_payload(
     async_datalake: AsyncDatalake,
     async_datalake_minio_secondary_mongo: AsyncDatalake,
@@ -288,3 +377,35 @@ async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps
 
     status = await manager.status()
     assert asset.asset_id in status.metadata["local_deleted_asset_ids"]
+
+
+@pytest.mark.asyncio
+async def test_replication_reclaim_is_idempotent_after_source_tombstoned(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
+):
+    source = async_datalake
+    target = async_datalake_minio_secondary_mongo
+    manager = ReplicationManager(source, target)
+
+    asset, target_asset = await _replicate_asset_to_verified(
+        source=source,
+        target=target,
+        manager=manager,
+        asset_name=f"replication/reclaim/idempotent_{uuid4().hex}.png",
+    )
+    target_bytes = await target.get_object(target_asset.storage_ref)
+
+    first = await manager.reclaim_verified_payloads(ReplicationReclaimRequest(asset_ids=[asset.asset_id], limit=1))
+    second = await manager.reclaim_verified_payloads(ReplicationReclaimRequest(asset_ids=[asset.asset_id], limit=1))
+
+    assert first.reclaimed_asset_ids == [asset.asset_id]
+    assert second.attempted_asset_ids == []
+    assert second.reclaimed_asset_ids == []
+    assert second.failed_asset_ids == []
+    assert second.skipped_asset_ids == [asset.asset_id]
+
+    source_asset = await source.get_asset(asset.asset_id)
+    assert source_asset.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+    assert ReplicationManager.is_local_deleted(source_asset) is True
+    assert await target.get_object(target_asset.storage_ref) == target_bytes
