@@ -227,6 +227,18 @@ class AsyncDataVault:
         safe = _sanitize_object_name_component(alias)
         return f"{self._object_name_prefix}/{safe}"
 
+    async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        """List assets visible to the backing store (Mongo filters; pass ``kind`` to narrow)."""
+        return await self._backend.list_assets(filters)
+
+    async def list_image_assets(self) -> list[Asset]:
+        """Return assets with image kind (convenience over :meth:`list_assets`)."""
+        return await self._backend.list_assets({"kind": "image"})
+
+    async def get_asset(self, asset_id: str) -> Asset:
+        """Load :class:`~mindtrace.datalake.types.Asset` metadata by canonical ``asset_id``."""
+        return await self._backend.get_asset(asset_id)
+
     async def load(
         self,
         alias: str,
@@ -235,7 +247,10 @@ class AsyncDataVault:
         registry: Registry | None = None,
         **get_object_kwargs: Any,
     ) -> Any:
-        """Resolve ``alias`` to an asset and return the payload.
+        """Resolve a registered **alias** string to an asset and return the stored payload.
+
+        Aliases are rows in the asset-alias table; they are not always identical to ``asset_id``.
+        To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
         ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
@@ -244,6 +259,25 @@ class AsyncDataVault:
         return materialized objects; in that case this step is skipped for non-bytes results.
         """
         asset = await self._backend.get_asset_by_alias(alias)
+        payload = await self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        reg = registry if registry is not None else self._registry
+        if not materialize or reg is None:
+            return payload
+        hints = extract_serialization_block(asset)
+        if hints is None or not isinstance(payload, (bytes, bytearray)):
+            return payload
+        return materialize_payload_with_hints(reg, payload, hints)
+
+    async def load_by_asset_id(
+        self,
+        asset_id: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Any:
+        """Load payload bytes for ``asset_id`` without resolving an alias."""
+        asset = await self._backend.get_asset(asset_id)
         payload = await self._backend.get_object(asset.storage_ref, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
@@ -342,9 +376,26 @@ class AsyncDataVault:
         registry: Registry | None = None,
         **get_object_kwargs: Any,
     ) -> Image.Image:
-        """Load an asset saved via :meth:`save_image` and return a :class:`PIL.Image.Image`."""
+        """Load an image using a registered **alias** (see :meth:`load`)."""
         payload = await self.load(
             alias,
+            materialize=materialize,
+            registry=registry,
+            **get_object_kwargs,
+        )
+        return _pil_image_from_payload(payload)
+
+    async def load_image_by_asset_id(
+        self,
+        asset_id: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Image.Image:
+        """Decode image bytes for ``asset_id`` (no alias lookup)."""
+        payload = await self.load_by_asset_id(
+            asset_id,
             materialize=materialize,
             registry=registry,
             **get_object_kwargs,
@@ -432,6 +483,18 @@ class DataVault:
         safe = _sanitize_object_name_component(alias)
         return f"{self._object_name_prefix}/{safe}"
 
+    def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        """List assets visible to the backing store (Mongo filters; pass ``kind`` to narrow)."""
+        return self._backend.list_assets(filters)
+
+    def list_image_assets(self) -> list[Asset]:
+        """Return assets with image kind (convenience over :meth:`list_assets`)."""
+        return self._backend.list_assets({"kind": "image"})
+
+    def get_asset(self, asset_id: str) -> Asset:
+        """Load :class:`~mindtrace.datalake.types.Asset` metadata by canonical ``asset_id``."""
+        return self._backend.get_asset(asset_id)
+
     def load(
         self,
         alias: str,
@@ -440,7 +503,10 @@ class DataVault:
         registry: Registry | None = None,
         **get_object_kwargs: Any,
     ) -> Any:
-        """Resolve ``alias`` to an asset and return the payload.
+        """Resolve a registered **alias** string to an asset and return the stored payload.
+
+        Aliases are rows in the asset-alias table; they are not always identical to ``asset_id``.
+        To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
         ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
@@ -449,6 +515,25 @@ class DataVault:
         return materialized objects; in that case this step is skipped for non-bytes results.
         """
         asset = self._backend.get_asset_by_alias(alias)
+        payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        reg = registry if registry is not None else self._registry
+        if not materialize or reg is None:
+            return payload
+        hints = extract_serialization_block(asset)
+        if hints is None or not isinstance(payload, (bytes, bytearray)):
+            return payload
+        return materialize_payload_with_hints(reg, payload, hints)
+
+    def load_by_asset_id(
+        self,
+        asset_id: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Any:
+        """Load payload bytes for ``asset_id`` without resolving an alias."""
+        asset = self._backend.get_asset(asset_id)
         payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
@@ -547,9 +632,26 @@ class DataVault:
         registry: Registry | None = None,
         **get_object_kwargs: Any,
     ) -> Image.Image:
-        """Load an asset saved via :meth:`save_image` and return a :class:`PIL.Image.Image`."""
+        """Load an image using a registered **alias** (see :meth:`load`)."""
         payload = self.load(
             alias,
+            materialize=materialize,
+            registry=registry,
+            **get_object_kwargs,
+        )
+        return _pil_image_from_payload(payload)
+
+    def load_image_by_asset_id(
+        self,
+        asset_id: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Image.Image:
+        """Decode image bytes for ``asset_id`` (no alias lookup)."""
+        payload = self.load_by_asset_id(
+            asset_id,
             materialize=materialize,
             registry=registry,
             **get_object_kwargs,
