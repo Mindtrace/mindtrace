@@ -233,6 +233,9 @@ class SystemDiagnostics(BaseModel):
     backend_status: Dict[str, bool]
     memory_usage_mb: Optional[float] = None
     uptime_seconds: Optional[float] = None
+    failure_counts: Optional[Dict[str, int]] = None
+    cameras_in_cooldown: Optional[List[str]] = None
+    capture_groups_count: Optional[int] = None
 
 
 class SystemDiagnosticsResponse(BaseResponse):
@@ -470,6 +473,22 @@ class HomographyBatchMeasurementResponse(BaseResponse):
     """Response model for unified batch homography measurements."""
 
     data: HomographyBatchMeasurementData
+
+
+# Capture Groups
+class CaptureGroupInfo(BaseModel):
+    """Capture group information model."""
+
+    stage: str
+    set_name: str
+    max_concurrent: int
+    cameras: List[str]
+
+
+class CaptureGroupsResponse(BaseResponse):
+    """Response model for capture groups."""
+
+    data: Dict[str, CaptureGroupInfo]
 
 
 # Health Check
