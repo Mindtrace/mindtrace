@@ -463,9 +463,6 @@ class AsyncCameraManager(Mindtrace):
             self._cameras[camera_name] = proxy
             self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
-            # Auto-export config for state preservation on reconnect
-            await self._auto_export_config(camera_name)
-
             return proxy
 
         # Multiple
@@ -787,6 +784,11 @@ class AsyncCameraManager(Mindtrace):
             else:
                 camera_name, success = result
                 results[camera_name] = success
+
+        # Export config for cameras that were successfully configured
+        for camera_name, success in results.items():
+            if success:
+                await self._auto_export_config(camera_name)
 
         return results
 
