@@ -355,6 +355,41 @@ async def test_local_async_backend_delegates_annotation_methods():
     dl.list_annotation_records_for_asset.assert_awaited_once_with("a1")
 
 
+@pytest.mark.asyncio
+async def test_local_async_backend_delegates_list_and_get_asset():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    dl = AsyncMock()
+    dl.list_assets = AsyncMock(return_value=[asset])
+    dl.get_asset = AsyncMock(return_value=asset)
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.list_assets() == [asset]
+    dl.list_assets.assert_awaited_once_with(None)
+    assert await backend.get_asset("a1") is asset
+    dl.get_asset.assert_awaited_once_with("a1")
+
+
+def test_local_sync_backend_delegates_list_and_get_asset():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    dl = Mock()
+    dl.list_assets = Mock(return_value=[asset])
+    dl.get_asset = Mock(return_value=asset)
+    backend = LocalDataVaultBackend(dl)
+    assert backend.list_assets() == [asset]
+    dl.list_assets.assert_called_once_with(None)
+    assert backend.get_asset("a1") is asset
+    dl.get_asset.assert_called_once_with("a1")
+
+
 def test_local_sync_backend_delegates_annotation_methods():
     rec = AnnotationRecord(
         kind="bbox",
