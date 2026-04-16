@@ -14,7 +14,9 @@ Facades:
   :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`, or a duck-typed sync object.
 
 Both vaults expose ``save_image`` / ``load_image`` (async counterparts on :class:`AsyncDataVault`)
-for **PIL** images using **lossless PNG** as the canonical encoded form.
+for **PIL** images using **lossless PNG** as the canonical encoded form, and
+``add_annotations`` / ``load_annotations`` for batch typed annotations
+(:mod:`~mindtrace.datalake.annotations`).
 
 Typical async usage::
 
@@ -45,12 +47,14 @@ Remote service (blocking), after ``DatalakeService`` is running (URL must match 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
+from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.data_vault_backends import (
     _ASYNC_VAULT_METHOD_NAMES,
@@ -351,6 +355,30 @@ class AsyncDataVault:
         asset = await self._backend.get_asset_by_alias(alias)
         return await self._backend.list_annotation_records_for_asset(asset.asset_id)
 
+    async def add_annotations(
+        self,
+        alias: str,
+        annotations: Sequence[AnnotationVariants],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        """Insert Pydantic annotation models (see :mod:`~mindtrace.datalake.annotations`) on the asset at ``alias``."""
+        asset = await self._backend.get_asset_by_alias(alias)
+        payloads = [a.to_payload() for a in annotations]
+        merged = _annotations_bound_to_asset(payloads, asset.asset_id)
+        return await self._backend.add_annotation_records(
+            merged,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    async def load_annotations(self, alias: str) -> list[AnnotationVariants]:
+        """Load annotations as discriminated-union Pydantic models for the asset at ``alias``."""
+        asset = await self._backend.get_asset_by_alias(alias)
+        records = await self._backend.list_annotation_records_for_asset(asset.asset_id)
+        return [annotation_from_record(r) for r in records]
+
 
 class DataVault:
     """Blocking alias-based save/load with a pluggable :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`."""
@@ -515,3 +543,27 @@ class DataVault:
         """List annotation records whose subject is the asset resolved from ``alias``."""
         asset = self._backend.get_asset_by_alias(alias)
         return self._backend.list_annotation_records_for_asset(asset.asset_id)
+
+    def add_annotations(
+        self,
+        alias: str,
+        annotations: Sequence[AnnotationVariants],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        """Insert Pydantic annotation models (see :mod:`~mindtrace.datalake.annotations`) on the asset at ``alias``."""
+        asset = self._backend.get_asset_by_alias(alias)
+        payloads = [a.to_payload() for a in annotations]
+        merged = _annotations_bound_to_asset(payloads, asset.asset_id)
+        return self._backend.add_annotation_records(
+            merged,
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    def load_annotations(self, alias: str) -> list[AnnotationVariants]:
+        """Load annotations as discriminated-union Pydantic models for the asset at ``alias``."""
+        asset = self._backend.get_asset_by_alias(alias)
+        records = self._backend.list_annotation_records_for_asset(asset.asset_id)
+        return [annotation_from_record(r) for r in records]
