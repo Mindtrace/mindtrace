@@ -477,7 +477,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                 }
                 for class_name in image_class_labels
             ]
-            datalake.add_annotation_records(annotation_set.annotation_set_id, records)
+            datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             classification_record_count += len(records)
 
         detections = _parse_detection_annotations(annotation_path)
@@ -499,7 +499,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                 }
                 for detection in detections
             ]
-            datalake.add_annotation_records(annotation_set.annotation_set_id, records)
+            datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             detection_record_count += len(records)
 
         segmentation_masks = list(_iter_segmentation_masks(segmentation_mask_dir, image_id))
@@ -551,7 +551,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                         "attributes": {"layer": "segmentation", "source_mask": "SegmentationClass"},
                     }
                 )
-            datalake.add_annotation_records(annotation_set.annotation_set_id, records)
+            datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             segmentation_record_count += len(records)
 
     dataset_version = datalake.create_dataset_version(

@@ -78,7 +78,6 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     listed_annotation_sets = sync_datalake.list_annotation_sets({"purpose": "ground_truth"})
 
     inserted_records = sync_datalake.add_annotation_records(
-        annotation_set.annotation_set_id,
         [
             {
                 "kind": "bbox",
@@ -89,6 +88,7 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
                 "attributes": {"quality": "high"},
             }
         ],
+        annotation_set_id=annotation_set.annotation_set_id,
     )
     annotation_record = inserted_records[0]
     fetched_annotation_record = sync_datalake.get_annotation_record(annotation_record.annotation_id)

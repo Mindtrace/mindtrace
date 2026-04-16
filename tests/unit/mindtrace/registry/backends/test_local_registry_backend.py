@@ -909,18 +909,22 @@ def test_fetch_metadata_missing_entry(backend, sample_metadata):
 def test_local_backend_module_can_reload_windows_import_branch(monkeypatch):
     import mindtrace.registry.backends.local_registry_backend as local_backend_module
 
-    actual_system = platform.system()
+    # Snapshot the module namespace so the reload does not leak new class objects
+    # into sys.modules — otherwise LocalRegistryBackend identity changes break
+    # isinstance checks in downstream tests (e.g. Mount.from_registry).
+    original_dict = local_backend_module.__dict__.copy()
+
     dummy_msvcrt = types.ModuleType("msvcrt")
     monkeypatch.setitem(sys.modules, "msvcrt", dummy_msvcrt)
     monkeypatch.setattr(platform, "system", lambda: "Windows")
 
-    reloaded = importlib.reload(local_backend_module)
-
-    assert reloaded.msvcrt is dummy_msvcrt
-    assert reloaded.fcntl is None
-
-    monkeypatch.setattr(platform, "system", lambda: actual_system)
-    importlib.reload(reloaded)
+    try:
+        reloaded = importlib.reload(local_backend_module)
+        assert reloaded.msvcrt is dummy_msvcrt
+        assert reloaded.fcntl is None
+    finally:
+        local_backend_module.__dict__.clear()
+        local_backend_module.__dict__.update(original_dict)
 
 
 def test_acquire_shared_lock_cleans_up_expired_or_corrupted_exclusive_lock(backend):

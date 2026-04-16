@@ -1,3 +1,5 @@
+import pytest
+
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
@@ -6,8 +8,6 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncPayloadPlan,
     ObjectPayloadDescriptor,
 )
-import pytest
-
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
 
 

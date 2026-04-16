@@ -35,6 +35,10 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
 
+class DuplicateAliasError(ValueError):
+    """Raised when an alias string is already registered to a different asset."""
+
+
 class DatalakeDocument(MindtraceDocument):
     """Beanie document that can still be instantiated before collection init in unit tests."""
 
@@ -166,6 +170,30 @@ class Asset(DatalakeDocument):
             "storage_ref.version",
             "subject.kind",
             "subject.id",
+            "metadata.origin.asset_id",
+            [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
+        ]
+
+
+class AssetAlias(DatalakeDocument):
+    """Maps a string alias to an :class:`Asset` (typically ``asset_id`` as the default alias).
+
+    Multiple rows may share the same ``asset_id`` (one primary row where ``alias == asset_id``,
+    plus optional human-friendly aliases).
+    """
+
+    alias_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("alias"))
+    alias: Annotated[str, Indexed(unique=True)]
+    asset_id: Annotated[str, Indexed()]
+    is_primary: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_asset_aliases"
+        indexes = [
+            "asset_id",
+            "is_primary",
+            [("asset_id", 1), ("is_primary", 1)],
         ]
 
 
