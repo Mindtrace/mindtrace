@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from mindtrace.datalake.data_vault import AsyncDataVault, DataVault, _pil_image_to_png_bytes
-from mindtrace.datalake.types import Asset, StorageRef
+from mindtrace.datalake.types import Asset, DuplicateAliasError, StorageRef
 from mindtrace.datalake.vault_serialization import (
     BYTES_CLASS,
     SERIALIZATION_METADATA_KEY,
@@ -375,6 +375,71 @@ def test_load_skips_materialize_when_payload_not_bytes(tmp_path: Path):
     backend.get_object = Mock(return_value=[1, 2])
     vault = DataVault(backend, registry=reg)
     assert vault.load("a") == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_async_load_skips_materialize_without_hints(tmp_path: Path):
+    reg = Registry(tmp_path / "r", version_objects=False, mutable=True)
+    asset = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        metadata={},
+    )
+    backend = Mock()
+    backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_object = AsyncMock(return_value=b"payload")
+    vault = AsyncDataVault(backend, registry=reg)
+    assert await vault.load("a") == b"payload"
+
+
+@pytest.mark.asyncio
+async def test_async_load_skips_materialize_when_payload_not_bytes(tmp_path: Path):
+    reg = Registry(tmp_path / "r", version_objects=False, mutable=True)
+    asset = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        metadata={SERIALIZATION_METADATA_KEY: direct_bytes_serialization_block()},
+    )
+    backend = Mock()
+    backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_object = AsyncMock(return_value=[1, 2])
+    vault = AsyncDataVault(backend, registry=reg)
+    assert await vault.load("a") == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_async_save_image_propagates_duplicate_alias_error():
+    im = Image.new("RGB", (1, 1), color=(1, 2, 3))
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="asset-id-other",
+    )
+    backend = Mock()
+    backend.create_asset_from_object = AsyncMock(return_value=asset)
+    backend.add_alias = AsyncMock(side_effect=DuplicateAliasError("alias clash"))
+    vault = AsyncDataVault(backend)
+    with pytest.raises(DuplicateAliasError, match="alias clash"):
+        await vault.save_image("friendly", im)
+
+
+def test_sync_save_image_propagates_duplicate_alias_error():
+    im = Image.new("RGB", (1, 1), color=(1, 2, 3))
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="asset-id-other",
+    )
+    backend = Mock()
+    backend.create_asset_from_object = Mock(return_value=asset)
+    backend.add_alias = Mock(side_effect=DuplicateAliasError("alias clash"))
+    vault = DataVault(backend)
+    with pytest.raises(DuplicateAliasError, match="alias clash"):
+        vault.save_image("friendly", im)
 
 
 def test_png_roundtrip_helper_matches_save_image_encoding():
