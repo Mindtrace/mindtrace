@@ -531,8 +531,7 @@ def test_registry_load_bytes_artifact_with_stale_class_metadata(registry, test_b
 
 
 def test_registry_load_cloudpickle_artifact_with_stale_class_metadata(registry):
-    def func(x):
-        return x + 1
+    func = lambda x: x + 1  # noqa: E731 - intentional lambda regression case
 
     registry.register_materializer(type(func), CloudpickleMaterializer)
 
