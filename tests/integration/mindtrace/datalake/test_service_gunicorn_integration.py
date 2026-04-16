@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from mindtrace.datalake import DatalakeService
-from mindtrace.datalake.service_types import AssetOutput, DatalakeHealthOutput, DatalakeSummaryOutput, MountsOutput, ObjectOutput
+from mindtrace.datalake.service_types import (
+    AssetOutput,
+    DatalakeHealthOutput,
+    DatalakeSummaryOutput,
+    MountsOutput,
+    ObjectOutput,
+)
 from mindtrace.services.core.types import (
     ClassNameOutput,
     EndpointsOutput,
