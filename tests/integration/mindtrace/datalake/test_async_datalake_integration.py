@@ -22,6 +22,10 @@ from mindtrace.datalake.types import (
 )
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind
 
+# Annotation sets created without a Datum still need an explicit asset subject per record
+# until linked to a datum with asset_refs['image'].
+_INTEGRATION_EXPLICIT_SUBJECT = {"kind": "asset", "id": "integration-annotation-subject-explicit"}
+
 
 @pytest.mark.asyncio
 async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
@@ -207,7 +211,17 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
     with pytest.raises(DocumentNotFoundError, match="DatasetVersion missing@0.0.1 not found"):
         await async_datalake.get_dataset_version("missing", "0.0.1")
 
-    datum = await async_datalake.create_datum(asset_refs={}, split="train")
+    storage_ref = await async_datalake.put_object(
+        name="error-paths-inst.png", obj=b"\x89PNG\r\n\x1a\n", metadata={}
+    )
+    img_asset = await async_datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=storage_ref,
+        metadata={},
+        created_by="pytest",
+    )
+    datum = await async_datalake.create_datum(asset_refs={"image": img_asset.asset_id}, split="train")
     annotation_set = await async_datalake.create_annotation_set(
         name="instance-records",
         purpose="ground_truth",
@@ -220,9 +234,7 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
         source=AnnotationSource(type="human", name="pytest"),
         geometry={"x": 1, "y": 2, "width": 3, "height": 4},
     )
-    inserted_records = await async_datalake.add_annotation_records(
-        [record], annotation_set_id=annotation_set.annotation_set_id
-    )
+    inserted_records = await async_datalake.add_annotation_records([record], annotation_set_id=annotation_set.annotation_set_id)
 
     refreshed_annotation_set = await async_datalake.get_annotation_set(annotation_set.annotation_set_id)
     assert inserted_records[0].annotation_id in refreshed_annotation_set.annotation_record_ids
@@ -284,7 +296,17 @@ async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatala
     listed_schemas = await async_datalake.list_annotation_schemas({"task_type": "detection"})
     updated_schema = await async_datalake.update_annotation_schema(schema.annotation_schema_id, allow_scores=True)
 
-    datum = await async_datalake.create_datum(asset_refs={}, split="train")
+    hopper_path = Path("tests/resources/hopper.png")
+    image_bytes = hopper_path.read_bytes()
+    sr = await async_datalake.put_object(name="schema-flow-hopper.png", obj=image_bytes, metadata={})
+    flow_asset = await async_datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=sr,
+        metadata={},
+        created_by="pytest",
+    )
+    datum = await async_datalake.create_datum(asset_refs={"image": flow_asset.asset_id}, split="train")
     annotation_set = await async_datalake.create_annotation_set(
         name="schema-bound",
         purpose="ground_truth",
@@ -400,6 +422,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "source": {"type": "human", "name": "pytest"},
                     "geometry": {"x": 1},
                     "attributes": {"quality": "high"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -415,6 +438,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "source": {"type": "human", "name": "pytest"},
                     "geometry": {},
                     "attributes": {"quality": "high"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -429,6 +453,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "label_id": 9,
                     "source": {"type": "human", "name": "pytest"},
                     "attributes": {"quality": "high"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -442,6 +467,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "label": "cat",
                     "label_id": 1,
                     "source": {"type": "human", "name": "pytest"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -458,6 +484,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "label_id": 1,
                     "source": {"type": "human", "name": "pytest"},
                     "attributes": {"quality": "high", "extra": True},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -473,6 +500,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "source": {"type": "human", "name": "pytest"},
                     "attributes": {"quality": "high"},
                     "score": 0.5,
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=invalid_classification_set.annotation_set_id,
@@ -504,6 +532,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "label": "dent",
                     "source": {"type": "human", "name": "pytest"},
                     "geometry": {"x": 1, "y": 2, "width": 3},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
                 }
             ],
             annotation_set_id=detection_set.annotation_set_id,
@@ -524,12 +553,28 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
     )
     with pytest.raises(AnnotationSchemaValidationError, match="must include non-empty geometry"):
         await async_datalake.add_annotation_records(
-            [{"kind": "mask", "label": "dent", "source": {"type": "human", "name": "pytest"}, "geometry": {}}],
+            [
+                {
+                    "kind": "mask",
+                    "label": "dent",
+                    "source": {"type": "human", "name": "pytest"},
+                    "geometry": {},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
+                }
+            ],
             annotation_set_id=segmentation_set.annotation_set_id,
         )
     with pytest.raises(AnnotationSchemaValidationError, match="must include at least one of"):
         await async_datalake.add_annotation_records(
-            [{"kind": "mask", "label": "dent", "source": {"type": "human", "name": "pytest"}, "geometry": {"x": 1}}],
+            [
+                {
+                    "kind": "mask",
+                    "label": "dent",
+                    "source": {"type": "human", "name": "pytest"},
+                    "geometry": {"x": 1},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
+                }
+            ],
             annotation_set_id=segmentation_set.annotation_set_id,
         )
 
@@ -579,8 +624,18 @@ async def test_async_datalake_mocked_duplicate_and_rollback_paths(async_datalake
     with pytest.raises(RuntimeError, match="insert failed"):
         await async_datalake.add_annotation_records(
             [
-                {"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}},
-                {"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}},
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "source": {"type": "human", "name": "pytest"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
+                },
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "source": {"type": "human", "name": "pytest"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
+                },
             ],
             annotation_set_id=annotation_set.annotation_set_id,
         )
@@ -590,6 +645,13 @@ async def test_async_datalake_mocked_duplicate_and_rollback_paths(async_datalake
     async_datalake.annotation_set_database.update = AsyncMock(side_effect=RuntimeError("update failed"))
     with pytest.raises(RuntimeError, match="update failed"):
         await async_datalake.add_annotation_records(
-            [{"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}}],
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "source": {"type": "human", "name": "pytest"},
+                    "subject": _INTEGRATION_EXPLICIT_SUBJECT,
+                }
+            ],
             annotation_set_id=annotation_set.annotation_set_id,
         )
