@@ -25,6 +25,12 @@ if "beartype.claw" not in sys.modules:
 import numpy as np  # noqa: F401
 import pytest
 
+# Load shared integration fixtures (S3/MinIO, GCP, etc.) from a single top-level entry point.
+# Nested directories must not use pytest_plugins (pytest 8+). The module is named
+# ``integration_fixtures`` (not ``conftest``) so pytest does not also auto-register it
+# when collecting tests under ``tests/integration/mindtrace/registry/``.
+pytest_plugins = ["tests.integration.mindtrace.registry.integration_fixtures"]
+
 
 def by_slow_marker(item):
     # Check if test is marked as slow

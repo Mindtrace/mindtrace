@@ -950,6 +950,73 @@ class AsyncDatalake(Mindtrace):
             return await self.get_annotation_schema(annotation_schema_id)
         return None
 
+    async def _datums_referencing_annotation_set(self, annotation_set_id: str) -> list[Datum]:
+        return await self.datum_database.find({"annotation_set_ids": annotation_set_id})
+
+    async def _merge_asset_subjects_from_datum_links(
+        self,
+        annotation_set_id: str,
+        annotations: list[Any],
+    ) -> list[Any]:
+        """When inserting into an annotation set, ensure ``subject`` targets the image asset.
+
+        ``Datum.annotation_set_ids`` links sets to datums; ``datum.asset_refs['image']`` supplies the
+        canonical image asset id for dataset / importer rows. Callers may still pass an explicit
+        ``subject``; those values are preserved.
+        """
+        datums = await self._datums_referencing_annotation_set(annotation_set_id)
+
+        def _needs_subject(a: Any) -> bool:
+            if isinstance(a, dict):
+                return a.get("subject") is None
+            return getattr(a, "subject", None) is None
+
+        def _any_missing_subject() -> bool:
+            return any(_needs_subject(a) for a in annotations)
+
+        if not datums:
+            if _any_missing_subject():
+                raise ValueError(
+                    "No Datum references this annotation set (Datum.annotation_set_ids does not "
+                    "include this set). Either link the AnnotationSet to a Datum via "
+                    "create_annotation_set(..., datum_id=...), or provide an explicit asset subject "
+                    "on each annotation record."
+                )
+            return annotations
+
+        image_ids = [d.asset_refs.get("image") for d in datums if d.asset_refs.get("image")]
+        if not image_ids:
+            if _any_missing_subject():
+                raise ValueError(
+                    "Datums linked to this annotation set have no asset_refs['image']. "
+                    "Add an 'image' role to datum.asset_refs, or provide an explicit asset subject "
+                    "on each annotation record."
+                )
+            return annotations
+
+        unique_images = set(image_ids)
+        if len(unique_images) > 1:
+            raise ValueError(
+                "Annotation set is linked to multiple datums whose asset_refs['image'] disagree. "
+                "Provide an explicit asset subject on each annotation record."
+            )
+        default_image = image_ids[0]
+
+        merged: list[Any] = []
+        for a in annotations:
+            if isinstance(a, dict):
+                if a.get("subject") is None:
+                    merged.append({**a, "subject": {"kind": "asset", "id": default_image}})
+                else:
+                    merged.append(a)
+            elif getattr(a, "subject", None) is None:
+                merged.append(
+                    a.model_copy(update={"subject": SubjectRef(kind="asset", id=default_image)}),
+                )
+            else:
+                merged.append(a)
+        return merged
+
     async def add_annotation_records(
         self,
         annotations: Iterable[AnnotationRecord | dict[str, Any]],
@@ -960,7 +1027,11 @@ class AsyncDatalake(Mindtrace):
         """Insert annotation records.
 
         If ``annotation_set_id`` is set, records are registered on that set and validated against
-        its bound schema when present.
+        its bound schema when present. For sets linked from at least one :class:`Datum` whose
+        ``annotation_set_ids`` contains this set, any record without a ``subject`` is given
+        ``subject=SubjectRef(kind='asset', id=datum.asset_refs['image'])`` when that image ref is
+        unambiguous across linked datums—so asset-scoped queries stay consistent with datum-scoped
+        grouping without callers manually duplicating subjects.
 
         If ``annotation_set_id`` is omitted, records are stored without belonging to any set; each
         must have ``subject`` referencing an asset (``kind='asset'``). Optional
@@ -969,6 +1040,12 @@ class AsyncDatalake(Mindtrace):
         annotations_list = list(annotations)
         if not annotations_list:
             return []
+
+        if annotation_set_id is not None:
+            annotations_list = await self._merge_asset_subjects_from_datum_links(
+                annotation_set_id,
+                annotations_list,
+            )
 
         candidate_records = [self._coerce_annotation_record(a) for a in annotations_list]
 
