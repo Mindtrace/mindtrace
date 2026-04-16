@@ -1151,8 +1151,6 @@ class AsyncDatalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
-        if any(not str(asset_id).strip() for asset_id in asset_refs.values()):
-            raise ValueError("Datum asset_refs must contain non-empty asset ids")
         await self._validate_asset_refs_exist(asset_refs)
         await self._validate_annotation_set_ids_exist(annotation_set_ids or [])
         datum = self._build_document(
@@ -1177,7 +1175,7 @@ class AsyncDatalake(Mindtrace):
     async def _validate_asset_refs_exist(self, asset_refs: dict[str, str]) -> None:
         for asset_id in asset_refs.values():
             if not str(asset_id).strip():
-                continue
+                raise ValueError("Datum asset_refs must contain non-empty asset ids")
             await self.get_asset(asset_id)
 
     async def _validate_annotation_set_ids_exist(self, annotation_set_ids: list[str]) -> None:
