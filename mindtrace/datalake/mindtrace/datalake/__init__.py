@@ -1,3 +1,19 @@
+from .annotations import (
+    Annotation,
+    AnnotationVariants,
+    BboxAnnotation,
+    ClassificationAnnotation,
+    EllipseAnnotation,
+    InstanceMaskAnnotation,
+    KeypointAnnotation,
+    MaskAnnotation,
+    PointcloudSegmentationAnnotation,
+    PolygonAnnotation,
+    PolylineAnnotation,
+    RegressionAnnotation,
+    RotatedBboxAnnotation,
+    annotation_from_record,
+)
 from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
 from .data_vault import AsyncDataVault, DataVault
 from .data_vault_backends import (
@@ -54,6 +70,20 @@ from .types import (
 from .upload_client import DatalakeDirectUploadClient
 
 __all__ = [
+    "Annotation",
+    "AnnotationVariants",
+    "annotation_from_record",
+    "BboxAnnotation",
+    "ClassificationAnnotation",
+    "EllipseAnnotation",
+    "InstanceMaskAnnotation",
+    "KeypointAnnotation",
+    "MaskAnnotation",
+    "PointcloudSegmentationAnnotation",
+    "PolygonAnnotation",
+    "PolylineAnnotation",
+    "RegressionAnnotation",
+    "RotatedBboxAnnotation",
     "AnnotationLabelDefinition",
     "AnnotationRecord",
     "AnnotationSchema",
