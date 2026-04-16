@@ -13,6 +13,9 @@ Facades:
   :meth:`~mindtrace.datalake.service.DatalakeService.connect` (sync task methods), a
   :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`, or a duck-typed sync object.
 
+Both vaults expose ``save_image`` / ``load_image`` (async counterparts on :class:`AsyncDataVault`)
+for **PIL** images using **lossless PNG** as the canonical encoded form.
+
 Typical async usage::
 
     vault = AsyncDataVault(datalake)
@@ -25,25 +28,27 @@ Typical sync usage::
     asset = vault.save("my-key", image_bytes, kind="image", media_type="image/png")
     data = vault.load("my-key")
 
-Remote service (blocking), after ``DatalakeService`` is running (URL must match the deployed service). Over HTTP, ``save`` takes ``Path`` / bytes / str only; ``load`` returns bytes—rebuild PIL (etc.) on the client, or pass ``registry=`` and use ``load(..., materialize=True)`` when ``Asset.metadata`` contains ``mindtrace.serialization`` hints (see :mod:`mindtrace.datalake.vault_serialization`)::
+Remote service (blocking), after ``DatalakeService`` is running (URL must match the deployed service)::
 
-    from io import BytesIO
     from pathlib import Path
 
     from PIL import Image
     from mindtrace.datalake import DataVault, DatalakeService
 
-    hopper = Path("tests/resources/hopper.png")
+    hopper = Image.open(Path("tests/resources/hopper.png"))
     vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
-    vault.save("images:hopper", hopper)
-    image = Image.open(BytesIO(vault.load("images:hopper")))
+    vault.save_image("images:hopper", hopper)
+    image = vault.load_image("images:hopper")
 """
 
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.data_vault_backends import (
@@ -69,6 +74,27 @@ from mindtrace.registry import Registry
 from zenml.materializers.base_materializer import BaseMaterializer
 
 _SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
+
+
+def _pil_image_to_png_bytes(image: Image.Image) -> bytes:
+    """Encode a PIL image as lossless PNG bytes (Mindtrace canonical wire format for images)."""
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _pil_image_from_payload(payload: Any) -> Image.Image:
+    """Decode PNG bytes (or pass through an existing ``Image.Image``) for :meth:`load_image`."""
+    if isinstance(payload, Image.Image):
+        return payload
+    if isinstance(payload, (bytes, bytearray)):
+        im = Image.open(BytesIO(bytes(payload)))
+        im.load()
+        return im
+    raise TypeError(
+        "load_image expected PNG bytes or PIL.Image.Image after load; got "
+        f"{type(payload).__name__}. Use load() for non-image payloads."
+    )
 
 
 def _sanitize_object_name_component(alias: str) -> str:
@@ -227,6 +253,63 @@ class AsyncDataVault:
                 raise
         return asset
 
+    async def save_image(
+        self,
+        alias: str,
+        image: Image.Image,
+        *,
+        mount: str | None = None,
+        created_by: str | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        """Store a :class:`PIL.Image.Image` as **lossless PNG** (``kind=image``, ``media_type=image/png``)."""
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"save_image expected PIL.Image.Image, got {type(image).__name__}")
+        png_bytes = _pil_image_to_png_bytes(image)
+        merged_asset_metadata = augment_asset_metadata_for_vault_save(
+            png_bytes,
+            asset_metadata,
+            registry=self._registry,
+            materializer=None,
+        )
+        name = self._object_name(alias)
+        asset = await self._backend.create_asset_from_object(
+            name=name,
+            obj=png_bytes,
+            kind="image",
+            media_type="image/png",
+            mount=mount,
+            object_metadata=object_metadata,
+            asset_metadata=merged_asset_metadata,
+            created_by=created_by,
+            on_conflict=on_conflict,
+        )
+        if alias != asset.asset_id:
+            try:
+                await self._backend.add_alias(asset.asset_id, alias)
+            except DuplicateAliasError:
+                raise
+        return asset
+
+    async def load_image(
+        self,
+        alias: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Image.Image:
+        """Load an asset saved via :meth:`save_image` and return a :class:`PIL.Image.Image`."""
+        payload = await self.load(
+            alias,
+            materialize=materialize,
+            registry=registry,
+            **get_object_kwargs,
+        )
+        return _pil_image_from_payload(payload)
+
 
 class DataVault:
     """Blocking alias-based save/load with a pluggable :class:`~mindtrace.datalake.data_vault_backends.DataVaultBackend`."""
@@ -312,3 +395,60 @@ class DataVault:
             except DuplicateAliasError:
                 raise
         return asset
+
+    def save_image(
+        self,
+        alias: str,
+        image: Image.Image,
+        *,
+        mount: str | None = None,
+        created_by: str | None = None,
+        asset_metadata: dict[str, Any] | None = None,
+        object_metadata: dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> Asset:
+        """Store a :class:`PIL.Image.Image` as **lossless PNG** (``kind=image``, ``media_type=image/png``)."""
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"save_image expected PIL.Image.Image, got {type(image).__name__}")
+        png_bytes = _pil_image_to_png_bytes(image)
+        merged_asset_metadata = augment_asset_metadata_for_vault_save(
+            png_bytes,
+            asset_metadata,
+            registry=self._registry,
+            materializer=None,
+        )
+        name = self._object_name(alias)
+        asset = self._backend.create_asset_from_object(
+            name=name,
+            obj=png_bytes,
+            kind="image",
+            media_type="image/png",
+            mount=mount,
+            object_metadata=object_metadata,
+            asset_metadata=merged_asset_metadata,
+            created_by=created_by,
+            on_conflict=on_conflict,
+        )
+        if alias != asset.asset_id:
+            try:
+                self._backend.add_alias(asset.asset_id, alias)
+            except DuplicateAliasError:
+                raise
+        return asset
+
+    def load_image(
+        self,
+        alias: str,
+        *,
+        materialize: bool = True,
+        registry: Registry | None = None,
+        **get_object_kwargs: Any,
+    ) -> Image.Image:
+        """Load an asset saved via :meth:`save_image` and return a :class:`PIL.Image.Image`."""
+        payload = self.load(
+            alias,
+            materialize=materialize,
+            registry=registry,
+            **get_object_kwargs,
+        )
+        return _pil_image_from_payload(payload)
