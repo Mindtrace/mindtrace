@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from pydantic import ValidationError
 
 from mindtrace.datalake.annotations import (
     AnnotationVariants,
@@ -65,6 +66,29 @@ def test_mask_from_record_storage_ref_as_object():
     m = annotation_from_record(rec)
     assert isinstance(m, MaskAnnotation)
     assert m.storage_ref == ref
+
+
+def test_mask_from_record_non_dict_non_storage_ref_storage_ref_passthrough_invalidates():
+    """``else sr`` branch: wire data that is neither dict nor StorageRef is passed to validation."""
+    rec = AnnotationRecord(
+        kind="mask",
+        label="m",
+        source=_src(),
+        geometry={"storage_ref": "not-a-storage-ref"},
+    )
+    with pytest.raises(ValidationError):
+        MaskAnnotation.from_record(rec)
+
+
+def test_instance_mask_from_record_non_dict_non_storage_ref_storage_ref_passthrough_invalidates():
+    rec = AnnotationRecord(
+        kind="instance_mask",
+        label="m",
+        source=_src(),
+        geometry={"storage_ref": 12345},
+    )
+    with pytest.raises(ValidationError):
+        InstanceMaskAnnotation.from_record(rec)
 
 
 def test_instance_mask_payload_instance_id_branch():
