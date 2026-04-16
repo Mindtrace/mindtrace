@@ -1,0 +1,3773 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://mindtrace.ai/dev/datalake-v3-proposal/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Datalake V3 Proposal - Mindtrace Package Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#datalake-v3-proposal" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Mindtrace Package Docs" class="md-header__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mindtrace Package Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Datalake V3 Proposal
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="deep-orange"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../core/" class="md-tabs__link">
+          
+  
+  
+  Mindtrace
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../core/api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Mindtrace Package Docs" class="md-nav__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Mindtrace Package Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindtrace
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Mindtrace
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../services/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../services/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../database/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#objectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objectives
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Objectives">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Version History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#v1-the-mtrix-datalake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V1: The mtrix Datalake
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="V1: The mtrix Datalake">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-v1-was" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What V1 was
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-v1-did" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What V1 did
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strengths-of-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strengths of V1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Strengths of V1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-good-service-decomposition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Good service decomposition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-strong-dataset-version-packaging-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Strong dataset-version packaging model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-thoughtful-localoffline-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Thoughtful local/offline workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-practical-incremental-update-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Practical incremental update support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-strong-hugging-face-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Strong Hugging Face integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#limitations-of-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations of V1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Limitations of V1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-it-is-dataset-package-centric-not-canonical-data-centric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. It is dataset-package centric, not canonical-data centric
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-annotations-are-file-based-not-first-class-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Annotations are file-based, not first-class records
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-local-filesystem-layout-is-doing-too-much-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Local filesystem layout is doing too much work
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-remote-storage-topology-is-fixed-and-overly-opinionated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Remote storage topology is fixed and overly opinionated
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-no-generalized-storage-namespace-or-mount-abstraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. No generalized storage namespace or mount abstraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-reuse-and-composability-are-limited" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Reuse and composability are limited
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#v2-the-current-mindtracedatalake-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V2: The current mindtrace.datalake module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="V2: The current mindtrace.datalake module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-v2-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What V2 is
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-v2-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What V2 does
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strengths-of-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strengths of V2
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Strengths of V2">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-it-is-much-simpler-than-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. It is much simpler than V1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-it-introduces-a-canonical-persisted-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. It introduces a canonical persisted record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-it-separates-heavy-payloads-from-metadata-when-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. It separates heavy payloads from metadata when needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-it-supports-derivation-as-a-first-class-relationship" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. It supports derivation as a first-class relationship
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-it-provides-a-practical-query-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. It provides a practical query layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-v2-dataset-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The V2 Dataset class
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#limitations-of-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations of V2
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Limitations of V2">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-datum-is-doing-too-much" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Datum is doing too much
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-there-is-no-first-class-annotation-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. There is no first-class annotation model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-there-is-no-explicit-assetstorage-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. There is no explicit asset/storage model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-registry-usage-is-still-too-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Registry usage is still too primitive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-query-model-is-powerful-but-not-yet-a-canonical-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Query model is powerful but not yet a canonical data model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-dataset-concepts-are-not-yet-explicit-enough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Dataset concepts are not yet explicit enough
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#v3-expanding-the-current-datalake-to-match-our-data-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V3: Expanding the current Datalake to match our data needs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="V3: Expanding the current Datalake to match our data needs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-generalized-storage-via-store-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Generalized storage via Store / mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-explicit-payload-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Explicit payload identity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-first-class-annotation-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. First-class annotation schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-reusable-dataset-membership-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Reusable dataset membership model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-immutable-dataset-versions-over-canonical-entities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Immutable dataset versions over canonical entities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary-of-the-version-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary of the version history
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#module-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Module Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-database-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The database module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The database module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-role-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main role / responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Major classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-registry-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The registry module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The registry module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-role-responsibility_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main role / responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-classes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Major classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-datalake-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The datalake module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The datalake module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-role-responsibility_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main role / responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-classes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Major classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-jobs-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The jobs module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The jobs module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-role-responsibility_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main role / responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-classes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Major classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-cluster-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The cluster module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The cluster module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-role-responsibility_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main role / responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-classes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Major classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-everything-works-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How everything works together
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v3-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V3 Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="V3 Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strongest-parts-of-the-proposed-v3-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strongest parts of the proposed V3 design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1-split-payload-storage-from-metadata-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Split payload storage from metadata storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-datum-as-the-unit-of-dataset-membership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Datum as the unit of dataset membership
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-immutable-dataset-with-mutable-datasetbuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Immutable Dataset with mutable DatasetBuilder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-view-semantics-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. View semantics by default
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-query-generated-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Query-generated datasets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-mindtrace-native-datasets-plus-huggingface-interoperability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Mindtrace-native datasets plus HuggingFace interoperability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canonical-v3-entities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canonical V3 entities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Collection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-collectionitem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. CollectionItem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-assetretention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. AssetRetention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-storageref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. StorageRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-asset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Asset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-annotationsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. AnnotationSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-annotationrecord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. AnnotationRecord
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-annotationset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. AnnotationSet
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-datum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Datum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-datasetversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. DatasetVersion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canonical-semantic-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canonical semantic rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proposed-minimal-v3-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proposed minimal V3 API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-storage-mounts-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A. Storage / mounts API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="A. Storage / mounts API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakehealth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakemounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeobjectsput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/objects/put
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeobjectsget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/objects/get
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeobjectshead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/objects/head
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeobjectscopy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/objects/copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-assets-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B. Assets API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="B. Assets API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeassets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/assets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakeassetsasset_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/assets/{asset_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakeassets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/assets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-apiv1datalakeassetsasset_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /api/v1/datalake/assets/{asset_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-datasets-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C. Datasets API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="C. Datasets API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakedatasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/datasets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakedatasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/datasets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakedatasetsdataset_nameversions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/datasets/{dataset_name}/versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakedatasetsdataset_nameversionsversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/datasets/{dataset_name}/versions/{version}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakedatasetsdataset_nameversionsversionview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/datasets/{dataset_name}/versions/{version}/view
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakedatasetsquery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/datasets/query
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-datum-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D. Datum API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="D. Datum API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakedatums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/datums
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakedatumsdatum_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/datums/{datum_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakedatums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/datums
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#patch-apiv1datalakedatumsdatum_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PATCH /api/v1/datalake/datums/{datum_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e-annotation-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E. Annotation API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="E. Annotation API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeannotation-sets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/annotation-sets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakeannotation-setsannotation_set_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/annotation-sets/{annotation_set_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakeannotation-sets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/annotation-sets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1datalakeannotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/datalake/annotations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1datalakeannotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/datalake/annotations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#patch-apiv1datalakeannotationsannotation_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PATCH /api/v1/datalake/annotations/{annotation_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-apiv1datalakeannotationsannotation_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /api/v1/datalake/annotations/{annotation_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migrating-from-v1-to-v3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating from V1 to V3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migration-guidance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration guidance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#immediate-compatibility-requirement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Immediate compatibility requirement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#datasetbuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DatasetBuilder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Appendix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#integration-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open questions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-v3-implementation-stance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended V3 implementation stance
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="datalake-v3-proposal">Datalake V3 Proposal</h1>
+<h2 id="summary">Summary</h2>
+<p>This document proposes <strong>Datalake Version 3 (V3)</strong> for Mindtrace.</p>
+<p>V3 is intended as the next architectural step after:</p>
+<ul>
+<li><strong>V1</strong>: the original <code>mtrix</code> Datalake, which focused primarily on dataset packaging, synchronization, and loading</li>
+<li><strong>V2</strong>: the current <code>mindtrace.datalake</code> module, which introduced a simpler and more data-centric persistence model</li>
+</ul>
+<p>The purpose of this document is to describe what V3 should be, why it is needed, how it relates to the earlier versions, and what architectural shape makes sense as Mindtrace grows.</p>
+<p>At a high level, V3 is trying to accomplish the following:</p>
+<ul>
+<li>provide a clearer and more scalable long-term data architecture for Mindtrace</li>
+<li>move beyond dataset-package management toward a more general canonical persistence layer</li>
+<li>support richer storage topologies and more explicit data ownership boundaries</li>
+<li>support structured, queryable, and reusable data across multiple applications and workflows</li>
+<li>fit cleanly with adjacent modules such as <code>jobs</code> and <code>cluster</code></li>
+<li>preserve the useful ideas from earlier iterations without carrying forward their structural limitations</li>
+</ul>
+<p>In short, this document lays out a vision for V3 as the long-term data foundation for Mindtrace: scalable, modular, storage-aware, and designed to support rich data workflows across the platform.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#objectives">Objectives</a></li>
+<li><a href="#goals">Goals</a></li>
+<li><a href="#non-goals">Non-goals</a></li>
+<li><a href="#version-history">Version History</a></li>
+<li><a href="#v1-the-mtrix-datalake">V1: The <code>mtrix</code> Datalake</a></li>
+<li><a href="#v2-the-current-mindtracedatalake-module">V2: The current <code>mindtrace.datalake</code> module</a><ul>
+<li><a href="#the-v2-dataset-class">The V2 <code>Dataset</code> class</a></li>
+</ul>
+</li>
+<li><a href="#v3-expanding-the-current-datalake-to-match-our-data-needs">V3: Expanding the current Datalake to match our data needs</a></li>
+<li><a href="#module-structure">Module Structure</a></li>
+<li><a href="#the-database-module">The <code>database</code> module</a></li>
+<li><a href="#the-registry-module">The <code>registry</code> module</a></li>
+<li><a href="#the-datalake-module">The <code>datalake</code> module</a></li>
+<li><a href="#the-jobs-module">The <code>jobs</code> module</a></li>
+<li><a href="#the-cluster-module">The <code>cluster</code> module</a></li>
+<li><a href="#how-everything-works-together">How everything works together</a></li>
+<li><a href="#v3-design">V3 Design</a></li>
+<li><a href="#strongest-parts-of-the-proposed-v3-design">Strongest parts of the proposed V3 design</a></li>
+<li><a href="#canonical-v3-entities">Canonical V3 entities</a><ul>
+<li><a href="#canonical-entity-summary-table">Canonical entity summary table</a></li>
+<li><a href="#1-collection">Collection</a></li>
+<li><a href="#2-collectionitem">CollectionItem</a></li>
+<li><a href="#3-assetretention">AssetRetention</a></li>
+<li><a href="#4-storageref">StorageRef</a></li>
+<li><a href="#5-asset">Asset</a></li>
+<li><a href="#6-annotationsource">AnnotationSource</a></li>
+<li><a href="#7-annotationrecord">AnnotationRecord</a></li>
+<li><a href="#8-annotationset">AnnotationSet</a></li>
+<li><a href="#9-datum">Datum</a></li>
+<li><a href="#10-datasetversion">DatasetVersion</a></li>
+</ul>
+</li>
+<li><a href="#canonical-semantic-rule">Canonical semantic rule</a></li>
+<li><a href="#proposed-minimal-v3-api">Proposed minimal V3 API</a><ul>
+<li><a href="#a-storage--mounts-api">A. Storage / mounts API</a></li>
+<li><a href="#b-assets-api">B. Assets API</a></li>
+<li><a href="#c-datasets-api">C. Datasets API</a></li>
+<li><a href="#d-datum-api">D. Datum API</a></li>
+<li><a href="#e-annotation-api">E. Annotation API</a></li>
+</ul>
+</li>
+<li><a href="#migrating-from-v1-to-v3">Migrating from V1 to V3</a></li>
+<li><a href="#datasetbuilder">DatasetBuilder</a></li>
+<li><a href="#appendix">Appendix</a></li>
+<li><a href="#integration-notes">Integration notes</a></li>
+<li><a href="#open-questions">Open questions</a></li>
+<li><a href="#recommended-v3-implementation-stance">Recommended V3 implementation stance</a></li>
+</ul>
+<hr />
+<h2 id="objectives">Objectives</h2>
+<h3 id="goals">Goals</h3>
+<ul>
+<li>Define a canonical data model for Datalake in Mindtrace.</li>
+<li>Support remote payload storage across multiple backends via <code>Store</code> / <code>Registry</code>.</li>
+<li>Support structured metadata and annotation persistence in a database.</li>
+<li>Preserve immutable dataset-version semantics.</li>
+<li>Support query-generated dataset views.</li>
+<li>Support both Mindtrace-native datasets and HuggingFace dataset interoperability.</li>
+<li>Keep the initial V3 API small enough to implement without building the entire future platform at once.</li>
+</ul>
+<h3 id="non-goals">Non-goals</h3>
+<ul>
+<li>Full enterprise data catalog in the initial V3 implementation.</li>
+<li>Full lineage graph and lifecycle management in the initial V3 implementation.</li>
+<li>Arbitrary Python-callable query execution over RPC.</li>
+<li>Fully automatic reference-counted garbage collection across all stored objects in the initial V3 implementation.</li>
+<li>Replacing every existing application-level workflow with Datalake on day one.</li>
+</ul>
+<hr />
+<h2 id="version-history">Version History</h2>
+<p>This proposal is easier to understand if the Datalake is viewed as three iterations:</p>
+<ul>
+<li><strong>V1</strong>: the <code>mtrix</code> Datalake</li>
+<li><strong>V2</strong>: the current <code>mindtrace.datalake</code> module</li>
+<li><strong>V3</strong>: expanding the current Datalake to match the broader data model and storage needs described in this proposal</li>
+</ul>
+<h3 id="v1-the-mtrix-datalake">V1: The <code>mtrix</code> Datalake</h3>
+<p>The previous <code>mtrix</code> package included a <code>datalake</code> module that is useful to study because it solved a real set of problems well, but it also reveals why a new Datalake iteration is necessary.</p>
+<h4 id="what-v1-was">What V1 was</h4>
+<p>The <code>mtrix</code> Datalake was primarily a dataset lifecycle and synchronization system.</p>
+<p>At a high level it combined:</p>
+<ul>
+<li>a thin top-level <code>Datalake</code> facade</li>
+<li>a <code>ServiceRegistry</code> for dependency wiring</li>
+<li>service classes for discovery, provisioning, synchronization, loading, and manifest handling</li>
+<li>manifest-driven dataset versioning</li>
+<li>local filesystem dataset layouts</li>
+<li>Hugging Face as a registry / discovery plane</li>
+<li>GCP as blob storage</li>
+<li>Arrow / Hugging Face dataset cache building for loading</li>
+</ul>
+<p>In other words, V1 was less a generalized canonical datalake and more a dataset packaging, synchronization, and loading framework.</p>
+<h4 id="what-v1-did">What V1 did</h4>
+<p>V1 supported a concrete end-to-end workflow:</p>
+<ol>
+<li><strong>Create a dataset locally</strong> from a source directory.</li>
+<li><strong>Validate it</strong> by attempting to build cache through a Hugging Face <code>GeneratorBasedBuilder</code>.</li>
+<li><strong>Store it locally</strong> under a conventional directory structure with manifest files, split subdirectories, data files, masks, annotation JSON, and item metadata JSON.</li>
+<li><strong>Publish it remotely</strong> by splitting responsibilities across:</li>
+<li>Hugging Face for dataset repository / manifest / README style coordination</li>
+<li>GCP for actual data and annotation file blobs</li>
+<li><strong>Fetch it back locally</strong> by downloading a manifest first and then lazily filling in missing files.</li>
+<li><strong>Load it</strong> by materializing a Hugging Face dataset through a builder and Arrow cache.</li>
+<li><strong>Update it incrementally</strong> by comparing against previous versions and copying / merging changed files and annotations.</li>
+</ol>
+<p>This gave <code>mtrix</code> a practical dataset distribution pipeline with local-first and offline-aware behavior.</p>
+<h4 id="strengths-of-v1">Strengths of V1</h4>
+<h5 id="1-good-service-decomposition">1. Good service decomposition</h5>
+<p>The split into:</p>
+<ul>
+<li>discovery</li>
+<li>provisioning</li>
+<li>synchronization</li>
+<li>loading</li>
+<li>manifest management</li>
+</ul>
+<p>was clean and maintainable. The top-level <code>Datalake</code> class remained fairly thin while operational complexity lived in focused service classes.</p>
+<h5 id="2-strong-dataset-version-packaging-model">2. Strong dataset-version packaging model</h5>
+<p>The manifest-driven dataset-version model was well suited to shipping and loading versioned datasets. It gave a clear package boundary for:</p>
+<ul>
+<li>dataset name</li>
+<li>semantic version</li>
+<li>data type</li>
+<li>split structure</li>
+<li>output definitions</li>
+<li>annotation files</li>
+<li>item metadata files</li>
+</ul>
+<h5 id="3-thoughtful-localoffline-workflow">3. Thoughtful local/offline workflow</h5>
+<p>The explicit <code>offline_mode</code> was operationally useful and reflected real needs. The system was clearly designed around:</p>
+<ul>
+<li>local availability</li>
+<li>remote synchronization when needed</li>
+<li>explicit failure when offline constraints prevented an operation</li>
+</ul>
+<h5 id="4-practical-incremental-update-support">4. Practical incremental update support</h5>
+<p>The previous design did support version-to-version update flows, including:</p>
+<ul>
+<li>comparing previous and current versions</li>
+<li>uploading only newly introduced files in some cases</li>
+<li>merging annotation content</li>
+<li>applying removals</li>
+</ul>
+<p>That is a meaningful capability and should not be dismissed.</p>
+<h5 id="5-strong-hugging-face-integration">5. Strong Hugging Face integration</h5>
+<p>If the main consumer abstraction is a Hugging Face dataset, the old design was coherent. The builder/cache flow was aligned with a real consumer story.</p>
+<h4 id="limitations-of-v1">Limitations of V1</h4>
+<p>The limitations of V1 are structural rather than cosmetic.</p>
+<h5 id="1-it-is-dataset-package-centric-not-canonical-data-centric">1. It is dataset-package centric, not canonical-data centric</h5>
+<p>V1 treats the world primarily as:</p>
+<ul>
+<li>dataset names</li>
+<li>dataset versions</li>
+<li>manifests</li>
+<li>split directories</li>
+<li>files inside those directories</li>
+</ul>
+<p>That is enough for dataset shipping, but not enough for a reusable canonical data layer.</p>
+<p>It does not make the following concepts first-class:</p>
+<ul>
+<li>assets</li>
+<li>storage references independent of local layout</li>
+<li>datums as reusable units of membership</li>
+<li>annotation sets</li>
+<li>atomic annotation records</li>
+<li>multiple storage locations for the same payload</li>
+</ul>
+<h5 id="2-annotations-are-file-based-not-first-class-records">2. Annotations are file-based, not first-class records</h5>
+<p>Annotations in V1 are largely handled as JSON files per split and per dataset version. They can be merged and copied, but they are not modeled as queryable, canonical records.</p>
+<p>That creates several limitations:</p>
+<ul>
+<li>weak support for live annotation CRUD</li>
+<li>poor provenance at the per-annotation level</li>
+<li>difficulty representing multiple overlapping annotation layers</li>
+<li>difficulty querying across annotations independently of dataset package boundaries</li>
+<li>difficulty reusing annotation data outside a specific packaged dataset version</li>
+</ul>
+<h5 id="3-local-filesystem-layout-is-doing-too-much-work">3. Local filesystem layout is doing too much work</h5>
+<p>V1 is heavily coupled to a particular on-disk representation:</p>
+<ul>
+<li>root dataset directories</li>
+<li><code>manifest_v*.json</code></li>
+<li><code>splits/&lt;split&gt;/...</code></li>
+<li>images / meshes / point clouds directories</li>
+<li>masks directories</li>
+<li>annotation and item metadata JSON files</li>
+</ul>
+<p>This is practical for one packaging format, but too rigid for a general platform.</p>
+<h5 id="4-remote-storage-topology-is-fixed-and-overly-opinionated">4. Remote storage topology is fixed and overly opinionated</h5>
+<p>V1 effectively assumes:</p>
+<ul>
+<li>Hugging Face for registry / discovery / repository concerns</li>
+<li>GCP for blob storage</li>
+</ul>
+<p>That hardcodes vendor roles into the design.</p>
+<h5 id="5-no-generalized-storage-namespace-or-mount-abstraction">5. No generalized storage namespace or mount abstraction</h5>
+<p>There is no equivalent of a multi-mount <code>Store</code> or unified storage facade.</p>
+<h5 id="6-reuse-and-composability-are-limited">6. Reuse and composability are limited</h5>
+<p>Because the main unit is a packaged dataset version, it is difficult to treat:</p>
+<ul>
+<li>an image asset</li>
+<li>a derived artifact</li>
+<li>a label snapshot</li>
+<li>a shared annotation layer</li>
+</ul>
+<p>as reusable canonical pieces that can participate in multiple datasets or workflows.</p>
+<h3 id="v2-the-current-mindtracedatalake-module">V2: The current <code>mindtrace.datalake</code> module</h3>
+<p>The current <code>mindtrace.datalake</code> module in the Mindtrace repo is already a significant shift away from the original <code>mtrix</code> dataset-package model. It is not yet the V3 design proposed in this document, but it does represent a meaningful V2 step.</p>
+<h4 id="what-v2-is">What V2 is</h4>
+<p>The current V2 module is a lightweight asynchronous datalake centered on a single <code>Datalake</code> class and a single <code>Datum</code> model.</p>
+<p>At a high level, V2 provides:</p>
+<ul>
+<li>MongoDB-backed persistence of <code>Datum</code> records</li>
+<li>optional external payload storage through <code>Registry</code></li>
+<li>automatic lazy loading of registry-backed payloads</li>
+<li>derivation tracking through <code>derived_from</code></li>
+<li>querying over datums and derivation chains</li>
+<li>a unified API for storing data either directly in MongoDB or indirectly via registry references</li>
+</ul>
+<p>The core mental model in V2 is:</p>
+<ul>
+<li>a <code>Datum</code> is the fundamental stored object</li>
+<li>each datum may either hold inline <code>data</code> or a <code>registry_uri</code> + <code>registry_key</code></li>
+<li>each datum may be derived from another datum</li>
+<li>queries can traverse derivation relationships to build row-shaped result sets</li>
+</ul>
+<p>This is a much simpler design than V1 and a much more data-centric design than the old package-based approach.</p>
+<h4 id="what-v2-does">What V2 does</h4>
+<p>Operationally, the current V2 module supports:</p>
+<ol>
+<li><strong>Add datum</strong></li>
+<li>store payload directly in MongoDB for smaller values</li>
+<li>or store payload in a registry and keep only a reference in MongoDB</li>
+<li><strong>Get datum</strong></li>
+<li>load a datum record from MongoDB</li>
+<li>if it is registry-backed, transparently load the payload from the referenced registry</li>
+<li><strong>Track derivation</strong></li>
+<li>maintain parent/child relationships using <code>derived_from</code></li>
+<li><strong>Query derived data</strong></li>
+<li>support base queries and chained derived queries</li>
+<li>support strategies like <code>latest</code>, <code>earliest</code>, <code>random</code>, <code>quickest</code>, and <code>missing</code></li>
+<li><strong>Run aggregation-based query execution</strong></li>
+<li>use Mongo aggregation for more efficient chained lookups than the older legacy query path</li>
+</ol>
+<h4 id="strengths-of-v2">Strengths of V2</h4>
+<h5 id="1-it-is-much-simpler-than-v1">1. It is much simpler than V1</h5>
+<p>The V2 module is dramatically simpler than the old <code>mtrix</code> Datalake.</p>
+<p>It strips away:</p>
+<ul>
+<li>dataset package layout assumptions</li>
+<li>split-directory orchestration</li>
+<li>Hugging Face repository coupling</li>
+<li>GCP-specific remote role assumptions</li>
+<li>manifest-first lifecycle complexity</li>
+</ul>
+<p>and instead focuses on a smaller core:</p>
+<ul>
+<li>datum records</li>
+<li>registry-backed payload indirection</li>
+<li>derivation-aware querying</li>
+</ul>
+<h5 id="2-it-introduces-a-canonical-persisted-record">2. It introduces a canonical persisted record</h5>
+<p>The <code>Datum</code> model is the first real step toward a reusable canonical persistence layer.</p>
+<p>Unlike V1, the current module is not primarily organized around dataset package files. It has a real persisted record type with fields for:</p>
+<ul>
+<li>payload or payload reference</li>
+<li>metadata</li>
+<li>derivation relationship</li>
+<li>timestamps</li>
+</ul>
+<h5 id="3-it-separates-heavy-payloads-from-metadata-when-needed">3. It separates heavy payloads from metadata when needed</h5>
+<p>The <code>add_datum(...)</code> path allows a datum to be stored either:</p>
+<ul>
+<li>directly in MongoDB</li>
+<li>or externally in a registry with a MongoDB reference</li>
+</ul>
+<h5 id="4-it-supports-derivation-as-a-first-class-relationship">4. It supports derivation as a first-class relationship</h5>
+<p><code>derived_from</code> is simple, but powerful. It allows V2 to represent:</p>
+<ul>
+<li>processing pipelines</li>
+<li>generated labels</li>
+<li>transformations</li>
+<li>parent/child data relationships</li>
+</ul>
+<h5 id="5-it-provides-a-practical-query-layer">5. It provides a practical query layer</h5>
+<p>The aggregation-based <code>query_data(...)</code> is a meaningful improvement over purely application-side chained lookups.</p>
+<h4 id="the-v2-dataset-class">The V2 <code>Dataset</code> class</h4>
+<p>The current V2 branch also introduces a <code>Dataset</code> document model that is worth calling out explicitly.</p>
+<p>This <code>Dataset</code> class is best understood as a <strong>row/column dataset view over datum references</strong>. In the current design:</p>
+<ul>
+<li>a dataset stores rows as dictionaries of <code>column -&gt; datum_id</code></li>
+<li>each column is associated with a <code>contract</code></li>
+<li>rows are loaded by resolving datum IDs through the Datalake</li>
+<li>the dataset can be converted into a Hugging Face <code>IterableDataset</code></li>
+</ul>
+<p>This is a meaningful step forward compared with V1 because it:</p>
+<ul>
+<li>replaces package-directory assumptions with a persisted document model</li>
+<li>makes datasets feel more data-centric and query-oriented</li>
+<li>introduces typed column contracts</li>
+<li>provides a practical bridge into Hugging Face workflows</li>
+</ul>
+<p>At the same time, it is still best viewed as part of the V2 transitional architecture rather than the final V3 canonical model.</p>
+<p>The current <code>Dataset</code> class is strong as:</p>
+<ul>
+<li>a tabular/materialized view over Datalake-backed data</li>
+<li>a convenient persisted document for assembling rows</li>
+<li>an HF interoperability layer</li>
+</ul>
+<p>But it is still limited by the broader V2 assumptions:</p>
+<ul>
+<li>it remains heavily datum-centric</li>
+<li>it represents datasets primarily as rows of datum references</li>
+<li>it does not yet express richer canonical entities such as assets, annotation sets, or immutable dataset-version lineage cleanly enough on its own</li>
+</ul>
+<p>So in the V1 -&gt; V2 -&gt; V3 evolution, the current <code>Dataset</code> class is best interpreted as:</p>
+<ul>
+<li><strong>more modern than V1’s package/manifest-first model</strong></li>
+<li><strong>useful and worth preserving in spirit</strong></li>
+<li>but ultimately better treated in V3 as a dataset view/materialization layer rather than the entire canonical dataset model</li>
+</ul>
+<h4 id="limitations-of-v2">Limitations of V2</h4>
+<h5 id="1-datum-is-doing-too-much">1. <code>Datum</code> is doing too much</h5>
+<p>The current <code>Datum</code> model is carrying several concerns at once:</p>
+<ul>
+<li>payload container</li>
+<li>payload reference</li>
+<li>metadata bag</li>
+<li>derivation node</li>
+<li>query unit</li>
+</ul>
+<p>This is a reasonable simplification for V2, but it does not scale cleanly into a richer datalake model.</p>
+<h5 id="2-there-is-no-first-class-annotation-model">2. There is no first-class annotation model</h5>
+<p>Annotations are not modeled as first-class structured records. They can exist only as arbitrary <code>data</code> or <code>metadata</code> attached to generic datums.</p>
+<p>That means V2 lacks:</p>
+<ul>
+<li>atomic annotation records</li>
+<li>annotation-set grouping</li>
+<li>explicit source/provenance model for labels</li>
+<li>strong geometry typing</li>
+<li>clear distinction between labels and arbitrary data payloads</li>
+</ul>
+<h5 id="3-there-is-no-explicit-assetstorage-model">3. There is no explicit asset/storage model</h5>
+<p>V2 can store payloads in a registry, but it does not yet have an explicit model for:</p>
+<ul>
+<li>asset identity</li>
+<li>storage references as first-class objects</li>
+<li>multiple physical locations for the same logical payload</li>
+<li>mount-aware storage semantics</li>
+</ul>
+<h5 id="4-registry-usage-is-still-too-primitive">4. Registry usage is still too primitive</h5>
+<p>The current module uses <code>registry_uri</code> directly and lazily creates <code>Registry(LocalRegistryBackend(...))</code> instances.</p>
+<h5 id="5-query-model-is-powerful-but-not-yet-a-canonical-data-model">5. Query model is powerful but not yet a canonical data model</h5>
+<p>The current aggregation query API is useful, but it is still oriented around:</p>
+<ul>
+<li>ad hoc row construction</li>
+<li>derivation traversal</li>
+<li>generic datum matching</li>
+</ul>
+<p>rather than around the higher-level V3 entities that should become canonical.</p>
+<h5 id="6-dataset-concepts-are-not-yet-explicit-enough">6. Dataset concepts are not yet explicit enough</h5>
+<p>Compared to V1, V2 swings strongly away from packaged datasets — which is good. But it does not yet replace them with sufficiently explicit canonical dataset entities.</p>
+<h3 id="v3-expanding-the-current-datalake-to-match-our-data-needs">V3: Expanding the current Datalake to match our data needs</h3>
+<p>At a high level, V3 builds on V2 rather than replacing it blindly.</p>
+<p>V3 exists because:</p>
+<ul>
+<li>V1 was too package-centric</li>
+<li>V2 is a strong simplification, but still too generic in the wrong places</li>
+<li>the next iteration needs to preserve V2's simplicity while adding explicit structure for assets, annotations, datasets, and storage</li>
+</ul>
+<p>Concretely, V3 must add:</p>
+<h4 id="1-generalized-storage-via-store-mounts">1. Generalized storage via <code>Store</code> / mounts</h4>
+<p>V3 needs mount-aware storage semantics and a unified storage facade rather than a raw <code>registry_uri</code> field on a generic datum.</p>
+<h4 id="2-explicit-payload-identity">2. Explicit payload identity</h4>
+<p>V3 needs <code>StorageRef</code> and <code>Asset</code> so payload-bearing objects can be identified and managed independently of the generic datum record.</p>
+<h4 id="3-first-class-annotation-schema">3. First-class annotation schema</h4>
+<p>V3 needs:</p>
+<ul>
+<li><code>AnnotationSource</code></li>
+<li><code>AnnotationRecord</code></li>
+<li><code>AnnotationSet</code></li>
+</ul>
+<p>so labels become canonical structured data rather than arbitrary embedded payloads.</p>
+<h4 id="4-reusable-dataset-membership-model">4. Reusable dataset membership model</h4>
+<p>V3 keeps <code>Datum</code>, but narrows its role to dataset membership and composition rather than using it as the one object that represents every kind of stored thing.</p>
+<h4 id="5-immutable-dataset-versions-over-canonical-entities">5. Immutable dataset versions over canonical entities</h4>
+<p>V3 reintroduces dataset-version semantics in a cleaner way than V1 by making dataset versions immutable views over canonical datums, assets, and annotation sets.</p>
+<h4 id="summary-of-the-version-history">Summary of the version history</h4>
+<ul>
+<li><strong>V1</strong> solved dataset packaging, synchronization, and HF-oriented loading.</li>
+<li><strong>V2</strong> introduced a much cleaner canonical datum record plus registry-backed payload indirection and derivation-aware querying.</li>
+<li><strong>V3</strong> is the next architectural step: expanding V2 into a fuller datalake with explicit assets, annotations, dataset versions, and mount-aware storage.</li>
+</ul>
+<hr />
+<h2 id="module-structure">Module Structure</h2>
+<p>This section describes how the major Mindtrace modules should relate to one another in the broader V3 architecture.</p>
+<h3 id="the-database-module">The <code>database</code> module</h3>
+<h4 id="main-role-responsibility">Main role / responsibility</h4>
+<p>The <code>database</code> module is responsible for structured persistence, querying, indexing, and model-backed storage for Mindtrace records.</p>
+<p>Its job is to provide:</p>
+<ul>
+<li>document-oriented persistence for structured application data</li>
+<li>ODM-style model integration</li>
+<li>backend abstraction across supported database/storage engines</li>
+<li>indexing, uniqueness, and query support for higher-level modules</li>
+</ul>
+<p>For the Datalake specifically, the <code>database</code> module is the structured persistence substrate for canonical metadata and queryable entities.</p>
+<h4 id="major-classes">Major classes</h4>
+<ul>
+<li><code>MindtraceDocument</code> / <code>UnifiedMindtraceDocument</code></li>
+<li><code>MongoMindtraceODM</code></li>
+<li><code>UnifiedMindtraceODM</code></li>
+<li>backend and model configuration types</li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    MD[MindtraceDocument / UnifiedMindtraceDocument] --&gt; ODM[MongoMindtraceODM / UnifiedMindtraceODM]
+    ODM --&gt; DBB[Database Backend]
+    DBB --&gt; M[MongoDB]
+    DBB --&gt; O[Other unified backends]</code></pre>
+<p>In the V3 architecture, the <code>database</code> module should be the place where canonical Datalake records live as structured, queryable entities, while the <code>registry</code> module stores larger payloads and versioned objects externally.</p>
+<h3 id="the-registry-module">The <code>registry</code> module</h3>
+<h4 id="main-role-responsibility_1">Main role / responsibility</h4>
+<p>The <code>registry</code> module is responsible for versioned object persistence and multi-backend storage access.</p>
+<p>Its job is to provide:</p>
+<ul>
+<li>a version-aware object persistence abstraction</li>
+<li>support for multiple storage backends</li>
+<li>multi-mount composition through <code>Store</code></li>
+<li>materialization and serialization of Python objects</li>
+</ul>
+<p>The <code>registry</code> module is the storage substrate that V3 should build on, rather than reimplement.</p>
+<h4 id="major-classes_1">Major classes</h4>
+<ul>
+<li><code>Registry</code></li>
+<li><code>Store</code></li>
+<li><code>Mount</code></li>
+<li><code>MountedRegistry</code></li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    M[Mount] --&gt;|builds| R[Registry]
+    R --&gt;|attached into| S[Store]
+    MR[MountedRegistry] --&gt;|wraps| R
+    S --&gt;|contains| MR
+
+    R --&gt; B[RegistryBackend]
+    B --&gt; L[LocalRegistryBackend]
+    B --&gt; S3[S3RegistryBackend]
+    B --&gt; G[GCPRegistryBackend]
+    B --&gt; MinIO[MinioRegistryBackend]</code></pre>
+<h3 id="the-datalake-module">The <code>datalake</code> module</h3>
+<h4 id="main-role-responsibility_2">Main role / responsibility</h4>
+<p>The <code>datalake</code> module is responsible for canonical persisted data models and data-facing query semantics.</p>
+<p>Its job is to provide:</p>
+<ul>
+<li>canonical records for assets, annotations, datums, and dataset versions</li>
+<li>persistent metadata and provenance</li>
+<li>queryable structured data</li>
+<li>a clean boundary between canonical state and export/materialization forms</li>
+<li>an integration layer that relies on both <code>registry</code> for payload persistence and <code>database</code> for structured records</li>
+</ul>
+<h4 id="major-classes_2">Major classes</h4>
+<ul>
+<li><code>Asset</code></li>
+<li><code>Datum</code></li>
+<li><code>AnnotationSet</code></li>
+<li><code>DatasetVersion</code></li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    A[Asset] --&gt; D[Datum]
+    AS[AnnotationSet] --&gt; AR[AnnotationRecord]
+    AR --&gt; D
+    DV[DatasetVersion] --&gt; D
+    DV --&gt; AS</code></pre>
+<h3 id="the-jobs-module">The <code>jobs</code> module</h3>
+<h4 id="main-role-responsibility_3">Main role / responsibility</h4>
+<p>The <code>jobs</code> module is responsible for executable work definitions and run lifecycle management.</p>
+<p>Its job is to provide:</p>
+<ul>
+<li>job definitions and schemas</li>
+<li>queueing and execution state</li>
+<li>retries and failure handling</li>
+<li>worker-facing input/output contracts</li>
+</ul>
+<p>The <code>jobs</code> module should remain usable without a hard dependency on the Datalake.</p>
+<h4 id="major-classes_3">Major classes</h4>
+<ul>
+<li><code>Job</code></li>
+<li><code>JobManager</code></li>
+<li><code>JobRun</code></li>
+<li><code>JobSchema</code></li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    JS[JobSchema] --&gt; J[Job]
+    J --&gt; JM[JobManager / Orchestrator]
+    JM --&gt; JR[JobRun]
+    JR --&gt;|validated by| JS
+
+    JM --&gt; JB[Job Backend]
+    JB --&gt; L[Local Backend]
+    JB --&gt; R[Redis Backend]
+    JB --&gt; MQ[RabbitMQ Backend]</code></pre>
+<h3 id="the-cluster-module">The <code>cluster</code> module</h3>
+<h4 id="main-role-responsibility_4">Main role / responsibility</h4>
+<p>The <code>cluster</code> module is responsible for distributed job orchestration, worker lifecycle management, and execution routing across nodes and workers.</p>
+<p>Based on the current module and README, its job is to provide:</p>
+<ul>
+<li>a central orchestrator for submitting and tracking jobs</li>
+<li>worker registration and worker-type registration</li>
+<li>node-managed worker launching</li>
+<li>routing jobs either directly to endpoints or through workers</li>
+<li>support for worker execution environments such as Git-based and Docker-based runs</li>
+<li>integration with the registry for worker distribution and launch metadata</li>
+</ul>
+<p>The current cluster module already acts as the practical bridge between execution and infrastructure. In a fuller V3 architecture, it should remain the main integration point between <code>jobs</code>, <code>registry</code>, and <code>datalake</code>.</p>
+<h4 id="major-classes_4">Major classes</h4>
+<ul>
+<li><code>ClusterManager</code></li>
+<li><code>Node</code></li>
+<li><code>Worker</code></li>
+<li><code>ProxyWorker</code> / <code>StandardWorkerLauncher</code></li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    CM[ClusterManager] --&gt; N[Node]
+    N --&gt; W[Worker]
+    CM --&gt; PW[ProxyWorker]
+    PW --&gt; SWL[StandardWorkerLauncher]
+    SWL --&gt; W
+    CM --&gt; ORCH[Job Orchestrator / Queue]
+    CM --&gt; WR[Worker Registry]</code></pre>
+<p>The actual current module also includes built-in worker implementations and execution helpers such as:</p>
+<ul>
+<li><code>EchoWorker</code></li>
+<li><code>RunScriptWorker</code></li>
+<li>Git and Docker execution environments</li>
+</ul>
+<p>So the current Cluster module is not just a scheduler in the abstract. It is already a concrete execution system with:</p>
+<ul>
+<li>orchestration through <code>ClusterManager</code></li>
+<li>node-based worker launching</li>
+<li>worker status tracking</li>
+<li>worker-type registration</li>
+<li>queue/orchestrator integration</li>
+<li>registry-backed worker distribution</li>
+</ul>
+<h3 id="how-everything-works-together">How everything works together</h3>
+<p>At a high level, the intended relationship is:</p>
+<ul>
+<li><strong><code>registry</code></strong> provides storage and object persistence primitives</li>
+<li><strong><code>database</code></strong> provides structured record persistence and query support</li>
+<li><strong><code>datalake</code></strong> provides canonical persisted data entities and data semantics</li>
+<li><strong><code>jobs</code></strong> provides executable task definitions and run lifecycle semantics</li>
+<li><strong><code>cluster</code></strong> integrates jobs and data in a distributed execution environment</li>
+</ul>
+<pre class="mermaid"><code>flowchart TD
+    DB[database module]
+    REG[registry module]
+
+    DB --&gt; DL[datalake module]
+    REG --&gt; DL
+
+    JOBS[jobs module] --&gt; CL[cluster module]
+    DL --&gt; CL</code></pre>
+<p>The intended dependency direction should be:</p>
+<ul>
+<li><code>registry</code> is a lower-level storage substrate</li>
+<li><code>database</code> is a lower-level structured persistence substrate</li>
+<li><code>datalake</code> builds on both <code>registry</code> and <code>database</code></li>
+<li><code>jobs</code> remains largely independent of <code>datalake</code></li>
+<li><code>cluster</code> is the primary integration layer between execution and persisted data</li>
+</ul>
+<p>This keeps the architecture modular while still allowing tight practical interoperability.</p>
+<h2 id="v3-design">V3 Design</h2>
+<h3 id="strongest-parts-of-the-proposed-v3-design">Strongest parts of the proposed V3 design</h3>
+<h3 id="1-split-payload-storage-from-metadata-storage">1. Split payload storage from metadata storage</h3>
+<p>This is the strongest architectural decision in the proposed V3 design.</p>
+<ul>
+<li>Payloads such as images, masks, artifacts, and exports belong in Registry / Store-backed object storage.</li>
+<li>Structured metadata, manifests, and annotations belong in a database / ODM layer.</li>
+</ul>
+<p>This enables:</p>
+<ul>
+<li>large-scale remote storage on NAS / MinIO / GCP</li>
+<li>lightweight queryability over metadata and labels</li>
+<li>app-independent asset reuse</li>
+<li>clean separation between storage concerns and annotation/query concerns</li>
+</ul>
+<h3 id="2-datum-as-the-unit-of-dataset-membership">2. <code>Datum</code> as the unit of dataset membership</h3>
+<p>The idea that a dataset is composed of datums is strong and should be central to V3.</p>
+<p>A datum can point to one or more stored payloads while also carrying:</p>
+<ul>
+<li>structured metadata</li>
+<li>split membership</li>
+<li>links to annotation sets</li>
+</ul>
+<p>This supports reusable assets, derived datasets, and query-generated views without forcing deep copies.</p>
+<h3 id="3-immutable-dataset-with-mutable-datasetbuilder">3. Immutable <code>Dataset</code> with mutable <code>DatasetBuilder</code></h3>
+<p>This is a very good modeling choice for V3.</p>
+<ul>
+<li><code>Dataset</code> should represent an immutable view / version.</li>
+<li><code>DatasetBuilder</code> should represent a mutable changeset used to construct a new dataset version.</li>
+</ul>
+<p>This makes versioning more natural and prevents accidental mutation of registered datasets.</p>
+<h3 id="4-view-semantics-by-default">4. View semantics by default</h3>
+<p>Returning dataset views from the Datalake without copying payloads is the right default behavior.</p>
+<p>This keeps registration and querying cheap, and aligns with the idea that datasets are reference-based compositions over stored datums and assets.</p>
+<h3 id="5-query-generated-datasets">5. Query-generated datasets</h3>
+<p>Generating datasets from metadata / annotation filters is a powerful capability and should remain a first-class feature.</p>
+<h3 id="6-mindtrace-native-datasets-plus-huggingface-interoperability">6. Mindtrace-native datasets plus HuggingFace interoperability</h3>
+<p>Supporting a native Mindtrace data model while providing conversion to / from HuggingFace datasets is a strong long-term direction.</p>
+<hr />
+<h3 id="canonical-v3-entities">Canonical V3 entities</h3>
+<p>The following entities define the proposed canonical V3 model.</p>
+<details>
+<summary>Expand the canonical V3 entity model and relationships</summary>
+
+The following entities define the proposed canonical V3 model.
+
+<pre class="mermaid"><code>erDiagram
+    STORAGE_REF ||--|| ASSET : "locates"
+    ASSET ||--o{ COLLECTION_ITEM : "included by"
+    COLLECTION ||--o{ COLLECTION_ITEM : "contains"
+    ASSET ||--o{ ASSET_RETENTION : "retained by"
+    COLLECTION ||--o{ ASSET_RETENTION : "may import/pin"
+    ASSET ||--o{ DATUM : "used by role refs"
+    DATASET_VERSION ||--o{ DATUM : "manifest contains"
+    DATASET_VERSION ||--o{ ANNOTATION_SET : "may include"
+    ANNOTATION_SET ||--o{ ANNOTATION_RECORD : "contains"
+    DATUM ||--o{ ANNOTATION_RECORD : "annotated by"
+    ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
+
+    STORAGE_REF {
+        string mount
+        string name
+        string version
+        string qualified_key
+    }
+
+    ASSET {
+        string asset_id
+        string kind
+        string media_type
+        string checksum
+        int size_bytes
+        string lifecycle_state
+    }
+
+    COLLECTION {
+        string collection_id
+        string name
+        string status
+    }
+
+    COLLECTION_ITEM {
+        string collection_item_id
+        string collection_id
+        string asset_id
+        string split
+        string status
+    }
+
+    ASSET_RETENTION {
+        string ownership_id
+        string asset_id
+        string owner_type
+        string owner_id
+        string retention_policy
+    }
+
+    DATUM {
+        string datum_id
+        string dataset_version_id
+        string split
+        json asset_refs
+        json metadata
+    }
+
+    ANNOTATION_SOURCE {
+        string type
+        string name
+        string version
+    }
+
+    ANNOTATION_SET {
+        string annotation_set_id
+        string dataset_version_id
+        string name
+        string purpose
+        string source_type
+        string status
+    }
+
+    ANNOTATION_RECORD {
+        string annotation_id
+        string datum_id
+        string annotation_set_id
+        string kind
+        string label
+        int label_id
+        float score
+        json geometry
+        json attributes
+    }
+
+    DATASET_VERSION {
+        string dataset_version_id
+        string dataset_name
+        string version
+        string source_dataset_version_id
+        json manifest
+    }</code></pre>
+
+Relationship summary:
+
+- `StorageRef` describes where a payload lives physically.
+- `Asset` is the logical record for a payload-bearing object and points to a `StorageRef`.
+- `Collection` is a workspace/context that uses assets without necessarily owning the underlying payload bytes.
+- `CollectionItem` is the membership record connecting a collection to an asset.
+- `AssetRetention` records why an asset should continue to be retained independently of collection membership.
+- `Datum` is the unit of dataset membership and references one or more `Asset`s by role.
+- `AnnotationSet` groups related annotations, often by source or purpose.
+- `AnnotationRecord` is an atomic label attached to a `Datum` and belonging to an `AnnotationSet`.
+- `AnnotationSource` captures where an annotation came from.
+- `DatasetVersion` is an immutable dataset view over datums, annotation sets, and provenance from earlier versions.
+- `DatasetBuilder` is treated separately as a Datalake helper/API concept rather than a canonical persisted entity.
+
+</details>
+
+<h3 id="1-collection">1. <code>Collection</code></h3>
+<p>A logical workspace, labeling scope, or collaboration boundary.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">Collection</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">collection_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">status</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;archived&quot;</span><span class="p">,</span> <span class="s2">&quot;deleted&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;active&quot;</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">created_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">updated_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>A collection organizes work over assets.</li>
+<li>A collection should not be treated as the underlying owner of payload bytes by default.</li>
+<li>Collection-local configuration, workflow metadata, and collaboration state can attach here or to nearby entities.</li>
+</ul>
+<h3 id="2-collectionitem">2. <code>CollectionItem</code></h3>
+<p>A membership record connecting a collection to an asset.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CollectionItem</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">project_item_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">collection_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">asset_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">split</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="s2">&quot;val&quot;</span><span class="p">,</span> <span class="s2">&quot;test&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">status</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;hidden&quot;</span><span class="p">,</span> <span class="s2">&quot;removed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;active&quot;</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">added_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">added_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li><code>CollectionItem</code> answers the question: “is this asset part of this project?”</li>
+<li>Removing an asset from a collection should usually remove this record, not delete the underlying asset.</li>
+<li>This entity is central to avoiding naive destructive reference-count semantics.</li>
+</ul>
+<h3 id="3-assetretention">3. <code>AssetRetention</code></h3>
+<p>A retention/stewardship record describing why an asset should continue to exist.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">AssetRetention</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">ownership_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">asset_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">owner_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">&quot;collection_import&quot;</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        <span class="s2">&quot;dataset_version&quot;</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        <span class="s2">&quot;global_corpus&quot;</span><span class="p">,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        <span class="s2">&quot;job_run&quot;</span><span class="p">,</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>        <span class="s2">&quot;manual_pin&quot;</span><span class="p">,</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>        <span class="s2">&quot;system&quot;</span><span class="p">,</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="p">]</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">owner_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">retention_policy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;retain&quot;</span><span class="p">,</span> <span class="s2">&quot;delete_when_unreferenced&quot;</span><span class="p">,</span> <span class="s2">&quot;archive_when_unreferenced&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;retain&quot;</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">created_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>This is a better fit than a single hard owner field.</li>
+<li>It allows an asset to remain alive even after one collection removes it, so long as another project, dataset version, job result, or durable policy still retains it.</li>
+<li>In V3, asset deletion should be governed by the absence of <code>CollectionItem</code> memberships and <code>AssetRetention</code> records, not by collection deletion alone.</li>
+</ul>
+<h3 id="4-storageref">4. <code>StorageRef</code></h3>
+<p>A reference to a stored payload object.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">StorageRef</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">mount</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;latest&quot;</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">qualified_key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li><code>mount</code> maps naturally to a <code>Store</code> mount such as <code>temp</code>, <code>nas</code>, or <code>gcp</code>.</li>
+<li><code>name</code> is the unqualified object key within that mount.</li>
+<li><code>version</code> refers to the storage-layer version, not the dataset version.</li>
+</ul>
+<h3 id="5-asset">5. <code>Asset</code></h3>
+<p>A canonical record for a payload-bearing object.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">Asset</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">asset_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">kind</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="s2">&quot;artifact&quot;</span><span class="p">,</span> <span class="s2">&quot;embedding&quot;</span><span class="p">,</span> <span class="s2">&quot;document&quot;</span><span class="p">,</span> <span class="s2">&quot;other&quot;</span><span class="p">]</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">media_type</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">storage_ref</span><span class="p">:</span> <span class="n">StorageRef</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">size_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">created_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>An asset is the catalog record for a payload in backing storage.</li>
+<li>This cleanly separates payload storage from dataset membership and annotation meaning.</li>
+</ul>
+<h3 id="6-annotationsource">6. <code>AnnotationSource</code></h3>
+<p>Describes where an annotation came from.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">AnnotationSource</span><span class="p">:</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="nb">type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;human&quot;</span><span class="p">,</span> <span class="s2">&quot;machine&quot;</span><span class="p">,</span> <span class="s2">&quot;derived&quot;</span><span class="p">]</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span></code></pre></div>
+<p>Examples:</p>
+<ul>
+<li><code>{"type": "human", "name": "review-ui"}</code></li>
+<li><code>{"type": "machine", "name": "yolo", "version": "1.2.0"}</code></li>
+<li><code>{"type": "derived", "name": "bbox-to-mask"}</code></li>
+</ul>
+<h3 id="7-annotationrecord">7. <code>AnnotationRecord</code></h3>
+<p>One atomic annotation.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">AnnotationRecord</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">annotation_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">datum_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">annotation_set_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">kind</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        <span class="s2">&quot;classification&quot;</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        <span class="s2">&quot;regression&quot;</span><span class="p">,</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>        <span class="s2">&quot;bbox&quot;</span><span class="p">,</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        <span class="s2">&quot;rotated_bbox&quot;</span><span class="p">,</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        <span class="s2">&quot;polygon&quot;</span><span class="p">,</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        <span class="s2">&quot;polyline&quot;</span><span class="p">,</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>        <span class="s2">&quot;ellipse&quot;</span><span class="p">,</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>        <span class="s2">&quot;keypoint&quot;</span><span class="p">,</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>        <span class="s2">&quot;mask&quot;</span><span class="p">,</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="s2">&quot;instance_mask&quot;</span><span class="p">,</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>        <span class="s2">&quot;pointcloud_segmentation&quot;</span><span class="p">,</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="p">]</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>    <span class="n">label_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>    <span class="n">score</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>    <span class="n">source</span><span class="p">:</span> <span class="n">AnnotationSource</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>    <span class="n">geometry</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>    <span class="n">attributes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>    <span class="n">updated_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span></code></pre></div>
+<p>Example geometry payloads:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bbox&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="w"> </span><span class="p">}</span>
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rotated_bbox&quot;</span><span class="p">,</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">&quot;cx&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">&quot;cy&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="p">,</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">&quot;angle_deg&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="p">}</span>
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mask&quot;</span><span class="p">,</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;encoding&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rle_row_major_v1&quot;</span><span class="p">,</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;counts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">12</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">91</span><span class="p">],</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1080</span><span class="p">,</span><span class="w"> </span><span class="mi">1920</span><span class="p">],</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">&quot;bbox&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>Atomic records are easier to query, edit, and export.</li>
+<li>Job outputs should map into these records rather than become the canonical storage format.</li>
+</ul>
+<h3 id="8-annotationset">8. <code>AnnotationSet</code></h3>
+<p>A grouping and provenance boundary for annotation records.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">AnnotationSet</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">annotation_set_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">dataset_version_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">purpose</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;ground_truth&quot;</span><span class="p">,</span> <span class="s2">&quot;prediction&quot;</span><span class="p">,</span> <span class="s2">&quot;review&quot;</span><span class="p">,</span> <span class="s2">&quot;snapshot&quot;</span><span class="p">,</span> <span class="s2">&quot;other&quot;</span><span class="p">]</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">source_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;human&quot;</span><span class="p">,</span> <span class="s2">&quot;machine&quot;</span><span class="p">,</span> <span class="s2">&quot;mixed&quot;</span><span class="p">]</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">status</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;draft&quot;</span><span class="p">,</span> <span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;archived&quot;</span><span class="p">]</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="n">created_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>This allows multiple annotation layers over the same underlying datum.</li>
+<li>Useful distinctions include human truth vs machine predictions vs reviewed snapshots.</li>
+</ul>
+<h3 id="9-datum">9. <code>Datum</code></h3>
+<p>The unit of dataset membership.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">Datum</span><span class="p">:</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="n">datum_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="n">dataset_version_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">split</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="s2">&quot;val&quot;</span><span class="p">,</span> <span class="s2">&quot;test&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="n">asset_refs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>  <span class="c1"># role -&gt; asset_id</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">annotation_set_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li><code>asset_refs</code> can map roles like <code>image</code>, <code>thumbnail</code>, <code>aux_mask</code>, or <code>roi_crop</code> to asset IDs.</li>
+<li>Datums should link to annotation sets instead of embedding all annotation payloads directly.</li>
+</ul>
+<h3 id="10-datasetversion">10. <code>DatasetVersion</code></h3>
+<p>An immutable dataset record.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">DatasetVersion</span><span class="p">:</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">dataset_version_id</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">dataset_name</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="n">manifest</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>  <span class="c1"># datum_ids</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="n">source_dataset_version_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    <span class="n">created_by</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+<p>Notes:</p>
+<ul>
+<li>This preserves the immutable dataset concept from the sketches.</li>
+<li>A runtime <code>Dataset</code> object can wrap this record and provide a Pythonic interface.</li>
+</ul>
+<h3 id="canonical-semantic-rule">Canonical semantic rule</h3>
+<p>One of the most important semantic rules for V3 should be:</p>
+<blockquote>
+<p>Dataset versions are immutable views over datum membership; assets and annotations are persisted separately and referenced by those views.</p>
+</blockquote>
+<p>This keeps the V3 data model normalized, extensible, and operationally practical.</p>
+<hr />
+<h3 id="proposed-minimal-v3-api">Proposed minimal V3 API</h3>
+<p>The API should be split into four slices:</p>
+<ul>
+<li>storage</li>
+<li>assets</li>
+<li>datasets</li>
+<li>annotations</li>
+</ul>
+<h3 id="a-storage-mounts-api">A. Storage / mounts API</h3>
+<h4 id="get-apiv1datalakehealth"><code>GET /api/v1/datalake/health</code></h4>
+<p>Basic service health.</p>
+<h4 id="get-apiv1datalakemounts"><code>GET /api/v1/datalake/mounts</code></h4>
+<p>List configured mounts and default mount information.</p>
+<p>Example response:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">&quot;default_mount&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nas&quot;</span><span class="p">,</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">&quot;mounts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;temp&quot;</span><span class="p">,</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">      </span><span class="nt">&quot;read_only&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">      </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;file:///tmp/mindtrace-store-abc123&quot;</span><span class="p">,</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">      </span><span class="nt">&quot;version_objects&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">      </span><span class="nt">&quot;mutable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nas&quot;</span><span class="p">,</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">      </span><span class="nt">&quot;read_only&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">      </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;s3://minio/datalake&quot;</span><span class="p">,</span>
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">      </span><span class="nt">&quot;version_objects&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">      </span><span class="nt">&quot;mutable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-13-19"><a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gcp&quot;</span><span class="p">,</span>
+</span><span id="__span-13-20"><a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="w">      </span><span class="nt">&quot;read_only&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-13-21"><a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="w">      </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gs://my-bucket/datalake&quot;</span><span class="p">,</span>
+</span><span id="__span-13-22"><a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="w">      </span><span class="nt">&quot;version_objects&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-13-23"><a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="w">      </span><span class="nt">&quot;mutable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+</span><span id="__span-13-24"><a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-13-25"><a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-13-26"><a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a><span class="p">}</span>
+</span></code></pre></div>
+<h4 id="post-apiv1datalakeobjectsput"><code>POST /api/v1/datalake/objects/put</code></h4>
+<p>Persist a raw payload into the configured Store / Registry layer.</p>
+<p>Example request:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p">{</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">&quot;mount&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nas&quot;</span><span class="p">,</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;project:p1:image:img1&quot;</span><span class="p">,</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;latest&quot;</span><span class="p">,</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="nt">&quot;content_base64&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span><span class="nt">&quot;content_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;image/jpeg&quot;</span><span class="p">,</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">    </span><span class="nt">&quot;filename&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;foo.jpg&quot;</span><span class="p">,</span>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">    </span><span class="nt">&quot;collection_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;p1&quot;</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="w">  </span><span class="nt">&quot;on_conflict&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;overwrite&quot;</span>
+</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="p">}</span>
+</span></code></pre></div>
+<h4 id="post-apiv1datalakeobjectsget"><code>POST /api/v1/datalake/objects/get</code></h4>
+<p>Retrieve a raw payload.</p>
+<h4 id="post-apiv1datalakeobjectshead"><code>POST /api/v1/datalake/objects/head</code></h4>
+<p>Inspect a storage object without returning the payload.</p>
+<h4 id="post-apiv1datalakeobjectscopy"><code>POST /api/v1/datalake/objects/copy</code></h4>
+<p>Copy an object between mounts.</p>
+<p>This is especially important for NAS -&gt; GCP promotion workflows.</p>
+<h3 id="b-assets-api">B. Assets API</h3>
+<h4 id="post-apiv1datalakeassets"><code>POST /api/v1/datalake/assets</code></h4>
+<p>Register an asset record for a stored payload.</p>
+<p>Example request:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p">{</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;image&quot;</span><span class="p">,</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">&quot;media_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;image/jpeg&quot;</span><span class="p">,</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">&quot;storage_ref&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="nt">&quot;mount&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nas&quot;</span><span class="p">,</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;project:p1:image:img1&quot;</span><span class="p">,</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;latest&quot;</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">  </span><span class="nt">&quot;checksum&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sha256:...&quot;</span><span class="p">,</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span><span class="nt">&quot;size_bytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12345</span><span class="p">,</span>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="w">    </span><span class="nt">&quot;filename&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;foo.jpg&quot;</span><span class="p">,</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="w">    </span><span class="nt">&quot;collection_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;p1&quot;</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="p">}</span>
+</span></code></pre></div>
+<h4 id="get-apiv1datalakeassetsasset_id"><code>GET /api/v1/datalake/assets/{asset_id}</code></h4>
+<p>Fetch asset metadata.</p>
+<h4 id="get-apiv1datalakeassets"><code>GET /api/v1/datalake/assets</code></h4>
+<p>List/filter assets by kind, project, metadata, or pagination.</p>
+<h4 id="delete-apiv1datalakeassetsasset_id"><code>DELETE /api/v1/datalake/assets/{asset_id}</code></h4>
+<p>Delete an asset record. Underlying payload deletion policy may remain conservative in the initial V3 implementation.</p>
+<h3 id="c-datasets-api">C. Datasets API</h3>
+<h4 id="post-apiv1datalakedatasets"><code>POST /api/v1/datalake/datasets</code></h4>
+<p>Create/register a new immutable dataset version.</p>
+<p>This should accept:</p>
+<ul>
+<li>dataset name</li>
+<li>version</li>
+<li>manifest / datum membership</li>
+<li>optionally a builder-derived payload</li>
+</ul>
+<h4 id="get-apiv1datalakedatasets"><code>GET /api/v1/datalake/datasets</code></h4>
+<p>List datasets.</p>
+<h4 id="get-apiv1datalakedatasetsdataset_nameversions"><code>GET /api/v1/datalake/datasets/{dataset_name}/versions</code></h4>
+<p>List versions for a dataset.</p>
+<h4 id="get-apiv1datalakedatasetsdataset_nameversionsversion"><code>GET /api/v1/datalake/datasets/{dataset_name}/versions/{version}</code></h4>
+<p>Fetch dataset version metadata.</p>
+<h4 id="post-apiv1datalakedatasetsdataset_nameversionsversionview"><code>POST /api/v1/datalake/datasets/{dataset_name}/versions/{version}/view</code></h4>
+<p>Return a paginated dataset view descriptor.</p>
+<h4 id="post-apiv1datalakedatasetsquery"><code>POST /api/v1/datalake/datasets/query</code></h4>
+<p>Create a derived dataset view using structured filters.</p>
+<p>Example request:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;dataset&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;all&quot;</span><span class="p">,</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="nt">&quot;split&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;train&quot;</span><span class="p">,</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">&quot;filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metadata.label&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;op&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;eq&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;undercut&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metadata.severity&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;op&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gt&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.0</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>This preserves the spirit of <code>from_query(...)</code> while replacing a Python <code>Callable</code> with a proper service contract.</p>
+<h3 id="d-datum-api">D. Datum API</h3>
+<h4 id="post-apiv1datalakedatums"><code>POST /api/v1/datalake/datums</code></h4>
+<p>Create one or more datums.</p>
+<h4 id="get-apiv1datalakedatumsdatum_id"><code>GET /api/v1/datalake/datums/{datum_id}</code></h4>
+<p>Fetch datum metadata.</p>
+<h4 id="get-apiv1datalakedatums"><code>GET /api/v1/datalake/datums</code></h4>
+<p>Filter datums by dataset version, split, or metadata.</p>
+<h4 id="patch-apiv1datalakedatumsdatum_id"><code>PATCH /api/v1/datalake/datums/{datum_id}</code></h4>
+<p>Update mutable datum metadata before finalization if allowed.</p>
+<h3 id="e-annotation-api">E. Annotation API</h3>
+<h4 id="post-apiv1datalakeannotation-sets"><code>POST /api/v1/datalake/annotation-sets</code></h4>
+<p>Create a new annotation set.</p>
+<h4 id="get-apiv1datalakeannotation-setsannotation_set_id"><code>GET /api/v1/datalake/annotation-sets/{annotation_set_id}</code></h4>
+<p>Fetch annotation set metadata.</p>
+<h4 id="get-apiv1datalakeannotation-sets"><code>GET /api/v1/datalake/annotation-sets</code></h4>
+<p>List/filter annotation sets.</p>
+<h4 id="post-apiv1datalakeannotations"><code>POST /api/v1/datalake/annotations</code></h4>
+<p>Create one or more annotation records.</p>
+<p>Example request:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">&quot;annotation_set_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aset-1&quot;</span><span class="p">,</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">&quot;annotations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">&quot;datum_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;datum-1&quot;</span><span class="p">,</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bbox&quot;</span><span class="p">,</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">      </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;crack&quot;</span><span class="p">,</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">      </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.92</span><span class="p">,</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">      </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">        </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;machine&quot;</span><span class="p">,</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">        </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;yolo&quot;</span><span class="p">,</span>
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">        </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.0.0&quot;</span>
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="w">      </span><span class="p">},</span>
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">      </span><span class="nt">&quot;geometry&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">        </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bbox&quot;</span><span class="p">,</span>
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="w">        </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="w">        </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+</span><span id="__span-17-18"><a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="w">        </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+</span><span id="__span-17-19"><a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="w">        </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span>
+</span><span id="__span-17-20"><a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a><span class="w">      </span><span class="p">},</span>
+</span><span id="__span-17-21"><a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a><span class="w">      </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-17-22"><a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a><span class="w">        </span><span class="nt">&quot;severity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span>
+</span><span id="__span-17-23"><a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a><span class="w">      </span><span class="p">}</span>
+</span><span id="__span-17-24"><a id="__codelineno-17-24" name="__codelineno-17-24" href="#__codelineno-17-24"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-17-25"><a id="__codelineno-17-25" name="__codelineno-17-25" href="#__codelineno-17-25"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-17-26"><a id="__codelineno-17-26" name="__codelineno-17-26" href="#__codelineno-17-26"></a><span class="p">}</span>
+</span></code></pre></div>
+<h4 id="get-apiv1datalakeannotations"><code>GET /api/v1/datalake/annotations</code></h4>
+<p>Filter annotation records by datum, set, kind, label, or source.</p>
+<h4 id="patch-apiv1datalakeannotationsannotation_id"><code>PATCH /api/v1/datalake/annotations/{annotation_id}</code></h4>
+<p>Update an annotation record.</p>
+<h4 id="delete-apiv1datalakeannotationsannotation_id"><code>DELETE /api/v1/datalake/annotations/{annotation_id}</code></h4>
+<p>Delete an annotation record.</p>
+<hr />
+<h3 id="migrating-from-v1-to-v3">Migrating from V1 to V3</h3>
+<p>The V1 <code>mtrix</code> Datalake supported a smaller set of task/output types than the V3 design. To preserve backward compatibility in spirit, V3 should explicitly map those V1 output types into canonical V3 entities.</p>
+<p>The key principle is:</p>
+<ul>
+<li><strong>V1 output types</strong> describe task/result categories</li>
+<li><strong>V3 canonical entities</strong> describe how those results should persist in the Datalake</li>
+</ul>
+<p>The table below captures the recommended mapping.</p>
+<table>
+<thead>
+<tr>
+<th>V1 output type</th>
+<th>Meaning in V1</th>
+<th>Recommended V3 representation</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>classification</code></td>
+<td>Single class-style output</td>
+<td><code>AnnotationSet</code> + <code>AnnotationRecord(kind="classification")</code></td>
+<td>The annotation set captures source/purpose; each record stores the label and optional score/provenance.</td>
+</tr>
+<tr>
+<td><code>regression</code></td>
+<td>Scalar numeric output</td>
+<td><code>AnnotationSet</code> + <code>AnnotationRecord(kind="regression")</code> <strong>or</strong> structured datum/collection metadata, depending on domain semantics</td>
+<td>If regression is part of the canonical label space, model it explicitly. If it is operational metadata, store it as structured metadata instead.</td>
+</tr>
+<tr>
+<td><code>detection</code></td>
+<td>Bounding-box detection output with labels</td>
+<td><code>AnnotationSet</code> + <code>AnnotationRecord(kind="bbox")</code></td>
+<td>Each detected object should become an atomic bbox annotation record.</td>
+</tr>
+<tr>
+<td><code>image_segmentation</code></td>
+<td>Mask-based image segmentation</td>
+<td><code>Asset(kind="mask")</code> + <code>AnnotationSet</code> + <code>AnnotationRecord(kind="mask")</code></td>
+<td>The mask payload should be stored as an asset, while the annotation record references it canonically.</td>
+</tr>
+<tr>
+<td><code>pointcloud_segmentation</code></td>
+<td>Per-point segmentation/classification for point clouds</td>
+<td><code>AnnotationSet</code> + <code>AnnotationRecord(kind="pointcloud_segmentation")</code> <strong>or</strong> a dedicated pointcloud annotation entity if introduced</td>
+<td>V3 should support this explicitly even if the first implementation uses a specialized annotation kind before a richer pointcloud model exists.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="migration-guidance">Migration guidance</h3>
+<p>To migrate V1 semantics into V3 cleanly:</p>
+<ol>
+<li>Preserve the <strong>task meaning</strong> of each V1 output type.</li>
+<li>Persist the result using <strong>canonical V3 entities</strong>, not V1-shaped output blobs as the source of truth.</li>
+<li>Keep provenance such as:</li>
+<li>original task/output type</li>
+<li>producing model or run</li>
+<li>source dataset/collection context</li>
+<li>Treat legacy package outputs and caches as <strong>derived/imported forms</strong>, not as the canonical V3 persistence model.</li>
+</ol>
+<h3 id="immediate-compatibility-requirement">Immediate compatibility requirement</h3>
+<p>At minimum, V3 should preserve support for the full V1 output surface:</p>
+<ul>
+<li>classification</li>
+<li>regression</li>
+<li>detection</li>
+<li>image segmentation</li>
+<li>pointcloud segmentation</li>
+</ul>
+<p>That support does not require V3 to preserve the exact V1 storage format. It does require V3 to provide a canonical way to represent all of those semantics in the new data model.</p>
+<h3 id="datasetbuilder">DatasetBuilder</h3>
+<p><code>DatasetBuilder</code> should not be treated as a canonical persisted entity.</p>
+<p>Instead, it should be treated as a separate Datalake-facing helper/API concept used to:</p>
+<ul>
+<li>stage changes to dataset membership</li>
+<li>construct new immutable <code>DatasetVersion</code>s</li>
+<li>support ergonomic SDK workflows for dataset authoring and revision</li>
+</ul>
+<p>In other words:</p>
+<ul>
+<li><code>DatasetVersion</code> is canonical persisted state</li>
+<li><code>DatasetBuilder</code> is a mutable construction helper that may be exposed by the Datalake API or SDK, but should not sit in the canonical entity model itself</li>
+</ul>
+<h2 id="appendix">Appendix</h2>
+<h3 id="integration-notes">Integration notes</h3>
+<p>This proposal is intentionally framed as a public Mindtrace design rather than an application-specific integration plan.</p>
+<p>A consumer of the Datalake module should be able to:</p>
+<ul>
+<li>store payloads through the storage / asset APIs</li>
+<li>reference canonical Datalake asset IDs from higher-level application records</li>
+<li>use the annotation APIs for live label CRUD when appropriate</li>
+<li>generate dataset exports from canonical assets and annotation records</li>
+<li>promote objects across mounts through storage copy endpoints</li>
+</ul>
+<p>This keeps Datalake positioned as the canonical persistence and access layer while allowing downstream applications to remain thin clients over that data model.</p>
+<hr />
+<h3 id="open-questions">Open questions</h3>
+<p>The following are intentionally left open for later design decisions:</p>
+<ol>
+<li><strong>Reference counting and garbage collection</strong></li>
+<li>Should v1 maintain explicit reference counts on assets?</li>
+<li>
+<p>Should this be derived rather than eagerly tracked?</p>
+</li>
+<li>
+<p><strong>Taxonomy / ontology support</strong></p>
+</li>
+<li>
+<p>Should class maps and label ontologies become first-class entities in v1 or later?</p>
+</li>
+<li>
+<p><strong>Transaction semantics</strong></p>
+</li>
+<li>How tightly do we want to coordinate DB writes and Store writes?</li>
+<li>
+<p>Is eventual consistency acceptable in v1?</p>
+</li>
+<li>
+<p><strong>Query language</strong></p>
+</li>
+<li>
+<p>What structured filter language should be adopted for dataset and annotation queries?</p>
+</li>
+<li>
+<p><strong>Runtime SDK surface</strong></p>
+</li>
+<li>
+<p>How much of the Python ergonomic layer (<code>Dataset</code>, <code>DatasetBuilder</code>, HF interop helpers) should ship in the first implementation?</p>
+</li>
+<li>
+<p><strong>Access control / multi-tenant concerns</strong></p>
+</li>
+<li>Should authorization remain outside the Datalake service in the initial V3 implementation, or be partly absorbed later?</li>
+</ol>
+<hr />
+<h3 id="recommended-v3-implementation-stance">Recommended V3 implementation stance</h3>
+<p>A practical first implementation of V3 should:</p>
+<ul>
+<li>preserve the Registry / Store + database split</li>
+<li>implement explicit canonical entities for assets, datums, dataset versions, annotation sets, and atomic annotation records</li>
+<li>keep the service API small and explicit</li>
+<li>avoid overpromising advanced lifecycle mechanics in the first cut</li>
+</ul>
+<p>In short: build the Datalake as a canonical data layer with a narrow, clear contract, not as a one-off app-specific storage helper and not as a giant platform on day one.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Mindtrace
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/mindtrace-ai" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.footer", "navigation.top", "navigation.expand", "navigation.tabs.sticky", "search.suggest", "search.highlight", "search.share"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
