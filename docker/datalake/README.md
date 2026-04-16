@@ -44,7 +44,8 @@ from PIL import Image
 from mindtrace.datalake import DataVault, DatalakeService
 
 hopper = Image.open(Path("tests/resources/hopper.png"))
-vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
+cm = DatalakeService.connect(url="http://localhost:8080")
+vault = DataVault(cm)
 
 vault.save_image("images:hopper", hopper)
 image = vault.load_image("images:hopper")
@@ -61,7 +62,8 @@ from PIL import Image
 from mindtrace.datalake import AsyncDataVault, DatalakeService
 
 hopper = Image.open(Path("tests/resources/hopper.png"))
-vault = AsyncDataVault(DatalakeService.connect(url="http://localhost:8080"))
+cm = DatalakeService.connect(url="http://localhost:8080")
+vault = AsyncDataVault(cm)
 
 await vault.save_image("images:hopper", hopper)
 image = await vault.load_image("images:hopper")

@@ -36,7 +36,8 @@ Remote service (blocking), after ``DatalakeService`` is running (URL must match 
     from mindtrace.datalake import DataVault, DatalakeService
 
     hopper = Image.open(Path("tests/resources/hopper.png"))
-    vault = DataVault(DatalakeService.connect(url="http://localhost:8080"))
+    cm = DatalakeService.connect(url="http://localhost:8080")
+    vault = DataVault(cm)
     vault.save_image("images:hopper", hopper)
     image = vault.load_image("images:hopper")
 """
