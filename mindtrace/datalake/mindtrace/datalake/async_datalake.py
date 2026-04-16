@@ -1207,6 +1207,8 @@ class AsyncDatalake(Mindtrace):
         existing = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
         if existing:
             raise ValueError(f"Dataset version already exists: {dataset_name}@{version}")
+        if len(manifest) != len(set(manifest)):
+            raise ValueError("Dataset version manifest must not contain duplicate datum ids")
         for datum_id in manifest:
             await self.get_datum(datum_id)
         dataset_version = self._build_document(
