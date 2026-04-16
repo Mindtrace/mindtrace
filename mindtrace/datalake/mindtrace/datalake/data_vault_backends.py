@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 from abc import ABC, abstractmethod
 from typing import Any
+from unittest.mock import Mock as _UnitTestMock
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.datalake import Datalake
@@ -42,21 +43,31 @@ _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
 )
 
 
-def looks_like_datalake_service_sync_client(obj: Any) -> bool:
-    """Return True if ``obj`` is a :class:`~mindtrace.services.ConnectionManager` with sync datalake task methods.
+def _is_unittest_mock(obj: Any) -> bool:
+    return isinstance(obj, _UnitTestMock)
 
-    ``MagicMock`` and plain ducks are rejected so in-process datalake fakes are not mistaken for HTTP clients.
+
+def looks_like_datalake_service_sync_client(obj: Any) -> bool:
+    """Return True if ``obj`` exposes sync ``DatalakeService`` task methods (``assets_get_by_alias``, …).
+
+    Accepts a :class:`~mindtrace.services.ConnectionManager` or a non-mock facade with the same
+    callables (e.g. an in-process HTTP test client). ``unittest.mock.Mock`` / ``MagicMock`` are
+    rejected so generic mocks are not mistaken for service clients.
     """
 
-    if not isinstance(obj, ConnectionManager):
+    if isinstance(obj, ConnectionManager):
+        return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+    if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
 
 
 def looks_like_datalake_service_async_client(obj: Any) -> bool:
-    """Return True if ``obj`` is a connection manager with async ``a``-prefixed datalake task methods."""
+    """Return True if ``obj`` exposes async ``a``-prefixed ``DatalakeService`` task methods."""
 
-    if not isinstance(obj, ConnectionManager):
+    if isinstance(obj, ConnectionManager):
+        return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+    if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
 
