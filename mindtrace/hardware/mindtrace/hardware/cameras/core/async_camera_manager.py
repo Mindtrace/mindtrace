@@ -1,11 +1,20 @@
 """Async camera manager for Mindtrace hardware cameras."""
 
 import asyncio
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
+from mindtrace.hardware.cameras.core.capture_groups import (
+    CaptureGroup,
+    StageSetConfigDict,
+    build_capture_groups,
+    get_semaphore_for_capture,
+    validate_stage_set_configs,
+)
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
@@ -88,6 +97,22 @@ class AsyncCameraManager(Mindtrace):
         # Performance settings that persist across camera open/close cycles
         self._timeout_ms = self._hardware_config.cameras.timeout_ms
         self._retrieve_retry_count = self._hardware_config.cameras.retrieve_retry_count
+
+        # Stage+Set capture groups (per-group concurrency control)
+        self._capture_groups: Dict[str, CaptureGroup] = {}
+        self._camera_group_keys: Dict[str, List[str]] = {}
+
+        # Auto-reconnection / failure tracking
+        self._failure_counts: Dict[str, int] = {}
+        self._last_reinit_attempt: Dict[str, float] = {}
+        self._max_consecutive_failures = self._hardware_config.cameras.max_consecutive_failures
+        self._reinitialization_cooldown = self._hardware_config.cameras.reinitialization_cooldown
+
+        # Camera config preservation directory
+        camera_config_dir = self._hardware_config.cameras.camera_config_dir
+        if not camera_config_dir:
+            camera_config_dir = str(Path(self._hardware_config.paths.config_dir).expanduser() / "cameras")
+        self._camera_config_dir = camera_config_dir
 
         self.logger.info(
             f"AsyncCameraManager initialized. Available backends: {self._discovered_backends}, "
@@ -437,6 +462,7 @@ class AsyncCameraManager(Mindtrace):
             proxy = AsyncCamera(camera, camera_name)
             self._cameras[camera_name] = proxy
             self.logger.info(f"Camera '{camera_name}' initialized successfully")
+
             return proxy
 
         # Multiple
@@ -565,7 +591,7 @@ class AsyncCameraManager(Mindtrace):
         self.logger.info(f"Retrieve retry count set to {count}")
 
     def diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostics information including bandwidth management."""
+        """Get diagnostics information including bandwidth management and resilience status."""
         return {
             "max_concurrent_captures": self.max_concurrent_captures,
             "active_cameras": len(self._cameras),
@@ -576,7 +602,139 @@ class AsyncCameraManager(Mindtrace):
                 "balanced": 2,
                 "aggressive": 3,
             },
+            "failure_counts": dict(self._failure_counts),
+            "cameras_in_cooldown": [
+                name
+                for name, ts in self._last_reinit_attempt.items()
+                if time.time() - ts < self._reinitialization_cooldown
+            ],
+            "capture_groups_count": len(self._capture_groups),
         }
+
+    # ------------------------------------------------------------------ #
+    #  Capture Groups (stage+set batching)                                #
+    # ------------------------------------------------------------------ #
+
+    def configure_capture_groups(self, config: StageSetConfigDict) -> None:
+        """Configure stage+set capture groups with per-group semaphores.
+
+        Each group creates a concurrency semaphore sized to ``batch_size``,
+        limiting how many cameras within the group can capture simultaneously.
+
+        Args:
+            config: ``{stage: {set: {"batch_size": int, "cameras": [str]}}}``
+
+        Raises:
+            CameraConfigurationError: If config is invalid.
+        """
+        is_valid, error = validate_stage_set_configs(config, self.active_cameras)
+        if not is_valid:
+            raise CameraConfigurationError(f"Invalid capture group config: {error}")
+
+        groups, camera_map = build_capture_groups(config)
+        self._capture_groups = groups
+        self._camera_group_keys = camera_map
+        self.logger.info(f"Configured {len(groups)} capture groups for {len(camera_map)} cameras")
+
+    def remove_capture_groups(self) -> None:
+        """Clear all capture group configurations."""
+        count = len(self._capture_groups)
+        self._capture_groups.clear()
+        self._camera_group_keys.clear()
+        self.logger.info(f"Removed {count} capture groups")
+
+    def get_capture_groups(self) -> Dict[str, Any]:
+        """Return current capture group configuration as serializable dict."""
+        return {key: group.to_dict() for key, group in self._capture_groups.items()}
+
+    # ------------------------------------------------------------------ #
+    #  Auto-Reconnection / Failure Tracking                               #
+    # ------------------------------------------------------------------ #
+
+    def _get_camera_config_path(self, camera_name: str) -> str:
+        """Return filesystem path for a camera's preserved config."""
+        safe_name = camera_name.replace(":", "_").replace("/", "_")
+        return str(Path(self._camera_config_dir) / f"{safe_name}.json")
+
+    async def _auto_export_config(self, camera_name: str) -> None:
+        """Export camera config after successful init for later restoration."""
+        try:
+            if camera_name not in self._cameras:
+                return
+            camera = self._cameras[camera_name]
+            config_path = self._get_camera_config_path(camera_name)
+            Path(config_path).parent.mkdir(parents=True, exist_ok=True)
+            await camera.save_config(config_path)
+            self.logger.debug(f"Auto-exported config for '{camera_name}' to {config_path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-export config for '{camera_name}': {e}")
+
+    async def _auto_import_config(self, camera_name: str) -> None:
+        """Restore camera config from previously saved file."""
+        try:
+            config_path = self._get_camera_config_path(camera_name)
+            if not Path(config_path).exists():
+                self.logger.debug(f"No saved config for '{camera_name}'")
+                return
+            if camera_name not in self._cameras:
+                return
+            camera = self._cameras[camera_name]
+            await camera.load_config(config_path)
+            self.logger.info(f"Auto-imported config for '{camera_name}' from {config_path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-import config for '{camera_name}': {e}")
+
+    async def _handle_camera_failure(self, camera_name: str) -> None:
+        """Handle consecutive failures: cooldown check, close, reinit, restore config."""
+        current_time = time.time()
+
+        # Cooldown check — avoid thrashing
+        last_attempt = self._last_reinit_attempt.get(camera_name, 0.0)
+        if current_time - last_attempt < self._reinitialization_cooldown:
+            remaining = self._reinitialization_cooldown - (current_time - last_attempt)
+            self.logger.info(f"Reinit cooldown for '{camera_name}', {remaining:.1f}s remaining")
+            return
+
+        self.logger.warning(
+            f"Failure threshold reached for '{camera_name}' "
+            f"({self._failure_counts.get(camera_name, 0)} consecutive failures), "
+            f"attempting reinit"
+        )
+        self._last_reinit_attempt[camera_name] = current_time
+
+        # Close the camera
+        try:
+            await self.close(camera_name)
+        except Exception as e:
+            self.logger.warning(f"Error closing '{camera_name}' during reinit: {e}")
+
+        # Re-open and restore config
+        try:
+            await self.open(camera_name, test_connection=True)
+            await self._auto_import_config(camera_name)
+            # Re-export to keep the saved file fresh
+            await self._auto_export_config(camera_name)
+            self._failure_counts[camera_name] = 0
+            self.logger.info(f"Reinit successful for '{camera_name}'")
+        except Exception as e:
+            self.logger.error(f"Reinit failed for '{camera_name}': {e}")
+            # Reset counter to prevent immediate re-trigger on next capture
+            self._failure_counts[camera_name] = 0
+
+    def _record_capture_success(self, camera_name: str) -> None:
+        """Reset failure counter on successful capture."""
+        if self._failure_counts.get(camera_name, 0) > 0:
+            self._failure_counts[camera_name] = 0
+
+    async def _record_capture_failure(self, camera_name: str) -> None:
+        """Increment failure counter and trigger reinit if threshold reached."""
+        count = self._failure_counts.get(camera_name, 0) + 1
+        self._failure_counts[camera_name] = count
+        self.logger.warning(
+            f"Capture failure #{count} for '{camera_name}' (threshold: {self._max_consecutive_failures})"
+        )
+        if count >= self._max_consecutive_failures:
+            await self._handle_camera_failure(camera_name)
 
     async def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
         """Close one, many, or all cameras.
@@ -596,6 +754,8 @@ class AsyncCameraManager(Mindtrace):
                 try:
                     await self._cameras[camera_name].close()
                     del self._cameras[camera_name]
+                    # Clean up failure tracking (but preserve group assignments — they're config, not state)
+                    self._failure_counts.pop(camera_name, None)
                     self.logger.info(f"Camera '{camera_name}' closed")
                 except Exception as e:
                     self.logger.warning(f"Failed to close '{camera_name}': {e}")
@@ -625,6 +785,11 @@ class AsyncCameraManager(Mindtrace):
                 camera_name, success = result
                 results[camera_name] = success
 
+        # Export config for cameras that were successfully configured
+        for camera_name, success in results.items():
+            if success:
+                await self._auto_export_config(camera_name)
+
         return results
 
     async def batch_capture(
@@ -632,6 +797,8 @@ class AsyncCameraManager(Mindtrace):
         camera_names: List[str],
         save_path_pattern: Optional[str] = None,
         output_format: str = "pil",
+        stage: Optional[str] = None,
+        set_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management.
 
@@ -639,6 +806,8 @@ class AsyncCameraManager(Mindtrace):
             camera_names: List of camera names to capture from
             save_path_pattern: Optional path pattern for saving images. Use {camera} placeholder for camera name
             output_format: Output format for images
+            stage: Optional stage name for capture group routing
+            set_name: Optional set name for capture group routing
 
         Returns:
             Dictionary mapping camera names to captured images or file paths
@@ -647,7 +816,19 @@ class AsyncCameraManager(Mindtrace):
 
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
             try:
-                async with self._capture_semaphore:
+                # Route to correct semaphore (group-specific or global)
+                semaphore, err = get_semaphore_for_capture(
+                    camera_name,
+                    stage,
+                    set_name,
+                    self._capture_groups,
+                    self._camera_group_keys,
+                    self._capture_semaphore,
+                )
+                if err:
+                    raise CameraConfigurationError(err)
+
+                async with semaphore:
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
@@ -661,6 +842,9 @@ class AsyncCameraManager(Mindtrace):
 
                     image = await camera.capture(save_path=save_path, output_format=output_format)
 
+                    # Track success for auto-reconnection
+                    self._record_capture_success(camera_name)
+
                     # When save_path_pattern is provided, return the file path instead of image data
                     if save_path_pattern and save_path:
                         return camera_name, save_path
@@ -668,6 +852,8 @@ class AsyncCameraManager(Mindtrace):
                         return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
+                # Track failure for auto-reconnection
+                await self._record_capture_failure(camera_name)
                 return camera_name, None
 
         tasks = [capture_from_camera(name) for name in camera_names]
@@ -690,13 +876,27 @@ class AsyncCameraManager(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         output_format: str = "pil",
+        stage: Optional[str] = None,
+        set_name: Optional[str] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}
 
         async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Dict[str, Any]]:
             try:
-                async with self._capture_semaphore:
+                # Route to correct semaphore (group-specific or global)
+                semaphore, err = get_semaphore_for_capture(
+                    camera_name,
+                    stage,
+                    set_name,
+                    self._capture_groups,
+                    self._camera_group_keys,
+                    self._capture_semaphore,
+                )
+                if err:
+                    raise CameraConfigurationError(err)
+
+                async with semaphore:
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
@@ -714,9 +914,11 @@ class AsyncCameraManager(Mindtrace):
                         output_format=output_format,
                     )
 
+                    self._record_capture_success(camera_name)
                     return camera_name, result
             except Exception as e:
                 self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
+                await self._record_capture_failure(camera_name)
                 return camera_name, {
                     "success": False,
                     "images": None,

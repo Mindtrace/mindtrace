@@ -61,7 +61,20 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      # DatalakeService registers /health as a POST endpoint (Mindtrace Service default methods).
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "-X",
+          "POST",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          "{}",
+          "http://localhost:8080/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
