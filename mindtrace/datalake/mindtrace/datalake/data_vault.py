@@ -32,16 +32,17 @@ Typical sync usage::
 
 Remote service (blocking), after ``DatalakeService`` is running (URL must match the deployed service)::
 
-    from pathlib import Path
-
     from PIL import Image
-    from mindtrace.datalake import DataVault, DatalakeService
+    from mindtrace.datalake import DataVault
 
-    hopper = Image.open(Path("tests/resources/hopper.png"))
-    cm = DatalakeService.connect(url="http://localhost:8080")
-    vault = DataVault(cm)
+    hopper = Image.open("tests/resources/hopper.png")
+    vault = DataVault.from_url("http://localhost:8080")
     vault.save_image("images:hopper", hopper)
     image = vault.load_image("images:hopper")
+
+This is equivalent to calling :meth:`~mindtrace.datalake.service.DatalakeService.connect` and
+passing the connection manager to :class:`DataVault` — see :meth:`DataVault.from_url` and
+:meth:`AsyncDataVault.from_url`.
 """
 
 from __future__ import annotations
@@ -69,6 +70,7 @@ from mindtrace.datalake.data_vault_backends import (
     looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.datalake import Datalake
+from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.types import AnnotationRecord, Asset, DuplicateAliasError, SubjectRef
 from mindtrace.datalake.vault_serialization import (
     augment_asset_metadata_for_vault_save,
@@ -204,6 +206,23 @@ class AsyncDataVault:
         self._backend = _normalize_async_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
         self._registry = registry
+
+    @classmethod
+    def from_url(
+        cls,
+        url: str,
+        *,
+        timeout: int = 60,
+        object_name_prefix: str = "vault",
+        registry: Registry | None = None,
+    ) -> AsyncDataVault:
+        """Connect to a running :class:`~mindtrace.datalake.service.DatalakeService` and return a vault.
+
+        Uses the same connection manager as :meth:`~mindtrace.datalake.service.DatalakeService.connect`
+        (including async task methods when exposed by the client).
+        """
+        cm = DatalakeService.connect(url=url, timeout=timeout)
+        return cls(cm, object_name_prefix=object_name_prefix, registry=registry)
 
     def _object_name(self, alias: str) -> str:
         safe = _sanitize_object_name_component(alias)
@@ -393,6 +412,22 @@ class DataVault:
         self._backend = _normalize_sync_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
         self._registry = registry
+
+    @classmethod
+    def from_url(
+        cls,
+        url: str,
+        *,
+        timeout: int = 60,
+        object_name_prefix: str = "vault",
+        registry: Registry | None = None,
+    ) -> DataVault:
+        """Connect to a running :class:`~mindtrace.datalake.service.DatalakeService` and return a vault.
+
+        Equivalent to ``DataVault(DatalakeService.connect(url=url, timeout=timeout), ...)``.
+        """
+        cm = DatalakeService.connect(url=url, timeout=timeout)
+        return cls(cm, object_name_prefix=object_name_prefix, registry=registry)
 
     def _object_name(self, alias: str) -> str:
         safe = _sanitize_object_name_component(alias)

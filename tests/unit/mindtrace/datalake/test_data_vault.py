@@ -105,3 +105,73 @@ def test_sync_data_vault_add_and_list_annotations_for_asset():
     listed = vault.list_annotations_for_asset("my-alias")
     assert listed == [stored]
     dl.list_annotation_records_for_asset.assert_called_once_with("a_target")
+
+
+class _FakeSyncServiceCM:
+    """Minimal surface so :func:`looks_like_datalake_service_sync_client` accepts the CM."""
+
+    def assets_get_by_alias(self, *a, **k):
+        raise NotImplementedError
+
+    def objects_get(self, *a, **k):
+        raise NotImplementedError
+
+    def assets_create_from_object(self, *a, **k):
+        raise NotImplementedError
+
+    def aliases_add(self, *a, **k):
+        raise NotImplementedError
+
+
+class _FakeAsyncServiceCM:
+    """Minimal surface so :func:`looks_like_datalake_service_async_client` accepts the CM."""
+
+    async def aassets_get_by_alias(self, *a, **k):
+        raise NotImplementedError
+
+    async def aobjects_get(self, *a, **k):
+        raise NotImplementedError
+
+    async def aassets_create_from_object(self, *a, **k):
+        raise NotImplementedError
+
+    async def aaliases_add(self, *a, **k):
+        raise NotImplementedError
+
+
+def test_data_vault_from_url(monkeypatch):
+    fake_cm = _FakeSyncServiceCM()
+    captured: dict[str, object] = {}
+
+    def fake_connect(cls, url=None, timeout=60):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return fake_cm
+
+    monkeypatch.setattr(
+        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        classmethod(fake_connect),
+    )
+    vault = DataVault.from_url("http://example:8080", timeout=30, object_name_prefix="prefix")
+    assert isinstance(vault, DataVault)
+    assert vault._object_name_prefix == "prefix"
+    assert captured == {"url": "http://example:8080", "timeout": 30}
+
+
+def test_async_data_vault_from_url(monkeypatch):
+    fake_cm = _FakeAsyncServiceCM()
+    captured: dict[str, object] = {}
+
+    def fake_connect(cls, url=None, timeout=60):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return fake_cm
+
+    monkeypatch.setattr(
+        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        classmethod(fake_connect),
+    )
+    vault = AsyncDataVault.from_url("http://async:9090", timeout=45, object_name_prefix="av")
+    assert isinstance(vault, AsyncDataVault)
+    assert vault._object_name_prefix == "av"
+    assert captured == {"url": "http://async:9090", "timeout": 45}
