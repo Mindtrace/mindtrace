@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 import hashlib
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Dict, List, Type
@@ -14,13 +14,13 @@ from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
-from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
     StoreKeyFormatError,
     StoreLocationNotFound,
 )
+from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.types import BatchResult, VerifyLevel
 
@@ -113,7 +113,9 @@ class Store(Mindtrace):
             idx += 1
         return f"{candidate}-{idx}"
 
-    def add_mount(self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None) -> None:
+    def add_mount(
+        self, mount_or_registry: Mount | Registry, *, name: str | None = None, read_only: bool | None = None
+    ) -> None:
         if isinstance(mount_or_registry, Mount):
             mount_name = name if name is not None else mount_or_registry.name
             registry = Registry.from_mount(mount_or_registry)
@@ -345,6 +347,58 @@ class Store(Mindtrace):
                 result.failed.append(item_key)
                 result.errors[item_key] = {"error": type(e).__name__, "message": str(e)}
         return result
+
+    def create_direct_upload_target(
+        self,
+        key: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+        upload_id: str | None = None,
+    ) -> dict[str, Any]:
+        mount, object_name, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        target = registry.create_direct_upload_target(
+            upload_id or hashlib.sha1(key.encode()).hexdigest(),
+            content_type=content_type,
+            expiration_minutes=expiration_minutes,
+        )
+        return {"mount": resolved_mount, "name": object_name, **target}
+
+    def inspect_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> dict[str, Any]:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.inspect_direct_upload_target(staged_target)
+
+    def cleanup_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> bool:
+        mount, _, _ = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.cleanup_direct_upload_target(staged_target)
+
+    def commit_direct_upload(
+        self,
+        key: str,
+        *,
+        staged_target: dict[str, Any],
+        version: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str:
+        mount, object_name, key_version = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        resolved_version = registry.commit_direct_upload(
+            object_name,
+            staged_target=staged_target,
+            version=version if version is not None else key_version,
+            metadata=metadata,
+            on_conflict=on_conflict,
+        )
+        self.cache_update_location(object_name, resolved_mount)
+        return resolved_version
 
     def _single_load(
         self,

@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mindtrace.registry.core.registry import Registry
 
 
 class MountBackendKind(str, Enum):
@@ -165,6 +168,7 @@ class Mount:
         credential configuration.
         """
         from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
         from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
 
         backend = registry.backend
@@ -174,7 +178,7 @@ class Mount:
             "version_digits": registry.version_digits,
         }
 
-        if backend.__class__.__name__ == "LocalRegistryBackend":
+        if isinstance(backend, LocalRegistryBackend):
             return cls(
                 name=name,
                 backend=MountBackendKind.LOCAL,

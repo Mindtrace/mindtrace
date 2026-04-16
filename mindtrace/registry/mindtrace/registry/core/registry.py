@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
     GCSMountConfig,
@@ -22,11 +23,9 @@ from mindtrace.registry.core.mount import (
     LocalMountConfig,
     Mount,
     MountBackendKind,
-    NoAuth,
     S3AccessKeyAuth,
     S3MountConfig,
 )
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
@@ -421,6 +420,104 @@ class Registry(Mindtrace):
             self.logger.warning(f"Error updating cache: {e}")
 
         return result
+
+    def serialization_hints_for_object(
+        self,
+        obj: Any,
+        *,
+        materializer: Type[BaseMaterializer] | None = None,
+    ) -> Dict[str, str]:
+        """Return ZenML ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
+        return self._core.serialization_hints_for_object(obj, materializer=materializer)
+
+    def materialize_from_bytes(
+        self,
+        raw: bytes | bytearray,
+        *,
+        object_class: str,
+        materializer: str,
+        init_params: Dict[str, Any] | None = None,
+        relative_path: str = "data.txt",
+        **kwargs: Any,
+    ) -> Any:
+        """Materialize *raw* bytes laid out as a single file (default ZenML bytes layout: ``data.txt``)."""
+        return self._core.materialize_from_bytes(
+            raw,
+            object_class=object_class,
+            materializer=materializer,
+            init_params=init_params,
+            relative_path=relative_path,
+            **kwargs,
+        )
+
+    def create_direct_upload_target(
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        """Create a backend-native direct-upload target for a bytes artifact."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.create_direct_upload_target(
+            upload_id,
+            content_type=content_type,
+            expiration_minutes=expiration_minutes,
+        )
+
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+        """Inspect a staged direct-upload target."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.inspect_direct_upload_target(staged_target)
+
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+        """Delete a staged direct-upload target."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.cleanup_direct_upload_target(staged_target)
+
+    def commit_direct_upload(
+        self,
+        name: str,
+        *,
+        staged_target: dict[str, Any],
+        version: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str:
+        """Commit a previously uploaded bytes artifact into canonical registry storage."""
+        target_core = self._remote if self._cached else self._core
+        backend = target_core.backend
+
+        if on_conflict is None:
+            on_conflict = OnConflict.OVERWRITE if target_core.mutable else OnConflict.SKIP
+        if on_conflict not in (OnConflict.SKIP, OnConflict.OVERWRITE):
+            raise ValueError(f"on_conflict must be 'skip' or 'overwrite', got '{on_conflict}'")
+        if on_conflict == OnConflict.OVERWRITE and not target_core.mutable:
+            raise ValueError(
+                "Cannot use on_conflict='overwrite' with an immutable registry. "
+                "Create the registry with mutable=True to allow overwrites."
+            )
+
+        resolved_version = target_core._resolve_save_version(name, version)
+        direct_metadata = target_core._build_direct_bytes_metadata(metadata)
+        result = backend.commit_direct_upload(
+            name,
+            resolved_version,
+            staged_target,
+            direct_metadata,
+            on_conflict=on_conflict,
+        )
+        if result.is_error:
+            if result.exception:
+                raise result.exception
+            raise RuntimeError(f"Failed to commit direct upload for {name}@{resolved_version}: {result.message}")
+        if result.is_skipped:
+            raise RuntimeError(f"Object {name}@{resolved_version} already exists.")
+
+        target_core._invalidate_versions_cache(name)
+        if self._cached:
+            self.clear_cache()
+        return result.version
 
     @overload
     def load(
