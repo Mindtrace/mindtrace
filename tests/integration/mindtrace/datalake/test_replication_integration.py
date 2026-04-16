@@ -27,7 +27,13 @@ import pytest
 from pymongo import MongoClient
 
 from mindtrace.datalake import AsyncDatalake, ReplicationManager
-from mindtrace.datalake.replication_types import ReplicationBatchRequest, ReplicationReconcileRequest
+from mindtrace.datalake.replication import LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+from mindtrace.datalake.replication_types import (
+    ReplicationBatchRequest,
+    ReplicationReclaimRequest,
+    ReplicationReconcileRequest,
+)
+from mindtrace.registry import StoreLocationNotFound
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
 
 _MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
@@ -211,3 +217,74 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
 
     await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
     await _assert_target_bytes_match_source(source=source, target=target, asset_ids=[a.asset_id for a in assets])
+
+
+@pytest.mark.asyncio
+async def test_replication_mark_local_delete_eligible_requires_verified_target_payload(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
+):
+    source = async_datalake
+    target = async_datalake_minio_secondary_mongo
+    manager = ReplicationManager(source, target)
+
+    asset = await _create_image_asset(source, name=f"replication/reclaim/pending_{uuid4().hex}.png")
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=[asset],
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+
+    target_asset = await target.get_asset(asset.asset_id)
+    assert ReplicationManager.get_payload_status(target_asset) == "pending"
+
+    with pytest.raises(RuntimeError, match="not delete-eligible until target payload is verified"):
+        await manager.mark_local_delete_eligible(asset.asset_id)
+
+
+@pytest.mark.asyncio
+async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps_target_readable(
+    async_datalake: AsyncDatalake,
+    async_datalake_minio_secondary_mongo: AsyncDatalake,
+):
+    source = async_datalake
+    target = async_datalake_minio_secondary_mongo
+    manager = ReplicationManager(source, target)
+
+    asset = await _create_image_asset(source, name=f"replication/reclaim/verified_{uuid4().hex}.png")
+    source_bytes = await source.get_object(asset.storage_ref)
+
+    await manager.upsert_metadata_batch(
+        ReplicationBatchRequest(
+            assets=[asset],
+            origin_lake_id=source.mongo_db_name,
+            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        )
+    )
+    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+
+    reclaim_result = await manager.reclaim_verified_payloads(
+        ReplicationReclaimRequest(asset_ids=[asset.asset_id], limit=1)
+    )
+
+    assert reclaim_result.attempted_asset_ids == [asset.asset_id]
+    assert reclaim_result.reclaimed_asset_ids == [asset.asset_id]
+    assert reclaim_result.failed_asset_ids == []
+
+    source_asset = await source.get_asset(asset.asset_id)
+    assert source_asset.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+    assert ReplicationManager.is_local_deleted(source_asset) is True
+
+    with pytest.raises(StoreLocationNotFound):
+        await source.get_object(source_asset.storage_ref)
+
+    target_asset = await target.get_asset(asset.asset_id)
+    assert ReplicationManager.get_payload_status(target_asset) == "verified"
+    target_bytes = await target.get_object(target_asset.storage_ref)
+    assert target_bytes == source_bytes
+
+    status = await manager.status()
+    assert asset.asset_id in status.metadata["local_deleted_asset_ids"]
