@@ -630,6 +630,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#capture-groups-stageset-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture groups (stage+set batching)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-reconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-reconnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#camera-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1299,6 +1321,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#capture-groups-stageset-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture groups (stage+set batching)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-reconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-reconnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#camera-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1608,6 +1652,39 @@
 </span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
 </span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">capture_one</span><span class="p">())</span>
 </span></code></pre></div>
+<h3 id="capture-groups-stageset-batching">Capture groups (stage+set batching)</h3>
+<p>For production-line setups with multiple cameras, use capture groups to control concurrency per camera group:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">CameraManager</span><span class="p">()</span> <span class="k">as</span> <span class="n">manager</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">cameras</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">discover</span><span class="p">()</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">opened</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">cameras</span><span class="p">)</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="c1"># Configure groups: 1 stage, 2 sets, max 1 concurrent per set</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">manager</span><span class="o">.</span><span class="n">configure_capture_groups</span><span class="p">({</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        <span class="s2">&quot;inspection&quot;</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>            <span class="s2">&quot;top_cameras&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;cameras&quot;</span><span class="p">:</span> <span class="n">cameras</span><span class="p">[:</span><span class="mi">3</span><span class="p">]},</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>            <span class="s2">&quot;side_cameras&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;cameras&quot;</span><span class="p">:</span> <span class="n">cameras</span><span class="p">[</span><span class="mi">3</span><span class="p">:]},</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>        <span class="p">}</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>    <span class="p">})</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>    <span class="c1"># Batch capture with group routing</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">batch_capture</span><span class="p">(</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>        <span class="n">cameras</span><span class="p">[:</span><span class="mi">3</span><span class="p">],</span> <span class="n">stage</span><span class="o">=</span><span class="s2">&quot;inspection&quot;</span><span class="p">,</span> <span class="n">set_name</span><span class="o">=</span><span class="s2">&quot;top_cameras&quot;</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>    <span class="p">)</span>
+</span></code></pre></div>
+<p>Each group creates an <code>asyncio.Semaphore</code> sized to <code>batch_size</code>, limiting how many cameras within the group can capture simultaneously. This prevents GigE bandwidth saturation when multiple cameras share a network link.</p>
+<h3 id="auto-reconnection">Auto-reconnection</h3>
+<p>The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:</p>
+<ol>
+<li>Exports the current camera config to disk</li>
+<li>Closes and re-opens the camera</li>
+<li>Restores the saved configuration</li>
+</ol>
+<p>Configure via environment variables or <code>HardwareConfig</code>:</p>
+<ul>
+<li><code>MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES</code> (default: 5)</li>
+<li><code>MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN</code> (default: 30s)</li>
+<li><code>MINDTRACE_HW_CAMERA_CONFIG_DIR</code> (default: <code>~/.config/mindtrace/cameras</code>)</li>
+</ul>
 <h3 id="camera-backends">Camera backends</h3>
 <p>The camera module exposes availability flags so you can check which backends are usable in the current environment:</p>
 <ul>
@@ -1617,10 +1694,10 @@
 <li><code>SETUP_AVAILABLE</code></li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">BASLER_AVAILABLE</span><span class="p">,</span> <span class="n">OPENCV_AVAILABLE</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Basler:&quot;</span><span class="p">,</span> <span class="n">BASLER_AVAILABLE</span><span class="p">)</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;OpenCV:&quot;</span><span class="p">,</span> <span class="n">OPENCV_AVAILABLE</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">BASLER_AVAILABLE</span><span class="p">,</span> <span class="n">OPENCV_AVAILABLE</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Basler:&quot;</span><span class="p">,</span> <span class="n">BASLER_AVAILABLE</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;OpenCV:&quot;</span><span class="p">,</span> <span class="n">OPENCV_AVAILABLE</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="homography-utilities">Homography utilities</h3>
 <p>The top-level hardware package also exposes planar calibration helpers:</p>
@@ -1631,20 +1708,20 @@
 <li><code>MeasuredBox</code></li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">HomographyCalibrator</span><span class="p">,</span> <span class="n">PlanarHomographyMeasurer</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">calibrator</span> <span class="o">=</span> <span class="n">HomographyCalibrator</span><span class="p">()</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">calibrator</span><span class="o">.</span><span class="n">calibrate_checkerboard</span><span class="p">(</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">image</span><span class="o">=</span><span class="n">checkerboard_image</span><span class="p">,</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">board_size</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">square_size</span><span class="o">=</span><span class="mf">25.0</span><span class="p">,</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">world_unit</span><span class="o">=</span><span class="s2">&quot;mm&quot;</span><span class="p">,</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">)</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="n">measurer</span> <span class="o">=</span> <span class="n">PlanarHomographyMeasurer</span><span class="p">(</span><span class="n">calibration</span><span class="p">)</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="n">measured</span> <span class="o">=</span> <span class="n">measurer</span><span class="o">.</span><span class="n">measure_bounding_box</span><span class="p">(</span><span class="n">detection_bbox</span><span class="p">,</span> <span class="n">target_unit</span><span class="o">=</span><span class="s2">&quot;cm&quot;</span><span class="p">)</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">measured</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">HomographyCalibrator</span><span class="p">,</span> <span class="n">PlanarHomographyMeasurer</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">calibrator</span> <span class="o">=</span> <span class="n">HomographyCalibrator</span><span class="p">()</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">calibrator</span><span class="o">.</span><span class="n">calibrate_checkerboard</span><span class="p">(</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">image</span><span class="o">=</span><span class="n">checkerboard_image</span><span class="p">,</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">board_size</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">square_size</span><span class="o">=</span><span class="mf">25.0</span><span class="p">,</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">world_unit</span><span class="o">=</span><span class="s2">&quot;mm&quot;</span><span class="p">,</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="p">)</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">measurer</span> <span class="o">=</span> <span class="n">PlanarHomographyMeasurer</span><span class="p">(</span><span class="n">calibration</span><span class="p">)</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="n">measured</span> <span class="o">=</span> <span class="n">measurer</span><span class="o">.</span><span class="n">measure_bounding_box</span><span class="p">(</span><span class="n">detection_bbox</span><span class="p">,</span> <span class="n">target_unit</span><span class="o">=</span><span class="s2">&quot;cm&quot;</span><span class="p">)</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">measured</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="stereo-cameras">Stereo Cameras</h2>
 <p>The stereo camera subsystem is intended for 3D vision workflows where you want depth-aware capture and stereo-specific device control.</p>
@@ -1658,22 +1735,22 @@
 <li><code>BaslerStereoAceBackend</code></li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.stereo_cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">StereoCamera</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">camera</span> <span class="o">=</span> <span class="n">StereoCamera</span><span class="p">()</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">capture</span><span class="p">()</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">intensity</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">disparity</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">point_cloud</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">capture_point_cloud</span><span class="p">()</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">point_cloud</span><span class="o">.</span><span class="n">save_ply</span><span class="p">(</span><span class="s2">&quot;output.ply&quot;</span><span class="p">)</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="n">camera</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.stereo_cameras</span><span class="w"> </span><span class="kn">import</span> <span class="n">StereoCamera</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">camera</span> <span class="o">=</span> <span class="n">StereoCamera</span><span class="p">()</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">capture</span><span class="p">()</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">intensity</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">disparity</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">point_cloud</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">capture_point_cloud</span><span class="p">()</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">point_cloud</span><span class="o">.</span><span class="n">save_ply</span><span class="p">(</span><span class="s2">&quot;output.ply&quot;</span><span class="p">)</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="n">camera</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </span></code></pre></div>
 <p>For operational usage, the CLI includes stereo service management commands:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>start<span class="w"> </span>--open-docs
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>status
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>stop
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>start<span class="w"> </span>--open-docs
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>status
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>stop
 </span></code></pre></div>
 <h2 id="3d-scanners">3D Scanners</h2>
 <p>The 3D scanner subsystem focuses on async capture workflows and industrial structured-light scanning.</p>
@@ -1686,28 +1763,28 @@
 <li><code>PhotoneoBackend</code></li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.scanners_3d</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncScanner3D</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">capture_scan</span><span class="p">():</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">AsyncScanner3D</span><span class="o">.</span><span class="n">open</span><span class="p">()</span> <span class="k">as</span> <span class="n">scanner</span><span class="p">:</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">capture</span><span class="p">()</span>
-</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">range_shape</span><span class="p">)</span>
-</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>
-</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>        <span class="n">point_cloud</span> <span class="o">=</span> <span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">capture_point_cloud</span><span class="p">()</span>
-</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>        <span class="n">point_cloud</span><span class="o">.</span><span class="n">save_ply</span><span class="p">(</span><span class="s2">&quot;output.ply&quot;</span><span class="p">)</span>
-</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
-</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
-</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">capture_scan</span><span class="p">())</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.scanners_3d</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncScanner3D</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">capture_scan</span><span class="p">():</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">AsyncScanner3D</span><span class="o">.</span><span class="n">open</span><span class="p">()</span> <span class="k">as</span> <span class="n">scanner</span><span class="p">:</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">capture</span><span class="p">()</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">range_shape</span><span class="p">)</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>        <span class="n">point_cloud</span> <span class="o">=</span> <span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">capture_point_cloud</span><span class="p">()</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>        <span class="n">point_cloud</span><span class="o">.</span><span class="n">save_ply</span><span class="p">(</span><span class="s2">&quot;output.ply&quot;</span><span class="p">)</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">capture_scan</span><span class="p">())</span>
 </span></code></pre></div>
 <p>A dedicated scanner README exists in this package:
 - <a href="mindtrace/hardware/scanners_3d/README.md">3D scanner subsystem documentation</a></p>
 <p>CLI example:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>start<span class="w"> </span>--open-docs
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>status
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>stop
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>start<span class="w"> </span>--open-docs
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>status
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>stop
 </span></code></pre></div>
 <h2 id="plcs">PLCs</h2>
 <p>The PLC subsystem provides <code>PLCManager</code> for industrial controller integration.</p>
@@ -1716,26 +1793,26 @@
 <li><code>PLCManager</code></li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManager</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">plc_example</span><span class="p">():</span>
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>    <span class="n">manager</span> <span class="o">=</span> <span class="n">PLCManager</span><span class="p">()</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">register_plc</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">,</span> <span class="s2">&quot;192.168.1.100&quot;</span><span class="p">,</span> <span class="n">plc_type</span><span class="o">=</span><span class="s2">&quot;logix&quot;</span><span class="p">)</span>
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">connect_plc</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">)</span>
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    <span class="n">values</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">read_tags</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;Motor_Speed&quot;</span><span class="p">,</span> <span class="s2">&quot;Status&quot;</span><span class="p">])</span>
-</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
-</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">cleanup</span><span class="p">()</span>
-</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>
-</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>
-</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">plc_example</span><span class="p">())</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManager</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">plc_example</span><span class="p">():</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="n">manager</span> <span class="o">=</span> <span class="n">PLCManager</span><span class="p">()</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">register_plc</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">,</span> <span class="s2">&quot;192.168.1.100&quot;</span><span class="p">,</span> <span class="n">plc_type</span><span class="o">=</span><span class="s2">&quot;logix&quot;</span><span class="p">)</span>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">connect_plc</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">)</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>    <span class="n">values</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">read_tags</span><span class="p">(</span><span class="s2">&quot;Line1&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;Motor_Speed&quot;</span><span class="p">,</span> <span class="s2">&quot;Status&quot;</span><span class="p">])</span>
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>    <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">cleanup</span><span class="p">()</span>
+</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>
+</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>
+</span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">plc_example</span><span class="p">())</span>
 </span></code></pre></div>
 <p>CLI example:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>status
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>stop
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>status
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>stop
 </span></code></pre></div>
 <h2 id="sensors">Sensors</h2>
 <p>The sensors subsystem provides a unified async interface for reading and publishing sensor data across multiple communication backends.</p>
@@ -1752,13 +1829,13 @@
 <p>A dedicated sensor README exists in this package:
 - <a href="mindtrace/hardware/sensors/README.md">Sensor subsystem documentation</a></p>
 <p>Minimal example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.sensors</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncSensor</span><span class="p">,</span> <span class="n">MQTTSensorBackend</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">backend</span> <span class="o">=</span> <span class="n">MQTTSensorBackend</span><span class="p">(</span><span class="s2">&quot;mqtt://localhost:1883&quot;</span><span class="p">)</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="k">async</span> <span class="k">with</span> <span class="n">AsyncSensor</span><span class="p">(</span><span class="s2">&quot;temp001&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;sensors/temperature&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">sensor</span><span class="p">:</span>
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">sensor</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.sensors</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncSensor</span><span class="p">,</span> <span class="n">MQTTSensorBackend</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="n">backend</span> <span class="o">=</span> <span class="n">MQTTSensorBackend</span><span class="p">(</span><span class="s2">&quot;mqtt://localhost:1883&quot;</span><span class="p">)</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="k">async</span> <span class="k">with</span> <span class="n">AsyncSensor</span><span class="p">(</span><span class="s2">&quot;temp001&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;sensors/temperature&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">sensor</span><span class="p">:</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>    <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">sensor</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="services-and-mcp">Services and MCP</h2>
 <p>The hardware package is designed to work well with Mindtrace services, which can expose hardware functionality over HTTP and MCP.</p>
@@ -1769,90 +1846,90 @@
 <li>MCP-compatible tool endpoints for agent workflows</li>
 </ul>
 <p>Example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerConnectionManager</span><span class="p">,</span> <span class="n">PLCManagerService</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Launch a PLC service and wait for a usable client</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="n">cm</span> <span class="o">=</span> <span class="n">PLCManagerService</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="mi">8003</span><span class="p">,</span> <span class="n">wait_for_launch</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">cm</span><span class="o">.</span><span class="n">status</span><span class="p">())</span>
-</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>
-</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="c1"># Or connect later from another Python process</span>
-</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="n">plc_cm</span> <span class="o">=</span> <span class="n">PLCManagerConnectionManager</span><span class="p">(</span><span class="s2">&quot;http://localhost:8003&quot;</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.hardware.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">PLCManagerConnectionManager</span><span class="p">,</span> <span class="n">PLCManagerService</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Launch a PLC service and wait for a usable client</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="n">cm</span> <span class="o">=</span> <span class="n">PLCManagerService</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="mi">8003</span><span class="p">,</span> <span class="n">wait_for_launch</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">cm</span><span class="o">.</span><span class="n">status</span><span class="p">())</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="c1"># Or connect later from another Python process</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="n">plc_cm</span> <span class="o">=</span> <span class="n">PLCManagerConnectionManager</span><span class="p">(</span><span class="s2">&quot;http://localhost:8003&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <p>Example with the docs UI and a direct HTTP request:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># Visit http://localhost:8003/docs</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>$<span class="w"> </span>curl<span class="w"> </span>http://localhost:8003/status
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="c1"># Visit http://localhost:8003/docs</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>$<span class="w"> </span>curl<span class="w"> </span>http://localhost:8003/status
 </span></code></pre></div>
 <p>If you are already using the Mindtrace services layer, the hardware module fits naturally into that pattern.</p>
 <p>For service lifecycle management, the main operational interface is the hardware CLI.</p>
 <h2 id="cli-tools">CLI Tools</h2>
 <p>The package includes a dedicated CLI:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>mindtrace-hw<span class="w"> </span>--help
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>mindtrace-hw<span class="w"> </span>--help
 </span></code></pre></div>
 <p>Common service commands include:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># Cameras</span>
-</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>start
-</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>status
-</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>stop
-</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>
-</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="c1"># Stereo cameras</span>
-</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>start
-</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>status
-</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>stop
-</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>
-</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="c1"># 3D scanners</span>
-</span><span id="__span-19-12"><a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>start
-</span><span id="__span-19-13"><a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>status
-</span><span id="__span-19-14"><a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>stop
-</span><span id="__span-19-15"><a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>
-</span><span id="__span-19-16"><a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="c1"># PLCs</span>
-</span><span id="__span-19-17"><a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
-</span><span id="__span-19-18"><a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>status
-</span><span id="__span-19-19"><a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>stop
-</span><span id="__span-19-20"><a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a>
-</span><span id="__span-19-21"><a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="c1"># Global status</span>
-</span><span id="__span-19-22"><a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a>mindtrace-hw<span class="w"> </span>status
-</span><span id="__span-19-23"><a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a>mindtrace-hw<span class="w"> </span>stop
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Cameras</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>start
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>status
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>stop
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="c1"># Stereo cameras</span>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>start
+</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>status
+</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>mindtrace-hw<span class="w"> </span>stereo<span class="w"> </span>stop
+</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>
+</span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="c1"># 3D scanners</span>
+</span><span id="__span-20-12"><a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>start
+</span><span id="__span-20-13"><a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>status
+</span><span id="__span-20-14"><a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>mindtrace-hw<span class="w"> </span>scanner<span class="w"> </span>stop
+</span><span id="__span-20-15"><a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a>
+</span><span id="__span-20-16"><a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a><span class="c1"># PLCs</span>
+</span><span id="__span-20-17"><a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>start
+</span><span id="__span-20-18"><a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>status
+</span><span id="__span-20-19"><a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a>mindtrace-hw<span class="w"> </span>plc<span class="w"> </span>stop
+</span><span id="__span-20-20"><a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a>
+</span><span id="__span-20-21"><a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a><span class="c1"># Global status</span>
+</span><span id="__span-20-22"><a id="__codelineno-20-22" name="__codelineno-20-22" href="#__codelineno-20-22"></a>mindtrace-hw<span class="w"> </span>status
+</span><span id="__span-20-23"><a id="__codelineno-20-23" name="__codelineno-20-23" href="#__codelineno-20-23"></a>mindtrace-hw<span class="w"> </span>stop
 </span></code></pre></div>
 <p>Example workflow:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Start a camera service and open its docs</span>
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>start<span class="w"> </span>--open-docs
-</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Check overall hardware service status</span>
-</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>status
-</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
-</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="c1"># Show service-specific status</span>
-</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>status
-</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
-</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># Stop the service again</span>
-</span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>stop
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Start a camera service and open its docs</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>start<span class="w"> </span>--open-docs
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Check overall hardware service status</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>status
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="c1"># Show service-specific status</span>
+</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>status
+</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>
+</span><span id="__span-21-10"><a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="c1"># Stop the service again</span>
+</span><span id="__span-21-11"><a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>$<span class="w"> </span>mindtrace-hw<span class="w"> </span>camera<span class="w"> </span>stop
 </span></code></pre></div>
 <p>A dedicated CLI README exists in this package:
 - <a href="mindtrace/hardware/cli/README.md">Hardware CLI documentation</a></p>
 <h2 id="installation-and-backend-extras">Installation and Backend Extras</h2>
 <p>Base install:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>uv<span class="w"> </span>add<span class="w"> </span>mindtrace-hardware
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>uv<span class="w"> </span>add<span class="w"> </span>mindtrace-hardware
 </span></code></pre></div>
 <p>Or with pip:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware
 </span></code></pre></div>
 <p>Optional extras enable backend-specific support:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-basler]&#39;</span>
-</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-genicam]&#39;</span>
-</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-all]&#39;</span>
-</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[stereo-basler]&#39;</span>
-</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[stereo-all]&#39;</span>
-</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[scanners-photoneo]&#39;</span>
-</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[scanners-all]&#39;</span>
-</span><span id="__span-23-8"><a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[hardware-all]&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-basler]&#39;</span>
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-genicam]&#39;</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[cameras-all]&#39;</span>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[stereo-basler]&#39;</span>
+</span><span id="__span-24-5"><a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[stereo-all]&#39;</span>
+</span><span id="__span-24-6"><a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[scanners-photoneo]&#39;</span>
+</span><span id="__span-24-7"><a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[scanners-all]&#39;</span>
+</span><span id="__span-24-8"><a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;mindtrace-hardware[hardware-all]&#39;</span>
 </span></code></pre></div>
 <h3 id="setup-entry-points">Setup entry points</h3>
 <p>The package also defines setup-oriented commands for vendor-specific support:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>mindtrace-camera-basler<span class="w"> </span>--help
-</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>mindtrace-camera-genicam<span class="w"> </span>--help
-</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>mindtrace-stereo-basler<span class="w"> </span>--help
-</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>mindtrace-scanner-photoneo<span class="w"> </span>--help
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>mindtrace-camera-basler<span class="w"> </span>--help
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>mindtrace-camera-genicam<span class="w"> </span>--help
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>mindtrace-stereo-basler<span class="w"> </span>--help
+</span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>mindtrace-scanner-photoneo<span class="w"> </span>--help
 </span></code></pre></div>
 <h2 id="configuration">Configuration</h2>
 <p>The hardware package includes shared configuration helpers under <code>mindtrace.hardware.core</code> and is designed to support:</p>
@@ -1872,14 +1949,14 @@
 </ul>
 <h2 id="testing">Testing</h2>
 <p>If you are working in the full Mindtrace repo, run tests for this module specifically:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Mindtrace/mindtrace.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>mindtrace
-</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--dev<span class="w"> </span>--all-extras
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Mindtrace/mindtrace.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>mindtrace
+</span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--dev<span class="w"> </span>--all-extras
 </span></code></pre></div>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1"># Run the hardware test suite</span>
-</span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>ds<span class="w"> </span>test:<span class="w"> </span>hardware
-</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>
-</span><span id="__span-26-4"><a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1"># Run only unit tests for hardware</span>
-</span><span id="__span-26-5"><a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>ds<span class="w"> </span>test:<span class="w"> </span>--unit<span class="w"> </span>hardware
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="c1"># Run the hardware test suite</span>
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>ds<span class="w"> </span>test:<span class="w"> </span>hardware
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>
+</span><span id="__span-27-4"><a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="c1"># Run only unit tests for hardware</span>
+</span><span id="__span-27-5"><a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>ds<span class="w"> </span>test:<span class="w"> </span>--unit<span class="w"> </span>hardware
 </span></code></pre></div>
 <p>When hardware-dependent tests are not practical, prefer mock or simulator-based workflows where the subsystem supports them.</p>
 <h2 id="practical-notes-and-caveats">Practical Notes and Caveats</h2>
