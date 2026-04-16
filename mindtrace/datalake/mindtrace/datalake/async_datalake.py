@@ -545,6 +545,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
+        datums = await self.list_datums()
+        if any(asset_id in getattr(datum, "asset_refs", {}).values() for datum in datums):
+            raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
         alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
         for row in alias_rows:
             await self.asset_alias_database.delete(row.id)
@@ -883,6 +886,9 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSet:
         if annotation_schema_id is not None:
             await self.get_annotation_schema(annotation_schema_id)
+        datum = None
+        if datum_id is not None:
+            datum = await self.get_datum(datum_id)
         annotation_set = self._build_document(
             AnnotationSet,
             name=name,
@@ -895,12 +901,18 @@ class AsyncDatalake(Mindtrace):
             updated_at=self._utc_now(),
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
-        if datum_id is not None:
-            datum = await self.get_datum(datum_id)
+        if datum is not None:
             if inserted.annotation_set_id not in datum.annotation_set_ids:
                 datum.annotation_set_ids.append(inserted.annotation_set_id)
                 datum.updated_at = self._utc_now()
-                await self.datum_database.update(datum)
+                try:
+                    await self.datum_database.update(datum)
+                except Exception:
+                    try:
+                        await self.annotation_set_database.delete(inserted.id)
+                    except Exception:
+                        pass
+                    raise
         return inserted
 
     async def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
@@ -1133,6 +1145,7 @@ class AsyncDatalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
+        await self._validate_asset_refs_exist(asset_refs)
         datum = self._build_document(
             Datum,
             split=split,
@@ -1152,8 +1165,16 @@ class AsyncDatalake(Mindtrace):
     async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
         return await self.datum_database.find(filters or {})
 
+    async def _validate_asset_refs_exist(self, asset_refs: dict[str, str]) -> None:
+        for asset_id in asset_refs.values():
+            if not str(asset_id).strip():
+                continue
+            await self.get_asset(asset_id)
+
     async def update_datum(self, datum_id: str, **changes: Any) -> Datum:
         datum = await self.get_datum(datum_id)
+        if "asset_refs" in changes and changes["asset_refs"] is not None:
+            await self._validate_asset_refs_exist(changes["asset_refs"])
         for key, value in changes.items():
             setattr(datum, key, value)
         datum.updated_at = self._utc_now()
