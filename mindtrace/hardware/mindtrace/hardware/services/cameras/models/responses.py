@@ -491,12 +491,6 @@ class CaptureGroupsResponse(BaseResponse):
     data: Dict[str, CaptureGroupInfo]
 
 
-class CaptureSaveResponse(BaseResponse):
-    """Response model for capture-and-save operation."""
-
-    data: CaptureResult
-
-
 # Health Check
 class HealthCheckResponse(BaseModel):
     """Health check response model."""

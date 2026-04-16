@@ -111,6 +111,8 @@ class CaptureImageRequest(BaseModel):
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
     output_format: str = Field("pil", description="Output format for returned image ('numpy' or 'pil')")
+    stage: Optional[str] = Field(None, description="Stage name for capture group routing")
+    set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
@@ -563,16 +565,3 @@ class ConfigureCaptureGroupsRequest(BaseModel):
         ...,
         description=("Stage+set config: {stage: {set: {'batch_size': int, 'cameras': [str]}}}"),
     )
-
-
-# Capture Save Operations
-class CaptureSaveRequest(BaseModel):
-    """Request model for capture-and-save operation.
-
-    Captures an image and saves it locally or forwards to an external API.
-    """
-
-    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    save_path: str = Field(..., description="File path or remote key for saving the image")
-    stage: Optional[str] = Field(None, description="Stage name for capture group routing")
-    set_name: Optional[str] = Field(None, description="Set name for capture group routing")
