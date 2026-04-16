@@ -144,7 +144,7 @@ def test_store_integration_read_only_mount_and_batch_failures(temp_dir):
     readonly = Registry(backend=temp_dir / "readonly", version_objects=True, mutable=True)
     store = Store(mounts={"w": writable, "ro": readonly}, default_mount="w")
     store.remove_mount("ro")
-    store.add_mount("ro", readonly, read_only=True)
+    store.add_mount(readonly, name="ro", read_only=True)
 
     with pytest.raises(PermissionError):
         store.save("ro/blocked:item", 1)
