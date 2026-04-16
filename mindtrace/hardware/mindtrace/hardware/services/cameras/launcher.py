@@ -18,12 +18,14 @@ def main():
     # Create service with mock support if requested
     service = CameraManagerService(include_mocks=args.include_mocks)
 
-    # Launch the camera service
+    # Launch the camera service (include_mocks must be passed through launch() so gunicorn
+    # workers receive it via --init-params; the pre-launch `service` instance is not reused.)
     connection_manager = service.launch(
         host=args.host,
         port=args.port,
         wait_for_launch=True,
         block=True,  # Keep the service running
+        include_mocks=args.include_mocks,
     )
 
     return connection_manager
