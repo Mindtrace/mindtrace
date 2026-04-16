@@ -9,20 +9,26 @@ from mindtrace.datalake.data_vault import _normalize_async_backend, _normalize_s
 from mindtrace.datalake.data_vault_backends import (
     DatalakeServiceAsyncDataVaultBackend,
     DatalakeServiceDataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
     _encode_obj_for_service,
     looks_like_datalake_service_async_client,
     looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.service_types import (
     AddAliasInput,
+    AddAnnotationRecordsInput,
+    AddedAnnotationRecordsOutput,
+    AnnotationRecordListOutput,
     AssetAliasOutput,
     AssetOutput,
     CreateAssetFromObjectInput,
     GetAssetByAliasInput,
     GetObjectInput,
+    ListAnnotationRecordsForAssetInput,
     ObjectDataOutput,
 )
-from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
+from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef, SubjectRef
 
 
 @pytest.mark.parametrize(
@@ -265,3 +271,97 @@ def test_looks_like_datalake_service_async_client_rejects_mock():
 def test_normalize_async_backend_wraps_service_facade():
     backend = _normalize_async_backend(_AsyncServiceFacade())
     assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
+
+
+@pytest.mark.asyncio
+async def test_local_async_backend_delegates_annotation_methods():
+    rec = AnnotationRecord(
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="a1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = AsyncMock()
+    dl.add_annotation_records = AsyncMock(return_value=[rec])
+    dl.list_annotation_records_for_asset = AsyncMock(return_value=[rec])
+
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1") == [rec]
+    dl.add_annotation_records.assert_awaited_once_with([{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None)
+    assert await backend.list_annotation_records_for_asset("a1") == [rec]
+    dl.list_annotation_records_for_asset.assert_awaited_once_with("a1")
+
+
+def test_local_sync_backend_delegates_annotation_methods():
+    rec = AnnotationRecord(
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="a1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = Mock()
+    dl.add_annotation_records = Mock(return_value=[rec])
+    dl.list_annotation_records_for_asset = Mock(return_value=[rec])
+
+    backend = LocalDataVaultBackend(dl)
+    assert backend.add_annotation_records([{"kind": "bbox"}], annotation_schema_id="sch") == [rec]
+    dl.add_annotation_records.assert_called_once_with([{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch")
+    assert backend.list_annotation_records_for_asset("a1") == [rec]
+    dl.list_annotation_records_for_asset.assert_called_once_with("a1")
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_add_and_list_annotation_records():
+    rec = AnnotationRecord(
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="a1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.aannotation_records_add = AsyncMock(return_value=AddedAnnotationRecordsOutput(annotation_records=[rec]))
+    cm.aannotation_records_list_for_asset = AsyncMock(return_value=AnnotationRecordListOutput(annotation_records=[rec]))
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    out = await backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1")
+    assert out == [rec]
+    cm.aannotation_records_add.assert_awaited_once()
+    inp = cm.aannotation_records_add.await_args.args[0]
+    assert isinstance(inp, AddAnnotationRecordsInput)
+    assert inp.annotations == [{"kind": "bbox"}]
+    assert inp.annotation_set_id == "s1"
+
+    listed = await backend.list_annotation_records_for_asset("a1")
+    assert listed == [rec]
+    linp = cm.aannotation_records_list_for_asset.await_args.args[0]
+    assert isinstance(linp, ListAnnotationRecordsForAssetInput)
+    assert linp.asset_id == "a1"
+
+
+def test_datalake_service_sync_backend_add_and_list_annotation_records():
+    rec = AnnotationRecord(
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="a1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.annotation_records_add = Mock(return_value=AddedAnnotationRecordsOutput(annotation_records=[rec]))
+    cm.annotation_records_list_for_asset = Mock(return_value=AnnotationRecordListOutput(annotation_records=[rec]))
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    out = backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1")
+    assert out == [rec]
+    inp = cm.annotation_records_add.call_args.args[0]
+    assert isinstance(inp, AddAnnotationRecordsInput)
+    assert inp.annotation_set_id == "s1"
+
+    listed = backend.list_annotation_records_for_asset("a1")
+    assert listed == [rec]
+    linp = cm.annotation_records_list_for_asset.call_args.args[0]
+    assert isinstance(linp, ListAnnotationRecordsForAssetInput)
+    assert linp.asset_id == "a1"
