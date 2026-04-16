@@ -1466,7 +1466,7 @@ def test_register_materializer_edge_cases(backend, monkeypatch):
 
 BYTES_DIRECT_METADATA = {
     "class": "builtins.bytes",
-    "materializer": "zenml.materializers.BytesMaterializer",
+    "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     "init_params": {},
     "metadata": {},
     "_files": ["data.txt"],

@@ -1,7 +1,7 @@
 """High-level alias-based access to datalake assets and payloads.
 
 Serialization uses the same registry/store stack as :class:`~mindtrace.datalake.AsyncDatalake`
-(``put_object`` / ``get_object``), so ZenML materializers registered on ``Registry`` apply.
+(``put_object`` / ``get_object``), so materializers registered on ``Registry`` apply.
 
 Facades:
 
@@ -54,7 +54,6 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
-from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
 from mindtrace.datalake.async_datalake import AsyncDatalake
@@ -79,6 +78,7 @@ from mindtrace.datalake.vault_serialization import (
     materialize_payload_with_hints,
 )
 from mindtrace.registry import Registry
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 _SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
 
@@ -253,7 +253,7 @@ class AsyncDataVault:
         To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
-        ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
+        ``registry=`` or the vault constructor), byte payloads are passed through registry materializers
         using hints stored under ``Asset.metadata["mindtrace.serialization"]`` (see
         :mod:`mindtrace.datalake.vault_serialization`). In-process datalake backends may already
         return materialized objects; in that case this step is skipped for non-bytes results.
@@ -509,7 +509,7 @@ class DataVault:
         To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
-        ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
+        ``registry=`` or the vault constructor), byte payloads are passed through registry materializers
         using hints stored under ``Asset.metadata["mindtrace.serialization"]`` (see
         :mod:`mindtrace.datalake.vault_serialization`). In-process datalake backends may already
         return materialized objects; in that case this step is skipped for non-bytes results.

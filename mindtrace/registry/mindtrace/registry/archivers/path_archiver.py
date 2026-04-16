@@ -14,8 +14,7 @@ from mindtrace.registry.core.base_materializer import ArtifactType
 class PathArchiver(Archiver):
     """Archiver for Path objects that preserves original filenames.
 
-    Unlike ZenML's PathMaterializer which saves files with a generic name,
-    this archiver preserves the original filename (including extension)
+    This archiver preserves the original filename (including extension)
     when saving and loading Path objects.
     """
 

@@ -7,15 +7,13 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Type, overload
-
-if TYPE_CHECKING:
-    from mindtrace.registry.core.base_materializer import BaseMaterializer
+from typing import Any, Dict, List, Type, overload
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
@@ -424,7 +422,7 @@ class Registry(Mindtrace):
         *,
         materializer: Type[BaseMaterializer] | None = None,
     ) -> Dict[str, str]:
-        """Return ZenML ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
+        """Return ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
         return self._core.serialization_hints_for_object(obj, materializer=materializer)
 
     def materialize_from_bytes(
@@ -437,7 +435,7 @@ class Registry(Mindtrace):
         relative_path: str = "data.txt",
         **kwargs: Any,
     ) -> Any:
-        """Materialize *raw* bytes laid out as a single file (default ZenML bytes layout: ``data.txt``)."""
+        """Materialize *raw* bytes laid out as a single file (default bytes layout: ``data.txt``)."""
         return self._core.materialize_from_bytes(
             raw,
             object_class=object_class,

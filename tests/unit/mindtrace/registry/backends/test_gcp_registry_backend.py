@@ -1376,7 +1376,7 @@ def test_list_versions_has_object_and_materializer_edge_cases(backend, sample_me
 
 BYTES_DIRECT_METADATA_GCP = {
     "class": "builtins.bytes",
-    "materializer": "zenml.materializers.BytesMaterializer",
+    "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     "init_params": {},
     "metadata": {},
     "_files": ["data.txt"],

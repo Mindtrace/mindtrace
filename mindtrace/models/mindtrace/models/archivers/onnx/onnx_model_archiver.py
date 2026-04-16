@@ -37,9 +37,7 @@ class OnnxModelArchiver(Archiver):
         >>> loaded_model = registry.load("onnx_model:v1")
     """
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (
-        (ModelProto,) if _ONNX_AVAILABLE else (object,)  # Fallback to prevent ZenML error
-    )
+    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (ModelProto,) if _ONNX_AVAILABLE else (object,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):

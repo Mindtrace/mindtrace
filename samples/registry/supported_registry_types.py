@@ -24,7 +24,8 @@ def main():
     # Register materializer for our custom Pydantic model
     # Use the actual type of the model for registration
     registry.register_materializer(
-        f"{ExampleModel.__module__}.{ExampleModel.__name__}", "zenml.materializers.PydanticMaterializer"
+        f"{ExampleModel.__module__}.{ExampleModel.__name__}",
+        "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer",
     )
 
     # 1. Basic Python types

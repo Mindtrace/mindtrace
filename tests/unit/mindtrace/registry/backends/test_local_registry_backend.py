@@ -1336,7 +1336,7 @@ def test_internal_lock_uses_windows_open_flags_for_shared_and_exclusive(backend,
 
 BYTES_DIRECT_METADATA_LOCAL = {
     "class": "builtins.bytes",
-    "materializer": "zenml.materializers.BytesMaterializer",
+    "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     "init_params": {},
     "metadata": {},
     "_files": ["data.txt"],

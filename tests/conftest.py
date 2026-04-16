@@ -69,7 +69,7 @@ def configure_logging_for_tests(caplog):
     original_level = root_logger.level
     root_logger.setLevel(logging.DEBUG)
 
-    # Remove third-party handlers (e.g. ZenML) from root logger that cause noise.
+    # Remove third-party handlers from root logger that cause noise.
     # caplog's handler is managed by pytest and re-added each test automatically.
     original_root_handlers = root_logger.handlers[:]
     root_logger.handlers = [h for h in root_logger.handlers if type(h).__module__.startswith("_pytest")]

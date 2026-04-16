@@ -1,7 +1,7 @@
 """Conventions for registry ``class`` / ``materializer`` hints on :class:`~mindtrace.datalake.types.Asset`.
 
 These hints let a :class:`~mindtrace.datalake.DataVault` client that only receives **bytes** from a
-remote ``objects.get``-style API reconstruct a Python value using the same ZenML materializers as
+remote ``objects.get``-style API reconstruct a Python value using the same materializers as
 :class:`~mindtrace.registry.Registry`, provided the payload matches a **single-file** staged layout
 (see :meth:`~mindtrace.registry.Registry.materialize_from_bytes`).
 """
@@ -11,14 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Type
 
-from zenml.materializers.base_materializer import BaseMaterializer
-
 from mindtrace.datalake.types import Asset
 from mindtrace.registry import Registry
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 SERIALIZATION_METADATA_KEY = "mindtrace.serialization"
 
-BYTES_MATERIALIZER = "zenml.materializers.BytesMaterializer"
+BYTES_MATERIALIZER = "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer"
 BYTES_CLASS = "builtins.bytes"
 DEFAULT_BYTES_FILES = ("data.txt",)
 
@@ -92,8 +91,8 @@ def materialize_payload_with_hints(
 ) -> Any:
     """Decode *raw* using *serialization* hints and :meth:`~mindtrace.registry.Registry.materialize_from_bytes`.
 
-    Only **single-file** ZenML layouts are supported here; multi-file artifacts require an in-process
-    :meth:`~mindtrace.registry.Registry.load` against the backing registry.
+    Only **single-file** materializer layouts are supported here; multi-file artifacts require an
+    in-process :meth:`~mindtrace.registry.Registry.load` against the backing registry.
     """
     files = serialization.get("_files")
     if isinstance(files, list) and files and all(isinstance(x, str) for x in files):
@@ -102,9 +101,7 @@ def materialize_payload_with_hints(
         rel_paths = list(DEFAULT_BYTES_FILES)
 
     if len(rel_paths) > 1:
-        raise NotImplementedError(
-            "Materializing multi-file ZenML artifacts from a single byte payload is not implemented."
-        )
+        raise NotImplementedError("Materializing multi-file artifacts from a single byte payload is not implemented.")
 
     init_params = serialization.get("init_params") or {}
     if not isinstance(init_params, dict):

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
     RegistryObjectNotFound,
@@ -33,12 +34,6 @@ def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
         return Version(v, digits=digits).parts
     except ValueError:
         return tuple(0 for _ in range(digits))
-
-
-def _is_materializer(obj: Any) -> bool:
-    from mindtrace.registry.core.base_materializer import BaseMaterializer
-
-    return isinstance(obj, BaseMaterializer)
 
 
 class _RegistryCore(Mindtrace):
@@ -328,7 +323,7 @@ class _RegistryCore(Mindtrace):
         """Build registry metadata for a bytes artifact uploaded out-of-band."""
         return {
             "class": "builtins.bytes",
-            "materializer": "zenml.materializers.BytesMaterializer",
+            "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
             "init_params": {},
             "metadata": ifnone(metadata, default={}),
             "_files": ["data.txt"],
@@ -610,8 +605,8 @@ class _RegistryCore(Mindtrace):
         relative_path: str = "data.txt",
         **kwargs: Any,
     ) -> Any:
-        """Write *raw* to *relative_path* under a staged directory and run the ZenML materializer."""
-        with TemporaryDirectory(dir=self._artifact_store.path) as base:
+        """Write *raw* to *relative_path* under a staged directory and run the materializer."""
+        with TemporaryDirectory(dir=self._temp_dir) as base:
             temp_dir = Path(base) / "staged"
             temp_dir.mkdir(parents=True, exist_ok=True)
             target = temp_dir / relative_path

@@ -46,7 +46,7 @@ def test_extract_serialization_block_roundtrip():
     )
     block = extract_serialization_block(asset)
     assert block is not None
-    assert block["materializer"] == "zenml.materializers.BytesMaterializer"
+    assert block["materializer"] == "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer"
 
 
 def test_materialize_payload_with_hints_bytes(tmp_path: Path):

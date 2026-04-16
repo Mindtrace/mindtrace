@@ -4627,7 +4627,7 @@ class TestRegistryCoreCoverage:
 
 REGISTRY_BYTES_META = {
     "class": "builtins.bytes",
-    "materializer": "zenml.materializers.BytesMaterializer",
+    "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     "init_params": {},
     "metadata": {},
     "_files": ["data.txt"],

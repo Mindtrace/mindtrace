@@ -31,7 +31,7 @@ try:
     )
 except ImportError:
     _HF_AVAILABLE = False
-    _HF_PROCESSOR_TYPES = (object,)  # Fallback to prevent ZenML error
+    _HF_PROCESSOR_TYPES = (object,)
 
 
 class HuggingFaceProcessorArchiver(Archiver):
