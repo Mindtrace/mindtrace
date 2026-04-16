@@ -1,3 +1,4 @@
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -448,3 +449,66 @@ def test_update_from_store_without_syncing_all_versions():
 def test_update_rejects_non_mapping_input(basic_store):
     with pytest.raises(TypeError, match="mapping must be a mapping or Store"):
         basic_store.update(object())
+
+
+def test_store_direct_upload_round_trip_on_mount(basic_store):
+    target = basic_store.create_direct_upload_target("a/store-bytes", upload_id="store-up-1")
+    assert target["mount"] == "a"
+    staged = target["staged_target"]
+
+    Path(staged["path"]).write_bytes(b"store-payload")
+    assert basic_store.inspect_direct_upload_target("a/store-bytes", staged_target=staged)["exists"] is True
+    ver = basic_store.commit_direct_upload(
+        "a/store-bytes",
+        staged_target=staged,
+        version="1.0.0",
+        metadata=None,
+    )
+    assert ver == "1.0.0"
+
+
+def test_store_commit_direct_upload_uses_key_version_when_omitted():
+    """Store passes key-embedded version into Registry when ``version`` is omitted."""
+    with TemporaryDirectory() as d1:
+        store = Store.from_mounts(
+            [
+                Mount(
+                    name="a",
+                    backend="local",
+                    config=LocalMountConfig(uri=d1),
+                    is_default=True,
+                    registry_options={"version_objects": True, "mutable": True},
+                ),
+            ]
+        )
+        target = store.create_direct_upload_target("a/keyver@2.0.0", upload_id="kv1")
+        staged = target["staged_target"]
+        Path(staged["path"]).write_bytes(b"v")
+        ver = store.commit_direct_upload(
+            "a/keyver@2.0.0",
+            staged_target=staged,
+            version=None,
+            metadata=None,
+        )
+        assert ver == "2.0.0"
+
+
+def test_store_direct_upload_unqualified_key_uses_default_mount():
+    with TemporaryDirectory() as d1:
+        store = Store.from_mounts(
+            [
+                Mount(
+                    name="a",
+                    backend="local",
+                    config=LocalMountConfig(uri=d1),
+                    is_default=True,
+                    registry_options={"version_objects": True, "mutable": True},
+                ),
+            ]
+        )
+        target = store.create_direct_upload_target("solo-obj", upload_id="uq1")
+        assert target["mount"] == "a"
+        staged = target["staged_target"]
+        Path(staged["path"]).write_bytes(b"1")
+        assert store.inspect_direct_upload_target("solo-obj", staged_target=staged)["exists"] is True
+        assert store.cleanup_direct_upload_target("solo-obj", staged_target=staged) is True

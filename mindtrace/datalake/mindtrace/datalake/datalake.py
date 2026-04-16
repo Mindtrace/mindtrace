@@ -97,7 +97,6 @@ class Datalake(Mindtrace):
             )
 
             datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -106,6 +105,7 @@ class Datalake(Mindtrace):
                         "geometry": {"type": "bbox", "x": 1, "y": 2, "width": 3, "height": 4},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
             print(datum.datum_id, annotation_set.annotation_set_id)
@@ -308,6 +308,18 @@ class Datalake(Mindtrace):
     def copy_object(self, source, **kwargs: Any):
         return self._submit_coro(self._backend.copy_object(source, **kwargs))
 
+    def create_object_upload_session(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_object_upload_session(**kwargs))
+
+    def get_object_upload_session(self, upload_session_id: str):
+        return self._submit_coro(self._backend.get_object_upload_session(upload_session_id))
+
+    def complete_object_upload_session(self, upload_session_id: str, **kwargs: Any):
+        return self._submit_coro(self._backend.complete_object_upload_session(upload_session_id, **kwargs))
+
+    def reconcile_upload_sessions(self, limit: int = 100):
+        return self._submit_coro(self._backend.reconcile_upload_sessions(limit=limit))
+
     def create_asset(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset(**kwargs))
 
@@ -322,6 +334,24 @@ class Datalake(Mindtrace):
 
     def delete_asset(self, asset_id: str) -> None:
         self._submit_coro(self._backend.delete_asset(asset_id))
+
+    def ensure_primary_asset_alias(self, asset):
+        return self._submit_coro(self._backend.ensure_primary_asset_alias(asset))
+
+    def resolve_alias(self, alias: str) -> str:
+        return self._submit_coro(self._backend.resolve_alias(alias))
+
+    def add_alias(self, asset_id: str, alias: str):
+        return self._submit_coro(self._backend.add_alias(asset_id, alias))
+
+    def remove_alias(self, alias: str) -> None:
+        self._submit_coro(self._backend.remove_alias(alias))
+
+    def list_aliases_for_asset(self, asset_id: str) -> list[str]:
+        return self._submit_coro(self._backend.list_aliases_for_asset(asset_id))
+
+    def get_asset_by_alias(self, alias: str):
+        return self._submit_coro(self._backend.get_asset_by_alias(alias))
 
     def create_collection(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_collection(**kwargs))
@@ -371,6 +401,24 @@ class Datalake(Mindtrace):
     def delete_asset_retention(self, asset_retention_id: str) -> None:
         self._submit_coro(self._backend.delete_asset_retention(asset_retention_id))
 
+    def create_annotation_schema(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_annotation_schema(**kwargs))
+
+    def get_annotation_schema(self, annotation_schema_id: str):
+        return self._submit_coro(self._backend.get_annotation_schema(annotation_schema_id))
+
+    def get_annotation_schema_by_name_version(self, name: str, version: str):
+        return self._submit_coro(self._backend.get_annotation_schema_by_name_version(name, version))
+
+    def list_annotation_schemas(self, filters: dict[str, Any] | None = None):
+        return self._submit_coro(self._backend.list_annotation_schemas(filters))
+
+    def update_annotation_schema(self, annotation_schema_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_annotation_schema(annotation_schema_id, **changes))
+
+    def delete_annotation_schema(self, annotation_schema_id: str) -> None:
+        self._submit_coro(self._backend.delete_annotation_schema(annotation_schema_id))
+
     def create_annotation_set(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_annotation_set(**kwargs))
 
@@ -380,14 +428,32 @@ class Datalake(Mindtrace):
     def list_annotation_sets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_sets(filters))
 
-    def add_annotation_records(self, annotation_set_id: str, annotations):
-        return self._submit_coro(self._backend.add_annotation_records(annotation_set_id, annotations))
+    def update_annotation_set(self, annotation_set_id: str, **changes: Any):
+        return self._submit_coro(self._backend.update_annotation_set(annotation_set_id, **changes))
+
+    def add_annotation_records(
+        self,
+        annotations,
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ):
+        return self._submit_coro(
+            self._backend.add_annotation_records(
+                annotations,
+                annotation_set_id=annotation_set_id,
+                annotation_schema_id=annotation_schema_id,
+            )
+        )
 
     def get_annotation_record(self, annotation_id: str):
         return self._submit_coro(self._backend.get_annotation_record(annotation_id))
 
     def list_annotation_records(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_records(filters))
+
+    def list_annotation_records_for_asset(self, asset_id: str):
+        return self._submit_coro(self._backend.list_annotation_records_for_asset(asset_id))
 
     def update_annotation_record(self, annotation_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_record(annotation_id, **changes))
@@ -424,6 +490,9 @@ class Datalake(Mindtrace):
 
     def create_asset_from_object(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset_from_object(**kwargs))
+
+    def create_asset_from_uploaded_object(self, **kwargs: Any):
+        return self._submit_coro(self._backend.create_asset(**kwargs))
 
     def close(self) -> None:
         try:
