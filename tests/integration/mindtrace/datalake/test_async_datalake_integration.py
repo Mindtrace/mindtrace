@@ -77,7 +77,6 @@ async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
     listed_annotation_sets = await async_datalake.list_annotation_sets({"purpose": "ground_truth"})
 
     inserted_records = await async_datalake.add_annotation_records(
-        annotation_set.annotation_set_id,
         [
             {
                 "kind": "bbox",
@@ -88,6 +87,7 @@ async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
                 "attributes": {"quality": "high"},
             }
         ],
+        annotation_set_id=annotation_set.annotation_set_id,
     )
     annotation_record = inserted_records[0]
     fetched_annotation_record = await async_datalake.get_annotation_record(annotation_record.annotation_id)
@@ -220,7 +220,7 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
         source=AnnotationSource(type="human", name="pytest"),
         geometry={"x": 1, "y": 2, "width": 3, "height": 4},
     )
-    inserted_records = await async_datalake.add_annotation_records(annotation_set.annotation_set_id, [record])
+    inserted_records = await async_datalake.add_annotation_records([record], annotation_set_id=annotation_set.annotation_set_id)
 
     refreshed_annotation_set = await async_datalake.get_annotation_set(annotation_set.annotation_set_id)
     assert inserted_records[0].annotation_id in refreshed_annotation_set.annotation_record_ids
@@ -292,7 +292,6 @@ async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatala
     )
 
     inserted = await async_datalake.add_annotation_records(
-        annotation_set.annotation_set_id,
         [
             {
                 "kind": "bbox",
@@ -304,11 +303,11 @@ async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatala
                 "score": 0.5,
             }
         ],
+        annotation_set_id=annotation_set.annotation_set_id,
     )
 
     with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
         await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -318,6 +317,7 @@ async def test_async_datalake_annotation_schema_flow(async_datalake: AsyncDatala
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
     assert fetched_schema.annotation_schema_id == schema.annotation_schema_id
@@ -390,7 +390,6 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
 
     with pytest.raises(AnnotationSchemaValidationError, match="must not include geometry"):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "classification",
@@ -401,11 +400,11 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
 
     with pytest.raises(AnnotationSchemaValidationError, match="kind 'bbox' is not allowed"):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -416,11 +415,11 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
 
     with pytest.raises(AnnotationSchemaValidationError, match="label_id 9 does not match"):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "classification",
@@ -430,11 +429,11 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
 
     with pytest.raises(AnnotationSchemaValidationError, match="missing required fields: quality"):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "classification",
@@ -443,13 +442,13 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "source": {"type": "human", "name": "pytest"},
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
 
     with pytest.raises(
         AnnotationSchemaValidationError, match="not allowed by schema 'classification-errors@1.0.0': extra"
     ):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "classification",
@@ -459,11 +458,11 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "attributes": {"quality": "high", "extra": True},
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
 
     with pytest.raises(AnnotationSchemaValidationError, match="scores are not allowed"):
         await async_datalake.add_annotation_records(
-            invalid_classification_set.annotation_set_id,
             [
                 {
                     "kind": "classification",
@@ -474,6 +473,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "score": 0.5,
                 }
             ],
+            annotation_set_id=invalid_classification_set.annotation_set_id,
         )
     await async_datalake.update_annotation_set(
         invalid_classification_set.annotation_set_id,
@@ -496,7 +496,6 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
     )
     with pytest.raises(AnnotationSchemaValidationError, match="missing required geometry fields"):
         await async_datalake.add_annotation_records(
-            detection_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -505,6 +504,7 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
                     "geometry": {"x": 1, "y": 2, "width": 3},
                 }
             ],
+            annotation_set_id=detection_set.annotation_set_id,
         )
 
     segmentation_schema = await async_datalake.create_annotation_schema(
@@ -522,13 +522,13 @@ async def test_async_datalake_annotation_schema_error_paths(async_datalake: Asyn
     )
     with pytest.raises(AnnotationSchemaValidationError, match="must include non-empty geometry"):
         await async_datalake.add_annotation_records(
-            segmentation_set.annotation_set_id,
             [{"kind": "mask", "label": "dent", "source": {"type": "human", "name": "pytest"}, "geometry": {}}],
+            annotation_set_id=segmentation_set.annotation_set_id,
         )
     with pytest.raises(AnnotationSchemaValidationError, match="must include at least one of"):
         await async_datalake.add_annotation_records(
-            segmentation_set.annotation_set_id,
             [{"kind": "mask", "label": "dent", "source": {"type": "human", "name": "pytest"}, "geometry": {"x": 1}}],
+            annotation_set_id=segmentation_set.annotation_set_id,
         )
 
 
@@ -576,11 +576,11 @@ async def test_async_datalake_mocked_duplicate_and_rollback_paths(async_datalake
     async_datalake.annotation_record_database.delete = AsyncMock()
     with pytest.raises(RuntimeError, match="insert failed"):
         await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}},
                 {"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}},
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
     async_datalake.annotation_record_database.insert = AsyncMock(return_value=inserted)
@@ -588,6 +588,6 @@ async def test_async_datalake_mocked_duplicate_and_rollback_paths(async_datalake
     async_datalake.annotation_set_database.update = AsyncMock(side_effect=RuntimeError("update failed"))
     with pytest.raises(RuntimeError, match="update failed"):
         await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [{"kind": "bbox", "label": "dent", "source": {"type": "human", "name": "pytest"}}],
+            annotation_set_id=annotation_set.annotation_set_id,
         )

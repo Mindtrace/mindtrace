@@ -473,9 +473,9 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert datalake.create_asset_from_object.call_args_list[0].kwargs["on_conflict"] == "overwrite"
     assert datalake.create_asset_from_object.call_args_list[1].kwargs["kind"] == "mask"
 
-    classification_records = datalake.add_annotation_records.call_args_list[0].args[1]
-    detection_records = datalake.add_annotation_records.call_args_list[1].args[1]
-    segmentation_records = datalake.add_annotation_records.call_args_list[2].args[1]
+    classification_records = datalake.add_annotation_records.call_args_list[0].args[0]
+    detection_records = datalake.add_annotation_records.call_args_list[1].args[0]
+    segmentation_records = datalake.add_annotation_records.call_args_list[2].args[0]
 
     assert classification_records[0]["kind"] == "classification"
     assert detection_records[0]["kind"] == "bbox"

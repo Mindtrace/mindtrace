@@ -66,6 +66,7 @@ from mindtrace.datalake.service_types import (
     GetObjectInput,
     HeadObjectInput,
     ListDatasetVersionsInput,
+    ListAnnotationRecordsForAssetInput,
     ListInput,
     MountsOutput,
     ObjectDataOutput,
@@ -984,7 +985,6 @@ SERVICE_CASES = [
     {
         "service_method": "add_annotation_records",
         "payload_factory": lambda o: AddAnnotationRecordsInput(
-            annotation_set_id=o.annotation_set.annotation_set_id,
             annotations=[
                 {
                     "kind": "bbox",
@@ -993,6 +993,7 @@ SERVICE_CASES = [
                     "geometry": {"x": 1, "y": 2, "w": 3, "h": 4},
                 }
             ],
+            annotation_set_id=o.annotation_set.annotation_set_id,
         ),
         "datalake_method": "add_annotation_records",
         "datalake_return_factory": lambda o: [o.annotation_record],
@@ -1000,7 +1001,6 @@ SERVICE_CASES = [
         "expected_output_field": "annotation_records",
         "expected_output_factory": lambda o: [o.annotation_record],
         "expected_args_factory": lambda o: (
-            o.annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -1010,7 +1010,10 @@ SERVICE_CASES = [
                 }
             ],
         ),
-        "expected_kwargs_factory": lambda o: {},
+        "expected_kwargs_factory": lambda o: {
+            "annotation_set_id": o.annotation_set.annotation_set_id,
+            "annotation_schema_id": None,
+        },
     },
     {
         "service_method": "get_annotation_record",
@@ -1032,6 +1035,17 @@ SERVICE_CASES = [
         "expected_output_field": "annotation_records",
         "expected_output_factory": lambda o: [o.annotation_record],
         "expected_args_factory": lambda o: ({"label": "cat"},),
+        "expected_kwargs_factory": lambda o: {},
+    },
+    {
+        "service_method": "list_annotation_records_for_asset",
+        "payload_factory": lambda o: ListAnnotationRecordsForAssetInput(asset_id=o.asset.asset_id),
+        "datalake_method": "list_annotation_records_for_asset",
+        "datalake_return_factory": lambda o: [o.annotation_record],
+        "expected_output_type": AnnotationRecordListOutput,
+        "expected_output_field": "annotation_records",
+        "expected_output_factory": lambda o: [o.annotation_record],
+        "expected_args_factory": lambda o: (o.asset.asset_id,),
         "expected_kwargs_factory": lambda o: {},
     },
     {
@@ -1202,6 +1216,7 @@ class TestDatalakeServiceInitialization:
         assert "objects.upload_session.create" in service.endpoints
         assert "assets.create_from_uploaded_object" in service.endpoints
         assert "annotation_records.add" in service.endpoints
+        assert "annotation_records.list_for_asset" in service.endpoints
         assert "dataset_versions.resolve" in service.endpoints
 
     def test_initialization_skips_startup_hook_when_not_live(self, mock_datalake):

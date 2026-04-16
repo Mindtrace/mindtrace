@@ -475,11 +475,60 @@ class TestAsyncDatalakeUnit:
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
         )
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [record_instance, {"kind": "bbox", "label": "crack", "source": {"type": "machine", "name": "detector"}}],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
         assert inserted == [inserted_model, inserted_dict]
         assert annotation_set.annotation_record_ids == ["annotation_model", "annotation_dict"]
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_without_set_requires_asset_subject(self, async_datalake, mock_odm):
+        inserted_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            subject=SubjectRef(kind="asset", id="asset_abc"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
+        )
+        inserted_record.annotation_id = "ann_free"
+        mock_odm.insert = AsyncMock(return_value=inserted_record)
+
+        inserted = await async_datalake.add_annotation_records(
+            [
+                {
+                    "kind": "bbox",
+                    "label": "dent",
+                    "subject": {"kind": "asset", "id": "asset_abc"},
+                    "source": {"type": "human", "name": "review-ui"},
+                    "geometry": {},
+                }
+            ],
+        )
+        assert inserted == [inserted_record]
+        mock_odm.insert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_add_annotation_records_without_set_rejects_missing_subject(self, async_datalake):
+        with pytest.raises(ValueError, match="subject=SubjectRef"):
+            await async_datalake.add_annotation_records(
+                [{"kind": "bbox", "label": "x", "source": {"type": "human", "name": "a"}, "geometry": {}}],
+            )
+
+    @pytest.mark.asyncio
+    async def test_list_annotation_records_for_asset_delegates_to_list(self, async_datalake):
+        record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            subject=SubjectRef(kind="asset", id="asset_123"),
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
+        )
+        async_datalake.list_annotation_records = AsyncMock(return_value=[record])
+        result = await async_datalake.list_annotation_records_for_asset("asset_123")
+        assert result == [record]
+        async_datalake.list_annotation_records.assert_awaited_once_with(
+            filters={"subject.kind": "asset", "subject.id": "asset_123"},
+        )
 
     @pytest.mark.asyncio
     async def test_annotation_record_crud_async(self, async_datalake, mock_odm):
@@ -809,7 +858,6 @@ class TestAsyncDatalakeUnit:
         mock_odm.insert = AsyncMock(side_effect=[inserted_record])
 
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -820,6 +868,7 @@ class TestAsyncDatalakeUnit:
                     "attributes": {"quality": "high"},
                 }
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
         assert inserted == [inserted_record]
@@ -840,7 +889,6 @@ class TestAsyncDatalakeUnit:
         mock_odm.insert = AsyncMock(return_value=inserted_record)
 
         inserted = await async_datalake.add_annotation_records(
-            annotation_set.annotation_set_id,
             [
                 {
                     "kind": "bbox",
@@ -850,6 +898,7 @@ class TestAsyncDatalakeUnit:
                     "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
                 }
             ],
+            annotation_set_id=annotation_set.annotation_set_id,
         )
 
         coerced_record = mock_odm.insert.await_args.args[0]
@@ -878,7 +927,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "classification",
@@ -886,11 +934,11 @@ class TestAsyncDatalakeUnit:
                         "source": {"type": "human", "name": "review-ui"},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         with pytest.raises(AnnotationSchemaValidationError, match="must not include geometry"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "classification",
@@ -899,6 +947,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 1},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
     @pytest.mark.asyncio
@@ -931,7 +980,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(AnnotationSchemaValidationError, match="not defined in schema"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -947,6 +995,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
                     },
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         assert async_datalake.annotation_record_database.insert.await_count == 0
@@ -1247,7 +1296,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(RuntimeError, match="insert failed"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -1262,6 +1310,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 5, "y": 6, "width": 7, "height": 8},
                     },
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
@@ -1271,7 +1320,6 @@ class TestAsyncDatalakeUnit:
 
         with pytest.raises(RuntimeError, match="set update failed"):
             await async_datalake.add_annotation_records(
-                annotation_set.annotation_set_id,
                 [
                     {
                         "kind": "bbox",
@@ -1280,6 +1328,7 @@ class TestAsyncDatalakeUnit:
                         "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
                     }
                 ],
+                annotation_set_id=annotation_set.annotation_set_id,
             )
 
         assert annotation_set.annotation_record_ids == []
