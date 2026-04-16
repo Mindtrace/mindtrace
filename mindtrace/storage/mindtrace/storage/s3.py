@@ -246,6 +246,50 @@ class S3StorageHandler(StorageHandler):
                 error_message=str(e),
             )
 
+    def copy(self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False) -> FileResult:
+        """Copy an existing object to another key in the same bucket."""
+        try:
+            self.client.head_object(Bucket=self.bucket_name, Key=source_remote_path)
+            if fail_if_exists and self.exists(destination_remote_path):
+                return FileResult(
+                    local_path="",
+                    remote_path=destination_remote_path,
+                    status=Status.ALREADY_EXISTS,
+                    error_type="AlreadyExists",
+                    error_message=f"Object already exists: {self._full_path(destination_remote_path)}",
+                )
+            self.client.copy_object(
+                Bucket=self.bucket_name,
+                Key=destination_remote_path,
+                CopySource={"Bucket": self.bucket_name, "Key": source_remote_path},
+            )
+            return FileResult(local_path="", remote_path=destination_remote_path, status=Status.OK)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey", "NotFound"):
+                return FileResult(
+                    local_path="",
+                    remote_path=source_remote_path,
+                    status=Status.NOT_FOUND,
+                    error_type="NotFound",
+                    error_message=f"Object not found: {self._full_path(source_remote_path)}",
+                )
+            return FileResult(
+                local_path="",
+                remote_path=destination_remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return FileResult(
+                local_path="",
+                remote_path=destination_remote_path,
+                status=Status.ERROR,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+
     # ------------------------------------------------------------------
     # String Operations (no temp files)
     # ------------------------------------------------------------------
@@ -414,6 +458,7 @@ class S3StorageHandler(StorageHandler):
         *,
         expiration_minutes: int = 60,
         method: str = "GET",
+        content_type: str | None = None,
     ) -> str:
         """Get a presigned URL for an object in the bucket.
 
@@ -432,9 +477,12 @@ class S3StorageHandler(StorageHandler):
                 ExpiresIn=expiration_minutes * 60,
             )
         elif method.upper() == "PUT":
+            params = {"Bucket": self.bucket_name, "Key": remote_path}
+            if content_type is not None:
+                params["ContentType"] = content_type
             return self.client.generate_presigned_url(
                 "put_object",
-                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                Params=params,
                 ExpiresIn=expiration_minutes * 60,
             )
         else:
