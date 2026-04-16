@@ -114,6 +114,27 @@ def test_registry_initialization(registry, temp_registry_dir):
     assert Path(temp_registry_dir).exists()
 
 
+def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(registry, test_bytes):
+    hints = registry.serialization_hints_for_object(test_bytes)
+
+    assert hints == {
+        "class": "builtins.bytes",
+        "materializer": "zenml.materializers.BytesMaterializer",
+    }
+
+
+def test_registry_materialize_from_bytes_delegates_to_core(registry):
+    raw = b"hello-bytes"
+
+    out = registry.materialize_from_bytes(
+        raw,
+        object_class="builtins.bytes",
+        materializer="zenml.materializers.BytesMaterializer",
+    )
+
+    assert out == raw
+
+
 def test_registry_default_directory():
     """Test that Registry uses the default directory from config when registry_dir is None."""
     # Create a registry without specifying registry_dir
