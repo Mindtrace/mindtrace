@@ -137,7 +137,7 @@ COPY mindtrace/hardware/pyproject.toml ./mindtrace/hardware/
 COPY mindtrace/storage/pyproject.toml ./mindtrace/storage/
 
 # Create stub pyproject.toml for unused workspace members
-RUN for pkg in apps agents automation cluster database datalake jobs models registry ui; do \
+RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
     mkdir -p mindtrace/$pkg && \
     printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done
@@ -163,7 +163,7 @@ COPY mindtrace/hardware ./mindtrace/hardware
 COPY mindtrace/storage ./mindtrace/storage
 
 # Create stub pyproject.toml for other workspace members to satisfy workspace structure
-RUN for pkg in apps agents automation cluster database datalake jobs models registry ui; do \
+RUN for pkg in apps automation cluster database datalake jobs models registry ui; do \
     mkdir -p mindtrace/$pkg && \
     printf '[project]\nname = "mindtrace-%s"\nversion = "0.0.0"\n' "$pkg" > mindtrace/$pkg/pyproject.toml; \
     done

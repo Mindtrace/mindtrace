@@ -21,8 +21,7 @@ dependencies = [
     "mindtrace-jobs>=0.10.0",
     "mindtrace-hardware>=0.10.0",
     "mindtrace-ui>=0.10.0",
-    "mindtrace-automation>=0.10.0",
-    "mindtrace-agents>=0.10.0"
+    "mindtrace-automation>=0.10.0"
 ]
 
 [project.urls]
