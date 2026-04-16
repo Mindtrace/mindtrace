@@ -16,9 +16,10 @@ from mindtrace.registry import LocalMountConfig, Mount, Registry, Store
 
 
 def main() -> None:
-    with TemporaryDirectory(prefix="mindtrace-sample-a-") as dir_a, TemporaryDirectory(
-        prefix="mindtrace-sample-b-"
-    ) as dir_b:
+    with (
+        TemporaryDirectory(prefix="mindtrace-sample-a-") as dir_a,
+        TemporaryDirectory(prefix="mindtrace-sample-b-") as dir_b,
+    ):
         primary_mount = Mount(
             name="primary",
             backend="local",

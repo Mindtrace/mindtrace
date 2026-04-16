@@ -41,8 +41,14 @@ class TestDockerEnvironment:
             working_dir="/workspace",
         )
 
-    def test_initialization(self):
-        """Test DockerEnvironment initialization with all parameters."""
+    def test_initialization(self, monkeypatch):
+        """Test DockerEnvironment initialization with all parameters.
+
+        Host shells often set GOOGLE_APPLICATION_CREDENTIALS; DockerEnvironment copies
+        that into the container env and volumes. Clear it here so this test only
+        checks the explicit constructor arguments.
+        """
+        monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
         env = DockerEnvironment(
             image="test-image:latest",
             environment={"TEST_VAR": "test_value"},
