@@ -588,6 +588,41 @@ class _RegistryCore(Mindtrace):
 
         return materializer.load(data_type=object_class, **init_params)
 
+    def serialization_hints_for_object(
+        self,
+        obj: Any,
+        materializer: Type[BaseMaterializer] | None = None,
+    ) -> Dict[str, str]:
+        """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
+        return {
+            "class": f"{type(obj).__module__}.{type(obj).__name__}",
+            "materializer": self._find_materializer(obj, materializer),
+        }
+
+    def materialize_from_bytes(
+        self,
+        raw: bytes | bytearray,
+        *,
+        object_class: str,
+        materializer: str,
+        init_params: Dict[str, Any] | None = None,
+        relative_path: str = "data.txt",
+        **kwargs: Any,
+    ) -> Any:
+        """Write *raw* to *relative_path* under a staged directory and run the ZenML materializer."""
+        with TemporaryDirectory(dir=self._artifact_store.path) as base:
+            temp_dir = Path(base) / "staged"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            target = temp_dir / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(bytes(raw))
+            meta: Dict[str, Any] = {
+                "class": object_class,
+                "materializer": materializer,
+                "init_params": ifnone(init_params, default={}),
+            }
+            return self._materialize(temp_dir, meta, **kwargs)
+
     def load(
         self,
         name: str | List[str],

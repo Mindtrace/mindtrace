@@ -375,7 +375,6 @@ async def _seed_image_dataset_with_bbox_annotation(
         created_by="pytest-dataset-sync",
     )
     await datalake.add_annotation_records(
-        ann_set.annotation_set_id,
         [
             {
                 "kind": "bbox",
@@ -386,6 +385,7 @@ async def _seed_image_dataset_with_bbox_annotation(
                 "attributes": {"quality": "high"},
             }
         ],
+        annotation_set_id=ann_set.annotation_set_id,
     )
     await datalake.create_dataset_version(
         dataset_name=dataset_name,

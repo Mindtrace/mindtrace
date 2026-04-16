@@ -421,6 +421,35 @@ class Registry(Mindtrace):
 
         return result
 
+    def serialization_hints_for_object(
+        self,
+        obj: Any,
+        *,
+        materializer: Type[BaseMaterializer] | None = None,
+    ) -> Dict[str, str]:
+        """Return ZenML ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
+        return self._core.serialization_hints_for_object(obj, materializer=materializer)
+
+    def materialize_from_bytes(
+        self,
+        raw: bytes | bytearray,
+        *,
+        object_class: str,
+        materializer: str,
+        init_params: Dict[str, Any] | None = None,
+        relative_path: str = "data.txt",
+        **kwargs: Any,
+    ) -> Any:
+        """Materialize *raw* bytes laid out as a single file (default ZenML bytes layout: ``data.txt``)."""
+        return self._core.materialize_from_bytes(
+            raw,
+            object_class=object_class,
+            materializer=materializer,
+            init_params=init_params,
+            relative_path=relative_path,
+            **kwargs,
+        )
+
     def create_direct_upload_target(
         self,
         upload_id: str,
