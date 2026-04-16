@@ -16,6 +16,16 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.mount import (
+    AmbientAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    MountBackendKind,
+    S3AccessKeyAuth,
+    S3MountConfig,
+)
 from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
 
 
@@ -174,6 +184,69 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
     # Class-level materializer registry (delegates to _RegistryCore)
     # ─────────────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def _backend_from_mount(cls, mount: Mount) -> RegistryBackend:
+        """Build a concrete backend instance from a declarative mount."""
+        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.registry.backends.s3_registry_backend import S3RegistryBackend
+
+        if mount.backend is MountBackendKind.LOCAL:
+            cfg = mount.config
+            if not isinstance(cfg, LocalMountConfig):
+                raise TypeError("local mounts require LocalMountConfig")
+            return LocalRegistryBackend(uri=cfg.uri)
+
+        if mount.backend is MountBackendKind.S3:
+            cfg = mount.config
+            if not isinstance(cfg, S3MountConfig):
+                raise TypeError("s3 mounts require S3MountConfig")
+            auth = mount.auth
+            backend_kwargs = {
+                "bucket": cfg.bucket,
+                "prefix": cfg.prefix or "",
+                "endpoint": cfg.endpoint,
+                "secure": cfg.secure,
+            }
+            if isinstance(auth, S3AccessKeyAuth):
+                backend_kwargs.update({"access_key": auth.access_key, "secret_key": auth.secret_key})
+            elif not isinstance(auth, AmbientAuth):
+                raise TypeError("s3 mounts require AmbientAuth or S3AccessKeyAuth")
+            return S3RegistryBackend(**backend_kwargs)
+
+        if mount.backend is MountBackendKind.GCS:
+            cfg = mount.config
+            if not isinstance(cfg, GCSMountConfig):
+                raise TypeError("gcs mounts require GCSMountConfig")
+            auth = mount.auth
+            backend_kwargs = {
+                "bucket_name": cfg.bucket_name,
+                "project_id": cfg.project_id,
+                "prefix": cfg.prefix or "",
+                "credentials_path": cfg.credentials_path,
+            }
+            if isinstance(auth, GCSServiceAccountFileAuth):
+                backend_kwargs["credentials_path"] = auth.path
+            elif not isinstance(auth, AmbientAuth):
+                raise TypeError("gcs mounts require AmbientAuth or GCSServiceAccountFileAuth")
+            return GCPRegistryBackend(**backend_kwargs)
+
+        raise ValueError(f"Unsupported mount backend: {mount.backend}")
+
+    @classmethod
+    def from_mount(cls, mount, **kwargs) -> "Registry":
+        """Construct a Registry from a declarative ``Mount`` definition."""
+        if not isinstance(mount, Mount):
+            raise TypeError("mount must be a Mount")
+        registry_kwargs = dict(mount.registry_options)
+        registry_kwargs.update(kwargs)
+        backend = cls._backend_from_mount(mount)
+        return cls(backend=backend, **registry_kwargs)
+
+    @property
+    def mount(self) -> Mount:
+        """Best-effort declarative mount derived from this registry."""
+        return Mount.from_registry(self)
 
     @classmethod
     def register_default_materializer(cls, object_class: str | type, materializer_class: str):
@@ -347,6 +420,104 @@ class Registry(Mindtrace):
             self.logger.warning(f"Error updating cache: {e}")
 
         return result
+
+    def serialization_hints_for_object(
+        self,
+        obj: Any,
+        *,
+        materializer: Type[BaseMaterializer] | None = None,
+    ) -> Dict[str, str]:
+        """Return ZenML ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
+        return self._core.serialization_hints_for_object(obj, materializer=materializer)
+
+    def materialize_from_bytes(
+        self,
+        raw: bytes | bytearray,
+        *,
+        object_class: str,
+        materializer: str,
+        init_params: Dict[str, Any] | None = None,
+        relative_path: str = "data.txt",
+        **kwargs: Any,
+    ) -> Any:
+        """Materialize *raw* bytes laid out as a single file (default ZenML bytes layout: ``data.txt``)."""
+        return self._core.materialize_from_bytes(
+            raw,
+            object_class=object_class,
+            materializer=materializer,
+            init_params=init_params,
+            relative_path=relative_path,
+            **kwargs,
+        )
+
+    def create_direct_upload_target(
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        """Create a backend-native direct-upload target for a bytes artifact."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.create_direct_upload_target(
+            upload_id,
+            content_type=content_type,
+            expiration_minutes=expiration_minutes,
+        )
+
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+        """Inspect a staged direct-upload target."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.inspect_direct_upload_target(staged_target)
+
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+        """Delete a staged direct-upload target."""
+        backend = self._remote.backend if self._cached else self.backend
+        return backend.cleanup_direct_upload_target(staged_target)
+
+    def commit_direct_upload(
+        self,
+        name: str,
+        *,
+        staged_target: dict[str, Any],
+        version: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        on_conflict: str | None = None,
+    ) -> str:
+        """Commit a previously uploaded bytes artifact into canonical registry storage."""
+        target_core = self._remote if self._cached else self._core
+        backend = target_core.backend
+
+        if on_conflict is None:
+            on_conflict = OnConflict.OVERWRITE if target_core.mutable else OnConflict.SKIP
+        if on_conflict not in (OnConflict.SKIP, OnConflict.OVERWRITE):
+            raise ValueError(f"on_conflict must be 'skip' or 'overwrite', got '{on_conflict}'")
+        if on_conflict == OnConflict.OVERWRITE and not target_core.mutable:
+            raise ValueError(
+                "Cannot use on_conflict='overwrite' with an immutable registry. "
+                "Create the registry with mutable=True to allow overwrites."
+            )
+
+        resolved_version = target_core._resolve_save_version(name, version)
+        direct_metadata = target_core._build_direct_bytes_metadata(metadata)
+        result = backend.commit_direct_upload(
+            name,
+            resolved_version,
+            staged_target,
+            direct_metadata,
+            on_conflict=on_conflict,
+        )
+        if result.is_error:
+            if result.exception:
+                raise result.exception
+            raise RuntimeError(f"Failed to commit direct upload for {name}@{resolved_version}: {result.message}")
+        if result.is_skipped:
+            raise RuntimeError(f"Object {name}@{resolved_version} already exists.")
+
+        target_core._invalidate_versions_cache(name)
+        if self._cached:
+            self.clear_cache()
+        return result.version
 
     @overload
     def load(

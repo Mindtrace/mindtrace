@@ -4,9 +4,41 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Optional, Union
-from urllib.request import urlretrieve
+from urllib.request import urlopen, urlretrieve
+
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def download_with_progress(
+    url: str, destination: Union[str, Path], desc: Optional[str] = None, chunk_size: int = 1024 * 1024
+) -> Path:
+    """Download a URL to a local file with a tqdm progress bar when content-length is available."""
+    destination = Path(destination).expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    with urlopen(url) as response, destination.open("wb") as output:
+        total_size_header = response.headers.get("Content-Length")
+        total_size = int(total_size_header) if total_size_header is not None else None
+        progress = tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=desc or f"Downloading {destination.name}",
+        )
+        try:
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
+                output.write(chunk)
+                progress.update(len(chunk))
+        finally:
+            progress.close()
+
+    return destination
 
 
 def download_and_extract_zip(
@@ -65,7 +97,11 @@ def download_and_extract_zip(
 
 
 def download_and_extract_tarball(
-    url: str, extract_to: Union[str, Path], filename: Optional[str] = None, remove_after_extract: bool = True
+    url: str,
+    extract_to: Union[str, Path],
+    filename: Optional[str] = None,
+    remove_after_extract: bool = True,
+    show_progress: bool = False,
 ) -> Path:
     """
     Download a tarball (tar.gz, tar.bz2, etc.) from URL and extract it to the specified directory.
@@ -97,7 +133,10 @@ def download_and_extract_tarball(
 
         try:
             logger.info(f"Downloading tarball from {url} to {tarball_path}")
-            urlretrieve(url, tarball_path)
+            if show_progress:
+                download_with_progress(url, tarball_path, desc=f"Downloading {filename}")
+            else:
+                urlretrieve(url, tarball_path)
 
             logger.info(f"Extracting tarball to {extract_to}")
 

@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
@@ -772,10 +773,14 @@ async def test_async_camera_capture_connection_error_retry(monkeypatch):
             cam._backend.capture = connection_error_capture
             cam._backend.retrieve_retry_count = 2  # Set retry count on backend
 
-            # This should retry and succeed
+            retry_sleep = AsyncMock()
+            monkeypatch.setattr("mindtrace.hardware.cameras.core.async_camera.asyncio.sleep", retry_sleep)
+
+            # This should retry and succeed without incurring a real backoff delay.
             result = await cam.capture()
             assert result is not None
             assert call_count == 2
+            retry_sleep.assert_awaited_once()
     finally:
         await manager.close(None)
 

@@ -111,6 +111,8 @@ class CaptureImageRequest(BaseModel):
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
     output_format: str = Field("pil", description="Output format for returned image ('numpy' or 'pil')")
+    stage: Optional[str] = Field(None, description="Stage name for capture group routing")
+    set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
@@ -137,6 +139,8 @@ class CaptureBatchRequest(BaseModel):
         None, description="Optional path pattern for saving images. Use {camera} placeholder for camera name"
     )
     output_format: str = Field("pil", description="Output format for returned images ('numpy' or 'pil')")
+    stage: Optional[str] = Field(None, description="Stage name for capture group routing")
+    set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
@@ -220,6 +224,8 @@ class CaptureHDRBatchRequest(BaseModel):
     )
     return_images: bool = Field(True, description="Whether to return captured images in response")
     output_format: str = Field("pil", description="Output format for returned images ('numpy' or 'pil')")
+    stage: Optional[str] = Field(None, description="Stage name for capture group routing")
+    set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("exposure_levels")
     @classmethod
@@ -545,3 +551,17 @@ class HomographyCalibrateMultiViewRequest(BaseModel):
                 f"Number of images ({len(self.image_paths)}) must match number of positions ({len(self.positions)})"
             )
         return self
+
+
+# Capture Group Operations
+class ConfigureCaptureGroupsRequest(BaseModel):
+    """Request model for configuring stage+set capture groups.
+
+    Each group creates a concurrency semaphore sized to ``batch_size``,
+    limiting how many cameras within the group can capture simultaneously.
+    """
+
+    config: Dict[str, Dict[str, Dict[str, Any]]] = Field(
+        ...,
+        description=("Stage+set config: {stage: {set: {'batch_size': int, 'cameras': [str]}}}"),
+    )
