@@ -1394,6 +1394,46 @@ class BaslerCameraBackend(CameraBackend):
                     success_count += 1
                     total_settings += 1
 
+                # Restore GigE network transport settings
+                if config_data.get("packet_size") is not None:
+                    total_settings += 1
+                    try:
+                        await self._run_blocking(
+                            self.camera.GevSCPSPacketSize.SetValue,
+                            int(config_data["packet_size"]),
+                            timeout=self._op_timeout_s,
+                        )
+                        success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not restore packet size for camera '{self.camera_name}': {e}")
+
+                if config_data.get("inter_packet_delay") is not None:
+                    total_settings += 1
+                    try:
+                        await self._run_blocking(
+                            self.camera.GevSCPD.SetValue,
+                            int(config_data["inter_packet_delay"]),
+                            timeout=self._op_timeout_s,
+                        )
+                        success_count += 1
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Could not restore inter-packet delay for camera '{self.camera_name}': {e}"
+                        )
+
+                if config_data.get("bandwidth_limit") is not None:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "DeviceLinkThroughputLimit"):
+                            await self._run_blocking(
+                                self.camera.DeviceLinkThroughputLimit.SetValue,
+                                int(config_data["bandwidth_limit"]),
+                                timeout=self._op_timeout_s,
+                            )
+                            success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not restore bandwidth limit for camera '{self.camera_name}': {e}")
+
             self.logger.debug(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
@@ -1514,6 +1554,34 @@ class BaslerCameraBackend(CameraBackend):
             except Exception as e:
                 self.logger.warning(f"Could not get pixel format for camera '{self.camera_name}': {e}")
 
+            # Get GigE network transport settings
+            packet_size = None
+            try:
+                packet_size = int(
+                    await self._run_blocking(self.camera.GevSCPSPacketSize.GetValue, timeout=self._op_timeout_s)
+                )
+            except Exception as e:
+                self.logger.debug(f"Could not get packet size for camera '{self.camera_name}': {e}")
+
+            inter_packet_delay = None
+            try:
+                inter_packet_delay = int(
+                    await self._run_blocking(self.camera.GevSCPD.GetValue, timeout=self._op_timeout_s)
+                )
+            except Exception as e:
+                self.logger.debug(f"Could not get inter-packet delay for camera '{self.camera_name}': {e}")
+
+            bandwidth_limit = None
+            try:
+                if hasattr(self.camera, "DeviceLinkThroughputLimit"):
+                    bandwidth_limit = float(
+                        await self._run_blocking(
+                            self.camera.DeviceLinkThroughputLimit.GetValue, timeout=self._op_timeout_s
+                        )
+                    )
+            except Exception as e:
+                self.logger.debug(f"Could not get bandwidth limit for camera '{self.camera_name}': {e}")
+
             # Create common format configuration
             config_data = {
                 "camera_type": "basler",
@@ -1531,6 +1599,9 @@ class BaslerCameraBackend(CameraBackend):
                 "retrieve_retry_count": self.retrieve_retry_count,
                 "timeout_ms": self.timeout_ms,
                 "buffer_count": getattr(self, "buffer_count", 25),
+                "packet_size": packet_size,
+                "inter_packet_delay": inter_packet_delay,
+                "bandwidth_limit": bandwidth_limit,
             }
 
             # Write config to file (run in threadpool to avoid blocking event loop)
