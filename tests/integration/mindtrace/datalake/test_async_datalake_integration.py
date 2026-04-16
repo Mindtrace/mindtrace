@@ -211,9 +211,7 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
     with pytest.raises(DocumentNotFoundError, match="DatasetVersion missing@0.0.1 not found"):
         await async_datalake.get_dataset_version("missing", "0.0.1")
 
-    storage_ref = await async_datalake.put_object(
-        name="error-paths-inst.png", obj=b"\x89PNG\r\n\x1a\n", metadata={}
-    )
+    storage_ref = await async_datalake.put_object(name="error-paths-inst.png", obj=b"\x89PNG\r\n\x1a\n", metadata={})
     img_asset = await async_datalake.create_asset(
         kind="image",
         media_type="image/png",
@@ -234,7 +232,9 @@ async def test_async_datalake_error_paths_and_instance_annotation_record(async_d
         source=AnnotationSource(type="human", name="pytest"),
         geometry={"x": 1, "y": 2, "width": 3, "height": 4},
     )
-    inserted_records = await async_datalake.add_annotation_records([record], annotation_set_id=annotation_set.annotation_set_id)
+    inserted_records = await async_datalake.add_annotation_records(
+        [record], annotation_set_id=annotation_set.annotation_set_id
+    )
 
     refreshed_annotation_set = await async_datalake.get_annotation_set(annotation_set.annotation_set_id)
     assert inserted_records[0].annotation_id in refreshed_annotation_set.annotation_record_ids
