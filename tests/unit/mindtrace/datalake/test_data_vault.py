@@ -110,6 +110,12 @@ def test_sync_data_vault_add_and_list_annotations_for_asset():
 class _FakeSyncServiceCM:
     """Minimal surface so :func:`looks_like_datalake_service_sync_client` accepts the CM."""
 
+    def assets_get(self, *a, **k):
+        raise NotImplementedError
+
+    def assets_list(self, *a, **k):
+        raise NotImplementedError
+
     def assets_get_by_alias(self, *a, **k):
         raise NotImplementedError
 
@@ -125,6 +131,12 @@ class _FakeSyncServiceCM:
 
 class _FakeAsyncServiceCM:
     """Minimal surface so :func:`looks_like_datalake_service_async_client` accepts the CM."""
+
+    async def aassets_get(self, *a, **k):
+        raise NotImplementedError
+
+    async def aassets_list(self, *a, **k):
+        raise NotImplementedError
 
     async def aassets_get_by_alias(self, *a, **k):
         raise NotImplementedError
