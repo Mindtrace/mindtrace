@@ -1,43 +1,38 @@
 # Mindtrace Datalake
 
-The Mindtrace Datalake is the canonical data layer for Mindtrace.
+The Mindtrace Datalake is the canonical data layer for Mindtrace. It sits on **`mindtrace.database`** (structured records) and **`mindtrace.registry`** (object storage and mounts) and exposes a unified model for assets, collections, annotations, and immutable dataset versions.
 
-It is intended to sit above the lower-level `database` and `registry` modules and provide a unified model for:
+**Start here**
 
-- assets and their storage locations
-- collections and collection membership
-- annotations and annotation provenance
-- dataset composition and immutable dataset versions
-- data-oriented integration with jobs and cluster execution
+- **[Happy path](./HAPPY_PATH.md)** — local stack, direct upload, **dataset sync** vs **replication**, and operational caveats.
+- **Docker (Mongo + MinIO + `DatalakeService`)** — [docker/datalake/README.md](../../docker/datalake/README.md) at the repository root.
 
-This README reflects the **V3 design direction** for the Datalake module while remaining grounded in the current Mindtrace architecture.
+---
 
-## What the Datalake is for
+## What you can do today
 
-The Datalake exists to answer questions like:
+| Area | Role |
+|------|------|
+| **`DatalakeService`** | HTTP/MCP-facing API over `AsyncDatalake` (typed tasks, FastAPI). |
+| **Objects & uploads** | Put bytes in storage (`objects.put` or upload-session flow), then reference them from canonical records. |
+| **Canonical model** | Assets, collections, datums, dataset versions, annotations — persisted in Mongo, payloads in configured mounts. |
+| **Dataset sync** | Export/import **dataset version** bundles between lakes (`dataset_versions.export`, `import_prepare`, `import_commit`). |
+| **Replication** | Metadata-first mirroring and payload lifecycle (`replication.*` tasks — upsert, hydrate, reconcile, status, reclaim). |
 
-- What assets exist in the system?
-- Where do those assets live physically?
-- Which collections include them?
-- What annotations exist for them, and where did those annotations come from?
-- Which immutable dataset version should a training or evaluation run consume?
-- How should jobs and cluster-executed workflows read from and write back into canonical data?
+**Sync vs replication (short):**
 
-The Datalake is therefore more than a dataset loader and more than a storage helper. It is the data model and persistence boundary that higher-level workflows should build on.
+- **Dataset sync** — move a **named, versioned dataset snapshot** as an import/export bundle. Dataset-centric.
+- **Replication** — mirror **assets** across lakes with a metadata-first pipeline and optional hydration/reclaim. Asset-centric.
+
+Same-lake **`metadata_only`** transfer policies are supported where implemented; **cross-lake `metadata_only` import is intentionally rejected** until unresolved-placeholder semantics exist. See the [happy path](./HAPPY_PATH.md) and GitHub issues for detail.
+
+---
 
 ## Relationship to other Mindtrace modules
 
-The Datalake is designed to depend on two lower-level modules:
-
-- **`mindtrace.database`** — structured persistence for canonical records
-- **`mindtrace.registry`** — versioned object persistence and storage access
-
-And it is designed to integrate with:
-
-- **`mindtrace.jobs`** — execution schemas, queues, and run lifecycle
-- **`mindtrace.cluster`** — orchestration and distributed execution
-
-At a high level:
+- **`mindtrace.database`** — persistence for canonical documents.
+- **`mindtrace.registry`** — mounts, stores, and `StorageRef` resolution.
+- **`mindtrace.jobs`** / **`mindtrace.cluster`** — execution and orchestration consume datalake data; they should not define the canonical schema.
 
 ```mermaid
 flowchart TD
@@ -51,41 +46,77 @@ flowchart TD
     DL --> CL
 ```
 
-This means:
+---
 
-- the Datalake should not reimplement storage or document persistence itself
-- Jobs should remain focused on execution semantics
-- Cluster should be the main integration layer between execution and canonical data
+## DataVault (`AsyncDataVault` / `DataVault`)
 
-## Current implementation status
+**DataVault** is a small facade over **`save(alias, payload, …)`** and **`load(alias)`**: it creates/links assets, registers aliases, and reads objects through the same registry stack as **`AsyncDatalake`**.
 
-The Datalake is evolving.
+- **In-process:** `AsyncDataVault(async_datalake)` or `DataVault(datalake)` (or pass an explicit **`LocalAsyncDataVaultBackend`** / **`LocalDataVaultBackend`**).
+- **Remote HTTP/MCP:** `cm = DatalakeService.connect(url="http://…")`, then **`DataVault(cm)`** or **`AsyncDataVault(cm)`**. The facade recognizes the service client and uses **`DatalakeServiceDataVaultBackend`** / **`DatalakeServiceAsyncDataVaultBackend`** automatically. You can still pass those backends explicitly if you prefer.
 
-Historically, Mindtrace has had:
+When the lake is running in **Docker** (Mongo + MinIO + `DatalakeService`), see **[docker/datalake/README.md](../../docker/datalake/README.md#using-datavault-against-the-compose-stack)** for a copy-paste sample against `http://localhost:8080`.
 
-- **V1** — the older `mtrix` Datalake, focused on dataset packaging, synchronization, and loading
-- **V2** — the current `mindtrace.datalake` implementation, centered on `Datum`, derivation, and query-based access
-- **V3** — the design direction now being defined, which expands the Datalake into a fuller canonical data model
+---
 
-The V3 design introduces a clearer set of canonical entities while still building on the useful ideas from V2.
+## Datalake service (`DatalakeService`)
 
-## Canonical V3 concepts
+The package provides **`DatalakeService`**, which wraps **`AsyncDatalake`** with the Mindtrace **`Service`** layer (FastAPI + MCP). Initialization can be lazy; live processes may enable startup initialization and background helpers (for example upload-session reconciliation).
 
-The core V3 concepts are:
+Example (adjust host/port and Mongo URIs for your environment):
 
-- **Collection** — a logical workspace or organizational boundary
-- **CollectionItem** — a membership record connecting a collection to an asset
-- **AssetRetention** — a retention/stewardship record describing why an asset should continue to exist
-- **StorageRef** — a physical storage reference describing where a payload lives
-- **Asset** — the canonical logical record for a payload-bearing object
-- **AnnotationSource** — structured provenance for annotations
-- **AnnotationRecord** — the atomic unit of annotation persistence
-- **AnnotationSet** — a grouping of related annotation records
-- **Datum** — the reusable unit of dataset membership/composition
-- **DatasetVersion** — an immutable dataset view/version
-- **DatasetBuilder** — a helper/API concept for constructing new dataset versions
+```python
+from mindtrace.datalake import DatalakeService
 
-### Entity relationships
+service = DatalakeService.launch(
+    host="localhost",
+    port=8080,
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="mindtrace",
+)
+# Use async handlers or the service’s app/routes per your deployment.
+```
+
+### Task families (overview)
+
+Includes, among others:
+
+- **`health`**, **`summary`**, **`mounts`**
+- **`objects.*`** — put/get/head/copy, upload session create/complete
+- **`assets.*`**, **`assets.get_by_alias`**, **`aliases.add`**, **`collections.*`**, **`collection_items.*`**, **`asset_retentions.*`**
+- **`annotation_*`**, **`datums.*`**
+- **`dataset_versions.*`** — CRUD, resolve, **export**, **import_prepare**, **import_commit**
+- **`replication.*`** — **upsert_batch**, **hydrate_asset_payload**, **reconcile**, **mark_local_delete_eligible**, **delete_local_payload**, **reclaim_verified_payloads**, **status**
+
+Exact wire format and paths depend on how the shared `Service` framework exposes tasks; treat names above as the stable task identifiers.
+
+---
+
+## Storage model
+
+Structured records live in the database layer; large payloads live in registry-backed storage. Mounts can target local disk, S3-compatible endpoints (including MinIO), GCS, etc., via **`Mount`** and store configuration.
+
+---
+
+## Design reference (V3 direction)
+
+The datalake is evolving from earlier internal versions toward a fuller **V3** canonical model. The sections below summarize that direction; they are **not** an exhaustive API spec.
+
+### Implementation status (historical labels)
+
+- **V1** — older `mtrix`-era datalake (packaging and loading).
+- **V2** — current `mindtrace.datalake` center of gravity (`Datum`, queries, etc.).
+- **V3** — design direction: clearer entities, registry mounts, service-oriented access.
+
+### Canonical V3 concepts
+
+- **Collection**, **CollectionItem**, **AssetRetention**
+- **StorageRef**, **Asset**
+- **Annotation** schema/set/record model
+- **Datum**, **DatasetVersion**
+- **DatasetBuilder** (helper for constructing new versions — not the same as a persisted version record)
+
+### Entity relationships (conceptual)
 
 ```mermaid
 erDiagram
@@ -102,171 +133,26 @@ erDiagram
     ANNOTATION_SOURCE ||--o{ ANNOTATION_RECORD : "source for"
 ```
 
-## Storage model
+### Annotations
 
-The V3 direction assumes a clean separation between:
+V3 aims for first-class annotation types (classification, bbox, mask, keypoint, etc.) with provenance. See `docs/datalake-v3-proposal.md` in the repository for the full proposal.
 
-- **structured records** stored through the `database` module
-- **payload-bearing objects** stored through the `registry` module
+### Design principles
 
-Examples:
+1. Canonical data should outlive individual workflows.
+2. Storage location should be separate from logical identity.
+3. Datasets should be immutable views over reusable entities.
+4. Annotations should be structured, queryable, and provenance-aware.
+5. Collections should not imply destructive ownership of shared assets.
+6. Execution systems integrate with the datalake; they do not define its schema.
 
-- annotation metadata and collection membership belong in the database layer
-- images, masks, artifacts, and other large payloads belong in the registry/storage layer
-
-### Registry mounts
-
-The new registry/store API work introduces declarative mount definitions for storage configuration.
-
-Conceptually, the Datalake should rely on those primitives rather than hardcoding storage backends directly.
-
-Relevant registry concepts now available include:
-
-- `Mount`
-- `Registry.from_mount(...)`
-- `Registry.mount`
-- `Store.from_mounts(...)`
-- `Store.add_mount(...)`
-
-Supported mount/backend families include:
-
-- local filesystem
-- S3-compatible storage (including MinIO)
-- GCS
-
-This is important for the Datalake because it lets storage become:
-
-- configurable
-- multi-backend
-- environment-aware
-- separate from the canonical data model itself
-
-## Annotations
-
-One of the main V3 goals is to treat annotations as first-class canonical data rather than as ad hoc blobs or package files.
-
-The canonical persisted annotation types should support at least:
-
-- `classification`
-- `regression`
-- `bbox`
-- `rotated_bbox`
-- `polygon`
-- `polyline`
-- `ellipse`
-- `keypoint`
-- `mask`
-- `instance_mask`
-- `pointcloud_segmentation`
-
-These types preserve compatibility with the older V1 output surface while giving V3 room to support richer annotation workflows.
-
-## Datasets
-
-In V3, datasets should be represented as immutable views over canonical data rather than as the only place where data meaning lives.
-
-### `DatasetVersion`
-
-`DatasetVersion` is the canonical persisted dataset concept.
-
-It should represent:
-
-- a named versioned dataset
-- immutable membership over datums
-- stable provenance and repeatability
-
-### `DatasetBuilder`
-
-`DatasetBuilder` should remain a separate helper/API concept.
-
-It should be used to:
-
-- stage membership changes
-- construct new immutable dataset versions
-- provide a friendlier SDK workflow for creating and revising datasets
-
-It should **not** be treated as a canonical persisted entity in the same way as `DatasetVersion`.
-
-## Jobs and Cluster integration
-
-The Datalake should fit cleanly with the Jobs and Cluster modules.
-
-### Jobs
-
-Jobs should define:
-
-- executable task schemas
-- run lifecycle
-- retries, queueing, and execution behavior
-
-They should not need to own the Datalake’s canonical storage model.
-
-### Cluster
-
-Cluster should be the integration/orchestration layer that:
-
-- resolves Datalake-backed inputs into worker-consumable job inputs
-- dispatches jobs
-- persists canonical outputs back into the Datalake
-- stores raw run artifacts separately when needed
-
-### Important rule
-
-Job/task schemas are **not** the same thing as canonical Datalake schemas.
-
-For example:
-
-- a detection job output may be a convenient execution-time structure
-- but canonical persistence should become an `AnnotationSet` plus atomic `AnnotationRecord`s
-
-This keeps execution concerns and data concerns cleanly separated.
-
-## Design principles
-
-The V3 Datalake direction is guided by a few key principles:
-
-1. **Canonical data should outlive individual workflows**
-2. **Storage location should be separate from logical identity**
-3. **Datasets should be immutable views over reusable underlying entities**
-4. **Annotations should be structured, queryable, and provenance-aware**
-5. **Collections should not imply destructive ownership of shared assets**
-6. **Execution systems should integrate with the Datalake, not define its schema**
-
-## What this README is not
-
-This README is intentionally a conceptual entry point.
-
-It does not try to be:
-
-- a full API reference for every current class or method
-- a migration guide for every historical implementation detail
-- a complete implementation-status ledger
-
-For the evolving architecture and canonical V3 design discussion, see:
-
-- `docs/datalake-v3-proposal.md`
+---
 
 ## Built-in Pascal VOC importer
 
-The Datalake package now includes a built-in importer for **Pascal VOC 2012**.
+The package includes an importer for **Pascal VOC 2012** (splits, one image per asset, segmentation via class masks, etc.). This is **one** way to load a benchmark into the canonical model; it is separate from service upload/sync/replication flows.
 
-Current scope:
-
-- VOC **2012** only
-- splits: `train`, `val`, `trainval`
-- one image -> one `Asset`
-- one sample -> one `Datum`
-- separate annotation sets for:
-  - classification
-  - detection
-  - segmentation
-- segmentation imported from `SegmentationClass` as:
-  - one per-class binary mask asset
-  - one `mask` annotation record per class present
-
-### CLI usage
-
-After installing the package from a branch or editable checkout:
+### CLI
 
 ```bash
 mindtrace-datalake-import-pascal-voc \
@@ -278,7 +164,7 @@ mindtrace-datalake-import-pascal-voc \
   --download
 ```
 
-Or directly as a module:
+Or:
 
 ```bash
 python -m mindtrace.datalake.importers.pascal_voc \
@@ -290,7 +176,7 @@ python -m mindtrace.datalake.importers.pascal_voc \
   --download
 ```
 
-### Python API
+### Python
 
 ```python
 from mindtrace.datalake import Datalake, PascalVocImportConfig, import_pascal_voc
@@ -311,20 +197,16 @@ with Datalake.create(
     print(summary)
 ```
 
-### Notes
+Importer notes: reuses downloaded trees when present; overwrite-on-conflict for importer writes; fails if the target `DatasetVersion` already exists.
 
-- The importer will reuse an already-downloaded VOC tarball or extracted `VOCdevkit/VOC2012` tree when present.
-- Importer-managed image and mask payload writes use overwrite-on-conflict semantics so local retries after failed partial imports are less brittle.
-- The importer still fails if the target `DatasetVersion` already exists.
+---
 
-## Near-term development direction
+## Jobs and cluster
 
-The near-term direction for the Datalake is:
+Jobs should own execution lifecycle; cluster orchestration should resolve datalake inputs/outputs. Task output schemas are not canonical datalake schemas — persist results as datalake entities (e.g. annotation sets/records) when they represent durable data.
 
-- keep the useful simplicity of the current V2 system
-- adopt the newer registry/store mount primitives
-- grow toward the V3 canonical entity model
-- maintain compatibility with the older V1 semantic surface where needed
-- keep the module aligned with `database`, `registry`, `jobs`, and `cluster`
+---
 
-In short, the goal is to make the Datalake the long-term data foundation for Mindtrace: modular, storage-aware, queryable, and capable of supporting richer workflows than earlier iterations.
+## What this README is not
+
+This file is an entry point, not a full API reference. For deeper V3 discussion see **`docs/datalake-v3-proposal.md`**. For a practical walkthrough of today’s features, use **[HAPPY_PATH.md](./HAPPY_PATH.md)**.

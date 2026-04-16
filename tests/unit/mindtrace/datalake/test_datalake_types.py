@@ -47,7 +47,13 @@ def test_main_type_str_methods_are_readable():
     collection = Collection(name="demo-collection")
     collection_item = CollectionItem(collection_id=collection.collection_id, asset_id=asset.asset_id)
     asset_retention = AssetRetention(asset_id=asset.asset_id, owner_type="manual_pin", owner_id="owner_1")
-    record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
+    record = AnnotationRecord(
+        kind="bbox",
+        label="dent",
+        source={"type": "human", "name": "review-ui"},
+        geometry={},
+        metadata={"origin": "unit"},
+    )
     annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
     datum = Datum(asset_refs={"image": asset.asset_id}, split="train")
     dataset_version = DatasetVersion(dataset_name="demo", version="0.1.0", manifest=[datum.datum_id])
@@ -63,6 +69,7 @@ def test_main_type_str_methods_are_readable():
     assert "Collection(collection_id=" in str(collection)
     assert "CollectionItem(collection_item_id=" in str(collection_item)
     assert "AssetRetention(asset_retention_id=" in str(asset_retention)
+    assert record.metadata == {"origin": "unit"}
     assert "AnnotationRecord(annotation_id=" in str(record)
     assert "AnnotationSet(annotation_set_id=" in str(annotation_set)
     assert "Datum(datum_id=" in str(datum)
