@@ -39,22 +39,50 @@ cp docker/datalake/.env.example docker/datalake/.env
 docker compose -f docker/datalake/docker-compose.yml --env-file docker/datalake/.env up --build
 ```
 
-Then, with the stack running, use **`DataVault`** with a client from **`DatalakeService.connect`**. The vault detects the connection manager and speaks the right service tasks (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, etc.).
+Then, with the stack running, use **`DataVault.from_url(...)`** to connect to the datalake service and work with typed annotations.
 
 Run this example from the **repository root** so `tests/resources/hopper.png` resolves, with `mindtrace` installed and the service listening on port `8080`:
 
 ```python
 from PIL import Image
+from mindtrace.datalake import (
+    AnnotationSource,
+    BboxAnnotation,
+    ClassificationAnnotation,
+    DataVault,
+)
 
-from mindtrace.datalake import DataVault, DatalakeService
+# Connect to a Datalake using the DataVault wrapper
+vault = DataVault.from_url("http://localhost:8080")
 
+# Save images
 hopper = Image.open("tests/resources/hopper.png")
-cm = DatalakeService.connect(url="http://localhost:8080")
-vault = DataVault(cm)
+vault.save_image("hopper", hopper)
 
-vault.save_image("images:hopper", hopper)
-image = vault.load_image("images:hopper")
+# Add annotation labels
+src = AnnotationSource(type="human", name="demo")
+bbox = BboxAnnotation(
+    label="dog",
+    source=src,
+    x=10,
+    y=10,
+    width=120,
+    height=80,
+)
+classification = ClassificationAnnotation(label="outdoor", source=src)
+vault.add_annotations("hopper", [bbox, classification])
+
+# Load images
+image = vault.load_image("hopper")
 image.show()
+
+# Load annotations
+annotations = vault.load_annotations("hopper")
+for ann in annotations:
+    if isinstance(ann, BboxAnnotation):
+        print(ann.label, ann.x, ann.y, ann.width, ann.height)
+    elif isinstance(ann, ClassificationAnnotation):
+        print(ann.label)
 ```
 
 ## Using DataVault against the compose stack
