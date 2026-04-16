@@ -1152,6 +1152,8 @@ class AsyncDatalake(Mindtrace):
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
         await self._validate_asset_refs_exist(asset_refs)
+        for annotation_set_id in annotation_set_ids or []:
+            await self.get_annotation_set(annotation_set_id)
         datum = self._build_document(
             Datum,
             split=split,
