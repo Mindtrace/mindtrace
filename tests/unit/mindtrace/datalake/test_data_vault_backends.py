@@ -5,10 +5,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from mindtrace.datalake.data_vault import _normalize_async_backend, _normalize_sync_backend
 from mindtrace.datalake.data_vault_backends import (
     DatalakeServiceAsyncDataVaultBackend,
     DatalakeServiceDataVaultBackend,
     _encode_obj_for_service,
+    looks_like_datalake_service_async_client,
+    looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.service_types import (
     AddAliasInput,
@@ -196,3 +199,69 @@ def test_datalake_service_sync_backend_call_raises_when_no_method():
 
     with pytest.raises(AttributeError, match="has none of"):
         backend._call("assets_get_by_alias", input_obj=GetAssetByAliasInput(alias="x"))
+
+
+class _SyncServiceFacade:
+    """Non-:class:`~mindtrace.services.ConnectionManager` object with service task methods (in-process test client)."""
+
+    def assets_get_by_alias(self, *_a, **_kw):
+        return None
+
+    def objects_get(self, *_a, **_kw):
+        return None
+
+    def assets_create_from_object(self, *_a, **_kw):
+        return None
+
+    def aliases_add(self, *_a, **_kw):
+        return None
+
+
+def test_looks_like_datalake_service_sync_client_accepts_facade():
+    assert looks_like_datalake_service_sync_client(_SyncServiceFacade()) is True
+
+
+def test_looks_like_datalake_service_sync_client_rejects_mock():
+    cm = Mock()
+    cm.assets_get_by_alias = Mock()
+    cm.objects_get = Mock()
+    cm.assets_create_from_object = Mock()
+    cm.aliases_add = Mock()
+    assert looks_like_datalake_service_sync_client(cm) is False
+
+
+def test_normalize_sync_backend_wraps_service_facade():
+    backend = _normalize_sync_backend(_SyncServiceFacade())
+    assert isinstance(backend, DatalakeServiceDataVaultBackend)
+
+
+class _AsyncServiceFacade:
+    async def aassets_get_by_alias(self, *_a, **_kw):
+        return None
+
+    async def aobjects_get(self, *_a, **_kw):
+        return None
+
+    async def aassets_create_from_object(self, *_a, **_kw):
+        return None
+
+    async def aaliases_add(self, *_a, **_kw):
+        return None
+
+
+def test_looks_like_datalake_service_async_client_accepts_facade():
+    assert looks_like_datalake_service_async_client(_AsyncServiceFacade()) is True
+
+
+def test_looks_like_datalake_service_async_client_rejects_mock():
+    cm = Mock()
+    cm.aassets_get_by_alias = AsyncMock()
+    cm.aobjects_get = AsyncMock()
+    cm.aassets_create_from_object = AsyncMock()
+    cm.aaliases_add = AsyncMock()
+    assert looks_like_datalake_service_async_client(cm) is False
+
+
+def test_normalize_async_backend_wraps_service_facade():
+    backend = _normalize_async_backend(_AsyncServiceFacade())
+    assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
