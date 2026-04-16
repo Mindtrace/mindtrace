@@ -135,7 +135,9 @@ class ReplicationManager:
         return merged
 
     @staticmethod
-    def _should_preserve_verified_payload(existing_asset: Asset, new_asset: Asset, mapped_storage_ref: StorageRef) -> bool:
+    def _should_preserve_verified_payload(
+        existing_asset: Asset, new_asset: Asset, mapped_storage_ref: StorageRef
+    ) -> bool:
         if ReplicationManager.get_payload_status(existing_asset) != "verified":
             return False
         if not _storage_refs_equivalent(existing_asset.storage_ref, mapped_storage_ref):
@@ -175,7 +177,9 @@ class ReplicationManager:
 
             metadata_for_replication = dict(asset.metadata or {})
             payload_status: PayloadStatus = "pending"
-            if existing_asset is not None and self._should_preserve_verified_payload(existing_asset, asset, mapped_storage_ref):
+            if existing_asset is not None and self._should_preserve_verified_payload(
+                existing_asset, asset, mapped_storage_ref
+            ):
                 existing_replication = (existing_asset.metadata or {}).get("replication")
                 if isinstance(existing_replication, dict):
                     metadata_for_replication["replication"] = dict(existing_replication)

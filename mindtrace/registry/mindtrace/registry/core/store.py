@@ -568,7 +568,9 @@ class Store(Mindtrace):
         saved = self.copy(source, target=target, source_version=source_version, target_version=target_version)
 
         mount, name, key_version = self.parse_key(source)
-        resolved_source_version = source_version if source_version not in (None, "latest") else (key_version or source_version)
+        resolved_source_version = (
+            source_version if source_version not in (None, "latest") else (key_version or source_version)
+        )
         resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
 
         delete_version = resolved_source_version

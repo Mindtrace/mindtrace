@@ -588,8 +588,7 @@ class _RegistryCore(Mindtrace):
                 object_class = getattr(module, class_name)
             except (ImportError, AttributeError, ValueError) as exc:
                 self.logger.warning(
-                    "Failed to resolve object class '%s' for materializer '%s'; "
-                    "falling back to typing.Any: %s",
+                    "Failed to resolve object class '%s' for materializer '%s'; falling back to typing.Any: %s",
                     object_class,
                     materializer_class,
                     exc,

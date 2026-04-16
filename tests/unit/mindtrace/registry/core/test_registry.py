@@ -531,8 +531,10 @@ def test_registry_load_bytes_artifact_with_stale_class_metadata(registry, test_b
 
 
 def test_registry_load_cloudpickle_artifact_with_stale_class_metadata(registry):
-    registry.register_materializer(type(lambda x: x), CloudpickleMaterializer)
-    func = lambda x: x + 1
+    def func(x):
+        return x + 1
+
+    registry.register_materializer(type(func), CloudpickleMaterializer)
 
     registry.save("test:lambda", func, version="1.0.0")
     _rewrite_registry_metadata(registry, "test:lambda", "1.0.0", **{"class": "missing.module.Type"})
