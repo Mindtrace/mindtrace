@@ -819,12 +819,15 @@ class TestCameraManagerServiceCaptureAndHomography:
         CameraManagerService._register_endpoints(service)
 
         endpoint_paths = [entry.args[0] for entry in service.add_endpoint.call_args_list]
-        assert service.add_endpoint.call_count == 38
+        assert service.add_endpoint.call_count == 41
         assert "health" in endpoint_paths
         assert "cameras/capture" in endpoint_paths
         assert "cameras/stream/start" in endpoint_paths
         assert "stream/{camera_name}" in endpoint_paths
         assert "cameras/homography/measure/distance" in endpoint_paths
+        assert "cameras/capture-groups/configure" in endpoint_paths
+        assert "cameras/capture-groups" in endpoint_paths
+        assert "cameras/capture-groups/remove" in endpoint_paths
 
     @pytest.mark.asyncio
     async def test_configure_cameras_batch_formats_partial_results(self, service_with_mock_manager):

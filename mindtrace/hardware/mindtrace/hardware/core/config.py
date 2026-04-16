@@ -27,6 +27,11 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_WHITE_BALANCE: Default camera white balance mode
     - MINDTRACE_HW_CAMERA_TIMEOUT: Camera capture timeout in seconds
     - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES: Maximum concurrent captures for network bandwidth management
+    - MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES: Consecutive capture failures before auto-reinit (default: 5)
+    - MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN: Seconds between reinit attempts (default: 30.0)
+    - MINDTRACE_HW_CAMERA_CONFIG_DIR: Directory for preserved camera configs
+    - MINDTRACE_HW_CAMERA_SAVE_API_URL: External save API URL for capture forwarding
+    - MINDTRACE_HW_CAMERA_SAVE_API_TIMEOUT: HTTP timeout for save API forwarding (default: 10.0)
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
     - MINDTRACE_HW_CAMERA_OPENCV_HEIGHT: OpenCV default frame height
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
@@ -172,6 +177,15 @@ class CameraSettings:
     # Image enhancement algorithm settings
     enhancement_gamma: float = 2.2  # Gamma correction value
     enhancement_contrast: float = 1.2  # Contrast enhancement factor
+
+    # Auto-reconnection settings
+    max_consecutive_failures: int = 5  # Consecutive capture failures before attempting reinit
+    reinitialization_cooldown: float = 30.0  # Seconds between reinit attempts
+    camera_config_dir: str = ""  # Dir for preserved camera configs; empty = PathSettings.config_dir + "/cameras"
+
+    # Capture save forwarding
+    save_api_url: str = ""  # External save API URL; empty = local save only
+    save_api_timeout: float = 10.0  # HTTP timeout for save API forwarding (seconds)
 
     # OpenCV capability ranges (defines hardware limits)
     opencv_exposure_range_min: float = -13.0
@@ -648,6 +662,32 @@ class HardwareConfigManager(Mindtrace):
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
             try:
                 self._config.cameras.max_concurrent_captures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Auto-reconnection settings
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES"):
+            try:
+                self._config.cameras.max_consecutive_failures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN"):
+            try:
+                self._config.cameras.reinitialization_cooldown = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_CONFIG_DIR"):
+            self._config.cameras.camera_config_dir = env_val
+
+        # Capture save forwarding
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_SAVE_API_URL"):
+            self._config.cameras.save_api_url = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_SAVE_API_TIMEOUT"):
+            try:
+                self._config.cameras.save_api_timeout = float(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
 

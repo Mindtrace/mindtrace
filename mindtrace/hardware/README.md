@@ -155,6 +155,45 @@ async def capture_one():
 asyncio.run(capture_one())
 ```
 
+### Capture groups (stage+set batching)
+
+For production-line setups with multiple cameras, use capture groups to control concurrency per camera group:
+
+```python
+async with CameraManager() as manager:
+    cameras = manager.discover()
+    opened = await manager.open(cameras)
+
+    # Configure groups: 1 stage, 2 sets, max 1 concurrent per set
+    manager.configure_capture_groups({
+        "inspection": {
+            "top_cameras": {"batch_size": 1, "cameras": cameras[:3]},
+            "side_cameras": {"batch_size": 1, "cameras": cameras[3:]},
+        }
+    })
+
+    # Batch capture with group routing
+    results = await manager.batch_capture(
+        cameras[:3], stage="inspection", set_name="top_cameras"
+    )
+```
+
+Each group creates an `asyncio.Semaphore` sized to `batch_size`, limiting how many cameras within the group can capture simultaneously. This prevents GigE bandwidth saturation when multiple cameras share a network link.
+
+### Auto-reconnection
+
+The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
+
+1. Exports the current camera config to disk
+2. Closes and re-opens the camera
+3. Restores the saved configuration
+
+Configure via environment variables or `HardwareConfig`:
+
+- `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` (default: 5)
+- `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` (default: 30s)
+- `MINDTRACE_HW_CAMERA_CONFIG_DIR` (default: `~/.config/mindtrace/cameras`)
+
 ### Camera backends
 
 The camera module exposes availability flags so you can check which backends are usable in the current environment:
