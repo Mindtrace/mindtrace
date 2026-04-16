@@ -217,7 +217,9 @@ class MockMinioHandler:
     ) -> str:
         return f"https://example.invalid/presign/{remote_path}"
 
-    def copy(self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False) -> MockFileResult:
+    def copy(
+        self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False
+    ) -> MockFileResult:
         if source_remote_path not in self._objects:
             return MockFileResult(
                 remote_path=destination_remote_path,

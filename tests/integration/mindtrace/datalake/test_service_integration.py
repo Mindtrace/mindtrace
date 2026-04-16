@@ -592,7 +592,11 @@ class TestDatalakeServiceIntegration:
             )
         except (HTTPException, AttributeError) as exc:
             message = str(exc).lower()
-            if "private key" in message or "sign credentials" in message or "unable to generate a pre-signed url" in message:
+            if (
+                "private key" in message
+                or "sign credentials" in message
+                or "unable to generate a pre-signed url" in message
+            ):
                 pytest.skip(f"Unable to generate a pre-signed URL: {exc}")
             raise
 

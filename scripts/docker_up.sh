@@ -21,6 +21,11 @@ until nc -z localhost 27018; do
     sleep 1
 done
 
+echo "Waiting for secondary MongoDB to be ready..."
+until nc -z localhost 27019; do
+    sleep 1
+done
+
 echo "Waiting for Redis to be ready..."
 until nc -z localhost 6380; do
     sleep 1

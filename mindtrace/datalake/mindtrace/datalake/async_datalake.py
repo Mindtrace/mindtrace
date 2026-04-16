@@ -9,7 +9,6 @@ from typing import Any, TypeVar
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -17,12 +16,14 @@ from mindtrace.datalake.types import (
     AnnotationSet,
     AnnotationSource,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    DuplicateAliasError,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -30,6 +31,7 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 
 DocumentT = TypeVar("DocumentT")
 
@@ -137,6 +139,11 @@ class AsyncDatalake(Mindtrace):
             db_name=mongo_db_name,
             db_uri=mongo_db_uri,
         )
+        self.asset_alias_database = MongoMindtraceODM(
+            model_cls=AssetAlias,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
 
     async def initialize(self) -> None:
         await self.asset_database.initialize()
@@ -149,6 +156,7 @@ class AsyncDatalake(Mindtrace):
         await self.datum_database.initialize()
         await self.dataset_version_database.initialize()
         await self.direct_upload_session_database.initialize()
+        await self.asset_alias_database.initialize()
 
     @classmethod
     async def create(
@@ -270,6 +278,11 @@ class AsyncDatalake(Mindtrace):
         from mindtrace.datalake.sync import DatasetSyncManager
 
         return DatasetSyncManager(self, target=target)
+
+    def replication(self, target: "AsyncDatalake" | None = None):
+        from mindtrace.datalake.replication import ReplicationManager
+
+        return ReplicationManager(self, target=target)
 
     async def copy_object(
         self,
@@ -446,7 +459,74 @@ class AsyncDatalake(Mindtrace):
             created_by=created_by,
             updated_at=self._utc_now(),
         )
-        return await self.asset_database.insert(asset)
+        inserted = await self.asset_database.insert(asset)
+        await self.ensure_primary_asset_alias(inserted)
+        return inserted
+
+    async def ensure_primary_asset_alias(self, asset: Asset) -> AssetAlias:
+        """Ensure a primary alias row exists with ``alias == asset.asset_id`` (idempotent)."""
+        existing = await self.asset_alias_database.find({"alias": asset.asset_id})
+        if existing:
+            row = existing[0]
+            if row.asset_id != asset.asset_id:
+                raise DuplicateAliasError(f"Alias {asset.asset_id!r} is already mapped to asset_id {row.asset_id!r}")
+            return row
+        doc = self._build_document(
+            AssetAlias,
+            alias=asset.asset_id,
+            asset_id=asset.asset_id,
+            is_primary=True,
+            created_at=self._utc_now(),
+        )
+        return await self.asset_alias_database.insert(doc)
+
+    async def resolve_alias(self, alias: str) -> str:
+        """Return ``asset_id`` for a string alias, or raise :class:`~mindtrace.database.core.exceptions.DocumentNotFoundError`."""
+        rows = await self.asset_alias_database.find({"alias": alias})
+        if not rows:
+            raise DocumentNotFoundError(f"No asset alias {alias!r}")
+        return rows[0].asset_id
+
+    async def add_alias(self, asset_id: str, alias: str) -> AssetAlias:
+        """Register an additional alias for ``asset_id``. Raises :class:`~mindtrace.datalake.types.DuplicateAliasError` on conflict."""
+        await self.get_asset(asset_id)
+        if alias == asset_id:
+            return await self.ensure_primary_asset_alias(await self.get_asset(asset_id))
+        existing = await self.asset_alias_database.find({"alias": alias})
+        if existing:
+            if existing[0].asset_id == asset_id:
+                return existing[0]
+            raise DuplicateAliasError(f"Alias {alias!r} is already mapped to asset_id {existing[0].asset_id!r}")
+        doc = self._build_document(
+            AssetAlias,
+            alias=alias,
+            asset_id=asset_id,
+            is_primary=False,
+            created_at=self._utc_now(),
+        )
+        try:
+            return await self.asset_alias_database.insert(doc)
+        except DuplicateInsertError as e:
+            raise DuplicateAliasError(f"Alias {alias!r} already exists") from e
+
+    async def remove_alias(self, alias: str) -> None:
+        """Remove an alias mapping. Refuses to remove the primary alias where ``alias == asset_id``."""
+        rows = await self.asset_alias_database.find({"alias": alias})
+        if not rows:
+            raise DocumentNotFoundError(f"No asset alias {alias!r}")
+        row = rows[0]
+        if row.is_primary and row.alias == row.asset_id:
+            raise ValueError("Cannot remove the primary alias (alias equal to asset_id); delete the asset instead")
+        await self.asset_alias_database.delete(row.id)
+
+    async def list_aliases_for_asset(self, asset_id: str) -> list[str]:
+        """Return all alias strings registered for ``asset_id``."""
+        rows = await self.asset_alias_database.find({"asset_id": asset_id})
+        return [r.alias for r in rows]
+
+    async def get_asset_by_alias(self, alias: str) -> Asset:
+        """Load :class:`Asset` by alias string."""
+        return await self.get_asset(await self.resolve_alias(alias))
 
     async def get_asset(self, asset_id: str) -> Asset:
         results = await self.asset_database.find({"asset_id": asset_id})
@@ -465,6 +545,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
+        alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
+        for row in alias_rows:
+            await self.asset_alias_database.delete(row.id)
         await self.asset_database.delete(asset.id)
 
     async def create_collection(
@@ -838,17 +921,141 @@ class AsyncDatalake(Mindtrace):
         annotation_set.updated_at = self._utc_now()
         return await self.annotation_set_database.update(annotation_set)
 
-    async def add_annotation_records(
+    def _assert_asset_subject_for_set_less_records(self, records: list[AnnotationRecord]) -> None:
+        """When inserting without an :class:`AnnotationSet`, each record must target an asset."""
+        for record in records:
+            sub = record.subject
+            if sub is None:
+                raise ValueError(
+                    "When annotation_set_id is omitted, each annotation must include "
+                    "subject=SubjectRef(kind='asset', id=<asset_id>)."
+                )
+            if sub.kind != "asset":
+                raise ValueError(f"When annotation_set_id is omitted, subject.kind must be 'asset', got {sub.kind!r}.")
+            if not str(sub.id).strip():
+                raise ValueError("When annotation_set_id is omitted, subject.id must be a non-empty asset id.")
+
+    async def _schema_for_annotation_insert(
+        self,
+        *,
+        annotation_set_id: str | None,
+        annotation_schema_id: str | None,
+    ) -> AnnotationSchema | None:
+        if annotation_set_id is not None:
+            annotation_set = await self.get_annotation_set(annotation_set_id)
+            if annotation_set.annotation_schema_id is None:
+                return None
+            return await self.get_annotation_schema(annotation_set.annotation_schema_id)
+        if annotation_schema_id is not None:
+            return await self.get_annotation_schema(annotation_schema_id)
+        return None
+
+    async def _datums_referencing_annotation_set(self, annotation_set_id: str) -> list[Datum]:
+        return await self.datum_database.find({"annotation_set_ids": annotation_set_id})
+
+    async def _merge_asset_subjects_from_datum_links(
         self,
         annotation_set_id: str,
-        annotations: Iterable[AnnotationRecord | dict[str, Any]],
-    ) -> list[AnnotationRecord]:
-        annotation_set = await self.get_annotation_set(annotation_set_id)
-        schema = None
-        if annotation_set.annotation_schema_id is not None:
-            schema = await self.get_annotation_schema(annotation_set.annotation_schema_id)
+        annotations: list[Any],
+    ) -> list[Any]:
+        """When inserting into an annotation set, ensure ``subject`` targets the image asset.
 
-        candidate_records = [self._coerce_annotation_record(annotation) for annotation in annotations]
+        ``Datum.annotation_set_ids`` links sets to datums; ``datum.asset_refs['image']`` supplies the
+        canonical image asset id for dataset / importer rows. Callers may still pass an explicit
+        ``subject``; those values are preserved.
+        """
+        datums = await self._datums_referencing_annotation_set(annotation_set_id)
+
+        def _needs_subject(a: Any) -> bool:
+            if isinstance(a, dict):
+                return a.get("subject") is None
+            return getattr(a, "subject", None) is None
+
+        def _any_missing_subject() -> bool:
+            return any(_needs_subject(a) for a in annotations)
+
+        if not datums:
+            if _any_missing_subject():
+                raise ValueError(
+                    "No Datum references this annotation set (Datum.annotation_set_ids does not "
+                    "include this set). Either link the AnnotationSet to a Datum via "
+                    "create_annotation_set(..., datum_id=...), or provide an explicit asset subject "
+                    "on each annotation record."
+                )
+            return annotations
+
+        image_ids = [d.asset_refs.get("image") for d in datums if d.asset_refs.get("image")]
+        if not image_ids:
+            if _any_missing_subject():
+                raise ValueError(
+                    "Datums linked to this annotation set have no asset_refs['image']. "
+                    "Add an 'image' role to datum.asset_refs, or provide an explicit asset subject "
+                    "on each annotation record."
+                )
+            return annotations
+
+        unique_images = set(image_ids)
+        if len(unique_images) > 1:
+            raise ValueError(
+                "Annotation set is linked to multiple datums whose asset_refs['image'] disagree. "
+                "Provide an explicit asset subject on each annotation record."
+            )
+        default_image = image_ids[0]
+
+        merged: list[Any] = []
+        for a in annotations:
+            if isinstance(a, dict):
+                if a.get("subject") is None:
+                    merged.append({**a, "subject": {"kind": "asset", "id": default_image}})
+                else:
+                    merged.append(a)
+            elif getattr(a, "subject", None) is None:
+                merged.append(
+                    a.model_copy(update={"subject": SubjectRef(kind="asset", id=default_image)}),
+                )
+            else:
+                merged.append(a)
+        return merged
+
+    async def add_annotation_records(
+        self,
+        annotations: Iterable[AnnotationRecord | dict[str, Any]],
+        *,
+        annotation_set_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> list[AnnotationRecord]:
+        """Insert annotation records.
+
+        If ``annotation_set_id`` is set, records are registered on that set and validated against
+        its bound schema when present. For sets linked from at least one :class:`Datum` whose
+        ``annotation_set_ids`` contains this set, any record without a ``subject`` is given
+        ``subject=SubjectRef(kind='asset', id=datum.asset_refs['image'])`` when that image ref is
+        unambiguous across linked datums—so asset-scoped queries stay consistent with datum-scoped
+        grouping without callers manually duplicating subjects.
+
+        If ``annotation_set_id`` is omitted, records are stored without belonging to any set; each
+        must have ``subject`` referencing an asset (``kind='asset'``). Optional
+        ``annotation_schema_id`` enables schema validation for that free-standing insert.
+        """
+        annotations_list = list(annotations)
+        if not annotations_list:
+            return []
+
+        if annotation_set_id is not None:
+            annotations_list = await self._merge_asset_subjects_from_datum_links(
+                annotation_set_id,
+                annotations_list,
+            )
+
+        candidate_records = [self._coerce_annotation_record(a) for a in annotations_list]
+
+        if annotation_set_id is None:
+            self._assert_asset_subject_for_set_less_records(candidate_records)
+
+        schema = await self._schema_for_annotation_insert(
+            annotation_set_id=annotation_set_id,
+            annotation_schema_id=annotation_schema_id,
+        )
         for record in candidate_records:
             if schema is not None:
                 self._validate_annotation_record_against_schema(record, schema)
@@ -862,6 +1069,10 @@ class AsyncDatalake(Mindtrace):
             await self._rollback_inserted_annotation_records(inserted_records)
             raise
 
+        if annotation_set_id is None:
+            return inserted_records
+
+        annotation_set = await self.get_annotation_set(annotation_set_id)
         previous_record_ids = list(annotation_set.annotation_record_ids)
         next_record_ids = list(previous_record_ids)
         for inserted in inserted_records:
@@ -877,6 +1088,12 @@ class AsyncDatalake(Mindtrace):
             await self._rollback_inserted_annotation_records(inserted_records)
             raise
         return inserted_records
+
+    async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
+        """Return annotation records whose subject is the given asset."""
+        return await self.list_annotation_records(
+            filters={"subject.kind": "asset", "subject.id": asset_id},
+        )
 
     async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
         results = await self.annotation_record_database.find({"annotation_id": annotation_id})
