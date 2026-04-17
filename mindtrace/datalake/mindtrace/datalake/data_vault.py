@@ -237,7 +237,7 @@ class AsyncDataVault:
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -269,7 +269,7 @@ class AsyncDataVault:
         self,
         *,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -549,7 +549,7 @@ class DataVault:
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -580,7 +580,7 @@ class DataVault:
         self,
         *,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:

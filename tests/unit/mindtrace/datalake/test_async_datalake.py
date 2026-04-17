@@ -18,7 +18,6 @@ from mindtrace.datalake.async_datalake import (
     SlowOpsPolicy,
 )
 from mindtrace.datalake.pagination_types import (
-    MAX_PAGE_LIMIT,
     CursorEnvelope,
     DatasetViewExpand,
     DatasetViewRow,
@@ -578,14 +577,27 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_list_assets_page_rejects_invalid_page_limits_before_query(self, async_datalake, mock_odm):
-        with pytest.raises(ValueError, match=f"between 1 and {MAX_PAGE_LIMIT}"):
+        max_page_limit = int(async_datalake.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"])
+
+        with pytest.raises(ValueError, match=f"between 1 and {max_page_limit}"):
             await async_datalake.list_assets_page(limit=0)
 
-        with pytest.raises(ValueError, match=f"between 1 and {MAX_PAGE_LIMIT}"):
-            await async_datalake.list_assets_page(limit=MAX_PAGE_LIMIT + 1)
+        with pytest.raises(ValueError, match=f"between 1 and {max_page_limit}"):
+            await async_datalake.list_assets_page(limit=max_page_limit + 1)
 
         mock_odm.find_window.assert_not_awaited()
         mock_odm.count_documents.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_list_assets_page_uses_configured_default_limit(self, async_datalake, mock_odm):
+        async_datalake.config["MINDTRACE_DATALAKE"]["DEFAULT_PAGE_LIMIT"] = 7
+        async_datalake.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"] = 9
+
+        page = await async_datalake.list_assets_page()
+
+        assert page.page.limit == 7
+        mock_odm.find_window.assert_awaited_once()
+        assert mock_odm.find_window.await_args.kwargs["limit"] == 8
 
     @pytest.mark.asyncio
     async def test_iter_assets_uses_lazy_database_iterator(self, async_datalake, mock_odm):

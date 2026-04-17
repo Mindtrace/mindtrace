@@ -14,7 +14,6 @@ from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.pagination_types import (
-    MAX_PAGE_LIMIT,
     CursorEnvelope,
     CursorPage,
     DatasetViewExpand,
@@ -463,6 +462,21 @@ class AsyncDatalake(Mindtrace):
             raise ValueError(f"Unsupported sort {sort!r} for resource {resource!r}")
         return specs[sort]
 
+    def _default_page_limit(self) -> int:
+        return int(self.config["MINDTRACE_DATALAKE"]["DEFAULT_PAGE_LIMIT"])
+
+    def _max_page_limit(self) -> int:
+        return int(self.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"])
+
+    def _resolve_page_limit(self, limit: int | None) -> int:
+        resolved_limit = self._default_page_limit() if limit is None else limit
+        max_page_limit = self._max_page_limit()
+        if resolved_limit < 1 or resolved_limit > max_page_limit:
+            raise ValueError(
+                f"Page limit must be between 1 and {max_page_limit}, got {resolved_limit}."
+            )
+        return resolved_limit
+
     async def _paginate_database(
         self,
         *,
@@ -470,14 +484,11 @@ class AsyncDatalake(Mindtrace):
         resource: str,
         filters: dict[str, Any] | None,
         sort: str,
-        limit: int,
+        limit: int | None,
         cursor: str | None,
         include_total: bool,
     ) -> CursorPage[Any]:
-        if limit < 1 or limit > MAX_PAGE_LIMIT:
-            raise ValueError(
-                f"Page limit must be between 1 and {MAX_PAGE_LIMIT}, got {limit}."
-            )
+        limit = self._resolve_page_limit(limit)
         base_query = dict(filters or {})
         sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
         snapshot_field = self._snapshot_field_for(resource)
@@ -1080,7 +1091,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -1148,7 +1159,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Collection]:
@@ -1215,7 +1226,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[CollectionItem]:
@@ -1292,7 +1303,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[AssetRetention]:
@@ -1382,7 +1393,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[AnnotationSchema]:
@@ -1573,7 +1584,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[AnnotationSet]:
@@ -1779,7 +1790,7 @@ class AsyncDatalake(Mindtrace):
         asset_id: str,
         *,
         sort: str = "subject_created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[AnnotationRecord]:
@@ -1827,7 +1838,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[AnnotationRecord]:
@@ -1913,7 +1924,7 @@ class AsyncDatalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Datum]:
@@ -2001,7 +2012,7 @@ class AsyncDatalake(Mindtrace):
         dataset_name: str | None = None,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[DatasetVersion]:
@@ -2023,7 +2034,7 @@ class AsyncDatalake(Mindtrace):
         dataset_name: str,
         version: str,
         *,
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         sort: str = "manifest_order",
         filters: list[StructuredFilter] | None = None,
@@ -2038,6 +2049,7 @@ class AsyncDatalake(Mindtrace):
         if sort != "manifest_order":
             raise ValueError("dataset version views currently support only sort='manifest_order'")
 
+        limit = self._resolve_page_limit(limit)
         dataset_version = await self.get_dataset_version(dataset_name, version)
         expand = expand or DatasetViewExpand()
         filter_list = filters or []
@@ -2053,7 +2065,7 @@ class AsyncDatalake(Mindtrace):
             )
             start_index = int(envelope.last_key.get("ordinal", -1)) + 1
 
-        scan_chunk_size = max(limit * 2, 100)
+        scan_chunk_size = max(limit * 2, self._default_page_limit())
         matches = await self._scan_dataset_view_manifest(
             manifest=dataset_version.manifest,
             start_index=start_index,
@@ -2099,7 +2111,7 @@ class AsyncDatalake(Mindtrace):
         dataset_name: str,
         version: str,
         *,
-        page_size: int = 100,
+        page_size: int | None = None,
         sort: str = "manifest_order",
         filters: list[StructuredFilter] | None = None,
         expand: DatasetViewExpand | None = None,
