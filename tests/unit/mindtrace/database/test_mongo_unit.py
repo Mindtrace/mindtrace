@@ -634,6 +634,64 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
             mock_init.assert_called_once()
 
 
+def test_mongo_backend_find_iter_sync_streams_with_native_cursor():
+    """Test MongoDB sync iterator uses the sync cursor path without materializing a list."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    with (
+        patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient"),
+        patch("mindtrace.database.backends.mongo_odm.MongoClient"),
+    ):
+        backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+        backend.model_cls = MotorDoc
+        backend._is_initialized = False
+
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = mock_cursor
+        mock_cursor.batch_size.return_value = mock_cursor
+        mock_cursor.limit.return_value = mock_cursor
+        mock_cursor.__iter__.return_value = iter(
+            [
+                {"_id": ObjectId("507f1f77bcf86cd799439011"), "name": "John", "age": 30, "email": "john@example.com"},
+                {"_id": ObjectId("507f1f77bcf86cd799439012"), "name": "Jane", "age": 31, "email": "jane@example.com"},
+            ]
+        )
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+
+        with (
+            patch.object(backend, "initialize_sync") as initialize_sync,
+            patch.object(backend, "_sync_collection", return_value=mock_collection),
+        ):
+            rows = list(
+                backend.find_iter_sync(
+                    {"age": {"$gte": 30}},
+                    sort=[("age", 1)],
+                    batch_size=50,
+                    limit=10,
+                )
+            )
+
+        initialize_sync.assert_called_once_with()
+        mock_collection.find.assert_called_once_with({"age": {"$gte": 30}})
+        mock_cursor.sort.assert_called_once_with([("age", 1)])
+        mock_cursor.batch_size.assert_called_once_with(50)
+        mock_cursor.limit.assert_called_once_with(10)
+        assert [row.name for row in rows] == ["John", "Jane"]
+        assert [row.id for row in rows] == ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_find_iter_sync_rejects_async_context():
+    """Test MongoDB sync iterator rejects calls from an active event loop."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+
+    with pytest.raises(RuntimeError, match="find_iter_sync\\(\\) called from async context"):
+        backend.find_iter_sync({})
+
+
 # ============================================================================
 # Tests for init_mode and initialization coverage
 # ============================================================================

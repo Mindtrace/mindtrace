@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
@@ -8,6 +8,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
@@ -137,7 +138,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not db_uri or not db_name:
             raise ValueError("db_uri and db_name are required")
 
+        self.db_uri = db_uri
         self.client = AsyncIOMotorClient(db_uri)
+        self._sync_client: MongoClient | None = None
         self.db_name = db_name
         self._motor_routing = False
         self._allow_index_dropping = allow_index_dropping
@@ -210,6 +213,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
     def _motor_collection(self):
         return self.client[self.db_name][self._collection_name()]
+
+    def _sync_collection(self):
+        if self._sync_client is None:
+            self._sync_client = MongoClient(self.db_uri)
+        return self._sync_client[self.db_name][self._collection_name()]
 
     def _mongo_doc_to_model(self, doc: dict | None) -> T | None:
         if doc is None:
@@ -732,6 +740,44 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             cursor = cursor.sort(sort)
         raw = await cursor.to_list(length=limit)
         return [m for m in (self._mongo_doc_to_model(d) for d in raw) if m is not None]
+
+    def find_iter_sync(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        batch_size: int | None = None,
+        limit: int | None = None,
+    ) -> Iterator[T]:
+        """Lazily iterate over matching documents using a synchronous Mongo cursor."""
+        if self._models is not None:
+            raise ValueError("Cannot use find_iter_sync() in multi-model mode. Use db.model_name.find_iter_sync() instead.")
+
+        try:
+            asyncio.get_running_loop()
+            raise RuntimeError("find_iter_sync() called from async context. Use async for item in find_iter() instead.")
+        except RuntimeError as exc:
+            if "no running event loop" not in str(exc).lower():
+                raise
+
+        if not self._is_initialized:
+            self.initialize_sync()
+
+        cursor = self._sync_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        if batch_size is not None:
+            cursor = cursor.batch_size(batch_size)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+
+        def _generator() -> Iterator[T]:
+            for raw in cursor:
+                model = self._mongo_doc_to_model(raw)
+                if model is not None:
+                    yield model
+
+        return _generator()
 
     async def count_documents(self, query: dict[str, Any] | None = None) -> int:
         """Return the number of documents matching ``query`` without loading them."""
