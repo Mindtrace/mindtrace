@@ -1,5 +1,6 @@
 """Unit tests for RequestLoggingMiddleware."""
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
+from mindtrace.services.core.service import Service
 
 
 @pytest.fixture
@@ -89,4 +91,38 @@ class TestRequestLoggingMiddleware:
         assert err_kwargs.get("service_name") == "unit-test-svc"
         assert err_kwargs.get("error_type") == "ValueError"
         assert "planned failure" in (err_kwargs.get("error") or "")
-        assert err_kwargs.get("stack_trace")
+        stack_trace = err_kwargs.get("stack_trace") or ""
+        assert "Traceback" in stack_trace
+        assert "ValueError: planned failure" in stack_trace
+        assert "NoneType: None" not in stack_trace
+
+    def test_quiet_paths_override_skips_logging(self, mock_logger: MagicMock) -> None:
+        client = _client(mock_logger, quiet_paths={"/api/ping"})
+        client.get("/api/ping")
+        mock_logger.info.assert_not_called()
+
+    def test_quiet_paths_override_still_logs_others(self, mock_logger: MagicMock) -> None:
+        client = _client(mock_logger, quiet_paths={"/api/ping"})
+        client.get("/api/fail")
+        mock_logger.error.assert_called_once()
+        assert mock_logger.error.call_args.kwargs.get("status") == "failed"
+
+    def test_enabled_false_ctor_arg_bypasses(self, mock_logger: MagicMock) -> None:
+        client = _client(mock_logger, enabled=False)
+        res = client.get("/api/ping")
+        assert res.status_code == 200
+        assert "X-Request-ID" not in res.headers
+        mock_logger.info.assert_not_called()
+
+
+class TestServiceEndpointLogLevels:
+    """Introspection endpoints should default to DEBUG to avoid docker log spam."""
+
+    @pytest.mark.parametrize(
+        "endpoint_name",
+        ["endpoints", "status", "class_name", "heartbeat", "server_id", "pid_file"],
+    )
+    def test_introspection_endpoint_is_debug(self, endpoint_name: str) -> None:
+        spec = Service.__endpoints__[endpoint_name]
+        assert spec.autolog_kwargs is not None
+        assert spec.autolog_kwargs.get("log_level") == logging.DEBUG

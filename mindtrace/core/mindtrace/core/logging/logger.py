@@ -263,49 +263,84 @@ def get_logger(
 # ---------------------------------------------------------------------------
 
 
-def _get_structlog_logger(logger, logger_name, op_name):
-    """Return a structlog-compatible logger, warning once if the provided one lacks ``.bind()``."""
-    if logger and hasattr(logger, "bind"):
+class _StdlibBinder:
+    """Attach contextual fields to a stdlib logger for track_operation.
+
+    Honors the subset of structlog's BoundLogger surface that track_operation
+    uses (.bind/.log/.info/.debug/.warning/.error/.exception), routing to a
+    stdlib Logger via ``extra={...}``. Keeps stdlib-configured projects free of
+    structlog without losing per-operation context.
+    """
+
+    __slots__ = ("_logger", "_context")
+
+    def __init__(self, logger: logging.Logger, context: Optional[dict[str, Any]] = None) -> None:
+        self._logger = logger
+        self._context = dict(context or {})
+
+    def bind(self, **kwargs: Any) -> "_StdlibBinder":
+        return _StdlibBinder(self._logger, {**self._context, **kwargs})
+
+    def log(self, level: int, event: str, **kwargs: Any) -> None:
+        exc_info = kwargs.pop("exc_info", None)
+        self._logger.log(level, event, extra={**self._context, **kwargs}, exc_info=exc_info)
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        self.log(logging.INFO, event, **kwargs)
+
+    def debug(self, event: str, **kwargs: Any) -> None:
+        self.log(logging.DEBUG, event, **kwargs)
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.log(logging.WARNING, event, **kwargs)
+
+    def error(self, event: str, **kwargs: Any) -> None:
+        self.log(logging.ERROR, event, **kwargs)
+
+    def exception(self, event: str, **kwargs: Any) -> None:
+        kwargs.setdefault("exc_info", True)
+        self.log(logging.ERROR, event, **kwargs)
+
+
+def _wrap_if_stdlib(logger: Any) -> Any:
+    """Return `logger` unchanged if it already supports `.bind()`, else wrap it for stdlib."""
+    if logger is None or hasattr(logger, "bind"):
         return logger
-    if logger:
-        warnings.warn(
-            f"Logger {logger} does not support .bind(). Creating new structlog logger.",
-            UserWarning,
-            stacklevel=3,
-        )
+    if isinstance(logger, logging.Logger):
+        return _StdlibBinder(logger)
+    return logger
+
+
+def _get_structlog_logger(logger, logger_name, op_name):
+    """Return a logger that supports `.bind()` for track_operation.
+
+    Structlog loggers are returned as-is. Stdlib loggers are wrapped in a
+    `_StdlibBinder` so track_operation can attach context via `extra={...}`.
+    Falls back to `get_logger(logger_name or default)` when nothing is passed,
+    honoring the operator's `USE_STRUCTLOG` config.
+    """
+    wrapped = _wrap_if_stdlib(logger)
+    if wrapped is not None:
+        return wrapped
     name = logger_name or f"mindtrace.operations.{op_name}"
-    return get_logger(name, use_structlog=True)
+    return _wrap_if_stdlib(get_logger(name))
 
 
 def _determine_logger_for_decorator(logger, logger_name, args, op_name):
-    """Pick the best structlog logger for a decorated method call."""
-    if logger and hasattr(logger, "bind"):
-        return logger
+    """Pick the best logger for a decorated method call, bind-capable or adapted."""
+    wrapped = _wrap_if_stdlib(logger)
+    if wrapped is not None:
+        return wrapped
 
-    # For bound methods, try the instance's logger
     if args and hasattr(args[0], "logger"):
-        class_logger = args[0].logger
-        if hasattr(class_logger, "bind"):
-            return class_logger
-        warnings.warn(
-            f"Logger {class_logger} does not support .bind(). Creating new structlog logger.",
-            UserWarning,
-            stacklevel=3,
-        )
-        logger_name = getattr(class_logger, "name", None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
-        return get_logger(logger_name, use_structlog=True)
+        instance_logger = _wrap_if_stdlib(args[0].logger)
+        if instance_logger is not None:
+            return instance_logger
 
     if logger_name:
-        return get_logger(logger_name, use_structlog=True)
+        return _wrap_if_stdlib(get_logger(logger_name))
 
-    if logger:
-        warnings.warn(
-            f"Logger {logger} does not support .bind(). Creating new structlog logger.",
-            UserWarning,
-            stacklevel=3,
-        )
-
-    return get_logger(f"mindtrace.methods.{op_name}", use_structlog=True)
+    return _wrap_if_stdlib(get_logger(f"mindtrace.methods.{op_name}"))
 
 
 class _OperationTracker:
@@ -385,7 +420,13 @@ class _OperationTracker:
         if exc_type is None:
             bound.log(self.log_level, f"{self.name}_completed", duration=duration, duration_ms=dur_ms)
         elif issubclass(exc_type, TimeoutError):
-            bound.error(f"{self.name}_timeout", timeout_after=self.timeout, duration=duration, duration_ms=dur_ms)
+            bound.error(
+                f"{self.name}_timeout",
+                timeout_after=self.timeout,
+                duration=duration,
+                duration_ms=dur_ms,
+                exc_info=(exc_type, exc_val, exc_tb),
+            )
             raise
         else:
             bound.error(
@@ -394,6 +435,7 @@ class _OperationTracker:
                 error_type=type(exc_val).__name__,
                 duration=duration,
                 duration_ms=dur_ms,
+                exc_info=(exc_type, exc_val, exc_tb),
             )
             raise
 
@@ -430,7 +472,11 @@ class _OperationTracker:
                 except TimeoutError:
                     dur = time.time() - start
                     bound.error(
-                        f"{op_name}_timeout", timeout_after=self.timeout, duration=dur, duration_ms=round(dur * 1000, 2)
+                        f"{op_name}_timeout",
+                        timeout_after=self.timeout,
+                        duration=dur,
+                        duration_ms=round(dur * 1000, 2),
+                        exc_info=True,
                     )
                     raise
                 except Exception as e:
@@ -441,6 +487,7 @@ class _OperationTracker:
                         error_type=type(e).__name__,
                         duration=dur,
                         duration_ms=round(dur * 1000, 2),
+                        exc_info=True,
                     )
                     raise
 
@@ -466,6 +513,7 @@ class _OperationTracker:
                         error_type=type(e).__name__,
                         duration=dur,
                         duration_ms=round(dur * 1000, 2),
+                        exc_info=True,
                     )
                     raise
 

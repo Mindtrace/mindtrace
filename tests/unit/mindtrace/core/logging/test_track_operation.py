@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import warnings
 from unittest.mock import Mock, patch
 
 import pytest
@@ -194,17 +195,16 @@ class TestTrackOperationLoggerDetermination:
         assert result == "success"
 
     def test_fallback_logger_creation(self):
-        """Test fallback logger creation when no logger supports bind()."""
+        """Stdlib loggers are adapted silently; no warning is emitted."""
         stdlib_logger = logging.getLogger("stdlib_test")
 
         @track_operation("op", logger=stdlib_logger)
         def test_func():
             return "success"
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_func()
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_func() == "success"
 
 
 class TestTrackOperationContextBinding:
@@ -373,24 +373,21 @@ class TestTrackOperationEdgeCases:
         assert results == ["completed_op1", "completed_op2", "completed_op3"]
 
 
-class TestTrackOperationLoggerWithoutBindSupport:
-    """Test track_operation with loggers that don't support bind()."""
+class TestTrackOperationWithStdlibLogger:
+    """track_operation works with stdlib loggers silently, attaching context via `extra={...}`."""
 
-    def test_stdlib_logger_creates_warning_and_new_logger(self):
-        """Test that stdlib logger without bind() creates warning and new structlog logger."""
+    def test_stdlib_logger_emits_no_bind_warning(self):
         stdlib_logger = logging.getLogger("stdlib_test")
 
         @track_operation("op", logger=stdlib_logger)
         def test_func():
             return "success"
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_func()
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_func() == "success"
 
-    def test_class_with_stdlib_logger_creates_warning(self):
-        """Test class method with stdlib logger creates warning and new logger."""
+    def test_class_with_stdlib_logger_emits_no_warning(self):
         stdlib_logger = logging.getLogger("class_stdlib_test")
 
         class TestClass:
@@ -403,13 +400,11 @@ class TestTrackOperationLoggerWithoutBindSupport:
 
         instance = TestClass()
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_method(instance)
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_method(instance) == "success"
 
-    def test_context_manager_with_stdlib_logger(self):
-        """Test context manager with stdlib logger creates warning."""
+    def test_context_manager_with_stdlib_logger_emits_no_warning(self):
         stdlib_logger = logging.getLogger("ctx_stdlib_test")
 
         async def run_test():
@@ -417,10 +412,51 @@ class TestTrackOperationLoggerWithoutBindSupport:
                 assert log is not None
                 return "success"
 
-        # Should create warning about bind method
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = asyncio.run(run_test())
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert asyncio.run(run_test()) == "success"
+
+    def test_stdlib_logger_success_attaches_context_via_extra(self, caplog: pytest.LogCaptureFixture):
+        stdlib_logger = logging.getLogger("stdlib_success")
+
+        @track_operation("my_op", logger=stdlib_logger, user_id="u-1")
+        def test_func():
+            return "success"
+
+        with caplog.at_level(logging.DEBUG, logger="stdlib_success"):
+            assert test_func() == "success"
+
+        events = [r.message for r in caplog.records]
+        assert "my_op_started" in events
+        assert "my_op_completed" in events
+        started = next(r for r in caplog.records if r.message == "my_op_started")
+        completed = next(r for r in caplog.records if r.message == "my_op_completed")
+        assert started.operation == "my_op"
+        assert started.user_id == "u-1"
+        assert completed.operation == "my_op"
+        assert "duration_ms" in completed.__dict__
+
+    def test_stdlib_logger_failure_sets_exc_info(self, caplog: pytest.LogCaptureFixture):
+        stdlib_logger = logging.getLogger("stdlib_failure")
+
+        @track_operation("my_op", logger=stdlib_logger)
+        def test_func():
+            raise ValueError("boom")
+
+        with caplog.at_level(logging.DEBUG, logger="stdlib_failure"):
+            with pytest.raises(ValueError):
+                test_func()
+
+        failed = next(r for r in caplog.records if r.message == "my_op_failed")
+        assert failed.exc_info is not None
+        assert failed.exc_info[0] is ValueError
+
+    def test_structlog_logger_passes_through_unchanged(self):
+        structlog_logger = get_logger("structlog_passthrough", use_structlog=True)
+
+        from mindtrace.core.logging.logger import _wrap_if_stdlib
+
+        assert _wrap_if_stdlib(structlog_logger) is structlog_logger
 
 
 class TestTrackOperationLoggerNameFallback:
@@ -656,3 +692,74 @@ class TestTrackOperationClassMethodWithoutLogger:
 
         result = await async_function_with_metrics()
         assert result == "success"
+
+
+class TestTrackOperationExcInfo:
+    """Failures must carry exc_info so structlog's format_exc_info renders a real traceback."""
+
+    @staticmethod
+    def _mock_logger() -> Mock:
+        logger = Mock()
+        logger.bind.return_value = logger
+        return logger
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_generic_exception_passes_exc_info(self):
+        logger = self._mock_logger()
+        with pytest.raises(ValueError):
+            async with track_operation("op", logger=logger):
+                raise ValueError("boom")
+        logger.error.assert_called_once()
+        kwargs = logger.error.call_args.kwargs
+        assert kwargs.get("exc_info") is not None
+        exc_type, exc_val, _ = kwargs["exc_info"]
+        assert exc_type is ValueError
+        assert str(exc_val) == "boom"
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_timeout_passes_exc_info(self):
+        logger = self._mock_logger()
+        with pytest.raises(TimeoutError):
+            async with track_operation("op", logger=logger, timeout=0.1):
+                raise asyncio.TimeoutError()
+        logger.error.assert_called_once()
+        kwargs = logger.error.call_args.kwargs
+        assert kwargs.get("exc_info") is not None
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_failure_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger)
+        async def boom():
+            raise RuntimeError("nope")
+
+        with pytest.raises(RuntimeError):
+            await boom()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_timeout_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger, timeout=0.05)
+        async def slow():
+            await asyncio.sleep(1.0)
+
+        with pytest.raises(TimeoutError):
+            await slow()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True
+
+    def test_sync_decorator_failure_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger)
+        def boom():
+            raise RuntimeError("nope")
+
+        with pytest.raises(RuntimeError):
+            boom()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True

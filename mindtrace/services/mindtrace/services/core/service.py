@@ -171,32 +171,32 @@ class Service(Mindtrace):
         cls.mcp = MCPClientManager(cls)
         cls.__endpoints__ = Service._collect_endpoints(cls)
 
-    @endpoint("endpoints", schema=EndpointsSchema, as_tool=True)
+    @endpoint("endpoints", schema=EndpointsSchema, as_tool=True, autolog_kwargs={"log_level": logging.DEBUG})
     def endpoints_func(self):
         """List all available endpoints for the service."""
         return {"endpoints": list(self._endpoints.keys())}
 
-    @endpoint("status", schema=StatusSchema, as_tool=True)
+    @endpoint("status", schema=StatusSchema, as_tool=True, autolog_kwargs={"log_level": logging.DEBUG})
     def status_func(self):
         """Get the current status of the service."""
         return {"status": self.status.value}
 
-    @endpoint("class_name", schema=ClassNameSchema)
+    @endpoint("class_name", schema=ClassNameSchema, autolog_kwargs={"log_level": logging.DEBUG})
     def class_name_func(self):
         """Return the name of the concrete class of this service instance."""
         return {"class_name": self.__class__.__name__}
 
-    @endpoint("heartbeat", schema=HeartbeatSchema, as_tool=True)
+    @endpoint("heartbeat", schema=HeartbeatSchema, as_tool=True, autolog_kwargs={"log_level": logging.DEBUG})
     def heartbeat_func(self):
         """Perform a heartbeat check for the service."""
         return {"heartbeat": self.heartbeat()}
 
-    @endpoint("server_id", schema=ServerIDSchema)
+    @endpoint("server_id", schema=ServerIDSchema, autolog_kwargs={"log_level": logging.DEBUG})
     def server_id_func(self):
         """Return the server's unique ID."""
         return {"server_id": self.id}
 
-    @endpoint("pid_file", schema=PIDFileSchema)
+    @endpoint("pid_file", schema=PIDFileSchema, autolog_kwargs={"log_level": logging.DEBUG})
     def pid_file_func(self):
         """Return the path to the server's PID file."""
         return {"pid_file": self.pid_file}
