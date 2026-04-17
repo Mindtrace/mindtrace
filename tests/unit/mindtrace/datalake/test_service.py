@@ -1418,6 +1418,17 @@ class TestDatalakeServiceUtilities:
         assert exc_info.value.status_code == 400
         assert "list_assets()" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_await_pagination_client_safe_translates_value_error(self):
+        async def fail():
+            raise ValueError("Invalid snapshot token")
+
+        with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+            await DatalakeService._await_pagination_client_safe(fail())
+
+        assert exc_info.value.status_code == 400
+        assert "Invalid snapshot token" in exc_info.value.detail
+
 
 @pytest.mark.parametrize(
     "case",
@@ -1468,6 +1479,17 @@ async def test_service_list_assets_page_maps_page_contract(service, mock_datalak
     assert result.items == [datalake_objects.asset]
     assert result.page.next_cursor == "cursor-1"
     assert result.page.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_service_list_assets_page_translates_invalid_cursor(service, mock_datalake):
+    mock_datalake.list_assets_page.side_effect = ValueError("Invalid snapshot token")
+
+    with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+        await service.list_assets_page(PageInput(filters={"kind": "image"}, limit=1, cursor="bad-cursor"))
+
+    assert exc_info.value.status_code == 400
+    assert "Invalid snapshot token" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1671,6 +1693,24 @@ async def test_service_view_dataset_version_page_maps_expand_and_filters(service
     assert result.items[0].datum_id == "datum_1"
     assert result.page.next_cursor == "cursor-2"
     assert result.view.dataset_name == "demo"
+
+
+@pytest.mark.asyncio
+async def test_service_view_dataset_version_page_translates_invalid_cursor(service, mock_datalake):
+    mock_datalake.view_dataset_version_page.side_effect = ValueError("Cursor filters do not match this request")
+
+    payload = ViewDatasetVersionPageInput(
+        dataset_name="demo",
+        version="1.0.0",
+        limit=1,
+        cursor="bad-cursor",
+    )
+
+    with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+        await service.view_dataset_version_page(payload)
+
+    assert exc_info.value.status_code == 400
+    assert "Cursor filters do not match this request" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

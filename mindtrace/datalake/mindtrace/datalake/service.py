@@ -456,6 +456,16 @@ class DatalakeService(Service):
                 ),
             ) from exc
 
+    @staticmethod
+    async def _await_pagination_client_safe(coro: Awaitable[Any]) -> Any:
+        try:
+            return await DatalakeService._await_client_safe(coro)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid pagination request. {exc}",
+            ) from exc
+
     async def health(self) -> DatalakeHealthOutput:
         datalake = await self._ensure_datalake()
         return DatalakeHealthOutput(**(await datalake.get_health()))
@@ -558,12 +568,14 @@ class DatalakeService(Service):
 
     async def list_assets_page(self, payload: PageInput) -> AssetPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_assets_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_assets_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AssetPageOutput(items=page.items, page=page.page)
 
@@ -634,12 +646,14 @@ class DatalakeService(Service):
 
     async def list_collections_page(self, payload: PageInput) -> CollectionPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_collections_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_collections_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return CollectionPageOutput(items=page.items, page=page.page)
 
@@ -667,12 +681,14 @@ class DatalakeService(Service):
 
     async def list_collection_items_page(self, payload: PageInput) -> CollectionItemPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_collection_items_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_collection_items_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return CollectionItemPageOutput(items=page.items, page=page.page)
 
@@ -706,12 +722,14 @@ class DatalakeService(Service):
 
     async def list_asset_retentions_page(self, payload: PageInput) -> AssetRetentionPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_asset_retentions_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_asset_retentions_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AssetRetentionPageOutput(items=page.items, page=page.page)
 
@@ -748,12 +766,14 @@ class DatalakeService(Service):
 
     async def list_annotation_schemas_page(self, payload: PageInput) -> AnnotationSchemaPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_annotation_schemas_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_schemas_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AnnotationSchemaPageOutput(items=page.items, page=page.page)
 
@@ -783,12 +803,14 @@ class DatalakeService(Service):
 
     async def list_annotation_sets_page(self, payload: PageInput) -> AnnotationSetPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_annotation_sets_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_sets_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AnnotationSetPageOutput(items=page.items, page=page.page)
 
@@ -818,12 +840,14 @@ class DatalakeService(Service):
         self, payload: ListAnnotationRecordsForAssetPageInput
     ) -> AnnotationRecordPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_annotation_records_for_asset_page(
-            payload.asset_id,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_records_for_asset_page(
+                payload.asset_id,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AnnotationRecordPageOutput(items=page.items, page=page.page)
 
@@ -839,12 +863,14 @@ class DatalakeService(Service):
 
     async def list_annotation_records_page(self, payload: PageInput) -> AnnotationRecordPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_annotation_records_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_records_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return AnnotationRecordPageOutput(items=page.items, page=page.page)
 
@@ -871,12 +897,14 @@ class DatalakeService(Service):
 
     async def list_datums_page(self, payload: PageInput) -> DatumPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_datums_page(
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_datums_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return DatumPageOutput(items=page.items, page=page.page)
 
@@ -907,13 +935,15 @@ class DatalakeService(Service):
 
     async def list_dataset_versions_page(self, payload: ListDatasetVersionsPageInput) -> DatasetVersionPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.list_dataset_versions_page(
-            dataset_name=payload.dataset_name,
-            filters=payload.filters,
-            sort=payload.sort,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.list_dataset_versions_page(
+                dataset_name=payload.dataset_name,
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
         )
         return DatasetVersionPageOutput(items=page.items, page=page.page)
 
@@ -924,15 +954,17 @@ class DatalakeService(Service):
 
     async def view_dataset_version_page(self, payload: ViewDatasetVersionPageInput) -> DatasetViewPageOutput:
         datalake = await self._ensure_datalake()
-        page = await datalake.view_dataset_version_page(
-            payload.dataset_name,
-            payload.version,
-            limit=payload.limit,
-            cursor=payload.cursor,
-            sort=payload.sort,
-            filters=payload.filters,
-            expand=payload.expand,
-            include_total=payload.include_total,
+        page = await self._await_pagination_client_safe(
+            datalake.view_dataset_version_page(
+                payload.dataset_name,
+                payload.version,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                sort=payload.sort,
+                filters=payload.filters,
+                expand=payload.expand,
+                include_total=payload.include_total,
+            )
         )
         return DatasetViewPageOutput(items=page.items, page=page.page, view=page.view)
 
