@@ -8,14 +8,11 @@ from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset
 
 PageItemT = TypeVar("PageItemT")
 
-DEFAULT_PAGE_LIMIT = 100
-MAX_PAGE_LIMIT = 500
-
 
 class PageInfo(BaseModel):
     """Shared page metadata for cursor-based list and view responses."""
 
-    limit: int = Field(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT)
+    limit: int = Field(ge=1)
     next_cursor: str | None = None
     has_more: bool
     total_count: int | None = None
@@ -41,7 +38,7 @@ class CursorPage(BaseModel, Generic[PageItemT]):
 class PageRequest(BaseModel):
     """Base request contract for cursor-based collection pagination."""
 
-    limit: int = Field(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT)
+    limit: int | None = Field(default=None, ge=1)
     cursor: str | None = None
     sort: str = "created_desc"
     include_total: bool = False

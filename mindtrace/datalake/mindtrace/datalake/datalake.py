@@ -371,7 +371,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -438,7 +438,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -487,7 +487,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -539,7 +539,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -591,7 +591,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -640,7 +640,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -701,7 +701,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -720,7 +720,7 @@ class Datalake(Mindtrace):
         asset_id: str,
         *,
         sort: str = "subject_created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -769,7 +769,7 @@ class Datalake(Mindtrace):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -820,7 +820,7 @@ class Datalake(Mindtrace):
         dataset_name: str | None = None,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ):
@@ -840,7 +840,7 @@ class Datalake(Mindtrace):
         dataset_name: str,
         version: str,
         *,
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         sort: str = "manifest_order",
         filters=None,

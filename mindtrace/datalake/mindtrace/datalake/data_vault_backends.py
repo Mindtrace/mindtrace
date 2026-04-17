@@ -108,7 +108,7 @@ class AsyncDataVaultBackend(ABC):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]: ...
@@ -178,7 +178,7 @@ class DataVaultBackend(ABC):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]: ...
@@ -250,7 +250,7 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -348,7 +348,7 @@ class LocalDataVaultBackend(DataVaultBackend):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -469,7 +469,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -492,7 +492,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         batch_size: int | None = None,
     ) -> AsyncIterator[Asset]:
         cursor: str | None = None
-        page_limit = batch_size or 100
+        page_limit = batch_size
         while True:
             page = await self.list_assets_page(
                 filters=filters,
@@ -618,7 +618,7 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
         *,
         filters: dict[str, Any] | None = None,
         sort: str = "created_desc",
-        limit: int = 100,
+        limit: int | None = None,
         cursor: str | None = None,
         include_total: bool = False,
     ) -> CursorPage[Asset]:
@@ -641,7 +641,7 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
         batch_size: int | None = None,
     ) -> Iterator[Asset]:
         cursor: str | None = None
-        page_limit = batch_size or 100
+        page_limit = batch_size
         while True:
             page = self.list_assets_page(
                 filters=filters,
