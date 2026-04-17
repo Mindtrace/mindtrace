@@ -1770,8 +1770,8 @@ class AsyncDatalake(Mindtrace):
             "list_annotation_records_for_asset",
             alternatives="list_annotation_records_for_asset_page()",
         )
-        return await self.list_annotation_records(
-            filters={"subject.kind": "asset", "subject.id": asset_id},
+        return await self.annotation_record_database.find(
+            {"subject.kind": "asset", "subject.id": asset_id},
         )
 
     async def list_annotation_records_for_asset_page(
