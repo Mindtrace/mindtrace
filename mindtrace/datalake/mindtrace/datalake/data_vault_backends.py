@@ -80,7 +80,7 @@ def looks_like_datalake_service_sync_client(obj: Any) -> bool:
     """
 
     if isinstance(obj, ConnectionManager):
-        return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+        return True
     if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
@@ -90,7 +90,7 @@ def looks_like_datalake_service_async_client(obj: Any) -> bool:
     """Return True if ``obj`` exposes async ``a``-prefixed ``DatalakeService`` task methods."""
 
     if isinstance(obj, ConnectionManager):
-        return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+        return True
     if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
@@ -455,7 +455,10 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return await method(input_obj)
-        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+        raise TypeError(
+            "This AsyncDataVault service client does not support the required ConnectionManager "
+            f"method(s): {', '.join(method_names)}"
+        )
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = await self._call("aassets_list", input_obj=ListInput(filters=filters))
@@ -601,7 +604,10 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return method(input_obj)
-        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+        raise TypeError(
+            "This DataVault service client does not support the required ConnectionManager "
+            f"method(s): {', '.join(method_names)}"
+        )
 
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = self._call("assets_list", input_obj=ListInput(filters=filters))
