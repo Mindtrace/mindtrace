@@ -56,16 +56,40 @@ class MockDiscordEventHandler(DiscordEventHandler):
 class TestDiscordClient:
     """Test DiscordClient class."""
 
-    @pytest.fixture
-    def mock_bot(self):
-        """Create a mock Discord bot."""
+    @staticmethod
+    def _make_eventful_bot():
         bot = Mock()
         bot.user = Mock()
-        bot.user.name = "TestBot"
         bot.guilds = []
         bot.users = []
         bot.latency = 0.1
         bot.status = "online"
+        bot.tree = Mock()
+        bot.tree.get_commands.return_value = []
+        bot.tree.sync = AsyncMock(return_value=["cmd"])
+
+        def event_decorator(func):
+            setattr(bot, func.__name__, func)
+            return func
+
+        def command_decorator(*args, **kwargs):
+            def wrapper(func):
+                setattr(bot.tree, f"registered_{kwargs.get('name', func.__name__)}", func)
+                return func
+
+            return wrapper
+
+        bot.event = Mock(side_effect=event_decorator)
+        bot.tree.command = Mock(side_effect=command_decorator)
+        bot.process_commands = AsyncMock()
+        bot.change_presence = AsyncMock()
+        return bot
+
+    @pytest.fixture
+    def mock_bot(self):
+        """Create a mock Discord bot."""
+        bot = self._make_eventful_bot()
+        bot.user.name = "TestBot"
         return bot
 
     @pytest.fixture
@@ -432,6 +456,121 @@ class TestDiscordClient:
         # Verify command executed (cooldown is just a pass in current implementation)
         mock_interaction.response.defer.assert_called_once()
         mock_interaction.followup.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_ready_syncs_commands_and_sets_presence(self, discord_client):
+        discord_client.bot.user = "TestBot"
+        discord_client.bot.guilds = [Mock(), Mock()]
+        discord_client.bot.tree.get_commands.return_value = [Mock(), Mock()]
+        discord_client.bot.tree.sync = AsyncMock(return_value=[Mock()])
+
+        await discord_client.bot.on_ready()
+
+        discord_client.bot.tree.sync.assert_called_once()
+        discord_client.bot.change_presence.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_ready_logs_sync_errors_but_still_sets_presence(self, discord_client):
+        discord_client.bot.user = "TestBot"
+        discord_client.bot.guilds = []
+        discord_client.bot.tree.get_commands.return_value = [Mock()]
+        discord_client.bot.tree.sync = AsyncMock(side_effect=Exception("sync failed"))
+
+        with patch.object(discord_client.logger, "error") as mock_error:
+            await discord_client.bot.on_ready()
+
+        mock_error.assert_called_once()
+        discord_client.bot.change_presence.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_message_ignores_bot_authors(self, discord_client):
+        message = Mock()
+        message.author.bot = True
+
+        with patch.object(discord_client, "_handle_event", new_callable=AsyncMock) as mock_handle:
+            await discord_client.bot.on_message(message)
+
+        discord_client.bot.process_commands.assert_not_called()
+        mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_message_processes_commands_and_dispatches_event(self, discord_client):
+        message = Mock()
+        message.author.bot = False
+
+        with patch.object(discord_client, "_handle_event", new_callable=AsyncMock) as mock_handle:
+            await discord_client.bot.on_message(message)
+
+        discord_client.bot.process_commands.assert_called_once_with(message)
+        mock_handle.assert_awaited_once_with(DiscordEventType.MESSAGE, message=message)
+
+    @pytest.mark.asyncio
+    async def test_on_reaction_add_ignores_bot_users(self, discord_client):
+        reaction = Mock()
+        user = Mock()
+        user.bot = True
+
+        with patch.object(discord_client, "_handle_event", new_callable=AsyncMock) as mock_handle:
+            await discord_client.bot.on_reaction_add(reaction, user)
+
+        mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_reaction_add_dispatches_reaction_event(self, discord_client):
+        reaction = Mock()
+        user = Mock()
+        user.bot = False
+
+        with patch.object(discord_client, "_handle_event", new_callable=AsyncMock) as mock_handle:
+            await discord_client.bot.on_reaction_add(reaction, user)
+
+        mock_handle.assert_awaited_once_with(DiscordEventType.REACTION, reaction=reaction, user=user, action="add")
+
+    @pytest.mark.asyncio
+    async def test_member_and_voice_events_dispatch_expected_types(self, discord_client):
+        member = Mock()
+        before = Mock()
+        after = Mock()
+
+        with patch.object(discord_client, "_handle_event", new_callable=AsyncMock) as mock_handle:
+            await discord_client.bot.on_member_join(member)
+            await discord_client.bot.on_member_remove(member)
+            await discord_client.bot.on_voice_state_update(member, before, after)
+
+        assert mock_handle.await_args_list[0].args == (DiscordEventType.MEMBER_JOIN,)
+        assert mock_handle.await_args_list[0].kwargs == {"member": member}
+        assert mock_handle.await_args_list[1].args == (DiscordEventType.MEMBER_LEAVE,)
+        assert mock_handle.await_args_list[1].kwargs == {"member": member}
+        assert mock_handle.await_args_list[2].args == (DiscordEventType.VOICE_STATE_UPDATE,)
+        assert mock_handle.await_args_list[2].kwargs == {"member": member, "before": before, "after": after}
+
+    def test_register_command_adds_parameter_descriptions(self, discord_client):
+        async def test_command(ctx, *args):
+            return "Test response"
+
+        with patch("mindtrace.services.discord.discord_client.app_commands.describe") as mock_describe:
+            discord_client.register_command(
+                name="test",
+                description="Test command",
+                usage="!test",
+                handler=test_command,
+                parameters={"target": {"description": "Target user"}},
+            )
+
+        mock_describe.assert_called_once_with(target="Target user")
+
+    @pytest.mark.asyncio
+    async def test_registered_slash_wrapper_dispatches_to_execute_slash_command(self, discord_client):
+        async def test_command(ctx, *args):
+            return "Test response"
+
+        discord_client.register_command(name="test", description="Test command", usage="!test", handler=test_command)
+
+        interaction = Mock()
+        with patch.object(discord_client, "_execute_slash_command", new_callable=AsyncMock) as mock_execute:
+            await discord_client.bot.tree.registered_test(interaction, "arg1")
+
+        mock_execute.assert_awaited_once_with(interaction, "test", "arg1")
 
     def test_discord_client_no_token_error(self):
         """Test that DiscordClient raises error when no token is provided."""

@@ -6,6 +6,11 @@ from mindtrace.hardware.services.cameras.schemas.backend_schemas import (
     DiscoverCamerasSchema,
     GetBackendInfoSchema,
 )
+from mindtrace.hardware.services.cameras.schemas.capture_group_schemas import (
+    ConfigureCaptureGroupsSchema,
+    GetCaptureGroupsSchema,
+    RemoveCaptureGroupsSchema,
+)
 from mindtrace.hardware.services.cameras.schemas.capture_schemas import (
     CaptureHDRImagesBatchSchema,
     CaptureHDRImageSchema,
@@ -91,6 +96,10 @@ ALL_SCHEMAS = {
     "get_camera_configuration": GetCameraConfigurationSchema,
     "import_camera_config": ImportCameraConfigSchema,
     "export_camera_config": ExportCameraConfigSchema,
+    # Capture Groups
+    "configure_capture_groups": ConfigureCaptureGroupsSchema,
+    "get_capture_groups": GetCaptureGroupsSchema,
+    "remove_capture_groups": RemoveCaptureGroupsSchema,
     # Image Capture
     "capture_image": CaptureImageSchema,
     "capture_images_batch": CaptureImagesBatchSchema,
@@ -147,6 +156,10 @@ __all__ = [
     "GetCameraConfigurationSchema",
     "ImportCameraConfigSchema",
     "ExportCameraConfigSchema",
+    # Capture Groups
+    "ConfigureCaptureGroupsSchema",
+    "GetCaptureGroupsSchema",
+    "RemoveCaptureGroupsSchema",
     # Image Capture
     "CaptureImageSchema",
     "CaptureImagesBatchSchema",

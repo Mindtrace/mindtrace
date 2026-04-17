@@ -1,17 +1,17 @@
-import re
 import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
-from mindtrace.registry import LocalRegistryBackend, Registry
+from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import (
@@ -19,7 +19,18 @@ from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     RegistryVersionConflict,
 )
-from mindtrace.registry.core.types import CleanupState, OpResult, OpResults
+from mindtrace.registry.core.mount import (
+    AmbientAuth,
+    GCSMountConfig,
+    GCSServiceAccountFileAuth,
+    LocalMountConfig,
+    Mount,
+    NoAuth,
+    S3AccessKeyAuth,
+    S3MountConfig,
+)
+from mindtrace.registry.core.types import BatchResult, CleanupState, OnConflict, OpResult, OpResults, VerifyLevel
+from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockMinioHandler
 
 
 class SampleModel(BaseModel):
@@ -265,11 +276,17 @@ def test_load_nonexistent_object(registry):
         registry.load("test:config", version="1.0.0")
 
 
+def test_underscore_object_name(registry, test_config):
+    """Test that saving with underscored names works (underscores are allowed)."""
+    registry.save("test_config", test_config, version="1.0.0")
+    loaded = registry.load("test_config", version="1.0.0")
+    assert loaded is not None
+
+
 def test_invalid_object_name(registry, test_config):
-    """Test that saving with an invalid object name raises an error."""
-    error_msg = "Object name 'test_config' cannot contain underscores. Use colons (':') for namespacing."
-    with pytest.raises(ValueError, match=re.escape(error_msg)):
-        registry.save("test_config", test_config, version="1.0.0")
+    """Test that saving with an @ in the name raises an error."""
+    with pytest.raises(ValueError, match="cannot contain '@'"):
+        registry.save("test@config", test_config, version="1.0.0")
 
 
 def test_list_objects_and_versions(registry, test_config):
@@ -873,10 +890,10 @@ def test_str_value_load_error(registry, color):
 
 
 def test_next_version_first_version(registry):
-    """Test _next_version returns "1" for the first version of an object."""
+    """Test _next_version returns first canonical version for a new object."""
     # Test with a new object name that has no versions
     next_version = registry._next_version("new:object")
-    assert next_version == "1"
+    assert next_version == "1.0.0"
 
     # Verify that _latest returns None for a non-existent object
     assert registry._latest("new:object") is None
@@ -903,7 +920,7 @@ def test_save_push_rollback_on_error(registry, test_config):
     assert not artifact_path.exists()
 
     # Verify that metadata was not created
-    meta_path = registry.backend.uri / "_meta_test_config@1.0.0.yaml"
+    meta_path = registry.backend.uri / "_meta_test%3Aconfig@1.0.0.yaml"
     assert not meta_path.exists()
 
 
@@ -959,22 +976,22 @@ def test_dict_like_interface_basic(registry):
     assert registry["test:str"] == "hello"
     assert "test:str" in registry
 
-    # Test with specific version
-    registry["test:str@1.0.0"] = "hello v1"
-    assert registry["test:str@1.0.0"] == "hello v1"
-    assert "test:str@1.0.0" in registry
+    # Test with a newer explicit version
+    registry["test:str@2.0.0"] = "hello v2"
+    assert registry["test:str@2.0.0"] == "hello v2"
+    assert "test:str@2.0.0" in registry
 
     # Test that latest version is now the specific version
-    assert registry["test:str"] == "hello v1"
+    assert registry["test:str"] == "hello v2"
     assert "test:str" in registry
 
     # Test __len__ (should count unique names only)
     assert len(registry) == 1
 
     # Test __delitem__ with specific version
-    del registry["test:str@1.0.0"]
-    assert "test:str@1.0.0" not in registry
-    assert "test:str" in registry  # Latest version should still exist
+    del registry["test:str@2.0.0"]
+    assert "test:str@2.0.0" not in registry
+    assert "test:str" in registry  # Earlier version should still exist
 
     # Test __delitem__ with latest version
     del registry["test:str"]
@@ -994,9 +1011,9 @@ def test_dict_like_interface_get(registry):
     assert registry.get("test:str", "default") == "hello"
 
     # Test with version
-    registry["test:str@1.0.0"] = "hello v1"
-    assert registry.get("test:str@1.0.0") == "hello v1"
-    assert registry.get("test:str@1.0.0", "default") == "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
+    assert registry.get("test:str@2.0.0") == "hello v2"
+    assert registry.get("test:str@2.0.0", "default") == "hello v2"
 
     # Test with invalid version
     assert registry.get("test:str@invalid") is None
@@ -1008,7 +1025,7 @@ def test_dict_like_interface_keys_values_items(registry):
     # Add some test data
     registry["test:str"] = "hello"
     registry["test:int"] = 42
-    registry["test:str@1.0.0"] = "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
 
     # Test keys()
     keys = registry.keys()
@@ -1019,14 +1036,14 @@ def test_dict_like_interface_keys_values_items(registry):
     values = registry.values()
     assert isinstance(values, list)
     assert len(values) == 2
-    assert "hello v1" in values  # Latest version of test:str
+    assert "hello v2" in values  # Latest version of test:str
     assert 42 in values  # Latest version of test:int
 
     # Test items() - should only return latest versions
     items = registry.items()
     assert isinstance(items, list)
     assert len(items) == 2
-    assert ("test:str", "hello v1") in items  # Latest version of test:str
+    assert ("test:str", "hello v2") in items  # Latest version of test:str
     assert ("test:int", 42) in items  # Latest version of test:int
 
 
@@ -1057,7 +1074,7 @@ def test_dict_like_interface_clear(registry):
     # Add some test data
     registry["test:str"] = "hello"
     registry["test:int"] = 42
-    registry["test:str@1.0.0"] = "hello v1"
+    registry["test:str@2.0.0"] = "hello v2"
 
     # Clear the registry
     registry.clear()
@@ -1068,7 +1085,7 @@ def test_dict_like_interface_clear(registry):
     assert list(registry.values()) == []
     assert list(registry.items()) == []
     assert "test:str" not in registry
-    assert "test:str@1.0.0" not in registry
+    assert "test:str@2.0.0" not in registry
 
 
 def test_dict_like_interface_pop(registry):
@@ -1109,9 +1126,9 @@ def test_dict_like_interface_setdefault(registry):
     assert registry.setdefault("test:str", "new default") == "default"
     assert registry["test:str"] == "default"
 
-    # Test with version
-    assert registry.setdefault("test:str@1.0.0", "v1") == "v1"
-    assert registry["test:str@1.0.0"] == "v1"
+    # Test with explicit newer version
+    assert registry.setdefault("test:str@2.0.0", "v2") == "v2"
+    assert registry["test:str@2.0.0"] == "v2"
 
     # Test with None default
     assert registry.setdefault("test:none") is None
@@ -1144,7 +1161,7 @@ def test_dict_like_interface_error_handling(registry):
 def test_dict_like_interface_version_handling(registry):
     """Test version handling in dictionary-like interface."""
     # Test saving multiple versions
-    registry["test:str"] = "test string"  # Saves a "1"
+    registry["test:str"] = "test string"  # Saves canonical first version
     registry["test:str@1.0.2"] = "v1.0.2"
     registry["test:str@1.0.1"] = "v1.0.1"
 
@@ -1152,12 +1169,12 @@ def test_dict_like_interface_version_handling(registry):
     assert registry["test:str"] == "v1.0.2"
 
     # Test accessing specific versions
-    assert registry["test:str@1"] == "test string"
+    assert registry["test:str@1.0.0"] == "test string"
     assert registry["test:str@1.0.1"] == "v1.0.1"
 
     # Test deleting specific version
-    del registry["test:str@1"]
-    assert "test:str@1" not in registry
+    del registry["test:str@1.0.0"]
+    assert "test:str@1.0.0" not in registry
     assert registry["test:str@1.0.1"] == "v1.0.1"
 
     # Test deleting all versions
@@ -1309,12 +1326,12 @@ def test_dict_batch_setitem_auto_increments_on_versioned_mutable(mutable_registr
     assert mutable_registry["test:b"] == 20
 
     # v1 still exists with original values
-    assert mutable_registry["test:a@1"] == 1
-    assert mutable_registry["test:b@1"] == 2
+    assert mutable_registry["test:a@1.0.0"] == 1
+    assert mutable_registry["test:b@1.0.0"] == 2
 
     # v2 (auto-incremented from 1) has the new values
-    assert mutable_registry["test:a@2"] == 10
-    assert mutable_registry["test:b@2"] == 20
+    assert mutable_registry["test:a@1.0.1"] == 10
+    assert mutable_registry["test:b@1.0.1"] == 20
 
 
 def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_registry):
@@ -1332,23 +1349,23 @@ def test_dict_single_setitem_auto_increments_on_versioned_mutable(mutable_regist
 def test_dict_single_setitem_overwrite_explicit_version(mutable_registry):
     """Single __setitem__ with explicit version overwrites in-place on mutable registry."""
     mutable_registry["testmutable:a"] = 1
-    mutable_registry["testmutable:a@1"] = 10
+    mutable_registry["testmutable:a@1.0.0"] = 10
 
-    assert mutable_registry["testmutable:a@1"] == 10
-    assert mutable_registry.list_versions("testmutable:a") == ["1"]
+    assert mutable_registry["testmutable:a@1.0.0"] == 10
+    assert mutable_registry.list_versions("testmutable:a") == ["1.0.0"]
 
 
 def test_dict_batch_setitem_overwrite_explicit_version(mutable_registry):
     """Batch __setitem__ with explicit versions overwrites in-place on mutable registry."""
     mutable_registry[["testbatch:a", "testbatch:b"]] = [1, 2]
-    mutable_registry[["testbatch:a@1", "testbatch:b@1"]] = [10, 20]
+    mutable_registry[["testbatch:a@1.0.0", "testbatch:b@1.0.0"]] = [10, 20]
 
     assert mutable_registry["testbatch:a"] == 10
     assert mutable_registry["testbatch:b"] == 20
-    assert mutable_registry["testbatch:a@1"] == 10
-    assert mutable_registry["testbatch:b@1"] == 20
-    assert mutable_registry.list_versions("testbatch:a") == ["1"]
-    assert mutable_registry.list_versions("testbatch:b") == ["1"]
+    assert mutable_registry["testbatch:a@1.0.0"] == 10
+    assert mutable_registry["testbatch:b@1.0.0"] == 20
+    assert mutable_registry.list_versions("testbatch:a") == ["1.0.0"]
+    assert mutable_registry.list_versions("testbatch:b") == ["1.0.0"]
 
 
 def test_dict_batch_delitem(mutable_registry):
@@ -1593,7 +1610,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Verify only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load object
     loaded_config = non_versioned_registry.load("test:config")
@@ -1606,7 +1623,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Verify still only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load should get new value
     loaded_config = non_versioned_registry.load("test:config")
@@ -1619,8 +1636,8 @@ def test_non_versioned_delete(non_versioned_registry, test_config):
     non_versioned_registry.save("test:config", test_config)
 
     # Delete should work with version string as well
-    non_versioned_registry.delete("test:config", "1")
-    assert not non_versioned_registry.has_object("test:config", "1")
+    non_versioned_registry.delete("test:config", "1.0.0")
+    assert not non_versioned_registry.has_object("test:config", "1.0.0")
 
     # Save again
     non_versioned_registry.save("test:config", test_config)
@@ -1660,10 +1677,10 @@ def test_dict_api_non_versioned_batch_overwrite(non_versioned_registry):
     non_versioned_registry[["test:a", "test:b"]] = [1, 2]
     non_versioned_registry[["test:a", "test:b"]] = [10, 20]
 
-    assert non_versioned_registry["test:a@1"] == 10
-    assert non_versioned_registry["test:b@1"] == 20
-    assert non_versioned_registry.list_versions("test:a") == ["1"]
-    assert non_versioned_registry.list_versions("test:b") == ["1"]
+    assert non_versioned_registry["test:a@1.0.0"] == 10
+    assert non_versioned_registry["test:b@1.0.0"] == 20
+    assert non_versioned_registry.list_versions("test:a") == ["1.0.0"]
+    assert non_versioned_registry.list_versions("test:b") == ["1.0.0"]
 
 
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
@@ -1671,18 +1688,18 @@ def test_non_versioned_version_handling(non_versioned_registry, test_config):
     # Save with explicit version
     non_versioned_registry.save("test:config", test_config, version="v2")
 
-    # Verify version is always "1"
+    # Verify version is always canonical first version
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
-    assert versions[0] == "1"
+    assert versions[0] == "1.0.0"
 
     # Load with explicit version should still work
     loaded_config = non_versioned_registry.load("test:config", version="v2")
     assert loaded_config == test_config
 
     # Delete with explicit version should work
-    non_versioned_registry.delete("test:config", version="1")
-    assert not non_versioned_registry.has_object("test:config", "1")
+    non_versioned_registry.delete("test:config", version="1.0.0")
+    assert not non_versioned_registry.has_object("test:config", "1.0.0")
 
 
 def test_download_basic(registry, test_config):
@@ -1859,7 +1876,7 @@ def test_download_non_versioned(registry, non_versioned_registry, test_config):
     # Verify object exists in non-versioned registry
     print(non_versioned_registry.list_versions("test:config"))
     print(non_versioned_registry)
-    assert non_versioned_registry.has_object("test:config", "1")
+    assert non_versioned_registry.has_object("test:config", "1.0.0")
 
     # Verify object content
     loaded_config = non_versioned_registry.load("test:config")
@@ -1940,14 +1957,15 @@ def test_update_with_registry(registry):
         registry.update(source_reg)
 
         # Verify all objects and versions were transferred
-        assert registry.has_object("config1", "1")
-        assert registry.has_object("config2", "1")
-        assert registry.has_object("config2", "2")
+        assert registry.has_object("config1", "1.0.0")
+        assert registry.has_object("config2", "1.0.0")
+        # Download without target_version uses target auto-versioning
+        assert registry.has_object("config2", "1.0.1")
 
         # Verify object contents
-        assert registry.load("config1", version="1") == config1
-        assert registry.load("config2", version="1") == config2
-        assert registry.load("config2", version="2") == config2
+        assert registry.load("config1", version="1.0.0") == config1
+        assert registry.load("config2", version="1.0.0") == config2
+        assert registry.load("config2", version="1.0.1") == config2
 
 
 def test_update_with_existing_objects(registry):
@@ -2164,7 +2182,7 @@ def test_backend_internal_lock_contention(registry):
         assert not registry.backend._acquire_internal_lock(lock_key, other_lock_id, timeout=30)
 
         with pytest.raises(LockAcquisitionError):
-            with registry.backend._internal_lock(lock_key, timeout=0.5):
+            with registry.backend._internal_lock(lock_key, timeout=0.01):
                 pass
     finally:
         # Release the lock
@@ -2495,6 +2513,9 @@ def test_load_hash_mismatch_detection(registry, test_config):
 def test_load_missing_hash_warning(registry, test_config, caplog):
     """Test that load() logs warning when hash is missing from metadata."""
     import yaml
+
+    # Explicitly opt-in to propagation for this capture-oriented test.
+    registry.logger.propagate = True
 
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
@@ -3796,9 +3817,9 @@ def test_batch_save_auto_version(registry):
     assert isinstance(results, BatchResult)
     assert len(results) == 2
     assert results.all_succeeded
-    # Auto-increment starts at 1
-    assert results.results[0] == "1"
-    assert results.results[1] == "1"
+    # Auto-increment starts at first canonical version
+    assert results.results[0] == "1.0.0"
+    assert results.results[1] == "1.0.0"
 
 
 def test_batch_save_mixed_skip(registry):
@@ -3972,3 +3993,757 @@ def test_resolve_load_version_not_found(registry):
     """Test that _resolve_load_version raises RegistryObjectNotFound for missing objects."""
     with pytest.raises(RegistryObjectNotFound):
         registry._resolve_load_version("nonexistent", "latest")
+
+
+def test_resolve_save_version_uses_normalized_single_version_when_versioning_disabled(temp_registry_dir):
+    registry = Registry(backend=temp_registry_dir, version_objects=False, version_digits=3)
+
+    assert registry._core._resolve_save_version("test:a", None) == "1.0.0"
+
+
+def _make_cached_facade_registry(temp_registry_dir: str) -> Registry:
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+    return Registry(backend=mock_backend, version_objects=True)
+
+
+class _BadLenList(list):
+    def __len__(self):
+        raise RuntimeError("bad length")
+
+
+class TestRegistryFacadeCoverage:
+    def test_facade_properties_mount_and_internal_getattr_guard(self, temp_registry_dir):
+        registry = Registry(backend=temp_registry_dir, version_objects=True, mutable=True, version_digits=4)
+        sentinel = object()
+
+        with patch.object(Mount, "from_registry", return_value=sentinel):
+            assert registry.mount is sentinel
+
+        assert registry.mutable is True
+        assert registry.version_digits == 4
+
+        with pytest.raises(AttributeError):
+            registry.__getattr__("_core")
+
+    def test_from_mount_validates_type_and_applies_overrides(self):
+        with TemporaryDirectory() as temp_dir:
+            mount = Mount(
+                name="local",
+                backend="local",
+                config=LocalMountConfig(uri=temp_dir),
+                registry_options={"version_objects": True, "mutable": False},
+            )
+
+            registry = Registry.from_mount(mount, mutable=True)
+
+            assert isinstance(registry.backend, LocalRegistryBackend)
+            assert registry.mutable is True
+            assert registry.version_objects is True
+
+        with pytest.raises(TypeError, match="mount must be a Mount"):
+            Registry.from_mount("not-a-mount")
+
+    def test_backend_from_mount_validates_and_builds_all_supported_backends(self, monkeypatch):
+        local_mount = Mount(name="local", backend="local", config=LocalMountConfig(uri="/tmp/local"))
+        assert isinstance(Registry._backend_from_mount(local_mount), LocalRegistryBackend)
+
+        bad_local_mount = Mount(name="bad-local", backend="local", config=LocalMountConfig(uri="/tmp/local"))
+        object.__setattr__(bad_local_mount, "config", S3MountConfig(bucket="datasets"))
+        with pytest.raises(TypeError, match="local mounts require LocalMountConfig"):
+            Registry._backend_from_mount(bad_local_mount)
+
+        monkeypatch.setattr(
+            "mindtrace.registry.backends.s3_registry_backend.S3RegistryBackend",
+            lambda **kwargs: SimpleNamespace(kind="s3", kwargs=kwargs),
+        )
+        s3_mount = Mount(
+            name="s3",
+            backend="s3",
+            config=S3MountConfig(bucket="datasets", prefix="prefix", endpoint="minio.local", secure=False),
+            auth=S3AccessKeyAuth(access_key="abc", secret_key="xyz"),
+        )
+        s3_backend = Registry._backend_from_mount(s3_mount)
+        assert s3_backend.kwargs == {
+            "bucket": "datasets",
+            "prefix": "prefix",
+            "endpoint": "minio.local",
+            "secure": False,
+            "access_key": "abc",
+            "secret_key": "xyz",
+        }
+
+        bad_s3_mount = Mount(name="bad-s3", backend="s3", config=S3MountConfig(bucket="datasets"), auth=AmbientAuth())
+        object.__setattr__(bad_s3_mount, "config", LocalMountConfig(uri="/tmp/local"))
+        with pytest.raises(TypeError, match="s3 mounts require S3MountConfig"):
+            Registry._backend_from_mount(bad_s3_mount)
+        object.__setattr__(bad_s3_mount, "config", S3MountConfig(bucket="datasets"))
+        object.__setattr__(bad_s3_mount, "auth", NoAuth())
+        with pytest.raises(TypeError, match="s3 mounts require AmbientAuth or S3AccessKeyAuth"):
+            Registry._backend_from_mount(bad_s3_mount)
+
+        monkeypatch.setattr(
+            "mindtrace.registry.backends.gcp_registry_backend.GCPRegistryBackend",
+            lambda **kwargs: SimpleNamespace(kind="gcs", kwargs=kwargs),
+        )
+        gcs_mount = Mount(
+            name="gcs",
+            backend="gcs",
+            config=GCSMountConfig(bucket_name="bucket-a", project_id="proj-1", prefix="exports"),
+            auth=GCSServiceAccountFileAuth(path="/tmp/service-account.json"),
+        )
+        gcs_backend = Registry._backend_from_mount(gcs_mount)
+        assert gcs_backend.kwargs == {
+            "bucket_name": "bucket-a",
+            "project_id": "proj-1",
+            "prefix": "exports",
+            "credentials_path": "/tmp/service-account.json",
+        }
+
+        bad_gcs_mount = Mount(
+            name="bad-gcs",
+            backend="gcs",
+            config=GCSMountConfig(bucket_name="bucket-a", project_id="proj-1"),
+            auth=AmbientAuth(),
+        )
+        object.__setattr__(bad_gcs_mount, "config", LocalMountConfig(uri="/tmp/local"))
+        with pytest.raises(TypeError, match="gcs mounts require GCSMountConfig"):
+            Registry._backend_from_mount(bad_gcs_mount)
+        object.__setattr__(bad_gcs_mount, "config", GCSMountConfig(bucket_name="bucket-a", project_id="proj-1"))
+        object.__setattr__(bad_gcs_mount, "auth", NoAuth())
+        with pytest.raises(TypeError, match="gcs mounts require AmbientAuth or GCSServiceAccountFileAuth"):
+            Registry._backend_from_mount(bad_gcs_mount)
+
+        with pytest.raises(ValueError, match="Unsupported mount backend"):
+            Registry._backend_from_mount(SimpleNamespace(backend="ftp"))
+
+    def test_is_cache_stale_handles_missing_versions_metadata_and_top_level_errors(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        registry.logger = Mock()
+
+        registry._remote._latest = Mock(return_value=None)
+        assert registry._is_cache_stale("test:obj", "latest") is True
+
+        registry._remote._latest = Mock(return_value="1.0.0")
+        registry._remote.backend.fetch_metadata = Mock(side_effect=RuntimeError("remote metadata error"))
+        registry._cache.backend.fetch_metadata = Mock(side_effect=RuntimeError("cache metadata error"))
+        assert registry._is_cache_stale("test:obj", "latest") is True
+
+        registry._remote.backend.fetch_metadata = Mock(
+            return_value=_make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"class": "x"}))
+        )
+        registry._cache.backend.fetch_metadata = Mock(
+            return_value=_make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"hash": "cache"}))
+        )
+        assert registry._is_cache_stale("test:obj", "1.0.0") is True
+
+        registry._remote.backend.fetch_metadata = Mock(
+            return_value=_make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"hash": "remote"}))
+        )
+        registry._cache.backend.fetch_metadata = Mock(
+            return_value=_make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"class": "x"}))
+        )
+        assert registry._is_cache_stale("test:obj", "1.0.0") is True
+
+        registry._remote._latest = Mock(side_effect=RuntimeError("boom"))
+        assert registry._is_cache_stale("test:obj", "latest") is True
+        registry.logger.debug.assert_called()
+
+    def test_find_stale_indices_handles_empty_and_hash_mismatch(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+
+        assert registry._find_stale_indices([], []) == set()
+
+        remote_results = _make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"hash": "remote"}))
+        cache_results = _make_op_results(OpResult.success("test:obj", "1.0.0", metadata={"hash": "cache"}))
+        registry._remote.backend.fetch_metadata = Mock(return_value=remote_results)
+        registry._cache.backend.fetch_metadata = Mock(return_value=cache_results)
+
+        assert registry._find_stale_indices([("test:obj", "1.0.0")], [0]) == {0}
+
+    def test_save_updates_cache_for_single_and_batch_cached_saves(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        registry._cache.save = Mock()
+
+        batch_result = BatchResult(results=["1.0.0", None], succeeded=[("a", "1.0.0")], failed=[("b", "latest")])
+        registry._remote.save = Mock(return_value=batch_result)
+        result = registry.save(["a", "b"], "shared")
+
+        assert result is batch_result
+        registry._cache.save.assert_called_once_with(
+            ["a"], ["shared"], version=["1.0.0"], on_conflict=OnConflict.OVERWRITE
+        )
+
+        registry._cache.save.reset_mock()
+        registry._remote.save = Mock(return_value="2.0.0")
+        assert registry.save("c", "value", version="2.0.0") == "2.0.0"
+        registry._cache.save.assert_called_once_with("c", "value", version="2.0.0", on_conflict=OnConflict.OVERWRITE)
+
+    def test_load_dispatches_batch_for_cached_registry(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        sentinel = BatchResult()
+        registry._load_batch_cached = Mock(return_value=sentinel)
+
+        assert registry.load(["test:obj"], ["1.0.0"]) is sentinel
+
+    def test_load_single_cached_handles_corrupt_cache_and_cache_write_failures(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        registry.logger = Mock()
+        registry._cache.has_object = Mock(return_value=True)
+        registry._is_cache_stale = Mock(return_value=False)
+        registry._cache.load = Mock(side_effect=ValueError("cache corrupted"))
+        registry._cache.delete = Mock(side_effect=RuntimeError("cannot delete cache"))
+        registry._remote.load = Mock(return_value="remote-value")
+        registry._cache.save = Mock(side_effect=RuntimeError("cannot save cache"))
+
+        result = registry._load_single_cached("test:obj", "1.0.0", verify=VerifyLevel.FULL)
+
+        assert result == "remote-value"
+        registry._remote.load.assert_called_once_with("test:obj", "1.0.0", output_dir=None, verify=VerifyLevel.FULL)
+        registry.logger.debug.assert_called()
+        registry.logger.warning.assert_called()
+
+    def test_load_batch_cached_handles_resolution_cache_remote_and_unknown_failures(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        registry.logger = Mock()
+
+        def resolve_version(name, version):
+            resolved = {"cached": "1.0.0", "remote": "2.0.0", "stale": "3.0.0"}
+            if name == "missing":
+                raise RegistryObjectNotFound("missing")
+            return resolved[name]
+
+        registry._remote._resolve_load_version = Mock(side_effect=resolve_version)
+        registry._cache.load = Mock(
+            return_value=BatchResult(results=["cached-value", None, "stale-cache"], succeeded=[("cached", "1.0.0")])
+        )
+        registry._find_stale_indices = Mock(return_value={3})
+        registry._remote.load = Mock(
+            return_value=BatchResult(
+                results=["remote-value", "fresh-value"],
+                succeeded=[("remote", "2.0.0"), ("stale", "3.0.0")],
+            )
+        )
+        registry._cache.save = Mock()
+
+        result = registry._load_batch_cached(["cached", "remote", "missing", "stale"], verify=VerifyLevel.FULL)
+
+        assert result.results == ["cached-value", "remote-value", None, "fresh-value"]
+        assert result.succeeded == [("cached", "1.0.0"), ("remote", "2.0.0"), ("stale", "3.0.0")]
+        assert result.failed == [("missing", "latest")]
+        assert result.errors[("missing", "latest")]["error"] == "RegistryObjectNotFound"
+        registry._cache.save.assert_called_once_with(
+            ["remote", "stale"],
+            ["remote-value", "fresh-value"],
+            version=["2.0.0", "3.0.0"],
+            on_conflict=OnConflict.OVERWRITE,
+        )
+
+        with pytest.raises(ValueError, match="same length"):
+            registry._load_batch_cached(["a", "b"], ["1.0.0"])
+
+        registry._remote._resolve_load_version = Mock(side_effect=lambda name, version: version)
+        registry._cache.load = Mock(return_value=BatchResult(results=[None, None]))
+        registry._remote.load = Mock(
+            return_value=BatchResult(
+                results=[None, None],
+                errors={("err", "1.0.0"): {"error": "RemoteError", "message": "boom"}},
+                failed=[("err", "1.0.0")],
+            )
+        )
+        result = registry._load_batch_cached(["err", "unknown"], ["1.0.0", "2.0.0"], verify=VerifyLevel.INTEGRITY)
+
+        assert result.failed == [("err", "1.0.0"), ("unknown", "2.0.0")]
+        assert result.errors[("err", "1.0.0")] == {"error": "RemoteError", "message": "boom"}
+        assert result.errors[("unknown", "2.0.0")] == {"error": "Unknown", "message": "Item not loaded"}
+
+        registry._remote._resolve_load_version = Mock(return_value="9.0.0")
+        registry._cache.load = Mock(return_value=BatchResult(results=[None]))
+        registry._remote.load = Mock(return_value=BatchResult(results=["remote-only"], succeeded=[("warn", "9.0.0")]))
+        registry._cache.save = Mock(side_effect=RuntimeError("cache write failed"))
+
+        result = registry._load_batch_cached(["warn"], ["9.0.0"], verify=VerifyLevel.INTEGRITY)
+
+        assert result.results == ["remote-only"]
+        registry.logger.warning.assert_called()
+
+    def test_delete_clear_and_cache_cleanup_error_paths(self, temp_registry_dir):
+        registry = _make_cached_facade_registry(temp_registry_dir)
+        registry.logger = Mock()
+        registry._remote.delete = Mock(return_value=None)
+        registry._cache.list_versions = Mock(return_value=["1.0.0", "2.0.0"])
+        registry._cache.delete = Mock(side_effect=[RuntimeError("skip"), None])
+
+        registry.delete("test:obj", None)
+
+        assert registry._cache.delete.call_args_list == [(("test:obj", "1.0.0"),), (("test:obj", "2.0.0"),)]
+
+        registry._remote.delete.reset_mock()
+        registry._remote.delete.return_value = None
+        registry._cache.delete = Mock()
+        registry.delete(_BadLenList(["test:obj"]), None)
+        registry.logger.warning.assert_called()
+
+        registry._remote.clear = Mock()
+        registry._cache.clear = Mock()
+        registry.clear(clear_registry_metadata=True)
+        registry._remote.clear.assert_called_once_with(True)
+        registry._cache.clear.assert_called_once_with()
+
+
+class TestRegistryCoreCoverage:
+    def test_version_sort_key_invalid_version_falls_back_to_zero_tuple(self):
+        from mindtrace.registry.core._registry_core import _version_sort_key
+
+        assert _version_sort_key("not-a-version", digits=3) == (0, 0, 0)
+
+    def test_core_init_validates_backend_and_metadata_conflicts(self, temp_registry_dir):
+        with pytest.raises(ValueError, match="Invalid backend type"):
+            _RegistryCore(backend=123)
+
+        _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=False, version_digits=3)
+        with pytest.raises(ValueError, match="Mutable conflict"):
+            _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=True, version_digits=3)
+        with pytest.raises(ValueError, match="version_digits must be >= 1"):
+            _RegistryCore(backend=temp_registry_dir, version_objects=True, version_digits=0)
+        with pytest.raises(ValueError, match="Version digits conflict"):
+            _RegistryCore(backend=temp_registry_dir, version_objects=True, mutable=False, version_digits=4)
+
+    def test_core_save_rejects_overwrite_on_immutable_registry(self, registry, test_config):
+        with pytest.raises(ValueError, match="immutable registry"):
+            registry.save("test:config", test_config, version="1.0.0", on_conflict="overwrite")
+
+    def test_core_save_single_raises_runtime_when_backend_error_lacks_exception(self, registry, monkeypatch):
+        def mock_push(*args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:error", "1.0.0", error_type="PushError", message="backend boom"))
+            return results
+
+        monkeypatch.setattr(registry.backend, "push", mock_push)
+
+        with pytest.raises(RuntimeError, match="Failed to save test:error@1.0.0: backend boom"):
+            registry.save("test:error", "value", version="1.0.0")
+
+    def test_core_batch_save_records_missing_push_results(self, registry, monkeypatch):
+        monkeypatch.setattr(registry.backend, "push", lambda *args, **kwargs: OpResults())
+
+        result = registry.save(["test:a"], ["a"], version=["1.0.0"])
+
+        assert result.failed == [("test:a", "1.0.0")]
+        assert result.errors[("test:a", "1.0.0")] == {"error": "UnknownError", "message": "No push result"}
+
+    def test_core_batch_save_records_backend_errors(self, registry, monkeypatch):
+        def mock_push(names, versions, *args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed(names[0], versions[0], error_type="PushError", message="bad item"))
+            return results
+
+        monkeypatch.setattr(registry.backend, "push", mock_push)
+
+        result = registry.save(["test:b"], ["b"], version=["1.0.0"])
+
+        assert result.failed == [("test:b", "1.0.0")]
+        assert result.errors[("test:b", "1.0.0")] == {"error": "PushError", "message": "bad item"}
+
+    def test_core_load_single_raises_for_pull_errors(self, registry, monkeypatch):
+        registry.save("test:obj", "value", version="1.0.0")
+        metadata = registry.info("test:obj", "1.0.0")
+        monkeypatch.setattr(
+            registry.backend,
+            "fetch_metadata",
+            lambda names, versions: _make_op_results(OpResult.success(names[0], versions[0], metadata=metadata)),
+        )
+
+        def pull_with_exception(*args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:obj", "1.0.0", RuntimeError("pull exploded")))
+            return results
+
+        monkeypatch.setattr(registry.backend, "pull", pull_with_exception)
+        with pytest.raises(RuntimeError, match="pull exploded"):
+            registry.load("test:obj", "1.0.0")
+
+        def pull_without_exception(*args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:obj", "1.0.0", error_type="PullError", message="backend fail"))
+            return results
+
+        monkeypatch.setattr(registry.backend, "pull", pull_without_exception)
+        with pytest.raises(RuntimeError, match="Failed to pull test:obj@1.0.0: backend fail"):
+            registry.load("test:obj", "1.0.0")
+
+    def test_core_batch_load_records_metadata_pull_and_materialization_failures(self, registry, monkeypatch, caplog):
+        core = registry._core
+        core.save("test:ok", "ok", version="1.0.0")
+        core.save("test:nohash", "nohash", version="1.0.0")
+        metadata_ok = core.info("test:ok", "1.0.0")
+        metadata_nohash = core.info("test:nohash", "1.0.0")
+        metadata_nohash.pop("hash", None)
+        metadata_nohash["scenario"] = "path"
+
+        def mock_fetch_metadata(names, versions):
+            results = OpResults()
+            results.add(OpResult.success("test:ok", "1.0.0", metadata=metadata_ok))
+            results.add(OpResult.failed("test:pullerr", "1.0.0", error_type="FetchError", message="no metadata"))
+            results.add(OpResult.success("test:nohash", "1.0.0", metadata=metadata_nohash))
+            return results
+
+        def mock_pull(names, versions, paths, **kwargs):
+            results = OpResults()
+            for name, version, path in zip(names, versions, paths):
+                if name == "test:nohash":
+                    source = registry.backend._full_path(registry.backend._object_key(name, version))
+                    shutil.copytree(source, path, dirs_exist_ok=True)
+                    results.add(OpResult.success(name, version))
+                    continue
+                if name == "test:materr":
+                    (Path(path) / "data.json").write_text('"boom"')
+                    results.add(OpResult.success(name, version))
+                    continue
+                if name == "test:pullop":
+                    results.add(OpResult.failed(name, version, error_type="PullError", message="pull failed"))
+                    continue
+                source = core.backend._full_path(core.backend._object_key(name, version))
+                shutil.copytree(source, path, dirs_exist_ok=True)
+                results.add(OpResult.success(name, version))
+            return results
+
+        original_resolve = core._resolve_load_version
+
+        def resolve_version(name, version):
+            if name == "test:missingfetch":
+                return "1.0.0"
+            if name == "test:pullop":
+                return "1.0.0"
+            if name == "test:materr":
+                return "1.0.0"
+            return original_resolve(name, version)
+
+        original_materialize = core._materialize
+
+        def wrapped_materialize(temp_dir, metadata, **kwargs):
+            if metadata.get("scenario") == "path":
+                return Path(temp_dir)
+            if metadata.get("materializer") == "materr":
+                raise RuntimeError("materialize fail")
+            return original_materialize(temp_dir, metadata, **kwargs)
+
+        monkeypatch.setattr(core, "_resolve_load_version", resolve_version)
+        monkeypatch.setattr(core.backend, "fetch_metadata", mock_fetch_metadata)
+        monkeypatch.setattr(core.backend, "pull", mock_pull)
+        monkeypatch.setattr(core, "_materialize", wrapped_materialize)
+
+        materr_meta = dict(metadata_ok)
+        materr_meta["materializer"] = "materr"
+
+        def fetch_metadata_with_materr(names, versions):
+            results = OpResults()
+            for name, version in zip(names, versions):
+                if name == "test:ok":
+                    results.add(OpResult.success(name, version, metadata=metadata_ok))
+                elif name == "test:nohash":
+                    results.add(OpResult.success(name, version, metadata=metadata_nohash))
+                elif name == "test:pullop":
+                    results.add(OpResult.success(name, version, metadata=metadata_ok))
+                elif name == "test:materr":
+                    results.add(OpResult.success(name, version, metadata=materr_meta))
+            return results
+
+        monkeypatch.setattr(core.backend, "fetch_metadata", fetch_metadata_with_materr)
+
+        with TemporaryDirectory() as output_dir, caplog.at_level("WARNING"):
+            result = core.load(
+                ["test:ok", "test:missingfetch", "test:pullop", "test:materr", "test:nohash"],
+                version=["1.0.0"] * 5,
+                output_dir=output_dir,
+            )
+
+        assert result.results[0] == "ok"
+        assert result.results[1] is None
+        assert result.results[2] is None
+        assert result.results[3] is None
+        assert isinstance(result.results[4], Path)
+        assert ("test:missingfetch", "1.0.0") in result.failed
+        assert ("test:pullop", "1.0.0") in result.failed
+        assert ("test:materr", "1.0.0") in result.failed
+        assert result.errors[("test:missingfetch", "1.0.0")]["error"] == "RegistryObjectNotFound"
+        assert result.errors[("test:pullop", "1.0.0")]["error"] == "PullError"
+        assert result.errors[("test:materr", "1.0.0")]["error"] == "ValueError"
+
+    def test_core_batch_load_records_metadata_fetch_error_results(self, registry, monkeypatch):
+        core = registry._core
+        monkeypatch.setattr(core, "_resolve_load_version", lambda name, version: "1.0.0")
+
+        def fetch_metadata(names, versions):
+            results = OpResults()
+            results.add(OpResult.failed(names[0], versions[0], error_type="FetchError", message="metadata missing"))
+            return results
+
+        monkeypatch.setattr(core.backend, "fetch_metadata", fetch_metadata)
+
+        result = core.load(["test:fetcherr"], version=["1.0.0"])
+
+        assert result.failed == [("test:fetcherr", "1.0.0")]
+        assert result.errors[("test:fetcherr", "1.0.0")] == {"error": "FetchError", "message": "metadata missing"}
+
+    def test_core_batch_load_moves_file_path_outputs(self, registry, monkeypatch):
+        core = registry._core
+        core.save("test:file", "value", version="1.0.0")
+        metadata = core.info("test:file", "1.0.0")
+        metadata.pop("hash", None)
+        metadata["scenario"] = "file"
+
+        monkeypatch.setattr(
+            core.backend,
+            "fetch_metadata",
+            lambda names, versions: _make_op_results(OpResult.success(names[0], versions[0], metadata=metadata)),
+        )
+
+        def pull(names, versions, paths, **kwargs):
+            results = OpResults()
+            for name, version, path in zip(names, versions, paths):
+                source = core.backend._full_path(core.backend._object_key(name, version))
+                shutil.copytree(source, path, dirs_exist_ok=True)
+                results.add(OpResult.success(name, version))
+            return results
+
+        original_materialize = core._materialize
+
+        def wrapped_materialize(temp_dir, metadata, **kwargs):
+            if metadata.get("scenario") == "file":
+                return Path(temp_dir) / "data.json"
+            return original_materialize(temp_dir, metadata, **kwargs)
+
+        monkeypatch.setattr(core.backend, "pull", pull)
+        monkeypatch.setattr(core, "_materialize", wrapped_materialize)
+
+        with TemporaryDirectory() as output_dir:
+            result = core.load(["test:file"], version=["1.0.0"], output_dir=output_dir)
+
+        moved_file = result.results[0]
+        assert isinstance(moved_file, Path)
+        assert moved_file.name == "data.json"
+
+    def test_core_delete_single_and_batch_error_paths(self, registry, monkeypatch):
+        with pytest.raises(RegistryObjectNotFound, match="does not exist"):
+            registry.delete("test:missing")
+
+        registry.save("test:obj", "value", version="1.0.0")
+
+        def delete_with_exception(*args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:obj", "1.0.0", RuntimeError("delete exploded")))
+            return results
+
+        monkeypatch.setattr(registry.backend, "delete", delete_with_exception)
+        with pytest.raises(RuntimeError, match="delete exploded"):
+            registry.delete("test:obj", "1.0.0")
+
+        def delete_without_exception(*args, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:obj", "1.0.0", error_type="DeleteError", message="backend fail"))
+            return results
+
+        monkeypatch.setattr(registry.backend, "delete", delete_without_exception)
+        with pytest.raises(RuntimeError, match="Failed to delete test:obj@1.0.0: backend fail"):
+            registry.delete("test:obj", "1.0.0")
+
+        with pytest.raises(ValueError, match="same length"):
+            registry.delete(["test:a", "test:b"], version=["1.0.0"])
+
+        def batch_delete(names, versions, **kwargs):
+            results = OpResults()
+            results.add(OpResult.failed("test:error", "1.0.0", error_type="DeleteError", message="bad delete"))
+            return results
+
+        monkeypatch.setattr(registry.backend, "delete", batch_delete)
+        result = registry.delete(
+            ["test:missingall", "test:badver", "test:error", "test:ok"],
+            version=[None, "bad", "1.0.0", "1.0.0"],
+        )
+
+        assert result.failed == [("test:missingall", "all"), ("test:badver", "bad"), ("test:error", "1.0.0")]
+        assert result.succeeded == [("test:ok", "1.0.0")]
+        assert result.errors[("test:missingall", "all")]["error"] == "RegistryObjectNotFound"
+        assert result.errors[("test:badver", "bad")]["error"] == "ValueError"
+        assert result.errors[("test:error", "1.0.0")] == {"error": "DeleteError", "message": "bad delete"}
+
+    def test_core_dict_like_helpers_and_update_paths(self, registry):
+        core = registry._core
+
+        core["test:dict"] = "value"
+        assert core["test:dict"] == "value"
+
+        batch = core[["test:dict", "test:missing"]]
+        assert isinstance(batch, BatchResult)
+        assert batch.results[0] == "value"
+        assert batch.results[1] is None
+
+        with pytest.raises(KeyError, match="Object not found"):
+            _ = core["test:missing"]
+
+        del core[["test:dict@1.0.0"]]
+        assert "test:dict" not in core
+
+        with pytest.raises(KeyError, match="Object not found"):
+            del core["test:missing"]
+
+        assert core.get("test:missing", "fallback") == "fallback"
+
+        core["test:a"] = "a"
+        core["test:b"] = "b"
+        assert core.values() == ["a", "b"]
+        assert core.items() == [("test:a", "a"), ("test:b", "b")]
+
+        with TemporaryDirectory() as source_dir, TemporaryDirectory() as target_dir:
+            source = _RegistryCore(backend=source_dir, version_objects=True)
+            source.save("test:sync", "v1", version="1.0.0")
+            target = _RegistryCore(backend=target_dir, version_objects=True)
+            target.update(source)
+            assert target.load("test:sync", "1.0.0") == "v1"
+            with pytest.raises(ValueError, match="already exists"):
+                target.update(source)
+
+            target.update({"test:mapped": "mapped"})
+            assert target.load("test:mapped") == "mapped"
+
+            target["test:pop"] = "value"
+            assert target.pop("test:pop") == "value"
+            assert target.pop("test:missing@1.0.0", "fallback-version") == "fallback-version"
+            assert target.pop("test:missing", "fallback") == "fallback"
+            with pytest.raises(KeyError, match="Object never-there does not exist"):
+                target.pop("never-there")
+            with pytest.raises(KeyError, match="version 1.0.0 does not exist"):
+                target.pop("test:missing@1.0.0")
+
+            assert target.setdefault("test:default", "created") == "created"
+            assert target.load("test:default") == "created"
+            assert target.setdefault("test:default", "ignored") == "created"
+            assert target.setdefault("test:none") is None
+
+            with patch.object(target, "delete", side_effect=KeyError("boom")):
+                assert target.pop("test:default", "delete-fallback") == "delete-fallback"
+
+
+REGISTRY_BYTES_META = {
+    "class": "builtins.bytes",
+    "materializer": "zenml.materializers.BytesMaterializer",
+    "init_params": {},
+    "metadata": {},
+    "_files": ["data.txt"],
+}
+
+
+def test_registry_direct_upload_local_round_trip(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid", content_type="application/octet-stream")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"xyz")
+    assert reg.inspect_direct_upload_target(staged)["exists"] is True
+    assert reg.cleanup_direct_upload_target(staged) is True
+
+
+def test_registry_commit_direct_upload_local_success(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid2")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"data")
+    ver = reg.commit_direct_upload("reg:bytes", staged_target=staged, version="1.0.0", metadata=None)
+    assert ver == "1.0.0"
+
+
+def test_registry_commit_direct_upload_auto_assigns_version_when_none(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid-auto")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"auto")
+    ver = reg.commit_direct_upload(
+        "reg:auto-versioned",
+        staged_target=staged,
+        version=None,
+        metadata=REGISTRY_BYTES_META,
+    )
+    assert ver == "1.0.0"
+
+
+def test_registry_commit_direct_upload_rejects_version_latest_when_versioned(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid3")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    with pytest.raises(ValueError, match="latest"):
+        reg.commit_direct_upload("reg:late", staged_target=staged, version="latest")
+
+
+def test_registry_commit_direct_upload_on_conflict_and_immutable_validation(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=False)
+    t = reg.create_direct_upload_target("sid4")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    with pytest.raises(ValueError, match="on_conflict"):
+        reg.commit_direct_upload("a:b", staged_target=staged, on_conflict="maybe")
+    with pytest.raises(ValueError, match="immutable"):
+        reg.commit_direct_upload("a:b", staged_target=staged, on_conflict=OnConflict.OVERWRITE)
+
+
+def test_registry_commit_direct_upload_propagates_backend_failure(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid5")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+
+    def boom(*args, **kwargs):
+        return OpResult.failed("n", "1.0.0", ValueError("backend boom"))
+
+    reg.backend.commit_direct_upload = boom
+    with pytest.raises(ValueError, match="backend boom"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_commit_direct_upload_error_without_exception_raises_runtime(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid6")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+
+    reg.backend.commit_direct_upload = lambda *a, **k: OpResult.failed(
+        "n", "1.0.0", exception=None, error_type="E", message="no details"
+    )
+    with pytest.raises(RuntimeError, match="Failed to commit direct upload"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_commit_direct_upload_skipped_raises_runtime(temp_registry_dir):
+    reg = Registry(backend=temp_registry_dir, version_objects=True, mutable=True)
+    t = reg.create_direct_upload_target("sid7")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"x")
+    reg.backend.commit_direct_upload = lambda *a, **k: OpResult.skipped("n", "1.0.0")
+    with pytest.raises(RuntimeError, match="already exists"):
+        reg.commit_direct_upload("n", staged_target=staged, version="1.0.0", metadata=REGISTRY_BYTES_META)
+
+
+def test_registry_cached_remote_direct_upload_delegates(monkeypatch, tmp_path):
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockMinioHandler)
+    s3 = S3RegistryBackend(
+        uri=str(tmp_path / "s3_cache"),
+        endpoint="localhost:9000",
+        access_key="a",
+        secret_key="b",
+        bucket="bucket",
+        secure=False,
+    )
+    reg = Registry(backend=s3, use_cache=True, version_objects=True, mutable=True)
+    out = reg.create_direct_upload_target("up1", content_type="text/plain")
+    assert out["upload_method"] == "presigned_url"
+    staged = out["staged_target"]
+    reg.backend.storage._objects[staged["path"]] = b"payload"
+    ver = reg.commit_direct_upload(
+        "cached:obj",
+        staged_target=staged,
+        version="1.0.0",
+        metadata=REGISTRY_BYTES_META,
+    )
+    assert ver == "1.0.0"

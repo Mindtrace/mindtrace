@@ -4,7 +4,6 @@ from beanie import Link
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
 from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
-from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
 from mindtrace.database.backends.unified_odm import (
     BackendType,
     UnifiedMindtraceDocument,
@@ -27,3 +26,12 @@ __all__ = [
     "UnifiedMindtraceDocument",
     "UnifiedMindtraceODM",
 ]
+
+
+def __getattr__(name):
+    if name == "RegistryMindtraceODM":
+        from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
+
+        globals()["RegistryMindtraceODM"] = RegistryMindtraceODM
+        return RegistryMindtraceODM
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

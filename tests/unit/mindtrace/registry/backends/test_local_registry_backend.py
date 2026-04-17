@@ -1,14 +1,22 @@
+import importlib
 import json
+import os
+import platform
 import shutil
+import sys
+import time
+import types
 import uuid
 from pathlib import Path
 from typing import Generator
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import LocalRegistryBackend
+from mindtrace.registry.core.types import OnConflict
 
 
 @pytest.fixture
@@ -86,7 +94,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Verify metadata file exists
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     assert meta_path.exists()
 
     # Fetch metadata - returns OpResults with OpResult for each (name, version)
@@ -102,7 +110,7 @@ def test_save_and_fetch_metadata(backend, sample_metadata):
 def test_fetch_metadata_empty_file_single(backend):
     """Test that fetch_metadata returns failed result for empty metadata files."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     meta_path.touch()  # Create empty file
 
     # Also create the object directory so the path update doesn't fail
@@ -118,7 +126,7 @@ def test_fetch_metadata_empty_file_single(backend):
 def test_fetch_metadata_empty_file_batch(backend, sample_metadata):
     """Test that fetch_metadata returns failed result for empty metadata files in batch."""
     # Create an empty metadata file (yaml.safe_load will return None for empty files)
-    meta_path = backend.uri / "_meta_test_object@1.0.0.yaml"
+    meta_path = backend.uri / "_meta_test%3Aobject@1.0.0.yaml"
     meta_path.touch()  # Create empty file
 
     # Also create the object directory so the path update doesn't fail
@@ -548,10 +556,9 @@ def test_internal_lock_release_wrong_id(backend):
     result = backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=False)
     assert result is True
 
-    # Try to release with wrong ID - returns True (no error) but lock should still exist
+    # Try to release with wrong ID - should fail and leave the lock in place
     result = backend._release_internal_lock(lock_key, wrong_id)
-    # Note: returns True because it tries shared lock path which doesn't exist
-    # The important check is that the exclusive lock still exists
+    assert result is False
 
     # Exclusive lock file should still exist (wrong ID didn't release it)
     exclusive_path = backend._exclusive_lock_path(lock_key)
@@ -708,7 +715,7 @@ def test_internal_lock_raises_on_acquisition_failure(backend):
     # Context manager itself should still raise LockAcquisitionError
     # (the backend methods catch this and return failed results)
     with pytest.raises(LockAcquisitionError, match="lock"):
-        with backend._internal_lock(lock_key):
+        with backend._internal_lock(lock_key, timeout=0.01):
             pass  # Should never reach here
 
     # Clean up
@@ -729,6 +736,9 @@ def test_push_blocked_by_active_lock(backend, sample_object_dir):
     exclusive_path = backend._exclusive_lock_path(lock_key)
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
+
+    # Use a tiny lock timeout so contention is detected quickly in tests.
+    backend._lock_timeout = 0.01
 
     # Push should return failed result because lock is held
     result = backend.push(["test:object"], ["1.0.0"], [sample_object_dir], [{"test": True}])
@@ -757,6 +767,9 @@ def test_delete_blocked_by_active_lock(backend, sample_object_dir):
     exclusive_path = backend._exclusive_lock_path(lock_key)
     with open(exclusive_path, "w") as f:
         json.dump({"lock_id": lock_id, "expires_at": time.time() + 60}, f)
+
+    # Use a tiny lock timeout so contention is detected quickly in tests.
+    backend._lock_timeout = 0.01
 
     # Delete should return failed result because lock is held
     result = backend.delete(["test:object"], ["1.0.0"])
@@ -891,3 +904,535 @@ def test_fetch_metadata_missing_entry(backend, sample_metadata):
 
     assert ("missing:obj", "1.0") in result
     assert result[("missing:obj", "1.0")].is_error
+
+
+def test_local_backend_module_can_reload_windows_import_branch(monkeypatch):
+    import mindtrace.registry.backends.local_registry_backend as local_backend_module
+
+    # Snapshot the module namespace so the reload does not leak new class objects
+    # into sys.modules — otherwise LocalRegistryBackend identity changes break
+    # isinstance checks in downstream tests (e.g. Mount.from_registry).
+    original_dict = local_backend_module.__dict__.copy()
+
+    dummy_msvcrt = types.ModuleType("msvcrt")
+    monkeypatch.setitem(sys.modules, "msvcrt", dummy_msvcrt)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+
+    try:
+        reloaded = importlib.reload(local_backend_module)
+        assert reloaded.msvcrt is dummy_msvcrt
+        assert reloaded.fcntl is None
+    finally:
+        local_backend_module.__dict__.clear()
+        local_backend_module.__dict__.update(original_dict)
+
+
+def test_acquire_shared_lock_cleans_up_expired_or_corrupted_exclusive_lock(backend):
+    lock_key = "test_shared_cleanup"
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+
+    exclusive_path.write_text(json.dumps({"lock_id": "old", "expires_at": 0}))
+    assert backend._acquire_internal_lock(lock_key, "shared-1", timeout=30, shared=True) is True
+    assert backend._release_internal_lock(lock_key, "shared-1") is True
+
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text("not-json")
+    assert backend._acquire_internal_lock(lock_key, "shared-2", timeout=30, shared=True) is True
+    assert backend._release_internal_lock(lock_key, "shared-2") is True
+
+
+def test_acquire_shared_lock_ignores_racy_missing_cleanup_unlink(backend, monkeypatch):
+    lock_key = "test_shared_cleanup_race"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text("bad-json")
+
+    real_unlink = Path.unlink
+
+    def mock_unlink(self, *args, **kwargs):
+        if self == exclusive_path:
+            raise FileNotFoundError("exclusive lock already removed")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", mock_unlink)
+
+    assert backend._acquire_internal_lock(lock_key, "shared-race", timeout=30, shared=True) is True
+    monkeypatch.undo()
+    exclusive_path.unlink(missing_ok=True)
+    assert backend._release_internal_lock(lock_key, "shared-race") is True
+
+
+def test_acquire_shared_lock_returns_false_when_active_exclusive_exists(backend):
+    lock_key = "test_shared_blocked"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text(json.dumps({"lock_id": "writer", "expires_at": time.time() + 60}))
+
+    assert backend._acquire_internal_lock(lock_key, "shared-reader", timeout=30, shared=True) is False
+
+
+def test_acquire_shared_lock_rolls_back_when_exclusive_appears(backend, monkeypatch):
+    lock_key = "test_shared_rollback"
+    lock_id = "shared-lock"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    original_fsync = os.fsync
+
+    def mock_fsync(fd):
+        exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+        exclusive_path.write_text(json.dumps({"lock_id": "writer", "expires_at": time.time() + 60}))
+        return original_fsync(fd)
+
+    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.os.fsync", mock_fsync)
+
+    assert backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=True) is False
+    assert not backend._shared_lock_path(lock_key, lock_id).exists()
+
+
+def test_acquire_shared_lock_ignores_corrupt_exclusive_on_double_check(backend, monkeypatch):
+    lock_key = "test_shared_double_check_corrupt"
+    lock_id = "shared-lock"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    original_fsync = os.fsync
+
+    def mock_fsync(fd):
+        exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+        exclusive_path.write_text("bad-json")
+        return original_fsync(fd)
+
+    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.os.fsync", mock_fsync)
+
+    assert backend._acquire_internal_lock(lock_key, lock_id, timeout=30, shared=True) is True
+    exclusive_path.unlink(missing_ok=True)
+    assert backend._release_internal_lock(lock_key, lock_id) is True
+
+
+def test_acquire_shared_lock_treats_existing_holder_as_success(backend, monkeypatch):
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.os.open",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileExistsError()),
+    )
+    assert backend._acquire_internal_lock("test_shared_exists", "shared-lock", timeout=30, shared=True) is True
+
+
+def test_acquire_exclusive_lock_ignores_corrupted_shared_locks(backend):
+    lock_key = "test_exclusive_corrupt_shared"
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    backend._shared_lock_path(lock_key, "bad").write_text("bad-json")
+
+    assert backend._acquire_internal_lock(lock_key, "exclusive", timeout=30, shared=False) is True
+    assert backend._release_internal_lock(lock_key, "exclusive") is True
+
+
+def test_acquire_exclusive_lock_returns_false_when_active_shared_lock_exists(backend):
+    lock_key = "test_exclusive_blocked_by_shared"
+    shared_path = backend._shared_lock_path(lock_key, "reader")
+    shared_path.parent.mkdir(parents=True, exist_ok=True)
+    shared_path.write_text(json.dumps({"lock_id": "reader", "expires_at": time.time() + 60}))
+
+    assert backend._acquire_internal_lock(lock_key, "exclusive", timeout=30, shared=False) is False
+
+
+def test_acquire_exclusive_lock_handles_racy_shared_lock_disappearance(backend, monkeypatch):
+    lock_key = "test_exclusive_shared_race"
+    shared_path = backend._shared_lock_path(lock_key, "reader")
+    shared_path.parent.mkdir(parents=True, exist_ok=True)
+    shared_path.write_text(json.dumps({"lock_id": "reader", "expires_at": time.time() + 60}))
+
+    real_open = open
+
+    def mock_open(path, *args, **kwargs):
+        if Path(path) == shared_path:
+            raise FileNotFoundError("shared lock disappeared")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(backend, "_cleanup_expired_locks", lambda key: None)
+    monkeypatch.setattr("builtins.open", mock_open)
+
+    assert backend._acquire_internal_lock(lock_key, "exclusive", timeout=30, shared=False) is True
+    assert backend._release_internal_lock(lock_key, "exclusive") is True
+
+
+def test_acquire_exclusive_lock_retries_after_expired_lock_when_cleanup_is_skipped(backend, monkeypatch):
+    lock_key = "test_exclusive_expired_retry"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text(json.dumps({"lock_id": "old", "expires_at": 0}))
+
+    monkeypatch.setattr(backend, "_cleanup_expired_locks", lambda key: None)
+
+    assert backend._acquire_internal_lock(lock_key, "exclusive", timeout=30, shared=False) is True
+    assert backend._release_internal_lock(lock_key, "exclusive") is True
+
+
+def test_acquire_exclusive_lock_returns_false_for_corrupt_existing_exclusive_after_file_exists(backend, monkeypatch):
+    lock_key = "test_exclusive_corrupt_existing"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text("bad-json")
+
+    monkeypatch.setattr(backend, "_cleanup_expired_locks", lambda key: None)
+
+    assert backend._acquire_internal_lock(lock_key, "exclusive", timeout=30, shared=False) is False
+
+
+def test_acquire_internal_lock_returns_false_on_unexpected_error(backend, monkeypatch):
+    monkeypatch.setattr(backend, "_cleanup_expired_locks", lambda key: (_ for _ in ()).throw(OSError("cleanup failed")))
+    assert backend._acquire_internal_lock("test_error", "lock", timeout=30, shared=False) is False
+
+
+def test_acquire_internal_lock_returns_false_when_lock_dir_creation_fails(backend, monkeypatch):
+    real_mkdir = Path.mkdir
+    lock_dir = backend._lock_dir("test_error_mkdir")
+
+    def mock_mkdir(self, *args, **kwargs):
+        if self == lock_dir:
+            raise OSError("mkdir failed")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mock_mkdir)
+    assert backend._acquire_internal_lock("test_error_mkdir", "lock", timeout=30, shared=False) is False
+
+
+def test_cleanup_expired_locks_handles_missing_dir_and_corrupted_file(backend):
+    backend._cleanup_expired_locks("missing-lock-dir")
+
+    lock_key = "test_cleanup_corrupt"
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    corrupt_lock = lock_dir / "_shared_bad"
+    corrupt_lock.write_text("bad-json")
+
+    backend._cleanup_expired_locks(lock_key)
+    assert not corrupt_lock.exists()
+
+
+def test_cleanup_expired_locks_ignores_racy_missing_unlink(backend, monkeypatch):
+    lock_key = "test_cleanup_unlink_race"
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    corrupt_lock = lock_dir / "_shared_bad"
+    corrupt_lock.write_text("bad-json")
+
+    real_unlink = Path.unlink
+
+    def mock_unlink(self, *args, **kwargs):
+        if self == corrupt_lock:
+            raise FileNotFoundError("already removed")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", mock_unlink)
+    backend._cleanup_expired_locks(lock_key)
+
+
+def test_release_internal_lock_handles_corrupted_exclusive_and_unexpected_errors(backend, monkeypatch):
+    lock_key = "test_release_corrupt"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text("bad-json")
+
+    assert backend._release_internal_lock(lock_key, "lock-id") is False
+    assert exclusive_path.exists()
+
+    monkeypatch.setattr(backend, "_exclusive_lock_path", lambda key: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert backend._release_internal_lock("test_release_error", "lock-id") is False
+
+
+def test_release_internal_lock_tolerates_exclusive_disappearing_before_open(backend, monkeypatch):
+    lock_key = "test_release_open_race"
+    lock_id = "lock-id"
+    exclusive_path = backend._exclusive_lock_path(lock_key)
+    exclusive_path.parent.mkdir(parents=True, exist_ok=True)
+    exclusive_path.write_text(json.dumps({"lock_id": lock_id, "expires_at": time.time() + 60}))
+
+    real_open = open
+
+    def mock_open(path, *args, **kwargs):
+        if Path(path) == exclusive_path:
+            raise FileNotFoundError("exclusive lock disappeared")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open)
+    assert backend._release_internal_lock(lock_key, lock_id) is True
+
+
+def test_cleanup_lock_dir_ignores_rmdir_errors(backend, monkeypatch):
+    lock_key = "test_cleanup_dir_error"
+    lock_dir = backend._lock_dir(lock_key)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(Path, "rmdir", lambda self: (_ for _ in ()).throw(OSError("cannot remove")))
+    backend._cleanup_lock_dir(lock_key)
+
+
+def test_pull_reports_missing_object_and_copy_errors(backend, sample_object_dir, sample_metadata, monkeypatch):
+    fake_meta = {"_files": ["file.txt"]}
+    result = backend.pull("missing:object", "1.0.0", str(backend.uri / "dest"), metadata=fake_meta)
+    assert result[("missing:object", "1.0.0")].is_error
+
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    fetched_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.shutil.copytree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("copy failed")),
+    )
+    result = backend.pull("test:object", "1.0.0", str(backend.uri / "dest2"), metadata=fetched_meta)
+    assert result[("test:object", "1.0.0")].is_error
+
+
+def test_pull_with_shared_lock_copies_contents(backend, sample_object_dir, sample_metadata):
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    dest_path = backend.uri / "locked-download"
+    fetched_meta = backend.fetch_metadata("test:object", "1.0.0").first().metadata
+
+    result = backend.pull("test:object", "1.0.0", str(dest_path), acquire_lock=True, metadata=fetched_meta)
+
+    assert result[("test:object", "1.0.0")].ok
+    assert (dest_path / "file1.txt").read_text() == "test content 1"
+
+
+def test_delete_validates_lengths_and_reports_runtime_failures(
+    backend, sample_object_dir, sample_metadata, monkeypatch
+):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.delete(["a", "b"], ["1.0.0"])
+
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.shutil.rmtree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("delete failed")),
+    )
+    result = backend.delete("test:object", "1.0.0")
+    assert result[("test:object", "1.0.0")].is_error
+
+
+def test_save_metadata_branches(backend, sample_metadata):
+    with pytest.raises(ValueError, match="Input lengths must match"):
+        backend.save_metadata(["a", "b"], ["1.0.0"], [sample_metadata])
+
+    result = backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    assert result[("test:object", "1.0.0")].ok
+
+    result = backend.save_metadata("test:object", "1.0.0", {"updated": True}, on_conflict="skip")
+    assert result[("test:object", "1.0.0")].is_skipped
+
+    result = backend.save_metadata("test:object", "1.0.0", {"updated": True}, on_conflict="overwrite")
+    assert result[("test:object", "1.0.0")].is_overwritten
+
+
+def test_push_rolls_back_artifacts_and_metadata_when_metadata_write_fails(
+    backend, sample_object_dir, sample_metadata, monkeypatch
+):
+    real_safe_dump = yaml.safe_dump
+
+    def failing_safe_dump(data, stream, *args, **kwargs):
+        stream.write("")
+        raise OSError("metadata write failed")
+
+    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.yaml.safe_dump", failing_safe_dump)
+    result = backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)
+
+    assert result[("test:object", "1.0.0")].is_error
+    assert not (backend.uri / "test:object" / "1.0.0").exists()
+    assert not backend._object_metadata_path("test:object", "1.0.0").exists()
+    monkeypatch.setattr("mindtrace.registry.backends.local_registry_backend.yaml.safe_dump", real_safe_dump)
+
+
+def test_fetch_and_delete_metadata_length_and_error_branches(backend, sample_metadata, monkeypatch):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.fetch_metadata(["a", "b"], ["1.0.0"])
+
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.delete_metadata(["a", "b"], ["1.0.0"])
+
+    backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    monkeypatch.setattr(Path, "unlink", lambda self: (_ for _ in ()).throw(OSError("unlink failed")))
+    result = backend.delete_metadata("test:object", "1.0.0")
+    assert result[("test:object", "1.0.0")].is_error
+
+
+def test_fetch_registry_metadata_returns_empty_on_open_failure(backend, monkeypatch):
+    backend.metadata_path.write_text("{}")
+
+    def boom(*args, **kwargs):
+        raise OSError("cannot read")
+
+    monkeypatch.setattr("builtins.open", boom)
+    assert backend.fetch_registry_metadata() == {}
+
+
+def test_list_versions_non_numeric_versions_sort_to_front(backend, sample_metadata):
+    backend.save_metadata("test:object", "2.0.0", sample_metadata)
+    backend.save_metadata("test:object", "alpha", sample_metadata)
+
+    versions = backend.list_versions("test:object")["test:object"]
+    assert versions[0] == "alpha"
+    assert "2.0.0" in versions
+
+
+def test_has_object_validates_lengths(backend):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.has_object(["a", "b"], ["1.0.0"])
+
+
+def test_register_materializer_length_default_key_and_error_paths(backend, monkeypatch):
+    with pytest.raises(ValueError, match="lengths must match"):
+        backend.register_materializer(["a", "b"], ["m"])
+
+    backend.metadata_path.write_text(json.dumps({}))
+    backend.register_materializer("test.Object", "TestMaterializer")
+    assert backend.registered_materializer("test.Object") == "TestMaterializer"
+
+    def boom(*args, **kwargs):
+        raise OSError("write failed")
+
+    monkeypatch.setattr("builtins.open", boom)
+    with pytest.raises(OSError, match="write failed"):
+        backend.register_materializer("other.Object", "OtherMaterializer")
+
+
+def test_registered_materializers_missing_error_and_filtered_list(backend, monkeypatch):
+    if backend.metadata_path.exists():
+        backend.metadata_path.unlink()
+    assert backend.registered_materializers() == {}
+
+    backend.metadata_path.write_text(json.dumps({"materializers": {"a": "A", "b": "B", "c": "C"}}))
+    assert backend.registered_materializer("missing") is None
+    assert backend.registered_materializers("a") == {"a": "A"}
+    assert backend.registered_materializers(["a", "c"]) == {"a": "A", "c": "C"}
+
+    def boom(*args, **kwargs):
+        raise OSError("read failed")
+
+    monkeypatch.setattr("builtins.open", boom)
+    with pytest.raises(OSError, match="read failed"):
+        backend.registered_materializers()
+
+
+def test_fetch_metadata_reports_yaml_errors(backend, sample_metadata, monkeypatch):
+    backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.yaml.safe_load",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad yaml")),
+    )
+
+    result = backend.fetch_metadata("test:object", "1.0.0")
+    assert result[("test:object", "1.0.0")].is_error
+
+
+def test_internal_lock_uses_windows_open_flags_for_shared_and_exclusive(backend, monkeypatch):
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+
+    shared_result = backend._acquire_internal_lock("test_windows_shared", "lock-1", timeout=30, shared=True)
+    exclusive_result = backend._acquire_internal_lock("test_windows_exclusive", "lock-2", timeout=30, shared=False)
+
+    assert shared_result is True
+    assert exclusive_result is True
+    assert backend._release_internal_lock("test_windows_shared", "lock-1") is True
+    assert backend._release_internal_lock("test_windows_exclusive", "lock-2") is True
+
+
+BYTES_DIRECT_METADATA_LOCAL = {
+    "class": "builtins.bytes",
+    "materializer": "zenml.materializers.BytesMaterializer",
+    "init_params": {},
+    "metadata": {},
+    "_files": ["data.txt"],
+}
+
+
+def test_local_direct_upload_create_inspect_cleanup_commit(backend):
+    target = backend.create_direct_upload_target("lu1", content_type="application/octet-stream")
+    assert target["upload_method"] == "local_path"
+    staged = target["staged_target"]
+    assert staged["kind"] == "local_file"
+    upload_path = Path(staged["path"])
+    assert upload_path.parent.is_dir()
+
+    assert backend.inspect_direct_upload_target(staged)["exists"] is False
+    upload_path.write_bytes(b"abc")
+    assert backend.inspect_direct_upload_target(staged)["exists"] is True
+
+    assert backend.cleanup_direct_upload_target({"kind": "other", "path": str(upload_path)}) is False
+
+    r = backend.commit_direct_upload(
+        "local:bytes",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.ok
+    assert not upload_path.exists()
+
+    r2 = backend.commit_direct_upload(
+        "local:bytes",
+        "1.0.0",
+        {"kind": "local_file", "path": "/nonexistent/nope.txt"},
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r2.is_error
+
+
+def test_local_commit_direct_upload_skip_and_overwrite(backend, sample_metadata):
+    obj_dir = backend.uri / "src_obj"
+    obj_dir.mkdir(parents=True)
+    (obj_dir / "file1.txt").write_text("x")
+    meta = {**sample_metadata, "_files": ["file1.txt"]}
+    backend.push("local:dup", "1.0.0", str(obj_dir), meta)
+
+    t = backend.create_direct_upload_target("lu2")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"new-bytes")
+
+    skip = backend.commit_direct_upload(
+        "local:dup",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.SKIP,
+    )
+    assert skip.is_skipped
+
+    t2 = backend.create_direct_upload_target("lu3")
+    staged2 = t2["staged_target"]
+    Path(staged2["path"]).write_bytes(b"overwrite-bytes")
+    ow = backend.commit_direct_upload(
+        "local:dup",
+        "1.0.0",
+        staged2,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert ow.is_overwritten
+
+
+def test_local_cleanup_direct_upload_target_returns_false_on_error(backend, monkeypatch):
+    target = backend.create_direct_upload_target("lu4")
+    staged = target["staged_target"]
+    Path(staged["path"]).write_bytes(b"z")
+
+    monkeypatch.setattr(Path, "unlink", lambda self, *a, **kw: (_ for _ in ()).throw(OSError("unlink failed")))
+    assert backend.cleanup_direct_upload_target(staged) is False
+
+
+def test_local_commit_direct_upload_metadata_yaml_failure(backend, monkeypatch):
+    t = backend.create_direct_upload_target("lu5")
+    staged = t["staged_target"]
+    Path(staged["path"]).write_bytes(b"data")
+
+    monkeypatch.setattr(
+        "mindtrace.registry.backends.local_registry_backend.yaml.safe_dump",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("yaml boom")),
+    )
+    r = backend.commit_direct_upload(
+        "local:yamlfail",
+        "1.0.0",
+        staged,
+        BYTES_DIRECT_METADATA_LOCAL,
+        on_conflict=OnConflict.OVERWRITE,
+    )
+    assert r.is_error
