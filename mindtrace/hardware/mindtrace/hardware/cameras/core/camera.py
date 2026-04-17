@@ -345,6 +345,55 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.get_image_enhancement())
 
+    # Liquid Lens / Focus Control
+
+    def get_lens_status(self) -> Dict[str, Any]:
+        """Get liquid lens hardware state.
+
+        Returns:
+            Dict with keys: connected (bool), status (str), optical_power (float | None).
+        """
+        return self._submit(self._backend.get_lens_status())
+
+    def get_optical_power(self) -> float:
+        """Get current lens optical power in diopters."""
+        return self._submit(self._backend.get_optical_power())
+
+    def set_optical_power(self, diopters: float):
+        """Set lens optical power in diopters (manual focus).
+
+        Args:
+            diopters: Target optical power within the lens range.
+        """
+        self._submit(self._backend.set_optical_power(diopters))
+
+    def get_optical_power_range(self) -> Optional[Tuple[float, float]]:
+        """Get optical power range for liquid lens.
+
+        Returns:
+            Tuple of (min_diopters, max_diopters), or None if not supported.
+        """
+        return self._submit(self._backend.get_optical_power_range())
+
+    def trigger_autofocus(self, accuracy: str = "Normal") -> bool:
+        """Trigger one-shot autofocus.
+
+        Args:
+            accuracy: "Fast", "Normal", or "Accurate".
+
+        Returns:
+            True when autofocus completes successfully.
+        """
+        return self._submit(self._backend.trigger_autofocus(accuracy))
+
+    def get_focus_config(self) -> Dict[str, Any]:
+        """Get current focus/autofocus configuration."""
+        return self._submit(self._backend.get_focus_config())
+
+    def set_focus_config(self, **settings):
+        """Set focus/autofocus parameters."""
+        self._submit(self._backend.set_focus_config(**settings))
+
     def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
