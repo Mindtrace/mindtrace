@@ -14,6 +14,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.pagination_types import (
+    MAX_PAGE_LIMIT,
     CursorEnvelope,
     CursorPage,
     DatasetViewExpand,
@@ -473,6 +474,10 @@ class AsyncDatalake(Mindtrace):
         cursor: str | None,
         include_total: bool,
     ) -> CursorPage[Any]:
+        if limit < 1 or limit > MAX_PAGE_LIMIT:
+            raise ValueError(
+                f"Page limit must be between 1 and {MAX_PAGE_LIMIT}, got {limit}."
+            )
         base_query = dict(filters or {})
         sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
         snapshot_field = self._snapshot_field_for(resource)
