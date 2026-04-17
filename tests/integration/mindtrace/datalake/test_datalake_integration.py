@@ -161,6 +161,136 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     sync_datalake.delete_asset(asset.asset_id)
 
 
+def test_sync_datalake_iterators_stream_end_to_end(sync_datalake: Datalake):
+    hopper_path = Path("tests/resources/hopper.png")
+    image_bytes = hopper_path.read_bytes()
+
+    asset = sync_datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=sync_datalake.put_object(name="iter-sync-hopper.png", obj=image_bytes),
+        checksum="sha256:iter-sync-primary",
+        size_bytes=len(image_bytes),
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    secondary_asset = sync_datalake.create_asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=sync_datalake.put_object(name="iter-sync-secondary.png", obj=image_bytes),
+        checksum="sha256:iter-sync-secondary",
+        size_bytes=len(image_bytes),
+        metadata={"suite": "iterator-secondary"},
+        created_by="pytest",
+    )
+    datum = sync_datalake.create_datum(
+        asset_refs={"image": asset.asset_id},
+        split="train",
+        metadata={"suite": "iterator"},
+    )
+    collection = sync_datalake.create_collection(
+        name="sync-iterator-collection",
+        description="iterator integration",
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    collection_item = sync_datalake.create_collection_item(
+        collection_id=collection.collection_id,
+        asset_id=asset.asset_id,
+        split="train",
+        metadata={"suite": "iterator"},
+        added_by="pytest",
+    )
+    asset_retention = sync_datalake.create_asset_retention(
+        asset_id=asset.asset_id,
+        owner_type="manual_pin",
+        owner_id="pytest",
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    annotation_schema = sync_datalake.create_annotation_schema(
+        name="sync-iterator-schema",
+        version="1.0.0",
+        task_type="detection",
+        allowed_annotation_kinds=["bbox"],
+        labels=[AnnotationLabelDefinition(name="hopper")],
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    annotation_set = sync_datalake.create_annotation_set(
+        name="sync-iterator-set",
+        purpose="ground_truth",
+        source_type="human",
+        datum_id=datum.datum_id,
+        annotation_schema_id=annotation_schema.annotation_schema_id,
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    annotation_record = sync_datalake.add_annotation_records(
+        [
+            {
+                "kind": "bbox",
+                "label": "hopper",
+                "source": {"type": "human", "name": "pytest", "version": "1.0"},
+                "subject": SubjectRef(kind="asset", id=asset.asset_id),
+                "geometry": {"x": 1, "y": 2, "width": 3, "height": 4},
+            }
+        ],
+        annotation_set_id=annotation_set.annotation_set_id,
+        annotation_schema_id=annotation_schema.annotation_schema_id,
+    )[0]
+    dataset_version = sync_datalake.create_dataset_version(
+        dataset_name="sync-iterator-dataset",
+        version="0.1.0",
+        manifest=[datum.datum_id],
+        metadata={"suite": "iterator"},
+        created_by="pytest",
+    )
+    sync_datalake.create_dataset_version(
+        dataset_name="other-sync-iterator-dataset",
+        version="0.1.0",
+        manifest=[datum.datum_id],
+        metadata={"suite": "iterator-other"},
+        created_by="pytest",
+    )
+
+    assert [item.asset_id for item in sync_datalake.iter_assets(filters={"metadata.suite": "iterator"})] == [asset.asset_id]
+    assert [item.collection_id for item in sync_datalake.iter_collections(filters={"name": "sync-iterator-collection"})] == [
+        collection.collection_id
+    ]
+    assert [
+        item.collection_item_id for item in sync_datalake.iter_collection_items(filters={"collection_id": collection.collection_id})
+    ] == [collection_item.collection_item_id]
+    assert [item.asset_retention_id for item in sync_datalake.iter_asset_retentions(filters={"asset_id": asset.asset_id})] == [
+        asset_retention.asset_retention_id
+    ]
+    assert [
+        item.annotation_schema_id
+        for item in sync_datalake.iter_annotation_schemas(filters={"name": "sync-iterator-schema"})
+    ] == [annotation_schema.annotation_schema_id]
+    assert [
+        item.annotation_set_id
+        for item in sync_datalake.iter_annotation_sets(filters={"annotation_schema_id": annotation_schema.annotation_schema_id})
+    ] == [
+        annotation_set.annotation_set_id
+    ]
+    assert [
+        item.annotation_id for item in sync_datalake.iter_annotation_records(filters={"subject.id": asset.asset_id})
+    ] == [annotation_record.annotation_id]
+    assert [item.datum_id for item in sync_datalake.iter_datums(filters={"split": "train"})] == [datum.datum_id]
+    assert [
+        item.dataset_version_id
+        for item in sync_datalake.iter_dataset_versions(dataset_name="sync-iterator-dataset")
+    ] == [dataset_version.dataset_version_id]
+
+    sync_datalake.delete_annotation_record(annotation_record.annotation_id)
+    sync_datalake.delete_asset_retention(asset_retention.asset_retention_id)
+    sync_datalake.delete_collection(collection.collection_id)
+    sync_datalake.update_datum(datum.datum_id, asset_refs={})
+    sync_datalake.delete_asset(secondary_asset.asset_id)
+    sync_datalake.delete_asset(asset.asset_id)
+
+
 def test_sync_datalake_direct_upload_wrappers(sync_datalake: Datalake):
     payload = b"sync-direct-upload"
 
