@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Iterator
 from concurrent.futures import Future
 from typing import Any, Optional
 
@@ -284,6 +285,21 @@ class Datalake(Mindtrace):
                 pass
             raise
 
+    def _iter_database_sync(
+        self,
+        *,
+        database: Any,
+        resource: str,
+        filters: dict[str, Any] | None,
+        sort: str,
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        self._ensure_not_in_running_loop()
+        from mindtrace.datalake.async_datalake import AsyncDatalake as AsyncDatalakeImpl
+
+        sort_spec, _ = AsyncDatalakeImpl._resolve_sort_spec(resource, sort)
+        yield from database.find_iter_sync(filters or {}, sort=sort_spec, batch_size=batch_size)
+
     def initialize(self) -> None:
         self._submit_coro(self._backend.initialize())
 
@@ -334,6 +350,21 @@ class Datalake(Mindtrace):
 
     def list_assets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_assets(filters))
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.asset_database,
+            resource="assets",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
 
     def list_assets_page(
         self,
@@ -572,6 +603,21 @@ class Datalake(Mindtrace):
     def list_annotation_records(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_records(filters))
 
+    def iter_annotation_records(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.annotation_record_database,
+            resource="annotation_records",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
+
     def list_annotation_records_for_asset(self, asset_id: str):
         return self._submit_coro(self._backend.list_annotation_records_for_asset(asset_id))
 
@@ -627,6 +673,21 @@ class Datalake(Mindtrace):
 
     def list_datums(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_datums(filters))
+
+    def iter_datums(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.datum_database,
+            resource="datums",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
 
     def list_datums_page(
         self,
