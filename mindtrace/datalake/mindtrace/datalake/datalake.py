@@ -6,7 +6,7 @@ from concurrent.futures import Future
 from typing import Any, Optional
 
 from mindtrace.core import Mindtrace
-from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOpsPolicy
 from mindtrace.registry import Mount, Store
 
 
@@ -176,6 +176,7 @@ class Datalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
         async_datalake: Optional[AsyncDatalake] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         **kwargs: Any,
@@ -190,6 +191,7 @@ class Datalake(Mindtrace):
             self.store = async_datalake.store
             self.mongo_db_uri = async_datalake.mongo_db_uri
             self.mongo_db_name = async_datalake.mongo_db_name
+            self.slow_ops_policy = async_datalake.slow_ops_policy
             return
 
         self._loop = asyncio.new_event_loop()
@@ -209,10 +211,12 @@ class Datalake(Mindtrace):
             store=store,
             mounts=mounts,
             default_mount=default_mount,
+            slow_ops_policy=slow_ops_policy,
         )
         self.store = self._backend.store
         self.mongo_db_uri = self._backend.mongo_db_uri
         self.mongo_db_name = self._backend.mongo_db_name
+        self.slow_ops_policy = self._backend.slow_ops_policy
 
     @classmethod
     def create(
@@ -223,6 +227,7 @@ class Datalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
     ) -> "Datalake":
         datalake = cls(
             mongo_db_uri=mongo_db_uri,
@@ -230,6 +235,7 @@ class Datalake(Mindtrace):
             store=store,
             mounts=mounts,
             default_mount=default_mount,
+            slow_ops_policy=slow_ops_policy,
         )
         datalake.initialize()
         return datalake

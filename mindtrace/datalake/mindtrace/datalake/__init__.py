@@ -14,7 +14,14 @@ from .annotations import (
     RotatedBboxAnnotation,
     annotation_from_record,
 )
-from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
+from .async_datalake import (
+    AnnotationSchemaInUseError,
+    AsyncDatalake,
+    DuplicateAnnotationSchemaError,
+    SlowOperationDisabledError,
+    SlowOperationWarning,
+    SlowOpsPolicy,
+)
 from .data_vault import AsyncDataVault, DataVault
 from .data_vault_backends import (
     AsyncDataVaultBackend,
@@ -106,6 +113,9 @@ __all__ = [
     "AssetAlias",
     "AsyncDataVault",
     "AsyncDataVaultBackend",
+    "SlowOperationDisabledError",
+    "SlowOperationWarning",
+    "SlowOpsPolicy",
     "DataVault",
     "DataVaultBackend",
     "DatalakeServiceAsyncDataVaultBackend",

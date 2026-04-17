@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mindtrace.datalake import Datalake
+from mindtrace.datalake.async_datalake import SlowOpsPolicy
 from mindtrace.datalake.pagination_types import CursorPage, DatasetViewInfo, DatasetViewPage, DatasetViewRow, PageInfo
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
@@ -40,6 +41,7 @@ class TestDatalakeSyncFacade:
         backend.store = MagicMock()
         backend.mongo_db_uri = "mongodb://test:27017"
         backend.mongo_db_name = "test_db"
+        backend.slow_ops_policy = SlowOpsPolicy.FORBID
         loop = asyncio.new_event_loop()
         try:
             datalake = Datalake(async_datalake=backend, loop=loop, mongo_db_uri="ignored", mongo_db_name="ignored")
@@ -48,6 +50,7 @@ class TestDatalakeSyncFacade:
             assert datalake.store is backend.store
             assert datalake.mongo_db_uri == "mongodb://test:27017"
             assert datalake.mongo_db_name == "test_db"
+            assert datalake.slow_ops_policy == SlowOpsPolicy.FORBID
         finally:
             loop.close()
 
@@ -64,6 +67,7 @@ class TestDatalakeSyncFacade:
             store=None,
             mounts=None,
             default_mount=None,
+            slow_ops_policy=SlowOpsPolicy.WARN,
         )
         initialize_mock.assert_called_once()
         assert isinstance(result, Datalake)
@@ -467,6 +471,39 @@ class TestDatalakeSyncFacade:
             items=[Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png"))],
             page=PageInfo(limit=1, next_cursor="asset-cursor", has_more=True, total_count=2),
         )
+        collection_page = CursorPage(items=[Collection(name="demo")], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+        collection_item_page = CursorPage(
+            items=[CollectionItem(collection_id="collection_1", asset_id="asset_1")],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
+        retention_page = CursorPage(
+            items=[AssetRetention(asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1")],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
+        annotation_schema_page = CursorPage(
+            items=[
+                AnnotationSchema(
+                    name="demo-schema",
+                    version="1.0.0",
+                    task_type="classification",
+                    allowed_annotation_kinds=["classification"],
+                    labels=[AnnotationLabelDefinition(name="cat")],
+                )
+            ],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
+        annotation_set_page = CursorPage(
+            items=[AnnotationSet(name="gt", purpose="ground_truth", source_type="human")],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
+        annotation_record_page = CursorPage(
+            items=[AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
+        datum_page = CursorPage(
+            items=[Datum(asset_refs={"image": "asset_1"})],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False),
+        )
         dataset_page = CursorPage(
             items=[DatasetVersion(dataset_name="demo", version="0.1.0")],
             page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
@@ -477,15 +514,87 @@ class TestDatalakeSyncFacade:
             view=DatasetViewInfo(dataset_name="demo", version="0.1.0", sort="manifest_order"),
         )
         mock_backend.list_assets_page = AsyncMock(return_value=asset_page)
+        mock_backend.list_collections_page = AsyncMock(return_value=collection_page)
+        mock_backend.list_collection_items_page = AsyncMock(return_value=collection_item_page)
+        mock_backend.list_asset_retentions_page = AsyncMock(return_value=retention_page)
+        mock_backend.list_annotation_schemas_page = AsyncMock(return_value=annotation_schema_page)
+        mock_backend.list_annotation_sets_page = AsyncMock(return_value=annotation_set_page)
+        mock_backend.list_annotation_records_page = AsyncMock(return_value=annotation_record_page)
+        mock_backend.list_annotation_records_for_asset_page = AsyncMock(return_value=annotation_record_page)
+        mock_backend.list_datums_page = AsyncMock(return_value=datum_page)
         mock_backend.list_dataset_versions_page = AsyncMock(return_value=dataset_page)
         mock_backend.view_dataset_version_page = AsyncMock(return_value=view_page)
 
         assert datalake.list_assets_page(filters={"kind": "image"}, limit=1).page.next_cursor == "asset-cursor"
+        assert datalake.list_collections_page(limit=1).items[0].name == "demo"
+        assert datalake.list_collection_items_page(limit=1).items[0].collection_id == "collection_1"
+        assert datalake.list_asset_retentions_page(limit=1).items[0].owner_id == "owner_1"
+        assert datalake.list_annotation_schemas_page(limit=1).items[0].name == "demo-schema"
+        assert datalake.list_annotation_sets_page(limit=1).items[0].name == "gt"
+        assert datalake.list_annotation_records_page(limit=1).items[0].label == "dent"
+        assert datalake.list_annotation_records_for_asset_page("asset_1", limit=1).items[0].label == "dent"
+        assert datalake.list_datums_page(limit=1).items[0].asset_refs == {"image": "asset_1"}
         assert datalake.list_dataset_versions_page(dataset_name="demo", limit=1).items[0].dataset_name == "demo"
         assert datalake.view_dataset_version_page("demo", "0.1.0", limit=1).view.sort == "manifest_order"
 
         mock_backend.list_assets_page.assert_awaited_once_with(
             filters={"kind": "image"},
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_collections_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_collection_items_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_asset_retentions_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_annotation_schemas_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_annotation_sets_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_annotation_records_page.assert_awaited_once_with(
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_annotation_records_for_asset_page.assert_awaited_once_with(
+            "asset_1",
+            sort="subject_created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_datums_page.assert_awaited_once_with(
+            filters=None,
             sort="created_desc",
             limit=1,
             cursor=None,
