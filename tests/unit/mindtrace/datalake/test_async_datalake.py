@@ -837,6 +837,33 @@ class TestAsyncDatalakeUnit:
             await async_datalake.view_dataset_version_page("demo", "1.0.0", sort="created_desc")
 
     @pytest.mark.asyncio
+    async def test_view_dataset_version_page_uses_configured_default_limit(self, async_datalake):
+        dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=["datum_1"])
+        datum = Datum(datum_id="datum_1", split="train")
+
+        async_datalake.config["MINDTRACE_DATALAKE"]["DEFAULT_PAGE_LIMIT"] = 7
+        async_datalake.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"] = 9
+        async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
+        async_datalake.datum_database = MagicMock()
+        async_datalake.datum_database.find = AsyncMock(return_value=[datum])
+
+        page = await async_datalake.view_dataset_version_page("demo", "1.0.0")
+
+        assert page.page.limit == 7
+        async_datalake.get_dataset_version.assert_awaited_once_with("demo", "1.0.0")
+        async_datalake.datum_database.find.assert_awaited_once_with({"datum_id": {"$in": ["datum_1"]}})
+
+    @pytest.mark.asyncio
+    async def test_view_dataset_version_page_rejects_configured_max_before_lookup(self, async_datalake):
+        async_datalake.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"] = 9
+        async_datalake.get_dataset_version = AsyncMock()
+
+        with pytest.raises(ValueError, match="between 1 and 9"):
+            await async_datalake.view_dataset_version_page("demo", "1.0.0", limit=10)
+
+        async_datalake.get_dataset_version.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_iter_dataset_version_view_walks_all_pages(self, async_datalake):
         first_page = MagicMock(
             items=[DatasetViewRow(datum_id="datum_1")],
