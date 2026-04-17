@@ -31,7 +31,18 @@ from mindtrace.datalake.service_types import (
 from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef
 from mindtrace.services.core.connection_manager import ConnectionManager
 
-_SYNC_VAULT_METHOD_NAMES = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
+_SYNC_VAULT_METHOD_NAMES = (
+    "list_assets",
+    "list_assets_page",
+    "iter_assets",
+    "get_asset",
+    "get_asset_by_alias",
+    "get_object",
+    "create_asset_from_object",
+    "add_alias",
+    "add_annotation_records",
+    "list_annotation_records_for_asset",
+)
 _ASYNC_VAULT_METHOD_NAMES = _SYNC_VAULT_METHOD_NAMES
 
 # Sync/async method names on a ``DatalakeService`` client from ``Service.connect`` /
