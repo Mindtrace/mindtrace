@@ -1,4 +1,5 @@
 import asyncio
+import json
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -357,6 +358,8 @@ class TestAsyncDatalakeUnit:
         assert async_datalake._build_snapshot_query(resource="assets", snapshot_token=snapshot_token) == {
             "created_at": {"$lte": datetime(2026, 1, 1, tzinfo=timezone.utc)}
         }
+        assert async_datalake._decode_snapshot_token(None, expected_resource="assets") is None
+        assert async_datalake._build_snapshot_query(resource="assets", snapshot_token=None) == {}
         assert async_datalake._snapshot_field_for("missing") is None
 
         with pytest.raises(ValueError, match="Unsupported pagination resource"):
@@ -373,6 +376,25 @@ class TestAsyncDatalakeUnit:
                     cutoff=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 ),
                 expected_resource="assets",
+            )
+        with pytest.raises(ValueError, match="Unsupported snapshot token kind"):
+            async_datalake._decode_snapshot_token(
+                json.dumps({"kind": "other", "resource": "assets", "field": "created_at", "cutoff": "x"}),
+                expected_resource="assets",
+            )
+        with pytest.raises(ValueError, match="Snapshot token missing field"):
+            async_datalake._decode_snapshot_token(
+                json.dumps({"kind": "temporal_cutoff", "resource": "assets", "field": "", "cutoff": "x"}),
+                expected_resource="assets",
+            )
+        with pytest.raises(ValueError, match="Snapshot token field mismatch for resource"):
+            async_datalake._build_snapshot_query(
+                resource="assets",
+                snapshot_token=async_datalake._encode_snapshot_token(
+                    resource="assets",
+                    field="updated_at",
+                    cutoff=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                ),
             )
 
     @pytest.mark.parametrize(
@@ -738,6 +760,13 @@ class TestAsyncDatalakeUnit:
         assert page.page.total_count is None
         async_datalake.annotation_set_database.find.assert_awaited_once_with({"annotation_set_id": {"$in": ["set_1"]}})
         async_datalake.annotation_record_database.find.assert_awaited_once_with({"annotation_id": {"$in": ["ann_1"]}})
+
+    @pytest.mark.asyncio
+    async def test_build_dataset_view_rows_returns_empty_list_for_empty_input(self, async_datalake):
+        assert await async_datalake._build_dataset_view_rows(
+            datums=[],
+            expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
+        ) == []
 
     @pytest.mark.asyncio
     async def test_view_dataset_version_page_scans_manifest_in_chunks_for_sparse_filters(self, async_datalake):
