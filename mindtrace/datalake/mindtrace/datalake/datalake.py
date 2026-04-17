@@ -329,6 +329,25 @@ class Datalake(Mindtrace):
     def list_assets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_assets(filters))
 
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_assets_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]):
         return self._submit_coro(self._backend.update_asset_metadata(asset_id, metadata))
 
@@ -362,6 +381,25 @@ class Datalake(Mindtrace):
     def list_collections(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_collections(filters))
 
+    def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_collections_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_collection(self, collection_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_collection(collection_id, **changes))
 
@@ -376,6 +414,25 @@ class Datalake(Mindtrace):
 
     def list_collection_items(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_collection_items(filters))
+
+    def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_collection_items_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
 
     def resolve_collection_item(self, collection_item_id: str):
         return self._submit_coro(self._backend.resolve_collection_item(collection_item_id))
@@ -395,6 +452,25 @@ class Datalake(Mindtrace):
     def list_asset_retentions(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_asset_retentions(filters))
 
+    def list_asset_retentions_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_asset_retentions_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_asset_retention(self, asset_retention_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_asset_retention(asset_retention_id, **changes))
 
@@ -413,6 +489,25 @@ class Datalake(Mindtrace):
     def list_annotation_schemas(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_schemas(filters))
 
+    def list_annotation_schemas_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_annotation_schemas_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_annotation_schema(self, annotation_schema_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_schema(annotation_schema_id, **changes))
 
@@ -427,6 +522,25 @@ class Datalake(Mindtrace):
 
     def list_annotation_sets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_sets(filters))
+
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_annotation_sets_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
 
     def update_annotation_set(self, annotation_set_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_set(annotation_set_id, **changes))
@@ -455,6 +569,44 @@ class Datalake(Mindtrace):
     def list_annotation_records_for_asset(self, asset_id: str):
         return self._submit_coro(self._backend.list_annotation_records_for_asset(asset_id))
 
+    def list_annotation_records_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_annotation_records_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
+    def list_annotation_records_for_asset_page(
+        self,
+        asset_id: str,
+        *,
+        sort: str = "subject_created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_annotation_records_for_asset_page(
+                asset_id,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_annotation_record(self, annotation_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_annotation_record(annotation_id, **changes))
 
@@ -470,6 +622,25 @@ class Datalake(Mindtrace):
     def list_datums(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_datums(filters))
 
+    def list_datums_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_datums_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
     def update_datum(self, datum_id: str, **changes: Any):
         return self._submit_coro(self._backend.update_datum(datum_id, **changes))
 
@@ -481,6 +652,52 @@ class Datalake(Mindtrace):
 
     def list_dataset_versions(self, dataset_name: str | None = None, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_dataset_versions(dataset_name=dataset_name, filters=filters))
+
+    def list_dataset_versions_page(
+        self,
+        *,
+        dataset_name: str | None = None,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.list_dataset_versions_page(
+                dataset_name=dataset_name,
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            )
+        )
+
+    def view_dataset_version_page(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+        sort: str = "manifest_order",
+        filters=None,
+        expand=None,
+        include_total: bool = False,
+    ):
+        return self._submit_coro(
+            self._backend.view_dataset_version_page(
+                dataset_name,
+                version,
+                limit=limit,
+                cursor=cursor,
+                sort=sort,
+                filters=filters,
+                expand=expand,
+                include_total=include_total,
+            )
+        )
 
     def resolve_datum(self, datum_id: str):
         return self._submit_coro(self._backend.resolve_datum(datum_id))

@@ -7,6 +7,15 @@ import pytest
 from fastapi import HTTPException
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.pagination_types import (
+    CursorPage,
+    DatasetViewExpand,
+    DatasetViewInfo,
+    DatasetViewPage,
+    DatasetViewRow,
+    PageInfo,
+    StructuredFilter,
+)
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
@@ -30,6 +39,7 @@ from mindtrace.datalake.service_types import (
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
+    AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
     CollectionItemListOutput,
@@ -56,6 +66,8 @@ from mindtrace.datalake.service_types import (
     DatasetSyncImportPlanOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
+    DatasetVersionPageOutput,
+    DatasetViewPageOutput,
     DatumListOutput,
     DatumOutput,
     ExportDatasetVersionInput,
@@ -67,12 +79,14 @@ from mindtrace.datalake.service_types import (
     HeadObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListDatasetVersionsInput,
+    ListDatasetVersionsPageInput,
     ListInput,
     MountsOutput,
     ObjectDataOutput,
     ObjectHeadOutput,
     ObjectOutput,
     ObjectUploadSessionOutput,
+    PageInput,
     PutObjectInput,
     ReplicationBatchResultOutput,
     ReplicationHydrateAssetPayloadInput,
@@ -91,6 +105,7 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionInput,
     UpdateCollectionItemInput,
     UpdateDatumInput,
+    ViewDatasetVersionPageInput,
 )
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
@@ -1409,6 +1424,89 @@ async def test_service_methods_map_requests_to_async_datalake(case, service, moc
 
 
 @pytest.mark.asyncio
+async def test_service_list_assets_page_maps_page_contract(service, mock_datalake, datalake_objects):
+    page = CursorPage(
+        items=[datalake_objects.asset],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True, total_count=2),
+    )
+    mock_datalake.list_assets_page.return_value = page
+
+    result = await service.list_assets_page(PageInput(filters={"kind": "image"}, limit=1, include_total=True))
+
+    mock_datalake.list_assets_page.assert_awaited_once_with(
+        filters={"kind": "image"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    assert isinstance(result, AssetPageOutput)
+    assert result.items == [datalake_objects.asset]
+    assert result.page.next_cursor == "cursor-1"
+    assert result.page.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_service_list_dataset_versions_page_includes_dataset_name(service, mock_datalake, datalake_objects):
+    page = CursorPage(
+        items=[datalake_objects.dataset_version],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_dataset_versions_page.return_value = page
+
+    result = await service.list_dataset_versions_page(
+        ListDatasetVersionsPageInput(dataset_name="demo-dataset", filters={"version": "1.0"}, limit=1)
+    )
+
+    mock_datalake.list_dataset_versions_page.assert_awaited_once_with(
+        dataset_name="demo-dataset",
+        filters={"version": "1.0"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(result, DatasetVersionPageOutput)
+    assert result.items == [datalake_objects.dataset_version]
+    assert result.page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_service_view_dataset_version_page_maps_expand_and_filters(service, mock_datalake):
+    page = DatasetViewPage(
+        items=[DatasetViewRow(datum_id="datum_1", split="train", metadata={"rank": 1})],
+        page=PageInfo(limit=1, next_cursor="cursor-2", has_more=True, total_count=2),
+        view=DatasetViewInfo(dataset_name="demo", version="1.0.0", sort="manifest_order"),
+    )
+    mock_datalake.view_dataset_version_page.return_value = page
+
+    payload = ViewDatasetVersionPageInput(
+        dataset_name="demo",
+        version="1.0.0",
+        limit=1,
+        include_total=True,
+        filters=[StructuredFilter(field="split", op="eq", value="train")],
+        expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+    )
+    result = await service.view_dataset_version_page(payload)
+
+    mock_datalake.view_dataset_version_page.assert_awaited_once_with(
+        "demo",
+        "1.0.0",
+        limit=1,
+        cursor=None,
+        sort="manifest_order",
+        filters=[StructuredFilter(field="split", op="eq", value="train")],
+        expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+        include_total=True,
+    )
+    assert isinstance(result, DatasetViewPageOutput)
+    assert result.items[0].datum_id == "datum_1"
+    assert result.page.next_cursor == "cursor-2"
+    assert result.view.dataset_name == "demo"
+
+
+@pytest.mark.asyncio
 async def test_service_export_dataset_version_uses_sync_manager(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
@@ -1492,9 +1590,7 @@ async def test_service_replication_hydrate_asset_payload_uses_replication_manage
 
 @pytest.mark.asyncio
 async def test_service_replication_reconcile_uses_replication_manager(service):
-    request = ReplicationReconcileRequest(
-        asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"}
-    )
+    request = ReplicationReconcileRequest(asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"})
     reconcile_result = ReplicationReconcileResult(
         attempted_asset_ids=["asset_1"],
         verified_asset_ids=["asset_1"],
