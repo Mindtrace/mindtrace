@@ -25,6 +25,19 @@ def basic_store():
         yield store
 
 
+@pytest.fixture
+def versioned_store():
+    with TemporaryDirectory() as d1, TemporaryDirectory() as d2:
+        store = Store(
+            mounts={
+                "a": Registry(backend=Path(d1), version_objects=True, mutable=True),
+                "b": Registry(backend=Path(d2), version_objects=True, mutable=True),
+            },
+            default_mount="a",
+        )
+        yield store
+
+
 def test_parse_key_with_and_without_mount(basic_store):
     assert basic_store.parse_key("a/foo@1") == ("a", "foo", "1")
     assert basic_store.parse_key("foo@2") == (None, "foo", "2")
@@ -105,6 +118,43 @@ def test_copy_and_move_between_mounts(basic_store):
     assert basic_store.load("a/moved")["v"] == 1
     with pytest.raises(RegistryObjectNotFound):
         basic_store.load("b/copied")
+
+
+def test_move_unqualified_source_deletes_from_resolved_mount(basic_store):
+    basic_store.save("b/original", {"v": "from-b"})
+
+    moved_version = basic_store.move("original", target="a/moved")
+
+    assert moved_version is not None
+    assert basic_store.load("a/moved")["v"] == "from-b"
+    with pytest.raises(RegistryObjectNotFound):
+        basic_store.load("b/original")
+
+
+def test_move_unqualified_source_with_explicit_version_deletes_from_resolved_mount(versioned_store):
+    versioned_store.save("b/versioned", {"v": "v1"}, version="1.0.0")
+    versioned_store.save("b/versioned", {"v": "v2"}, version="1.0.1")
+
+    moved_version = versioned_store.move("versioned", target="a/moved-versioned", source_version="1.0.0")
+
+    assert moved_version is not None
+    assert versioned_store.load("a/moved-versioned")["v"] == "v1"
+    with pytest.raises(RegistryObjectNotFound):
+        versioned_store.load("b/versioned", version="1.0.0")
+    assert versioned_store.load("b/versioned", version="1.0.1")["v"] == "v2"
+
+
+def test_move_unqualified_source_with_key_version_deletes_loaded_version(versioned_store):
+    versioned_store.save("b/key-versioned", {"v": "v1"}, version="1.0.0")
+    versioned_store.save("b/key-versioned", {"v": "v2"}, version="1.0.1")
+
+    moved_version = versioned_store.move("key-versioned@1.0.0", target="a/moved-key-version")
+
+    assert moved_version is not None
+    assert versioned_store.load("a/moved-key-version")["v"] == "v1"
+    with pytest.raises(RegistryObjectNotFound):
+        versioned_store.load("b/key-versioned", version="1.0.0")
+    assert versioned_store.load("b/key-versioned", version="1.0.1")["v"] == "v2"
 
 
 def test_dict_like_helpers(basic_store):

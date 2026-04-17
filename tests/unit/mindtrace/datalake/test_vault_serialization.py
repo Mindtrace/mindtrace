@@ -57,6 +57,17 @@ def test_materialize_payload_with_hints_bytes(tmp_path: Path):
     assert out == raw
 
 
+def test_materialize_payload_with_hints_uses_any_for_stale_class_path(tmp_path: Path):
+    reg = Registry(tmp_path / "reg", version_objects=False, mutable=True)
+    raw = b"hello-bytes"
+    block = direct_bytes_serialization_block()
+    block["class"] = "missing.module.Type"
+
+    out = materialize_payload_with_hints(reg, raw, block)
+
+    assert out == raw
+
+
 def test_data_vault_load_materializes_with_mock_backend(tmp_path: Path):
     reg = Registry(tmp_path / "reg", version_objects=False, mutable=True)
     asset = Asset(

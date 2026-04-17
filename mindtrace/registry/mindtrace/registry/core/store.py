@@ -567,13 +567,17 @@ class Store(Mindtrace):
     ) -> str:
         saved = self.copy(source, target=target, source_version=source_version, target_version=target_version)
 
-        delete_version = source_version
-        if source_version == "latest":
-            mount, name, key_version = self.parse_key(source)
-            resolved_mount = mount or self._resolve_load_location(name, key_version or "latest")
+        mount, name, key_version = self.parse_key(source)
+        resolved_source_version = (
+            source_version if source_version not in (None, "latest") else (key_version or source_version)
+        )
+        resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
+
+        delete_version = resolved_source_version
+        if delete_version in (None, "latest"):
             delete_version = self.get_mount(resolved_mount).registry.list_versions(name)[-1]
 
-        self.delete(source, version=delete_version)
+        self.delete(self.build_key(resolved_mount, name), version=delete_version)
         return saved
 
     def __getitem__(self, key: str | list[str]) -> Any:
