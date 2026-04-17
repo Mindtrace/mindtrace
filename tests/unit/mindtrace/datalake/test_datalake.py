@@ -537,86 +537,48 @@ class TestDatalakeSyncFacade:
         assert datalake.list_dataset_versions_page(dataset_name="demo", limit=1).items[0].dataset_name == "demo"
         assert datalake.view_dataset_version_page("demo", "0.1.0", limit=1).view.sort == "manifest_order"
 
-        mock_backend.list_assets_page.assert_awaited_once_with(
-            filters={"kind": "image"},
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
+    def test_sync_iterator_methods_stream_without_submit_coro(self, datalake, mock_backend):
+        asset = Asset(
+            asset_id="asset_1",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset_1.png"),
         )
-        mock_backend.list_collections_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
+        annotation_record = AnnotationRecord(
+            kind="bbox",
+            label="dent",
+            source={"type": "human", "name": "review-ui"},
+            geometry={},
         )
-        mock_backend.list_collection_items_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
+        datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+
+        mock_backend.asset_database = MagicMock()
+        mock_backend.asset_database.find_iter_sync = MagicMock(return_value=iter([asset]))
+        mock_backend.annotation_record_database = MagicMock()
+        mock_backend.annotation_record_database.find_iter_sync = MagicMock(return_value=iter([annotation_record]))
+        mock_backend.datum_database = MagicMock()
+        mock_backend.datum_database.find_iter_sync = MagicMock(return_value=iter([datum]))
+
+        datalake._submit_coro = MagicMock(side_effect=AssertionError("unexpected async bridge"))
+
+        assert list(datalake.iter_assets(filters={"kind": "image"}, batch_size=10)) == [asset]
+        assert list(datalake.iter_annotation_records(filters={"label": "dent"}, batch_size=20)) == [annotation_record]
+        assert list(datalake.iter_datums(filters={"split": "train"}, batch_size=30)) == [datum]
+
+        mock_backend.asset_database.find_iter_sync.assert_called_once_with(
+            {"kind": "image"},
+            sort=[("created_at", -1), ("asset_id", -1)],
+            batch_size=10,
         )
-        mock_backend.list_asset_retentions_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
+        mock_backend.annotation_record_database.find_iter_sync.assert_called_once_with(
+            {"label": "dent"},
+            sort=[("created_at", -1), ("annotation_id", -1)],
+            batch_size=20,
         )
-        mock_backend.list_annotation_schemas_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.list_annotation_sets_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.list_annotation_records_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.list_annotation_records_for_asset_page.assert_awaited_once_with(
-            "asset_1",
-            sort="subject_created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.list_datums_page.assert_awaited_once_with(
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.list_dataset_versions_page.assert_awaited_once_with(
-            dataset_name="demo",
-            filters=None,
-            sort="created_desc",
-            limit=1,
-            cursor=None,
-            include_total=False,
-        )
-        mock_backend.view_dataset_version_page.assert_awaited_once_with(
-            "demo",
-            "0.1.0",
-            limit=1,
-            cursor=None,
-            sort="manifest_order",
-            filters=None,
-            expand=None,
-            include_total=False,
+        mock_backend.datum_database.find_iter_sync.assert_called_once_with(
+            {"split": "train"},
+            sort=[("created_at", -1), ("datum_id", -1)],
+            batch_size=30,
         )
 
     def test_close_handles_cleanup_exceptions_and_context_manager(self, datalake):
