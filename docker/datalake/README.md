@@ -51,7 +51,7 @@ vault.save_image("images:hopper", hopper)
 image = vault.load_image("images:hopper")
 image.show()
 
-# Scalable discovery stays on the vault API too.
+# Use the pagination API to iterate through assets and annotations
 page = vault.list_image_assets_page(limit=10, include_total=True)
 print("first page ids:", [asset.asset_id for asset in page.items])
 print("has more:", page.page.has_more, "next cursor:", page.page.next_cursor)
