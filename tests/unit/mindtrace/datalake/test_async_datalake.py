@@ -482,7 +482,9 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
-        self._patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123")
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123"
+        )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         inserted_model = AnnotationRecord(
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -1106,7 +1108,9 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake, mock_odm):
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(
+        self, async_datalake, mock_odm
+    ):
         schema = AnnotationSchema(
             name="bbox-demo",
             version="1.0.0",
@@ -1496,7 +1500,9 @@ class TestAsyncDatalakeUnit:
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(self, async_datalake, mock_odm):
+    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(
+        self, async_datalake, mock_odm
+    ):
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         mock_odm.find = AsyncMock(return_value=[])
@@ -1618,7 +1624,9 @@ class TestAsyncDatalakeUnit:
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         self._patch_datum_find_for_annotation_set_merge(
-            mock_odm, annotation_set.annotation_set_id, image_asset_id="datum_default_image",
+            mock_odm,
+            annotation_set.annotation_set_id,
+            image_asset_id="datum_default_image",
         )
         explicit = SubjectRef(kind="asset", id="user_chosen")
         inserted_dict = AnnotationRecord(
