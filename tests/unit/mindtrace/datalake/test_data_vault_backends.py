@@ -381,6 +381,28 @@ def test_normalize_sync_backend_wraps_service_facade():
     assert isinstance(backend, DatalakeServiceDataVaultBackend)
 
 
+class _LegacySyncDuckBackend:
+    def list_assets(self, *_a, **_kw):
+        return []
+
+    def get_asset_by_alias(self, *_a, **_kw):
+        return None
+
+    def get_object(self, *_a, **_kw):
+        return b""
+
+    def create_asset_from_object(self, *_a, **_kw):
+        return None
+
+    def add_alias(self, *_a, **_kw):
+        return None
+
+
+def test_normalize_sync_backend_rejects_legacy_duck_backend_missing_scalable_methods():
+    with pytest.raises(TypeError, match="list_assets_page|iter_assets"):
+        _normalize_sync_backend(_LegacySyncDuckBackend())
+
+
 class _AsyncServiceFacade:
     async def aassets_get(self, *_a, **_kw):
         return None
@@ -420,6 +442,28 @@ def test_looks_like_datalake_service_async_client_rejects_mock():
 def test_normalize_async_backend_wraps_service_facade():
     backend = _normalize_async_backend(_AsyncServiceFacade())
     assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
+
+
+class _LegacyAsyncDuckBackend:
+    async def list_assets(self, *_a, **_kw):
+        return []
+
+    async def get_asset_by_alias(self, *_a, **_kw):
+        return None
+
+    async def get_object(self, *_a, **_kw):
+        return b""
+
+    async def create_asset_from_object(self, *_a, **_kw):
+        return None
+
+    async def add_alias(self, *_a, **_kw):
+        return None
+
+
+def test_normalize_async_backend_rejects_legacy_duck_backend_missing_scalable_methods():
+    with pytest.raises(TypeError, match="list_assets_page|iter_assets"):
+        _normalize_async_backend(_LegacyAsyncDuckBackend())
 
 
 @pytest.mark.asyncio
