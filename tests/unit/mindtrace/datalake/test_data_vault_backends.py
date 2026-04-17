@@ -4,6 +4,7 @@ import base64
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from urllib3.util.url import parse_url
 
 from mindtrace.datalake.data_vault import _normalize_async_backend, _normalize_sync_backend
 from mindtrace.datalake.data_vault_backends import (
@@ -34,6 +35,7 @@ from mindtrace.datalake.service_types import (
     PageInput,
 )
 from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef, SubjectRef
+from mindtrace.services.core.connection_manager import ConnectionManager
 
 
 @pytest.mark.parametrize(
@@ -212,7 +214,7 @@ async def test_datalake_service_async_backend_add_alias():
 async def test_datalake_service_async_backend_call_raises_when_no_method():
     backend = DatalakeServiceAsyncDataVaultBackend(object())
 
-    with pytest.raises(AttributeError, match="has none of"):
+    with pytest.raises(TypeError, match="required ConnectionManager method"):
         await backend._call("aassets_get_by_alias", input_obj=GetAssetByAliasInput(alias="x"))
 
 
@@ -334,8 +336,51 @@ def test_datalake_service_sync_backend_create_and_add_alias():
 def test_datalake_service_sync_backend_call_raises_when_no_method():
     backend = DatalakeServiceDataVaultBackend(object())
 
-    with pytest.raises(AttributeError, match="has none of"):
+    with pytest.raises(TypeError, match="required ConnectionManager method"):
         backend._call("assets_get_by_alias", input_obj=GetAssetByAliasInput(alias="x"))
+
+
+class _BareSyncConnectionManager(ConnectionManager):
+    pass
+
+
+class _BareAsyncConnectionManager(ConnectionManager):
+    pass
+
+
+def test_looks_like_datalake_service_sync_client_accepts_connection_manager_without_endpoint_probe():
+    assert looks_like_datalake_service_sync_client(_BareSyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+
+
+def test_looks_like_datalake_service_async_client_accepts_connection_manager_without_endpoint_probe():
+    assert (
+        looks_like_datalake_service_async_client(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+    )
+
+
+def test_normalize_sync_backend_wraps_connection_manager_without_page_endpoint():
+    backend = _normalize_sync_backend(_BareSyncConnectionManager(url=parse_url("http://localhost:8080")))
+    assert isinstance(backend, DatalakeServiceDataVaultBackend)
+
+
+def test_normalize_async_backend_wraps_connection_manager_without_page_endpoint():
+    backend = _normalize_async_backend(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080")))
+    assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
+
+
+def test_datalake_service_sync_backend_list_assets_page_requires_endpoint():
+    backend = DatalakeServiceDataVaultBackend(_BareSyncConnectionManager(url=parse_url("http://localhost:8080")))
+
+    with pytest.raises(TypeError, match="assets_list_page"):
+        backend.list_assets_page()
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_list_assets_page_requires_endpoint():
+    backend = DatalakeServiceAsyncDataVaultBackend(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080")))
+
+    with pytest.raises(TypeError, match="aassets_list_page"):
+        await backend.list_assets_page()
 
 
 class _SyncServiceFacade:
