@@ -1097,9 +1097,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
-        datums = await self.list_datums()
-        if any(asset_id in getattr(datum, "asset_refs", {}).values() for datum in datums):
-            raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
+        async for datum in self.iter_datums(batch_size=100):
+            if asset_id in getattr(datum, "asset_refs", {}).values():
+                raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
         collection_items = await self.collection_item_database.find({"asset_id": asset_id})
         if collection_items:
             raise ValueError(f"Asset {asset_id} is still referenced by one or more collection items")
@@ -1847,7 +1847,7 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
         record = await self.get_annotation_record(annotation_id)
-        annotation_sets = await self.list_annotation_sets()
+        annotation_sets = await self.annotation_set_database.find({"annotation_record_ids": annotation_id})
         for annotation_set in annotation_sets:
             if annotation_id in annotation_set.annotation_record_ids:
                 annotation_set.annotation_record_ids = [

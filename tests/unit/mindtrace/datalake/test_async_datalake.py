@@ -47,6 +47,14 @@ from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 class TestAsyncDatalakeUnit:
     @staticmethod
+    def _async_iterable(items):
+        async def generator():
+            for item in items:
+                yield item
+
+        return generator()
+
+    @staticmethod
     def _patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set_id: str, *, image_asset_id: str) -> None:
         """Return a linked Datum when AsyncDatalake looks up datums by ``annotation_set_ids``."""
 
@@ -1077,7 +1085,7 @@ class TestAsyncDatalakeUnit:
         updated = await async_datalake.update_asset_metadata(asset.asset_id, {"source": "demo"})
         assert updated.metadata == {"source": "demo"}
         async_datalake.get_asset = AsyncMock(return_value=asset)
-        async_datalake.list_datums = AsyncMock(return_value=[])
+        async_datalake.datum_database.find_iter = lambda *_a, **_kw: self._async_iterable([])
         async_datalake.collection_item_database.find = AsyncMock(return_value=[])
         await async_datalake.delete_asset(asset.asset_id)
         mock_odm.delete.assert_awaited_with("db-id")
@@ -1295,14 +1303,36 @@ class TestAsyncDatalakeUnit:
         assert await async_datalake.get_annotation_record(record.annotation_id) is record
         assert await async_datalake.list_annotation_records({"label": "dent"}) == [record]
         async_datalake.get_annotation_record = AsyncMock(return_value=record)
-        async_datalake.list_annotation_sets = AsyncMock(return_value=[annotation_set_1, annotation_set_2])
         updated = await async_datalake.update_annotation_record(
             record.annotation_id, source={"type": "machine", "name": "det"}
         )
         assert updated.source.type == "machine"
+        async_datalake.annotation_set_database = MagicMock()
+        async_datalake.annotation_set_database.find = AsyncMock(return_value=[annotation_set_1, annotation_set_2])
+        async_datalake.annotation_set_database.update = AsyncMock(side_effect=lambda obj: obj)
         await async_datalake.delete_annotation_record(record.annotation_id)
         assert annotation_set_1.annotation_record_ids == []
         assert annotation_set_2.annotation_record_ids == ["other_annotation"]
+
+    @pytest.mark.asyncio
+    async def test_delete_annotation_record_still_works_when_slow_lists_are_forbidden(self, async_datalake):
+        record = AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
+        record.id = "db-rec"
+        annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        annotation_set.annotation_record_ids = [record.annotation_id]
+        async_datalake.slow_ops_policy = SlowOpsPolicy.FORBID
+        async_datalake.get_annotation_record = AsyncMock(return_value=record)
+        async_datalake.annotation_set_database = MagicMock()
+        async_datalake.annotation_set_database.find = AsyncMock(return_value=[annotation_set])
+        async_datalake.annotation_set_database.update = AsyncMock(side_effect=lambda obj: obj)
+        async_datalake.annotation_record_database = MagicMock()
+        async_datalake.annotation_record_database.delete = AsyncMock()
+
+        await async_datalake.delete_annotation_record(record.annotation_id)
+
+        assert annotation_set.annotation_record_ids == []
+        async_datalake.annotation_set_database.find.assert_awaited_once_with({"annotation_record_ids": record.annotation_id})
+        async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-rec")
 
     @pytest.mark.asyncio
     async def test_annotation_getters_and_listing(self, async_datalake, mock_odm):
@@ -1498,7 +1528,7 @@ class TestAsyncDatalakeUnit:
         asset.id = "db-asset"
         datum = Datum(asset_refs={"image": asset.asset_id})
         async_datalake.get_asset = AsyncMock(return_value=asset)
-        async_datalake.list_datums = AsyncMock(return_value=[datum])
+        async_datalake.datum_database.find_iter = lambda *_a, **_kw: self._async_iterable([datum])
 
         with pytest.raises(ValueError, match="still referenced"):
             await async_datalake.delete_asset(asset.asset_id)
@@ -1508,7 +1538,7 @@ class TestAsyncDatalakeUnit:
         asset = Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
         asset.id = "db-asset"
         async_datalake.get_asset = AsyncMock(return_value=asset)
-        async_datalake.list_datums = AsyncMock(return_value=[])
+        async_datalake.datum_database.find_iter = lambda *_a, **_kw: self._async_iterable([])
         mock_odm.find = AsyncMock(return_value=[MagicMock(id="item-row")])
 
         with pytest.raises(ValueError, match="collection items"):
@@ -1529,6 +1559,26 @@ class TestAsyncDatalakeUnit:
 
         assert mock_odm.delete.await_args_list[0].args == ("alias-row",)
         assert mock_odm.delete.await_args_list[1].args == ("db-asset",)
+
+    @pytest.mark.asyncio
+    async def test_delete_asset_still_works_when_slow_lists_are_forbidden(self, async_datalake):
+        asset = Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
+        asset.id = "db-asset"
+        async_datalake.slow_ops_policy = SlowOpsPolicy.FORBID
+        async_datalake.get_asset = AsyncMock(return_value=asset)
+        async_datalake.datum_database = MagicMock()
+        async_datalake.datum_database.find_iter = lambda *_a, **_kw: self._async_iterable([])
+        async_datalake.collection_item_database = MagicMock()
+        async_datalake.collection_item_database.find = AsyncMock(return_value=[])
+        async_datalake.asset_alias_database = MagicMock()
+        async_datalake.asset_alias_database.find = AsyncMock(return_value=[])
+        async_datalake.asset_alias_database.delete = AsyncMock()
+        async_datalake.asset_database = MagicMock()
+        async_datalake.asset_database.delete = AsyncMock()
+
+        await async_datalake.delete_asset(asset.asset_id)
+
+        async_datalake.asset_database.delete.assert_awaited_once_with("db-asset")
 
     @pytest.mark.asyncio
     async def test_get_datum_raises_when_missing(self, async_datalake, mock_odm):
