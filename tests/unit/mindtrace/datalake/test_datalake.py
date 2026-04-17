@@ -544,6 +544,23 @@ class TestDatalakeSyncFacade:
             media_type="image/png",
             storage_ref=StorageRef(mount="temp", name="asset_1.png"),
         )
+        collection = Collection(collection_id="collection_1", name="demo")
+        collection_item = CollectionItem(collection_item_id="item_1", collection_id="collection_1", asset_id="asset_1")
+        asset_retention = AssetRetention(asset_retention_id="retention_1", asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1")
+        annotation_schema = AnnotationSchema(
+            annotation_schema_id="schema_1",
+            name="demo-schema",
+            version="1.0.0",
+            task_type="classification",
+            allowed_annotation_kinds=["classification"],
+            labels=[AnnotationLabelDefinition(name="cat")],
+        )
+        annotation_set = AnnotationSet(
+            annotation_set_id="set_1",
+            name="gt",
+            purpose="ground_truth",
+            source_type="human",
+        )
         annotation_record = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -551,24 +568,74 @@ class TestDatalakeSyncFacade:
             geometry={},
         )
         datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+        dataset_version = DatasetVersion(dataset_version_id="dataset_version_1", dataset_name="demo", version="0.1.0")
 
         mock_backend.asset_database = MagicMock()
         mock_backend.asset_database.find_iter_sync = MagicMock(return_value=iter([asset]))
+        mock_backend.collection_database = MagicMock()
+        mock_backend.collection_database.find_iter_sync = MagicMock(return_value=iter([collection]))
+        mock_backend.collection_item_database = MagicMock()
+        mock_backend.collection_item_database.find_iter_sync = MagicMock(return_value=iter([collection_item]))
+        mock_backend.asset_retention_database = MagicMock()
+        mock_backend.asset_retention_database.find_iter_sync = MagicMock(return_value=iter([asset_retention]))
+        mock_backend.annotation_schema_database = MagicMock()
+        mock_backend.annotation_schema_database.find_iter_sync = MagicMock(return_value=iter([annotation_schema]))
+        mock_backend.annotation_set_database = MagicMock()
+        mock_backend.annotation_set_database.find_iter_sync = MagicMock(return_value=iter([annotation_set]))
         mock_backend.annotation_record_database = MagicMock()
         mock_backend.annotation_record_database.find_iter_sync = MagicMock(return_value=iter([annotation_record]))
         mock_backend.datum_database = MagicMock()
         mock_backend.datum_database.find_iter_sync = MagicMock(return_value=iter([datum]))
+        mock_backend.dataset_version_database = MagicMock()
+        mock_backend.dataset_version_database.find_iter_sync = MagicMock(return_value=iter([dataset_version]))
 
         datalake._submit_coro = MagicMock(side_effect=AssertionError("unexpected async bridge"))
 
         assert list(datalake.iter_assets(filters={"kind": "image"}, batch_size=10)) == [asset]
+        assert list(datalake.iter_collections(filters={"status": "active"}, batch_size=11)) == [collection]
+        assert list(datalake.iter_collection_items(filters={"collection_id": "collection_1"}, batch_size=12)) == [
+            collection_item
+        ]
+        assert list(datalake.iter_asset_retentions(filters={"asset_id": "asset_1"}, batch_size=13)) == [asset_retention]
+        assert list(datalake.iter_annotation_schemas(filters={"task_type": "classification"}, batch_size=14)) == [
+            annotation_schema
+        ]
+        assert list(datalake.iter_annotation_sets(filters={"purpose": "ground_truth"}, batch_size=15)) == [annotation_set]
         assert list(datalake.iter_annotation_records(filters={"label": "dent"}, batch_size=20)) == [annotation_record]
         assert list(datalake.iter_datums(filters={"split": "train"}, batch_size=30)) == [datum]
+        assert list(datalake.iter_dataset_versions(dataset_name="demo", filters={"version": "0.1.0"}, batch_size=31)) == [
+            dataset_version
+        ]
 
         mock_backend.asset_database.find_iter_sync.assert_called_once_with(
             {"kind": "image"},
             sort=[("created_at", -1), ("asset_id", -1)],
             batch_size=10,
+        )
+        mock_backend.collection_database.find_iter_sync.assert_called_once_with(
+            {"status": "active"},
+            sort=[("created_at", -1), ("collection_id", -1)],
+            batch_size=11,
+        )
+        mock_backend.collection_item_database.find_iter_sync.assert_called_once_with(
+            {"collection_id": "collection_1"},
+            sort=[("added_at", -1), ("collection_item_id", -1)],
+            batch_size=12,
+        )
+        mock_backend.asset_retention_database.find_iter_sync.assert_called_once_with(
+            {"asset_id": "asset_1"},
+            sort=[("created_at", -1), ("asset_retention_id", -1)],
+            batch_size=13,
+        )
+        mock_backend.annotation_schema_database.find_iter_sync.assert_called_once_with(
+            {"task_type": "classification"},
+            sort=[("created_at", -1), ("annotation_schema_id", -1)],
+            batch_size=14,
+        )
+        mock_backend.annotation_set_database.find_iter_sync.assert_called_once_with(
+            {"purpose": "ground_truth"},
+            sort=[("created_at", -1), ("annotation_set_id", -1)],
+            batch_size=15,
         )
         mock_backend.annotation_record_database.find_iter_sync.assert_called_once_with(
             {"label": "dent"},
@@ -579,6 +646,11 @@ class TestDatalakeSyncFacade:
             {"split": "train"},
             sort=[("created_at", -1), ("datum_id", -1)],
             batch_size=30,
+        )
+        mock_backend.dataset_version_database.find_iter_sync.assert_called_once_with(
+            {"version": "0.1.0", "dataset_name": "demo"},
+            sort=[("created_at", -1), ("dataset_version_id", -1)],
+            batch_size=31,
         )
 
     def test_close_handles_cleanup_exceptions_and_context_manager(self, datalake):
