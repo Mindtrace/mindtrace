@@ -22,19 +22,40 @@ from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
+    AnnotationRecordOutput,
+    AnnotationSetListOutput,
+    AnnotationSetOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetPageOutput,
+    CollectionItemListOutput,
+    CollectionItemOutput,
+    CollectionListOutput,
+    CollectionOutput,
+    CreateAnnotationSetInput,
     CreateAssetFromObjectInput,
+    CreateCollectionInput,
+    CreateCollectionItemInput,
+    DeleteByIdInput,
     GetAssetByAliasInput,
     GetByIdInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     ObjectDataOutput,
     PageInput,
+    UpdateCollectionItemInput,
 )
-from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef, SubjectRef
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSet,
+    Asset,
+    AssetAlias,
+    Collection,
+    CollectionItem,
+    StorageRef,
+    SubjectRef,
+)
 from mindtrace.services.core.connection_manager import ConnectionManager
 
 
@@ -329,7 +350,10 @@ def test_datalake_service_sync_backend_create_and_add_alias():
     cm.aliases_add = Mock(return_value=AssetAliasOutput(asset_alias=row))
 
     backend = DatalakeServiceDataVaultBackend(cm)
-    assert backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream") is asset
+    assert (
+        backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream")
+        is asset
+    )
     assert backend.add_alias("id1", "f") is row
 
 
@@ -349,12 +373,16 @@ class _BareAsyncConnectionManager(ConnectionManager):
 
 
 def test_looks_like_datalake_service_sync_client_accepts_connection_manager_without_endpoint_probe():
-    assert looks_like_datalake_service_sync_client(_BareSyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+    assert (
+        looks_like_datalake_service_sync_client(_BareSyncConnectionManager(url=parse_url("http://localhost:8080")))
+        is True
+    )
 
 
 def test_looks_like_datalake_service_async_client_accepts_connection_manager_without_endpoint_probe():
     assert (
-        looks_like_datalake_service_async_client(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+        looks_like_datalake_service_async_client(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080")))
+        is True
     )
 
 
@@ -526,7 +554,9 @@ async def test_local_async_backend_delegates_annotation_methods():
 
     backend = LocalAsyncDataVaultBackend(dl)
     assert await backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1") == [rec]
-    dl.add_annotation_records.assert_awaited_once_with([{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None)
+    dl.add_annotation_records.assert_awaited_once_with(
+        [{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None
+    )
     assert await backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_awaited_once_with("a1")
 
@@ -635,7 +665,9 @@ def test_local_sync_backend_delegates_annotation_methods():
 
     backend = LocalDataVaultBackend(dl)
     assert backend.add_annotation_records([{"kind": "bbox"}], annotation_schema_id="sch") == [rec]
-    dl.add_annotation_records.assert_called_once_with([{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch")
+    dl.add_annotation_records.assert_called_once_with(
+        [{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch"
+    )
     assert backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_called_once_with("a1")
 
@@ -693,3 +725,197 @@ def test_datalake_service_sync_backend_add_and_list_annotation_records():
     linp = cm.annotation_records_list_for_asset.call_args.args[0]
     assert isinstance(linp, ListAnnotationRecordsForAssetInput)
     assert linp.asset_id == "a1"
+
+
+@pytest.mark.asyncio
+async def test_local_async_backend_delegates_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = AsyncMock()
+    dl.list_collections = AsyncMock(return_value=[collection])
+    dl.create_collection = AsyncMock(return_value=collection)
+    dl.list_collection_items = AsyncMock(return_value=[item])
+    dl.create_collection_item = AsyncMock(return_value=item)
+    dl.update_collection_item = AsyncMock(return_value=item)
+    dl.list_annotation_sets = AsyncMock(return_value=[annotation_set])
+    dl.create_annotation_set = AsyncMock(return_value=annotation_set)
+    dl.get_annotation_record = AsyncMock(return_value=record)
+    dl.list_annotation_records = AsyncMock(return_value=[record])
+    dl.delete_annotation_record = AsyncMock(return_value=None)
+
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.list_collections() == [collection]
+    assert await backend.create_collection(name="training") == collection
+    assert await backend.list_collection_items() == [item]
+    assert await backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert await backend.update_collection_item("ci_1", status="active") == item
+    assert await backend.list_annotation_sets() == [annotation_set]
+    assert (
+        await backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human")
+        == annotation_set
+    )
+    assert await backend.get_annotation_record("annotation_1") == record
+    assert await backend.list_annotation_records() == [record]
+    await backend.delete_annotation_record("annotation_1")
+    dl.delete_annotation_record.assert_awaited_once_with("annotation_1")
+
+
+def test_local_sync_backend_delegates_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = Mock()
+    dl.list_collections = Mock(return_value=[collection])
+    dl.create_collection = Mock(return_value=collection)
+    dl.list_collection_items = Mock(return_value=[item])
+    dl.create_collection_item = Mock(return_value=item)
+    dl.update_collection_item = Mock(return_value=item)
+    dl.list_annotation_sets = Mock(return_value=[annotation_set])
+    dl.create_annotation_set = Mock(return_value=annotation_set)
+    dl.get_annotation_record = Mock(return_value=record)
+    dl.list_annotation_records = Mock(return_value=[record])
+    dl.delete_annotation_record = Mock(return_value=None)
+
+    backend = LocalDataVaultBackend(dl)
+    assert backend.list_collections() == [collection]
+    assert backend.create_collection(name="training") == collection
+    assert backend.list_collection_items() == [item]
+    assert backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert backend.update_collection_item("ci_1", status="active") == item
+    assert backend.list_annotation_sets() == [annotation_set]
+    assert (
+        backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human") == annotation_set
+    )
+    assert backend.get_annotation_record("annotation_1") == record
+    assert backend.list_annotation_records() == [record]
+    backend.delete_annotation_record("annotation_1")
+    dl.delete_annotation_record.assert_called_once_with("annotation_1")
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.acollections_list = AsyncMock(return_value=CollectionListOutput(collections=[collection]))
+    cm.acollections_create = AsyncMock(return_value=CollectionOutput(collection=collection))
+    cm.acollection_items_list = AsyncMock(return_value=CollectionItemListOutput(collection_items=[item]))
+    cm.acollection_items_create = AsyncMock(return_value=CollectionItemOutput(collection_item=item))
+    cm.acollection_items_update = AsyncMock(return_value=CollectionItemOutput(collection_item=item))
+    cm.aannotation_sets_list = AsyncMock(return_value=AnnotationSetListOutput(annotation_sets=[annotation_set]))
+    cm.aannotation_sets_create = AsyncMock(return_value=AnnotationSetOutput(annotation_set=annotation_set))
+    cm.aannotation_records_get = AsyncMock(return_value=AnnotationRecordOutput(annotation_record=record))
+    cm.aannotation_records_list = AsyncMock(return_value=AnnotationRecordListOutput(annotation_records=[record]))
+    cm.aannotation_records_delete = AsyncMock(return_value=None)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.list_collections() == [collection]
+    assert await backend.create_collection(name="training") == collection
+    assert await backend.list_collection_items() == [item]
+    assert await backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert await backend.update_collection_item("ci_1", status="active") == item
+    assert await backend.list_annotation_sets() == [annotation_set]
+    assert (
+        await backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human")
+        == annotation_set
+    )
+    assert await backend.get_annotation_record("annotation_1") == record
+    assert await backend.list_annotation_records() == [record]
+    await backend.delete_annotation_record("annotation_1")
+
+    assert isinstance(cm.acollections_create.await_args.args[0], CreateCollectionInput)
+    assert isinstance(cm.acollection_items_create.await_args.args[0], CreateCollectionItemInput)
+    assert isinstance(cm.acollection_items_update.await_args.args[0], UpdateCollectionItemInput)
+    assert isinstance(cm.aannotation_sets_create.await_args.args[0], CreateAnnotationSetInput)
+    assert isinstance(cm.aannotation_records_delete.await_args.args[0], DeleteByIdInput)
+
+
+def test_datalake_service_sync_backend_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.collections_list = Mock(return_value=CollectionListOutput(collections=[collection]))
+    cm.collections_create = Mock(return_value=CollectionOutput(collection=collection))
+    cm.collection_items_list = Mock(return_value=CollectionItemListOutput(collection_items=[item]))
+    cm.collection_items_create = Mock(return_value=CollectionItemOutput(collection_item=item))
+    cm.collection_items_update = Mock(return_value=CollectionItemOutput(collection_item=item))
+    cm.annotation_sets_list = Mock(return_value=AnnotationSetListOutput(annotation_sets=[annotation_set]))
+    cm.annotation_sets_create = Mock(return_value=AnnotationSetOutput(annotation_set=annotation_set))
+    cm.annotation_records_get = Mock(return_value=AnnotationRecordOutput(annotation_record=record))
+    cm.annotation_records_list = Mock(return_value=AnnotationRecordListOutput(annotation_records=[record]))
+    cm.annotation_records_delete = Mock(return_value=None)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.list_collections() == [collection]
+    assert backend.create_collection(name="training") == collection
+    assert backend.list_collection_items() == [item]
+    assert backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert backend.update_collection_item("ci_1", status="active") == item
+    assert backend.list_annotation_sets() == [annotation_set]
+    assert (
+        backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human") == annotation_set
+    )
+    assert backend.get_annotation_record("annotation_1") == record
+    assert backend.list_annotation_records() == [record]
+    backend.delete_annotation_record("annotation_1")
+
+    assert isinstance(cm.collections_create.call_args.args[0], CreateCollectionInput)
+    assert isinstance(cm.collection_items_create.call_args.args[0], CreateCollectionItemInput)
+    assert isinstance(cm.collection_items_update.call_args.args[0], UpdateCollectionItemInput)
+    assert isinstance(cm.annotation_sets_create.call_args.args[0], CreateAnnotationSetInput)
+    assert isinstance(cm.annotation_records_delete.call_args.args[0], DeleteByIdInput)
