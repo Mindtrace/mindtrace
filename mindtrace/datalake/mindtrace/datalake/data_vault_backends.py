@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import base64
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from unittest.mock import Mock as _UnitTestMock
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.datalake import Datalake
+from mindtrace.datalake.pagination_types import CursorPage
 from mindtrace.datalake.service_types import (
     AddAliasInput,
     AddAnnotationRecordsInput,
@@ -24,6 +26,7 @@ from mindtrace.datalake.service_types import (
     GetObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
+    PageInput,
 )
 from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -37,6 +40,7 @@ _SYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
     "assets_get",
     "assets_get_by_alias",
     "assets_list",
+    "assets_list_page",
     "objects_get",
     "assets_create_from_object",
     "aliases_add",
@@ -45,6 +49,7 @@ _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
     "aassets_get",
     "aassets_get_by_alias",
     "aassets_list",
+    "aassets_list_page",
     "aobjects_get",
     "aassets_create_from_object",
     "aaliases_add",
@@ -85,6 +90,26 @@ class AsyncDataVaultBackend(ABC):
 
     @abstractmethod
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]: ...
+
+    @abstractmethod
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]: ...
 
     @abstractmethod
     async def get_asset(self, asset_id: str) -> Asset: ...
@@ -135,6 +160,26 @@ class DataVaultBackend(ABC):
 
     @abstractmethod
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]: ...
+
+    @abstractmethod
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]: ...
 
     @abstractmethod
     def get_asset(self, asset_id: str) -> Asset: ...
@@ -188,6 +233,33 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return await self._datalake.list_assets(filters)
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._datalake.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        async for asset in self._datalake.iter_assets(filters=filters, sort=sort, batch_size=batch_size):
+            yield asset
 
     async def get_asset(self, asset_id: str) -> Asset:
         return await self._datalake.get_asset(asset_id)
@@ -259,6 +331,32 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return self._datalake.list_assets(filters)
+
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return self._datalake.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        yield from self._datalake.iter_assets(filters=filters, sort=sort, batch_size=batch_size)
 
     def get_asset(self, asset_id: str) -> Asset:
         return self._datalake.get_asset(asset_id)
@@ -351,6 +449,48 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = await self._call("aassets_list", input_obj=ListInput(filters=filters))
         return out.assets
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._call(
+            "aassets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        cursor: str | None = None
+        page_limit = batch_size or 100
+        while True:
+            page = await self.list_assets_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            for asset in page.items:
+                yield asset
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     async def get_asset(self, asset_id: str) -> Asset:
         out = await self._call("aassets_get", input_obj=GetByIdInput(id=asset_id))
@@ -455,6 +595,47 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = self._call("assets_list", input_obj=ListInput(filters=filters))
         return out.assets
+
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return self._call(
+            "assets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        cursor: str | None = None
+        page_limit = batch_size or 100
+        while True:
+            page = self.list_assets_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            yield from page.items
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     def get_asset(self, asset_id: str) -> Asset:
         out = self._call("assets_get", input_obj=GetByIdInput(id=asset_id))

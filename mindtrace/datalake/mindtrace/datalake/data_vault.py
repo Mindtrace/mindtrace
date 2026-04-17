@@ -48,7 +48,7 @@ passing the connection manager to :class:`DataVault` — see :meth:`DataVault.fr
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -71,6 +71,7 @@ from mindtrace.datalake.data_vault_backends import (
     looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.datalake import Datalake
+from mindtrace.datalake.pagination_types import CursorPage
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.types import AnnotationRecord, Asset, DuplicateAliasError, SubjectRef
 from mindtrace.datalake.vault_serialization import (
@@ -228,12 +229,68 @@ class AsyncDataVault:
         return f"{self._object_name_prefix}/{safe}"
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
-        """List assets visible to the backing store (Mongo filters; pass ``kind`` to narrow)."""
+        """List assets eagerly; prefer :meth:`iter_assets` or :meth:`list_assets_page` for scalable discovery."""
         return await self._backend.list_assets(filters)
 
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        """Return one cursor-based page of assets visible to the backing store."""
+        return await self._backend.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        """Stream assets lazily from the backing store."""
+        async for asset in self._backend.iter_assets(filters=filters, sort=sort, batch_size=batch_size):
+            yield asset
+
     async def list_image_assets(self) -> list[Asset]:
-        """Return assets with image kind (convenience over :meth:`list_assets`)."""
+        """List image assets eagerly; prefer :meth:`iter_image_assets` or :meth:`list_image_assets_page`."""
         return await self._backend.list_assets({"kind": "image"})
+
+    async def list_image_assets_page(
+        self,
+        *,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        """Return one cursor-based page of image assets."""
+        return await self.list_assets_page(
+            filters={"kind": "image"},
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def iter_image_assets(
+        self,
+        *,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        """Stream image assets lazily from the backing store."""
+        async for asset in self.iter_assets(filters={"kind": "image"}, sort=sort, batch_size=batch_size):
+            yield asset
 
     async def get_asset(self, asset_id: str) -> Asset:
         """Load :class:`~mindtrace.datalake.types.Asset` metadata by canonical ``asset_id``."""
@@ -484,12 +541,66 @@ class DataVault:
         return f"{self._object_name_prefix}/{safe}"
 
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
-        """List assets visible to the backing store (Mongo filters; pass ``kind`` to narrow)."""
+        """List assets eagerly; prefer :meth:`iter_assets` or :meth:`list_assets_page` for scalable discovery."""
         return self._backend.list_assets(filters)
 
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        """Return one cursor-based page of assets visible to the backing store."""
+        return self._backend.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        """Stream assets lazily from the backing store."""
+        yield from self._backend.iter_assets(filters=filters, sort=sort, batch_size=batch_size)
+
     def list_image_assets(self) -> list[Asset]:
-        """Return assets with image kind (convenience over :meth:`list_assets`)."""
+        """List image assets eagerly; prefer :meth:`iter_image_assets` or :meth:`list_image_assets_page`."""
         return self._backend.list_assets({"kind": "image"})
+
+    def list_image_assets_page(
+        self,
+        *,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        """Return one cursor-based page of image assets."""
+        return self.list_assets_page(
+            filters={"kind": "image"},
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def iter_image_assets(
+        self,
+        *,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        """Stream image assets lazily from the backing store."""
+        yield from self.iter_assets(filters={"kind": "image"}, sort=sort, batch_size=batch_size)
 
     def get_asset(self, asset_id: str) -> Asset:
         """Load :class:`~mindtrace.datalake.types.Asset` metadata by canonical ``asset_id``."""
