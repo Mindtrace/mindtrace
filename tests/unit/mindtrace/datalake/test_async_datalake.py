@@ -1214,7 +1214,7 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_list_annotation_records_for_asset_delegates_to_list(self, async_datalake):
+    async def test_list_annotation_records_for_asset_queries_database_directly(self, async_datalake):
         record = AnnotationRecord(
             kind="bbox",
             label="dent",
@@ -1222,12 +1222,26 @@ class TestAsyncDatalakeUnit:
             source={"type": "human", "name": "review-ui"},
             geometry={},
         )
-        async_datalake.list_annotation_records = AsyncMock(return_value=[record])
+        async_datalake.annotation_record_database.find = AsyncMock(return_value=[record])
         result = await async_datalake.list_annotation_records_for_asset("asset_123")
         assert result == [record]
-        async_datalake.list_annotation_records.assert_awaited_once_with(
-            filters={"subject.kind": "asset", "subject.id": "asset_123"},
+        async_datalake.annotation_record_database.find.assert_awaited_once_with(
+            {"subject.kind": "asset", "subject.id": "asset_123"},
         )
+
+    @pytest.mark.asyncio
+    async def test_list_annotation_records_for_asset_warns_once_with_asset_specific_guidance(self, async_datalake):
+        async_datalake.slow_ops_policy = SlowOpsPolicy.WARN
+        async_datalake.annotation_record_database.find = AsyncMock(return_value=[])
+
+        with pytest.warns(
+            SlowOperationWarning,
+            match="list_annotation_records_for_asset\\(\\).*list_annotation_records_for_asset_page\\(\\)",
+        ) as warnings:
+            result = await async_datalake.list_annotation_records_for_asset("asset_123")
+
+        assert result == []
+        assert len(warnings) == 1
 
     @pytest.mark.asyncio
     async def test_add_annotation_records_set_less_rejects_non_asset_subject_kind(self, async_datalake):
