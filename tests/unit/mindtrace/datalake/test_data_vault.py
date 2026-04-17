@@ -9,11 +9,20 @@ from PIL import Image
 from mindtrace.datalake.data_vault import (
     AsyncDataVault,
     DataVault,
+    VaultDataset,
     _annotations_bound_to_asset,
     _pil_image_to_png_bytes,
 )
 from mindtrace.datalake.pagination_types import CursorPage, PageInfo
-from mindtrace.datalake.types import AnnotationRecord, Asset, StorageRef, SubjectRef
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSet,
+    Asset,
+    Collection,
+    CollectionItem,
+    StorageRef,
+    SubjectRef,
+)
 from mindtrace.datalake.vault_serialization import (
     SERIALIZATION_METADATA_KEY,
     direct_bytes_serialization_block,
@@ -468,3 +477,198 @@ def test_sync_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Path):
     backend.get_object = Mock(return_value=b"sync-payload")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("by-id") == b"sync-payload"
+
+
+def test_sync_data_vault_create_and_list_datasets():
+    collection = Collection(name="training", collection_id="collection_1")
+    backend = Mock()
+    backend.list_collections = Mock(side_effect=[[], [collection], [collection]])
+    backend.create_collection = Mock(return_value=collection)
+    backend.list_collection_items = Mock(return_value=[])
+    backend.iter_collections = Mock(return_value=iter([collection]))
+    page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1))
+    backend.list_collections_page = Mock(return_value=page)
+
+    vault = DataVault(backend)
+    created = vault.create_dataset("training", description="demo")
+    assert created == VaultDataset(
+        dataset_id="collection_1",
+        name="training",
+        description=None,
+        status="active",
+        metadata={},
+        asset_count=0,
+        created_at=collection.created_at,
+        created_by=None,
+        updated_at=collection.updated_at,
+    )
+    backend.create_collection.assert_called_once_with(
+        name="training",
+        description="demo",
+        status="active",
+        metadata=None,
+        created_by=None,
+    )
+
+    assert vault.list_datasets() == [created]
+    dataset_page = vault.list_datasets_page(limit=1, include_total=True)
+    assert dataset_page.items == [created]
+    backend.list_collections_page.assert_called_once_with(
+        filters={"status": "active"},
+        sort="updated_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    assert list(vault.iter_datasets()) == [created]
+
+
+def test_sync_data_vault_add_annotation_brings_asset_into_dataset():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.get_asset = Mock(return_value=asset)
+    backend.list_collection_items = Mock(return_value=[])
+    backend.create_collection_item = Mock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    )
+    backend.list_annotation_sets = Mock(return_value=[])
+    backend.create_annotation_set = Mock(return_value=annotation_set)
+    backend.add_annotation_records = Mock(return_value=[record])
+
+    vault = DataVault(backend)
+    out = vault.add_annotation(
+        "training",
+        {"kind": "bbox", "label": "cat", "source": {"type": "human", "name": "review"}, "geometry": {}},
+        asset="asset_1",
+    )
+
+    assert out == record
+    backend.create_collection_item.assert_called_once_with(
+        collection_id="collection_1",
+        asset_id="asset_1",
+        split=None,
+        status="active",
+        metadata=None,
+        added_by=None,
+    )
+    create_set_kwargs = backend.create_annotation_set.call_args.kwargs
+    assert create_set_kwargs["name"] == "training:asset_1"
+    assert create_set_kwargs["metadata"]["mindtrace"]["data_vault"]["dataset_collection_id"] == "collection_1"
+    add_args, add_kwargs = backend.add_annotation_records.call_args
+    assert add_kwargs["annotation_set_id"] == "annotation_set_1"
+    assert add_args[0][0]["subject"] == {"kind": "asset", "id": "asset_1"}
+
+
+def test_sync_data_vault_list_assets_and_annotations_and_remove_membership():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.list_collection_items = Mock(side_effect=[[item, item], [item]])
+    backend.get_asset = Mock(return_value=asset)
+    backend.list_annotation_sets = Mock(return_value=[annotation_set, annotation_set])
+    backend.get_annotation_record = Mock(return_value=record)
+    backend.delete_annotation_record = Mock()
+    backend.delete_collection_item = Mock()
+
+    vault = DataVault(backend)
+    assert vault.list_dataset_assets("training") == [asset]
+    assert vault.list_dataset_annotations("training") == [record, record]
+
+    vault.remove_annotation("training", "annotation_1")
+    backend.delete_annotation_record.assert_called_once_with("annotation_1")
+
+    vault.remove_asset("training", "asset_1")
+    backend.delete_collection_item.assert_called_once_with("ci_1")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_add_annotation_brings_asset_into_dataset():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    backend = Mock()
+    backend.list_collections = AsyncMock(return_value=[collection])
+    backend.get_asset = AsyncMock(return_value=asset)
+    backend.list_collection_items = AsyncMock(return_value=[])
+    backend.create_collection_item = AsyncMock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    )
+    backend.list_annotation_sets = AsyncMock(return_value=[])
+    backend.create_annotation_set = AsyncMock(return_value=annotation_set)
+    backend.add_annotation_records = AsyncMock(return_value=[record])
+
+    vault = AsyncDataVault(backend)
+    out = await vault.add_annotation(
+        "training",
+        {"kind": "bbox", "label": "cat", "source": {"type": "human", "name": "review"}, "geometry": {}},
+        asset="asset_1",
+    )
+
+    assert out == record
+    backend.create_collection_item.assert_awaited_once()
+    backend.create_annotation_set.assert_awaited_once()
+    backend.add_annotation_records.assert_awaited_once()
