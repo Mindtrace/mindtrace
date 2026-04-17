@@ -21,6 +21,7 @@ class TestCoreSettings:
         assert "MINDTRACE_TESTING_API_KEYS" in model_fields
         assert "MINDTRACE_DIR_PATHS" in model_fields
         assert "MINDTRACE_DEFAULT_HOST_URLS" in model_fields
+        assert "MINDTRACE_DATALAKE" in model_fields
         assert "MINDTRACE_MINIO" in model_fields
         assert "MINDTRACE_CLUSTER" in model_fields
         assert "MINDTRACE_MCP" in model_fields
@@ -208,6 +209,10 @@ USE_STRUCTLOG = True
 SERVICE = http://localhost:8000
 CLUSTER_MANAGER = http://localhost:8001
 
+[MINDTRACE_DATALAKE]
+DEFAULT_PAGE_LIMIT = 100
+MAX_PAGE_LIMIT = 500
+
 [MINDTRACE_MINIO]
 MINIO_REGISTRY_URI = http://localhost:9000
 MINIO_ENDPOINT = localhost:9000
@@ -266,11 +271,13 @@ value = ini_value
                     {
                         "MINDTRACE_TEST_PARAM": "env_value",
                         "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key_from_env",
+                        "MINDTRACE_DATALAKE__DEFAULT_PAGE_LIMIT": "250",
                     },
                 ):
                     settings = CoreSettings()
                     # Environment should override INI
                     assert settings.MINDTRACE_TEST_PARAM == "env_value"
+                    assert settings.MINDTRACE_DATALAKE.DEFAULT_PAGE_LIMIT == 250
         finally:
             os.unlink(temp_ini_path)
 
