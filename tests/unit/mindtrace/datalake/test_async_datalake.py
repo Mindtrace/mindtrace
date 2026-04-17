@@ -345,11 +345,35 @@ class TestAsyncDatalakeUnit:
         assert async_datalake._get_value_by_path({"a": {}}, "a.b") is None
         assert async_datalake._merge_query({}, {"x": 1}) == {"x": 1}
         assert async_datalake._merge_query({"x": 1}, {}) == {"x": 1}
+        snapshot_token = async_datalake._encode_snapshot_token(
+            resource="assets",
+            field="created_at",
+            cutoff=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        assert async_datalake._decode_snapshot_token(snapshot_token, expected_resource="assets") == (
+            "created_at",
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        assert async_datalake._build_snapshot_query(resource="assets", snapshot_token=snapshot_token) == {
+            "created_at": {"$lte": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+        }
+        assert async_datalake._snapshot_field_for("missing") is None
 
         with pytest.raises(ValueError, match="Unsupported pagination resource"):
             async_datalake._sort_specs_for("missing")
         with pytest.raises(ValueError, match="Unsupported sort"):
             async_datalake._resolve_sort_spec("assets", "missing")
+        with pytest.raises(ValueError, match="Invalid snapshot token"):
+            async_datalake._decode_snapshot_token("not-json", expected_resource="assets")
+        with pytest.raises(ValueError, match="Snapshot token resource mismatch"):
+            async_datalake._decode_snapshot_token(
+                async_datalake._encode_snapshot_token(
+                    resource="collections",
+                    field="created_at",
+                    cutoff=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                ),
+                expected_resource="assets",
+            )
 
     @pytest.mark.parametrize(
         ("filter_item", "item", "expected"),
@@ -434,14 +458,29 @@ class TestAsyncDatalakeUnit:
             storage_ref=StorageRef(mount="temp", name="asset-2.png"),
             created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
-        mock_odm.find_window = AsyncMock(side_effect=[[asset_1, asset_2], [asset_2]])
+        cutoff = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+        async def find_window_side_effect(query, *, sort=None, limit=None):
+            assert sort == [("created_at", -1), ("asset_id", -1)]
+            assert limit == 2
+            snapshot_query = {"created_at": {"$lte": cutoff}}
+            if "$and" in query.get("$and", [{}])[0]:
+                assert snapshot_query == query["$and"][1]
+                assert query["$and"][0]["$and"][0] == {"kind": "image"}
+                assert "$or" in query["$and"][0]["$and"][1]
+                return [asset_2]
+            assert snapshot_query in query["$and"]
+            return [asset_1, asset_2]
+
+        mock_odm.find_window = AsyncMock(side_effect=find_window_side_effect)
         mock_odm.count_documents = AsyncMock(return_value=2)
 
-        first_page = await async_datalake.list_assets_page(
-            filters={"kind": "image"},
-            limit=1,
-            include_total=True,
-        )
+        with patch.object(async_datalake, "_utc_now", return_value=cutoff):
+            first_page = await async_datalake.list_assets_page(
+                filters={"kind": "image"},
+                limit=1,
+                include_total=True,
+            )
 
         assert [asset.asset_id for asset in first_page.items] == ["asset_1"]
         assert first_page.page.has_more is True
@@ -456,6 +495,7 @@ class TestAsyncDatalakeUnit:
         )
         assert decoded.last_key["asset_id"] == "asset_1"
         assert decoded.last_key["created_at"] == asset_1.created_at
+        assert decoded.snapshot_token is not None
 
         second_page = await async_datalake.list_assets_page(
             filters={"kind": "image"},
@@ -466,8 +506,44 @@ class TestAsyncDatalakeUnit:
         assert [asset.asset_id for asset in second_page.items] == ["asset_2"]
         assert second_page.page.has_more is False
         second_query = mock_odm.find_window.await_args_list[1].args[0]
-        assert second_query["$and"][0] == {"kind": "image"}
-        assert "$or" in second_query["$and"][1]
+        assert second_query["$and"][0]["$and"][0] == {"kind": "image"}
+        assert "$or" in second_query["$and"][0]["$and"][1]
+        count_query = mock_odm.count_documents.await_args.args[0]
+        assert {"created_at": {"$lte": cutoff}} in count_query["$and"]
+
+    @pytest.mark.asyncio
+    async def test_list_assets_page_rejects_invalid_snapshot_token(self, async_datalake, mock_odm):
+        asset_1 = Asset(
+            asset_id="asset_1",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-1.png"),
+            created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        )
+        asset_2 = Asset(
+            asset_id="asset_2",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-2.png"),
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        mock_odm.find_window = AsyncMock(return_value=[asset_1, asset_2])
+
+        page = await async_datalake.list_assets_page(filters={"kind": "image"}, limit=1)
+        envelope = async_datalake._decode_cursor(
+            page.page.next_cursor,
+            expected_resource="assets",
+            expected_sort="created_desc",
+            expected_filters={"kind": "image"},
+        )
+        bad_cursor = async_datalake._encode_cursor(envelope.model_copy(update={"snapshot_token": "not-json"}))
+
+        with pytest.raises(ValueError, match="Invalid snapshot token"):
+            await async_datalake.list_assets_page(
+                filters={"kind": "image"},
+                limit=1,
+                cursor=bad_cursor,
+            )
 
     @pytest.mark.asyncio
     async def test_iter_assets_uses_lazy_database_iterator(self, async_datalake, mock_odm):
