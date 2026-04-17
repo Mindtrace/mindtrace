@@ -11,8 +11,6 @@ from mindtrace.database import MindtraceDocument, MongoMindtraceODM
 
 from .test_redis_odm import UserDoc as RedisUserDoc
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # MongoDB connection settings
@@ -29,12 +27,13 @@ _test_clients = []
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture(scope="function")
-def event_loop():
-    """Create an instance of the default event loop for each test function."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(autouse=True)
+def _reset_mongo_beanie_registry():
+    """Each test drops/recreates MongoDB; clear the per-model init guard so indexes run again."""
+    from mindtrace.database.backends import mongo_odm
+
+    mongo_odm._BEANIE_INITIALIZED_MODEL_CLASSES.clear()
+    yield
 
 
 @pytest.fixture(scope="function")
@@ -155,29 +154,3 @@ def pytest_sessionfinish(session, exitstatus):
 
     # Give background threads more time to finish
     time.sleep(0.3)
-
-
-@pytest.fixture(autouse=True, scope="session")
-def suppress_pymongo_logs():
-    """Suppress PyMongo debug logging that can cause issues during cleanup."""
-    # Suppress all PyMongo related loggers
-    loggers_to_suppress = [
-        "pymongo",
-        "pymongo.topology",
-        "pymongo.connection",
-        "pymongo.monitor",
-        "pymongo.periodic_executor",
-    ]
-
-    original_levels = {}
-    for logger_name in loggers_to_suppress:
-        logger = logging.getLogger(logger_name)
-        original_levels[logger_name] = logger.level
-        logger.setLevel(logging.CRITICAL)
-
-    yield
-
-    # Restore original levels
-    for logger_name, original_level in original_levels.items():
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(original_level)

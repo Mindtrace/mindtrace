@@ -1,0 +1,25 @@
+[run]
+source =
+    mindtrace/agents/mindtrace
+    mindtrace/apps/mindtrace
+    mindtrace/automation/mindtrace
+    mindtrace/cluster/mindtrace
+    mindtrace/core/mindtrace
+    mindtrace/database/mindtrace
+    mindtrace/datalake/mindtrace
+    mindtrace/hardware/mindtrace
+    mindtrace/jobs/mindtrace
+    mindtrace/models/mindtrace
+    mindtrace/registry/mindtrace
+    mindtrace/services/mindtrace
+    mindtrace/storage/mindtrace
+    mindtrace/ui/mindtrace
+parallel = true
+sigterm = true
+patch =
+    _exit
+    fork
+    subprocess
+
+[report]
+show_missing = true

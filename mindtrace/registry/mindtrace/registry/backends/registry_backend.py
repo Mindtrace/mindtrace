@@ -1,9 +1,9 @@
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
-from mindtrace.registry.core.types import OnConflict, OpResults
+from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
 
 # Type aliases for cleaner signatures
 NameArg = Union[str, List[str]]
@@ -122,6 +122,39 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             - OpResult.overwritten() when on_conflict="overwrite" and version existed
             - OpResult.failed() on failure
         """
+        pass
+
+    @abstractmethod
+    def create_direct_upload_target(
+        self,
+        upload_id: str,
+        *,
+        content_type: str = "application/octet-stream",
+        expiration_minutes: int = 60,
+    ) -> dict[str, Any]:
+        """Create a backend-native direct-upload target for a bytes artifact."""
+        pass
+
+    @abstractmethod
+    def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
+        """Inspect a staged direct-upload target and report whether it exists."""
+        pass
+
+    @abstractmethod
+    def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
+        """Delete any staged artifact associated with a direct-upload target."""
+        pass
+
+    @abstractmethod
+    def commit_direct_upload(
+        self,
+        name: str,
+        version: str,
+        staged_target: dict[str, Any],
+        metadata: dict[str, Any],
+        on_conflict: str = OnConflict.SKIP,
+    ) -> OpResult:
+        """Commit a previously uploaded bytes artifact into canonical registry storage."""
         pass
 
     @abstractmethod
@@ -390,8 +423,6 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         for n in names:
             if not n or not n.strip():
                 raise ValueError("Object names cannot be empty.")
-            elif "_" in n:
-                raise ValueError(f"Object name '{n}' cannot contain underscores. Use colons (':') for namespacing.")
             elif "@" in n:
                 raise ValueError(f"Object name '{n}' cannot contain '@'.")
 
