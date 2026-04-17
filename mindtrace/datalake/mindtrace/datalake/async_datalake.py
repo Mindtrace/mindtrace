@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import warnings
 from collections.abc import AsyncIterator, Iterable
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -60,6 +62,22 @@ class AnnotationSchemaInUseError(ValueError):
     """Raised when attempting to delete an annotation schema still referenced by a set."""
 
 
+class SlowOpsPolicy(StrEnum):
+    """How eager collection-list operations should behave."""
+
+    ALLOW = "allow"
+    WARN = "warn"
+    FORBID = "forbid"
+
+
+class SlowOperationWarning(UserWarning):
+    """Raised when callers use an eager collection operation that may not scale."""
+
+
+class SlowOperationDisabledError(RuntimeError):
+    """Raised when eager collection operations are disabled by policy."""
+
+
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     digest = hashlib.sha1(f"{mongo_db_uri}|{mongo_db_name}".encode()).hexdigest()[:12]
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
@@ -85,10 +103,12 @@ class AsyncDatalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
     ) -> None:
         super().__init__()
         self.mongo_db_uri = mongo_db_uri
         self.mongo_db_name = mongo_db_name
+        self.slow_ops_policy = SlowOpsPolicy(slow_ops_policy)
 
         if store is not None and mounts is not None:
             raise ValueError("Provide either store or mounts, not both")
@@ -179,6 +199,7 @@ class AsyncDatalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
     ) -> "AsyncDatalake":
         datalake = cls(
             mongo_db_uri=mongo_db_uri,
@@ -186,6 +207,7 @@ class AsyncDatalake(Mindtrace):
             store=store,
             mounts=mounts,
             default_mount=default_mount,
+            slow_ops_policy=slow_ops_policy,
         )
         await datalake.initialize()
         return datalake
@@ -480,6 +502,19 @@ class AsyncDatalake(Mindtrace):
                 if bool(expected) != exists:
                     return False
         return True
+
+    def _guard_slow_list_operation(self, operation_name: str, *, alternatives: str) -> None:
+        if self.slow_ops_policy == SlowOpsPolicy.ALLOW:
+            return
+
+        message = (
+            f"{operation_name}() eagerly materializes an unbounded result set and may not scale. "
+            f"Use {alternatives} instead."
+        )
+        if self.slow_ops_policy == SlowOpsPolicy.WARN:
+            warnings.warn(message, SlowOperationWarning, stacklevel=2)
+            return
+        raise SlowOperationDisabledError(message)
 
     async def get_health(self) -> dict[str, Any]:
         return {
@@ -816,6 +851,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        self._guard_slow_list_operation("list_assets", alternatives="iter_assets() or list_assets_page()")
         return await self.asset_database.find(filters or {})
 
     async def iter_assets(
@@ -899,6 +935,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        self._guard_slow_list_operation("list_collections", alternatives="list_collections_page()")
         return await self.collection_database.find(filters or {})
 
     async def list_collections_page(
@@ -965,6 +1002,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        self._guard_slow_list_operation("list_collection_items", alternatives="list_collection_items_page()")
         return await self.collection_item_database.find(filters or {})
 
     async def list_collection_items_page(
@@ -1041,6 +1079,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_asset_retentions(self, filters: dict[str, Any] | None = None) -> list[AssetRetention]:
+        self._guard_slow_list_operation("list_asset_retentions", alternatives="list_asset_retentions_page()")
         return await self.asset_retention_database.find(filters or {})
 
     async def list_asset_retentions_page(
@@ -1130,6 +1169,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_schemas(self, filters: dict[str, Any] | None = None) -> list[AnnotationSchema]:
+        self._guard_slow_list_operation("list_annotation_schemas", alternatives="list_annotation_schemas_page()")
         return await self.annotation_schema_database.find(filters or {})
 
     async def list_annotation_schemas_page(
@@ -1320,6 +1360,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        self._guard_slow_list_operation("list_annotation_sets", alternatives="list_annotation_sets_page()")
         return await self.annotation_set_database.find(filters or {})
 
     async def list_annotation_sets_page(
@@ -1520,6 +1561,10 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
         """Return annotation records whose subject is the given asset."""
+        self._guard_slow_list_operation(
+            "list_annotation_records_for_asset",
+            alternatives="list_annotation_records_for_asset_page()",
+        )
         return await self.list_annotation_records(
             filters={"subject.kind": "asset", "subject.id": asset_id},
         )
@@ -1550,6 +1595,10 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        self._guard_slow_list_operation(
+            "list_annotation_records",
+            alternatives="iter_annotation_records() or list_annotation_records_page()",
+        )
         return await self.annotation_record_database.find(filters or {})
 
     async def iter_annotation_records(
@@ -1635,6 +1684,7 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
+        self._guard_slow_list_operation("list_datums", alternatives="iter_datums() or list_datums_page()")
         return await self.datum_database.find(filters or {})
 
     async def iter_datums(
@@ -1734,6 +1784,7 @@ class AsyncDatalake(Mindtrace):
         dataset_name: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> list[DatasetVersion]:
+        self._guard_slow_list_operation("list_dataset_versions", alternatives="list_dataset_versions_page()")
         query = dict(filters or {})
         if dataset_name is not None:
             query["dataset_name"] = dataset_name
@@ -1774,6 +1825,11 @@ class AsyncDatalake(Mindtrace):
         expand: DatasetViewExpand | None = None,
         include_total: bool = False,
     ) -> DatasetViewPage:
+        """Page through a dataset version manifest.
+
+        This can still be a heavy operation for large manifests, especially when filters force
+        per-row inspection or when expansions require loading linked assets or annotations.
+        """
         if sort != "manifest_order":
             raise ValueError("dataset version views currently support only sort='manifest_order'")
 
@@ -1890,6 +1946,10 @@ class AsyncDatalake(Mindtrace):
             cursor = page.page.next_cursor
 
     async def resolve_datum(self, datum_id: str) -> ResolvedDatum:
+        """Fully materialize the datum graph for one datum.
+
+        This is an explicit heavy operation intended for bounded use, not for bulk traversal.
+        """
         datum = await self.get_datum(datum_id)
         assets: dict[str, Asset] = {}
         for role, asset_id in datum.asset_refs.items():
@@ -1913,6 +1973,10 @@ class AsyncDatalake(Mindtrace):
         )
 
     async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        """Fully materialize every datum in a dataset version.
+
+        This is an explicit heavy operation intended for bounded use, not for bulk traversal.
+        """
         dataset_version = await self.get_dataset_version(dataset_name, version)
         datums = [await self.resolve_datum(datum_id) for datum_id in dataset_version.manifest]
         return ResolvedDatasetVersion(dataset_version=dataset_version, datums=datums)
