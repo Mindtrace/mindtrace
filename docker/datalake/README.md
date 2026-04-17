@@ -26,13 +26,13 @@ docker compose -f docker/datalake/docker-compose.yml --env-file docker/datalake/
 
 Service endpoints:
 
-- Datalake API: <http://localhost:8080>
-- MinIO API: <http://localhost:9000>
-- MinIO Console: <http://localhost:9001>
+- Datalake API: [http://localhost:8080](http://localhost:8080)
+- MinIO API: [http://localhost:9000](http://localhost:9000)
+- MinIO Console: [http://localhost:9001](http://localhost:9001)
 
 ## Using DataVault against the compose stack
 
-With the stack running, use **`DataVault`** with a client from **`DatalakeService.connect`**. The vault detects the connection manager and speaks the right service tasks (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, etc.).
+With the stack running, use `**DataVault**` with a client from `**DatalakeService.connect**`. The vault detects the connection manager and speaks the right service tasks (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, etc.).
 
 **Images (PIL)** — run from the **repository root** so `tests/resources/hopper.png` resolves; `mindtrace` installed; service URL must match your stack (below uses port 8080):
 
@@ -51,7 +51,7 @@ vault.save_image("images:hopper", hopper)
 image = vault.load_image("images:hopper")
 image.show()
 
-# For listing and discovery operations, prefer to use the page API:
+# Scalable discovery stays on the vault API too.
 page = vault.list_image_assets_page(limit=10, include_total=True)
 print("first page ids:", [asset.asset_id for asset in page.items])
 print("has more:", page.page.has_more, "next cursor:", page.page.next_cursor)
@@ -109,3 +109,4 @@ The service image configures a single default S3-compatible mount named `minio` 
 - This setup is intended as a local/dev deployment path, not a production HA topology.
 - The compose stack provisions the MinIO bucket on startup using a short-lived `minio/mc` helper container.
 - No Redis or RabbitMQ services are included here because the goal is a minimal datalake-focused deployment.
+
