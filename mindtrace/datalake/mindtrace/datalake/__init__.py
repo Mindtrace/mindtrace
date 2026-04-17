@@ -22,7 +22,7 @@ from .async_datalake import (
     SlowOperationWarning,
     SlowOpsPolicy,
 )
-from .data_vault import AsyncDataVault, DataVault
+from .data_vault import AsyncDataVault, DataVault, VaultDataset
 from .data_vault_backends import (
     AsyncDataVaultBackend,
     DatalakeServiceAsyncDataVaultBackend,
@@ -113,6 +113,7 @@ __all__ = [
     "AssetAlias",
     "AsyncDataVault",
     "AsyncDataVaultBackend",
+    "VaultDataset",
     "SlowOperationDisabledError",
     "SlowOperationWarning",
     "SlowOpsPolicy",
