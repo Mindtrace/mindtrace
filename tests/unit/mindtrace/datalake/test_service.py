@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 
-from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.pagination_types import (
     CursorPage,
     DatasetViewExpand,
@@ -32,20 +32,26 @@ from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
     AnnotationRecordOutput,
+    AnnotationRecordPageOutput,
     AnnotationSchemaListOutput,
     AnnotationSchemaOutput,
+    AnnotationSchemaPageOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AnnotationSetPageOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
+    AssetRetentionPageOutput,
     CollectionItemListOutput,
     CollectionItemOutput,
+    CollectionItemPageOutput,
     CollectionListOutput,
     CollectionOutput,
+    CollectionPageOutput,
     CompleteObjectUploadSessionInput,
     CopyObjectInput,
     CreateAnnotationSchemaInput,
@@ -70,6 +76,7 @@ from mindtrace.datalake.service_types import (
     DatasetViewPageOutput,
     DatumListOutput,
     DatumOutput,
+    DatumPageOutput,
     ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
     GetAssetByAliasInput,
@@ -78,6 +85,7 @@ from mindtrace.datalake.service_types import (
     GetObjectInput,
     HeadObjectInput,
     ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetPageInput,
     ListDatasetVersionsInput,
     ListDatasetVersionsPageInput,
     ListInput,
@@ -262,7 +270,9 @@ def datalake_objects():
 
 @pytest.fixture
 def mock_datalake():
-    return Mock(spec=AsyncDatalake)
+    datalake = Mock(spec=AsyncDatalake)
+    datalake.slow_ops_policy = SlowOpsPolicy.WARN
+    return datalake
 
 
 @pytest.fixture
@@ -1318,12 +1328,14 @@ class TestDatalakeServiceInitialization:
     async def test_ensure_datalake_builds_and_initializes_async_datalake(self):
         created_datalake = Mock(spec=AsyncDatalake)
         created_datalake.initialize = AsyncMock()
+        created_datalake.slow_ops_policy = SlowOpsPolicy.FORBID
 
         service = DatalakeService(
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="mindtrace",
             mounts=["mount-a"],
             default_mount="nas",
+            slow_ops_policy=SlowOpsPolicy.FORBID,
             live_service=False,
             initialize_on_startup=False,
         )
@@ -1339,6 +1351,7 @@ class TestDatalakeServiceInitialization:
             mongo_db_name="mindtrace",
             mounts=["mount-a"],
             default_mount="nas",
+            slow_ops_policy=SlowOpsPolicy.FORBID,
         )
         created_datalake.initialize.assert_awaited_once_with()
 
@@ -1394,6 +1407,17 @@ class TestDatalakeServiceUtilities:
 
         assert exc_info.value.status_code == 500
 
+    @pytest.mark.asyncio
+    async def test_await_client_safe_translates_disabled_slow_operation(self):
+        async def fail():
+            raise SlowOperationDisabledError("list_assets() eagerly materializes an unbounded result set.")
+
+        with pytest.raises(HTTPException, match="disables eager list endpoints") as exc_info:
+            await DatalakeService._await_client_safe(fail())
+
+        assert exc_info.value.status_code == 400
+        assert "list_assets()" in exc_info.value.detail
+
 
 @pytest.mark.parametrize(
     "case",
@@ -1444,6 +1468,149 @@ async def test_service_list_assets_page_maps_page_contract(service, mock_datalak
     assert result.items == [datalake_objects.asset]
     assert result.page.next_cursor == "cursor-1"
     assert result.page.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_service_collection_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    collection_page = CursorPage(
+        items=[datalake_objects.collection],
+        page=PageInfo(limit=1, next_cursor="collection-cursor", has_more=True, total_count=2),
+    )
+    collection_item_page = CursorPage(
+        items=[datalake_objects.collection_item],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_collections_page.return_value = collection_page
+    mock_datalake.list_collection_items_page.return_value = collection_item_page
+
+    collection_result = await service.list_collections_page(PageInput(filters={"status": "active"}, limit=1))
+    collection_item_result = await service.list_collection_items_page(
+        PageInput(filters={"collection_id": datalake_objects.collection.collection_id}, limit=1, include_total=True)
+    )
+
+    mock_datalake.list_collections_page.assert_awaited_once_with(
+        filters={"status": "active"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_collection_items_page.assert_awaited_once_with(
+        filters={"collection_id": datalake_objects.collection.collection_id},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    assert isinstance(collection_result, CollectionPageOutput)
+    assert collection_result.items == [datalake_objects.collection]
+    assert isinstance(collection_item_result, CollectionItemPageOutput)
+    assert collection_item_result.items == [datalake_objects.collection_item]
+
+
+@pytest.mark.asyncio
+async def test_service_metadata_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    retention_page = CursorPage(
+        items=[datalake_objects.asset_retention],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    schema_page = CursorPage(
+        items=[datalake_objects.annotation_schema],
+        page=PageInfo(limit=1, next_cursor="schema-cursor", has_more=True, total_count=2),
+    )
+    set_page = CursorPage(
+        items=[datalake_objects.annotation_set],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_asset_retentions_page.return_value = retention_page
+    mock_datalake.list_annotation_schemas_page.return_value = schema_page
+    mock_datalake.list_annotation_sets_page.return_value = set_page
+
+    retention_result = await service.list_asset_retentions_page(
+        PageInput(filters={"asset_id": datalake_objects.asset.asset_id}, limit=1)
+    )
+    schema_result = await service.list_annotation_schemas_page(
+        PageInput(filters={"task_type": "detection"}, limit=1, include_total=True)
+    )
+    set_result = await service.list_annotation_sets_page(
+        PageInput(filters={"purpose": "ground_truth"}, limit=1)
+    )
+
+    mock_datalake.list_asset_retentions_page.assert_awaited_once_with(
+        filters={"asset_id": datalake_objects.asset.asset_id},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_annotation_schemas_page.assert_awaited_once_with(
+        filters={"task_type": "detection"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    mock_datalake.list_annotation_sets_page.assert_awaited_once_with(
+        filters={"purpose": "ground_truth"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(retention_result, AssetRetentionPageOutput)
+    assert isinstance(schema_result, AnnotationSchemaPageOutput)
+    assert isinstance(set_result, AnnotationSetPageOutput)
+
+
+@pytest.mark.asyncio
+async def test_service_annotation_and_datum_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    record_page = CursorPage(
+        items=[datalake_objects.annotation_record],
+        page=PageInfo(limit=1, next_cursor="record-cursor", has_more=True, total_count=2),
+    )
+    datum_page = CursorPage(
+        items=[datalake_objects.datum],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_annotation_records_for_asset_page.return_value = record_page
+    mock_datalake.list_annotation_records_page.return_value = record_page
+    mock_datalake.list_datums_page.return_value = datum_page
+
+    asset_record_result = await service.list_annotation_records_for_asset_page(
+        ListAnnotationRecordsForAssetPageInput(
+            asset_id=datalake_objects.asset.asset_id,
+            limit=1,
+            include_total=True,
+            sort="subject_created_desc",
+        )
+    )
+    record_result = await service.list_annotation_records_page(PageInput(filters={"label": "cat"}, limit=1))
+    datum_result = await service.list_datums_page(PageInput(filters={"split": "train"}, limit=1))
+
+    mock_datalake.list_annotation_records_for_asset_page.assert_awaited_once_with(
+        datalake_objects.asset.asset_id,
+        sort="subject_created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    mock_datalake.list_annotation_records_page.assert_awaited_once_with(
+        filters={"label": "cat"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_datums_page.assert_awaited_once_with(
+        filters={"split": "train"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(asset_record_result, AnnotationRecordPageOutput)
+    assert isinstance(record_result, AnnotationRecordPageOutput)
+    assert isinstance(datum_result, DatumPageOutput)
 
 
 @pytest.mark.asyncio
