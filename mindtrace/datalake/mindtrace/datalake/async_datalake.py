@@ -516,6 +516,140 @@ class AsyncDatalake(Mindtrace):
             return
         raise SlowOperationDisabledError(message)
 
+    @staticmethod
+    def _dataset_view_filter_payload(filters: list[StructuredFilter]) -> list[dict[str, Any]]:
+        return [filter_item.model_dump(mode="json") for filter_item in filters]
+
+    async def _find_rows_by_ids(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        id_field: str,
+        ids: list[str],
+    ) -> dict[str, Any]:
+        if not ids:
+            return {}
+        unique_ids = list(dict.fromkeys(ids))
+        rows = await database.find({id_field: {"$in": unique_ids}})
+        return {getattr(row, id_field): row for row in rows}
+
+    async def _scan_dataset_view_manifest(
+        self,
+        *,
+        manifest: list[str],
+        start_index: int,
+        filters: list[StructuredFilter],
+        target_count: int,
+        scan_chunk_size: int,
+    ) -> list[tuple[int, Datum]]:
+        matches: list[tuple[int, Datum]] = []
+        for chunk_start in range(start_index, len(manifest), scan_chunk_size):
+            chunk_ids = manifest[chunk_start : chunk_start + scan_chunk_size]
+            datums_by_id = await self._find_rows_by_ids(
+                database=self.datum_database,
+                id_field="datum_id",
+                ids=chunk_ids,
+            )
+            for offset, datum_id in enumerate(chunk_ids):
+                datum = datums_by_id.get(datum_id)
+                if datum is None or not self._matches_structured_filters(datum, filters):
+                    continue
+                matches.append((chunk_start + offset, datum))
+                if len(matches) >= target_count:
+                    return matches
+        return matches
+
+    async def _count_dataset_view_matches(
+        self,
+        *,
+        manifest: list[str],
+        filters: list[StructuredFilter],
+        scan_chunk_size: int,
+    ) -> int:
+        count = 0
+        for chunk_start in range(0, len(manifest), scan_chunk_size):
+            chunk_ids = manifest[chunk_start : chunk_start + scan_chunk_size]
+            datums_by_id = await self._find_rows_by_ids(
+                database=self.datum_database,
+                id_field="datum_id",
+                ids=chunk_ids,
+            )
+            for datum_id in chunk_ids:
+                datum = datums_by_id.get(datum_id)
+                if datum is not None and self._matches_structured_filters(datum, filters):
+                    count += 1
+        return count
+
+    async def _build_dataset_view_rows(
+        self,
+        *,
+        datums: list[Datum],
+        expand: DatasetViewExpand,
+    ) -> list[DatasetViewRow]:
+        if not datums:
+            return []
+
+        assets_by_id: dict[str, Asset] = {}
+        include_sets = expand.annotation_sets or expand.annotation_records
+        annotation_sets_by_id: dict[str, AnnotationSet] = {}
+        annotation_records_by_id: dict[str, AnnotationRecord] = {}
+
+        if expand.assets:
+            assets_by_id = await self._find_rows_by_ids(
+                database=self.asset_database,
+                id_field="asset_id",
+                ids=[asset_id for datum in datums for asset_id in datum.asset_refs.values()],
+            )
+
+        if include_sets:
+            annotation_sets_by_id = await self._find_rows_by_ids(
+                database=self.annotation_set_database,
+                id_field="annotation_set_id",
+                ids=[annotation_set_id for datum in datums for annotation_set_id in datum.annotation_set_ids],
+            )
+
+        if expand.annotation_records:
+            annotation_records_by_id = await self._find_rows_by_ids(
+                database=self.annotation_record_database,
+                id_field="annotation_id",
+                ids=[
+                    annotation_id
+                    for annotation_set in annotation_sets_by_id.values()
+                    for annotation_id in annotation_set.annotation_record_ids
+                ],
+            )
+
+        rows: list[DatasetViewRow] = []
+        for datum in datums:
+            row = DatasetViewRow(
+                datum_id=datum.datum_id,
+                split=datum.split,
+                metadata=dict(datum.metadata or {}),
+            )
+            if expand.assets:
+                row.assets = {
+                    role: assets_by_id[asset_id]
+                    for role, asset_id in datum.asset_refs.items()
+                    if asset_id in assets_by_id
+                }
+            if include_sets:
+                row.annotation_sets = [
+                    annotation_sets_by_id[annotation_set_id]
+                    for annotation_set_id in datum.annotation_set_ids
+                    if annotation_set_id in annotation_sets_by_id
+                ]
+            if expand.annotation_records:
+                row.annotation_records = {
+                    annotation_set.annotation_set_id: [
+                        annotation_records_by_id[annotation_id]
+                        for annotation_id in annotation_set.annotation_record_ids
+                        if annotation_id in annotation_records_by_id
+                    ]
+                    for annotation_set in row.annotation_sets or []
+                }
+            rows.append(row)
+        return rows
+
     async def get_health(self) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -1836,6 +1970,7 @@ class AsyncDatalake(Mindtrace):
         dataset_version = await self.get_dataset_version(dataset_name, version)
         expand = expand or DatasetViewExpand()
         filter_list = filters or []
+        filter_payload = self._dataset_view_filter_payload(filter_list)
         resource = f"dataset_version_view:{dataset_name}:{version}"
         start_index = 0
         if cursor is not None:
@@ -1843,74 +1978,45 @@ class AsyncDatalake(Mindtrace):
                 cursor,
                 expected_resource=resource,
                 expected_sort=sort,
-                expected_filters=[f.model_dump(mode="json") for f in filter_list],
+                expected_filters=filter_payload,
             )
             start_index = int(envelope.last_key.get("ordinal", -1)) + 1
 
-        rows: list[DatasetViewRow] = []
-        row_ordinals: list[int] = []
-        total_count = 0
+        scan_chunk_size = max(limit * 2, 100)
+        matches = await self._scan_dataset_view_manifest(
+            manifest=dataset_version.manifest,
+            start_index=start_index,
+            filters=filter_list,
+            target_count=limit + 1,
+            scan_chunk_size=scan_chunk_size,
+        )
+        visible_matches = matches[:limit]
+        rows = await self._build_dataset_view_rows(
+            datums=[datum for _, datum in visible_matches],
+            expand=expand,
+        )
         next_cursor: str | None = None
-
-        for ordinal in range(start_index, len(dataset_version.manifest)):
-            datum_id = dataset_version.manifest[ordinal]
-            datum = await self.get_datum(datum_id)
-            if not self._matches_structured_filters(datum, filter_list):
-                continue
-
-            total_count += 1
-            row = DatasetViewRow(
-                datum_id=datum.datum_id,
-                split=datum.split,
-                metadata=dict(datum.metadata or {}),
+        if len(matches) > limit and visible_matches:
+            last_ordinal, last_datum = visible_matches[-1]
+            next_cursor = self._encode_cursor(
+                CursorEnvelope(
+                    resource=resource,
+                    sort=sort,
+                    filter_fingerprint=self._cursor_filter_fingerprint(filter_payload),
+                    last_key={"ordinal": last_ordinal, "datum_id": last_datum.datum_id},
+                )
             )
 
-            include_sets = expand.annotation_sets or expand.annotation_records
-            if expand.assets:
-                row.assets = {role: await self.get_asset(asset_id) for role, asset_id in datum.asset_refs.items()}
-            if include_sets:
-                row.annotation_sets = [
-                    await self.get_annotation_set(annotation_set_id) for annotation_set_id in datum.annotation_set_ids
-                ]
-            if expand.annotation_records:
-                annotation_records: dict[str, list[AnnotationRecord]] = {}
-                annotation_sets = row.annotation_sets or []
-                for annotation_set in annotation_sets:
-                    annotation_records[annotation_set.annotation_set_id] = [
-                        await self.get_annotation_record(annotation_id)
-                        for annotation_id in annotation_set.annotation_record_ids
-                    ]
-                row.annotation_records = annotation_records
-
-            rows.append(row)
-            row_ordinals.append(ordinal)
-            if len(rows) == limit + 1:
-                last_row = rows[limit - 1]
-                last_ordinal = row_ordinals[limit - 1]
-                next_cursor = self._encode_cursor(
-                    CursorEnvelope(
-                        resource=resource,
-                        sort=sort,
-                        filter_fingerprint=self._cursor_filter_fingerprint(
-                            [f.model_dump(mode="json") for f in filter_list]
-                        ),
-                        last_key={"ordinal": last_ordinal, "datum_id": last_row.datum_id},
-                    )
-                )
-                rows = rows[:limit]
-                row_ordinals = row_ordinals[:limit]
-                break
-
         if include_total:
-            total_count_value = 0
-            for datum_id in dataset_version.manifest:
-                datum = await self.get_datum(datum_id)
-                if self._matches_structured_filters(datum, filter_list):
-                    total_count_value += 1
+            total_count_value = await self._count_dataset_view_matches(
+                manifest=dataset_version.manifest,
+                filters=filter_list,
+                scan_chunk_size=scan_chunk_size,
+            )
         else:
             total_count_value = None
 
-        has_more = next_cursor is not None
+        has_more = len(matches) > limit
         return DatasetViewPage(
             items=rows,
             page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count_value),
