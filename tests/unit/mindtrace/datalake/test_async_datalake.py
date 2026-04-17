@@ -455,7 +455,9 @@ class TestAsyncDatalakeUnit:
         assert await async_datalake.list_assets({"kind": "image"}) == [asset]
         updated = await async_datalake.update_asset_metadata(asset.asset_id, {"source": "demo"})
         assert updated.metadata == {"source": "demo"}
+        async_datalake.get_asset = AsyncMock(return_value=asset)
         async_datalake.list_datums = AsyncMock(return_value=[])
+        async_datalake.collection_item_database.find = AsyncMock(return_value=[])
         await async_datalake.delete_asset(asset.asset_id)
         mock_odm.delete.assert_awaited_with("db-id")
 
@@ -480,9 +482,7 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
-        self._patch_datum_find_for_annotation_set_merge(
-            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123"
-        )
+        self._patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         inserted_model = AnnotationRecord(
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -795,6 +795,9 @@ class TestAsyncDatalakeUnit:
         async_datalake.get_asset = AsyncMock(
             return_value=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
         )
+        async_datalake.get_annotation_set = AsyncMock(
+            return_value=AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        )
         datum = await async_datalake.create_datum(
             asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"}, annotation_set_ids=["set_1"]
         )
@@ -838,6 +841,12 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_dataset_version_async(self, async_datalake, mock_odm):
         mock_odm.find.return_value = []
+        async_datalake.get_datum = AsyncMock(
+            side_effect=[
+                Datum(asset_refs={"image": "asset_1"}),
+                Datum(asset_refs={"image": "asset_2"}),
+            ]
+        )
         created = await async_datalake.create_dataset_version(
             dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"]
         )
@@ -1097,9 +1106,7 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(
-        self, async_datalake, mock_odm
-    ):
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake, mock_odm):
         schema = AnnotationSchema(
             name="bbox-demo",
             version="1.0.0",
@@ -1489,9 +1496,7 @@ class TestAsyncDatalakeUnit:
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(
-        self, async_datalake, mock_odm
-    ):
+    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(self, async_datalake, mock_odm):
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         mock_odm.find = AsyncMock(return_value=[])
@@ -1613,9 +1618,7 @@ class TestAsyncDatalakeUnit:
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         self._patch_datum_find_for_annotation_set_merge(
-            mock_odm,
-            annotation_set.annotation_set_id,
-            image_asset_id="datum_default_image",
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="datum_default_image",
         )
         explicit = SubjectRef(kind="asset", id="user_chosen")
         inserted_dict = AnnotationRecord(
