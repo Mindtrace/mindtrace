@@ -293,6 +293,60 @@ class AsyncDatalake(Mindtrace):
         return envelope
 
     @staticmethod
+    def _snapshot_field_for(resource: str) -> str | None:
+        snapshot_fields = {
+            "assets": "created_at",
+            "collections": "created_at",
+            "collection_items": "added_at",
+            "asset_retentions": "created_at",
+            "annotation_schemas": "created_at",
+            "annotation_sets": "created_at",
+            "annotation_records": "created_at",
+            "datums": "created_at",
+            "dataset_versions": "created_at",
+        }
+        return snapshot_fields.get(resource)
+
+    @classmethod
+    def _encode_snapshot_token(cls, *, resource: str, field: str, cutoff: Any) -> str:
+        payload = {
+            "kind": "temporal_cutoff",
+            "resource": resource,
+            "field": field,
+            "cutoff": cls._serialize_cursor_value(cutoff),
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _decode_snapshot_token(cls, token: str | None, *, expected_resource: str) -> tuple[str, Any] | None:
+        if token is None:
+            return None
+        try:
+            payload = json.loads(token)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid snapshot token") from exc
+
+        if payload.get("kind") != "temporal_cutoff":
+            raise ValueError("Unsupported snapshot token kind")
+        if payload.get("resource") != expected_resource:
+            raise ValueError("Snapshot token resource mismatch")
+        field = payload.get("field")
+        if not isinstance(field, str) or not field:
+            raise ValueError("Snapshot token missing field")
+        return field, cls._deserialize_cursor_value(payload.get("cutoff"))
+
+    @classmethod
+    def _build_snapshot_query(cls, *, resource: str, snapshot_token: str | None) -> dict[str, Any]:
+        decoded = cls._decode_snapshot_token(snapshot_token, expected_resource=resource)
+        if decoded is None:
+            return {}
+        field, cutoff = decoded
+        expected_field = cls._snapshot_field_for(resource)
+        if expected_field is None or field != expected_field:
+            raise ValueError(f"Snapshot token field mismatch for resource {resource!r}")
+        return {field: {"$lte": cutoff}}
+
+    @staticmethod
     def _get_value_by_path(obj: Any, path: str) -> Any:
         current = obj
         for part in path.split("."):
@@ -419,18 +473,29 @@ class AsyncDatalake(Mindtrace):
         cursor: str | None,
         include_total: bool,
     ) -> CursorPage[Any]:
-        query = dict(filters or {})
+        base_query = dict(filters or {})
         sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
+        snapshot_field = self._snapshot_field_for(resource)
+        snapshot_token = (
+            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=self._utc_now())
+            if snapshot_field is not None
+            else None
+        )
+        page_query = base_query
         if cursor is not None:
             envelope = self._decode_cursor(
                 cursor,
                 expected_resource=resource,
                 expected_sort=sort,
-                expected_filters=query,
+                expected_filters=base_query,
             )
-            query = self._merge_query(query, self._build_cursor_query(sort_spec, envelope.last_key))
+            snapshot_token = envelope.snapshot_token
+            page_query = self._merge_query(page_query, self._build_cursor_query(sort_spec, envelope.last_key))
+        snapshot_query = self._build_snapshot_query(resource=resource, snapshot_token=snapshot_token)
+        base_query = self._merge_query(base_query, snapshot_query)
+        page_query = self._merge_query(page_query, snapshot_query)
 
-        window = await database.find_window(query, sort=sort_spec, limit=limit + 1)
+        window = await database.find_window(page_query, sort=sort_spec, limit=limit + 1)
         items = window[:limit]
         has_more = len(window) > limit
         next_cursor: str | None = None
@@ -443,10 +508,11 @@ class AsyncDatalake(Mindtrace):
                     sort=sort,
                     filter_fingerprint=self._cursor_filter_fingerprint(filters or {}),
                     last_key=last_key,
+                    snapshot_token=snapshot_token,
                 )
             )
 
-        total_count = await database.count_documents(filters or {}) if include_total else None
+        total_count = await database.count_documents(base_query) if include_total else None
         return CursorPage(
             items=items,
             page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count),
