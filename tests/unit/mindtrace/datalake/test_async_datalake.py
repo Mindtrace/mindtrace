@@ -569,8 +569,10 @@ class TestAsyncDatalakeUnit:
         )
 
         async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
-        async_datalake.get_datum = AsyncMock(side_effect=lambda datum_id: {"datum_1": datum_1, "datum_2": datum_2}[datum_id])
-        async_datalake.get_asset = AsyncMock(side_effect=lambda asset_id: {"asset_1": asset_1, "asset_2": asset_2}[asset_id])
+        async_datalake.datum_database = MagicMock()
+        async_datalake.datum_database.find = AsyncMock(return_value=[datum_2, datum_1])
+        async_datalake.asset_database = MagicMock()
+        async_datalake.asset_database.find = AsyncMock(return_value=[asset_2, asset_1])
 
         filters = [StructuredFilter(field="split", op="eq", value="train")]
         first_page = await async_datalake.view_dataset_version_page(
@@ -587,6 +589,8 @@ class TestAsyncDatalakeUnit:
         assert first_page.page.has_more is True
         assert first_page.items[0].datum_id == "datum_1"
         assert first_page.items[0].assets == {"image": asset_1}
+        assert async_datalake.datum_database.find.await_count == 2
+        async_datalake.asset_database.find.assert_awaited_once_with({"asset_id": {"$in": ["asset_1"]}})
 
         decoded = async_datalake._decode_cursor(
             first_page.page.next_cursor,
@@ -608,6 +612,7 @@ class TestAsyncDatalakeUnit:
         assert second_page.items[0].datum_id == "datum_2"
         assert second_page.items[0].assets is None
         assert second_page.page.has_more is False
+        assert async_datalake.datum_database.find.await_count == 3
 
     @pytest.mark.asyncio
     async def test_view_dataset_version_page_supports_annotation_expansion_and_filter_skips(self, async_datalake):
@@ -635,11 +640,12 @@ class TestAsyncDatalakeUnit:
         annotation_record.annotation_id = "ann_1"
 
         async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
-        async_datalake.get_datum = AsyncMock(
-            side_effect=lambda datum_id: {"datum_skip": skipped, "datum_keep": kept}[datum_id]
-        )
-        async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
-        async_datalake.get_annotation_record = AsyncMock(return_value=annotation_record)
+        async_datalake.datum_database = MagicMock()
+        async_datalake.datum_database.find = AsyncMock(return_value=[kept, skipped])
+        async_datalake.annotation_set_database = MagicMock()
+        async_datalake.annotation_set_database.find = AsyncMock(return_value=[annotation_set])
+        async_datalake.annotation_record_database = MagicMock()
+        async_datalake.annotation_record_database.find = AsyncMock(return_value=[annotation_record])
 
         page = await async_datalake.view_dataset_version_page(
             "demo",
@@ -654,6 +660,39 @@ class TestAsyncDatalakeUnit:
         assert page.items[0].annotation_sets == [annotation_set]
         assert page.items[0].annotation_records == {"set_1": [annotation_record]}
         assert page.page.total_count is None
+        async_datalake.annotation_set_database.find.assert_awaited_once_with({"annotation_set_id": {"$in": ["set_1"]}})
+        async_datalake.annotation_record_database.find.assert_awaited_once_with({"annotation_id": {"$in": ["ann_1"]}})
+
+    @pytest.mark.asyncio
+    async def test_view_dataset_version_page_scans_manifest_in_chunks_for_sparse_filters(self, async_datalake):
+        skipped_datums = [
+            Datum(datum_id=f"datum_skip_{index}", split="val")
+            for index in range(100)
+        ]
+        kept_datum = Datum(datum_id="datum_keep", split="train", metadata={"rank": 101})
+        manifest = [datum.datum_id for datum in skipped_datums] + [kept_datum.datum_id]
+        dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=manifest)
+        datums_by_id = {datum.datum_id: datum for datum in [*skipped_datums, kept_datum]}
+
+        async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
+        async_datalake.datum_database = MagicMock()
+
+        async def datum_find_side_effect(query):
+            ids = query["datum_id"]["$in"]
+            return [datums_by_id[datum_id] for datum_id in reversed(ids)]
+
+        async_datalake.datum_database.find = AsyncMock(side_effect=datum_find_side_effect)
+
+        page = await async_datalake.view_dataset_version_page(
+            "demo",
+            "1.0.0",
+            limit=1,
+            filters=[StructuredFilter(field="split", op="eq", value="train")],
+        )
+
+        assert [row.datum_id for row in page.items] == ["datum_keep"]
+        assert page.page.has_more is False
+        assert async_datalake.datum_database.find.await_count == 2
 
     @pytest.mark.asyncio
     async def test_view_dataset_version_page_rejects_unsupported_sort(self, async_datalake):
