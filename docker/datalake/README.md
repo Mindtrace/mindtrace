@@ -30,62 +30,35 @@ Service endpoints:
 - MinIO API: <http://localhost:9000>
 - MinIO Console: <http://localhost:9001>
 
-## Happy path: launch the stack and save/load an image
+## Using DataVault against the compose stack
 
-Start the local datalake stack from the repository root:
+With the stack running, use **`DataVault`** with a client from **`DatalakeService.connect`**. The vault detects the connection manager and speaks the right service tasks (`assets.get_by_alias`, `aliases.add`, `assets.create_from_object`, `objects.get`, etc.).
 
-```bash
-cp docker/datalake/.env.example docker/datalake/.env
-docker compose -f docker/datalake/docker-compose.yml --env-file docker/datalake/.env up --build
-```
-
-Then, with the stack running, use **`DataVault.from_url(...)`** to connect to the datalake service and work with typed annotations.
-
-Run this example from the **repository root** so `tests/resources/hopper.png` resolves, with `mindtrace` installed and the service listening on port `8080`:
+**Images (PIL)** — run from the **repository root** so `tests/resources/hopper.png` resolves; `mindtrace` installed; service URL must match your stack (below uses port 8080):
 
 ```python
+from pathlib import Path
+
 from PIL import Image
-from mindtrace.datalake import (
-    AnnotationSource,
-    BboxAnnotation,
-    ClassificationAnnotation,
-    DataVault,
-)
 
-# Connect to a Datalake using the DataVault wrapper
-vault = DataVault.from_url("http://localhost:8080")
+from mindtrace.datalake import DataVault, DatalakeService
 
-# Save images
-hopper = Image.open("tests/resources/hopper.png")
-vault.save_image("hopper", hopper)
+hopper = Image.open(Path("tests/resources/hopper.png"))
+cm = DatalakeService.connect(url="http://localhost:8080")
+vault = DataVault(cm)
 
-# Add annotation labels
-src = AnnotationSource(type="human", name="demo")
-bbox = BboxAnnotation(
-    label="dog",
-    source=src,
-    x=10,
-    y=10,
-    width=120,
-    height=80,
-)
-classification = ClassificationAnnotation(label="outdoor", source=src)
-vault.add_annotations("hopper", [bbox, classification])
-
-# Load images
-image = vault.load_image("hopper")
+vault.save_image("images:hopper", hopper)
+image = vault.load_image("images:hopper")
 image.show()
 
-# Load annotations
-annotations = vault.load_annotations("hopper")
-for ann in annotations:
-    if isinstance(ann, BboxAnnotation):
-        print(ann.label, ann.x, ann.y, ann.width, ann.height)
-    elif isinstance(ann, ClassificationAnnotation):
-        print(ann.label)
-```
+# Scalable discovery stays on the vault API too.
+page = vault.list_image_assets_page(limit=10, include_total=True)
+print("first page ids:", [asset.asset_id for asset in page.items])
+print("has more:", page.page.has_more, "next cursor:", page.page.next_cursor)
 
-## Using DataVault against the compose stack
+for asset in vault.iter_image_assets(batch_size=100):
+    print(asset.asset_id, asset.storage_ref)
+```
 
 **Async** — same flow with `AsyncDataVault` and `await`:
 
@@ -103,9 +76,24 @@ vault = AsyncDataVault(cm)
 await vault.save_image("images:hopper", hopper)
 image = await vault.load_image("images:hopper")
 image.show()
+
+page = await vault.list_image_assets_page(limit=10, include_total=True)
+print("first page ids:", [asset.asset_id for asset in page.items])
+
+async for asset in vault.iter_image_assets(batch_size=100):
+    print(asset.asset_id, asset.storage_ref)
 ```
 
 **Raw payloads** — use `save` / `load` with `Path`, `bytes`, `bytearray`, or `str` when you are not using `save_image` / `load_image`.
+
+**Generic assets** — use `list_assets_page(filters=...)` or `iter_assets(filters=...)` when you want scalable discovery for non-image content:
+
+```python
+page = vault.list_assets_page(filters={"kind": "artifact"}, limit=25)
+
+for asset in vault.iter_assets(filters={"created_by": "demo-script"}, batch_size=200):
+    print(asset.asset_id)
+```
 
 ## Default runtime shape
 
