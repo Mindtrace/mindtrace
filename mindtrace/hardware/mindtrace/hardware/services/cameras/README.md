@@ -92,6 +92,19 @@ Control per-group concurrency for production-line camera setups:
 - `POST /cameras/stream/stop/all` - Stop all streams
 - `GET /stream/{camera_name}` - Serve camera video stream (MJPEG)
 
+### Focus Control & Liquid Lens
+
+For Basler cameras with a connected liquid lens (e.g. Optotune EL-series), these endpoints provide hardware-level focus control and one-shot autofocus:
+
+- `POST /cameras/lens/status` - Get liquid lens hardware state (connected, status, optical power)
+- `POST /cameras/focus/optical-power/get` - Get current optical power (diopters)
+- `POST /cameras/focus/optical-power/set` - Set optical power for manual focus
+- `POST /cameras/focus/autofocus` - Trigger one-shot autofocus (Fast, Normal, or Accurate)
+- `GET /cameras/focus/config/get` - Get autofocus configuration
+- `POST /cameras/focus/config/set` - Set autofocus parameters (accuracy, stepper, ROI, edge detection)
+
+> **Note**: These are optional capabilities — they return `NotImplementedError` for cameras/backends without liquid lens support. The `/cameras/capabilities` endpoint includes a `supports_liquid_lens` field for auto-detection.
+
 ### Network & Performance
 
 - `GET /network/diagnostics` - Network diagnostics and performance metrics
@@ -205,6 +218,14 @@ Most REST endpoints are automatically exposed as MCP tools for integration with 
 - `camera_manager_measure_homography_distance` - Measure distance between two points
 - `camera_manager_measure_homography_batch` - Unified batch (boxes + distances)
 
+**Focus Control:**
+- `camera_manager_get_lens_status` - Get liquid lens hardware state
+- `camera_manager_get_optical_power` - Get current optical power
+- `camera_manager_set_optical_power` - Set optical power (manual focus)
+- `camera_manager_trigger_autofocus` - One-shot autofocus
+- `camera_manager_get_focus_config` - Get autofocus configuration
+- `camera_manager_set_focus_config` - Set autofocus parameters
+
 ## Capture Groups (Stage+Set Batching)
 
 Capture groups provide per-group concurrency control for production-line setups where multiple cameras share a GigE network link. Each group creates an `asyncio.Semaphore` sized to `batch_size`, limiting how many cameras within the group can capture simultaneously.
@@ -299,6 +320,18 @@ Can be changed dynamically without reinitialization:
 - `packet_size` - GigE packet size in bytes (set to match NIC MTU, e.g., 8164 for jumbo frames)
 - `inter_packet_delay` - Ticks between GigE packets (e.g., 1000 = ~8us gap)
 - `bandwidth_limit` - Bandwidth limit in Mbps
+
+### Focus / Liquid Lens (via `/cameras/focus/*`)
+
+Available on cameras with a connected liquid lens:
+
+- `optical_power` - Lens optical power in diopters (manual focus)
+- `accuracy` - Autofocus accuracy: Fast, Normal, Accurate
+- `stepper` - Autofocus step size (0.01–0.4)
+- `roi_size` - Focus ROI size: Size128, Size64, Size32
+- `focus_source` - AF source: Auto, SourceL, SourceM, SourceS
+- `edge_detection` - Enable edge-detection focusing
+- `roi_offset_x`, `roi_offset_y` - Focus ROI offset
 
 ### Startup-Only Parameters
 
