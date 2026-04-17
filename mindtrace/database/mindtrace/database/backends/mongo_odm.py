@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
@@ -673,6 +674,76 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
         query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
         return await query.to_list()
+
+    async def find_iter(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        batch_size: int | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[T]:
+        """
+        Lazily iterate over matching documents using a Mongo cursor.
+
+        This is intended for large scans where materializing the full result set
+        would be wasteful.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use find_iter() in multi-model mode. Use db.model_name.find_iter() instead.")
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        cursor = self._motor_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        if batch_size is not None:
+            cursor = cursor.batch_size(batch_size)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+
+        async for raw in cursor:
+            model = self._mongo_doc_to_model(raw)
+            if model is not None:
+                yield model
+
+    async def find_window(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+    ) -> List[T]:
+        """
+        Return a bounded, sorted window of matching documents.
+
+        This is useful for page-oriented callers that need ``limit + 1`` rows to
+        determine whether another page exists without loading the full collection.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use find_window() in multi-model mode. Use db.model_name.find_window() instead.")
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        cursor = self._motor_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        raw = await cursor.to_list(length=limit)
+        return [m for m in (self._mongo_doc_to_model(d) for d in raw) if m is not None]
+
+    async def count_documents(self, query: dict[str, Any] | None = None) -> int:
+        """Return the number of documents matching ``query`` without loading them."""
+        if self._models is not None:
+            raise ValueError(
+                "Cannot use count_documents() in multi-model mode. Use db.model_name.count_documents() instead."
+            )
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        return await self._motor_collection().count_documents(query or {})
 
     async def aggregate(self, pipeline: list) -> List[T]:
         """

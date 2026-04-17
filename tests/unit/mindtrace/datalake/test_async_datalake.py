@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,6 +12,7 @@ from mindtrace.datalake.async_datalake import (
     AnnotationSchemaValidationError,
     DuplicateAnnotationSchemaError,
 )
+from mindtrace.datalake.pagination_types import CursorEnvelope, DatasetViewExpand, StructuredFilter
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -67,6 +68,9 @@ class TestAsyncDatalakeUnit:
         mock.initialize = AsyncMock()
         mock.insert = AsyncMock(side_effect=lambda obj: obj)
         mock.find = AsyncMock(return_value=[])
+        mock.find_iter = AsyncMock()
+        mock.find_window = AsyncMock(return_value=[])
+        mock.count_documents = AsyncMock(return_value=0)
         mock.update = AsyncMock(side_effect=lambda obj: obj)
         mock.delete = AsyncMock()
         return mock
@@ -182,16 +186,8 @@ class TestAsyncDatalakeUnit:
         assert str(async_datalake) == "AsyncDatalake(database=test_db, default_mount=temp)"
 
     @pytest.mark.asyncio
-    async def test_summary_returns_counts(self, async_datalake):
-        async_datalake.list_assets = AsyncMock(return_value=[MagicMock(), MagicMock()])
-        async_datalake.list_collections = AsyncMock(return_value=[MagicMock()])
-        async_datalake.list_collection_items = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
-        async_datalake.list_asset_retentions = AsyncMock(return_value=[MagicMock()])
-        async_datalake.list_annotation_schemas = AsyncMock(return_value=[MagicMock(), MagicMock()])
-        async_datalake.list_annotation_sets = AsyncMock(return_value=[MagicMock()])
-        async_datalake.list_annotation_records = AsyncMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
-        async_datalake.list_datums = AsyncMock(return_value=[MagicMock()])
-        async_datalake.list_dataset_versions = AsyncMock(return_value=[])
+    async def test_summary_returns_counts(self, async_datalake, mock_odm):
+        mock_odm.count_documents = AsyncMock(side_effect=[2, 1, 3, 1, 2, 1, 3, 1, 0])
 
         summary = await async_datalake.summary()
 
@@ -199,6 +195,185 @@ class TestAsyncDatalakeUnit:
             "AsyncDatalake(database=test_db, default_mount=temp, assets=2, collections=1, collection_items=3, "
             "asset_retentions=1, annotation_schemas=2, annotation_sets=1, annotation_records=3, datums=1, dataset_versions=0)"
         )
+
+    def test_cursor_encode_and_decode_round_trip(self, async_datalake):
+        envelope = CursorEnvelope(
+            resource="assets",
+            sort="created_desc",
+            filter_fingerprint=async_datalake._cursor_filter_fingerprint({"kind": "image"}),
+            last_key={
+                "created_at": datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+                "asset_id": "asset_1",
+            },
+        )
+        cursor = async_datalake._encode_cursor(envelope)
+
+        decoded = async_datalake._decode_cursor(
+            cursor,
+            expected_resource="assets",
+            expected_sort="created_desc",
+            expected_filters={"kind": "image"},
+        )
+
+        assert decoded == envelope
+
+        with pytest.raises(ValueError, match="Cursor filters do not match this request"):
+            async_datalake._decode_cursor(
+                cursor,
+                expected_resource="assets",
+                expected_sort="created_desc",
+                expected_filters={"kind": "video"},
+            )
+
+    @pytest.mark.asyncio
+    async def test_list_assets_page_builds_and_consumes_cursor(self, async_datalake, mock_odm):
+        asset_1 = Asset(
+            asset_id="asset_1",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-1.png"),
+            created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        )
+        asset_2 = Asset(
+            asset_id="asset_2",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-2.png"),
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        mock_odm.find_window = AsyncMock(side_effect=[[asset_1, asset_2], [asset_2]])
+        mock_odm.count_documents = AsyncMock(return_value=2)
+
+        first_page = await async_datalake.list_assets_page(
+            filters={"kind": "image"},
+            limit=1,
+            include_total=True,
+        )
+
+        assert [asset.asset_id for asset in first_page.items] == ["asset_1"]
+        assert first_page.page.has_more is True
+        assert first_page.page.total_count == 2
+        assert first_page.page.next_cursor is not None
+
+        decoded = async_datalake._decode_cursor(
+            first_page.page.next_cursor,
+            expected_resource="assets",
+            expected_sort="created_desc",
+            expected_filters={"kind": "image"},
+        )
+        assert decoded.last_key["asset_id"] == "asset_1"
+        assert decoded.last_key["created_at"] == asset_1.created_at
+
+        second_page = await async_datalake.list_assets_page(
+            filters={"kind": "image"},
+            limit=1,
+            cursor=first_page.page.next_cursor,
+        )
+
+        assert [asset.asset_id for asset in second_page.items] == ["asset_2"]
+        assert second_page.page.has_more is False
+        second_query = mock_odm.find_window.await_args_list[1].args[0]
+        assert second_query["$and"][0] == {"kind": "image"}
+        assert "$or" in second_query["$and"][1]
+
+    @pytest.mark.asyncio
+    async def test_iter_assets_uses_lazy_database_iterator(self, async_datalake, mock_odm):
+        asset_1 = Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="a.png"))
+        asset_2 = Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="b.png"))
+        captured: dict[str, object] = {}
+
+        def find_iter(query, *, sort=None, batch_size=None):
+            captured["query"] = query
+            captured["sort"] = sort
+            captured["batch_size"] = batch_size
+
+            async def generator():
+                yield asset_1
+                yield asset_2
+
+            return generator()
+
+        mock_odm.find_iter = find_iter
+
+        results = [asset async for asset in async_datalake.iter_assets(filters={"kind": "image"}, batch_size=25)]
+
+        assert results == [asset_1, asset_2]
+        assert captured["query"] == {"kind": "image"}
+        assert captured["sort"] == [("created_at", -1), ("asset_id", -1)]
+        assert captured["batch_size"] == 25
+
+    @pytest.mark.asyncio
+    async def test_view_dataset_version_page_paginates_manifest_rows(self, async_datalake):
+        dataset_version = DatasetVersion(
+            dataset_name="demo",
+            version="1.0.0",
+            manifest=["datum_1", "datum_2"],
+        )
+        datum_1 = Datum(
+            datum_id="datum_1",
+            asset_refs={"image": "asset_1"},
+            split="train",
+            metadata={"rank": 1},
+        )
+        datum_2 = Datum(
+            datum_id="datum_2",
+            asset_refs={"image": "asset_2"},
+            split="train",
+            metadata={"rank": 2},
+        )
+        asset_1 = Asset(
+            asset_id="asset_1",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-1.png"),
+        )
+        asset_2 = Asset(
+            asset_id="asset_2",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="asset-2.png"),
+        )
+
+        async_datalake.get_dataset_version = AsyncMock(return_value=dataset_version)
+        async_datalake.get_datum = AsyncMock(side_effect=lambda datum_id: {"datum_1": datum_1, "datum_2": datum_2}[datum_id])
+        async_datalake.get_asset = AsyncMock(side_effect=lambda asset_id: {"asset_1": asset_1, "asset_2": asset_2}[asset_id])
+
+        filters = [StructuredFilter(field="split", op="eq", value="train")]
+        first_page = await async_datalake.view_dataset_version_page(
+            "demo",
+            "1.0.0",
+            limit=1,
+            filters=filters,
+            expand=DatasetViewExpand(assets=True, annotation_sets=False, annotation_records=False),
+            include_total=True,
+        )
+
+        assert first_page.view.dataset_name == "demo"
+        assert first_page.page.total_count == 2
+        assert first_page.page.has_more is True
+        assert first_page.items[0].datum_id == "datum_1"
+        assert first_page.items[0].assets == {"image": asset_1}
+
+        decoded = async_datalake._decode_cursor(
+            first_page.page.next_cursor,
+            expected_resource="dataset_version_view:demo:1.0.0",
+            expected_sort="manifest_order",
+            expected_filters=[f.model_dump(mode="json") for f in filters],
+        )
+        assert decoded.last_key == {"ordinal": 0, "datum_id": "datum_1"}
+
+        second_page = await async_datalake.view_dataset_version_page(
+            "demo",
+            "1.0.0",
+            limit=1,
+            cursor=first_page.page.next_cursor,
+            filters=filters,
+            expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+        )
+
+        assert second_page.items[0].datum_id == "datum_2"
+        assert second_page.items[0].assets is None
+        assert second_page.page.has_more is False
 
     def test_get_mounts_returns_named_mounts(self, async_datalake):
         mounts = async_datalake.get_mounts()
@@ -482,9 +657,7 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
-        self._patch_datum_find_for_annotation_set_merge(
-            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123"
-        )
+        self._patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         inserted_model = AnnotationRecord(
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -1108,9 +1281,7 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(
-        self, async_datalake, mock_odm
-    ):
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake, mock_odm):
         schema = AnnotationSchema(
             name="bbox-demo",
             version="1.0.0",
@@ -1500,9 +1671,7 @@ class TestAsyncDatalakeUnit:
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(
-        self, async_datalake, mock_odm
-    ):
+    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(self, async_datalake, mock_odm):
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         mock_odm.find = AsyncMock(return_value=[])
@@ -1624,9 +1793,7 @@ class TestAsyncDatalakeUnit:
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         self._patch_datum_find_for_annotation_set_merge(
-            mock_odm,
-            annotation_set.annotation_set_id,
-            image_asset_id="datum_default_image",
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="datum_default_image",
         )
         explicit = SubjectRef(kind="asset", id="user_chosen")
         inserted_dict = AnnotationRecord(

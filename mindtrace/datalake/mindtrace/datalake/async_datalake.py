@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import hashlib
-from collections.abc import Iterable
+import json
+from collections.abc import AsyncIterator, Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar
@@ -9,6 +11,16 @@ from typing import Any, TypeVar
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake.pagination_types import (
+    CursorEnvelope,
+    CursorPage,
+    DatasetViewExpand,
+    DatasetViewInfo,
+    DatasetViewPage,
+    DatasetViewRow,
+    PageInfo,
+    StructuredFilter,
+)
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -200,6 +212,275 @@ class AsyncDatalake(Mindtrace):
     def _build_document(model_cls: type[DocumentT], **data: Any) -> DocumentT:
         return model_cls.model_construct(**data)
 
+    @staticmethod
+    def _serialize_cursor_value(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return {"__mindtrace_type__": "datetime", "value": value.isoformat()}
+        return value
+
+    @classmethod
+    def _deserialize_cursor_value(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and value.get("__mindtrace_type__") == "datetime"
+            and isinstance(value.get("value"), str)
+        ):
+            return datetime.fromisoformat(value["value"])
+        return value
+
+    @staticmethod
+    def _cursor_filter_fingerprint(filters: Any) -> str:
+        if isinstance(filters, list):
+            payload = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in filters]
+        elif hasattr(filters, "model_dump"):
+            payload = filters.model_dump(mode="json")
+        else:
+            payload = filters or {}
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _encode_cursor(cls, envelope: CursorEnvelope) -> str:
+        payload = envelope.model_dump(mode="json")
+        payload["last_key"] = {key: cls._serialize_cursor_value(value) for key, value in envelope.last_key.items()}
+        encoded = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True).encode("utf-8")).decode("ascii")
+        return encoded.rstrip("=")
+
+    @classmethod
+    def _decode_cursor(
+        cls,
+        cursor: str,
+        *,
+        expected_resource: str,
+        expected_sort: str,
+        expected_filters: Any,
+    ) -> CursorEnvelope:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(f"{cursor}{padding}".encode("ascii")).decode("utf-8"))
+        payload["last_key"] = {
+            key: cls._deserialize_cursor_value(value) for key, value in payload.get("last_key", {}).items()
+        }
+        envelope = CursorEnvelope.model_validate(payload)
+        if envelope.resource != expected_resource:
+            raise ValueError(f"Cursor resource mismatch: expected {expected_resource!r}, got {envelope.resource!r}")
+        if envelope.sort != expected_sort:
+            raise ValueError(f"Cursor sort mismatch: expected {expected_sort!r}, got {envelope.sort!r}")
+        expected_fingerprint = cls._cursor_filter_fingerprint(expected_filters)
+        if envelope.filter_fingerprint != expected_fingerprint:
+            raise ValueError("Cursor filters do not match this request")
+        return envelope
+
+    @staticmethod
+    def _get_value_by_path(obj: Any, path: str) -> Any:
+        current = obj
+        for part in path.split("."):
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                current = getattr(current, part, None)
+            if current is None:
+                return None
+        return current
+
+    @classmethod
+    def _build_cursor_query(cls, sort_fields: list[tuple[str, int]], last_key: dict[str, Any]) -> dict[str, Any]:
+        clauses: list[dict[str, Any]] = []
+        for idx, (field, direction) in enumerate(sort_fields):
+            comparison = "$gt" if direction > 0 else "$lt"
+            clause: dict[str, Any] = {}
+            for prev_field, _ in sort_fields[:idx]:
+                clause[prev_field] = last_key[prev_field]
+            clause[field] = {comparison: last_key[field]}
+            clauses.append(clause)
+        return {"$or": clauses}
+
+    @staticmethod
+    def _merge_query(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+        if not base:
+            return extra
+        if not extra:
+            return base
+        return {"$and": [base, extra]}
+
+    @staticmethod
+    def _sort_specs_for(resource: str) -> dict[str, tuple[list[tuple[str, int]], list[str]]]:
+        specs: dict[str, dict[str, tuple[list[tuple[str, int]], list[str]]]] = {
+            "assets": {
+                "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
+                "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
+            },
+            "collections": {
+                "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
+                "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
+            },
+            "collection_items": {
+                "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
+                "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
+            },
+            "asset_retentions": {
+                "created_desc": (
+                    [("created_at", -1), ("asset_retention_id", -1)],
+                    ["created_at", "asset_retention_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("asset_retention_id", 1)],
+                    ["created_at", "asset_retention_id"],
+                ),
+            },
+            "annotation_schemas": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_schema_id", -1)],
+                    ["created_at", "annotation_schema_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("annotation_schema_id", 1)],
+                    ["created_at", "annotation_schema_id"],
+                ),
+            },
+            "annotation_sets": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_set_id", -1)],
+                    ["created_at", "annotation_set_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("annotation_set_id", 1)],
+                    ["created_at", "annotation_set_id"],
+                ),
+            },
+            "annotation_records": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_id", -1)],
+                    ["created_at", "annotation_id"],
+                ),
+                "subject_created_desc": (
+                    [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
+                    ["subject.kind", "subject.id", "created_at", "annotation_id"],
+                ),
+            },
+            "datums": {
+                "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
+                "split_created_desc": (
+                    [("split", 1), ("created_at", -1), ("datum_id", -1)],
+                    ["split", "created_at", "datum_id"],
+                ),
+            },
+            "dataset_versions": {
+                "created_desc": (
+                    [("created_at", -1), ("dataset_version_id", -1)],
+                    ["created_at", "dataset_version_id"],
+                ),
+                "dataset_version_desc": (
+                    [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+                    ["dataset_name", "version", "dataset_version_id"],
+                ),
+            },
+        }
+        if resource not in specs:
+            raise ValueError(f"Unsupported pagination resource: {resource}")
+        return specs[resource]
+
+    @classmethod
+    def _resolve_sort_spec(cls, resource: str, sort: str) -> tuple[list[tuple[str, int]], list[str]]:
+        specs = cls._sort_specs_for(resource)
+        if sort not in specs:
+            raise ValueError(f"Unsupported sort {sort!r} for resource {resource!r}")
+        return specs[sort]
+
+    async def _paginate_database(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        resource: str,
+        filters: dict[str, Any] | None,
+        sort: str,
+        limit: int,
+        cursor: str | None,
+        include_total: bool,
+    ) -> CursorPage[Any]:
+        query = dict(filters or {})
+        sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
+        if cursor is not None:
+            envelope = self._decode_cursor(
+                cursor,
+                expected_resource=resource,
+                expected_sort=sort,
+                expected_filters=query,
+            )
+            query = self._merge_query(query, self._build_cursor_query(sort_spec, envelope.last_key))
+
+        window = await database.find_window(query, sort=sort_spec, limit=limit + 1)
+        items = window[:limit]
+        has_more = len(window) > limit
+        next_cursor: str | None = None
+        if has_more and items:
+            last_item = items[-1]
+            last_key = {field: self._get_value_by_path(last_item, field) for field in cursor_fields}
+            next_cursor = self._encode_cursor(
+                CursorEnvelope(
+                    resource=resource,
+                    sort=sort,
+                    filter_fingerprint=self._cursor_filter_fingerprint(filters or {}),
+                    last_key=last_key,
+                )
+            )
+
+        total_count = await database.count_documents(filters or {}) if include_total else None
+        return CursorPage(
+            items=items,
+            page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count),
+        )
+
+    async def _iter_database(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        resource: str,
+        filters: dict[str, Any] | None,
+        sort: str,
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Any]:
+        sort_spec, _ = self._resolve_sort_spec(resource, sort)
+        async for item in database.find_iter(filters or {}, sort=sort_spec, batch_size=batch_size):
+            yield item
+
+    @classmethod
+    def _matches_structured_filters(cls, item: Any, filters: list[StructuredFilter]) -> bool:
+        if not filters:
+            return True
+        data = item.model_dump(mode="python") if hasattr(item, "model_dump") else item
+        for filter_item in filters:
+            actual = cls._get_value_by_path(data, filter_item.field)
+            expected = filter_item.value
+            op = filter_item.op
+            if op == "eq" and actual != expected:
+                return False
+            if op == "ne" and actual == expected:
+                return False
+            if op == "gt" and not (actual is not None and actual > expected):
+                return False
+            if op == "gte" and not (actual is not None and actual >= expected):
+                return False
+            if op == "lt" and not (actual is not None and actual < expected):
+                return False
+            if op == "lte" and not (actual is not None and actual <= expected):
+                return False
+            if op == "in" and not (expected is not None and actual in expected):
+                return False
+            if op == "contains":
+                if isinstance(actual, str):
+                    if not isinstance(expected, str) or expected not in actual:
+                        return False
+                elif isinstance(actual, (list, tuple, set)):
+                    if expected not in actual:
+                        return False
+                else:
+                    return False
+            if op == "exists":
+                exists = actual is not None
+                if bool(expected) != exists:
+                    return False
+        return True
+
     async def get_health(self) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -208,15 +489,15 @@ class AsyncDatalake(Mindtrace):
         }
 
     async def summary(self) -> str:
-        asset_count = len(await self.list_assets())
-        collection_count = len(await self.list_collections())
-        collection_item_count = len(await self.list_collection_items())
-        asset_retention_count = len(await self.list_asset_retentions())
-        annotation_schema_count = len(await self.list_annotation_schemas())
-        annotation_set_count = len(await self.list_annotation_sets())
-        annotation_record_count = len(await self.list_annotation_records())
-        datum_count = len(await self.list_datums())
-        dataset_version_count = len(await self.list_dataset_versions())
+        asset_count = await self.asset_database.count_documents()
+        collection_count = await self.collection_database.count_documents()
+        collection_item_count = await self.collection_item_database.count_documents()
+        asset_retention_count = await self.asset_retention_database.count_documents()
+        annotation_schema_count = await self.annotation_schema_database.count_documents()
+        annotation_set_count = await self.annotation_set_database.count_documents()
+        annotation_record_count = await self.annotation_record_database.count_documents()
+        datum_count = await self.datum_database.count_documents()
+        dataset_version_count = await self.dataset_version_database.count_documents()
         return (
             f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount}, "
             f"assets={asset_count}, collections={collection_count}, collection_items={collection_item_count}, "
@@ -537,6 +818,41 @@ class AsyncDatalake(Mindtrace):
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return await self.asset_database.find(filters or {})
 
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        async for asset in self._iter_database(
+            database=self.asset_database,
+            resource="assets",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield asset
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._paginate_database(
+            database=self.asset_database,
+            resource="assets",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
     async def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
         asset = await self.get_asset(asset_id)
         asset.metadata = metadata
@@ -585,6 +901,25 @@ class AsyncDatalake(Mindtrace):
     async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
         return await self.collection_database.find(filters or {})
 
+    async def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return await self._paginate_database(
+            database=self.collection_database,
+            resource="collections",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
     async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
         collection = await self.get_collection(collection_id)
         for key, value in changes.items():
@@ -631,6 +966,25 @@ class AsyncDatalake(Mindtrace):
 
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
         return await self.collection_item_database.find(filters or {})
+
+    async def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return await self._paginate_database(
+            database=self.collection_item_database,
+            resource="collection_items",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def resolve_collection_item(self, collection_item_id: str) -> ResolvedCollectionItem:
         collection_item = await self.get_collection_item(collection_item_id)
@@ -688,6 +1042,25 @@ class AsyncDatalake(Mindtrace):
 
     async def list_asset_retentions(self, filters: dict[str, Any] | None = None) -> list[AssetRetention]:
         return await self.asset_retention_database.find(filters or {})
+
+    async def list_asset_retentions_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AssetRetention]:
+        return await self._paginate_database(
+            database=self.asset_retention_database,
+            resource="asset_retentions",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_asset_retention(self, asset_retention_id: str, **changes: Any) -> AssetRetention:
         asset_retention = await self.get_asset_retention(asset_retention_id)
@@ -758,6 +1131,25 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_schemas(self, filters: dict[str, Any] | None = None) -> list[AnnotationSchema]:
         return await self.annotation_schema_database.find(filters or {})
+
+    async def list_annotation_schemas_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSchema]:
+        return await self._paginate_database(
+            database=self.annotation_schema_database,
+            resource="annotation_schemas",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_schema(self, annotation_schema_id: str, **changes: Any) -> AnnotationSchema:
         schema = await self.get_annotation_schema(annotation_schema_id)
@@ -929,6 +1321,25 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return await self.annotation_set_database.find(filters or {})
+
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._paginate_database(
+            database=self.annotation_set_database,
+            resource="annotation_sets",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_set(self, annotation_set_id: str, **changes: Any) -> AnnotationSet:
         annotation_set = await self.get_annotation_set(annotation_set_id)
@@ -1113,6 +1524,25 @@ class AsyncDatalake(Mindtrace):
             filters={"subject.kind": "asset", "subject.id": asset_id},
         )
 
+    async def list_annotation_records_for_asset_page(
+        self,
+        asset_id: str,
+        *,
+        sort: str = "subject_created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        return await self._paginate_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
+            filters={"subject.kind": "asset", "subject.id": asset_id},
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
     async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
         results = await self.annotation_record_database.find({"annotation_id": annotation_id})
         if not results:
@@ -1121,6 +1551,41 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
         return await self.annotation_record_database.find(filters or {})
+
+    async def iter_annotation_records(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[AnnotationRecord]:
+        async for record in self._iter_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield record
+
+    async def list_annotation_records_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        return await self._paginate_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_record(self, annotation_id: str, **changes: Any) -> AnnotationRecord:
         record = await self.get_annotation_record(annotation_id)
@@ -1171,6 +1636,41 @@ class AsyncDatalake(Mindtrace):
 
     async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
         return await self.datum_database.find(filters or {})
+
+    async def iter_datums(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Datum]:
+        async for datum in self._iter_database(
+            database=self.datum_database,
+            resource="datums",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield datum
+
+    async def list_datums_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Datum]:
+        return await self._paginate_database(
+            database=self.datum_database,
+            resource="datums",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def _validate_asset_refs_exist(self, asset_refs: dict[str, str]) -> None:
         for asset_id in asset_refs.values():
@@ -1238,6 +1738,156 @@ class AsyncDatalake(Mindtrace):
         if dataset_name is not None:
             query["dataset_name"] = dataset_name
         return await self.dataset_version_database.find(query)
+
+    async def list_dataset_versions_page(
+        self,
+        *,
+        dataset_name: str | None = None,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int = 100,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[DatasetVersion]:
+        query = dict(filters or {})
+        if dataset_name is not None:
+            query["dataset_name"] = dataset_name
+        return await self._paginate_database(
+            database=self.dataset_version_database,
+            resource="dataset_versions",
+            filters=query,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def view_dataset_version_page(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+        sort: str = "manifest_order",
+        filters: list[StructuredFilter] | None = None,
+        expand: DatasetViewExpand | None = None,
+        include_total: bool = False,
+    ) -> DatasetViewPage:
+        if sort != "manifest_order":
+            raise ValueError("dataset version views currently support only sort='manifest_order'")
+
+        dataset_version = await self.get_dataset_version(dataset_name, version)
+        expand = expand or DatasetViewExpand()
+        filter_list = filters or []
+        resource = f"dataset_version_view:{dataset_name}:{version}"
+        start_index = 0
+        if cursor is not None:
+            envelope = self._decode_cursor(
+                cursor,
+                expected_resource=resource,
+                expected_sort=sort,
+                expected_filters=[f.model_dump(mode="json") for f in filter_list],
+            )
+            start_index = int(envelope.last_key.get("ordinal", -1)) + 1
+
+        rows: list[DatasetViewRow] = []
+        row_ordinals: list[int] = []
+        total_count = 0
+        next_cursor: str | None = None
+
+        for ordinal in range(start_index, len(dataset_version.manifest)):
+            datum_id = dataset_version.manifest[ordinal]
+            datum = await self.get_datum(datum_id)
+            if not self._matches_structured_filters(datum, filter_list):
+                continue
+
+            total_count += 1
+            row = DatasetViewRow(
+                datum_id=datum.datum_id,
+                split=datum.split,
+                metadata=dict(datum.metadata or {}),
+            )
+
+            include_sets = expand.annotation_sets or expand.annotation_records
+            if expand.assets:
+                row.assets = {role: await self.get_asset(asset_id) for role, asset_id in datum.asset_refs.items()}
+            if include_sets:
+                row.annotation_sets = [
+                    await self.get_annotation_set(annotation_set_id) for annotation_set_id in datum.annotation_set_ids
+                ]
+            if expand.annotation_records:
+                annotation_records: dict[str, list[AnnotationRecord]] = {}
+                annotation_sets = row.annotation_sets or []
+                for annotation_set in annotation_sets:
+                    annotation_records[annotation_set.annotation_set_id] = [
+                        await self.get_annotation_record(annotation_id)
+                        for annotation_id in annotation_set.annotation_record_ids
+                    ]
+                row.annotation_records = annotation_records
+
+            rows.append(row)
+            row_ordinals.append(ordinal)
+            if len(rows) == limit + 1:
+                last_row = rows[limit - 1]
+                last_ordinal = row_ordinals[limit - 1]
+                next_cursor = self._encode_cursor(
+                    CursorEnvelope(
+                        resource=resource,
+                        sort=sort,
+                        filter_fingerprint=self._cursor_filter_fingerprint(
+                            [f.model_dump(mode="json") for f in filter_list]
+                        ),
+                        last_key={"ordinal": last_ordinal, "datum_id": last_row.datum_id},
+                    )
+                )
+                rows = rows[:limit]
+                row_ordinals = row_ordinals[:limit]
+                break
+
+        if include_total:
+            total_count_value = 0
+            for datum_id in dataset_version.manifest:
+                datum = await self.get_datum(datum_id)
+                if self._matches_structured_filters(datum, filter_list):
+                    total_count_value += 1
+        else:
+            total_count_value = None
+
+        has_more = next_cursor is not None
+        return DatasetViewPage(
+            items=rows,
+            page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count_value),
+            view=DatasetViewInfo(dataset_name=dataset_name, version=version, sort=sort),
+        )
+
+    async def iter_dataset_version_view(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        page_size: int = 100,
+        sort: str = "manifest_order",
+        filters: list[StructuredFilter] | None = None,
+        expand: DatasetViewExpand | None = None,
+    ) -> AsyncIterator[DatasetViewRow]:
+        cursor: str | None = None
+        while True:
+            page = await self.view_dataset_version_page(
+                dataset_name,
+                version,
+                limit=page_size,
+                cursor=cursor,
+                sort=sort,
+                filters=filters,
+                expand=expand,
+                include_total=False,
+            )
+            for row in page.items:
+                yield row
+            if not page.page.has_more:
+                break
+            cursor = page.page.next_cursor
 
     async def resolve_datum(self, datum_id: str) -> ResolvedDatum:
         datum = await self.get_datum(datum_id)

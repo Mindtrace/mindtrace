@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mindtrace.datalake import Datalake
+from mindtrace.datalake.pagination_types import CursorPage, DatasetViewInfo, DatasetViewPage, DatasetViewRow, PageInfo
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -459,6 +460,54 @@ class TestDatalakeSyncFacade:
         assert datalake.summary() == (
             "Datalake(database=test_db, default_mount=temp, assets=0, collections=0, collection_items=0, "
             "asset_retentions=0, annotation_sets=0, annotation_records=0, datums=0, dataset_versions=0)"
+        )
+
+    def test_sync_pagination_methods_delegate_to_async_backend(self, datalake, mock_backend):
+        asset_page = CursorPage(
+            items=[Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png"))],
+            page=PageInfo(limit=1, next_cursor="asset-cursor", has_more=True, total_count=2),
+        )
+        dataset_page = CursorPage(
+            items=[DatasetVersion(dataset_name="demo", version="0.1.0")],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+        )
+        view_page = DatasetViewPage(
+            items=[DatasetViewRow(datum_id="datum_1", split="train", metadata={"rank": 1})],
+            page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+            view=DatasetViewInfo(dataset_name="demo", version="0.1.0", sort="manifest_order"),
+        )
+        mock_backend.list_assets_page = AsyncMock(return_value=asset_page)
+        mock_backend.list_dataset_versions_page = AsyncMock(return_value=dataset_page)
+        mock_backend.view_dataset_version_page = AsyncMock(return_value=view_page)
+
+        assert datalake.list_assets_page(filters={"kind": "image"}, limit=1).page.next_cursor == "asset-cursor"
+        assert datalake.list_dataset_versions_page(dataset_name="demo", limit=1).items[0].dataset_name == "demo"
+        assert datalake.view_dataset_version_page("demo", "0.1.0", limit=1).view.sort == "manifest_order"
+
+        mock_backend.list_assets_page.assert_awaited_once_with(
+            filters={"kind": "image"},
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.list_dataset_versions_page.assert_awaited_once_with(
+            dataset_name="demo",
+            filters=None,
+            sort="created_desc",
+            limit=1,
+            cursor=None,
+            include_total=False,
+        )
+        mock_backend.view_dataset_version_page.assert_awaited_once_with(
+            "demo",
+            "0.1.0",
+            limit=1,
+            cursor=None,
+            sort="manifest_order",
+            filters=None,
+            expand=None,
+            include_total=False,
         )
 
     def test_close_handles_cleanup_exceptions_and_context_manager(self, datalake):
