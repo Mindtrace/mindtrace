@@ -116,8 +116,11 @@ class GCPRegistryBackend(RegistryBackend):
         """Resolve GCP config from explicit args or config.ini fallback.
 
         Reads from ``MINDTRACE_GCP`` and ``MINDTRACE_GCP_REGISTRY`` sections.
-        If ``credentials_path`` resolves to a non-existent file it is treated
-        as ``None`` so that ``GCSStorageHandler`` can fall back to ADC.
+        If ``credentials_path`` was passed explicitly and the file is missing,
+        raise ``FileNotFoundError`` — silently swallowing a caller's typo and
+        falling back to ADC burns time on auth retries before a confusing
+        downstream failure. A missing path sourced from config still falls
+        back to ADC so gcloud-login workflows keep working.
         """
         import os
 
@@ -126,14 +129,19 @@ class GCPRegistryBackend(RegistryBackend):
 
         project_id = project_id or gcp_cfg.get("GCP_PROJECT_ID")
         bucket_name = bucket_name or reg_cfg.get("GCP_BUCKET_NAME")
-        credentials_path = credentials_path or gcp_cfg.get("GCP_CREDENTIALS_PATH")
 
-        # Validate credentials file; fall back to ADC if missing
         if credentials_path:
-            credentials_path = os.path.expanduser(credentials_path)
-            if not os.path.exists(credentials_path):
-                self.logger.warning(f"Credentials file not found: {credentials_path}, falling back to ADC")
-                credentials_path = None
+            expanded = os.path.expanduser(credentials_path)
+            if not os.path.exists(expanded):
+                raise FileNotFoundError(f"credentials_path does not exist: {credentials_path}")
+            credentials_path = expanded
+        else:
+            credentials_path = gcp_cfg.get("GCP_CREDENTIALS_PATH")
+            if credentials_path:
+                credentials_path = os.path.expanduser(credentials_path)
+                if not os.path.exists(credentials_path):
+                    self.logger.warning(f"Credentials file not found: {credentials_path}, falling back to ADC")
+                    credentials_path = None
 
         if not project_id:
             raise ValueError("project_id is required (pass explicitly or set MINDTRACE_GCP.GCP_PROJECT_ID in config)")

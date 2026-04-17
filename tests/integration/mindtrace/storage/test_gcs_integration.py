@@ -273,7 +273,7 @@ def test_init_creates_bucket(gcs_client, gcp_project_id, gcp_credentials_path):
         pytest.skip(f"GCP bucket creation failed: {e}")
 
 
-def test_init_raises_error_if_bucket_not_exists(gcp_project_id):
+def test_init_raises_error_if_bucket_not_exists(gcp_project_id, gcp_credentials_path):
     """Test that handler raises error if bucket doesn't exist and create_if_missing=False."""
     bucket_name = f"mindtrace-test-nonexistent-{uuid.uuid4().hex[:8]}"
 
@@ -281,6 +281,7 @@ def test_init_raises_error_if_bucket_not_exists(gcp_project_id):
         GCSStorageHandler(
             bucket_name=bucket_name,
             project_id=gcp_project_id,
+            credentials_path=gcp_credentials_path,
             ensure_bucket=True,
             create_if_missing=False,
         )

@@ -247,13 +247,15 @@ def mock_gcs_handler(monkeypatch):
 
 
 @pytest.fixture
-def backend(mock_gcs_handler):
+def backend(mock_gcs_handler, tmp_path):
     """Create a GCPRegistryBackend instance with a mock GCS handler."""
+    creds = tmp_path / "credentials.json"
+    creds.write_text("{}")
     return GCPRegistryBackend(
         uri="gs://test-bucket",
         project_id="test-project",
         bucket_name="test-bucket",
-        credentials_path="/path/to/credentials.json",
+        credentials_path=str(creds),
     )
 
 
@@ -965,7 +967,15 @@ def test_config_and_path_helper_edge_cases(backend, monkeypatch):
         backend._resolve_config("project", None, None)
 
     monkeypatch.setattr("os.path.exists", lambda path: False)
-    project_id, bucket_name, credentials_path = backend._resolve_config("project", "bucket", "~/missing-creds.json")
+    with pytest.raises(FileNotFoundError, match="credentials_path does not exist"):
+        backend._resolve_config("project", "bucket", "~/missing-creds.json")
+
+    monkeypatch.setattr(
+        backend,
+        "config",
+        {"MINDTRACE_GCP": {"GCP_CREDENTIALS_PATH": "~/missing-creds.json"}, "MINDTRACE_GCP_REGISTRY": {}},
+    )
+    project_id, bucket_name, credentials_path = backend._resolve_config("project", "bucket", None)
     assert project_id == "project"
     assert bucket_name == "bucket"
     assert credentials_path is None

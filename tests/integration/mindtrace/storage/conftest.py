@@ -44,14 +44,16 @@ def gcp_project_id(core_config):
 def gcp_credentials_path(core_config):
     """Get GCP credentials path: env vars → config.ini → None (ADC fallback).
 
-    Returns None if no credentials file is configured, allowing
-    gcs_client to fall back to ADC (gcloud login).
+    If GCP_CREDENTIALS_PATH is configured but the file is missing, skip
+    immediately rather than falling back to ADC — otherwise google-auth
+    blocks probing the GCE metadata server and bucket.create() burns
+    several seconds on retries before the skip fires.
     """
     credentials_path = core_config.get("MINDTRACE_GCP", {}).get("GCP_CREDENTIALS_PATH")
     if credentials_path:
         credentials_path = os.path.expanduser(credentials_path)
         if not os.path.exists(credentials_path):
-            return None
+            pytest.skip(f"GCP credentials file not found: {credentials_path}")
     return credentials_path
 
 
