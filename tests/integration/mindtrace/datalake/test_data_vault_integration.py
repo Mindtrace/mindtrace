@@ -38,6 +38,38 @@ def _hopper_bytes() -> bytes:
     return _HOPPER.read_bytes()
 
 
+async def _save_async_image_assets(vault: AsyncDataVault, *, prefix: str, count: int = 3):
+    assets = []
+    for index in range(count):
+        assets.append(
+            await vault.save(
+                f"{prefix}-{index}",
+                f"payload-{index}".encode(),
+                kind="image",
+                media_type="image/png",
+                asset_metadata={"page_index": index},
+                created_by="integration",
+            )
+        )
+    return assets
+
+
+def _save_sync_image_assets(vault: DataVault, *, prefix: str, count: int = 3):
+    assets = []
+    for index in range(count):
+        assets.append(
+            vault.save(
+                f"{prefix}-{index}",
+                f"payload-{index}".encode(),
+                kind="image",
+                media_type="image/png",
+                asset_metadata={"page_index": index},
+                created_by="integration",
+            )
+        )
+    return assets
+
+
 @pytest.mark.asyncio
 async def test_async_data_vault_round_trip_friendly_alias_and_asset_id(async_datalake):
     vault = AsyncDataVault(async_datalake)
@@ -92,6 +124,35 @@ def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: D
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_image_discovery_supports_paging_and_streaming(async_datalake):
+    vault = AsyncDataVault(async_datalake)
+    assets = await _save_async_image_assets(vault, prefix=f"async-page-{uuid4().hex[:8]}")
+
+    first_page = await vault.list_image_assets_page(limit=2, include_total=True)
+    second_page = await vault.list_image_assets_page(limit=2, cursor=first_page.page.next_cursor)
+
+    assert first_page.page.total_count == 3
+    assert first_page.page.has_more is True
+    assert second_page.page.has_more is False
+    assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
+
+
+def test_sync_data_vault_image_discovery_supports_paging_and_streaming(sync_datalake: Datalake):
+    vault = DataVault(sync_datalake)
+    assets = _save_sync_image_assets(vault, prefix=f"sync-page-{uuid4().hex[:8]}")
+
+    first_page = vault.list_image_assets_page(limit=2, include_total=True)
+    second_page = vault.list_image_assets_page(limit=2, cursor=first_page.page.next_cursor)
+
+    assert first_page.page.total_count == 3
+    assert first_page.page.has_more is True
+    assert second_page.page.has_more is False
+    assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_save_load_image_hopper(async_datalake):
     if not _HOPPER.is_file():
         pytest.skip(f"Missing test fixture: {_HOPPER}")
@@ -129,6 +190,21 @@ async def test_async_data_vault_save_load_image_inprocess_service(datalake_servi
     assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
 
 
+@pytest.mark.asyncio
+async def test_async_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):
+    vault = AsyncDataVault(datalake_service_local_manager)
+    assets = await _save_async_image_assets(vault, prefix=f"svc-async-page-{uuid4().hex[:8]}")
+
+    first_page = await vault.list_image_assets_page(limit=2, include_total=True)
+    second_page = await vault.list_image_assets_page(limit=2, cursor=first_page.page.next_cursor)
+
+    assert first_page.page.total_count == 3
+    assert first_page.page.has_more is True
+    assert second_page.page.has_more is False
+    assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
+
+
 def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_local_manager):
     if not _HOPPER.is_file():
         pytest.skip(f"Missing test fixture: {_HOPPER}")
@@ -139,3 +215,17 @@ def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_loca
     vault.save_image(alias, im)
     out = vault.load_image(alias)
     assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+def test_sync_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):
+    vault = DataVault(datalake_service_local_manager)
+    assets = _save_sync_image_assets(vault, prefix=f"svc-sync-page-{uuid4().hex[:8]}")
+
+    first_page = vault.list_image_assets_page(limit=2, include_total=True)
+    second_page = vault.list_image_assets_page(limit=2, cursor=first_page.page.next_cursor)
+
+    assert first_page.page.total_count == 3
+    assert first_page.page.has_more is True
+    assert second_page.page.has_more is False
+    assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
