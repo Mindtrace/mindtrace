@@ -498,6 +498,29 @@ async def test_existence_helpers_return_false_on_document_not_found(source_datal
     assert await manager._datum_exists("x") is False
 
 
+@pytest.mark.asyncio
+async def test_asset_exists_returns_true_when_target_asset_is_present(source_datalake, target_datalake, replication_objects):
+    target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+
+    manager = ReplicationManager(source_datalake, target_datalake)
+
+    assert await manager._asset_exists(replication_objects.asset.asset_id) is True
+
+
+def test_should_preserve_verified_payload_rejects_storage_ref_mismatch(replication_objects):
+    existing_asset = replication_objects.asset.model_copy(
+        update={
+            "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
+            "checksum": "sha256:abc",
+            "size_bytes": 12,
+        }
+    )
+    new_asset = replication_objects.asset.model_copy(update={"checksum": "sha256:abc", "size_bytes": 12})
+    mapped_storage_ref = StorageRef(mount="remote", name="different.jpg", version="v1")
+
+    assert ReplicationManager._should_preserve_verified_payload(existing_asset, new_asset, mapped_storage_ref) is False
+
+
 def test_head_object_size_bytes_parsing():
     assert _head_object_size_bytes({"size_bytes": None, "size": "42"}) == 42
     assert _head_object_size_bytes({"content_length": "100"}) == 100
