@@ -418,6 +418,21 @@ class Datalake(Mindtrace):
     def list_collections(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_collections(filters))
 
+    def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.collection_database,
+            resource="collections",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
+
     def list_collections_page(
         self,
         *,
@@ -451,6 +466,21 @@ class Datalake(Mindtrace):
 
     def list_collection_items(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_collection_items(filters))
+
+    def iter_collection_items(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.collection_item_database,
+            resource="collection_items",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
 
     def list_collection_items_page(
         self,
@@ -489,6 +519,21 @@ class Datalake(Mindtrace):
     def list_asset_retentions(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_asset_retentions(filters))
 
+    def iter_asset_retentions(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.asset_retention_database,
+            resource="asset_retentions",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
+
     def list_asset_retentions_page(
         self,
         *,
@@ -526,6 +571,21 @@ class Datalake(Mindtrace):
     def list_annotation_schemas(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_schemas(filters))
 
+    def iter_annotation_schemas(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.annotation_schema_database,
+            resource="annotation_schemas",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
+
     def list_annotation_schemas_page(
         self,
         *,
@@ -559,6 +619,21 @@ class Datalake(Mindtrace):
 
     def list_annotation_sets(self, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_annotation_sets(filters))
+
+    def iter_annotation_sets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        yield from self._iter_database_sync(
+            database=self._backend.annotation_set_database,
+            resource="annotation_sets",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        )
 
     def list_annotation_sets_page(
         self,
@@ -719,6 +794,25 @@ class Datalake(Mindtrace):
 
     def list_dataset_versions(self, dataset_name: str | None = None, filters: dict[str, Any] | None = None):
         return self._submit_coro(self._backend.list_dataset_versions(dataset_name=dataset_name, filters=filters))
+
+    def iter_dataset_versions(
+        self,
+        *,
+        dataset_name: str | None = None,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Any]:
+        query = dict(filters or {})
+        if dataset_name is not None:
+            query["dataset_name"] = dataset_name
+        yield from self._iter_database_sync(
+            database=self._backend.dataset_version_database,
+            resource="dataset_versions",
+            filters=query,
+            sort=sort,
+            batch_size=batch_size,
+        )
 
     def list_dataset_versions_page(
         self,
