@@ -25,6 +25,7 @@ from mindtrace.datalake.service_types import (
     AnnotationRecordOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AnnotationSetPageOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
@@ -1055,6 +1056,43 @@ def test_datalake_service_sync_backend_dataset_methods():
     assert isinstance(cm.collection_items_update.call_args.args[0], UpdateCollectionItemInput)
     assert isinstance(cm.annotation_sets_create.call_args.args[0], CreateAnnotationSetInput)
     assert isinstance(cm.annotation_records_delete.call_args.args[0], DeleteByIdInput)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_annotation_set_paging():
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.aannotation_sets_list_page = AsyncMock(return_value=page)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    out = await backend.list_annotation_sets_page(filters={"status": "active"}, limit=1)
+
+    assert out == page
+    assert isinstance(cm.aannotation_sets_list_page.await_args.args[0], PageInput)
+
+
+def test_datalake_service_sync_backend_annotation_set_paging():
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.annotation_sets_list_page = Mock(return_value=page)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    out = backend.list_annotation_sets_page(filters={"status": "active"}, limit=1)
+
+    assert out == page
+    assert isinstance(cm.annotation_sets_list_page.call_args.args[0], PageInput)
 
 
 def test_datalake_service_sync_backend_snapshot_methods():

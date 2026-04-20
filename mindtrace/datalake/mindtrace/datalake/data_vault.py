@@ -47,7 +47,10 @@ passing the connection manager to :class:`DataVault` — see :meth:`DataVault.fr
 
 from __future__ import annotations
 
+import base64
+import json
 import re
+import warnings
 from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import UTC, datetime
 from io import BytesIO
@@ -61,7 +64,12 @@ from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
-from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import (
+    AsyncDatalake,
+    SlowOperationDisabledError,
+    SlowOperationWarning,
+    SlowOpsPolicy,
+)
 from mindtrace.datalake.data_vault_backends import (
     _ASYNC_VAULT_METHOD_NAMES,
     _SYNC_VAULT_METHOD_NAMES,
@@ -75,7 +83,7 @@ from mindtrace.datalake.data_vault_backends import (
     looks_like_datalake_service_sync_client,
 )
 from mindtrace.datalake.datalake import Datalake
-from mindtrace.datalake.pagination_types import CursorPage
+from mindtrace.datalake.pagination_types import CursorPage, PageInfo
 from mindtrace.datalake.service import DatalakeService
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -99,6 +107,8 @@ from mindtrace.registry import Registry
 
 _SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
 _DATA_VAULT_METADATA_QUERY_PREFIX = "metadata.mindtrace.data_vault"
+_DATASET_ASSETS_CURSOR_KIND = "dataset_assets_v1"
+_DATASET_ANNOTATIONS_CURSOR_KIND = "dataset_annotations_v1"
 
 
 class VaultDataset(BaseModel):
@@ -119,6 +129,47 @@ def _dataset_filters(filters: dict[str, Any] | None = None) -> dict[str, Any]:
     merged = dict(filters or {})
     merged.setdefault("status", "active")
     return merged
+
+
+def _resolve_slow_ops_policy(backend: Any, explicit: SlowOpsPolicy | str | None) -> SlowOpsPolicy:
+    if explicit is not None:
+        return SlowOpsPolicy(explicit)
+    candidate = getattr(backend, "slow_ops_policy", None)
+    if candidate is None:
+        candidate = getattr(getattr(backend, "_datalake", None), "slow_ops_policy", None)
+    if candidate is None or not isinstance(candidate, (SlowOpsPolicy, str)):
+        return SlowOpsPolicy.WARN
+    return SlowOpsPolicy(candidate)
+
+
+def _guard_slow_list_operation(policy: SlowOpsPolicy, operation_name: str, *, alternatives: str) -> None:
+    if policy == SlowOpsPolicy.ALLOW:
+        return
+    message = (
+        f"{operation_name}() eagerly materializes an unbounded result set and may not scale. "
+        f"Use {alternatives} instead."
+    )
+    if policy == SlowOpsPolicy.WARN:
+        warnings.warn(message, SlowOperationWarning, stacklevel=2)
+        return
+    raise SlowOperationDisabledError(message)
+
+
+def _encode_dataset_cursor(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_dataset_cursor(cursor: str | None, *, expected_kind: str) -> dict[str, Any]:
+    if cursor is None:
+        return {}
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8"))
+    except Exception as exc:
+        raise ValueError("Invalid dataset page cursor") from exc
+    if not isinstance(payload, dict) or payload.get("kind") != expected_kind:
+        raise ValueError("Invalid dataset page cursor")
+    return payload
 
 
 def _build_vault_dataset(collection: Collection, *, asset_count: int) -> VaultDataset:
@@ -473,10 +524,12 @@ class AsyncDataVault:
         *,
         object_name_prefix: str = "vault",
         registry: Registry | None = None,
+        slow_ops_policy: SlowOpsPolicy | str | None = None,
     ) -> None:
         self._backend = _normalize_async_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
         self._registry = registry
+        self.slow_ops_policy = _resolve_slow_ops_policy(backend, slow_ops_policy)
 
     @classmethod
     def from_url(
@@ -486,6 +539,7 @@ class AsyncDataVault:
         timeout: int = 60,
         object_name_prefix: str = "vault",
         registry: Registry | None = None,
+        slow_ops_policy: SlowOpsPolicy | str | None = None,
     ) -> AsyncDataVault:
         """Connect to a running :class:`~mindtrace.datalake.service.DatalakeService` and return a vault.
 
@@ -493,7 +547,7 @@ class AsyncDataVault:
         (including async task methods when exposed by the client).
         """
         cm = DatalakeService.connect(url=url, timeout=timeout)
-        return cls(cm, object_name_prefix=object_name_prefix, registry=registry)
+        return cls(cm, object_name_prefix=object_name_prefix, registry=registry, slow_ops_policy=slow_ops_policy)
 
     def _object_name(self, alias: str) -> str:
         safe = _sanitize_object_name_component(alias)
@@ -524,6 +578,30 @@ class AsyncDataVault:
 
     async def _build_dataset_summary(self, collection: Collection) -> VaultDataset:
         return _build_vault_dataset(collection, asset_count=await self._dataset_asset_count(collection.collection_id))
+
+    async def _count_dataset_assets(self, collection_id: str) -> int:
+        seen: set[str] = set()
+        cursor: str | None = None
+        while True:
+            page = await self._backend.list_collection_items_page(
+                filters={"collection_id": collection_id, "status": "active"},
+                cursor=cursor,
+            )
+            seen.update(item.asset_id for item in page.items)
+            if not page.page.has_more or page.page.next_cursor is None:
+                return len(seen)
+            cursor = page.page.next_cursor
+
+    async def _count_dataset_annotations(self, collection_id: str, asset_id: str | None) -> int:
+        total = 0
+        cursor: str | None = None
+        filters = _dataset_annotation_set_filters(collection_id, asset_id=asset_id)
+        while True:
+            page = await self._backend.list_annotation_sets_page(filters=filters, cursor=cursor)
+            total += sum(len(annotation_set.annotation_record_ids) for annotation_set in page.items)
+            if not page.page.has_more or page.page.next_cursor is None:
+                return total
+            cursor = page.page.next_cursor
 
     async def _ensure_collection_item(
         self,
@@ -746,7 +824,12 @@ class AsyncDataVault:
             await self._backend.delete_collection_item(item.collection_item_id)
 
     async def list_dataset_assets(self, dataset: str | VaultDataset) -> list[Asset]:
-        """List unique active assets that belong to a dataset."""
+        """List unique active assets that belong to a dataset eagerly."""
+        _guard_slow_list_operation(
+            self.slow_ops_policy,
+            "list_dataset_assets",
+            alternatives="iter_dataset_assets() or list_dataset_assets_page()",
+        )
         collection = await self._get_dataset_collection(dataset)
         items = await self._backend.list_collection_items(
             {"collection_id": collection.collection_id, "status": "active"}
@@ -759,6 +842,105 @@ class AsyncDataVault:
             seen.add(item.asset_id)
             assets.append(await self._backend.get_asset(item.asset_id))
         return assets
+
+    async def list_dataset_assets_page(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        collection = await self._get_dataset_collection(dataset)
+        state = _decode_dataset_cursor(cursor, expected_kind=_DATASET_ASSETS_CURSOR_KIND)
+        if state and state.get("collection_id") != collection.collection_id:
+            raise ValueError("Dataset asset cursor does not match the requested dataset")
+        if state and state.get("sort") != sort:
+            raise ValueError("Dataset asset cursor does not match the requested sort order")
+
+        resolved_limit = int(state["limit"]) if state.get("limit") is not None else limit
+        items_cursor = state.get("items_cursor")
+        seen: set[str] = set(state.get("seen_asset_ids", []))
+        pending_asset_ids: list[str] = list(state.get("pending_asset_ids", []))
+        items: list[Asset] = []
+        has_more = False
+
+        while resolved_limit is None or len(items) < resolved_limit:
+            while pending_asset_ids and (resolved_limit is None or len(items) < resolved_limit):
+                asset_id = pending_asset_ids.pop(0)
+                if asset_id in seen:
+                    continue
+                seen.add(asset_id)
+                items.append(await self._backend.get_asset(asset_id))
+            if resolved_limit is not None and len(items) >= resolved_limit:
+                has_more = bool(pending_asset_ids) or items_cursor is not None
+                break
+            if items and not pending_asset_ids and items_cursor is None and not has_more:
+                break
+
+            page = await self._backend.list_collection_items_page(
+                filters={"collection_id": collection.collection_id, "status": "active"},
+                sort=sort,
+                limit=limit,
+                cursor=items_cursor,
+                include_total=False,
+            )
+            if resolved_limit is None:
+                resolved_limit = page.page.limit
+            raw_asset_ids = [item.asset_id for item in page.items]
+            items_cursor = page.page.next_cursor
+            has_more = page.page.has_more and items_cursor is not None
+            if not raw_asset_ids and not has_more:
+                break
+            pending_asset_ids = raw_asset_ids
+            if not has_more and items_cursor is None and len(items) + len(pending_asset_ids) < resolved_limit:
+                while pending_asset_ids:
+                    asset_id = pending_asset_ids.pop(0)
+                    if asset_id in seen:
+                        continue
+                    seen.add(asset_id)
+                    items.append(await self._backend.get_asset(asset_id))
+                break
+
+        next_cursor: str | None = None
+        if pending_asset_ids or has_more:
+            next_cursor = _encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": collection.collection_id,
+                    "sort": sort,
+                    "limit": resolved_limit,
+                    "items_cursor": items_cursor,
+                    "seen_asset_ids": list(seen),
+                    "pending_asset_ids": pending_asset_ids,
+                }
+            )
+
+        total_count = await self._count_dataset_assets(collection.collection_id) if include_total else None
+        page_limit = resolved_limit if resolved_limit is not None else max(len(items), 1)
+        return CursorPage(
+            items=items,
+            page=PageInfo(
+                limit=page_limit, next_cursor=next_cursor, has_more=next_cursor is not None, total_count=total_count
+            ),
+        )
+
+    async def iter_dataset_assets(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        cursor: str | None = None
+        while True:
+            page = await self.list_dataset_assets_page(dataset, sort=sort, limit=batch_size, cursor=cursor)
+            for asset in page.items:
+                yield asset
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     async def add_annotation(
         self,
@@ -816,7 +998,12 @@ class AsyncDataVault:
         *,
         asset: str | Asset | None = None,
     ) -> list[AnnotationRecord]:
-        """List dataset-scoped annotations, optionally filtered to one asset."""
+        """List dataset-scoped annotations eagerly, optionally filtered to one asset."""
+        _guard_slow_list_operation(
+            self.slow_ops_policy,
+            "list_dataset_annotations",
+            alternatives="iter_dataset_annotations() or list_dataset_annotations_page()",
+        )
         collection = await self._get_dataset_collection(dataset)
         asset_id = await self._resolve_asset_id(asset) if asset is not None else None
         annotation_sets = await self._backend.list_annotation_sets(
@@ -827,6 +1014,111 @@ class AsyncDataVault:
             for annotation_id in annotation_set.annotation_record_ids:
                 annotations.append(await self._backend.get_annotation_record(annotation_id))
         return annotations
+
+    async def list_dataset_annotations_page(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        asset: str | Asset | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        collection = await self._get_dataset_collection(dataset)
+        asset_id = await self._resolve_asset_id(asset) if asset is not None else None
+        state = _decode_dataset_cursor(cursor, expected_kind=_DATASET_ANNOTATIONS_CURSOR_KIND)
+        if state and state.get("collection_id") != collection.collection_id:
+            raise ValueError("Dataset annotation cursor does not match the requested dataset")
+        if state and state.get("sort") != sort:
+            raise ValueError("Dataset annotation cursor does not match the requested sort order")
+        if state and state.get("asset_id") != asset_id:
+            raise ValueError("Dataset annotation cursor does not match the requested asset filter")
+
+        resolved_limit = int(state["limit"]) if state.get("limit") is not None else limit
+        annotation_sets_cursor = state.get("annotation_sets_cursor")
+        pending_annotation_ids: list[str] = list(state.get("pending_annotation_ids", []))
+        items: list[AnnotationRecord] = []
+        has_more = False
+        filters = _dataset_annotation_set_filters(collection.collection_id, asset_id=asset_id)
+
+        while resolved_limit is None or len(items) < resolved_limit:
+            while pending_annotation_ids and (resolved_limit is None or len(items) < resolved_limit):
+                items.append(await self._backend.get_annotation_record(pending_annotation_ids.pop(0)))
+            if resolved_limit is not None and len(items) >= resolved_limit:
+                has_more = bool(pending_annotation_ids) or annotation_sets_cursor is not None
+                break
+            if items and not pending_annotation_ids and annotation_sets_cursor is None and not has_more:
+                break
+
+            page = await self._backend.list_annotation_sets_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=annotation_sets_cursor,
+                include_total=False,
+            )
+            if resolved_limit is None:
+                resolved_limit = page.page.limit
+            pending_annotation_ids = [
+                annotation_id for annotation_set in page.items for annotation_id in annotation_set.annotation_record_ids
+            ]
+            annotation_sets_cursor = page.page.next_cursor
+            has_more = page.page.has_more and annotation_sets_cursor is not None
+            if not pending_annotation_ids and not has_more:
+                break
+            if (
+                not has_more
+                and annotation_sets_cursor is None
+                and len(items) + len(pending_annotation_ids) < resolved_limit
+            ):
+                while pending_annotation_ids:
+                    items.append(await self._backend.get_annotation_record(pending_annotation_ids.pop(0)))
+                break
+
+        next_cursor: str | None = None
+        if pending_annotation_ids or has_more:
+            next_cursor = _encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": collection.collection_id,
+                    "asset_id": asset_id,
+                    "sort": sort,
+                    "limit": resolved_limit,
+                    "annotation_sets_cursor": annotation_sets_cursor,
+                    "pending_annotation_ids": pending_annotation_ids,
+                }
+            )
+
+        total_count = (
+            await self._count_dataset_annotations(collection.collection_id, asset_id) if include_total else None
+        )
+        page_limit = resolved_limit if resolved_limit is not None else max(len(items), 1)
+        return CursorPage(
+            items=items,
+            page=PageInfo(
+                limit=page_limit, next_cursor=next_cursor, has_more=next_cursor is not None, total_count=total_count
+            ),
+        )
+
+    async def iter_dataset_annotations(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        asset: str | Asset | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[AnnotationRecord]:
+        cursor: str | None = None
+        while True:
+            page = await self.list_dataset_annotations_page(
+                dataset, asset=asset, sort=sort, limit=batch_size, cursor=cursor
+            )
+            for annotation in page.items:
+                yield annotation
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     async def _prepare_import_target_dataset(
         self,
@@ -1332,10 +1624,12 @@ class DataVault:
         *,
         object_name_prefix: str = "vault",
         registry: Registry | None = None,
+        slow_ops_policy: SlowOpsPolicy | str | None = None,
     ) -> None:
         self._backend = _normalize_sync_backend(backend)
         self._object_name_prefix = object_name_prefix.strip("/").strip() or "vault"
         self._registry = registry
+        self.slow_ops_policy = _resolve_slow_ops_policy(backend, slow_ops_policy)
 
     @classmethod
     def from_url(
@@ -1345,13 +1639,14 @@ class DataVault:
         timeout: int = 60,
         object_name_prefix: str = "vault",
         registry: Registry | None = None,
+        slow_ops_policy: SlowOpsPolicy | str | None = None,
     ) -> DataVault:
         """Connect to a running :class:`~mindtrace.datalake.service.DatalakeService` and return a vault.
 
         Equivalent to ``DataVault(DatalakeService.connect(url=url, timeout=timeout), ...)``.
         """
         cm = DatalakeService.connect(url=url, timeout=timeout)
-        return cls(cm, object_name_prefix=object_name_prefix, registry=registry)
+        return cls(cm, object_name_prefix=object_name_prefix, registry=registry, slow_ops_policy=slow_ops_policy)
 
     def _object_name(self, alias: str) -> str:
         safe = _sanitize_object_name_component(alias)
@@ -1382,6 +1677,30 @@ class DataVault:
 
     def _build_dataset_summary(self, collection: Collection) -> VaultDataset:
         return _build_vault_dataset(collection, asset_count=self._dataset_asset_count(collection.collection_id))
+
+    def _count_dataset_assets(self, collection_id: str) -> int:
+        seen: set[str] = set()
+        cursor: str | None = None
+        while True:
+            page = self._backend.list_collection_items_page(
+                filters={"collection_id": collection_id, "status": "active"},
+                cursor=cursor,
+            )
+            seen.update(item.asset_id for item in page.items)
+            if not page.page.has_more or page.page.next_cursor is None:
+                return len(seen)
+            cursor = page.page.next_cursor
+
+    def _count_dataset_annotations(self, collection_id: str, asset_id: str | None) -> int:
+        total = 0
+        cursor: str | None = None
+        filters = _dataset_annotation_set_filters(collection_id, asset_id=asset_id)
+        while True:
+            page = self._backend.list_annotation_sets_page(filters=filters, cursor=cursor)
+            total += sum(len(annotation_set.annotation_record_ids) for annotation_set in page.items)
+            if not page.page.has_more or page.page.next_cursor is None:
+                return total
+            cursor = page.page.next_cursor
 
     def _ensure_collection_item(
         self,
@@ -1598,7 +1917,12 @@ class DataVault:
             self._backend.delete_collection_item(item.collection_item_id)
 
     def list_dataset_assets(self, dataset: str | VaultDataset) -> list[Asset]:
-        """List unique active assets that belong to a dataset."""
+        """List unique active assets that belong to a dataset eagerly."""
+        _guard_slow_list_operation(
+            self.slow_ops_policy,
+            "list_dataset_assets",
+            alternatives="iter_dataset_assets() or list_dataset_assets_page()",
+        )
         collection = self._get_dataset_collection(dataset)
         items = self._backend.list_collection_items({"collection_id": collection.collection_id, "status": "active"})
         assets: list[Asset] = []
@@ -1609,6 +1933,104 @@ class DataVault:
             seen.add(item.asset_id)
             assets.append(self._backend.get_asset(item.asset_id))
         return assets
+
+    def list_dataset_assets_page(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        collection = self._get_dataset_collection(dataset)
+        state = _decode_dataset_cursor(cursor, expected_kind=_DATASET_ASSETS_CURSOR_KIND)
+        if state and state.get("collection_id") != collection.collection_id:
+            raise ValueError("Dataset asset cursor does not match the requested dataset")
+        if state and state.get("sort") != sort:
+            raise ValueError("Dataset asset cursor does not match the requested sort order")
+
+        resolved_limit = int(state["limit"]) if state.get("limit") is not None else limit
+        items_cursor = state.get("items_cursor")
+        seen: set[str] = set(state.get("seen_asset_ids", []))
+        pending_asset_ids: list[str] = list(state.get("pending_asset_ids", []))
+        items: list[Asset] = []
+        has_more = False
+
+        while resolved_limit is None or len(items) < resolved_limit:
+            while pending_asset_ids and (resolved_limit is None or len(items) < resolved_limit):
+                asset_id = pending_asset_ids.pop(0)
+                if asset_id in seen:
+                    continue
+                seen.add(asset_id)
+                items.append(self._backend.get_asset(asset_id))
+            if resolved_limit is not None and len(items) >= resolved_limit:
+                has_more = bool(pending_asset_ids) or items_cursor is not None
+                break
+            if items and not pending_asset_ids and items_cursor is None and not has_more:
+                break
+
+            page = self._backend.list_collection_items_page(
+                filters={"collection_id": collection.collection_id, "status": "active"},
+                sort=sort,
+                limit=limit,
+                cursor=items_cursor,
+                include_total=False,
+            )
+            if resolved_limit is None:
+                resolved_limit = page.page.limit
+            raw_asset_ids = [item.asset_id for item in page.items]
+            items_cursor = page.page.next_cursor
+            has_more = page.page.has_more and items_cursor is not None
+            if not raw_asset_ids and not has_more:
+                break
+            pending_asset_ids = raw_asset_ids
+            if not has_more and items_cursor is None and len(items) + len(pending_asset_ids) < resolved_limit:
+                while pending_asset_ids:
+                    asset_id = pending_asset_ids.pop(0)
+                    if asset_id in seen:
+                        continue
+                    seen.add(asset_id)
+                    items.append(self._backend.get_asset(asset_id))
+                break
+
+        next_cursor: str | None = None
+        if pending_asset_ids or has_more:
+            next_cursor = _encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": collection.collection_id,
+                    "sort": sort,
+                    "limit": resolved_limit,
+                    "items_cursor": items_cursor,
+                    "seen_asset_ids": list(seen),
+                    "pending_asset_ids": pending_asset_ids,
+                }
+            )
+
+        total_count = self._count_dataset_assets(collection.collection_id) if include_total else None
+        page_limit = resolved_limit if resolved_limit is not None else max(len(items), 1)
+        return CursorPage(
+            items=items,
+            page=PageInfo(
+                limit=page_limit, next_cursor=next_cursor, has_more=next_cursor is not None, total_count=total_count
+            ),
+        )
+
+    def iter_dataset_assets(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        cursor: str | None = None
+        while True:
+            page = self.list_dataset_assets_page(dataset, sort=sort, limit=batch_size, cursor=cursor)
+            yield from page.items
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     def add_annotation(
         self,
@@ -1664,7 +2086,12 @@ class DataVault:
         *,
         asset: str | Asset | None = None,
     ) -> list[AnnotationRecord]:
-        """List dataset-scoped annotations, optionally filtered to one asset."""
+        """List dataset-scoped annotations eagerly, optionally filtered to one asset."""
+        _guard_slow_list_operation(
+            self.slow_ops_policy,
+            "list_dataset_annotations",
+            alternatives="iter_dataset_annotations() or list_dataset_annotations_page()",
+        )
         collection = self._get_dataset_collection(dataset)
         asset_id = self._resolve_asset_id(asset) if asset is not None else None
         annotation_sets = self._backend.list_annotation_sets(
@@ -1675,6 +2102,106 @@ class DataVault:
             for annotation_id in annotation_set.annotation_record_ids:
                 annotations.append(self._backend.get_annotation_record(annotation_id))
         return annotations
+
+    def list_dataset_annotations_page(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        asset: str | Asset | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        collection = self._get_dataset_collection(dataset)
+        asset_id = self._resolve_asset_id(asset) if asset is not None else None
+        state = _decode_dataset_cursor(cursor, expected_kind=_DATASET_ANNOTATIONS_CURSOR_KIND)
+        if state and state.get("collection_id") != collection.collection_id:
+            raise ValueError("Dataset annotation cursor does not match the requested dataset")
+        if state and state.get("sort") != sort:
+            raise ValueError("Dataset annotation cursor does not match the requested sort order")
+        if state and state.get("asset_id") != asset_id:
+            raise ValueError("Dataset annotation cursor does not match the requested asset filter")
+
+        resolved_limit = int(state["limit"]) if state.get("limit") is not None else limit
+        annotation_sets_cursor = state.get("annotation_sets_cursor")
+        pending_annotation_ids: list[str] = list(state.get("pending_annotation_ids", []))
+        items: list[AnnotationRecord] = []
+        has_more = False
+        filters = _dataset_annotation_set_filters(collection.collection_id, asset_id=asset_id)
+
+        while resolved_limit is None or len(items) < resolved_limit:
+            while pending_annotation_ids and (resolved_limit is None or len(items) < resolved_limit):
+                items.append(self._backend.get_annotation_record(pending_annotation_ids.pop(0)))
+            if resolved_limit is not None and len(items) >= resolved_limit:
+                has_more = bool(pending_annotation_ids) or annotation_sets_cursor is not None
+                break
+            if items and not pending_annotation_ids and annotation_sets_cursor is None and not has_more:
+                break
+
+            page = self._backend.list_annotation_sets_page(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=annotation_sets_cursor,
+                include_total=False,
+            )
+            if resolved_limit is None:
+                resolved_limit = page.page.limit
+            pending_annotation_ids = [
+                annotation_id for annotation_set in page.items for annotation_id in annotation_set.annotation_record_ids
+            ]
+            annotation_sets_cursor = page.page.next_cursor
+            has_more = page.page.has_more and annotation_sets_cursor is not None
+            if not pending_annotation_ids and not has_more:
+                break
+            if (
+                not has_more
+                and annotation_sets_cursor is None
+                and len(items) + len(pending_annotation_ids) < resolved_limit
+            ):
+                while pending_annotation_ids:
+                    items.append(self._backend.get_annotation_record(pending_annotation_ids.pop(0)))
+                break
+
+        next_cursor: str | None = None
+        if pending_annotation_ids or has_more:
+            next_cursor = _encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": collection.collection_id,
+                    "asset_id": asset_id,
+                    "sort": sort,
+                    "limit": resolved_limit,
+                    "annotation_sets_cursor": annotation_sets_cursor,
+                    "pending_annotation_ids": pending_annotation_ids,
+                }
+            )
+
+        total_count = self._count_dataset_annotations(collection.collection_id, asset_id) if include_total else None
+        page_limit = resolved_limit if resolved_limit is not None else max(len(items), 1)
+        return CursorPage(
+            items=items,
+            page=PageInfo(
+                limit=page_limit, next_cursor=next_cursor, has_more=next_cursor is not None, total_count=total_count
+            ),
+        )
+
+    def iter_dataset_annotations(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        asset: str | Asset | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[AnnotationRecord]:
+        cursor: str | None = None
+        while True:
+            page = self.list_dataset_annotations_page(dataset, asset=asset, sort=sort, limit=batch_size, cursor=cursor)
+            yield from page.items
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     def _prepare_import_target_dataset(
         self,
