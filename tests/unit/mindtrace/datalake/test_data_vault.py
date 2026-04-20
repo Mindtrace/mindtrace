@@ -1,6 +1,7 @@
 """Unit tests for :mod:`mindtrace.datalake.data_vault`."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -26,6 +27,8 @@ from mindtrace.datalake.types import (
     Asset,
     Collection,
     CollectionItem,
+    DatasetVersion,
+    ResolvedDatasetVersion,
     StorageRef,
     SubjectRef,
 )
@@ -1158,3 +1161,143 @@ async def test_async_data_vault_public_dataset_error_paths():
             "training",
             {"kind": "bbox", "label": "cat", "source": {"type": "human", "name": "review"}, "geometry": {}},
         )
+
+
+def test_sync_data_vault_freeze_dataset_persists_snapshot():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="source_set_1",
+        name="training:asset_1",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
+    )
+    datalake = Mock()
+    datalake.list_collections = Mock(return_value=[collection])
+    datalake.list_collection_items = Mock(return_value=[item])
+    datalake.get_asset = Mock(return_value=asset)
+    datalake.list_annotation_sets = Mock(return_value=[source_set])
+    datalake.get_annotation_record = Mock(return_value=record)
+    datalake.create_datum = Mock(return_value=SimpleNamespace(datum_id="datum_1"))
+    datalake.create_annotation_set = Mock(
+        return_value=AnnotationSet(
+            annotation_set_id="snapshot_set_1",
+            name="training:asset_1",
+            purpose="ground_truth",
+            source_type="human",
+            status="active",
+        )
+    )
+    datalake.add_annotation_records = Mock(return_value=[])
+    datalake.create_dataset_version = Mock(return_value=DatasetVersion(dataset_name="training", version="1.2.3"))
+    datalake.resolve_dataset_version = Mock(return_value=resolved)
+
+    snapshot = DataVault(datalake)._freeze_dataset("training", persist_snapshot=True, snapshot_version="1.2.3")
+
+    assert snapshot == resolved
+    datalake.create_datum.assert_called_once()
+    datalake.create_annotation_set.assert_called_once()
+    datalake.add_annotation_records.assert_called_once()
+    datalake.create_dataset_version.assert_called_once()
+    assert datalake.create_dataset_version.call_args.kwargs["dataset_name"] == "training"
+    assert datalake.create_dataset_version.call_args.kwargs["version"] == "1.2.3"
+    assert datalake.create_dataset_version.call_args.kwargs["manifest"] == ["datum_1"]
+    assert (
+        datalake.create_dataset_version.call_args.kwargs["metadata"]["mindtrace"]["data_vault"]["source_dataset_id"]
+        == "collection_1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_freeze_dataset_persists_snapshot():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="source_set_1",
+        name="training:asset_1",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
+    )
+    datalake = Mock()
+    datalake.list_collections = AsyncMock(return_value=[collection])
+    datalake.list_collection_items = AsyncMock(return_value=[item])
+    datalake.get_asset = AsyncMock(return_value=asset)
+    datalake.list_annotation_sets = AsyncMock(return_value=[source_set])
+    datalake.get_annotation_record = AsyncMock(return_value=record)
+    datalake.create_datum = AsyncMock(return_value=SimpleNamespace(datum_id="datum_1"))
+    datalake.create_annotation_set = AsyncMock(
+        return_value=AnnotationSet(
+            annotation_set_id="snapshot_set_1",
+            name="training:asset_1",
+            purpose="ground_truth",
+            source_type="human",
+            status="active",
+        )
+    )
+    datalake.add_annotation_records = AsyncMock(return_value=[])
+    datalake.create_dataset_version = AsyncMock(return_value=DatasetVersion(dataset_name="training", version="1.2.3"))
+    datalake.resolve_dataset_version = AsyncMock(return_value=resolved)
+
+    snapshot = await AsyncDataVault(datalake)._freeze_dataset(
+        "training", persist_snapshot=True, snapshot_version="1.2.3"
+    )
+
+    assert snapshot == resolved
+    datalake.create_datum.assert_awaited_once()
+    datalake.create_annotation_set.assert_awaited_once()
+    datalake.add_annotation_records.assert_awaited_once()
+    datalake.create_dataset_version.assert_awaited_once()
+
+
+def test_data_vault_export_dataset_requires_local_backend():
+    vault = object.__new__(DataVault)
+    vault._backend = Mock()
+
+    with pytest.raises(NotImplementedError, match="local Datalake backend"):
+        vault._require_local_datalake()
+
+
+def test_async_data_vault_export_dataset_requires_local_backend():
+    vault = object.__new__(AsyncDataVault)
+    vault._backend = Mock()
+
+    with pytest.raises(NotImplementedError, match="local AsyncDatalake backend"):
+        vault._require_local_datalake()

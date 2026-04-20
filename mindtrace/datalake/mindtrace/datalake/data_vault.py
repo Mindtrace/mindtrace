@@ -49,10 +49,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Iterator, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -82,7 +83,11 @@ from mindtrace.datalake.types import (
     Asset,
     Collection,
     CollectionItem,
+    DatasetVersion,
+    Datum,
     DuplicateAliasError,
+    ResolvedDatasetVersion,
+    ResolvedDatum,
     SubjectRef,
 )
 from mindtrace.datalake.vault_serialization import (
@@ -185,6 +190,82 @@ def _annotation_id(annotation: str | AnnotationRecord) -> str:
     if isinstance(annotation, AnnotationRecord):
         return annotation.annotation_id
     return annotation
+
+
+def _merge_nested_dict(base: dict[str, Any] | None, extra: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base or {})
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_nested_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _snapshot_dataset_version_name(collection: Collection, snapshot_name: str | None) -> str:
+    return snapshot_name or collection.name
+
+
+def _snapshot_dataset_version_version(snapshot_version: str | None) -> str:
+    return snapshot_version or f"export-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+
+
+def _snapshot_primary_role(asset: Asset) -> str:
+    return "image" if asset.kind == "image" else "asset"
+
+
+def _snapshot_datum_metadata(collection: Collection, item: CollectionItem) -> dict[str, Any]:
+    return _merge_nested_dict(
+        item.metadata,
+        {
+            "mindtrace": {
+                "data_vault": {
+                    "source_dataset_id": collection.collection_id,
+                    "source_dataset_name": collection.name,
+                    "source_collection_item_id": item.collection_item_id,
+                }
+            }
+        },
+    )
+
+
+def _snapshot_annotation_set_metadata(
+    collection: Collection,
+    item: CollectionItem,
+    source_set: AnnotationSet,
+) -> dict[str, Any]:
+    return _merge_nested_dict(
+        source_set.metadata,
+        {
+            "mindtrace": {
+                "data_vault": {
+                    "source_dataset_id": collection.collection_id,
+                    "source_dataset_name": collection.name,
+                    "source_collection_item_id": item.collection_item_id,
+                    "source_annotation_set_id": source_set.annotation_set_id,
+                }
+            }
+        },
+    )
+
+
+def _snapshot_annotation_payload(record: AnnotationRecord, asset_id: str) -> dict[str, Any]:
+    payload = record.model_dump(
+        mode="json",
+        exclude={"annotation_id", "created_at", "updated_at"},
+    )
+    payload["subject"] = {"kind": "asset", "id": asset_id}
+    payload["metadata"] = _merge_nested_dict(
+        payload.get("metadata"),
+        {
+            "mindtrace": {
+                "data_vault": {
+                    "source_annotation_id": record.annotation_id,
+                }
+            }
+        },
+    )
+    return payload
 
 
 def _pil_image_to_png_bytes(image: Image.Image) -> bytes:
@@ -659,6 +740,191 @@ class AsyncDataVault:
             for annotation_id in annotation_set.annotation_record_ids:
                 annotations.append(await self._backend.get_annotation_record(annotation_id))
         return annotations
+
+    def _require_local_datalake(self) -> AsyncDatalake | Any:
+        if isinstance(self._backend, LocalAsyncDataVaultBackend):
+            return self._backend._datalake
+        raise NotImplementedError(
+            "DataVault dataset export currently requires a local AsyncDatalake backend when freeze is needed."
+        )
+
+    async def _freeze_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        persist_snapshot: bool = False,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        created_by: str | None = None,
+    ) -> ResolvedDatasetVersion:
+        collection = await self._get_dataset_collection(dataset)
+        items = await self._backend.list_collection_items(
+            {"collection_id": collection.collection_id, "status": "active"}
+        )
+        datalake = self._require_local_datalake()
+        dataset_name = _snapshot_dataset_version_name(collection, snapshot_name)
+        version = _snapshot_dataset_version_version(snapshot_version)
+
+        if persist_snapshot:
+            manifest: list[str] = []
+            for item in items:
+                asset = await self._backend.get_asset(item.asset_id)
+                datum = await datalake.create_datum(
+                    asset_refs={_snapshot_primary_role(asset): asset.asset_id},
+                    split=item.split,
+                    metadata=_snapshot_datum_metadata(collection, item),
+                )
+                manifest.append(datum.datum_id)
+                source_sets = await self._backend.list_annotation_sets(
+                    _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
+                )
+                for source_set in source_sets:
+                    frozen_set = await datalake.create_annotation_set(
+                        name=source_set.name,
+                        purpose=source_set.purpose,
+                        source_type=source_set.source_type,
+                        status=source_set.status,
+                        metadata=_snapshot_annotation_set_metadata(collection, item, source_set),
+                        created_by=created_by,
+                        datum_id=datum.datum_id,
+                        annotation_schema_id=source_set.annotation_schema_id,
+                    )
+                    source_records = [
+                        await self._backend.get_annotation_record(annotation_id)
+                        for annotation_id in source_set.annotation_record_ids
+                    ]
+                    if source_records:
+                        await datalake.add_annotation_records(
+                            [_snapshot_annotation_payload(record, asset.asset_id) for record in source_records],
+                            annotation_set_id=frozen_set.annotation_set_id,
+                            annotation_schema_id=source_set.annotation_schema_id,
+                        )
+            await datalake.create_dataset_version(
+                dataset_name=dataset_name,
+                version=version,
+                description=collection.description,
+                manifest=manifest,
+                metadata=_merge_nested_dict(
+                    collection.metadata,
+                    {
+                        "mindtrace": {
+                            "data_vault": {
+                                "source_dataset_id": collection.collection_id,
+                                "source_dataset_name": collection.name,
+                            }
+                        }
+                    },
+                ),
+                created_by=created_by,
+            )
+            return await datalake.resolve_dataset_version(dataset_name, version)
+
+        resolved_datums: list[ResolvedDatum] = []
+        manifest: list[str] = []
+        for item in items:
+            asset = await self._backend.get_asset(item.asset_id)
+            datum = Datum(
+                asset_refs={_snapshot_primary_role(asset): asset.asset_id},
+                split=item.split,
+                metadata=_snapshot_datum_metadata(collection, item),
+            )
+            source_sets = await self._backend.list_annotation_sets(
+                _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
+            )
+            frozen_sets: list[AnnotationSet] = []
+            frozen_records: dict[str, list[AnnotationRecord]] = {}
+            for source_set in source_sets:
+                cloned_records = [
+                    AnnotationRecord(**_snapshot_annotation_payload(record, asset.asset_id))
+                    for record in [
+                        await self._backend.get_annotation_record(annotation_id)
+                        for annotation_id in source_set.annotation_record_ids
+                    ]
+                ]
+                frozen_set = AnnotationSet(
+                    name=source_set.name,
+                    purpose=source_set.purpose,
+                    source_type=source_set.source_type,
+                    status=source_set.status,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                    annotation_record_ids=[record.annotation_id for record in cloned_records],
+                    metadata=_snapshot_annotation_set_metadata(collection, item, source_set),
+                    created_by=created_by,
+                )
+                frozen_sets.append(frozen_set)
+                frozen_records[frozen_set.annotation_set_id] = cloned_records
+            datum.annotation_set_ids = [annotation_set.annotation_set_id for annotation_set in frozen_sets]
+            manifest.append(datum.datum_id)
+            resolved_datums.append(
+                ResolvedDatum(
+                    datum=datum,
+                    assets={_snapshot_primary_role(asset): asset},
+                    annotation_sets=frozen_sets,
+                    annotation_records=frozen_records,
+                )
+            )
+        return ResolvedDatasetVersion(
+            dataset_version=DatasetVersion(
+                dataset_name=dataset_name,
+                version=version,
+                description=collection.description,
+                manifest=manifest,
+                metadata=_merge_nested_dict(
+                    collection.metadata,
+                    {
+                        "mindtrace": {
+                            "data_vault": {
+                                "source_dataset_id": collection.collection_id,
+                                "source_dataset_name": collection.name,
+                            }
+                        }
+                    },
+                ),
+                created_by=created_by,
+            ),
+            datums=resolved_datums,
+        )
+
+    async def export_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        format: str,
+        destination: str | Path,
+        include_media: bool = True,
+        overwrite: bool = False,
+        split_map: dict[str, str] | None = None,
+        exporter_options: dict[str, Any] | None = None,
+        persist_snapshot: bool = False,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        created_by: str | None = None,
+    ):
+        """Export a mutable DataVault dataset to a named external format."""
+        from mindtrace.datalake.exporters import export_dataset_to_format
+        from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
+
+        datalake = self._require_local_datalake()
+        resolved_dataset_version = await self._freeze_dataset(
+            dataset,
+            persist_snapshot=persist_snapshot,
+            snapshot_name=snapshot_name,
+            snapshot_version=snapshot_version,
+            created_by=created_by,
+        )
+        exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
+            datalake,
+            resolved_dataset_version,
+            split_map=split_map,
+        )
+        return export_dataset_to_format(
+            exportable_dataset,
+            format=format,
+            destination=destination,
+            include_media=include_media,
+            overwrite=overwrite,
+            exporter_options=exporter_options,
+        )
 
     async def load(
         self,
@@ -1222,6 +1488,189 @@ class DataVault:
             for annotation_id in annotation_set.annotation_record_ids:
                 annotations.append(self._backend.get_annotation_record(annotation_id))
         return annotations
+
+    def _require_local_datalake(self) -> Datalake | Any:
+        if isinstance(self._backend, LocalDataVaultBackend):
+            return self._backend._datalake
+        raise NotImplementedError(
+            "DataVault dataset export currently requires a local Datalake backend when freeze is needed."
+        )
+
+    def _freeze_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        persist_snapshot: bool = False,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        created_by: str | None = None,
+    ) -> ResolvedDatasetVersion:
+        collection = self._get_dataset_collection(dataset)
+        items = self._backend.list_collection_items({"collection_id": collection.collection_id, "status": "active"})
+        datalake = self._require_local_datalake()
+        dataset_name = _snapshot_dataset_version_name(collection, snapshot_name)
+        version = _snapshot_dataset_version_version(snapshot_version)
+
+        if persist_snapshot:
+            manifest: list[str] = []
+            for item in items:
+                asset = self._backend.get_asset(item.asset_id)
+                datum = datalake.create_datum(
+                    asset_refs={_snapshot_primary_role(asset): asset.asset_id},
+                    split=item.split,
+                    metadata=_snapshot_datum_metadata(collection, item),
+                )
+                manifest.append(datum.datum_id)
+                source_sets = self._backend.list_annotation_sets(
+                    _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
+                )
+                for source_set in source_sets:
+                    frozen_set = datalake.create_annotation_set(
+                        name=source_set.name,
+                        purpose=source_set.purpose,
+                        source_type=source_set.source_type,
+                        status=source_set.status,
+                        metadata=_snapshot_annotation_set_metadata(collection, item, source_set),
+                        created_by=created_by,
+                        datum_id=datum.datum_id,
+                        annotation_schema_id=source_set.annotation_schema_id,
+                    )
+                    source_records = [
+                        self._backend.get_annotation_record(annotation_id)
+                        for annotation_id in source_set.annotation_record_ids
+                    ]
+                    if source_records:
+                        datalake.add_annotation_records(
+                            [_snapshot_annotation_payload(record, asset.asset_id) for record in source_records],
+                            annotation_set_id=frozen_set.annotation_set_id,
+                            annotation_schema_id=source_set.annotation_schema_id,
+                        )
+            datalake.create_dataset_version(
+                dataset_name=dataset_name,
+                version=version,
+                description=collection.description,
+                manifest=manifest,
+                metadata=_merge_nested_dict(
+                    collection.metadata,
+                    {
+                        "mindtrace": {
+                            "data_vault": {
+                                "source_dataset_id": collection.collection_id,
+                                "source_dataset_name": collection.name,
+                            }
+                        }
+                    },
+                ),
+                created_by=created_by,
+            )
+            return datalake.resolve_dataset_version(dataset_name, version)
+
+        resolved_datums: list[ResolvedDatum] = []
+        manifest: list[str] = []
+        for item in items:
+            asset = self._backend.get_asset(item.asset_id)
+            datum = Datum(
+                asset_refs={_snapshot_primary_role(asset): asset.asset_id},
+                split=item.split,
+                metadata=_snapshot_datum_metadata(collection, item),
+            )
+            source_sets = self._backend.list_annotation_sets(
+                _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
+            )
+            frozen_sets: list[AnnotationSet] = []
+            frozen_records: dict[str, list[AnnotationRecord]] = {}
+            for source_set in source_sets:
+                cloned_records = [
+                    AnnotationRecord(**_snapshot_annotation_payload(record, asset.asset_id))
+                    for record in [
+                        self._backend.get_annotation_record(annotation_id)
+                        for annotation_id in source_set.annotation_record_ids
+                    ]
+                ]
+                frozen_set = AnnotationSet(
+                    name=source_set.name,
+                    purpose=source_set.purpose,
+                    source_type=source_set.source_type,
+                    status=source_set.status,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                    annotation_record_ids=[record.annotation_id for record in cloned_records],
+                    metadata=_snapshot_annotation_set_metadata(collection, item, source_set),
+                    created_by=created_by,
+                )
+                frozen_sets.append(frozen_set)
+                frozen_records[frozen_set.annotation_set_id] = cloned_records
+            datum.annotation_set_ids = [annotation_set.annotation_set_id for annotation_set in frozen_sets]
+            manifest.append(datum.datum_id)
+            resolved_datums.append(
+                ResolvedDatum(
+                    datum=datum,
+                    assets={_snapshot_primary_role(asset): asset},
+                    annotation_sets=frozen_sets,
+                    annotation_records=frozen_records,
+                )
+            )
+        return ResolvedDatasetVersion(
+            dataset_version=DatasetVersion(
+                dataset_name=dataset_name,
+                version=version,
+                description=collection.description,
+                manifest=manifest,
+                metadata=_merge_nested_dict(
+                    collection.metadata,
+                    {
+                        "mindtrace": {
+                            "data_vault": {
+                                "source_dataset_id": collection.collection_id,
+                                "source_dataset_name": collection.name,
+                            }
+                        }
+                    },
+                ),
+                created_by=created_by,
+            ),
+            datums=resolved_datums,
+        )
+
+    def export_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        format: str,
+        destination: str | Path,
+        include_media: bool = True,
+        overwrite: bool = False,
+        split_map: dict[str, str] | None = None,
+        exporter_options: dict[str, Any] | None = None,
+        persist_snapshot: bool = False,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        created_by: str | None = None,
+    ):
+        """Export a mutable DataVault dataset to a named external format."""
+        from mindtrace.datalake.exporters import export_dataset_to_format
+        from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_sync
+
+        datalake = self._require_local_datalake()
+        resolved_dataset_version = self._freeze_dataset(
+            dataset,
+            persist_snapshot=persist_snapshot,
+            snapshot_name=snapshot_name,
+            snapshot_version=snapshot_version,
+            created_by=created_by,
+        )
+        exportable_dataset = build_exportable_dataset_from_resolved_version_sync(
+            datalake,
+            resolved_dataset_version,
+            split_map=split_map,
+        )
+        return export_dataset_to_format(
+            exportable_dataset,
+            format=format,
+            destination=destination,
+            include_media=include_media,
+            overwrite=overwrite,
+            exporter_options=exporter_options,
+        )
 
     def load(
         self,
