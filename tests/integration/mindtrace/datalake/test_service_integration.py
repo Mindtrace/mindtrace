@@ -499,6 +499,11 @@ class TestDatalakeServiceIntegration:
             )
             is None
         )
+        detached_datum = datalake_service_local_manager.datums_update(
+            datum_id=datum.datum.datum_id,
+            changes={"asset_refs": {}},
+        )
+        assert detached_datum.datum.asset_refs == {}
         assert datalake_service_local_manager.assets_delete(id=created_from_object.asset.asset_id) is None
         assert datalake_service_local_manager.assets_delete(id=asset.asset.asset_id) is None
 

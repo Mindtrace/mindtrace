@@ -156,6 +156,7 @@ def test_datalake_end_to_end(sync_datalake: Datalake):
     assert created_from_object.subject.id == asset.asset_id
 
     sync_datalake.delete_annotation_record(annotation_record.annotation_id)
+    sync_datalake.update_datum(datum.datum_id, asset_refs={})
     sync_datalake.delete_asset(created_from_object.asset_id)
     sync_datalake.delete_asset(asset.asset_id)
 

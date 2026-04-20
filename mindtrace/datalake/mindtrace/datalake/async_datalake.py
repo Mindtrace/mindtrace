@@ -545,6 +545,12 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
+        datums = await self.list_datums()
+        if any(asset_id in getattr(datum, "asset_refs", {}).values() for datum in datums):
+            raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
+        collection_items = await self.collection_item_database.find({"asset_id": asset_id})
+        if collection_items:
+            raise ValueError(f"Asset {asset_id} is still referenced by one or more collection items")
         alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
         for row in alias_rows:
             await self.asset_alias_database.delete(row.id)
@@ -588,6 +594,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_collection(self, collection_id: str) -> None:
         collection = await self.get_collection(collection_id)
+        collection_items = await self.collection_item_database.find({"collection_id": collection_id})
+        for collection_item in collection_items:
+            await self.collection_item_database.delete(collection_item.id)
         await self.collection_database.delete(collection.id)
 
     async def create_collection_item(
@@ -883,6 +892,9 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSet:
         if annotation_schema_id is not None:
             await self.get_annotation_schema(annotation_schema_id)
+        datum = None
+        if datum_id is not None:
+            datum = await self.get_datum(datum_id)
         annotation_set = self._build_document(
             AnnotationSet,
             name=name,
@@ -895,12 +907,18 @@ class AsyncDatalake(Mindtrace):
             updated_at=self._utc_now(),
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
-        if datum_id is not None:
-            datum = await self.get_datum(datum_id)
+        if datum is not None:
             if inserted.annotation_set_id not in datum.annotation_set_ids:
                 datum.annotation_set_ids.append(inserted.annotation_set_id)
                 datum.updated_at = self._utc_now()
-                await self.datum_database.update(datum)
+                try:
+                    await self.datum_database.update(datum)
+                except Exception:
+                    try:
+                        await self.annotation_set_database.delete(inserted.id)
+                    except Exception:
+                        pass
+                    raise
         return inserted
 
     async def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
@@ -1133,6 +1151,8 @@ class AsyncDatalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
+        await self._validate_asset_refs_exist(asset_refs)
+        await self._validate_annotation_set_ids_exist(annotation_set_ids or [])
         datum = self._build_document(
             Datum,
             split=split,
@@ -1152,8 +1172,22 @@ class AsyncDatalake(Mindtrace):
     async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
         return await self.datum_database.find(filters or {})
 
+    async def _validate_asset_refs_exist(self, asset_refs: dict[str, str]) -> None:
+        for asset_id in asset_refs.values():
+            if not str(asset_id).strip():
+                raise ValueError("Datum asset_refs must contain non-empty asset ids")
+            await self.get_asset(asset_id)
+
+    async def _validate_annotation_set_ids_exist(self, annotation_set_ids: list[str]) -> None:
+        for annotation_set_id in annotation_set_ids:
+            await self.get_annotation_set(annotation_set_id)
+
     async def update_datum(self, datum_id: str, **changes: Any) -> Datum:
         datum = await self.get_datum(datum_id)
+        if "asset_refs" in changes and changes["asset_refs"] is not None:
+            await self._validate_asset_refs_exist(changes["asset_refs"])
+        if "annotation_set_ids" in changes and changes["annotation_set_ids"] is not None:
+            await self._validate_annotation_set_ids_exist(changes["annotation_set_ids"])
         for key, value in changes.items():
             setattr(datum, key, value)
         datum.updated_at = self._utc_now()
@@ -1173,6 +1207,10 @@ class AsyncDatalake(Mindtrace):
         existing = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
         if existing:
             raise ValueError(f"Dataset version already exists: {dataset_name}@{version}")
+        if len(manifest) != len(set(manifest)):
+            raise ValueError("Dataset version manifest must not contain duplicate datum ids")
+        for datum_id in manifest:
+            await self.get_datum(datum_id)
         dataset_version = self._build_document(
             DatasetVersion,
             dataset_name=dataset_name,

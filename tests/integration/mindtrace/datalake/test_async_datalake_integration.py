@@ -159,6 +159,7 @@ async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
     assert created_from_object.subject.id == asset.asset_id
 
     await async_datalake.delete_annotation_record(annotation_record.annotation_id)
+    await async_datalake.update_datum(datum.datum_id, asset_refs={})
     await async_datalake.delete_asset(created_from_object.asset_id)
     await async_datalake.delete_asset(asset.asset_id)
 
