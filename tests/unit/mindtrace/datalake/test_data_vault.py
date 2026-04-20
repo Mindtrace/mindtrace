@@ -13,12 +13,14 @@ from mindtrace.datalake.data_vault import (
     DataVault,
     VaultDataset,
     _annotation_id,
+    _annotation_matches_asset,
     _annotation_source_type,
     _annotations_bound_to_asset,
     _coerce_annotation_payload,
     _dataset_annotation_set_filters,
     _extract_annotation_asset_id,
     _pil_image_to_png_bytes,
+    _resolved_primary_asset,
 )
 from mindtrace.datalake.pagination_types import CursorPage, PageInfo
 from mindtrace.datalake.types import (
@@ -28,7 +30,9 @@ from mindtrace.datalake.types import (
     Collection,
     CollectionItem,
     DatasetVersion,
+    Datum,
     ResolvedDatasetVersion,
+    ResolvedDatum,
     StorageRef,
     SubjectRef,
 )
@@ -1301,3 +1305,442 @@ def test_async_data_vault_export_dataset_requires_local_backend():
 
     with pytest.raises(NotImplementedError, match="local AsyncDatalake backend"):
         vault._require_local_datalake()
+
+
+def test_data_vault_import_helpers_handle_asset_selection_and_unbound_annotations():
+    asset = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    resolved = ResolvedDatum(
+        datum=Datum(asset_refs={"other": "asset_1"}),
+        assets={"other": asset},
+        annotation_sets=[],
+        annotation_records={},
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        source={"type": "human", "name": "review"},
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+
+    assert _resolved_primary_asset(resolved) == asset
+    assert (
+        _resolved_primary_asset(
+            ResolvedDatum(datum=Datum(asset_refs={}), assets={}, annotation_sets=[], annotation_records={})
+        )
+        is None
+    )
+    assert _annotation_matches_asset(record, "asset_1") is True
+
+
+def test_sync_data_vault_prepare_import_target_dataset_archives_existing_collection():
+    existing = Collection(name="training", collection_id="collection_existing")
+    created = Collection(name="training", collection_id="collection_new")
+    datalake = Mock()
+    datalake.list_collections = Mock(side_effect=[[existing], []])
+    datalake.update_collection = Mock(return_value=existing)
+    datalake.create_collection = Mock(return_value=created)
+
+    dataset = DataVault(datalake)._prepare_import_target_dataset(
+        dataset_name="training",
+        description="Imported",
+        metadata={"source": "snapshot"},
+        overwrite=True,
+        created_by="tester",
+    )
+
+    assert dataset.dataset_id == "collection_new"
+    datalake.update_collection.assert_called_once_with("collection_existing", status="archived")
+
+
+def test_sync_data_vault_prepare_import_target_dataset_rejects_existing_name_without_overwrite():
+    existing = Collection(name="training", collection_id="collection_existing")
+    datalake = Mock()
+    datalake.list_collections = Mock(return_value=[existing])
+
+    with pytest.raises(ValueError, match="already exists"):
+        DataVault(datalake)._prepare_import_target_dataset(
+            dataset_name="training",
+            description="Imported",
+            metadata={"source": "snapshot"},
+            overwrite=False,
+            created_by="tester",
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_prepare_import_target_dataset_archives_existing_collection():
+    existing = Collection(name="training", collection_id="collection_existing")
+    created = Collection(name="training", collection_id="collection_new")
+    datalake = Mock()
+    datalake.list_collections = AsyncMock(side_effect=[[existing], []])
+    datalake.update_collection = AsyncMock(return_value=existing)
+    datalake.create_collection = AsyncMock(return_value=created)
+
+    dataset = await AsyncDataVault(datalake)._prepare_import_target_dataset(
+        dataset_name="training",
+        description="Imported",
+        metadata={"source": "snapshot"},
+        overwrite=True,
+        created_by="tester",
+    )
+
+    assert dataset.dataset_id == "collection_new"
+    datalake.update_collection.assert_awaited_once_with("collection_existing", status="archived")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_prepare_import_target_dataset_rejects_existing_name_without_overwrite():
+    existing = Collection(name="training", collection_id="collection_existing")
+    datalake = Mock()
+    datalake.list_collections = AsyncMock(return_value=[existing])
+
+    with pytest.raises(ValueError, match="already exists"):
+        await AsyncDataVault(datalake)._prepare_import_target_dataset(
+            dataset_name="training",
+            description="Imported",
+            metadata={"source": "snapshot"},
+            overwrite=False,
+            created_by="tester",
+        )
+
+
+def test_sync_data_vault_import_dataset_version_materializes_mutable_dataset():
+    source_dataset = DatasetVersion(
+        dataset_name="source-dataset", version="1.0.0", dataset_version_id="dataset_version_1"
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="image", version="1"),
+        asset_id="asset_image",
+    )
+    mask_asset = Asset(
+        kind="mask",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="mask", version="1"),
+        asset_id="asset_mask",
+    )
+    image_record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_image"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+    mask_record = AnnotationRecord(
+        annotation_id="annotation_2",
+        kind="bbox",
+        label="mask",
+        subject=SubjectRef(kind="asset", id="asset_mask"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 5, "y": 6, "width": 7, "height": 8},
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1", "annotation_2"],
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=source_dataset,
+        datums=[
+            ResolvedDatum(
+                datum=Datum(asset_refs={"image": "asset_image"}, split="train", metadata={"row": 1}),
+                assets={"image": image_asset, "mask": mask_asset},
+                annotation_sets=[source_set],
+                annotation_records={source_set.annotation_set_id: [image_record, mask_record]},
+            )
+        ],
+    )
+    imported_dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training-copy",
+        created_at=Collection(name="training-copy").created_at,
+        updated_at=Collection(name="training-copy").updated_at,
+    )
+    imported_set = AnnotationSet(
+        annotation_set_id="imported_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+    )
+    datalake = Mock()
+    vault = DataVault(datalake)
+    vault._prepare_import_target_dataset = Mock(return_value=imported_dataset)
+    vault._get_dataset_collection = Mock(return_value=Collection(name="training-copy", collection_id="collection_1"))
+    vault._ensure_collection_item = Mock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_image")
+    )
+    vault.get_dataset = Mock(return_value=imported_dataset)
+    datalake.resolve_dataset_version = Mock(return_value=resolved)
+    datalake.create_annotation_set = Mock(return_value=imported_set)
+    datalake.add_annotation_records = Mock(return_value=[image_record])
+
+    result = vault.import_dataset_version("source-dataset", "1.0.0", target_name="training-copy")
+
+    assert result == imported_dataset
+    vault._ensure_collection_item.assert_called_once()
+    datalake.create_annotation_set.assert_called_once()
+    added_payloads = datalake.add_annotation_records.call_args.args[0]
+    assert len(added_payloads) == 1
+    assert added_payloads[0]["subject"]["id"] == "asset_image"
+
+
+def test_sync_data_vault_import_dataset_version_skips_empty_datums_and_non_primary_records():
+    source_dataset = DatasetVersion(
+        dataset_name="source-dataset", version="1.0.0", dataset_version_id="dataset_version_1"
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="image", version="1"),
+        asset_id="asset_image",
+    )
+    other_asset = Asset(
+        kind="mask",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="mask", version="1"),
+        asset_id="asset_mask",
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    foreign_record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="mask",
+        subject=SubjectRef(kind="asset", id="asset_mask"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 5, "y": 6, "width": 7, "height": 8},
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=source_dataset,
+        datums=[
+            ResolvedDatum(
+                datum=Datum(asset_refs={}),
+                assets={},
+                annotation_sets=[],
+                annotation_records={},
+            ),
+            ResolvedDatum(
+                datum=Datum(asset_refs={"image": "asset_image"}, split="train"),
+                assets={"image": image_asset, "mask": other_asset},
+                annotation_sets=[source_set],
+                annotation_records={source_set.annotation_set_id: [foreign_record]},
+            ),
+        ],
+    )
+    imported_dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training-copy",
+        created_at=Collection(name="training-copy").created_at,
+        updated_at=Collection(name="training-copy").updated_at,
+    )
+    datalake = Mock()
+    vault = DataVault(datalake)
+    vault._prepare_import_target_dataset = Mock(return_value=imported_dataset)
+    vault._get_dataset_collection = Mock(return_value=Collection(name="training-copy", collection_id="collection_1"))
+    vault._ensure_collection_item = Mock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_image")
+    )
+    vault.get_dataset = Mock(return_value=imported_dataset)
+    datalake.resolve_dataset_version = Mock(return_value=resolved)
+    datalake.create_annotation_set = Mock()
+    datalake.add_annotation_records = Mock()
+
+    result = vault.import_dataset_version("source-dataset", "1.0.0", target_name="training-copy")
+
+    assert result == imported_dataset
+    vault._ensure_collection_item.assert_called_once()
+    datalake.create_annotation_set.assert_not_called()
+    datalake.add_annotation_records.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_import_dataset_version_materializes_mutable_dataset():
+    source_dataset = DatasetVersion(
+        dataset_name="source-dataset", version="1.0.0", dataset_version_id="dataset_version_1"
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="image", version="1"),
+        asset_id="asset_image",
+    )
+    image_record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_image"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 1, "y": 2, "width": 3, "height": 4},
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=source_dataset,
+        datums=[
+            ResolvedDatum(
+                datum=Datum(asset_refs={"image": "asset_image"}, split="train", metadata={"row": 1}),
+                assets={"image": image_asset},
+                annotation_sets=[source_set],
+                annotation_records={source_set.annotation_set_id: [image_record]},
+            )
+        ],
+    )
+    imported_dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training-copy",
+        created_at=Collection(name="training-copy").created_at,
+        updated_at=Collection(name="training-copy").updated_at,
+    )
+    imported_set = AnnotationSet(
+        annotation_set_id="imported_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+    )
+    datalake = Mock()
+    vault = AsyncDataVault(datalake)
+    vault._prepare_import_target_dataset = AsyncMock(return_value=imported_dataset)
+    vault._get_dataset_collection = AsyncMock(
+        return_value=Collection(name="training-copy", collection_id="collection_1")
+    )
+    vault._ensure_collection_item = AsyncMock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_image")
+    )
+    vault.get_dataset = AsyncMock(return_value=imported_dataset)
+    datalake.resolve_dataset_version = AsyncMock(return_value=resolved)
+    datalake.create_annotation_set = AsyncMock(return_value=imported_set)
+    datalake.add_annotation_records = AsyncMock(return_value=[image_record])
+
+    result = await vault.import_dataset_version("source-dataset", "1.0.0", target_name="training-copy")
+
+    assert result == imported_dataset
+    vault._ensure_collection_item.assert_awaited_once()
+    datalake.create_annotation_set.assert_awaited_once()
+    added_payloads = datalake.add_annotation_records.await_args.args[0]
+    assert len(added_payloads) == 1
+    assert added_payloads[0]["subject"]["id"] == "asset_image"
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_import_dataset_version_skips_empty_datums_and_non_primary_records():
+    source_dataset = DatasetVersion(
+        dataset_name="source-dataset", version="1.0.0", dataset_version_id="dataset_version_1"
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="image", version="1"),
+        asset_id="asset_image",
+    )
+    other_asset = Asset(
+        kind="mask",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="mask", version="1"),
+        asset_id="asset_mask",
+    )
+    source_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="source-set",
+        purpose="ground_truth",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    foreign_record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="mask",
+        subject=SubjectRef(kind="asset", id="asset_mask"),
+        source={"type": "human", "name": "review"},
+        geometry={"x": 5, "y": 6, "width": 7, "height": 8},
+    )
+    resolved = ResolvedDatasetVersion(
+        dataset_version=source_dataset,
+        datums=[
+            ResolvedDatum(datum=Datum(asset_refs={}), assets={}, annotation_sets=[], annotation_records={}),
+            ResolvedDatum(
+                datum=Datum(asset_refs={"image": "asset_image"}, split="train"),
+                assets={"image": image_asset, "mask": other_asset},
+                annotation_sets=[source_set],
+                annotation_records={source_set.annotation_set_id: [foreign_record]},
+            ),
+        ],
+    )
+    imported_dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training-copy",
+        created_at=Collection(name="training-copy").created_at,
+        updated_at=Collection(name="training-copy").updated_at,
+    )
+    datalake = Mock()
+    vault = AsyncDataVault(datalake)
+    vault._prepare_import_target_dataset = AsyncMock(return_value=imported_dataset)
+    vault._get_dataset_collection = AsyncMock(
+        return_value=Collection(name="training-copy", collection_id="collection_1")
+    )
+    vault._ensure_collection_item = AsyncMock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_image")
+    )
+    vault.get_dataset = AsyncMock(return_value=imported_dataset)
+    datalake.resolve_dataset_version = AsyncMock(return_value=resolved)
+    datalake.create_annotation_set = AsyncMock()
+    datalake.add_annotation_records = AsyncMock()
+
+    result = await vault.import_dataset_version("source-dataset", "1.0.0", target_name="training-copy")
+
+    assert result == imported_dataset
+    vault._ensure_collection_item.assert_awaited_once()
+    datalake.create_annotation_set.assert_not_called()
+    datalake.add_annotation_records.assert_not_called()
+
+
+def test_sync_data_vault_freeze_dataset_returns_dataset_version_when_persisting():
+    resolved = ResolvedDatasetVersion(
+        dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
+    )
+    vault = object.__new__(DataVault)
+    vault._freeze_dataset = Mock(return_value=resolved)
+
+    result = vault.freeze_dataset("training", persist=True, snapshot_version="1.2.3")
+
+    assert result == resolved.dataset_version
+    vault._freeze_dataset.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_freeze_dataset_returns_resolved_snapshot_when_not_persisting():
+    resolved = ResolvedDatasetVersion(
+        dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
+    )
+    vault = object.__new__(AsyncDataVault)
+    vault._freeze_dataset = AsyncMock(return_value=resolved)
+
+    result = await vault.freeze_dataset("training", persist=False, snapshot_version="1.2.3")
+
+    assert result == resolved
+    vault._freeze_dataset.assert_awaited_once()
