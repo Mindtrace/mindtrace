@@ -254,33 +254,35 @@ def test_sync_datalake_iterators_stream_end_to_end(sync_datalake: Datalake):
         created_by="pytest",
     )
 
-    assert [item.asset_id for item in sync_datalake.iter_assets(filters={"metadata.suite": "iterator"})] == [asset.asset_id]
-    assert [item.collection_id for item in sync_datalake.iter_collections(filters={"name": "sync-iterator-collection"})] == [
-        collection.collection_id
+    assert [item.asset_id for item in sync_datalake.iter_assets(filters={"metadata.suite": "iterator"})] == [
+        asset.asset_id
     ]
     assert [
-        item.collection_item_id for item in sync_datalake.iter_collection_items(filters={"collection_id": collection.collection_id})
+        item.collection_id for item in sync_datalake.iter_collections(filters={"name": "sync-iterator-collection"})
+    ] == [collection.collection_id]
+    assert [
+        item.collection_item_id
+        for item in sync_datalake.iter_collection_items(filters={"collection_id": collection.collection_id})
     ] == [collection_item.collection_item_id]
-    assert [item.asset_retention_id for item in sync_datalake.iter_asset_retentions(filters={"asset_id": asset.asset_id})] == [
-        asset_retention.asset_retention_id
-    ]
+    assert [
+        item.asset_retention_id for item in sync_datalake.iter_asset_retentions(filters={"asset_id": asset.asset_id})
+    ] == [asset_retention.asset_retention_id]
     assert [
         item.annotation_schema_id
         for item in sync_datalake.iter_annotation_schemas(filters={"name": "sync-iterator-schema"})
     ] == [annotation_schema.annotation_schema_id]
     assert [
         item.annotation_set_id
-        for item in sync_datalake.iter_annotation_sets(filters={"annotation_schema_id": annotation_schema.annotation_schema_id})
-    ] == [
-        annotation_set.annotation_set_id
-    ]
+        for item in sync_datalake.iter_annotation_sets(
+            filters={"annotation_schema_id": annotation_schema.annotation_schema_id}
+        )
+    ] == [annotation_set.annotation_set_id]
     assert [
         item.annotation_id for item in sync_datalake.iter_annotation_records(filters={"subject.id": asset.asset_id})
     ] == [annotation_record.annotation_id]
     assert [item.datum_id for item in sync_datalake.iter_datums(filters={"split": "train"})] == [datum.datum_id]
     assert [
-        item.dataset_version_id
-        for item in sync_datalake.iter_dataset_versions(dataset_name="sync-iterator-dataset")
+        item.dataset_version_id for item in sync_datalake.iter_dataset_versions(dataset_name="sync-iterator-dataset")
     ] == [dataset_version.dataset_version_id]
 
     sync_datalake.delete_annotation_record(annotation_record.annotation_id)

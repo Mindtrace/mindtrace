@@ -135,7 +135,9 @@ async def test_async_data_vault_image_discovery_supports_paging_and_streaming(as
     assert first_page.page.has_more is True
     assert second_page.page.has_more is False
     assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
-    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {
+        asset.asset_id for asset in assets
+    }
 
 
 def test_sync_data_vault_image_discovery_supports_paging_and_streaming(sync_datalake: Datalake):
@@ -202,7 +204,9 @@ async def test_async_data_vault_image_discovery_inprocess_service(datalake_servi
     assert first_page.page.has_more is True
     assert second_page.page.has_more is False
     assert {asset.asset_id for asset in first_page.items + second_page.items} == {asset.asset_id for asset in assets}
-    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {asset.asset_id for asset in assets}
+    assert {asset.asset_id async for asset in vault.iter_image_assets(batch_size=2)} == {
+        asset.asset_id for asset in assets
+    }
 
 
 def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_local_manager):

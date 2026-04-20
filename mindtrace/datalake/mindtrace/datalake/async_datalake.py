@@ -472,9 +472,7 @@ class AsyncDatalake(Mindtrace):
         resolved_limit = self._default_page_limit() if limit is None else limit
         max_page_limit = self._max_page_limit()
         if resolved_limit < 1 or resolved_limit > max_page_limit:
-            raise ValueError(
-                f"Page limit must be between 1 and {max_page_limit}, got {resolved_limit}."
-            )
+            raise ValueError(f"Page limit must be between 1 and {max_page_limit}, got {resolved_limit}.")
         return resolved_limit
 
     async def _paginate_database(

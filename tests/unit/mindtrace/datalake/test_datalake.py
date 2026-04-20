@@ -468,10 +468,14 @@ class TestDatalakeSyncFacade:
 
     def test_sync_pagination_methods_delegate_to_async_backend(self, datalake, mock_backend):
         asset_page = CursorPage(
-            items=[Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png"))],
+            items=[
+                Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png"))
+            ],
             page=PageInfo(limit=1, next_cursor="asset-cursor", has_more=True, total_count=2),
         )
-        collection_page = CursorPage(items=[Collection(name="demo")], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+        collection_page = CursorPage(
+            items=[Collection(name="demo")], page=PageInfo(limit=1, next_cursor=None, has_more=False)
+        )
         collection_item_page = CursorPage(
             items=[CollectionItem(collection_id="collection_1", asset_id="asset_1")],
             page=PageInfo(limit=1, next_cursor=None, has_more=False),
@@ -497,7 +501,9 @@ class TestDatalakeSyncFacade:
             page=PageInfo(limit=1, next_cursor=None, has_more=False),
         )
         annotation_record_page = CursorPage(
-            items=[AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})],
+            items=[
+                AnnotationRecord(kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={})
+            ],
             page=PageInfo(limit=1, next_cursor=None, has_more=False),
         )
         datum_page = CursorPage(
@@ -546,7 +552,9 @@ class TestDatalakeSyncFacade:
         )
         collection = Collection(collection_id="collection_1", name="demo")
         collection_item = CollectionItem(collection_item_id="item_1", collection_id="collection_1", asset_id="asset_1")
-        asset_retention = AssetRetention(asset_retention_id="retention_1", asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1")
+        asset_retention = AssetRetention(
+            asset_retention_id="retention_1", asset_id="asset_1", owner_type="manual_pin", owner_id="owner_1"
+        )
         annotation_schema = AnnotationSchema(
             annotation_schema_id="schema_1",
             name="demo-schema",
@@ -600,12 +608,14 @@ class TestDatalakeSyncFacade:
         assert list(datalake.iter_annotation_schemas(filters={"task_type": "classification"}, batch_size=14)) == [
             annotation_schema
         ]
-        assert list(datalake.iter_annotation_sets(filters={"purpose": "ground_truth"}, batch_size=15)) == [annotation_set]
+        assert list(datalake.iter_annotation_sets(filters={"purpose": "ground_truth"}, batch_size=15)) == [
+            annotation_set
+        ]
         assert list(datalake.iter_annotation_records(filters={"label": "dent"}, batch_size=20)) == [annotation_record]
         assert list(datalake.iter_datums(filters={"split": "train"}, batch_size=30)) == [datum]
-        assert list(datalake.iter_dataset_versions(dataset_name="demo", filters={"version": "0.1.0"}, batch_size=31)) == [
-            dataset_version
-        ]
+        assert list(
+            datalake.iter_dataset_versions(dataset_name="demo", filters={"version": "0.1.0"}, batch_size=31)
+        ) == [dataset_version]
 
         mock_backend.asset_database.find_iter_sync.assert_called_once_with(
             {"kind": "image"},

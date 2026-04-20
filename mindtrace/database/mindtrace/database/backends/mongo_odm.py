@@ -751,7 +751,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
     ) -> Iterator[T]:
         """Lazily iterate over matching documents using a synchronous Mongo cursor."""
         if self._models is not None:
-            raise ValueError("Cannot use find_iter_sync() in multi-model mode. Use db.model_name.find_iter_sync() instead.")
+            raise ValueError(
+                "Cannot use find_iter_sync() in multi-model mode. Use db.model_name.find_iter_sync() instead."
+            )
 
         try:
             asyncio.get_running_loop()

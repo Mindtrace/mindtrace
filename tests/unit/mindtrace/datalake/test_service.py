@@ -1554,9 +1554,7 @@ async def test_service_metadata_pages_map_page_contracts(service, mock_datalake,
     schema_result = await service.list_annotation_schemas_page(
         PageInput(filters={"task_type": "detection"}, limit=1, include_total=True)
     )
-    set_result = await service.list_annotation_sets_page(
-        PageInput(filters={"purpose": "ground_truth"}, limit=1)
-    )
+    set_result = await service.list_annotation_sets_page(PageInput(filters={"purpose": "ground_truth"}, limit=1))
 
     mock_datalake.list_asset_retentions_page.assert_awaited_once_with(
         filters={"asset_id": datalake_objects.asset.asset_id},
@@ -1797,7 +1795,9 @@ async def test_service_replication_hydrate_asset_payload_uses_replication_manage
 
 @pytest.mark.asyncio
 async def test_service_replication_reconcile_uses_replication_manager(service):
-    request = ReplicationReconcileRequest(asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"})
+    request = ReplicationReconcileRequest(
+        asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"}
+    )
     reconcile_result = ReplicationReconcileResult(
         attempted_asset_ids=["asset_1"],
         verified_asset_ids=["asset_1"],

@@ -209,7 +209,9 @@ class DatalakeService(Service):
         self.mongo_db_name = mongo_db_name
         self.mounts = mounts
         self.default_mount = default_mount
-        self.slow_ops_policy = async_datalake.slow_ops_policy if async_datalake is not None else SlowOpsPolicy(slow_ops_policy)
+        self.slow_ops_policy = (
+            async_datalake.slow_ops_policy if async_datalake is not None else SlowOpsPolicy(slow_ops_policy)
+        )
         self._datalake: AsyncDatalake | None = async_datalake
         self._initialized = async_datalake is not None
         self.initialize_on_startup = initialize_on_startup
@@ -450,10 +452,7 @@ class DatalakeService(Service):
         except SlowOperationDisabledError as exc:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "This deployment disables eager list endpoints because they do not scale safely. "
-                    f"{exc}"
-                ),
+                detail=(f"This deployment disables eager list endpoints because they do not scale safely. {exc}"),
             ) from exc
 
     @staticmethod
@@ -642,7 +641,9 @@ class DatalakeService(Service):
 
     async def list_collections(self, payload: ListInput) -> CollectionListOutput:
         datalake = await self._ensure_datalake()
-        return CollectionListOutput(collections=await self._await_client_safe(datalake.list_collections(payload.filters)))
+        return CollectionListOutput(
+            collections=await self._await_client_safe(datalake.list_collections(payload.filters))
+        )
 
     async def list_collections_page(self, payload: PageInput) -> CollectionPageOutput:
         datalake = await self._ensure_datalake()
@@ -833,7 +834,9 @@ class DatalakeService(Service):
     ) -> AnnotationRecordListOutput:
         datalake = await self._ensure_datalake()
         return AnnotationRecordListOutput(
-            annotation_records=await self._await_client_safe(datalake.list_annotation_records_for_asset(payload.asset_id)),
+            annotation_records=await self._await_client_safe(
+                datalake.list_annotation_records_for_asset(payload.asset_id)
+            ),
         )
 
     async def list_annotation_records_for_asset_page(

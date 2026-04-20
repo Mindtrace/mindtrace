@@ -329,7 +329,10 @@ def test_datalake_service_sync_backend_create_and_add_alias():
     cm.aliases_add = Mock(return_value=AssetAliasOutput(asset_alias=row))
 
     backend = DatalakeServiceDataVaultBackend(cm)
-    assert backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream") is asset
+    assert (
+        backend.create_asset_from_object(name="n", obj=b"b", kind="artifact", media_type="application/octet-stream")
+        is asset
+    )
     assert backend.add_alias("id1", "f") is row
 
 
@@ -349,12 +352,16 @@ class _BareAsyncConnectionManager(ConnectionManager):
 
 
 def test_looks_like_datalake_service_sync_client_accepts_connection_manager_without_endpoint_probe():
-    assert looks_like_datalake_service_sync_client(_BareSyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+    assert (
+        looks_like_datalake_service_sync_client(_BareSyncConnectionManager(url=parse_url("http://localhost:8080")))
+        is True
+    )
 
 
 def test_looks_like_datalake_service_async_client_accepts_connection_manager_without_endpoint_probe():
     assert (
-        looks_like_datalake_service_async_client(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080"))) is True
+        looks_like_datalake_service_async_client(_BareAsyncConnectionManager(url=parse_url("http://localhost:8080")))
+        is True
     )
 
 
@@ -526,7 +533,9 @@ async def test_local_async_backend_delegates_annotation_methods():
 
     backend = LocalAsyncDataVaultBackend(dl)
     assert await backend.add_annotation_records([{"kind": "bbox"}], annotation_set_id="s1") == [rec]
-    dl.add_annotation_records.assert_awaited_once_with([{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None)
+    dl.add_annotation_records.assert_awaited_once_with(
+        [{"kind": "bbox"}], annotation_set_id="s1", annotation_schema_id=None
+    )
     assert await backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_awaited_once_with("a1")
 
@@ -635,7 +644,9 @@ def test_local_sync_backend_delegates_annotation_methods():
 
     backend = LocalDataVaultBackend(dl)
     assert backend.add_annotation_records([{"kind": "bbox"}], annotation_schema_id="sch") == [rec]
-    dl.add_annotation_records.assert_called_once_with([{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch")
+    dl.add_annotation_records.assert_called_once_with(
+        [{"kind": "bbox"}], annotation_set_id=None, annotation_schema_id="sch"
+    )
     assert backend.list_annotation_records_for_asset("a1") == [rec]
     dl.list_annotation_records_for_asset.assert_called_once_with("a1")
 
