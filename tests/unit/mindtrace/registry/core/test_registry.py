@@ -12,9 +12,9 @@ from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
+from mindtrace.registry.archivers.builtin_materializers import CloudpickleMaterializer
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
-from mindtrace.registry.archivers.builtin_materializers import CloudpickleMaterializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
     RegistryObjectNotFound,
