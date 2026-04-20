@@ -30,6 +30,12 @@ def _apply_mount_map_to_storage_ref(storage_ref: StorageRef, mount_map: dict[str
     return StorageRef(mount=mapped, name=storage_ref.name, version=storage_ref.version)
 
 
+def _storage_refs_equivalent(a: StorageRef, b: StorageRef) -> bool:
+    av = a.version if a.version is not None else "latest"
+    bv = b.version if b.version is not None else "latest"
+    return a.mount == b.mount and a.name == b.name and av == bv
+
+
 def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
     for key in ("size_bytes", "size", "content_length", "ContentLength"):
         val = meta.get(key)
@@ -128,6 +134,16 @@ class ReplicationManager:
         merged["replication"] = state.model_dump(mode="json")
         return merged
 
+    @staticmethod
+    def _should_preserve_verified_payload(
+        existing_asset: Asset, new_asset: Asset, mapped_storage_ref: StorageRef
+    ) -> bool:
+        if ReplicationManager.get_payload_status(existing_asset) != "verified":
+            return False
+        if not _storage_refs_equivalent(existing_asset.storage_ref, mapped_storage_ref):
+            return False
+        return existing_asset.checksum == new_asset.checksum and existing_asset.size_bytes == new_asset.size_bytes
+
     async def upsert_metadata_batch(self, request: ReplicationBatchRequest) -> ReplicationBatchResult:
         result = ReplicationBatchResult()
 
@@ -153,20 +169,36 @@ class ReplicationManager:
 
         for asset in request.assets:
             mapped_storage_ref = _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map)
+            existing_asset = None
+            try:
+                existing_asset = await self.target.get_asset(asset.asset_id)
+            except DocumentNotFoundError:
+                pass
+
+            metadata_for_replication = dict(asset.metadata or {})
+            payload_status: PayloadStatus = "pending"
+            if existing_asset is not None and self._should_preserve_verified_payload(
+                existing_asset, asset, mapped_storage_ref
+            ):
+                existing_replication = (existing_asset.metadata or {}).get("replication")
+                if isinstance(existing_replication, dict):
+                    metadata_for_replication["replication"] = dict(existing_replication)
+                payload_status = "verified"
+
             replicated = Asset.model_validate(
                 {
                     **asset.model_dump(),
                     "storage_ref": mapped_storage_ref.model_dump(),
                     "metadata": self.build_asset_replication_metadata(
-                        asset.metadata,
+                        metadata_for_replication,
                         origin_lake_id=request.origin_lake_id,
                         origin_asset_id=asset.asset_id,
                         replication_mode=request.replication_mode,
-                        payload_status="pending",
+                        payload_status=payload_status,
                     ),
                 }
             )
-            if await self._asset_exists(asset.asset_id):
+            if existing_asset is not None:
                 await self._update_asset(replicated)
                 result.updated_assets += 1
             else:

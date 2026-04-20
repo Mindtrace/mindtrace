@@ -455,6 +455,9 @@ class TestAsyncDatalakeUnit:
         assert await async_datalake.list_assets({"kind": "image"}) == [asset]
         updated = await async_datalake.update_asset_metadata(asset.asset_id, {"source": "demo"})
         assert updated.metadata == {"source": "demo"}
+        async_datalake.get_asset = AsyncMock(return_value=asset)
+        async_datalake.list_datums = AsyncMock(return_value=[])
+        async_datalake.collection_item_database.find = AsyncMock(return_value=[])
         await async_datalake.delete_asset(asset.asset_id)
         mock_odm.delete.assert_awaited_with("db-id")
 
@@ -501,6 +504,24 @@ class TestAsyncDatalakeUnit:
         )
         assert inserted == [inserted_model, inserted_dict]
         assert annotation_set.annotation_record_ids == ["annotation_model", "annotation_dict"]
+
+    @pytest.mark.asyncio
+    async def test_create_annotation_set_rolls_back_when_datum_update_fails(self, async_datalake, mock_odm):
+        datum = Datum(asset_refs={"image": "asset_123"})
+        datum.annotation_set_ids = []
+        async_datalake.get_datum = AsyncMock(return_value=datum)
+        async_datalake.annotation_set_database.delete = AsyncMock()
+        async_datalake.datum_database.update = AsyncMock(side_effect=RuntimeError("datum update failed"))
+
+        with pytest.raises(RuntimeError, match="datum update failed"):
+            await async_datalake.create_annotation_set(
+                name="gt",
+                purpose="ground_truth",
+                source_type="human",
+                datum_id=datum.datum_id,
+            )
+
+        async_datalake.annotation_set_database.delete.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_add_annotation_records_without_set_requires_asset_subject(self, async_datalake, mock_odm):
@@ -773,6 +794,12 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_datum_crud_async(self, async_datalake, mock_odm):
+        async_datalake.get_asset = AsyncMock(
+            return_value=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
+        )
+        async_datalake.get_annotation_set = AsyncMock(
+            return_value=AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
+        )
         datum = await async_datalake.create_datum(
             asset_refs={"image": "asset_1"}, split="train", metadata={"source": "demo"}, annotation_set_ids=["set_1"]
         )
@@ -785,6 +812,29 @@ class TestAsyncDatalakeUnit:
         assert updated.metadata == {"source": "updated"}
 
     @pytest.mark.asyncio
+    async def test_update_datum_validates_asset_refs(self, async_datalake):
+        datum = Datum(asset_refs={"image": "asset_1"})
+        async_datalake.get_datum = AsyncMock(return_value=datum)
+        async_datalake.get_asset = AsyncMock(
+            return_value=Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
+        )
+
+        await async_datalake.update_datum(datum.datum_id, asset_refs={"image": "asset_2"})
+
+        async_datalake.get_asset.assert_awaited_once_with("asset_2")
+
+    @pytest.mark.asyncio
+    async def test_delete_asset_raises_when_still_referenced_by_datum(self, async_datalake):
+        asset = Asset(kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="x"))
+        asset.id = "db-asset"
+        datum = Datum(asset_refs={"image": asset.asset_id})
+        async_datalake.get_asset = AsyncMock(return_value=asset)
+        async_datalake.list_datums = AsyncMock(return_value=[datum])
+
+        with pytest.raises(ValueError, match="still referenced"):
+            await async_datalake.delete_asset(asset.asset_id)
+
+    @pytest.mark.asyncio
     async def test_get_datum_raises_when_missing(self, async_datalake, mock_odm):
         mock_odm.find.return_value = []
         with pytest.raises(DocumentNotFoundError):
@@ -793,6 +843,12 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_dataset_version_async(self, async_datalake, mock_odm):
         mock_odm.find.return_value = []
+        async_datalake.get_datum = AsyncMock(
+            side_effect=[
+                Datum(asset_refs={"image": "asset_1"}),
+                Datum(asset_refs={"image": "asset_2"}),
+            ]
+        )
         created = await async_datalake.create_dataset_version(
             dataset_name="demo", version="0.1.0", manifest=["datum_1", "datum_2"]
         )
