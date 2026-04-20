@@ -24,13 +24,17 @@ from mindtrace.datalake.service_types import (
     CreateAssetFromObjectInput,
     CreateCollectionInput,
     CreateCollectionItemInput,
+    CreateDatasetVersionInput,
+    CreateDatumInput,
     DeleteByIdInput,
     GetAssetByAliasInput,
     GetByIdInput,
+    GetDatasetVersionInput,
     GetObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     PageInput,
+    UpdateCollectionInput,
     UpdateCollectionItemInput,
 )
 from mindtrace.datalake.types import (
@@ -40,6 +44,9 @@ from mindtrace.datalake.types import (
     AssetAlias,
     Collection,
     CollectionItem,
+    DatasetVersion,
+    Datum,
+    ResolvedDatasetVersion,
     StorageRef,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -227,6 +234,9 @@ class AsyncDataVaultBackend(ABC):
     ) -> Collection: ...
 
     @abstractmethod
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection: ...
+
+    @abstractmethod
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]: ...
 
     @abstractmethod
@@ -283,6 +293,32 @@ class AsyncDataVaultBackend(ABC):
 
     @abstractmethod
     async def delete_annotation_record(self, annotation_id: str) -> None: ...
+
+    @abstractmethod
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum: ...
+
+    @abstractmethod
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion: ...
+
+    @abstractmethod
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion: ...
 
 
 class DataVaultBackend(ABC):
@@ -389,6 +425,9 @@ class DataVaultBackend(ABC):
     ) -> Collection: ...
 
     @abstractmethod
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection: ...
+
+    @abstractmethod
     def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]: ...
 
     @abstractmethod
@@ -445,6 +484,32 @@ class DataVaultBackend(ABC):
 
     @abstractmethod
     def delete_annotation_record(self, annotation_id: str) -> None: ...
+
+    @abstractmethod
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum: ...
+
+    @abstractmethod
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion: ...
+
+    @abstractmethod
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion: ...
 
 
 class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
@@ -594,6 +659,9 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
         return await self._datalake.list_collection_items(filters)
 
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        return await self._datalake.update_collection(collection_id, **changes)
+
     async def list_collection_items_page(
         self,
         *,
@@ -670,6 +738,45 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
         await self._datalake.delete_annotation_record(annotation_id)
+
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        return await self._datalake.create_datum(
+            asset_refs=asset_refs,
+            split=split,
+            metadata=metadata,
+            annotation_set_ids=annotation_set_ids,
+        )
+
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        return await self._datalake.create_dataset_version(
+            dataset_name=dataset_name,
+            version=version,
+            manifest=manifest,
+            description=description,
+            source_dataset_version_id=source_dataset_version_id,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        return await self._datalake.resolve_dataset_version(dataset_name, version)
 
 
 class LocalDataVaultBackend(DataVaultBackend):
@@ -817,6 +924,9 @@ class LocalDataVaultBackend(DataVaultBackend):
     def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
         return self._datalake.list_collection_items(filters)
 
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        return self._datalake.update_collection(collection_id, **changes)
+
     def list_collection_items_page(
         self,
         *,
@@ -893,6 +1003,45 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def delete_annotation_record(self, annotation_id: str) -> None:
         self._datalake.delete_annotation_record(annotation_id)
+
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        return self._datalake.create_datum(
+            asset_refs=asset_refs,
+            split=split,
+            metadata=metadata,
+            annotation_set_ids=annotation_set_ids,
+        )
+
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        return self._datalake.create_dataset_version(
+            dataset_name=dataset_name,
+            version=version,
+            manifest=manifest,
+            description=description,
+            source_dataset_version_id=source_dataset_version_id,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        return self._datalake.resolve_dataset_version(dataset_name, version)
 
 
 def _encode_obj_for_service(obj: Any) -> str:
@@ -1123,6 +1272,13 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         )
         return out.collection
 
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        out = await self._call(
+            "acollections_update",
+            input_obj=UpdateCollectionInput(collection_id=collection_id, changes=changes),
+        )
+        return out.collection
+
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
         out = await self._call("acollection_items_list", input_obj=ListInput(filters=filters))
         return out.collection_items
@@ -1221,6 +1377,57 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
         await self._call("aannotation_records_delete", input_obj=DeleteByIdInput(id=annotation_id))
+
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        out = await self._call(
+            "adatums_create",
+            input_obj=CreateDatumInput(
+                asset_refs=asset_refs,
+                split=split,
+                metadata=metadata,
+                annotation_set_ids=annotation_set_ids,
+            ),
+        )
+        return out.datum
+
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        out = await self._call(
+            "adataset_versions_create",
+            input_obj=CreateDatasetVersionInput(
+                dataset_name=dataset_name,
+                version=version,
+                manifest=manifest,
+                description=description,
+                source_dataset_version_id=source_dataset_version_id,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.dataset_version
+
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        out = await self._call(
+            "adataset_versions_resolve",
+            input_obj=GetDatasetVersionInput(dataset_name=dataset_name, version=version),
+        )
+        return out.resolved_dataset_version
 
 
 class DatalakeServiceDataVaultBackend(DataVaultBackend):
@@ -1433,6 +1640,13 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
         )
         return out.collection
 
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        out = self._call(
+            "collections_update",
+            input_obj=UpdateCollectionInput(collection_id=collection_id, changes=changes),
+        )
+        return out.collection
+
     def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
         out = self._call("collection_items_list", input_obj=ListInput(filters=filters))
         return out.collection_items
@@ -1531,3 +1745,54 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
 
     def delete_annotation_record(self, annotation_id: str) -> None:
         self._call("annotation_records_delete", input_obj=DeleteByIdInput(id=annotation_id))
+
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        out = self._call(
+            "datums_create",
+            input_obj=CreateDatumInput(
+                asset_refs=asset_refs,
+                split=split,
+                metadata=metadata,
+                annotation_set_ids=annotation_set_ids,
+            ),
+        )
+        return out.datum
+
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        out = self._call(
+            "dataset_versions_create",
+            input_obj=CreateDatasetVersionInput(
+                dataset_name=dataset_name,
+                version=version,
+                manifest=manifest,
+                description=description,
+                source_dataset_version_id=source_dataset_version_id,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.dataset_version
+
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        out = self._call(
+            "dataset_versions_resolve",
+            input_obj=GetDatasetVersionInput(dataset_name=dataset_name, version=version),
+        )
+        return out.resolved_dataset_version

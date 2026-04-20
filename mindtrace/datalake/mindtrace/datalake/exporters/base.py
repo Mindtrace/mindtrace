@@ -132,7 +132,7 @@ def _build_exportable_item(
 
 
 def build_exportable_dataset_from_resolved_version_sync(
-    datalake: Any,
+    object_loader: Any,
     resolved_dataset_version: ResolvedDatasetVersion,
     *,
     split_map: dict[str, str] | None = None,
@@ -148,7 +148,7 @@ def build_exportable_dataset_from_resolved_version_sync(
         _, asset = primary_entry
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=datalake.get_object(asset.storage_ref),
+            payload_bytes=object_loader.get_object(asset.storage_ref),
             split_map=split_map,
         )
         warnings.extend(item_warnings)
@@ -165,7 +165,7 @@ def build_exportable_dataset_from_resolved_version_sync(
 
 
 async def build_exportable_dataset_from_resolved_version_async(
-    datalake: Any,
+    object_loader: Any,
     resolved_dataset_version: ResolvedDatasetVersion,
     *,
     split_map: dict[str, str] | None = None,
@@ -181,7 +181,7 @@ async def build_exportable_dataset_from_resolved_version_async(
         _, asset = primary_entry
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=await datalake.get_object(asset.storage_ref),
+            payload_bytes=await object_loader.get_object(asset.storage_ref),
             split_map=split_map,
         )
         warnings.extend(item_warnings)
