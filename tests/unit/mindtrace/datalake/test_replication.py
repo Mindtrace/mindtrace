@@ -499,7 +499,9 @@ async def test_existence_helpers_return_false_on_document_not_found(source_datal
 
 
 @pytest.mark.asyncio
-async def test_asset_exists_returns_true_when_target_asset_is_present(source_datalake, target_datalake, replication_objects):
+async def test_asset_exists_returns_true_when_target_asset_is_present(
+    source_datalake, target_datalake, replication_objects
+):
     target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
 
     manager = ReplicationManager(source_datalake, target_datalake)

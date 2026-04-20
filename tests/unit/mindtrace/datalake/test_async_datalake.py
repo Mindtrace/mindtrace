@@ -209,7 +209,9 @@ class TestAsyncDatalakeUnit:
         with pytest.warns(SlowOperationWarning, match="list_assets\\(\\).*iter_assets\\(\\) or list_assets_page\\(\\)"):
             assert await warn_datalake.list_assets() == []
 
-        with pytest.raises(SlowOperationDisabledError, match="list_assets\\(\\).*iter_assets\\(\\) or list_assets_page\\(\\)"):
+        with pytest.raises(
+            SlowOperationDisabledError, match="list_assets\\(\\).*iter_assets\\(\\) or list_assets_page\\(\\)"
+        ):
             await forbid_datalake.list_assets()
 
     @pytest.mark.asyncio
@@ -428,8 +430,12 @@ class TestAsyncDatalakeUnit:
                 id="contains-list",
             ),
             pytest.param(StructuredFilter(field="kind", op="exists", value=True), {"kind": "image"}, True, id="exists"),
-            pytest.param(StructuredFilter(field="kind", op="eq", value="video"), {"kind": "image"}, False, id="eq-false"),
-            pytest.param(StructuredFilter(field="kind", op="ne", value="image"), {"kind": "image"}, False, id="ne-false"),
+            pytest.param(
+                StructuredFilter(field="kind", op="eq", value="video"), {"kind": "image"}, False, id="eq-false"
+            ),
+            pytest.param(
+                StructuredFilter(field="kind", op="ne", value="image"), {"kind": "image"}, False, id="ne-false"
+            ),
             pytest.param(StructuredFilter(field="score", op="gt", value=3), {"score": 3}, False, id="gt-false"),
             pytest.param(StructuredFilter(field="score", op="gte", value=4), {"score": 3}, False, id="gte-false"),
             pytest.param(StructuredFilter(field="score", op="lt", value=3), {"score": 3}, False, id="lt-false"),
@@ -638,7 +644,8 @@ class TestAsyncDatalakeUnit:
         async_datalake._iter_database = iter_records
 
         assert (
-            await async_datalake.list_collections_page(filters={"status": "active"}, limit=5, include_total=True) == "page"
+            await async_datalake.list_collections_page(filters={"status": "active"}, limit=5, include_total=True)
+            == "page"
         )
         assert await async_datalake.list_collection_items_page(filters={"collection_id": "c1"}) == "page"
         assert await async_datalake.list_asset_retentions_page(filters={"asset_id": "a1"}) == "page"
@@ -647,11 +654,12 @@ class TestAsyncDatalakeUnit:
         assert await async_datalake.list_annotation_records_page(filters={"label": "dent"}) == "page"
         assert await async_datalake.list_annotation_records_for_asset_page("asset_1") == "page"
         assert await async_datalake.list_datums_page(filters={"split": "train"}) == "page"
-        assert await async_datalake.list_dataset_versions_page(dataset_name="demo", filters={"version": "1.0.0"}) == "page"
+        assert (
+            await async_datalake.list_dataset_versions_page(dataset_name="demo", filters={"version": "1.0.0"}) == "page"
+        )
 
         annotation_records = [
-            record
-            async for record in async_datalake.iter_annotation_records(filters={"label": "dent"}, batch_size=11)
+            record async for record in async_datalake.iter_annotation_records(filters={"label": "dent"}, batch_size=11)
         ]
         datums = [datum async for datum in async_datalake.iter_datums(filters={"split": "train"}, batch_size=11)]
 
@@ -795,17 +803,17 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_build_dataset_view_rows_returns_empty_list_for_empty_input(self, async_datalake):
-        assert await async_datalake._build_dataset_view_rows(
-            datums=[],
-            expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
-        ) == []
+        assert (
+            await async_datalake._build_dataset_view_rows(
+                datums=[],
+                expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
+            )
+            == []
+        )
 
     @pytest.mark.asyncio
     async def test_view_dataset_version_page_scans_manifest_in_chunks_for_sparse_filters(self, async_datalake):
-        skipped_datums = [
-            Datum(datum_id=f"datum_skip_{index}", split="val")
-            for index in range(100)
-        ]
+        skipped_datums = [Datum(datum_id=f"datum_skip_{index}", split="val") for index in range(100)]
         kept_datum = Datum(datum_id="datum_keep", split="train", metadata={"rank": 101})
         manifest = [datum.datum_id for datum in skipped_datums] + [kept_datum.datum_id]
         dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=manifest)
@@ -1162,7 +1170,9 @@ class TestAsyncDatalakeUnit:
 
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         annotation_set.annotation_record_ids = []
-        self._patch_datum_find_for_annotation_set_merge(mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123")
+        self._patch_datum_find_for_annotation_set_merge(
+            mock_odm, annotation_set.annotation_set_id, image_asset_id="asset_123"
+        )
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         inserted_model = AnnotationRecord(
             kind="bbox", label="dent", source={"type": "human", "name": "review-ui"}, geometry={}
@@ -1396,7 +1406,9 @@ class TestAsyncDatalakeUnit:
         await async_datalake.delete_annotation_record(record.annotation_id)
 
         assert annotation_set.annotation_record_ids == []
-        async_datalake.annotation_set_database.find.assert_awaited_once_with({"annotation_record_ids": record.annotation_id})
+        async_datalake.annotation_set_database.find.assert_awaited_once_with(
+            {"annotation_record_ids": record.annotation_id}
+        )
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-rec")
 
     @pytest.mark.asyncio
@@ -1930,7 +1942,9 @@ class TestAsyncDatalakeUnit:
             )
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(self, async_datalake, mock_odm):
+    async def test_add_annotation_records_is_atomic_when_schema_validation_fails_mid_batch(
+        self, async_datalake, mock_odm
+    ):
         schema = AnnotationSchema(
             name="bbox-demo",
             version="1.0.0",
@@ -2320,7 +2334,9 @@ class TestAsyncDatalakeUnit:
         async_datalake.annotation_record_database.delete.assert_awaited_once_with("db-success")
 
     @pytest.mark.asyncio
-    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(self, async_datalake, mock_odm):
+    async def test_add_annotation_records_set_without_datum_link_requires_explicit_subject(
+        self, async_datalake, mock_odm
+    ):
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         mock_odm.find = AsyncMock(return_value=[])
@@ -2442,7 +2458,9 @@ class TestAsyncDatalakeUnit:
         annotation_set = AnnotationSet(name="gt", purpose="ground_truth", source_type="human")
         async_datalake.get_annotation_set = AsyncMock(return_value=annotation_set)
         self._patch_datum_find_for_annotation_set_merge(
-            mock_odm, annotation_set.annotation_set_id, image_asset_id="datum_default_image",
+            mock_odm,
+            annotation_set.annotation_set_id,
+            image_asset_id="datum_default_image",
         )
         explicit = SubjectRef(kind="asset", id="user_chosen")
         inserted_dict = AnnotationRecord(
