@@ -763,6 +763,7 @@ async def test_local_async_backend_delegates_dataset_methods():
     assert await backend.list_collection_items() == [item]
     assert await backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
     assert await backend.update_collection_item("ci_1", status="active") == item
+    await backend.delete_collection_item("ci_1")
     assert await backend.list_annotation_sets() == [annotation_set]
     assert (
         await backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human")
@@ -772,6 +773,20 @@ async def test_local_async_backend_delegates_dataset_methods():
     assert await backend.list_annotation_records() == [record]
     await backend.delete_annotation_record("annotation_1")
     dl.delete_annotation_record.assert_awaited_once_with("annotation_1")
+
+    page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    dl.list_collections_page = AsyncMock(return_value=page)
+    dl.list_collection_items_page = AsyncMock(return_value=item_page)
+
+    async def iter_collections(**kwargs):
+        assert kwargs == {"filters": {"status": "active"}, "sort": "created_desc", "batch_size": 2}
+        yield collection
+
+    dl.iter_collections = iter_collections
+    assert await backend.list_collections_page(filters={"status": "active"}, limit=1) == page
+    assert await backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    assert [c async for c in backend.iter_collections(filters={"status": "active"}, batch_size=2)] == [collection]
 
 
 def test_local_sync_backend_delegates_dataset_methods():
@@ -817,6 +832,16 @@ def test_local_sync_backend_delegates_dataset_methods():
     assert backend.list_annotation_records() == [record]
     backend.delete_annotation_record("annotation_1")
     dl.delete_annotation_record.assert_called_once_with("annotation_1")
+
+    page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    dl.list_collections_page = Mock(return_value=page)
+    dl.list_collection_items_page = Mock(return_value=item_page)
+    dl.iter_collections = Mock(return_value=iter([collection]))
+
+    assert backend.list_collections_page(filters={"status": "active"}, limit=1) == page
+    assert backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    assert list(backend.iter_collections(filters={"status": "active"}, batch_size=2)) == [collection]
 
 
 @pytest.mark.asyncio
@@ -871,6 +896,27 @@ async def test_datalake_service_async_backend_dataset_methods():
     assert isinstance(cm.aannotation_records_delete.await_args.args[0], DeleteByIdInput)
 
 
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_collection_paging_and_deletes():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    collection_page_1 = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    collection_page_2 = CursorPage(items=[], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.acollections_list_page = AsyncMock(side_effect=[collection_page_1, collection_page_1, collection_page_2])
+    cm.acollection_items_list_page = AsyncMock(return_value=item_page)
+    cm.acollection_items_delete = AsyncMock(return_value=None)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.list_collections_page(limit=1) == collection_page_1
+    assert [c async for c in backend.iter_collections(batch_size=1)] == [collection]
+    assert await backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    await backend.delete_collection_item("ci_1")
+    assert isinstance(cm.acollections_list_page.await_args_list[0].args[0], PageInput)
+    assert isinstance(cm.acollection_items_delete.await_args.args[0], DeleteByIdInput)
+
+
 def test_datalake_service_sync_backend_dataset_methods():
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
@@ -919,3 +965,23 @@ def test_datalake_service_sync_backend_dataset_methods():
     assert isinstance(cm.collection_items_update.call_args.args[0], UpdateCollectionItemInput)
     assert isinstance(cm.annotation_sets_create.call_args.args[0], CreateAnnotationSetInput)
     assert isinstance(cm.annotation_records_delete.call_args.args[0], DeleteByIdInput)
+
+
+def test_datalake_service_sync_backend_collection_paging_and_deletes():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    collection_page_1 = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    collection_page_2 = CursorPage(items=[], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.collections_list_page = Mock(side_effect=[collection_page_1, collection_page_1, collection_page_2])
+    cm.collection_items_list_page = Mock(return_value=item_page)
+    cm.collection_items_delete = Mock(return_value=None)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.list_collections_page(limit=1) == collection_page_1
+    assert list(backend.iter_collections(batch_size=1)) == [collection]
+    assert backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    backend.delete_collection_item("ci_1")
+    assert isinstance(cm.collections_list_page.call_args_list[0].args[0], PageInput)
+    assert isinstance(cm.collection_items_delete.call_args.args[0], DeleteByIdInput)

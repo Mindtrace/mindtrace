@@ -6,11 +6,17 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from PIL import Image
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.data_vault import (
     AsyncDataVault,
     DataVault,
     VaultDataset,
+    _annotation_id,
+    _annotation_source_type,
     _annotations_bound_to_asset,
+    _coerce_annotation_payload,
+    _dataset_annotation_set_filters,
+    _extract_annotation_asset_id,
     _pil_image_to_png_bytes,
 )
 from mindtrace.datalake.pagination_types import CursorPage, PageInfo
@@ -479,6 +485,381 @@ def test_sync_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Path):
     assert vault.load_by_asset_id("by-id") == b"sync-payload"
 
 
+def test_data_vault_dataset_helpers_cover_annotation_shapes():
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    typed = Mock()
+    typed.to_payload.return_value = {
+        "kind": "bbox",
+        "label": "y",
+        "subject": {"kind": "asset", "id": "asset_2"},
+        "source": {"type": "machine", "name": "model"},
+        "geometry": {},
+    }
+
+    assert _coerce_annotation_payload(record)["annotation_id"] == "annotation_1"
+    assert _coerce_annotation_payload({"kind": "bbox"}) == {"kind": "bbox"}
+    assert _coerce_annotation_payload(typed)["label"] == "y"
+    with pytest.raises(TypeError, match="annotation must be a dict"):
+        _coerce_annotation_payload(object())
+
+    assert _extract_annotation_asset_id({"subject": SubjectRef(kind="asset", id="asset_1")}) == "asset_1"
+    assert _extract_annotation_asset_id({"subject": {"kind": "asset", "id": 7}}) == "7"
+    assert _extract_annotation_asset_id({"subject": {"kind": "dataset", "id": "d1"}}) is None
+    assert _annotation_source_type({"source": {"type": "human"}}) == "human"
+    assert _annotation_source_type({"source": {"type": "other"}}) == "mixed"
+    assert _annotation_id(record) == "annotation_1"
+    assert _annotation_id("annotation_2") == "annotation_2"
+    assert _dataset_annotation_set_filters("collection_1", asset_id="asset_1") == {
+        "metadata.mindtrace.data_vault.dataset_collection_id": "collection_1",
+        "metadata.mindtrace.data_vault.asset_id": "asset_1",
+        "status": "active",
+    }
+
+
+def test_sync_data_vault_get_dataset_errors():
+    backend = Mock()
+    backend.list_collections = Mock(side_effect=[[], [Collection(name="x"), Collection(name="x")]])
+    vault = DataVault(backend)
+
+    with pytest.raises(DocumentNotFoundError, match="Dataset 'missing' not found"):
+        vault.get_dataset("missing")
+    with pytest.raises(ValueError, match="Multiple active datasets matched"):
+        vault.get_dataset("duplicate")
+
+
+def test_sync_data_vault_add_asset_uses_alias_and_updates_existing_item():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    existing = CollectionItem(
+        collection_id="collection_1",
+        asset_id="asset_1",
+        collection_item_id="ci_1",
+        split="val",
+        metadata={"old": True},
+    )
+    updated = existing.model_copy(update={"split": "train", "metadata": {"old": True, "new": True}})
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.get_asset = Mock(side_effect=[DocumentNotFoundError("no direct asset"), asset])
+    backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.list_collection_items = Mock(return_value=[existing])
+    backend.update_collection_item = Mock(return_value=updated)
+
+    vault = DataVault(backend)
+    out = vault.add_asset("training", "friendly-alias", split="train", metadata={"new": True})
+
+    assert out == asset
+    backend.get_asset_by_alias.assert_called_once_with("friendly-alias")
+    backend.update_collection_item.assert_called_once_with("ci_1", split="train", metadata={"old": True, "new": True})
+
+
+def test_sync_data_vault_add_asset_reactivates_existing_item():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    inactive = CollectionItem(
+        collection_id="collection_1",
+        asset_id="asset_1",
+        collection_item_id="ci_1",
+        status="removed",
+        metadata={"old": True},
+    )
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.get_asset = Mock(return_value=asset)
+    backend.list_collection_items = Mock(return_value=[inactive])
+    backend.update_collection_item = Mock(return_value=inactive.model_copy(update={"status": "active"}))
+
+    vault = DataVault(backend)
+    vault.add_asset("training", "asset_1", metadata={"new": True})
+
+    backend.update_collection_item.assert_called_once_with(
+        "ci_1",
+        status="active",
+        split=None,
+        metadata={"old": True, "new": True},
+    )
+
+
+def test_sync_data_vault_add_annotation_from_record_and_missing_subject_error():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.get_asset = Mock(return_value=asset)
+    backend.list_collection_items = Mock(return_value=[])
+    backend.create_collection_item = Mock(
+        return_value=CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    )
+    backend.list_annotation_sets = Mock(return_value=[annotation_set])
+    backend.add_annotation_records = Mock(return_value=[record])
+
+    vault = DataVault(backend)
+    assert vault.add_annotation("training", record) == record
+    add_payload = backend.add_annotation_records.call_args.args[0][0]
+    assert add_payload["subject"] == {"kind": "asset", "id": "asset_1"}
+
+    with pytest.raises(ValueError, match="must reference an asset subject"):
+        vault.add_annotation(
+            "training",
+            {"kind": "bbox", "label": "cat", "source": {"type": "human", "name": "review"}, "geometry": {}},
+        )
+
+
+def test_sync_data_vault_remove_annotation_missing_ok_and_filtered_annotation_listing():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    backend = Mock()
+    backend.list_collections = Mock(side_effect=[[collection], [collection], [collection]])
+    backend.get_asset = Mock(side_effect=DocumentNotFoundError("no direct asset"))
+    backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.list_annotation_sets = Mock(side_effect=[[], [annotation_set], [annotation_set]])
+    backend.get_annotation_record = Mock(return_value=record)
+    backend.delete_annotation_record = Mock()
+
+    vault = DataVault(backend)
+    vault.remove_annotation("training", "annotation_2", missing_ok=True)
+    assert vault.list_dataset_annotations("training", asset="friendly-alias") == [record]
+    vault.remove_annotation("training", record)
+    backend.delete_annotation_record.assert_called_once_with("annotation_1")
+
+
+def test_sync_data_vault_duplicate_create_and_missing_remove_errors():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    backend = Mock()
+    backend.list_collections = Mock(side_effect=[[collection], [collection], [collection]])
+    backend.get_asset = Mock(return_value=asset)
+    backend.list_collection_items = Mock(return_value=[])
+    backend.list_annotation_sets = Mock(return_value=[])
+    vault = DataVault(backend)
+
+    with pytest.raises(ValueError, match="already exists"):
+        vault.create_dataset("training")
+    with pytest.raises(DocumentNotFoundError, match="not part of dataset"):
+        vault.remove_asset("training", "asset_1")
+    with pytest.raises(DocumentNotFoundError, match="not part of dataset"):
+        vault.remove_annotation("training", "annotation_1")
+
+
+def test_sync_data_vault_internal_asset_and_dataset_shortcuts():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    vault = DataVault(backend)
+    dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training",
+        description=None,
+        status="active",
+        metadata={},
+        asset_count=0,
+        created_at=collection.created_at,
+        created_by=None,
+        updated_at=collection.updated_at,
+    )
+
+    assert vault._resolve_asset_id(asset) == "asset_1"
+    assert vault._get_dataset_collection(dataset) == collection
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_dataset_edge_cases_and_internal_paths():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    existing = CollectionItem(
+        collection_id="collection_1",
+        asset_id="asset_1",
+        collection_item_id="ci_1",
+        split="val",
+    )
+    backend = Mock()
+    backend.get_asset = AsyncMock(side_effect=DocumentNotFoundError("no direct asset"))
+    backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.list_collections = AsyncMock(side_effect=[[collection], [], [collection, collection]])
+    backend.list_collection_items = AsyncMock(return_value=[existing])
+    backend.update_collection_item = AsyncMock(return_value=existing.model_copy(update={"split": "train"}))
+
+    vault = AsyncDataVault(backend)
+    assert await vault._resolve_asset_id("friendly") == "asset_1"
+    assert await vault.get_dataset("training") == VaultDataset(
+        dataset_id="collection_1",
+        name="training",
+        description=None,
+        status="active",
+        metadata={},
+        asset_count=1,
+        created_at=collection.created_at,
+        created_by=None,
+        updated_at=collection.updated_at,
+    )
+    with pytest.raises(DocumentNotFoundError, match="Dataset 'missing' not found"):
+        await vault._get_dataset_collection("missing")
+    with pytest.raises(ValueError, match="Multiple active datasets matched"):
+        await vault._get_dataset_collection("duplicate")
+    item = await vault._ensure_collection_item(collection, "asset_1", split="train")
+    assert item.split == "train"
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_internal_shortcuts_and_reuse_paths():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    active_item = CollectionItem(
+        collection_id="collection_1",
+        asset_id="asset_1",
+        collection_item_id="ci_1",
+        status="active",
+        metadata={"old": True},
+    )
+    inactive_item = CollectionItem(
+        collection_id="collection_1",
+        asset_id="asset_2",
+        collection_item_id="ci_2",
+        status="removed",
+        metadata={"old": True},
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+    )
+    backend = Mock()
+    backend.list_collections = AsyncMock(return_value=[collection])
+    backend.list_collection_items = AsyncMock(side_effect=[[active_item], [inactive_item]])
+    backend.update_collection_item = AsyncMock(
+        side_effect=[
+            active_item.model_copy(update={"metadata": {"old": True, "new": True}}),
+            inactive_item.model_copy(update={"status": "active"}),
+        ]
+    )
+    backend.list_annotation_sets = AsyncMock(return_value=[annotation_set])
+    vault = AsyncDataVault(backend)
+    dataset = VaultDataset(
+        dataset_id="collection_1",
+        name="training",
+        description=None,
+        status="active",
+        metadata={},
+        asset_count=0,
+        created_at=collection.created_at,
+        created_by=None,
+        updated_at=collection.updated_at,
+    )
+
+    assert await vault._resolve_asset_id(asset) == "asset_1"
+    assert await vault._get_dataset_collection(dataset) == collection
+    updated_active = await vault._ensure_collection_item(collection, "asset_1", metadata={"new": True})
+    assert updated_active.metadata == {"old": True, "new": True}
+    reactivated = await vault._ensure_collection_item(collection, "asset_2")
+    assert reactivated.status == "active"
+    reused = await vault._get_or_create_dataset_annotation_set(collection, "asset_1")
+    assert reused == annotation_set
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_list_assets_dedupes_and_remove_annotation_missing_ok():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    backend = Mock()
+    backend.list_collections = AsyncMock(side_effect=[[collection], [collection]])
+    backend.list_collection_items = AsyncMock(side_effect=[[item, item], []])
+    backend.get_asset = AsyncMock(return_value=asset)
+    backend.list_annotation_sets = AsyncMock(return_value=[])
+    backend.delete_annotation_record = AsyncMock(return_value=None)
+
+    vault = AsyncDataVault(backend)
+    assert await vault.list_dataset_assets("training") == [asset]
+    await vault.remove_annotation("training", "annotation_1", missing_ok=True)
+    backend.delete_annotation_record.assert_not_awaited()
+
+
 def test_sync_data_vault_create_and_list_datasets():
     collection = Collection(name="training", collection_id="collection_1")
     backend = Mock()
@@ -672,3 +1053,108 @@ async def test_async_data_vault_add_annotation_brings_asset_into_dataset():
     backend.create_collection_item.assert_awaited_once()
     backend.create_annotation_set.assert_awaited_once()
     backend.add_annotation_records.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_public_dataset_workflows():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    dataset_page = CursorPage(
+        items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1)
+    )
+    backend = Mock()
+    backend.list_collections = AsyncMock(
+        side_effect=[
+            [collection],
+            [collection],
+            [],
+            [collection],
+            [collection],
+            [collection],
+            [collection],
+            [collection],
+        ]
+    )
+    backend.list_collections_page = AsyncMock(return_value=dataset_page)
+
+    async def iter_collections(**kwargs):
+        assert kwargs == {"filters": {"status": "active"}, "sort": "updated_desc", "batch_size": 5}
+        yield collection
+
+    backend.iter_collections = iter_collections
+    backend.create_collection = AsyncMock(return_value=collection)
+    backend.get_asset = AsyncMock(side_effect=[asset, asset, asset, asset, asset])
+    backend.list_collection_items = AsyncMock(side_effect=[[item], [item], [item], [item], [item], [item], [item]])
+    backend.update_collection_item = AsyncMock(return_value=item)
+    backend.delete_collection_item = AsyncMock(return_value=None)
+    backend.list_annotation_sets = AsyncMock(side_effect=[[annotation_set], [annotation_set], []])
+    backend.get_annotation_record = AsyncMock(return_value=record)
+    backend.delete_annotation_record = AsyncMock(return_value=None)
+
+    vault = AsyncDataVault(backend)
+    summary = await vault.get_dataset("training")
+    assert summary.asset_count == 1
+    assert await vault.list_datasets() == [summary]
+    page = await vault.list_datasets_page(limit=1, include_total=True)
+    assert page.items == [summary]
+    assert [dataset async for dataset in vault.iter_datasets(batch_size=5)] == [summary]
+    created = await vault.create_dataset("new-dataset")
+    assert created.name == "training"
+    assert await vault.add_asset("training", "asset_1", split="train") == asset
+    assert await vault.list_dataset_assets("training") == [asset]
+    assert await vault.list_dataset_annotations("training", asset="asset_1") == [record]
+    await vault.remove_annotation("training", "annotation_1")
+    backend.delete_annotation_record.assert_awaited_once_with("annotation_1")
+    await vault.remove_asset("training", "asset_1")
+    backend.delete_collection_item.assert_awaited_once_with("ci_1")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_public_dataset_error_paths():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    backend = Mock()
+    backend.list_collections = AsyncMock(side_effect=[[collection], [collection], [collection], [collection]])
+    backend.get_asset = AsyncMock(return_value=asset)
+    backend.list_collection_items = AsyncMock(return_value=[])
+    backend.list_annotation_sets = AsyncMock(return_value=[])
+
+    vault = AsyncDataVault(backend)
+    with pytest.raises(ValueError, match="already exists"):
+        await vault.create_dataset("training")
+    with pytest.raises(DocumentNotFoundError, match="not part of dataset"):
+        await vault.remove_asset("training", "asset_1")
+    with pytest.raises(DocumentNotFoundError, match="not part of dataset"):
+        await vault.remove_annotation("training", "annotation_1")
+    with pytest.raises(ValueError, match="must reference an asset subject"):
+        await vault.add_annotation(
+            "training",
+            {"kind": "bbox", "label": "cat", "source": {"type": "human", "name": "review"}, "geometry": {}},
+        )
