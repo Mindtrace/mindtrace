@@ -37,13 +37,20 @@ from mindtrace.datalake.service_types import (
     CreateAssetFromObjectInput,
     CreateCollectionInput,
     CreateCollectionItemInput,
+    CreateDatasetVersionInput,
+    CreateDatumInput,
+    DatasetVersionOutput,
+    DatumOutput,
     DeleteByIdInput,
     GetAssetByAliasInput,
     GetByIdInput,
+    GetDatasetVersionInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     ObjectDataOutput,
     PageInput,
+    ResolvedDatasetVersionOutput,
+    UpdateCollectionInput,
     UpdateCollectionItemInput,
 )
 from mindtrace.datalake.types import (
@@ -53,6 +60,9 @@ from mindtrace.datalake.types import (
     AssetAlias,
     Collection,
     CollectionItem,
+    DatasetVersion,
+    Datum,
+    ResolvedDatasetVersion,
     StorageRef,
     SubjectRef,
 )
@@ -845,6 +855,51 @@ def test_local_sync_backend_delegates_dataset_methods():
 
 
 @pytest.mark.asyncio
+async def test_local_async_backend_delegates_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    dl = AsyncMock()
+    dl.update_collection = AsyncMock(return_value=collection)
+    dl.create_datum = AsyncMock(return_value=datum)
+    dl.create_dataset_version = AsyncMock(return_value=dataset_version)
+    dl.resolve_dataset_version = AsyncMock(return_value=resolved)
+
+    backend = LocalAsyncDataVaultBackend(dl)
+
+    assert await backend.update_collection("collection_1", status="archived") == collection
+    assert await backend.create_datum(asset_refs={"image": "asset_1"}) == datum
+    assert (
+        await backend.create_dataset_version(dataset_name="training", version="1.0.0", manifest=["datum_1"])
+        == dataset_version
+    )
+    assert await backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+
+def test_local_sync_backend_delegates_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    dl = Mock()
+    dl.update_collection = Mock(return_value=collection)
+    dl.create_datum = Mock(return_value=datum)
+    dl.create_dataset_version = Mock(return_value=dataset_version)
+    dl.resolve_dataset_version = Mock(return_value=resolved)
+
+    backend = LocalDataVaultBackend(dl)
+
+    assert backend.update_collection("collection_1", status="archived") == collection
+    assert backend.create_datum(asset_refs={"image": "asset_1"}) == datum
+    assert (
+        backend.create_dataset_version(dataset_name="training", version="1.0.0", manifest=["datum_1"])
+        == dataset_version
+    )
+    assert backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+
+@pytest.mark.asyncio
 async def test_datalake_service_async_backend_dataset_methods():
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
@@ -894,6 +949,41 @@ async def test_datalake_service_async_backend_dataset_methods():
     assert isinstance(cm.acollection_items_update.await_args.args[0], UpdateCollectionItemInput)
     assert isinstance(cm.aannotation_sets_create.await_args.args[0], CreateAnnotationSetInput)
     assert isinstance(cm.aannotation_records_delete.await_args.args[0], DeleteByIdInput)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    cm = Mock()
+    cm.acollections_update = AsyncMock(return_value=CollectionOutput(collection=collection))
+    cm.adatums_create = AsyncMock(return_value=DatumOutput(datum=datum))
+    cm.adataset_versions_create = AsyncMock(return_value=DatasetVersionOutput(dataset_version=dataset_version))
+    cm.adataset_versions_resolve = AsyncMock(
+        return_value=ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
+    )
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+
+    assert await backend.update_collection("collection_1", status="archived") == collection
+    assert await backend.create_datum(asset_refs={"image": "asset_1"}, split="train") == datum
+    assert (
+        await backend.create_dataset_version(
+            dataset_name="training",
+            version="1.0.0",
+            manifest=["datum_1"],
+            description="snapshot",
+        )
+        == dataset_version
+    )
+    assert await backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+    assert isinstance(cm.acollections_update.await_args.args[0], UpdateCollectionInput)
+    assert isinstance(cm.adatums_create.await_args.args[0], CreateDatumInput)
+    assert isinstance(cm.adataset_versions_create.await_args.args[0], CreateDatasetVersionInput)
+    assert isinstance(cm.adataset_versions_resolve.await_args.args[0], GetDatasetVersionInput)
 
 
 @pytest.mark.asyncio
@@ -965,6 +1055,38 @@ def test_datalake_service_sync_backend_dataset_methods():
     assert isinstance(cm.collection_items_update.call_args.args[0], UpdateCollectionItemInput)
     assert isinstance(cm.annotation_sets_create.call_args.args[0], CreateAnnotationSetInput)
     assert isinstance(cm.annotation_records_delete.call_args.args[0], DeleteByIdInput)
+
+
+def test_datalake_service_sync_backend_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    cm = Mock()
+    cm.collections_update = Mock(return_value=CollectionOutput(collection=collection))
+    cm.datums_create = Mock(return_value=DatumOutput(datum=datum))
+    cm.dataset_versions_create = Mock(return_value=DatasetVersionOutput(dataset_version=dataset_version))
+    cm.dataset_versions_resolve = Mock(return_value=ResolvedDatasetVersionOutput(resolved_dataset_version=resolved))
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+
+    assert backend.update_collection("collection_1", status="archived") == collection
+    assert backend.create_datum(asset_refs={"image": "asset_1"}, split="train") == datum
+    assert (
+        backend.create_dataset_version(
+            dataset_name="training",
+            version="1.0.0",
+            manifest=["datum_1"],
+            description="snapshot",
+        )
+        == dataset_version
+    )
+    assert backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+    assert isinstance(cm.collections_update.call_args.args[0], UpdateCollectionInput)
+    assert isinstance(cm.datums_create.call_args.args[0], CreateDatumInput)
+    assert isinstance(cm.dataset_versions_create.call_args.args[0], CreateDatasetVersionInput)
+    assert isinstance(cm.dataset_versions_resolve.call_args.args[0], GetDatasetVersionInput)
 
 
 def test_datalake_service_sync_backend_collection_paging_and_deletes():

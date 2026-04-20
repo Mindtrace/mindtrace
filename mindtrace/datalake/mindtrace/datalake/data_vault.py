@@ -828,13 +828,6 @@ class AsyncDataVault:
                 annotations.append(await self._backend.get_annotation_record(annotation_id))
         return annotations
 
-    def _require_local_datalake(self) -> AsyncDatalake | Any:
-        if isinstance(self._backend, LocalAsyncDataVaultBackend):
-            return self._backend._datalake
-        raise NotImplementedError(
-            "DataVault dataset export currently requires a local AsyncDatalake backend when freeze is needed."
-        )
-
     async def _prepare_import_target_dataset(
         self,
         *,
@@ -848,9 +841,8 @@ class AsyncDataVault:
         if matches:
             if not overwrite:
                 raise ValueError(f"Dataset {dataset_name!r} already exists")
-            datalake = self._require_local_datalake()
             for collection in matches:
-                await datalake.update_collection(collection.collection_id, status="archived")
+                await self._backend.update_collection(collection.collection_id, status="archived")
         return await self.create_dataset(
             dataset_name,
             description=description,
@@ -870,8 +862,7 @@ class AsyncDataVault:
         created_by: str | None = None,
     ) -> VaultDataset:
         """Materialize an immutable dataset version into a mutable vault dataset."""
-        datalake = self._require_local_datalake()
-        resolved_dataset_version = await datalake.resolve_dataset_version(dataset_name, version)
+        resolved_dataset_version = await self._backend.resolve_dataset_version(dataset_name, version)
         source_dataset = resolved_dataset_version.dataset_version
         imported_dataset = await self._prepare_import_target_dataset(
             dataset_name=target_name or f"{dataset_name}-{version}",
@@ -959,7 +950,6 @@ class AsyncDataVault:
         items = await self._backend.list_collection_items(
             {"collection_id": collection.collection_id, "status": "active"}
         )
-        datalake = self._require_local_datalake()
         dataset_name = _snapshot_dataset_version_name(collection, snapshot_name)
         version = _snapshot_dataset_version_version(snapshot_version)
 
@@ -967,7 +957,7 @@ class AsyncDataVault:
             manifest: list[str] = []
             for item in items:
                 asset = await self._backend.get_asset(item.asset_id)
-                datum = await datalake.create_datum(
+                datum = await self._backend.create_datum(
                     asset_refs={_snapshot_primary_role(asset): asset.asset_id},
                     split=item.split,
                     metadata=_snapshot_datum_metadata(collection, item),
@@ -977,7 +967,7 @@ class AsyncDataVault:
                     _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
                 )
                 for source_set in source_sets:
-                    frozen_set = await datalake.create_annotation_set(
+                    frozen_set = await self._backend.create_annotation_set(
                         name=source_set.name,
                         purpose=source_set.purpose,
                         source_type=source_set.source_type,
@@ -992,12 +982,12 @@ class AsyncDataVault:
                         for annotation_id in source_set.annotation_record_ids
                     ]
                     if source_records:
-                        await datalake.add_annotation_records(
+                        await self._backend.add_annotation_records(
                             [_snapshot_annotation_payload(record, asset.asset_id) for record in source_records],
                             annotation_set_id=frozen_set.annotation_set_id,
                             annotation_schema_id=source_set.annotation_schema_id,
                         )
-            await datalake.create_dataset_version(
+            await self._backend.create_dataset_version(
                 dataset_name=dataset_name,
                 version=version,
                 description=collection.description,
@@ -1015,7 +1005,7 @@ class AsyncDataVault:
                 ),
                 created_by=created_by,
             )
-            return await datalake.resolve_dataset_version(dataset_name, version)
+            return await self._backend.resolve_dataset_version(dataset_name, version)
 
         resolved_datums: list[ResolvedDatum] = []
         manifest: list[str] = []
@@ -1102,7 +1092,6 @@ class AsyncDataVault:
         from mindtrace.datalake.exporters import export_dataset_to_format
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
 
-        datalake = self._require_local_datalake()
         resolved_dataset_version = await self._freeze_dataset(
             dataset,
             persist_snapshot=persist_snapshot,
@@ -1111,7 +1100,7 @@ class AsyncDataVault:
             created_by=created_by,
         )
         exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
-            datalake,
+            self._backend,
             resolved_dataset_version,
             split_map=split_map,
         )
@@ -1687,13 +1676,6 @@ class DataVault:
                 annotations.append(self._backend.get_annotation_record(annotation_id))
         return annotations
 
-    def _require_local_datalake(self) -> Datalake | Any:
-        if isinstance(self._backend, LocalDataVaultBackend):
-            return self._backend._datalake
-        raise NotImplementedError(
-            "DataVault dataset export currently requires a local Datalake backend when freeze is needed."
-        )
-
     def _prepare_import_target_dataset(
         self,
         *,
@@ -1707,9 +1689,8 @@ class DataVault:
         if matches:
             if not overwrite:
                 raise ValueError(f"Dataset {dataset_name!r} already exists")
-            datalake = self._require_local_datalake()
             for collection in matches:
-                datalake.update_collection(collection.collection_id, status="archived")
+                self._backend.update_collection(collection.collection_id, status="archived")
         return self.create_dataset(
             dataset_name,
             description=description,
@@ -1729,8 +1710,7 @@ class DataVault:
         created_by: str | None = None,
     ) -> VaultDataset:
         """Materialize an immutable dataset version into a mutable vault dataset."""
-        datalake = self._require_local_datalake()
-        resolved_dataset_version = datalake.resolve_dataset_version(dataset_name, version)
+        resolved_dataset_version = self._backend.resolve_dataset_version(dataset_name, version)
         source_dataset = resolved_dataset_version.dataset_version
         imported_dataset = self._prepare_import_target_dataset(
             dataset_name=target_name or f"{dataset_name}-{version}",
@@ -1816,7 +1796,6 @@ class DataVault:
     ) -> ResolvedDatasetVersion:
         collection = self._get_dataset_collection(dataset)
         items = self._backend.list_collection_items({"collection_id": collection.collection_id, "status": "active"})
-        datalake = self._require_local_datalake()
         dataset_name = _snapshot_dataset_version_name(collection, snapshot_name)
         version = _snapshot_dataset_version_version(snapshot_version)
 
@@ -1824,7 +1803,7 @@ class DataVault:
             manifest: list[str] = []
             for item in items:
                 asset = self._backend.get_asset(item.asset_id)
-                datum = datalake.create_datum(
+                datum = self._backend.create_datum(
                     asset_refs={_snapshot_primary_role(asset): asset.asset_id},
                     split=item.split,
                     metadata=_snapshot_datum_metadata(collection, item),
@@ -1834,7 +1813,7 @@ class DataVault:
                     _dataset_annotation_set_filters(collection.collection_id, asset_id=asset.asset_id)
                 )
                 for source_set in source_sets:
-                    frozen_set = datalake.create_annotation_set(
+                    frozen_set = self._backend.create_annotation_set(
                         name=source_set.name,
                         purpose=source_set.purpose,
                         source_type=source_set.source_type,
@@ -1849,12 +1828,12 @@ class DataVault:
                         for annotation_id in source_set.annotation_record_ids
                     ]
                     if source_records:
-                        datalake.add_annotation_records(
+                        self._backend.add_annotation_records(
                             [_snapshot_annotation_payload(record, asset.asset_id) for record in source_records],
                             annotation_set_id=frozen_set.annotation_set_id,
                             annotation_schema_id=source_set.annotation_schema_id,
                         )
-            datalake.create_dataset_version(
+            self._backend.create_dataset_version(
                 dataset_name=dataset_name,
                 version=version,
                 description=collection.description,
@@ -1872,7 +1851,7 @@ class DataVault:
                 ),
                 created_by=created_by,
             )
-            return datalake.resolve_dataset_version(dataset_name, version)
+            return self._backend.resolve_dataset_version(dataset_name, version)
 
         resolved_datums: list[ResolvedDatum] = []
         manifest: list[str] = []
@@ -1959,7 +1938,6 @@ class DataVault:
         from mindtrace.datalake.exporters import export_dataset_to_format
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_sync
 
-        datalake = self._require_local_datalake()
         resolved_dataset_version = self._freeze_dataset(
             dataset,
             persist_snapshot=persist_snapshot,
@@ -1968,7 +1946,7 @@ class DataVault:
             created_by=created_by,
         )
         exportable_dataset = build_exportable_dataset_from_resolved_version_sync(
-            datalake,
+            self._backend,
             resolved_dataset_version,
             split_map=split_map,
         )
