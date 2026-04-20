@@ -4580,3 +4580,441 @@ class TestBaslerCameraBackendRemainingLineCoverage:
             await camera.export_config(str(config_path))
 
         assert "Permission denied" in str(exc_info.value)
+
+
+# --- Liquid Lens / Focus Control Mocks & Fixtures ---
+
+
+class MockPylonCameraWithLens(MockPylonCamera):
+    """Mock pylon camera that has liquid lens GenICam nodes."""
+
+    def __init__(self, device_info=None, lens_connected=True):
+        super().__init__(device_info=device_info)
+        self._lens_connected = lens_connected
+        self._lens_optical_power = 2.979
+        self._lens_status = "Lens OK"
+        self._focus_auto = "Off"
+        self._focus_accurate = "Normal"
+        self._focus_stepper = 0.1
+        self._focus_stepper_lower_limit = 0.01
+        self._focus_stepper_upper_limit = 0.4
+        self._focus_roi_size = "Small"
+        self._auto_focus_source = "Contrast"
+        self._edge_detection_focusing = True
+        self._bsl_focus_x_offset = 0
+        self._bsl_focus_y_offset = 0
+
+        # Create lens node parameter objects
+        self._lens_connection_param = MockEnumParameter(
+            "Connect" if lens_connected else "NotConnect",
+            ["Connect", "NotConnect"],
+        )
+        self._lens_status_param = _SimpleMockParam(self, "_lens_status")
+        self._lens_optical_power_param = MockParameter(self._lens_optical_power, min_val=-3.408, max_val=5.092)
+        self._focus_auto_param = _AutofocusMockParam()
+        self._focus_accurate_param = MockEnumParameter(self._focus_accurate, ["Fast", "Normal", "Accurate"])
+        self._focus_stepper_param = MockParameter(self._focus_stepper, min_val=0.01, max_val=0.4)
+        self._focus_stepper_lower_param = MockParameter(self._focus_stepper_lower_limit, min_val=0.01, max_val=0.4)
+        self._focus_stepper_upper_param = MockParameter(self._focus_stepper_upper_limit, min_val=0.01, max_val=0.4)
+        self._focus_roi_size_param = MockEnumParameter(self._focus_roi_size, ["Small", "Medium", "Large"])
+        self._auto_focus_source_param = MockEnumParameter(self._auto_focus_source, ["Contrast", "Phase"])
+        self._edge_detection_param = _SimpleMockParam(self, "_edge_detection_focusing")
+        self._bsl_focus_x_offset_param = MockParameter(self._bsl_focus_x_offset, min_val=-960, max_val=960)
+        self._bsl_focus_y_offset_param = MockParameter(self._bsl_focus_y_offset, min_val=-540, max_val=540)
+
+    @property
+    def LensConnection(self):
+        return self._lens_connection_param
+
+    @property
+    def LensStatus(self):
+        return self._lens_status_param
+
+    @property
+    def LensOpticalPower(self):
+        return self._lens_optical_power_param
+
+    @property
+    def FocusAuto(self):
+        return self._focus_auto_param
+
+    @property
+    def FocusAccurate(self):
+        return self._focus_accurate_param
+
+    @property
+    def FocusStepper(self):
+        return self._focus_stepper_param
+
+    @property
+    def FocusStepperLowerLimit(self):
+        return self._focus_stepper_lower_param
+
+    @property
+    def FocusStepperUpperLimit(self):
+        return self._focus_stepper_upper_param
+
+    @property
+    def FocusROISize(self):
+        return self._focus_roi_size_param
+
+    @property
+    def AutoFocusSource(self):
+        return self._auto_focus_source_param
+
+    @property
+    def EdgeDetectionFocusing(self):
+        return self._edge_detection_param
+
+    @property
+    def BslFocusXOffset(self):
+        return self._bsl_focus_x_offset_param
+
+    @property
+    def BslFocusYOffset(self):
+        return self._bsl_focus_y_offset_param
+
+
+class _SimpleMockParam:
+    """Minimal mock param that reads/writes an attribute on a host object."""
+
+    def __init__(self, host, attr):
+        self._host = host
+        self._attr = attr
+
+    def GetValue(self):
+        return getattr(self._host, self._attr)
+
+    def SetValue(self, value):
+        setattr(self._host, self._attr, value)
+
+
+class _AutofocusMockParam:
+    """Mock FocusAuto that returns 'Off' after being set to 'Once' (simulates AF completion)."""
+
+    def __init__(self):
+        self._value = "Off"
+        self._return_off_next = False
+
+    def GetValue(self):
+        if self._return_off_next:
+            self._return_off_next = False
+            self._value = "Off"
+            return "Off"
+        return self._value
+
+    def SetValue(self, value):
+        if value not in ("Off", "Once"):
+            raise MockGenICamError(f"Invalid value {value}")
+        self._value = value
+        if value == "Once":
+            # Simulate: AF completes on next poll
+            self._return_off_next = True
+
+
+@pytest.fixture
+def mock_pypylon_with_lens(monkeypatch):
+    """Mock pypylon with lens-capable camera."""
+    mock_pylon = MockPylon()
+    mock_genicam = MockGenicam()
+
+    tl_factory = Mock()
+    devices = [MockPylonDevice(serial="40660836", model="a2A1920-160ucBAS")]
+    tl_factory.EnumerateDevices.return_value = devices
+    tl_factory.CreateDevice.side_effect = lambda device_info: device_info
+    mock_pylon.TlFactory.GetInstance.return_value = tl_factory
+
+    # Override InstantCamera to produce lens-capable camera
+    mock_pylon.InstantCamera = MockPylonCameraWithLens
+
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.pylon", mock_pylon)
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.genicam", mock_genicam)
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.PYPYLON_AVAILABLE", True)
+
+    return mock_pylon, mock_genicam
+
+
+@pytest.fixture
+def mock_pypylon_no_lens(monkeypatch):
+    """Mock pypylon with camera that does NOT have liquid lens."""
+    mock_pylon = MockPylon()
+    mock_genicam = MockGenicam()
+
+    tl_factory = Mock()
+    devices = [MockPylonDevice(serial="12345678", model="acA5472-5gc")]
+    tl_factory.EnumerateDevices.return_value = devices
+    tl_factory.CreateDevice.side_effect = lambda device_info: device_info
+    mock_pylon.TlFactory.GetInstance.return_value = tl_factory
+
+    # Standard camera (no lens nodes)
+    mock_pylon.InstantCamera = MockPylonCamera
+
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.pylon", mock_pylon)
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.genicam", mock_genicam)
+    monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.PYPYLON_AVAILABLE", True)
+
+    return mock_pylon, mock_genicam
+
+
+@pytest.fixture
+def basler_camera_with_lens(mock_pypylon_with_lens):
+    """Create a BaslerCameraBackend instance with lens-capable camera."""
+    from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+    camera = BaslerCameraBackend(
+        camera_name="Camera_40660836",
+        img_quality_enhancement=False,
+        retrieve_retry_count=3,
+        pixel_format="BGR8",
+        buffer_count=10,
+        timeout_ms=1000,
+    )
+    return camera
+
+
+@pytest.fixture
+def basler_camera_no_lens(mock_pypylon_no_lens):
+    """Create a BaslerCameraBackend instance without liquid lens."""
+    from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+    camera = BaslerCameraBackend(
+        camera_name="Camera_12345678",
+        img_quality_enhancement=False,
+        retrieve_retry_count=3,
+        pixel_format="BGR8",
+        buffer_count=10,
+        timeout_ms=1000,
+    )
+    return camera
+
+
+class TestBaslerCameraBackendLiquidLensDetection:
+    """Test liquid lens auto-detection helpers."""
+
+    @pytest.mark.asyncio
+    async def test_has_liquid_lens_with_lens_camera(self, basler_camera_with_lens):
+        """Camera with LensConnection node should be detected."""
+        await basler_camera_with_lens.initialize()
+        assert basler_camera_with_lens._has_liquid_lens() is True
+
+    @pytest.mark.asyncio
+    async def test_has_liquid_lens_without_lens_camera(self, basler_camera_no_lens):
+        """Camera without LensConnection node should not be detected."""
+        await basler_camera_no_lens.initialize()
+        assert basler_camera_no_lens._has_liquid_lens() is False
+
+    @pytest.mark.asyncio
+    async def test_has_liquid_lens_camera_none(self, basler_camera_with_lens):
+        """Returns False when camera is None."""
+        assert basler_camera_with_lens._has_liquid_lens() is False
+
+    @pytest.mark.asyncio
+    async def test_is_lens_connected_true(self, basler_camera_with_lens):
+        """Returns True when LensConnection is Connect."""
+        await basler_camera_with_lens.initialize()
+        assert basler_camera_with_lens._is_lens_connected() is True
+
+    @pytest.mark.asyncio
+    async def test_is_lens_connected_false_no_nodes(self, basler_camera_no_lens):
+        """Returns False when camera has no lens nodes."""
+        await basler_camera_no_lens.initialize()
+        assert basler_camera_no_lens._is_lens_connected() is False
+
+
+class TestBaslerCameraBackendGetLensStatus:
+    """Test get_lens_status method."""
+
+    @pytest.mark.asyncio
+    async def test_get_lens_status_with_lens(self, basler_camera_with_lens):
+        """Get lens status from a camera with liquid lens."""
+        await basler_camera_with_lens.initialize()
+        status = await basler_camera_with_lens.get_lens_status()
+        assert status["connected"] is True
+        assert status["status"] == "Lens OK"
+        assert status["optical_power"] == pytest.approx(2.979)
+
+    @pytest.mark.asyncio
+    async def test_get_lens_status_without_lens(self, basler_camera_no_lens):
+        """Camera without lens returns clean non-connected status (no exception)."""
+        await basler_camera_no_lens.initialize()
+        status = await basler_camera_no_lens.get_lens_status()
+        assert status["connected"] is False
+        assert status["status"] == "No lens controller"
+        assert status["optical_power"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_lens_status_not_initialized(self, basler_camera_with_lens):
+        """Raises CameraConnectionError when camera not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await basler_camera_with_lens.get_lens_status()
+
+
+class TestBaslerCameraBackendOpticalPower:
+    """Test get/set optical power methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_optical_power(self, basler_camera_with_lens):
+        """Get current optical power in diopters."""
+        await basler_camera_with_lens.initialize()
+        power = await basler_camera_with_lens.get_optical_power()
+        assert power == pytest.approx(2.979)
+
+    @pytest.mark.asyncio
+    async def test_get_optical_power_no_lens_raises(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError, match="does not have a connected liquid lens"):
+            await basler_camera_no_lens.get_optical_power()
+
+    @pytest.mark.asyncio
+    async def test_set_optical_power_in_range(self, basler_camera_with_lens):
+        """Set optical power within valid range."""
+        await basler_camera_with_lens.initialize()
+        await basler_camera_with_lens.set_optical_power(1.0)
+        power = await basler_camera_with_lens.get_optical_power()
+        assert power == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_set_optical_power_out_of_range(self, basler_camera_with_lens):
+        """Out-of-range diopters raises CameraConfigurationError."""
+        await basler_camera_with_lens.initialize()
+        with pytest.raises(CameraConfigurationError, match="outside valid range"):
+            await basler_camera_with_lens.set_optical_power(99.0)
+
+    @pytest.mark.asyncio
+    async def test_set_optical_power_negative_boundary(self, basler_camera_with_lens):
+        """Set optical power at negative boundary."""
+        await basler_camera_with_lens.initialize()
+        await basler_camera_with_lens.set_optical_power(-3.408)
+        power = await basler_camera_with_lens.get_optical_power()
+        assert power == pytest.approx(-3.408)
+
+    @pytest.mark.asyncio
+    async def test_set_optical_power_no_lens_raises(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError):
+            await basler_camera_no_lens.set_optical_power(1.0)
+
+    @pytest.mark.asyncio
+    async def test_get_optical_power_range(self, basler_camera_with_lens):
+        """Get optical power range [min, max]."""
+        await basler_camera_with_lens.initialize()
+        r = await basler_camera_with_lens.get_optical_power_range()
+        assert r == pytest.approx([-3.408, 5.092])
+
+    @pytest.mark.asyncio
+    async def test_get_optical_power_range_no_lens(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError, match="does not have liquid lens"):
+            await basler_camera_no_lens.get_optical_power_range()
+
+
+class TestBaslerCameraBackendAutofocus:
+    """Test trigger_autofocus method."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_autofocus_completes(self, basler_camera_with_lens):
+        """Autofocus completes when FocusAuto returns to Off."""
+        await basler_camera_with_lens.initialize()
+
+        # FocusAuto is already mock-set to "Off", so the first poll should detect completion
+        result = await basler_camera_with_lens.trigger_autofocus("Fast")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_trigger_autofocus_default_accuracy(self, basler_camera_with_lens):
+        """Autofocus with default Normal accuracy."""
+        await basler_camera_with_lens.initialize()
+        result = await basler_camera_with_lens.trigger_autofocus()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_trigger_autofocus_invalid_accuracy(self, basler_camera_with_lens):
+        """Invalid accuracy value raises CameraConfigurationError."""
+        await basler_camera_with_lens.initialize()
+        with pytest.raises(CameraConfigurationError, match="Invalid accuracy"):
+            await basler_camera_with_lens.trigger_autofocus("SuperFast")
+
+    @pytest.mark.asyncio
+    async def test_trigger_autofocus_no_lens_raises(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError):
+            await basler_camera_no_lens.trigger_autofocus()
+
+    @pytest.mark.asyncio
+    async def test_trigger_autofocus_not_initialized(self, basler_camera_with_lens):
+        """Raises CameraConnectionError when camera not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await basler_camera_with_lens.trigger_autofocus()
+
+
+class TestBaslerCameraBackendFocusConfig:
+    """Test get/set focus config methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_focus_config(self, basler_camera_with_lens):
+        """Get all focus configuration parameters."""
+        await basler_camera_with_lens.initialize()
+        config = await basler_camera_with_lens.get_focus_config()
+
+        assert "accuracy" in config
+        assert config["accuracy"] == "Normal"
+        assert "stepper" in config
+        assert config["stepper"] == pytest.approx(0.1)
+        assert "roi_size" in config
+        assert "focus_source" in config
+        assert "edge_detection" in config
+        assert "roi_offset_x" in config
+        assert "roi_offset_y" in config
+
+    @pytest.mark.asyncio
+    async def test_get_focus_config_no_lens_raises(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError, match="does not have liquid lens"):
+            await basler_camera_no_lens.get_focus_config()
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_accuracy(self, basler_camera_with_lens):
+        """Set focus accuracy to Accurate."""
+        await basler_camera_with_lens.initialize()
+        await basler_camera_with_lens.set_focus_config(accuracy="Accurate")
+        config = await basler_camera_with_lens.get_focus_config()
+        assert config["accuracy"] == "Accurate"
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_multiple(self, basler_camera_with_lens):
+        """Set multiple focus parameters at once."""
+        await basler_camera_with_lens.initialize()
+        await basler_camera_with_lens.set_focus_config(
+            accuracy="Fast",
+            roi_offset_x=100,
+            roi_offset_y=-50,
+        )
+        config = await basler_camera_with_lens.get_focus_config()
+        assert config["accuracy"] == "Fast"
+        assert config["roi_offset_x"] == 100
+        assert config["roi_offset_y"] == -50
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_unknown_key_ignored(self, basler_camera_with_lens):
+        """Unknown keys are warned and skipped, not raising."""
+        await basler_camera_with_lens.initialize()
+        # Should not raise
+        await basler_camera_with_lens.set_focus_config(nonexistent_param=42)
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_no_lens_raises(self, basler_camera_no_lens):
+        """Raises CameraConfigurationError on camera without lens."""
+        await basler_camera_no_lens.initialize()
+        with pytest.raises(CameraConfigurationError):
+            await basler_camera_no_lens.set_focus_config(accuracy="Fast")
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_not_initialized(self, basler_camera_with_lens):
+        """Raises CameraConnectionError when camera not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await basler_camera_with_lens.set_focus_config(accuracy="Fast")
