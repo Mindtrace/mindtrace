@@ -268,6 +268,93 @@ def _snapshot_annotation_payload(record: AnnotationRecord, asset_id: str) -> dic
     return payload
 
 
+def _import_dataset_metadata(
+    source_dataset: DatasetVersion,
+    target_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return _merge_nested_dict(
+        source_dataset.metadata,
+        _merge_nested_dict(
+            target_metadata,
+            {
+                "mindtrace": {
+                    "source_dataset_version": {
+                        "dataset_name": source_dataset.dataset_name,
+                        "version": source_dataset.version,
+                        "dataset_version_id": source_dataset.dataset_version_id,
+                    }
+                }
+            },
+        ),
+    )
+
+
+def _imported_annotation_set_metadata(
+    source_dataset: DatasetVersion,
+    source_set: AnnotationSet,
+    asset_id: str,
+) -> dict[str, Any]:
+    return _merge_nested_dict(
+        source_set.metadata,
+        {
+            "mindtrace": {
+                "data_vault": {
+                    "source_annotation_set_id": source_set.annotation_set_id,
+                    "source_dataset_version_id": source_dataset.dataset_version_id,
+                    "asset_id": asset_id,
+                }
+            }
+        },
+    )
+
+
+def _imported_annotation_payload(
+    record: AnnotationRecord,
+    *,
+    asset_id: str,
+    source_dataset: DatasetVersion,
+    source_set: AnnotationSet,
+) -> dict[str, Any]:
+    payload = record.model_dump(
+        mode="json",
+        exclude={"annotation_id", "created_at", "updated_at"},
+    )
+    payload["subject"] = {"kind": "asset", "id": asset_id}
+    payload["metadata"] = _merge_nested_dict(
+        payload.get("metadata"),
+        {
+            "mindtrace": {
+                "source_dataset_version": {
+                    "dataset_name": source_dataset.dataset_name,
+                    "version": source_dataset.version,
+                    "dataset_version_id": source_dataset.dataset_version_id,
+                },
+                "data_vault": {
+                    "source_annotation_id": record.annotation_id,
+                    "source_annotation_set_id": source_set.annotation_set_id,
+                },
+            }
+        },
+    )
+    return payload
+
+
+def _resolved_primary_asset(resolved_datum: ResolvedDatum) -> Asset | None:
+    for role in ("image", "asset"):
+        asset = resolved_datum.assets.get(role)
+        if asset is not None:
+            return asset
+    for asset in resolved_datum.assets.values():
+        return asset
+    return None
+
+
+def _annotation_matches_asset(record: AnnotationRecord, asset_id: str) -> bool:
+    if record.subject is None:
+        return True
+    return record.subject.kind == "asset" and record.subject.id == asset_id
+
+
 def _pil_image_to_png_bytes(image: Image.Image) -> bytes:
     """Encode a PIL image as lossless PNG bytes (Mindtrace canonical wire format for images)."""
     buf = BytesIO()
@@ -747,6 +834,117 @@ class AsyncDataVault:
         raise NotImplementedError(
             "DataVault dataset export currently requires a local AsyncDatalake backend when freeze is needed."
         )
+
+    async def _prepare_import_target_dataset(
+        self,
+        *,
+        dataset_name: str,
+        description: str | None,
+        metadata: dict[str, Any],
+        overwrite: bool,
+        created_by: str | None,
+    ) -> VaultDataset:
+        matches = await self._backend.list_collections(_dataset_filters({"name": dataset_name}))
+        if matches:
+            if not overwrite:
+                raise ValueError(f"Dataset {dataset_name!r} already exists")
+            datalake = self._require_local_datalake()
+            for collection in matches:
+                await datalake.update_collection(collection.collection_id, status="archived")
+        return await self.create_dataset(
+            dataset_name,
+            description=description,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    async def import_dataset_version(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        target_name: str | None = None,
+        target_description: str | None = None,
+        target_metadata: dict[str, Any] | None = None,
+        overwrite: bool = False,
+        created_by: str | None = None,
+    ) -> VaultDataset:
+        """Materialize an immutable dataset version into a mutable vault dataset."""
+        datalake = self._require_local_datalake()
+        resolved_dataset_version = await datalake.resolve_dataset_version(dataset_name, version)
+        source_dataset = resolved_dataset_version.dataset_version
+        imported_dataset = await self._prepare_import_target_dataset(
+            dataset_name=target_name or f"{dataset_name}-{version}",
+            description=target_description if target_description is not None else source_dataset.description,
+            metadata=_import_dataset_metadata(source_dataset, target_metadata),
+            overwrite=overwrite,
+            created_by=created_by,
+        )
+
+        collection = await self._get_dataset_collection(imported_dataset)
+        for resolved_datum in resolved_dataset_version.datums:
+            primary_asset = _resolved_primary_asset(resolved_datum)
+            if primary_asset is None:
+                continue
+            await self._ensure_collection_item(
+                collection,
+                primary_asset.asset_id,
+                split=resolved_datum.datum.split,
+                metadata=dict(resolved_datum.datum.metadata or {}),
+                added_by=created_by,
+            )
+            for source_set in resolved_datum.annotation_sets:
+                source_records = list(resolved_datum.annotation_records.get(source_set.annotation_set_id, []))
+                matching_records = [
+                    record for record in source_records if _annotation_matches_asset(record, primary_asset.asset_id)
+                ]
+                if not matching_records:
+                    continue
+                imported_set = await self._backend.create_annotation_set(
+                    name=source_set.name,
+                    purpose=source_set.purpose,
+                    source_type=source_set.source_type,
+                    status="active",
+                    metadata=_merge_nested_dict(
+                        _dataset_annotation_set_metadata(collection, primary_asset.asset_id),
+                        _imported_annotation_set_metadata(source_dataset, source_set, primary_asset.asset_id),
+                    ),
+                    created_by=created_by,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                )
+                await self._backend.add_annotation_records(
+                    [
+                        _imported_annotation_payload(
+                            record,
+                            asset_id=primary_asset.asset_id,
+                            source_dataset=source_dataset,
+                            source_set=source_set,
+                        )
+                        for record in matching_records
+                    ],
+                    annotation_set_id=imported_set.annotation_set_id,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                )
+        return await self.get_dataset(imported_dataset.name)
+
+    async def freeze_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        persist: bool = True,
+        created_by: str | None = None,
+    ) -> DatasetVersion | ResolvedDatasetVersion:
+        """Freeze a mutable vault dataset into an immutable snapshot."""
+        resolved = await self._freeze_dataset(
+            dataset,
+            persist_snapshot=persist,
+            snapshot_name=snapshot_name,
+            snapshot_version=snapshot_version,
+            created_by=created_by,
+        )
+        return resolved.dataset_version if persist else resolved
 
     async def _freeze_dataset(
         self,
@@ -1495,6 +1693,117 @@ class DataVault:
         raise NotImplementedError(
             "DataVault dataset export currently requires a local Datalake backend when freeze is needed."
         )
+
+    def _prepare_import_target_dataset(
+        self,
+        *,
+        dataset_name: str,
+        description: str | None,
+        metadata: dict[str, Any],
+        overwrite: bool,
+        created_by: str | None,
+    ) -> VaultDataset:
+        matches = self._backend.list_collections(_dataset_filters({"name": dataset_name}))
+        if matches:
+            if not overwrite:
+                raise ValueError(f"Dataset {dataset_name!r} already exists")
+            datalake = self._require_local_datalake()
+            for collection in matches:
+                datalake.update_collection(collection.collection_id, status="archived")
+        return self.create_dataset(
+            dataset_name,
+            description=description,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    def import_dataset_version(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        target_name: str | None = None,
+        target_description: str | None = None,
+        target_metadata: dict[str, Any] | None = None,
+        overwrite: bool = False,
+        created_by: str | None = None,
+    ) -> VaultDataset:
+        """Materialize an immutable dataset version into a mutable vault dataset."""
+        datalake = self._require_local_datalake()
+        resolved_dataset_version = datalake.resolve_dataset_version(dataset_name, version)
+        source_dataset = resolved_dataset_version.dataset_version
+        imported_dataset = self._prepare_import_target_dataset(
+            dataset_name=target_name or f"{dataset_name}-{version}",
+            description=target_description if target_description is not None else source_dataset.description,
+            metadata=_import_dataset_metadata(source_dataset, target_metadata),
+            overwrite=overwrite,
+            created_by=created_by,
+        )
+
+        collection = self._get_dataset_collection(imported_dataset)
+        for resolved_datum in resolved_dataset_version.datums:
+            primary_asset = _resolved_primary_asset(resolved_datum)
+            if primary_asset is None:
+                continue
+            self._ensure_collection_item(
+                collection,
+                primary_asset.asset_id,
+                split=resolved_datum.datum.split,
+                metadata=dict(resolved_datum.datum.metadata or {}),
+                added_by=created_by,
+            )
+            for source_set in resolved_datum.annotation_sets:
+                source_records = list(resolved_datum.annotation_records.get(source_set.annotation_set_id, []))
+                matching_records = [
+                    record for record in source_records if _annotation_matches_asset(record, primary_asset.asset_id)
+                ]
+                if not matching_records:
+                    continue
+                imported_set = self._backend.create_annotation_set(
+                    name=source_set.name,
+                    purpose=source_set.purpose,
+                    source_type=source_set.source_type,
+                    status="active",
+                    metadata=_merge_nested_dict(
+                        _dataset_annotation_set_metadata(collection, primary_asset.asset_id),
+                        _imported_annotation_set_metadata(source_dataset, source_set, primary_asset.asset_id),
+                    ),
+                    created_by=created_by,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                )
+                self._backend.add_annotation_records(
+                    [
+                        _imported_annotation_payload(
+                            record,
+                            asset_id=primary_asset.asset_id,
+                            source_dataset=source_dataset,
+                            source_set=source_set,
+                        )
+                        for record in matching_records
+                    ],
+                    annotation_set_id=imported_set.annotation_set_id,
+                    annotation_schema_id=source_set.annotation_schema_id,
+                )
+        return self.get_dataset(imported_dataset.name)
+
+    def freeze_dataset(
+        self,
+        dataset: str | VaultDataset,
+        *,
+        snapshot_name: str | None = None,
+        snapshot_version: str | None = None,
+        persist: bool = True,
+        created_by: str | None = None,
+    ) -> DatasetVersion | ResolvedDatasetVersion:
+        """Freeze a mutable vault dataset into an immutable snapshot."""
+        resolved = self._freeze_dataset(
+            dataset,
+            persist_snapshot=persist,
+            snapshot_name=snapshot_name,
+            snapshot_version=snapshot_version,
+            created_by=created_by,
+        )
+        return resolved.dataset_version if persist else resolved
 
     def _freeze_dataset(
         self,
