@@ -272,6 +272,17 @@ class AsyncDataVaultBackend(ABC):
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]: ...
 
     @abstractmethod
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]: ...
+
+    @abstractmethod
     async def create_annotation_set(
         self,
         *,
@@ -461,6 +472,17 @@ class DataVaultBackend(ABC):
 
     @abstractmethod
     def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]: ...
+
+    @abstractmethod
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]: ...
 
     @abstractmethod
     def create_annotation_set(
@@ -706,6 +728,23 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return await self._datalake.list_annotation_sets(filters)
+
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._datalake.list_annotation_sets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def create_annotation_set(
         self,
@@ -971,6 +1010,23 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         return self._datalake.list_annotation_sets(filters)
+
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return self._datalake.list_annotation_sets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     def create_annotation_set(
         self,
@@ -1340,6 +1396,26 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         out = await self._call("aannotation_sets_list", input_obj=ListInput(filters=filters))
         return out.annotation_sets
 
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._call(
+            "aannotation_sets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
     async def create_annotation_set(
         self,
         *,
@@ -1707,6 +1783,26 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
     def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
         out = self._call("annotation_sets_list", input_obj=ListInput(filters=filters))
         return out.annotation_sets
+
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return self._call(
+            "annotation_sets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
 
     def create_annotation_set(
         self,
