@@ -42,7 +42,6 @@ __all__ = [
     "RegistryBackend",
     "Store",
     "MountedRegistry",
-    "StoreMount",
     "StoreLocationNotFound",
     "StoreKeyFormatError",
     "StoreAmbiguousObjectError",
