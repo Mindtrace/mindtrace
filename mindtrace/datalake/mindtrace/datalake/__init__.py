@@ -32,6 +32,7 @@ from .data_vault_backends import (
     LocalDataVaultBackend,
 )
 from .datalake import Datalake
+from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -114,6 +115,11 @@ __all__ = [
     "AsyncDataVault",
     "AsyncDataVaultBackend",
     "VaultDataset",
+    "ExportResult",
+    "ExportableDataset",
+    "ExportableItem",
+    "export_dataset_to_format",
+    "get_dataset_exporter",
     "SlowOperationDisabledError",
     "SlowOperationWarning",
     "SlowOpsPolicy",
