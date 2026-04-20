@@ -11,6 +11,8 @@ from PIL import Image
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.async_datalake import SlowOperationDisabledError, SlowOperationWarning, SlowOpsPolicy
 from mindtrace.datalake.data_vault import (
+    _DATASET_ANNOTATIONS_CURSOR_KIND,
+    _DATASET_ASSETS_CURSOR_KIND,
     AsyncDataVault,
     DataVault,
     VaultDataset,
@@ -20,8 +22,12 @@ from mindtrace.datalake.data_vault import (
     _annotations_bound_to_asset,
     _coerce_annotation_payload,
     _dataset_annotation_set_filters,
+    _decode_dataset_cursor,
+    _encode_dataset_cursor,
     _extract_annotation_asset_id,
+    _guard_slow_list_operation,
     _pil_image_to_png_bytes,
+    _resolve_slow_ops_policy,
     _resolved_primary_asset,
 )
 from mindtrace.datalake.data_vault_backends import (
@@ -82,6 +88,110 @@ def test_annotations_bound_to_asset_copies_dict_and_annotation_record():
     )
     merged_rec = _annotations_bound_to_asset([rec], "asset_z")
     assert merged_rec[0].subject == SubjectRef(kind="asset", id="asset_z")
+
+
+def test_data_vault_private_paging_helpers_and_policy_resolution():
+    backend = SimpleNamespace(slow_ops_policy="allow")
+    wrapped = SimpleNamespace(_datalake=SimpleNamespace(slow_ops_policy="forbid"))
+
+    assert _resolve_slow_ops_policy(backend, None) == SlowOpsPolicy.ALLOW
+    assert _resolve_slow_ops_policy(wrapped, None) == SlowOpsPolicy.FORBID
+    assert _resolve_slow_ops_policy(SimpleNamespace(slow_ops_policy=Mock()), None) == SlowOpsPolicy.WARN
+    assert _resolve_slow_ops_policy(object(), SlowOpsPolicy.ALLOW) == SlowOpsPolicy.ALLOW
+
+    payload = {"kind": _DATASET_ASSETS_CURSOR_KIND, "collection_id": "collection_1", "sort": "created_desc"}
+    cursor = _encode_dataset_cursor(payload)
+    assert _decode_dataset_cursor(cursor, expected_kind=_DATASET_ASSETS_CURSOR_KIND) == payload
+
+    with pytest.raises(ValueError, match="Invalid dataset page cursor"):
+        _decode_dataset_cursor("not-base64", expected_kind=_DATASET_ASSETS_CURSOR_KIND)
+    with pytest.raises(ValueError, match="Invalid dataset page cursor"):
+        _decode_dataset_cursor(
+            _encode_dataset_cursor({"kind": _DATASET_ANNOTATIONS_CURSOR_KIND}),
+            expected_kind=_DATASET_ASSETS_CURSOR_KIND,
+        )
+
+    _guard_slow_list_operation(SlowOpsPolicy.ALLOW, "list_dataset_assets", alternatives="iter_dataset_assets()")
+    with pytest.warns(SlowOperationWarning, match="list_dataset_assets"):
+        _guard_slow_list_operation(SlowOpsPolicy.WARN, "list_dataset_assets", alternatives="iter_dataset_assets()")
+    with pytest.raises(SlowOperationDisabledError, match="list_dataset_assets"):
+        _guard_slow_list_operation(SlowOpsPolicy.FORBID, "list_dataset_assets", alternatives="iter_dataset_assets()")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_count_helpers_continue_across_pages():
+    item_1 = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    item_2 = CollectionItem(collection_id="collection_1", asset_id="asset_2", collection_item_id="ci_2")
+    asset_page_1 = CursorPage(items=[item_1], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    asset_page_2 = CursorPage(items=[item_2], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    annotation_page_1 = AnnotationSetPageOutput(
+        items=[
+            AnnotationSet(
+                annotation_set_id="annotation_set_1",
+                name="training:asset_1",
+                purpose="other",
+                source_type="human",
+                annotation_record_ids=["annotation_1", "annotation_2"],
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True),
+    )
+    annotation_page_2 = AnnotationSetPageOutput(
+        items=[
+            AnnotationSet(
+                annotation_set_id="annotation_set_2",
+                name="training:asset_2",
+                purpose="other",
+                source_type="human",
+                annotation_record_ids=["annotation_3"],
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False),
+    )
+    backend = Mock()
+    backend.list_collection_items_page = AsyncMock(
+        side_effect=lambda **kwargs: asset_page_1 if kwargs.get("cursor") is None else asset_page_2
+    )
+    backend.list_annotation_sets_page = AsyncMock(
+        side_effect=lambda **kwargs: annotation_page_1 if kwargs.get("cursor") is None else annotation_page_2
+    )
+
+    vault = AsyncDataVault(backend)
+    assert await vault._count_dataset_assets("collection_1") == 2
+    assert await vault._count_dataset_annotations("collection_1", None) == 3
+
+
+def test_sync_data_vault_count_annotations_continue_across_pages():
+    annotation_page_1 = AnnotationSetPageOutput(
+        items=[
+            AnnotationSet(
+                annotation_set_id="annotation_set_1",
+                name="training:asset_1",
+                purpose="other",
+                source_type="human",
+                annotation_record_ids=["annotation_1", "annotation_2"],
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True),
+    )
+    annotation_page_2 = AnnotationSetPageOutput(
+        items=[
+            AnnotationSet(
+                annotation_set_id="annotation_set_2",
+                name="training:asset_2",
+                purpose="other",
+                source_type="human",
+                annotation_record_ids=["annotation_3"],
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False),
+    )
+    backend = Mock()
+    backend.list_annotation_sets_page = Mock(
+        side_effect=lambda **kwargs: annotation_page_1 if kwargs.get("cursor") is None else annotation_page_2
+    )
+
+    assert DataVault(backend)._count_dataset_annotations("collection_1", None) == 3
 
 
 @pytest.mark.asyncio
@@ -1229,6 +1339,157 @@ def test_sync_data_vault_dataset_assets_page_iter_and_total():
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_dataset_assets_page_resume_validation_and_total():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset_1 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n1", version="1"),
+        asset_id="asset_1",
+    )
+    asset_2 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n2", version="1"),
+        asset_id="asset_2",
+    )
+    item_1 = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    item_2 = CollectionItem(collection_id="collection_1", asset_id="asset_2", collection_item_id="ci_2")
+    page = CursorPage(items=[item_1, item_2], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+
+    backend = Mock()
+    backend.list_collections = AsyncMock(return_value=[collection])
+    backend.list_collection_items_page = AsyncMock(side_effect=lambda **kwargs: page)
+    backend.get_asset = AsyncMock(side_effect=lambda asset_id: {"asset_1": asset_1, "asset_2": asset_2}[asset_id])
+    vault = AsyncDataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    asset_page = await vault.list_dataset_assets_page("training", limit=5, include_total=True)
+    assert [asset.asset_id for asset in asset_page.items] == ["asset_1", "asset_2"]
+    assert asset_page.page.total_count == 2
+    assert [asset.asset_id async for asset in vault.iter_dataset_assets("training", batch_size=5)] == [
+        "asset_1",
+        "asset_2",
+    ]
+
+    resume_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ASSETS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "sort": "created_desc",
+            "limit": 2,
+            "items_cursor": None,
+            "seen_asset_ids": [],
+            "pending_asset_ids": ["asset_1"],
+        }
+    )
+    resumed = await vault.list_dataset_assets_page("training", cursor=resume_cursor)
+    assert [asset.asset_id for asset in resumed.items] == ["asset_1"]
+    assert resumed.page.has_more is False
+
+    limited_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ASSETS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "sort": "created_desc",
+            "limit": 1,
+            "items_cursor": None,
+            "seen_asset_ids": [],
+            "pending_asset_ids": ["asset_1", "asset_2"],
+        }
+    )
+    limited = await vault.list_dataset_assets_page("training", cursor=limited_cursor)
+    assert [asset.asset_id for asset in limited.items] == ["asset_1"]
+    assert limited.page.has_more is True
+    assert limited.page.next_cursor is not None
+
+    with pytest.raises(ValueError, match="requested dataset"):
+        await vault.list_dataset_assets_page(
+            "training",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": "other_collection",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="sort order"):
+        await vault.list_dataset_assets_page(
+            "training",
+            sort="updated_desc",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_dataset_assets_page_empty_duplicate_and_iter_edges():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset_1 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n1", version="1"),
+        asset_id="asset_1",
+    )
+    asset_2 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n2", version="1"),
+        asset_id="asset_2",
+    )
+    item_1 = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    item_2 = CollectionItem(collection_id="collection_1", asset_id="asset_2", collection_item_id="ci_2")
+    duplicate_page = CursorPage(items=[item_1, item_1], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+    empty_page = CursorPage(items=[], page=PageInfo(limit=2, next_cursor=None, has_more=False))
+    iter_page_1 = CursorPage(items=[item_1], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    iter_page_2 = CursorPage(items=[item_2], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+
+    duplicate_backend = Mock()
+    duplicate_backend.list_collections = AsyncMock(return_value=[collection])
+    duplicate_backend.get_asset = AsyncMock(return_value=asset_1)
+    duplicate_backend.list_collection_items_page = AsyncMock(return_value=duplicate_page)
+    duplicate_vault = AsyncDataVault(duplicate_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    duplicate_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ASSETS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "sort": "created_desc",
+            "limit": 5,
+            "items_cursor": None,
+            "seen_asset_ids": [],
+            "pending_asset_ids": ["asset_1", "asset_1"],
+        }
+    )
+    duplicate_resumed = await duplicate_vault.list_dataset_assets_page("training", cursor=duplicate_cursor)
+    assert [asset.asset_id for asset in duplicate_resumed.items] == ["asset_1"]
+    duplicate_page = await duplicate_vault.list_dataset_assets_page("training")
+    assert [asset.asset_id for asset in duplicate_page.items] == ["asset_1"]
+
+    empty_backend = Mock()
+    empty_backend.list_collections = AsyncMock(return_value=[collection])
+    empty_backend.list_collection_items_page = AsyncMock(return_value=empty_page)
+    empty_backend.get_asset = AsyncMock()
+    empty_vault = AsyncDataVault(empty_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert (await empty_vault.list_dataset_assets_page("training")).items == []
+
+    iter_backend = Mock()
+    iter_backend.list_collections = AsyncMock(return_value=[collection])
+    iter_backend.list_collection_items_page = AsyncMock(side_effect=[iter_page_1, iter_page_2])
+    iter_backend.get_asset = AsyncMock(side_effect=lambda asset_id: {"asset_1": asset_1, "asset_2": asset_2}[asset_id])
+    iter_vault = AsyncDataVault(iter_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert [asset.asset_id async for asset in iter_vault.iter_dataset_assets("training", batch_size=1)] == [
+        "asset_1",
+        "asset_2",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_dataset_annotations_page_iter_and_asset_filter():
     collection = Collection(name="training", collection_id="collection_1")
     asset = Asset(
@@ -1315,6 +1576,428 @@ async def test_async_data_vault_dataset_annotations_page_iter_and_asset_filter()
     assert [
         record.annotation_id async for record in vault.iter_dataset_annotations("training", asset=asset, batch_size=2)
     ] == ["annotation_1", "annotation_2", "annotation_3"]
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_dataset_annotations_page_resume_validation_and_total():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    record_1 = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    record_2 = AnnotationRecord(
+        annotation_id="annotation_2",
+        kind="bbox",
+        label="dog",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1", "annotation_2"],
+        metadata={"mindtrace": {"data_vault": {"dataset_collection_id": "collection_1", "asset_id": "asset_1"}}},
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+
+    backend = Mock()
+    backend.list_collections = AsyncMock(return_value=[collection])
+    backend.list_annotation_sets_page = AsyncMock(side_effect=lambda **kwargs: page)
+    backend.get_annotation_record = AsyncMock(
+        side_effect=lambda annotation_id: {"annotation_1": record_1, "annotation_2": record_2}[annotation_id]
+    )
+    vault = AsyncDataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    annotation_page = await vault.list_dataset_annotations_page("training", asset=asset, limit=5, include_total=True)
+    assert [record.annotation_id for record in annotation_page.items] == ["annotation_1", "annotation_2"]
+    assert annotation_page.page.total_count == 2
+
+    resume_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "asset_id": "asset_1",
+            "sort": "created_desc",
+            "limit": 3,
+            "annotation_sets_cursor": None,
+            "pending_annotation_ids": ["annotation_1"],
+        }
+    )
+    resumed = await vault.list_dataset_annotations_page("training", asset=asset, cursor=resume_cursor)
+    assert [record.annotation_id for record in resumed.items] == ["annotation_1"]
+    assert resumed.page.has_more is False
+
+    limited_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "asset_id": "asset_1",
+            "sort": "created_desc",
+            "limit": 1,
+            "annotation_sets_cursor": None,
+            "pending_annotation_ids": ["annotation_1", "annotation_2"],
+        }
+    )
+    limited = await vault.list_dataset_annotations_page("training", asset=asset, cursor=limited_cursor)
+    assert [record.annotation_id for record in limited.items] == ["annotation_1"]
+    assert limited.page.has_more is True
+    assert limited.page.next_cursor is not None
+
+    with pytest.raises(ValueError, match="requested dataset"):
+        await vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "other_collection",
+                    "asset_id": "asset_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="sort order"):
+        await vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            sort="updated_desc",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "asset_id": "asset_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="asset filter"):
+        await vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "asset_id": "asset_2",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_dataset_annotations_page_empty_page_edge():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    empty_page = AnnotationSetPageOutput(items=[], page=PageInfo(limit=2, next_cursor=None, has_more=False))
+    backend = Mock()
+    backend.list_collections = AsyncMock(return_value=[collection])
+    backend.list_annotation_sets_page = AsyncMock(return_value=empty_page)
+    vault = AsyncDataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    page = await vault.list_dataset_annotations_page("training", asset=asset)
+    assert page.items == []
+    assert page.page.has_more is False
+
+
+def test_sync_data_vault_dataset_assets_page_resume_and_validation():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset_1 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n1", version="1"),
+        asset_id="asset_1",
+    )
+    asset_2 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n2", version="1"),
+        asset_id="asset_2",
+    )
+    item_1 = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    item_2 = CollectionItem(collection_id="collection_1", asset_id="asset_2", collection_item_id="ci_2")
+    page = CursorPage(items=[item_1, item_2], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.list_collection_items_page = Mock(side_effect=lambda **kwargs: page)
+    backend.get_asset = Mock(side_effect=lambda asset_id: {"asset_1": asset_1, "asset_2": asset_2}[asset_id])
+    vault = DataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    resume_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ASSETS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "sort": "created_desc",
+            "limit": 2,
+            "items_cursor": None,
+            "seen_asset_ids": [],
+            "pending_asset_ids": ["asset_1"],
+        }
+    )
+    resumed = vault.list_dataset_assets_page("training", cursor=resume_cursor)
+    assert [asset.asset_id for asset in resumed.items] == ["asset_1"]
+    assert resumed.page.has_more is False
+
+    asset_page = vault.list_dataset_assets_page("training", limit=5, include_total=True)
+    assert [asset.asset_id for asset in asset_page.items] == ["asset_1", "asset_2"]
+    assert asset_page.page.total_count == 2
+
+    with pytest.raises(ValueError, match="requested dataset"):
+        vault.list_dataset_assets_page(
+            "training",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": "other_collection",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="sort order"):
+        vault.list_dataset_assets_page(
+            "training",
+            sort="updated_desc",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ASSETS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+
+
+def test_sync_data_vault_dataset_assets_page_empty_and_duplicate_edges():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset_1 = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n1", version="1"),
+        asset_id="asset_1",
+    )
+    item_1 = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    duplicate_page = CursorPage(items=[item_1, item_1], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+    empty_page = CursorPage(items=[], page=PageInfo(limit=2, next_cursor=None, has_more=False))
+
+    duplicate_backend = Mock()
+    duplicate_backend.list_collections = Mock(return_value=[collection])
+    duplicate_backend.list_collection_items_page = Mock(return_value=duplicate_page)
+    duplicate_backend.get_asset = Mock(return_value=asset_1)
+    duplicate_vault = DataVault(duplicate_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert [asset.asset_id for asset in duplicate_vault.list_dataset_assets_page("training").items] == ["asset_1"]
+
+    empty_backend = Mock()
+    empty_backend.list_collections = Mock(return_value=[collection])
+    empty_backend.list_collection_items_page = Mock(return_value=empty_page)
+    empty_backend.get_asset = Mock()
+    empty_vault = DataVault(empty_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert empty_vault.list_dataset_assets_page("training").items == []
+
+
+def test_sync_data_vault_dataset_annotations_page_iter_total_and_validation():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    record_1 = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    record_2 = AnnotationRecord(
+        annotation_id="annotation_2",
+        kind="bbox",
+        label="dog",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1", "annotation_2"],
+        metadata={"mindtrace": {"data_vault": {"dataset_collection_id": "collection_1", "asset_id": "asset_1"}}},
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=5, next_cursor=None, has_more=False))
+
+    backend = Mock()
+    backend.list_collections = Mock(return_value=[collection])
+    backend.list_annotation_sets_page = Mock(side_effect=lambda **kwargs: page)
+    backend.get_annotation_record = Mock(
+        side_effect=lambda annotation_id: {"annotation_1": record_1, "annotation_2": record_2}[annotation_id]
+    )
+    vault = DataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+
+    annotation_page = vault.list_dataset_annotations_page("training", asset=asset, limit=5, include_total=True)
+    assert [record.annotation_id for record in annotation_page.items] == ["annotation_1", "annotation_2"]
+    assert annotation_page.page.total_count == 2
+    assert [
+        record.annotation_id for record in vault.iter_dataset_annotations("training", asset=asset, batch_size=5)
+    ] == [
+        "annotation_1",
+        "annotation_2",
+    ]
+
+    resume_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "asset_id": "asset_1",
+            "sort": "created_desc",
+            "limit": 3,
+            "annotation_sets_cursor": None,
+            "pending_annotation_ids": ["annotation_1"],
+        }
+    )
+    resumed = vault.list_dataset_annotations_page("training", asset=asset, cursor=resume_cursor)
+    assert [record.annotation_id for record in resumed.items] == ["annotation_1"]
+    assert resumed.page.has_more is False
+
+    with pytest.raises(ValueError, match="requested dataset"):
+        vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "other_collection",
+                    "asset_id": "asset_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="sort order"):
+        vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            sort="updated_desc",
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "asset_id": "asset_1",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+    with pytest.raises(ValueError, match="asset filter"):
+        vault.list_dataset_annotations_page(
+            "training",
+            asset=asset,
+            cursor=_encode_dataset_cursor(
+                {
+                    "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+                    "collection_id": "collection_1",
+                    "asset_id": "asset_2",
+                    "sort": "created_desc",
+                }
+            ),
+        )
+
+
+def test_sync_data_vault_dataset_annotations_page_limit_empty_and_iter_edges():
+    collection = Collection(name="training", collection_id="collection_1")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_1",
+    )
+    record_1 = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="cat",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    record_2 = AnnotationRecord(
+        annotation_id="annotation_2",
+        kind="bbox",
+        label="dog",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "review"},
+        geometry={},
+    )
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+        status="active",
+        annotation_record_ids=["annotation_1"],
+        metadata={"mindtrace": {"data_vault": {"dataset_collection_id": "collection_1", "asset_id": "asset_1"}}},
+    )
+    empty_page = AnnotationSetPageOutput(items=[], page=PageInfo(limit=2, next_cursor=None, has_more=False))
+    iter_page_1 = AnnotationSetPageOutput(
+        items=[annotation_set], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True)
+    )
+    iter_page_2 = AnnotationSetPageOutput(items=[], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+
+    limit_backend = Mock()
+    limit_backend.list_collections = Mock(return_value=[collection])
+    limit_backend.get_annotation_record = Mock(
+        side_effect=lambda annotation_id: {"annotation_1": record_1, "annotation_2": record_2}[annotation_id]
+    )
+    limit_vault = DataVault(limit_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    limited_cursor = _encode_dataset_cursor(
+        {
+            "kind": _DATASET_ANNOTATIONS_CURSOR_KIND,
+            "collection_id": "collection_1",
+            "asset_id": "asset_1",
+            "sort": "created_desc",
+            "limit": 1,
+            "annotation_sets_cursor": None,
+            "pending_annotation_ids": ["annotation_1", "annotation_2"],
+        }
+    )
+    limited = limit_vault.list_dataset_annotations_page("training", asset=asset, cursor=limited_cursor)
+    assert [record.annotation_id for record in limited.items] == ["annotation_1"]
+    assert limited.page.has_more is True
+
+    empty_backend = Mock()
+    empty_backend.list_collections = Mock(return_value=[collection])
+    empty_backend.list_annotation_sets_page = Mock(return_value=empty_page)
+    empty_vault = DataVault(empty_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert empty_vault.list_dataset_annotations_page("training", asset=asset).items == []
+
+    iter_backend = Mock()
+    iter_backend.list_collections = Mock(return_value=[collection])
+    iter_backend.list_annotation_sets_page = Mock(side_effect=[iter_page_1, iter_page_2])
+    iter_backend.get_annotation_record = Mock(return_value=record_1)
+    iter_vault = DataVault(iter_backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
+    assert [
+        record.annotation_id for record in iter_vault.iter_dataset_annotations("training", asset=asset, batch_size=1)
+    ] == ["annotation_1"]
 
 
 def test_sync_data_vault_eager_dataset_methods_obey_slow_ops_policy_forbid():
