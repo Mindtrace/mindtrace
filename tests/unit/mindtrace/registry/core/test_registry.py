@@ -9,12 +9,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import BaseModel
-from zenml.materializers import CloudpickleMaterializer
 
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.archivers.builtin_materializers import CloudpickleMaterializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
     RegistryObjectNotFound,
@@ -119,7 +119,7 @@ def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(r
 
     assert hints == {
         "class": "builtins.bytes",
-        "materializer": "zenml.materializers.BytesMaterializer",
+        "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     }
 
 
@@ -129,7 +129,7 @@ def test_registry_materialize_from_bytes_delegates_to_core(registry):
     out = registry.materialize_from_bytes(
         raw,
         object_class="builtins.bytes",
-        materializer="zenml.materializers.BytesMaterializer",
+        materializer="mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     )
 
     assert out == raw
@@ -512,7 +512,7 @@ def test_materialize_from_bytes_uses_any_when_class_path_is_not_importable(regis
     out = registry._core.materialize_from_bytes(
         raw,
         object_class="missing.module.Type",
-        materializer="zenml.materializers.BytesMaterializer",
+        materializer="mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     )
 
     assert out == raw
