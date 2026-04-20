@@ -846,12 +846,15 @@ def test_local_sync_backend_delegates_dataset_methods():
 
     page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False))
     item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    annotation_set_page = CursorPage(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
     dl.list_collections_page = Mock(return_value=page)
     dl.list_collection_items_page = Mock(return_value=item_page)
+    dl.list_annotation_sets_page = Mock(return_value=annotation_set_page)
     dl.iter_collections = Mock(return_value=iter([collection]))
 
     assert backend.list_collections_page(filters={"status": "active"}, limit=1) == page
     assert backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    assert backend.list_annotation_sets_page(filters={"status": "active"}, limit=1) == annotation_set_page
     assert list(backend.iter_collections(filters={"status": "active"}, batch_size=2)) == [collection]
 
 
