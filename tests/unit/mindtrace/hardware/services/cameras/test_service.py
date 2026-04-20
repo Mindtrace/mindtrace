@@ -533,6 +533,8 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.get_bandwidth_limit_range.return_value = [1.0, 1000.0]
         mock_camera.get_packet_size_range.side_effect = RuntimeError("no packet")
         mock_camera.get_inter_packet_delay_range.return_value = [0, 65535]
+        mock_camera.get_optical_power_range.side_effect = RuntimeError("no optical power")
+        mock_camera.get_lens_status.side_effect = RuntimeError("no lens")
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
         response = await service.get_camera_capabilities(CameraQueryRequest(camera="MockBasler:Camera1"))
@@ -548,6 +550,8 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.bandwidth_limit_range == (1.0, 1000.0)
         assert response.data.packet_size_range is None
         assert response.data.inter_packet_delay_range == (0, 65535)
+        assert response.data.optical_power_range is None
+        assert response.data.supports_liquid_lens is False
 
     @pytest.mark.asyncio
     async def test_get_camera_configuration_gracefully_handles_missing_fields(self, service_with_mock_manager):
@@ -822,6 +826,12 @@ class TestCameraManagerServiceCaptureAndHomography:
         assert "cameras/capture-groups/configure" in endpoints
         assert "cameras/capture-groups" in endpoints
         assert "cameras/capture-groups/remove" in endpoints
+        assert "cameras/lens/status" in endpoints
+        assert "cameras/focus/optical-power/get" in endpoints
+        assert "cameras/focus/optical-power/set" in endpoints
+        assert "cameras/focus/autofocus" in endpoints
+        assert "cameras/focus/config/get" in endpoints
+        assert "cameras/focus/config/set" in endpoints
 
     @pytest.mark.asyncio
     async def test_configure_cameras_batch_formats_partial_results(self, service_with_mock_manager):
