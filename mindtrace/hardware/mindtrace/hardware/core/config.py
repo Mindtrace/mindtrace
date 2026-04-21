@@ -44,6 +44,8 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
+    - MINDTRACE_HW_CAMERA_MOCK_BASLER_WIDTH: Mock Basler frame width (0 = backend default 1920)
+    - MINDTRACE_HW_CAMERA_MOCK_BASLER_HEIGHT: Mock Basler frame height (0 = backend default 1080)
     - MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS: Stereo camera capture timeout in milliseconds
     - MINDTRACE_HW_STEREO_CAMERA_EXPOSURE_TIME: Stereo camera exposure time in microseconds
     - MINDTRACE_HW_STEREO_CAMERA_GAIN: Stereo camera gain value
@@ -172,7 +174,13 @@ class CameraSettings:
     max_camera_index: int = 1  # Maximum camera index for OpenCV discovery
 
     # Mock/testing settings
-    mock_camera_count: int = 1  # Number of mock cameras to simulate
+    mock_camera_count: int = 5  # Number of mock cameras to simulate
+    mock_basler_image_dir: str = ""  # Optional directory containing per-device image fixtures
+    mock_basler_image_map: dict[str, str] = field(default_factory=dict)  # device_name -> absolute image path
+    # Mock Basler output size (fixture images are resized to this unless they already match). Zero = use
+    # backend default (1920×1080).
+    mock_basler_width: int = 0
+    mock_basler_height: int = 0
 
     # Image enhancement algorithm settings
     enhancement_gamma: float = 2.2  # Gamma correction value
@@ -618,6 +626,32 @@ class HardwareConfigManager(Mindtrace):
                 self._config.cameras.mock_camera_count = int(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_BASLER_IMAGE_DIR"):
+            self._config.cameras.mock_basler_image_dir = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_BASLER_IMAGE_MAP"):
+            try:
+                parsed = json.loads(env_val)
+                if isinstance(parsed, dict) and all(
+                    isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
+                ):
+                    self._config.cameras.mock_basler_image_map = parsed
+            except Exception:
+                # Keep defaults on invalid input
+                pass
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_BASLER_WIDTH"):
+            try:
+                self._config.cameras.mock_basler_width = int(env_val)
+            except ValueError:
+                pass
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_BASLER_HEIGHT"):
+            try:
+                self._config.cameras.mock_basler_height = int(env_val)
+            except ValueError:
+                pass
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_GAMMA"):
             try:

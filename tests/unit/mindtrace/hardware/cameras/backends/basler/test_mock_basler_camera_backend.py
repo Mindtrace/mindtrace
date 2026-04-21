@@ -231,6 +231,45 @@ class TestMockBaslerImageGeneration:
             await camera.close()
 
     @pytest.mark.asyncio
+    async def test_fixture_image_path_returns_deterministic_frame(self):
+        """If a fixture image is configured, the mock should return it (resized to ROI)."""
+        fixture = np.zeros((12, 10, 3), dtype=np.uint8)
+        fixture[:, :] = (10, 20, 30)  # BGR
+
+        fd, fixture_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+
+        try:
+            from PIL import Image
+
+            # Pillow expects RGB; our fixtures are BGR to match backend output.
+            Image.fromarray(fixture[..., ::-1]).save(fixture_path)
+
+            camera = MockBaslerCameraBackend(
+                "fixture_cam",
+                mock_image_path=fixture_path,
+                synthetic_pattern="noise",
+                synthetic_overlay_text=False,
+                fast_mode=True,
+            )
+            await camera.initialize()
+
+            fixture_frame = camera._get_fixture_image(width=camera.roi["width"], height=camera.roi["height"])
+            assert fixture_frame is not None
+            cy = fixture_frame.shape[0] // 2
+            cx = fixture_frame.shape[1] // 2
+            assert tuple(int(x) for x in fixture_frame[cy, cx]) == (10, 20, 30)
+
+            frame = await camera.capture()
+            assert frame.ndim == 3
+            assert frame.shape[2] == 3
+        finally:
+            try:
+                os.unlink(fixture_path)
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
