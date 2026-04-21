@@ -8,30 +8,16 @@ Handles saving and loading of:
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 from mindtrace.registry import Archiver, Registry
-from mindtrace.registry.core.base_materializer import ArtifactType
 
-# Check if transformers is available
 try:
-    from transformers import (
-        FeatureExtractionMixin,
-        ImageProcessingMixin,
-        PreTrainedTokenizerBase,
-        ProcessorMixin,
-    )
+    import transformers  # noqa: F401
 
     _HF_AVAILABLE = True
-    _HF_PROCESSOR_TYPES: Tuple[Type[Any], ...] = (
-        PreTrainedTokenizerBase,
-        ProcessorMixin,
-        ImageProcessingMixin,
-        FeatureExtractionMixin,
-    )
 except ImportError:
     _HF_AVAILABLE = False
-    _HF_PROCESSOR_TYPES = (object,)
 
 
 class HuggingFaceProcessorArchiver(Archiver):
@@ -49,9 +35,6 @@ class HuggingFaceProcessorArchiver(Archiver):
         >>> registry.save("vit_processor:v1", processor)
         >>> loaded_processor = registry.load("vit_processor:v1")
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = _HF_PROCESSOR_TYPES
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

@@ -1,17 +1,13 @@
 import json
 from pathlib import Path
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 from mindtrace.core import Config
 from mindtrace.registry.core.archiver import Archiver
-from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 class ConfigArchiver(Archiver):
     """Archiver for mindtrace.core.Config objects."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (Config,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

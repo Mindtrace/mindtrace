@@ -2,19 +2,15 @@
 
 import json
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 import cloudpickle
-from pydantic import BaseModel
 
-from mindtrace.registry.core.base_materializer import ArtifactType, BaseMaterializer
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 
 class BuiltInMaterializer(BaseMaterializer):
     """Handle JSON-serializable basic types (bool, float, int, str, NoneType)."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (bool, float, int, str, type(None))
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         data_path = os.path.join(self.uri, "data.json")
@@ -33,9 +29,6 @@ class BuiltInContainerMaterializer(BaseMaterializer):
     JSON-serializable containers are stored as JSON. Non-serializable containers
     fall back to cloudpickle.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (dict, list, set, tuple)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         try:
@@ -74,9 +67,6 @@ class BuiltInContainerMaterializer(BaseMaterializer):
 class BytesMaterializer(BaseMaterializer):
     """Handle bytes data type."""
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (bytes,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
     def save(self, data: bytes) -> None:
         data_path = os.path.join(self.uri, "data.txt")
         with open(data_path, "wb") as f:
@@ -94,9 +84,6 @@ class PydanticMaterializer(BaseMaterializer):
     Saves/loads using pydantic's native JSON serialization.
     The model's JSON string is stored as a JSON-encoded string in data.json.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (BaseModel,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         data_path = os.path.join(self.uri, "data.json")
@@ -117,9 +104,6 @@ class CloudpickleMaterializer(BaseMaterializer):
     Can serialize almost any Python object but artifacts are not portable
     across Python versions.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (object,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         filepath = os.path.join(self.uri, "artifact.pkl")

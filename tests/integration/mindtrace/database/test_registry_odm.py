@@ -7,14 +7,13 @@ with real file system operations using temporary directories.
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 import pytest
 from pydantic import BaseModel, Field
 
 from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Archiver, LocalRegistryBackend, Registry
-from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 # Test models
@@ -48,9 +47,6 @@ class ComplexUser(BaseModel):
 class UserArchiver(Archiver):
     """Custom archiver for User model that saves to JSON files."""
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (User,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
     def save(self, user: User):
         """Save user to a JSON file."""
         with open(Path(self.uri) / "user.json", "w") as f:
@@ -65,9 +61,6 @@ class UserArchiver(Archiver):
 class UserWithAgeArchiver(Archiver):
     """Custom archiver for UserWithAge model."""
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (UserWithAge,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
     def save(self, user: UserWithAge):
         """Save user to a JSON file."""
         with open(Path(self.uri) / "user_with_age.json", "w") as f:
@@ -81,9 +74,6 @@ class UserWithAgeArchiver(Archiver):
 
 class ComplexUserArchiver(Archiver):
     """Custom archiver for ComplexUser model."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (ComplexUser,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, user: ComplexUser):
         """Save user to a JSON file."""

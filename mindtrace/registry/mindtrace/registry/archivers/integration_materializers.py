@@ -1,15 +1,13 @@
 """Integration materializers for third-party ML frameworks."""
 
 import os
-from typing import Any, ClassVar, Type
+from typing import Any, Type
 
-from mindtrace.registry.core.base_materializer import ArtifactType, BaseMaterializer
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 
 class NumpyMaterializer(BaseMaterializer):
     """Handle numpy ndarray objects."""
-
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         import numpy as np
@@ -27,8 +25,6 @@ class NumpyMaterializer(BaseMaterializer):
 class PillowImageMaterializer(BaseMaterializer):
     """Handle PIL Image objects."""
 
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
     def save(self, data: Any) -> None:
         filepath = os.path.join(self.uri, "image.png")
         data.save(filepath)
@@ -42,8 +38,6 @@ class PillowImageMaterializer(BaseMaterializer):
 
 class PyTorchModuleMaterializer(BaseMaterializer):
     """Handle PyTorch nn.Module objects."""
-
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def save(self, data: Any) -> None:
         import cloudpickle
@@ -62,8 +56,6 @@ class PyTorchModuleMaterializer(BaseMaterializer):
 class PyTorchDataLoaderMaterializer(BaseMaterializer):
     """Handle PyTorch DataLoader and Dataset objects."""
 
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
-
     def save(self, data: Any) -> None:
         import cloudpickle
         import torch
@@ -80,8 +72,6 @@ class PyTorchDataLoaderMaterializer(BaseMaterializer):
 
 class HFDatasetMaterializer(BaseMaterializer):
     """Handle HuggingFace datasets (Dataset, DatasetDict, IterableDataset)."""
-
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def save(self, data: Any) -> None:
         filepath = os.path.join(self.uri, "hf_dataset")

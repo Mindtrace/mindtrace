@@ -5,13 +5,12 @@ handling for pre-PyTorch-2.6 checkpoints that require weights_only=False.
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 import torch
 from ultralytics import YOLO, YOLOWorld
 
 from mindtrace.registry import Archiver, Registry
-from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 class YoloArchiver(Archiver):
@@ -23,9 +22,6 @@ class YoloArchiver(Archiver):
     Handles old-format (pre-PyTorch-2.6) checkpoints that fail with
     ``weights_only=True`` by temporarily patching ``torch.load``.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (YOLO, YOLOWorld)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

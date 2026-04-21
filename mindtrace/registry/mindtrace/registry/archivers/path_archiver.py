@@ -5,10 +5,9 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path, PosixPath, PurePath, WindowsPath
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, ClassVar, Type
 
 from mindtrace.registry.core.archiver import Archiver
-from mindtrace.registry.core.base_materializer import ArtifactType
 
 
 class PathArchiver(Archiver):
@@ -18,8 +17,6 @@ class PathArchiver(Archiver):
     when saving and loading Path objects.
     """
 
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (Path, PosixPath, WindowsPath, PurePath)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
     METADATA_FILE: ClassVar[str] = "metadata.json"
     ARCHIVE_NAME: ClassVar[str] = "data.tar.gz"
 

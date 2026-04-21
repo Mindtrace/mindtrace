@@ -1,16 +1,12 @@
 from abc import abstractmethod
-from typing import Any, Set, Type
+from typing import Any, Type
 
 from mindtrace.core import Mindtrace
-from mindtrace.registry.core.base_materializer import ArtifactType, BaseMaterializer
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 
 class Archiver(Mindtrace, BaseMaterializer):
     """Base Archiver class for handling data persistence."""
-
-    # Required by BaseMaterializer
-    ASSOCIATED_TYPES: Set[Type] = {Any}
-    ASSOCIATED_ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
 
     def __init__(self, uri: str, *args, **kwargs):
         super().__init__(uri=uri, *args, **kwargs)
