@@ -95,8 +95,8 @@ class MockBaslerCameraBackend(CameraBackend):
                 - synthetic_pattern: One of {"auto","gradient","checkerboard","circular","noise"}
                 - synthetic_checker_size: Checker size (int) used when pattern is checkerboard
                 - synthetic_overlay_text: If False, disables text overlays in synthetic images
-                - mock_image_path: Path to an image file used as the returned frame (optional)
-                - mock_image_paths: List of paths to cycle through as returned frames (optional)
+                - mock_image_paths: List of image file paths to cycle through as returned frames (optional; use a
+                  length-one list for a single fixture)
 
         Raises:
             CameraConfigurationError: If configuration is invalid
@@ -151,12 +151,9 @@ class MockBaslerCameraBackend(CameraBackend):
 
         # Optional file-backed fixtures for deterministic mock frames
         raw_paths = backend_kwargs.get("mock_image_paths")
-        raw_path = backend_kwargs.get("mock_image_path")
         fixture_paths: List[str] = []
         if isinstance(raw_paths, list):
             fixture_paths.extend([p for p in raw_paths if isinstance(p, str) and p])
-        if isinstance(raw_path, str) and raw_path:
-            fixture_paths.append(raw_path)
         self._fixture_image_paths: List[str] = fixture_paths
         self._fixture_images: Optional[List[np.ndarray]] = None
 

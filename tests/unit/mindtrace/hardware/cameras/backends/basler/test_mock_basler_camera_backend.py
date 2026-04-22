@@ -247,7 +247,7 @@ class TestMockBaslerImageGeneration:
 
             camera = MockBaslerCameraBackend(
                 "fixture_cam",
-                mock_image_path=fixture_path,
+                mock_image_paths=[fixture_path],
                 synthetic_pattern="noise",
                 synthetic_overlay_text=False,
                 fast_mode=True,
