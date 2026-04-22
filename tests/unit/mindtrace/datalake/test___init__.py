@@ -47,3 +47,6 @@ def test_datalake_exports_sync_symbols():
     assert datalake_module.ReplicationReconcileRequest.__name__ == "ReplicationReconcileRequest"
     assert datalake_module.ReplicationReconcileResult.__name__ == "ReplicationReconcileResult"
     assert datalake_module.ReplicationStatusResult.__name__ == "ReplicationStatusResult"
+    assert datalake_module.SlowOpsPolicy.__name__ == "SlowOpsPolicy"
+    assert datalake_module.SlowOperationWarning.__name__ == "SlowOperationWarning"
+    assert datalake_module.SlowOperationDisabledError.__name__ == "SlowOperationDisabledError"

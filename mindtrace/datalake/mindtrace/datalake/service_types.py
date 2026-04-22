@@ -6,6 +6,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
+from mindtrace.datalake.pagination_types import (
+    CursorPage,
+    DatasetViewPage,
+    DatasetViewRequest,
+    PageRequest,
+)
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
@@ -210,6 +216,10 @@ class ListInput(BaseModel):
     filters: dict[str, Any] | None = None
 
 
+class PageInput(PageRequest):
+    filters: dict[str, Any] | None = None
+
+
 class UpdateAssetMetadataInput(BaseModel):
     asset_id: str
     metadata: dict[str, Any]
@@ -247,6 +257,10 @@ class AssetListOutput(BaseModel):
     assets: list[Asset]
 
 
+class AssetPageOutput(CursorPage[Asset]):
+    pass
+
+
 class CreateAssetFromUploadedObjectInput(BaseModel):
     kind: str
     media_type: str
@@ -265,6 +279,7 @@ GetAssetByAliasSchema = TaskSchema(
 )
 AddAliasSchema = TaskSchema(name="aliases.add", input_schema=AddAliasInput, output_schema=AssetAliasOutput)
 ListAssetsSchema = TaskSchema(name="assets.list", input_schema=ListInput, output_schema=AssetListOutput)
+ListAssetsPageSchema = TaskSchema(name="assets.list_page", input_schema=PageInput, output_schema=AssetPageOutput)
 UpdateAssetMetadataSchema = TaskSchema(
     name="assets.update_metadata", input_schema=UpdateAssetMetadataInput, output_schema=AssetOutput
 )
@@ -300,11 +315,18 @@ class CollectionListOutput(BaseModel):
     collections: list[Collection]
 
 
+class CollectionPageOutput(CursorPage[Collection]):
+    pass
+
+
 CreateCollectionSchema = TaskSchema(
     name="collections.create", input_schema=CreateCollectionInput, output_schema=CollectionOutput
 )
 GetCollectionSchema = TaskSchema(name="collections.get", input_schema=GetByIdInput, output_schema=CollectionOutput)
 ListCollectionsSchema = TaskSchema(name="collections.list", input_schema=ListInput, output_schema=CollectionListOutput)
+ListCollectionsPageSchema = TaskSchema(
+    name="collections.list_page", input_schema=PageInput, output_schema=CollectionPageOutput
+)
 UpdateCollectionSchema = TaskSchema(
     name="collections.update", input_schema=UpdateCollectionInput, output_schema=CollectionOutput
 )
@@ -333,6 +355,10 @@ class CollectionItemListOutput(BaseModel):
     collection_items: list[CollectionItem]
 
 
+class CollectionItemPageOutput(CursorPage[CollectionItem]):
+    pass
+
+
 class ResolvedCollectionItemOutput(BaseModel):
     resolved_collection_item: ResolvedCollectionItem
 
@@ -345,6 +371,9 @@ GetCollectionItemSchema = TaskSchema(
 )
 ListCollectionItemsSchema = TaskSchema(
     name="collection_items.list", input_schema=ListInput, output_schema=CollectionItemListOutput
+)
+ListCollectionItemsPageSchema = TaskSchema(
+    name="collection_items.list_page", input_schema=PageInput, output_schema=CollectionItemPageOutput
 )
 ResolveCollectionItemSchema = TaskSchema(
     name="collection_items.resolve", input_schema=GetByIdInput, output_schema=ResolvedCollectionItemOutput
@@ -379,6 +408,10 @@ class AssetRetentionListOutput(BaseModel):
     asset_retentions: list[AssetRetention]
 
 
+class AssetRetentionPageOutput(CursorPage[AssetRetention]):
+    pass
+
+
 CreateAssetRetentionSchema = TaskSchema(
     name="asset_retentions.create", input_schema=CreateAssetRetentionInput, output_schema=AssetRetentionOutput
 )
@@ -387,6 +420,9 @@ GetAssetRetentionSchema = TaskSchema(
 )
 ListAssetRetentionsSchema = TaskSchema(
     name="asset_retentions.list", input_schema=ListInput, output_schema=AssetRetentionListOutput
+)
+ListAssetRetentionsPageSchema = TaskSchema(
+    name="asset_retentions.list_page", input_schema=PageInput, output_schema=AssetRetentionPageOutput
 )
 UpdateAssetRetentionSchema = TaskSchema(
     name="asset_retentions.update", input_schema=UpdateAssetRetentionInput, output_schema=AssetRetentionOutput
@@ -428,6 +464,10 @@ class AnnotationSchemaListOutput(BaseModel):
     annotation_schemas: list[AnnotationSchema]
 
 
+class AnnotationSchemaPageOutput(CursorPage[AnnotationSchema]):
+    pass
+
+
 CreateAnnotationSchemaSchema = TaskSchema(
     name="annotation_schemas.create", input_schema=CreateAnnotationSchemaInput, output_schema=AnnotationSchemaOutput
 )
@@ -441,6 +481,9 @@ GetAnnotationSchemaByNameVersionSchema = TaskSchema(
 )
 ListAnnotationSchemasSchema = TaskSchema(
     name="annotation_schemas.list", input_schema=ListInput, output_schema=AnnotationSchemaListOutput
+)
+ListAnnotationSchemasPageSchema = TaskSchema(
+    name="annotation_schemas.list_page", input_schema=PageInput, output_schema=AnnotationSchemaPageOutput
 )
 UpdateAnnotationSchemaSchema = TaskSchema(
     name="annotation_schemas.update", input_schema=UpdateAnnotationSchemaInput, output_schema=AnnotationSchemaOutput
@@ -474,6 +517,10 @@ class AnnotationSetListOutput(BaseModel):
     annotation_sets: list[AnnotationSet]
 
 
+class AnnotationSetPageOutput(CursorPage[AnnotationSet]):
+    pass
+
+
 CreateAnnotationSetSchema = TaskSchema(
     name="annotation_sets.create", input_schema=CreateAnnotationSetInput, output_schema=AnnotationSetOutput
 )
@@ -482,6 +529,9 @@ GetAnnotationSetSchema = TaskSchema(
 )
 ListAnnotationSetsSchema = TaskSchema(
     name="annotation_sets.list", input_schema=ListInput, output_schema=AnnotationSetListOutput
+)
+ListAnnotationSetsPageSchema = TaskSchema(
+    name="annotation_sets.list_page", input_schema=PageInput, output_schema=AnnotationSetPageOutput
 )
 UpdateAnnotationSetSchema = TaskSchema(
     name="annotation_sets.update", input_schema=UpdateAnnotationSetInput, output_schema=AnnotationSetOutput
@@ -498,6 +548,10 @@ class ListAnnotationRecordsForAssetInput(BaseModel):
     asset_id: str
 
 
+class ListAnnotationRecordsForAssetPageInput(PageRequest):
+    asset_id: str
+
+
 class UpdateAnnotationRecordInput(BaseModel):
     annotation_id: str
     changes: dict[str, Any] = Field(default_factory=dict)
@@ -509,6 +563,10 @@ class AnnotationRecordOutput(BaseModel):
 
 class AnnotationRecordListOutput(BaseModel):
     annotation_records: list[AnnotationRecord]
+
+
+class AnnotationRecordPageOutput(CursorPage[AnnotationRecord]):
+    pass
 
 
 class AddedAnnotationRecordsOutput(BaseModel):
@@ -524,10 +582,18 @@ GetAnnotationRecordSchema = TaskSchema(
 ListAnnotationRecordsSchema = TaskSchema(
     name="annotation_records.list", input_schema=ListInput, output_schema=AnnotationRecordListOutput
 )
+ListAnnotationRecordsPageSchema = TaskSchema(
+    name="annotation_records.list_page", input_schema=PageInput, output_schema=AnnotationRecordPageOutput
+)
 ListAnnotationRecordsForAssetSchema = TaskSchema(
     name="annotation_records.list_for_asset",
     input_schema=ListAnnotationRecordsForAssetInput,
     output_schema=AnnotationRecordListOutput,
+)
+ListAnnotationRecordsForAssetPageSchema = TaskSchema(
+    name="annotation_records.list_for_asset_page",
+    input_schema=ListAnnotationRecordsForAssetPageInput,
+    output_schema=AnnotationRecordPageOutput,
 )
 UpdateAnnotationRecordSchema = TaskSchema(
     name="annotation_records.update", input_schema=UpdateAnnotationRecordInput, output_schema=AnnotationRecordOutput
@@ -557,6 +623,10 @@ class DatumListOutput(BaseModel):
     datums: list[Datum]
 
 
+class DatumPageOutput(CursorPage[Datum]):
+    pass
+
+
 class ResolvedDatumOutput(BaseModel):
     resolved_datum: ResolvedDatum
 
@@ -564,6 +634,7 @@ class ResolvedDatumOutput(BaseModel):
 CreateDatumSchema = TaskSchema(name="datums.create", input_schema=CreateDatumInput, output_schema=DatumOutput)
 GetDatumSchema = TaskSchema(name="datums.get", input_schema=GetByIdInput, output_schema=DatumOutput)
 ListDatumsSchema = TaskSchema(name="datums.list", input_schema=ListInput, output_schema=DatumListOutput)
+ListDatumsPageSchema = TaskSchema(name="datums.list_page", input_schema=PageInput, output_schema=DatumPageOutput)
 UpdateDatumSchema = TaskSchema(name="datums.update", input_schema=UpdateDatumInput, output_schema=DatumOutput)
 ResolveDatumSchema = TaskSchema(name="datums.resolve", input_schema=GetByIdInput, output_schema=ResolvedDatumOutput)
 
@@ -588,6 +659,15 @@ class ListDatasetVersionsInput(BaseModel):
     filters: dict[str, Any] | None = None
 
 
+class ListDatasetVersionsPageInput(PageInput):
+    dataset_name: str | None = None
+
+
+class ViewDatasetVersionPageInput(DatasetViewRequest):
+    dataset_name: str
+    version: str
+
+
 class DatasetVersionOutput(BaseModel):
     dataset_version: DatasetVersion
 
@@ -596,8 +676,16 @@ class DatasetVersionListOutput(BaseModel):
     dataset_versions: list[DatasetVersion]
 
 
+class DatasetVersionPageOutput(CursorPage[DatasetVersion]):
+    pass
+
+
 class ResolvedDatasetVersionOutput(BaseModel):
     resolved_dataset_version: ResolvedDatasetVersion
+
+
+class DatasetViewPageOutput(DatasetViewPage):
+    pass
 
 
 CreateDatasetVersionSchema = TaskSchema(
@@ -609,10 +697,20 @@ GetDatasetVersionSchema = TaskSchema(
 ListDatasetVersionsSchema = TaskSchema(
     name="dataset_versions.list", input_schema=ListDatasetVersionsInput, output_schema=DatasetVersionListOutput
 )
+ListDatasetVersionsPageSchema = TaskSchema(
+    name="dataset_versions.list_page",
+    input_schema=ListDatasetVersionsPageInput,
+    output_schema=DatasetVersionPageOutput,
+)
 ResolveDatasetVersionSchema = TaskSchema(
     name="dataset_versions.resolve",
     input_schema=GetDatasetVersionInput,
     output_schema=ResolvedDatasetVersionOutput,
+)
+ViewDatasetVersionPageSchema = TaskSchema(
+    name="dataset_versions.view_page",
+    input_schema=ViewDatasetVersionPageInput,
+    output_schema=DatasetViewPageOutput,
 )
 
 

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
 from mindtrace.datalake import DatalakeDirectUploadClient, DatalakeService, StorageRef, SubjectRef
+from mindtrace.datalake.pagination_types import DatasetViewExpand
 from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
@@ -21,6 +22,7 @@ from mindtrace.datalake.service_types import (
     AnnotationSetOutput,
     AssetListOutput,
     AssetOutput,
+    AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
     CollectionItemListOutput,
@@ -31,6 +33,8 @@ from mindtrace.datalake.service_types import (
     DatalakeSummaryOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
+    DatasetVersionPageOutput,
+    DatasetViewPageOutput,
     DatumListOutput,
     DatumOutput,
     MountsOutput,
@@ -746,3 +750,91 @@ class TestDatalakeServiceIntegration:
 
         with pytest.raises(Exception):
             DatalakeService._encode_base64(object())
+
+    def test_datalake_service_pagination_end_to_end(self, datalake_service_local_manager):
+        hopper_path = Path("tests/resources/hopper.png")
+        image_bytes = hopper_path.read_bytes()
+        encoded_image = _b64(image_bytes)
+        datums = []
+
+        for index in range(3):
+            stored = datalake_service_local_manager.objects_put(
+                name=f"service-page-{index}.png",
+                data_base64=encoded_image,
+                metadata={"page_index": index},
+            )
+            asset = datalake_service_local_manager.assets_create(
+                kind="image",
+                media_type="image/png",
+                storage_ref=stored.storage_ref,
+                checksum=f"sha256:service-page-{index}",
+                size_bytes=len(image_bytes),
+                metadata={"page_index": index},
+                created_by="pytest",
+            )
+            datum = datalake_service_local_manager.datums_create(
+                asset_refs={"image": asset.asset.asset_id},
+                split="train",
+                metadata={"page_index": index},
+            )
+            datums.append(datum.datum)
+
+        datalake_service_local_manager.dataset_versions_create(
+            dataset_name="service-pagination",
+            version="0.1.0",
+            manifest=[datum.datum_id for datum in datums],
+            metadata={"suite": "pagination"},
+            created_by="pytest",
+        )
+
+        first_asset_page = datalake_service_local_manager.assets_list_page(
+            filters={"kind": "image"},
+            limit=2,
+            include_total=True,
+        )
+        second_asset_page = datalake_service_local_manager.assets_list_page(
+            filters={"kind": "image"},
+            limit=2,
+            cursor=first_asset_page.page.next_cursor,
+        )
+
+        assert isinstance(first_asset_page, AssetPageOutput)
+        assert len(first_asset_page.items) == 2
+        assert first_asset_page.page.total_count >= 3
+        assert first_asset_page.page.has_more is True
+        assert isinstance(second_asset_page, AssetPageOutput)
+        assert len(second_asset_page.items) >= 1
+
+        dataset_version_page = datalake_service_local_manager.dataset_versions_list_page(
+            dataset_name="service-pagination",
+            filters={"version": "0.1.0"},
+            limit=1,
+            include_total=True,
+        )
+        assert isinstance(dataset_version_page, DatasetVersionPageOutput)
+        assert dataset_version_page.page.total_count == 1
+        assert dataset_version_page.items[0].dataset_name == "service-pagination"
+
+        first_view_page = datalake_service_local_manager.dataset_versions_view_page(
+            dataset_name="service-pagination",
+            version="0.1.0",
+            limit=2,
+            include_total=True,
+            expand=DatasetViewExpand(assets=True, annotation_sets=False, annotation_records=False),
+        )
+        second_view_page = datalake_service_local_manager.dataset_versions_view_page(
+            dataset_name="service-pagination",
+            version="0.1.0",
+            limit=2,
+            cursor=first_view_page.page.next_cursor,
+            expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+        )
+
+        assert isinstance(first_view_page, DatasetViewPageOutput)
+        assert [row.datum_id for row in first_view_page.items] == [datum.datum_id for datum in datums[:2]]
+        assert first_view_page.items[0].assets is not None
+        assert first_view_page.page.total_count == 3
+        assert first_view_page.page.has_more is True
+        assert isinstance(second_view_page, DatasetViewPageOutput)
+        assert second_view_page.items[0].datum_id == datums[2].datum_id
+        assert second_view_page.items[0].assets is None
