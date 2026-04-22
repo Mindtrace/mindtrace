@@ -12,6 +12,7 @@ from mindtrace.datalake.data_vault import (
     _annotations_bound_to_asset,
     _pil_image_to_png_bytes,
 )
+from mindtrace.datalake.pagination_types import CursorPage, PageInfo
 from mindtrace.datalake.types import AnnotationRecord, Asset, StorageRef, SubjectRef
 from mindtrace.datalake.vault_serialization import (
     SERIALIZATION_METADATA_KEY,
@@ -124,6 +125,9 @@ class _FakeSyncServiceCM:
     def assets_list(self, *a, **k):
         raise NotImplementedError
 
+    def assets_list_page(self, *a, **k):
+        raise NotImplementedError
+
     def assets_get_by_alias(self, *a, **k):
         raise NotImplementedError
 
@@ -144,6 +148,9 @@ class _FakeAsyncServiceCM:
         raise NotImplementedError
 
     async def aassets_list(self, *a, **k):
+        raise NotImplementedError
+
+    async def aassets_list_page(self, *a, **k):
         raise NotImplementedError
 
     async def aassets_get_by_alias(self, *a, **k):
@@ -215,6 +222,56 @@ async def test_async_data_vault_delegates_list_and_get_asset():
     assert backend.list_assets.await_args_list[1].args[0] == {"kind": "image"}
     assert await vault.get_asset("listed") is asset
     backend.get_asset.assert_awaited_once_with("listed")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_paged_and_streaming_asset_discovery():
+    asset_page = CursorPage(
+        items=[
+            Asset(
+                kind="image",
+                media_type="image/png",
+                storage_ref=StorageRef(mount="m", name="n-1", version="1"),
+                asset_id="listed-1",
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True, total_count=2),
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n-2", version="1"),
+        asset_id="listed-2",
+    )
+    backend = AsyncMock()
+    backend.list_assets_page = AsyncMock(return_value=asset_page)
+
+    async def iter_assets(**kwargs):
+        assert kwargs == {"filters": {"kind": "image"}, "sort": "created_desc", "batch_size": 10}
+        yield image_asset
+
+    backend.iter_assets = iter_assets
+
+    vault = AsyncDataVault(backend)
+    assert await vault.list_assets_page(filters={"kind": "image"}, limit=1, include_total=True) == asset_page
+    backend.list_assets_page.assert_awaited_once_with(
+        filters={"kind": "image"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+
+    assert await vault.list_image_assets_page(limit=1) == asset_page
+    assert backend.list_assets_page.await_args_list[1].kwargs == {
+        "filters": {"kind": "image"},
+        "sort": "created_desc",
+        "limit": 1,
+        "cursor": None,
+        "include_total": False,
+    }
+
+    assert [asset async for asset in vault.iter_image_assets(batch_size=10)] == [image_asset]
 
 
 @pytest.mark.asyncio
@@ -302,6 +359,51 @@ def test_sync_data_vault_delegates_list_and_get_asset():
     assert backend.list_assets.call_args_list[1].args[0] == {"kind": "image"}
     assert vault.get_asset("listed") is asset
     backend.get_asset.assert_called_once_with("listed")
+
+
+def test_sync_data_vault_paged_and_streaming_asset_discovery():
+    asset_page = CursorPage(
+        items=[
+            Asset(
+                kind="image",
+                media_type="image/png",
+                storage_ref=StorageRef(mount="m", name="n-1", version="1"),
+                asset_id="listed-1",
+            )
+        ],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True, total_count=2),
+    )
+    image_asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n-2", version="1"),
+        asset_id="listed-2",
+    )
+    backend = Mock()
+    backend.list_assets_page = Mock(return_value=asset_page)
+    backend.iter_assets = Mock(return_value=iter([image_asset]))
+
+    vault = DataVault(backend)
+    assert vault.list_assets_page(filters={"kind": "image"}, limit=1, include_total=True) == asset_page
+    backend.list_assets_page.assert_called_once_with(
+        filters={"kind": "image"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+
+    assert vault.list_image_assets_page(limit=1) == asset_page
+    assert backend.list_assets_page.call_args_list[1].kwargs == {
+        "filters": {"kind": "image"},
+        "sort": "created_desc",
+        "limit": 1,
+        "cursor": None,
+        "include_total": False,
+    }
+
+    assert list(vault.iter_image_assets(batch_size=10)) == [image_asset]
+    backend.iter_assets.assert_called_once_with(filters={"kind": "image"}, sort="created_desc", batch_size=10)
 
 
 def test_sync_data_vault_load_image_by_asset_id():

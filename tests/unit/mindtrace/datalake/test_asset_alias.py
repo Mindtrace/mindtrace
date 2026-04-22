@@ -154,7 +154,7 @@ def test_data_vault_rejects_incomplete_duck():
     class BadDuck:
         get_asset_by_alias = Mock()
 
-    with pytest.raises(TypeError, match="get_object"):
+    with pytest.raises(TypeError, match="list_assets"):
         DataVault(BadDuck())
 
 
@@ -163,7 +163,7 @@ async def test_async_data_vault_rejects_incomplete_duck():
     class BadDuck:
         get_asset_by_alias = AsyncMock()
 
-    with pytest.raises(TypeError, match="get_object"):
+    with pytest.raises(TypeError, match="list_assets"):
         AsyncDataVault(BadDuck())
 
 
