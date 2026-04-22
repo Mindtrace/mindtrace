@@ -1015,7 +1015,7 @@ class AsyncCameraManager(Mindtrace):
                 )
                 if backend_name == "basler":
                     cam_cfg = self._hardware_config.cameras
-                    if "mock_image_paths" not in kwargs and "mock_image_path" not in kwargs:
+                    if "mock_image_paths" not in kwargs:
                         fixture_paths: list[str] = []
                         mapped = cam_cfg.mock_basler_image_map.get(device_name)
                         if mapped:
