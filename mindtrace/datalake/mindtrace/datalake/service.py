@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Awaitable
 from contextlib import suppress
 from typing import Any
 
 from fastapi import HTTPException
 
-from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
 from mindtrace.datalake.service_types import (
@@ -18,19 +19,26 @@ from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
     AnnotationRecordOutput,
+    AnnotationRecordPageOutput,
     AnnotationSchemaListOutput,
     AnnotationSchemaOutput,
+    AnnotationSchemaPageOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AnnotationSetPageOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
+    AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
+    AssetRetentionPageOutput,
     CollectionItemListOutput,
     CollectionItemOutput,
+    CollectionItemPageOutput,
     CollectionListOutput,
     CollectionOutput,
+    CollectionPageOutput,
     CompleteObjectUploadSessionInput,
     CompleteObjectUploadSessionSchema,
     CopyObjectInput,
@@ -69,8 +77,11 @@ from mindtrace.datalake.service_types import (
     DatasetSyncImportRequest,
     DatasetVersionListOutput,
     DatasetVersionOutput,
+    DatasetVersionPageOutput,
+    DatasetViewPageOutput,
     DatumListOutput,
     DatumOutput,
+    DatumPageOutput,
     DeleteAnnotationRecordSchema,
     DeleteAnnotationSchemaSchema,
     DeleteAssetRetentionSchema,
@@ -99,16 +110,28 @@ from mindtrace.datalake.service_types import (
     HeadObjectInput,
     HeadObjectSchema,
     ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetPageInput,
+    ListAnnotationRecordsForAssetPageSchema,
     ListAnnotationRecordsForAssetSchema,
+    ListAnnotationRecordsPageSchema,
     ListAnnotationRecordsSchema,
+    ListAnnotationSchemasPageSchema,
     ListAnnotationSchemasSchema,
+    ListAnnotationSetsPageSchema,
     ListAnnotationSetsSchema,
+    ListAssetRetentionsPageSchema,
     ListAssetRetentionsSchema,
+    ListAssetsPageSchema,
     ListAssetsSchema,
+    ListCollectionItemsPageSchema,
     ListCollectionItemsSchema,
+    ListCollectionsPageSchema,
     ListCollectionsSchema,
     ListDatasetVersionsInput,
+    ListDatasetVersionsPageInput,
+    ListDatasetVersionsPageSchema,
     ListDatasetVersionsSchema,
+    ListDatumsPageSchema,
     ListDatumsSchema,
     ListInput,
     MountsOutput,
@@ -117,6 +140,7 @@ from mindtrace.datalake.service_types import (
     ObjectHeadOutput,
     ObjectOutput,
     ObjectUploadSessionOutput,
+    PageInput,
     PutObjectInput,
     PutObjectSchema,
     ReplicationBatchRequest,
@@ -155,6 +179,8 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionSchema,
     UpdateDatumInput,
     UpdateDatumSchema,
+    ViewDatasetVersionPageInput,
+    ViewDatasetVersionPageSchema,
 )
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.registry import Mount
@@ -171,6 +197,7 @@ class DatalakeService(Service):
         mongo_db_name: str | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
         async_datalake: AsyncDatalake | None = None,
         initialize_on_startup: bool = True,
         live_service: bool = True,
@@ -182,6 +209,9 @@ class DatalakeService(Service):
         self.mongo_db_name = mongo_db_name
         self.mounts = mounts
         self.default_mount = default_mount
+        self.slow_ops_policy = (
+            async_datalake.slow_ops_policy if async_datalake is not None else SlowOpsPolicy(slow_ops_policy)
+        )
         self._datalake: AsyncDatalake | None = async_datalake
         self._initialized = async_datalake is not None
         self.initialize_on_startup = initialize_on_startup
@@ -216,6 +246,7 @@ class DatalakeService(Service):
                 mongo_db_name=self.mongo_db_name,
                 mounts=self.mounts,
                 default_mount=self.default_mount,
+                slow_ops_policy=self.slow_ops_policy,
             )
         if not self._initialized:
             await self._datalake.initialize()
@@ -235,6 +266,26 @@ class DatalakeService(Service):
                 status_code=500, detail=f"Object payload type is not serializable to base64: {type(data)!r}"
             )
         return base64.b64encode(bytes(data)).decode("utf-8")
+
+    @staticmethod
+    async def _await_client_safe(coro: Awaitable[Any]) -> Any:
+        try:
+            return await coro
+        except SlowOperationDisabledError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"This deployment disables eager list endpoints because they do not scale safely. {exc}"),
+            ) from exc
+
+    @staticmethod
+    async def _await_pagination_client_safe(coro: Awaitable[Any]) -> Any:
+        try:
+            return await DatalakeService._await_client_safe(coro)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid pagination request. {exc}",
+            ) from exc
 
     @endpoint("health", schema=DatalakeHealthSchema, as_tool=True)
     async def health(self) -> DatalakeHealthOutput:
@@ -348,7 +399,21 @@ class DatalakeService(Service):
     @endpoint("assets.list", schema=ListAssetsSchema)
     async def list_assets(self, payload: ListInput) -> AssetListOutput:
         datalake = await self._ensure_datalake()
-        return AssetListOutput(assets=await datalake.list_assets(payload.filters))
+        return AssetListOutput(assets=await self._await_client_safe(datalake.list_assets(payload.filters)))
+
+    @endpoint("assets.list_page", schema=ListAssetsPageSchema)
+    async def list_assets_page(self, payload: PageInput) -> AssetPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_assets_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AssetPageOutput(items=page.items, page=page.page)
 
     @endpoint("assets.update_metadata", schema=UpdateAssetMetadataSchema)
     async def update_asset_metadata(self, payload: UpdateAssetMetadataInput) -> AssetOutput:
@@ -420,7 +485,23 @@ class DatalakeService(Service):
     @endpoint("collections.list", schema=ListCollectionsSchema)
     async def list_collections(self, payload: ListInput) -> CollectionListOutput:
         datalake = await self._ensure_datalake()
-        return CollectionListOutput(collections=await datalake.list_collections(payload.filters))
+        return CollectionListOutput(
+            collections=await self._await_client_safe(datalake.list_collections(payload.filters))
+        )
+
+    @endpoint("collections.list_page", schema=ListCollectionsPageSchema)
+    async def list_collections_page(self, payload: PageInput) -> CollectionPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_collections_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return CollectionPageOutput(items=page.items, page=page.page)
 
     @endpoint("collections.update", schema=UpdateCollectionSchema)
     async def update_collection(self, payload: UpdateCollectionInput) -> CollectionOutput:
@@ -445,7 +526,23 @@ class DatalakeService(Service):
     @endpoint("collection_items.list", schema=ListCollectionItemsSchema)
     async def list_collection_items(self, payload: ListInput) -> CollectionItemListOutput:
         datalake = await self._ensure_datalake()
-        return CollectionItemListOutput(collection_items=await datalake.list_collection_items(payload.filters))
+        return CollectionItemListOutput(
+            collection_items=await self._await_client_safe(datalake.list_collection_items(payload.filters))
+        )
+
+    @endpoint("collection_items.list_page", schema=ListCollectionItemsPageSchema)
+    async def list_collection_items_page(self, payload: PageInput) -> CollectionItemPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_collection_items_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return CollectionItemPageOutput(items=page.items, page=page.page)
 
     @endpoint("collection_items.resolve", schema=ResolveCollectionItemSchema)
     async def resolve_collection_item(self, payload: GetByIdInput) -> ResolvedCollectionItemOutput:
@@ -477,7 +574,23 @@ class DatalakeService(Service):
     @endpoint("asset_retentions.list", schema=ListAssetRetentionsSchema)
     async def list_asset_retentions(self, payload: ListInput) -> AssetRetentionListOutput:
         datalake = await self._ensure_datalake()
-        return AssetRetentionListOutput(asset_retentions=await datalake.list_asset_retentions(payload.filters))
+        return AssetRetentionListOutput(
+            asset_retentions=await self._await_client_safe(datalake.list_asset_retentions(payload.filters))
+        )
+
+    @endpoint("asset_retentions.list_page", schema=ListAssetRetentionsPageSchema)
+    async def list_asset_retentions_page(self, payload: PageInput) -> AssetRetentionPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_asset_retentions_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AssetRetentionPageOutput(items=page.items, page=page.page)
 
     @endpoint("asset_retentions.update", schema=UpdateAssetRetentionSchema)
     async def update_asset_retention(self, payload: UpdateAssetRetentionInput) -> AssetRetentionOutput:
@@ -512,7 +625,23 @@ class DatalakeService(Service):
     @endpoint("annotation_schemas.list", schema=ListAnnotationSchemasSchema)
     async def list_annotation_schemas(self, payload: ListInput) -> AnnotationSchemaListOutput:
         datalake = await self._ensure_datalake()
-        return AnnotationSchemaListOutput(annotation_schemas=await datalake.list_annotation_schemas(payload.filters))
+        return AnnotationSchemaListOutput(
+            annotation_schemas=await self._await_client_safe(datalake.list_annotation_schemas(payload.filters))
+        )
+
+    @endpoint("annotation_schemas.list_page", schema=ListAnnotationSchemasPageSchema)
+    async def list_annotation_schemas_page(self, payload: PageInput) -> AnnotationSchemaPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_schemas_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AnnotationSchemaPageOutput(items=page.items, page=page.page)
 
     @endpoint("annotation_schemas.update", schema=UpdateAnnotationSchemaSchema)
     async def update_annotation_schema(self, payload: UpdateAnnotationSchemaInput) -> AnnotationSchemaOutput:
@@ -539,7 +668,23 @@ class DatalakeService(Service):
     @endpoint("annotation_sets.list", schema=ListAnnotationSetsSchema)
     async def list_annotation_sets(self, payload: ListInput) -> AnnotationSetListOutput:
         datalake = await self._ensure_datalake()
-        return AnnotationSetListOutput(annotation_sets=await datalake.list_annotation_sets(payload.filters))
+        return AnnotationSetListOutput(
+            annotation_sets=await self._await_client_safe(datalake.list_annotation_sets(payload.filters))
+        )
+
+    @endpoint("annotation_sets.list_page", schema=ListAnnotationSetsPageSchema)
+    async def list_annotation_sets_page(self, payload: PageInput) -> AnnotationSetPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_sets_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AnnotationSetPageOutput(items=page.items, page=page.page)
 
     @endpoint("annotation_sets.update", schema=UpdateAnnotationSetSchema)
     async def update_annotation_set(self, payload: UpdateAnnotationSetInput) -> AnnotationSetOutput:
@@ -563,8 +708,26 @@ class DatalakeService(Service):
     ) -> AnnotationRecordListOutput:
         datalake = await self._ensure_datalake()
         return AnnotationRecordListOutput(
-            annotation_records=await datalake.list_annotation_records_for_asset(payload.asset_id),
+            annotation_records=await self._await_client_safe(
+                datalake.list_annotation_records_for_asset(payload.asset_id)
+            ),
         )
+
+    @endpoint("annotation_records.list_for_asset_page", schema=ListAnnotationRecordsForAssetPageSchema)
+    async def list_annotation_records_for_asset_page(
+        self, payload: ListAnnotationRecordsForAssetPageInput
+    ) -> AnnotationRecordPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_records_for_asset_page(
+                payload.asset_id,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AnnotationRecordPageOutput(items=page.items, page=page.page)
 
     @endpoint("annotation_records.get", schema=GetAnnotationRecordSchema)
     async def get_annotation_record(self, payload: GetByIdInput) -> AnnotationRecordOutput:
@@ -574,7 +737,23 @@ class DatalakeService(Service):
     @endpoint("annotation_records.list", schema=ListAnnotationRecordsSchema)
     async def list_annotation_records(self, payload: ListInput) -> AnnotationRecordListOutput:
         datalake = await self._ensure_datalake()
-        return AnnotationRecordListOutput(annotation_records=await datalake.list_annotation_records(payload.filters))
+        return AnnotationRecordListOutput(
+            annotation_records=await self._await_client_safe(datalake.list_annotation_records(payload.filters))
+        )
+
+    @endpoint("annotation_records.list_page", schema=ListAnnotationRecordsPageSchema)
+    async def list_annotation_records_page(self, payload: PageInput) -> AnnotationRecordPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_annotation_records_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return AnnotationRecordPageOutput(items=page.items, page=page.page)
 
     @endpoint("annotation_records.update", schema=UpdateAnnotationRecordSchema)
     async def update_annotation_record(self, payload: UpdateAnnotationRecordInput) -> AnnotationRecordOutput:
@@ -600,7 +779,21 @@ class DatalakeService(Service):
     @endpoint("datums.list", schema=ListDatumsSchema)
     async def list_datums(self, payload: ListInput) -> DatumListOutput:
         datalake = await self._ensure_datalake()
-        return DatumListOutput(datums=await datalake.list_datums(payload.filters))
+        return DatumListOutput(datums=await self._await_client_safe(datalake.list_datums(payload.filters)))
+
+    @endpoint("datums.list_page", schema=ListDatumsPageSchema)
+    async def list_datums_page(self, payload: PageInput) -> DatumPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_datums_page(
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return DatumPageOutput(items=page.items, page=page.page)
 
     @endpoint("datums.update", schema=UpdateDatumSchema)
     async def update_datum(self, payload: UpdateDatumInput) -> DatumOutput:
@@ -627,14 +820,48 @@ class DatalakeService(Service):
     @endpoint("dataset_versions.list", schema=ListDatasetVersionsSchema, as_tool=True)
     async def list_dataset_versions(self, payload: ListDatasetVersionsInput) -> DatasetVersionListOutput:
         datalake = await self._ensure_datalake()
-        versions = await datalake.list_dataset_versions(dataset_name=payload.dataset_name, filters=payload.filters)
+        versions = await self._await_client_safe(
+            datalake.list_dataset_versions(dataset_name=payload.dataset_name, filters=payload.filters)
+        )
         return DatasetVersionListOutput(dataset_versions=versions)
+
+    @endpoint("dataset_versions.list_page", schema=ListDatasetVersionsPageSchema, as_tool=True)
+    async def list_dataset_versions_page(self, payload: ListDatasetVersionsPageInput) -> DatasetVersionPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.list_dataset_versions_page(
+                dataset_name=payload.dataset_name,
+                filters=payload.filters,
+                sort=payload.sort,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                include_total=payload.include_total,
+            )
+        )
+        return DatasetVersionPageOutput(items=page.items, page=page.page)
 
     @endpoint("dataset_versions.resolve", schema=ResolveDatasetVersionSchema, as_tool=True)
     async def resolve_dataset_version(self, payload: GetDatasetVersionInput) -> ResolvedDatasetVersionOutput:
         datalake = await self._ensure_datalake()
         resolved = await datalake.resolve_dataset_version(payload.dataset_name, payload.version)
         return ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
+
+    @endpoint("dataset_versions.view_page", schema=ViewDatasetVersionPageSchema, as_tool=True)
+    async def view_dataset_version_page(self, payload: ViewDatasetVersionPageInput) -> DatasetViewPageOutput:
+        datalake = await self._ensure_datalake()
+        page = await self._await_pagination_client_safe(
+            datalake.view_dataset_version_page(
+                payload.dataset_name,
+                payload.version,
+                limit=payload.limit,
+                cursor=payload.cursor,
+                sort=payload.sort,
+                filters=payload.filters,
+                expand=payload.expand,
+                include_total=payload.include_total,
+            )
+        )
+        return DatasetViewPageOutput(items=page.items, page=page.page, view=page.view)
 
     @endpoint("dataset_versions.export", schema=ExportDatasetVersionSchema)
     async def export_dataset_version(self, payload: ExportDatasetVersionInput) -> DatasetSyncBundleOutput:
