@@ -711,10 +711,13 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if limit is not None:
             cursor = cursor.limit(limit)
 
-        async for raw in cursor:
-            model = self._mongo_doc_to_model(raw)
-            if model is not None:
-                yield model
+        try:
+            async for raw in cursor:
+                model = self._mongo_doc_to_model(raw)
+                if model is not None:
+                    yield model
+        finally:
+            await cursor.close()
 
     async def find_window(
         self,
@@ -774,10 +777,13 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             cursor = cursor.limit(limit)
 
         def _generator() -> Iterator[T]:
-            for raw in cursor:
-                model = self._mongo_doc_to_model(raw)
-                if model is not None:
-                    yield model
+            try:
+                for raw in cursor:
+                    model = self._mongo_doc_to_model(raw)
+                    if model is not None:
+                        yield model
+            finally:
+                cursor.close()
 
         return _generator()
 
